@@ -1,0 +1,32 @@
+[submodule "external/Beyond-All-Reason"]
+	path = external/Beyond-All-Reason
+	url = git@github.com:beyond-all-reason/Beyond-All-Reason.git
+	branch = master
+[submodule "external/RecoilEngine"]
+	path = external/RecoilEngine
+	url = git@github.com:beyond-all-reason/RecoilEngine.git
+	branch = master
+[submodule "external/teiserver"]
+	path = external/teiserver
+	url = git@github.com:beyond-all-reason/teiserver.git
+	branch = main
+[submodule "external/bar-lobby"]
+	path = external/bar-lobby
+	url = git@github.com:beyond-all-reason/bar-lobby.git
+	branch = master
+[submodule "external/BYAR-Chobby"]
+	path = external/BYAR-Chobby
+	url = git@github.com:beyond-all-reason/BYAR-Chobby.git
+	branch = master
+[submodule "external/tachyon"]
+	path = external/tachyon
+	url = git@github.com:beyond-all-reason/tachyon.git
+	branch = master
+[submodule "external/SPADS"]
+	path = external/SPADS
+	url = git@github.com:Yaribz/SPADS.git
+	branch = master
+[submodule "external/bar_debug_launcher"]
+	path = external/bar_debug_launcher
+	url = git@github.com:beyond-all-reason/bar_debug_launcher.git
+	branch = main
