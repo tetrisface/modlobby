@@ -52,6 +52,7 @@ stylua = { version = "=2.5.2", default-features = false }
 sysinfo = "=0.39.6"
 tauri = { version = "=2.11.5", features = [] }
 tauri-build = { version = "=2.6.3", features = [] }
+tauri-plugin-notification = "=2.3.3"
 tauri-plugin-opener = "=2.5.4"
 tempfile = "=3.27.0"
 thiserror = "=2.0.20"

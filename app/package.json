@@ -22,6 +22,7 @@
     "@solidjs/router": "1.0.0",
     "@tanstack/solid-virtual": "3.13.37",
     "@tauri-apps/api": "2.11.1",
+    "@tauri-apps/plugin-notification": "2.3.3",
     "flag-icons": "7.5.0",
     "monaco-editor": "0.56.0",
     "solid-js": "1.9.15"

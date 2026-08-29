@@ -1,6 +1,6 @@
 import { useNavigate } from '@solidjs/router'
 import { createVirtualizer } from '@tanstack/solid-virtual'
-import { For, Show, createMemo, createSignal } from 'solid-js'
+import { For, Show, createMemo, createSignal, onMount } from 'solid-js'
 import type { BattleList as Filters } from '../ipc/bindings/BattleList'
 import type { BattleSort } from '../ipc/bindings/BattleSort'
 import type { BattleView } from '../ipc/bindings/BattleView'
@@ -88,6 +88,34 @@ export function BattleList() {
 
   const hidden = createMemo(() => all().length - rows().length)
 
+  /**
+   * The room we were in when the app last stopped without leaving it. Offered
+   * only while it is still open — a room that closed while we were away is
+   * nothing to go back to.
+   */
+  const [remembered, setRemembered] = createSignal<number | null>(null)
+  onMount(async () => {
+    try {
+      setRemembered(await api.rememberedBattle())
+    } catch {
+      // Never having an offer is a fine outcome; it is not worth a notice.
+    }
+  })
+  const rejoinable = createMemo(() => {
+    const id = remembered()
+    if (id === null || lobby.myBattle) return undefined
+    return lobby.battles[id]
+  })
+
+  async function forget() {
+    setRemembered(null)
+    try {
+      await api.forgetBattle()
+    } catch {
+      // Dismissed either way; the file is not worth a warning.
+    }
+  }
+
   return (
     <section class='battles'>
       <header class='toolbar'>
@@ -173,6 +201,29 @@ export function BattleList() {
           {Object.keys(lobby.users).length} users
         </span>
       </header>
+
+      <Show when={rejoinable()}>
+        {(battle) => (
+          <div class='rejoin'>
+            <span class='rejoin-what'>
+              You were in <b>{battle().title}</b> when modlobby last closed.
+            </span>
+            <button
+              class='primary'
+              onClick={() => {
+                // Read the room before clearing: clearing unmounts this
+                // block, and with it the accessor the value came from.
+                const room = battle()
+                setRemembered(null)
+                void join(room)
+              }}
+            >
+              Rejoin
+            </button>
+            <button onClick={forget}>Not now</button>
+          </div>
+        )}
+      </Show>
 
       <div class='list' ref={scrollRef}>
         <Show

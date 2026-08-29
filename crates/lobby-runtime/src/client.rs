@@ -893,6 +893,15 @@ impl Runtime {
                     port,
                     script_password,
                 } => {
+                    // Raised once here rather than in the projector: the
+                    // effect fires whenever the host's status changes, and
+                    // `self.game` already tracks whether it is news.
+                    if self.game.is_none() {
+                        self.batcher.push(Delta::Alert {
+                            kind: lobby_ui::AlertKind::GameStarting,
+                            text: "your room's game has started".into(),
+                        });
+                    }
                     self.game = Some(Game {
                         view: GameRunningView { id, ip, port },
                         script_password,
@@ -919,6 +928,7 @@ impl Runtime {
                 | Effect::ChannelChanged { .. }
                 | Effect::ChannelsListed
                 | Effect::FriendsChanged
+                | Effect::Rung { .. }
                 | Effect::ModOptionsChanged { .. }
                 | Effect::VoteChanged => {}
             }

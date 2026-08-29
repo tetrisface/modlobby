@@ -1554,3 +1554,27 @@ input[type='checkbox'].v-edit {
 .room-tab.friend .room-name {
   color: var(--friend);
 }
+
+.rejoin {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 16px;
+  background: var(--sunken);
+  border-bottom: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  font-size: 13px;
+}
+
+.rejoin-what {
+  flex: 1;
+  color: var(--muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.rejoin-what b {
+  color: var(--text);
+  font-weight: 600;
+}

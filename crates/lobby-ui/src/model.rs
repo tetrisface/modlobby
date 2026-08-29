@@ -368,6 +368,17 @@ pub enum EngineStatus {
     Exited { code: Option<i32> },
 }
 
+/// Why an alert was raised, so the front end can honour the setting for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum AlertKind {
+    PrivateMessage,
+    Vote,
+    GameStarting,
+    Ring,
+}
+
 /// A pr-downloader run, and how far along it is.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "state", rename_all = "camelCase")]
@@ -630,6 +641,12 @@ pub enum Delta {
     Friends(FriendsView),
     /// How a content download is going.
     Download(DownloadStatus),
+    /// Something worth interrupting the reader for. The front end decides
+    /// whether to raise it, since only it knows whether anyone is looking.
+    Alert {
+        kind: AlertKind,
+        text: String,
+    },
     Notice {
         level: NoticeLevel,
         text: String,

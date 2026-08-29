@@ -7,14 +7,16 @@ use lobby_core::{Effect, LobbyState};
 use spring_protocol::ServerEvent;
 
 use crate::model::{
-    BATTLE_ROOM, BotView, ChannelSummaryView, ChannelView, ChatKind, ChatLine, Delta, FriendsView,
-    GameRunningView, LayoutView, MyBattleView, NoticeLevel, OptionChangeView, Phase, StartRectView,
-    UserView, VoteView, private_room,
+    AlertKind, BATTLE_ROOM, BotView, ChannelSummaryView, ChannelView, ChatKind, ChatLine, Delta,
+    FriendsView, GameRunningView, LayoutView, MyBattleView, NoticeLevel, OptionChangeView, Phase,
+    StartRectView, UserView, VoteView, private_room,
 };
 
 #[derive(Debug, Default)]
 pub struct Projector {
     seq: u64,
+    /// Whether a vote was already open, so only its opening raises an alert.
+    vote_open: bool,
 }
 
 impl Projector {
@@ -192,12 +194,21 @@ impl Projector {
                 };
                 out.push(Delta::Chat(self.line(BATTLE_ROOM, from, text, kind)));
             }
-            Effect::PrivateChat { with, from, text } => out.push(Delta::Chat(self.line(
-                &private_room(with),
-                from,
-                text,
-                ChatKind::Private,
-            ))),
+            Effect::PrivateChat { with, from, text } => {
+                // Our own message echoed back is not something to be told about.
+                if Some(from) != state.me.as_ref() {
+                    out.push(Delta::Alert {
+                        kind: AlertKind::PrivateMessage,
+                        text: format!("{from}: {text}"),
+                    });
+                }
+                out.push(Delta::Chat(self.line(
+                    &private_room(with),
+                    from,
+                    text,
+                    ChatKind::Private,
+                )));
+            }
             Effect::ChannelChat {
                 room,
                 from,
@@ -223,6 +234,10 @@ impl Projector {
                 format!("cannot join {room}: {reason}"),
             )),
             Effect::FriendsChanged => out.push(Delta::Friends(FriendsView::from(state))),
+            Effect::Rung { by } => out.push(Delta::Alert {
+                kind: AlertKind::Ring,
+                text: format!("{by} is asking for you"),
+            }),
             Effect::ChannelsListed => out.push(Delta::Directory(
                 state
                     .directory
@@ -235,6 +250,17 @@ impl Projector {
             )),
             Effect::VoteChanged => {
                 let vote = state.my_battle.as_ref().and_then(|my| my.vote.as_ref());
+                // Only a vote opening is worth interrupting for; its tally
+                // changing every few seconds is not.
+                if let Some(vote) = vote
+                    && !self.vote_open
+                {
+                    out.push(Delta::Alert {
+                        kind: AlertKind::Vote,
+                        text: format!("a vote opened: {}", vote.command),
+                    });
+                }
+                self.vote_open = vote.is_some();
                 out.push(Delta::Vote(vote.map(VoteView::from)));
             }
             Effect::ModOptionsChanged { keys } => {

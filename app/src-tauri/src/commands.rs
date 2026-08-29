@@ -172,13 +172,32 @@ pub async fn logout(app: State<'_, App>) -> Result<()> {
 #[tauri::command]
 pub async fn join_battle(app: State<'_, App>, id: u32, password: Option<String>) -> Result<()> {
     app.client.join_battle(id, password).await?;
+    // Remembered only once the host has let us in, so a room that refused us
+    // is never offered back.
+    app.rejoin.remember(id);
     Ok(())
 }
 
 #[tauri::command]
 pub async fn leave_battle(app: State<'_, App>) -> Result<()> {
     app.client.leave_battle().await?;
+    // Leaving on purpose is the one case where we should not be asked about it
+    // again; a crash never gets here, which is exactly the point.
+    app.rejoin.forget();
     Ok(())
+}
+
+/// The room we were in when the app last stopped, if it stopped without
+/// leaving. The caller checks it is still open before offering it.
+#[tauri::command]
+pub fn remembered_battle(app: State<'_, App>) -> Option<u32> {
+    app.rejoin.remembered()
+}
+
+/// Drops the offer without joining anything.
+#[tauri::command]
+pub fn forget_battle(app: State<'_, App>) {
+    app.rejoin.forget();
 }
 
 /// Connects the engine to the room's game as a spectator, now or when it starts.

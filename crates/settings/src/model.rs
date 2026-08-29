@@ -21,6 +21,7 @@ pub struct Settings {
     pub paths: Paths,
     pub battle_list: BattleList,
     pub chat: Chat,
+    pub notifications: Notifications,
     pub tweaks: Tweaks,
     pub logging: Logging,
 }
@@ -142,6 +143,38 @@ pub enum BattleSort {
     Title,
     Map,
     Host,
+}
+
+/// What is worth interrupting someone for.
+///
+/// Only raised while the window is not focused: a toast for something already
+/// on screen is noise. Chobby draws the same line, alerting only when its
+/// window is in the background.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(default, rename_all = "camelCase")]
+#[ts(export)]
+pub struct Notifications {
+    pub enabled: bool,
+    /// Someone messaged you directly.
+    pub private_message: bool,
+    /// A vote opened in your room.
+    pub vote: bool,
+    /// Your room's game started.
+    pub game_starting: bool,
+    /// Someone rang you.
+    pub ring: bool,
+}
+
+impl Default for Notifications {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            private_message: true,
+            vote: true,
+            game_starting: true,
+            ring: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]

@@ -26,6 +26,8 @@ export const api = {
   joinBattle: (id: number, password: string | null) =>
     invoke<void>('join_battle', { id, password }),
   leaveBattle: () => invoke<void>('leave_battle'),
+  rememberedBattle: () => invoke<number | null>('remembered_battle'),
+  forgetBattle: () => invoke<void>('forget_battle'),
   launch: () => invoke<void>('launch'),
   sayBattle: (text: string) => invoke<void>('say_battle', { text }),
   vote: (choice: VoteChoice) => invoke<void>('vote', { choice }),

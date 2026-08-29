@@ -233,6 +233,10 @@ pub enum ServerEvent {
     },
     /// `FRIENDREQUESTLISTEND`.
     FriendRequestListEnd,
+    /// `RING <name>`: someone is summoning us to a room.
+    Ring {
+        name: String,
+    },
     /// `SETSCRIPTTAGS k=v\tk=v`: the room's script tags (`game/modoptions/*` among them),
     /// one full line on join and then per change. teiserver lowercases the keys.
     SetScriptTags {
@@ -481,6 +485,7 @@ fn parse(raw: &RawMessage) -> Option<ServerEvent> {
             }
         }
         "ENDOFCHANNELS" => ServerEvent::EndOfChannels,
+        "RING" => ServerEvent::Ring { name: a.into() },
         "FRIENDLISTBEGIN" => ServerEvent::FriendListBegin,
         "FRIENDLISTEND" => ServerEvent::FriendListEnd,
         "FRIENDREQUESTLISTBEGIN" => ServerEvent::FriendRequestListBegin,

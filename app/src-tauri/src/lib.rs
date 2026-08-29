@@ -16,6 +16,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(move |tauri_app| {
             let mut watch = app.settings.watch()?;
             let handle = tauri_app.handle().clone();
@@ -44,6 +45,8 @@ pub fn run() {
             commands::open_log_dir,
             commands::join_battle,
             commands::leave_battle,
+            commands::remembered_battle,
+            commands::forget_battle,
             commands::launch,
             commands::say_battle,
             commands::vote,

@@ -43,6 +43,16 @@
         "filter": "info"
       }
     },
+    "notifications": {
+      "$ref": "#/$defs/Notifications",
+      "default": {
+        "enabled": true,
+        "gameStarting": true,
+        "privateMessage": true,
+        "ring": true,
+        "vote": true
+      }
+    },
     "paths": {
       "$ref": "#/$defs/Paths",
       "default": {
@@ -187,6 +197,36 @@
           "const": "pvp"
         }
       ]
+    },
+    "Notifications": {
+      "description": "What is worth interrupting someone for.\n\nOnly raised while the window is not focused: a toast for something already\non screen is noise. Chobby draws the same line, alerting only when its\nwindow is in the background.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "gameStarting": {
+          "description": "Your room's game started.",
+          "type": "boolean",
+          "default": true
+        },
+        "privateMessage": {
+          "description": "Someone messaged you directly.",
+          "type": "boolean",
+          "default": true
+        },
+        "ring": {
+          "description": "Someone rang you.",
+          "type": "boolean",
+          "default": true
+        },
+        "vote": {
+          "description": "A vote opened in your room.",
+          "type": "boolean",
+          "default": true
+        }
+      }
     },
     "Paths": {
       "type": "object",

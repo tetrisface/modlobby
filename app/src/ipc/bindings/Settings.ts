@@ -3,6 +3,7 @@ import type { Account } from "./Account";
 import type { BattleList } from "./BattleList";
 import type { Chat } from "./Chat";
 import type { Logging } from "./Logging";
+import type { Notifications } from "./Notifications";
 import type { Paths } from "./Paths";
 import type { Server } from "./Server";
 import type { Tweaks } from "./Tweaks";
@@ -11,4 +12,4 @@ export type Settings = {
 /**
  * Points editors at the schema next to the file.
  */
-$schema: string | null, server: Server, account: Account, paths: Paths, battleList: BattleList, chat: Chat, tweaks: Tweaks, logging: Logging, };
+$schema: string | null, server: Server, account: Account, paths: Paths, battleList: BattleList, chat: Chat, notifications: Notifications, tweaks: Tweaks, logging: Logging, };

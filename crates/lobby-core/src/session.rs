@@ -76,6 +76,11 @@ pub enum Effect {
     ChannelsListed,
     /// The friend list or the pending requests changed.
     FriendsChanged,
+    /// Someone is summoning us; Chobby alerts on this unconditionally, because
+    /// it is a person asking for you rather than the room making noise.
+    Rung {
+        by: String,
+    },
     /// A direct message; the Coordinator uses these for refusals.
     ///
     /// `with` is the other person, which is who the conversation is filed
@@ -592,6 +597,7 @@ impl Session {
             // Both listings arrive whole, so each one is collected into a
             // fresh set and swapped in at the end: a friend removed elsewhere
             // has to disappear here too.
+            E::Ring { name } => vec![Effect::Rung { by: name }],
             E::FriendListBegin => {
                 self.collecting_friends = Some(std::collections::BTreeSet::new());
                 vec![]

@@ -1,4 +1,4 @@
-import { Show, createEffect, createSignal } from 'solid-js'
+import { For, Show, createEffect, createSignal } from 'solid-js'
 import { createStore, unwrap } from 'solid-js/store'
 import type { Settings } from '../ipc/bindings/Settings'
 import { api, describeError } from '../ipc/client'
@@ -103,6 +103,45 @@ export function SettingsView() {
       </fieldset>
 
       <fieldset>
+        <legend>Notifications</legend>
+        <p class='muted'>Raised only while the window is in the background.</p>
+        <label class='row'>
+          <input
+            type='checkbox'
+            checked={draft.notifications.enabled}
+            onChange={(e) =>
+              setDraft('notifications', 'enabled', e.currentTarget.checked)
+            }
+          />
+          Notify me
+        </label>
+        <For
+          each={
+            [
+              ['privateMessage', 'A direct message'],
+              ['ring', 'Someone rings me'],
+              ['vote', 'A vote opens in my room'],
+              ['gameStarting', "My room's game starts"],
+            ] as const
+          }
+        >
+          {([key, label]) => (
+            <label class='row'>
+              <input
+                type='checkbox'
+                disabled={!draft.notifications.enabled}
+                checked={draft.notifications[key]}
+                onChange={(e) =>
+                  setDraft('notifications', key, e.currentTarget.checked)
+                }
+              />
+              {label}
+            </label>
+          )}
+        </For>
+      </fieldset>
+
+      <fieldset>
         <legend>Chat</legend>
         <label>
           Lines kept
@@ -165,6 +204,13 @@ function blank(): Settings {
     server: { host: '', port: 8201, tls: true },
     account: { username: '', rememberPassword: false, autoLogin: false },
     paths: { dataDir: null },
+    notifications: {
+      enabled: true,
+      privateMessage: true,
+      vote: true,
+      gameStarting: true,
+      ring: true,
+    },
     battleList: {
       showPassworded: true,
       showLocked: true,

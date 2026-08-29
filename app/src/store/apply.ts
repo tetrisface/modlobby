@@ -10,6 +10,7 @@ import {
   pushLine,
   pushNotice,
 } from './chat'
+import { raise } from '../ipc/alerts'
 import { emptyLobby, lobby, setLobby, type LobbyState } from './lobby'
 
 export function applyMessage(message: UiMessage): void {
@@ -225,6 +226,9 @@ export function applyDelta(delta: Delta): void {
       return
     case 'download':
       setLobby('download', delta.data)
+      return
+    case 'alert':
+      void raise(delta.data.kind, delta.data.text)
       return
     case 'notice':
       pushNotice(delta.data.level, delta.data.text)

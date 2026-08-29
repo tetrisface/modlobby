@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use lobby_runtime::{Client, Hardware, platform};
-use settings::{CredentialStore, KeyringStore, LoginGuard, Store};
+use settings::{CredentialStore, KeyringStore, LoginGuard, RejoinMemory, Store};
 use spring_protocol::ThrottlePolicy;
 
 pub struct App {
@@ -14,6 +14,8 @@ pub struct App {
     pub hardware: Hardware,
     /// Keeps us under teiserver's login limit across restarts.
     pub login_guard: LoginGuard,
+    /// The room to offer back after a restart.
+    pub rejoin: RejoinMemory,
 }
 
 impl App {
@@ -26,6 +28,7 @@ impl App {
         });
         Ok(Self {
             login_guard: LoginGuard::new(settings.dir()),
+            rejoin: RejoinMemory::new(settings.dir()),
             client,
             settings,
             credentials: Arc::new(KeyringStore),
