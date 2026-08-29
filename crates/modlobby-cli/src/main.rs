@@ -220,6 +220,7 @@ async fn run(conn: Connection, mode: Mode) -> anyhow::Result<()> {
                 continue;
             }
             Next::EngineExited(status) => {
+                send_all(&transport, session.set_in_game(false)).await?;
                 println!(
                     "engine exited: {}",
                     status.map_or_else(|e| e.to_string(), |s| s.to_string())
@@ -291,6 +292,9 @@ async fn run(conn: Connection, mode: Mode) -> anyhow::Result<()> {
                     {
                         let me = session.state.me.as_deref().unwrap_or(&conn.username);
                         let url = recoil::spring_url(me, &script_password, &ip, port);
+                        // SPADS /adduser's us to the running game only once the lobby
+                        // shows us in game; the engine needs a few seconds to reach the host.
+                        send_all(&transport, session.set_in_game(true)).await?;
                         engine = Some(launch_engine(&session, id, data_dir, url)?);
                     }
                 }
@@ -325,17 +329,22 @@ async fn run(conn: Connection, mode: Mode) -> anyhow::Result<()> {
 
     let leaving = session.leave_battle();
     if !leaving.is_empty() {
-        for effect in leaving {
-            if let Effect::Send(envelope) = effect {
-                transport.send(envelope).await?;
-            }
-        }
+        send_all(&transport, leaving).await?;
         // Let the writer flush LEAVEBATTLE before the socket goes away.
         tokio::time::sleep(Duration::from_millis(300)).await;
     }
     transport.shutdown().await;
     if engine.is_some() {
         println!("engine still running; it keeps its own connection to the host");
+    }
+    Ok(())
+}
+
+async fn send_all(transport: &Transport, effects: Vec<Effect>) -> anyhow::Result<()> {
+    for effect in effects {
+        if let Effect::Send(envelope) = effect {
+            transport.send(envelope).await?;
+        }
     }
     Ok(())
 }

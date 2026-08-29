@@ -12,6 +12,7 @@ pub mod event;
 pub mod hash;
 pub mod login;
 pub mod policy;
+pub mod status;
 pub mod telemetry;
 pub mod transport;
 
@@ -20,4 +21,5 @@ pub use codec::RawMessage;
 pub use event::{BattleOpened, ServerEvent, TeamLayout, UserStatus};
 pub use login::LoginRequest;
 pub use policy::{Area, Envelope, Mode, ThrottlePolicy};
+pub use status::my_status;
 pub use transport::{Endpoint, Inbound, Transport, TransportError};

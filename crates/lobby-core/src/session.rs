@@ -1,5 +1,5 @@
 use spring_protocol::{
-    Area, Envelope, LoginRequest, MyBattleStatus, ServerEvent, Sync, battle, telemetry,
+    Area, Envelope, LoginRequest, MyBattleStatus, ServerEvent, Sync, battle, status, telemetry,
 };
 
 use crate::state::{LobbyState, MyBattle, Phase};
@@ -95,6 +95,16 @@ impl Session {
         let line = battle::join_battle(id, password, &script_password);
         self.pending_join = Some(script_password);
         vec![Effect::Send(Envelope::queue(Area::Other, line))]
+    }
+
+    /// Announces whether we are in a game. SPADS admits a mid-game joiner to the
+    /// running game only after seeing this bit (`spads.pl` `cbClientStatus`), so it
+    /// must go out before the engine connects.
+    pub fn set_in_game(&mut self, in_game: bool) -> Vec<Effect> {
+        vec![Effect::Send(Envelope::queue(
+            Area::Status,
+            status::my_status(in_game, false),
+        ))]
     }
 
     pub fn leave_battle(&mut self) -> Vec<Effect> {
@@ -552,6 +562,13 @@ mod tests {
         assert_eq!(sent_lines(&effects), ["LEAVEBATTLE"]);
         assert!(effects.contains(&Effect::LeftBattle { id: 5 }));
         assert!(s.leave_battle().is_empty());
+    }
+
+    #[test]
+    fn in_game_status_is_a_mystatus_line() {
+        let mut s = ready_with_room();
+        assert_eq!(sent_lines(&s.set_in_game(true)), ["MYSTATUS 1"]);
+        assert_eq!(sent_lines(&s.set_in_game(false)), ["MYSTATUS 0"]);
     }
 
     #[test]
