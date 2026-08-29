@@ -12,14 +12,15 @@ use std::time::{Duration, Instant};
 
 use lobby_core::{Effect, Session};
 use lobby_ui::{
-    Batcher, Delta, EngineStatus, GameRunningView, Phase, Projector, Snapshot, UiMessage,
-    UiTransport,
+    Batcher, Delta, DownloadStatus, EngineStatus, GameRunningView, Phase, Projector, Snapshot,
+    UiMessage, UiTransport,
 };
 use spring_protocol::battle::{self, TooLong};
 use spring_protocol::policy::PolicyEvent;
 use spring_protocol::{
     Area, Endpoint, Envelope, Inbound, LoginRequest, ThrottlePolicy, Transport, TransportError,
 };
+use tokio::io::AsyncReadExt;
 use tokio::process::Child;
 use tokio::sync::{mpsc, oneshot};
 
@@ -98,6 +99,10 @@ enum Command {
         reply: Reply<()>,
     },
     RefreshFriends {
+        reply: Reply<()>,
+    },
+    /// Fetches whatever the current room is missing.
+    DownloadMissing {
         reply: Reply<()>,
     },
     FriendAction {
@@ -233,6 +238,11 @@ impl Client {
         self.ask(|reply| Command::RefreshFriends { reply }).await
     }
 
+    /// Fetches the game and map the current room needs and we do not have.
+    pub async fn download_missing(&self) -> Result<(), ClientError> {
+        self.ask(|reply| Command::DownloadMissing { reply }).await
+    }
+
     pub async fn friend_action(
         &self,
         action: lobby_core::FriendAction,
@@ -297,6 +307,7 @@ enum Next {
     Command(Command),
     Inbound(Inbound),
     EngineExited(std::io::Result<ExitStatus>),
+    Download(DownloadEvent),
 }
 
 struct Runtime {
@@ -317,8 +328,19 @@ struct Runtime {
     /// The room's (engine, game, map) the content check last ran against;
     /// scanning the rapid index is too slow to repeat per message.
     checked: Option<(String, String, String)>,
+    /// What a running pr-downloader was asked for, or `None` when none is.
+    downloading: Option<String>,
+    download_tx: mpsc::Sender<DownloadEvent>,
+    download_rx: mpsc::Receiver<DownloadEvent>,
     projector: Projector,
     batcher: Batcher,
+}
+
+/// What a pr-downloader child reports back to the runtime.
+#[derive(Debug)]
+enum DownloadEvent {
+    Progress(recoil::Progress),
+    Finished { what: String, ok: bool },
 }
 
 impl Runtime {
@@ -328,6 +350,9 @@ impl Runtime {
         hardware: Hardware,
         connector: Connector,
     ) -> Self {
+        // A short queue: progress lines arrive far faster than the front end
+        // needs them, and the batcher coalesces what gets through anyway.
+        let (download_tx, download_rx) = mpsc::channel(16);
         Self {
             rx,
             policy,
@@ -343,8 +368,129 @@ impl Runtime {
             join_reply: None,
             data_dir: None,
             checked: None,
+            downloading: None,
+            download_tx,
+            download_rx,
             projector: Projector::new(),
             batcher: Batcher::default(),
+        }
+    }
+
+    /// Starts pr-downloader on whatever the room needs and this machine lacks.
+    ///
+    /// The child is not awaited here: progress is streamed to the front end as
+    /// it arrives, and the content check runs again when it exits, so a room
+    /// that was short a map becomes joinable without anyone asking twice.
+    async fn start_download(&mut self) -> Result<(), ClientError> {
+        if self.downloading.is_some() {
+            return Err(ClientError::Refused("a download is already running".into()));
+        }
+        let Some(conn) = self.conn.as_ref() else {
+            return Err(ClientError::NotConnected);
+        };
+        let room = conn
+            .session
+            .state
+            .my_battle
+            .as_ref()
+            .and_then(|my| conn.session.state.battles.get(&my.id))
+            .ok_or_else(|| ClientError::Refused("not in a room".into()))?;
+        let (engine_version, game, map) = (
+            room.engine_version.clone(),
+            room.game_name.clone(),
+            room.map_name.clone(),
+        );
+
+        let Some(data_dir) = self.data_dir() else {
+            return Err(ClientError::Refused("no BAR data directory".into()));
+        };
+        let library = content::Library::new(&data_dir);
+        let mut wants = Vec::new();
+        if !library.has_game(&game) {
+            wants.push((recoil::Want::Game, game.clone()));
+        }
+        if !library.has_map(&map) {
+            wants.push((recoil::Want::Map, map.clone()));
+        }
+        if wants.is_empty() {
+            return Err(ClientError::Refused("nothing is missing".into()));
+        }
+
+        let what = wants
+            .iter()
+            .map(|(_, name)| name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut child = crate::launch::spawn_download(&data_dir, &engine_version, wants)
+            .map_err(ClientError::Refused)?;
+        let stdout = child.stdout.take();
+
+        self.downloading = Some(what.clone());
+        self.batcher.push(Delta::Download(DownloadStatus::Running {
+            what: what.clone(),
+            current: 0,
+            total: 0,
+        }));
+
+        let events = self.download_tx.clone();
+        tokio::spawn(async move {
+            if let Some(mut stdout) = stdout {
+                // Read raw rather than by line: pr-downloader redraws progress
+                // with carriage returns, so a line reader would see one
+                // enormous line at the end and no progress at all.
+                let mut buffer = String::new();
+                let mut chunk = [0_u8; 4096];
+                while let Ok(read) = stdout.read(&mut chunk).await {
+                    if read == 0 {
+                        break;
+                    }
+                    buffer.push_str(&String::from_utf8_lossy(&chunk[..read]));
+                    for line in recoil::split_output(&mut buffer) {
+                        if let Some(progress) = recoil::Progress::parse(&line) {
+                            let _ = events.send(DownloadEvent::Progress(progress)).await;
+                        }
+                    }
+                }
+            }
+            let status = child.wait().await;
+            let _ = events
+                .send(DownloadEvent::Finished {
+                    what,
+                    ok: matches!(status, Ok(status) if status.success()),
+                })
+                .await;
+        });
+
+        Ok(())
+    }
+
+    /// Reports a download's progress, and re-checks content when it ends.
+    async fn on_download(&mut self, event: DownloadEvent) {
+        match event {
+            DownloadEvent::Progress(progress) => {
+                let Some(what) = self.downloading.clone() else {
+                    return;
+                };
+                self.batcher.push(Delta::Download(DownloadStatus::Running {
+                    what,
+                    current: progress.current,
+                    total: progress.total,
+                }));
+            }
+            DownloadEvent::Finished { what, ok } => {
+                self.downloading = None;
+                self.batcher.push(Delta::Download(if ok {
+                    DownloadStatus::Done { what }
+                } else {
+                    DownloadStatus::Failed {
+                        what,
+                        reason: "pr-downloader did not finish".into(),
+                    }
+                }));
+                // Whatever arrived changes the answer, so ask the disk again.
+                self.checked = None;
+                self.refresh_content().await;
+            }
         }
     }
 
@@ -410,6 +556,7 @@ impl Runtime {
                 },
                 inbound = recv_inbound(&mut self.conn) => Next::Inbound(inbound),
                 status = wait_engine(&mut self.engine) => Next::EngineExited(status),
+                Some(event) = self.download_rx.recv() => Next::Download(event),
             };
             match next {
                 Next::Command(Command::Shutdown) => {
@@ -418,6 +565,7 @@ impl Runtime {
                     return;
                 }
                 Next::Command(command) => self.handle_command(command).await,
+                Next::Download(event) => self.on_download(event).await,
                 Next::Inbound(inbound) => {
                     self.handle_inbound(inbound).await;
                     while let Some(more) = self.try_recv_inbound() {
@@ -515,6 +663,10 @@ impl Runtime {
                     Ok::<_, std::convert::Infallible>(session.list_channels())
                 })
                 .await;
+            }
+            Command::DownloadMissing { reply } => {
+                let result = self.start_download().await;
+                let _ = reply.send(result);
             }
             Command::RefreshFriends { reply } => {
                 self.run_session(reply, |session| {
@@ -701,6 +853,14 @@ impl Runtime {
                 Effect::Ready => {
                     self.reply_login(Ok(()));
                     self.send_snapshot();
+                    // The server volunteers nothing about friendships, so the
+                    // list is asked for once the login flood has settled.
+                    // Without this a filter that depends on it would quietly
+                    // match nobody.
+                    if let Some(conn) = self.conn.as_mut() {
+                        let effects = conn.session.refresh_friends();
+                        queue.extend(effects);
+                    }
                 }
                 Effect::LoginDenied { reason } => self.refuse(reason).await,
                 Effect::AgreementRequired { .. } => {

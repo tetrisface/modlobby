@@ -368,6 +368,29 @@ pub enum EngineStatus {
     Exited { code: Option<i32> },
 }
 
+/// A pr-downloader run, and how far along it is.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "state", rename_all = "camelCase")]
+#[ts(export)]
+pub enum DownloadStatus {
+    Idle,
+    Running {
+        /// What was asked for, for the label.
+        what: String,
+        #[ts(type = "number")]
+        current: u64,
+        #[ts(type = "number")]
+        total: u64,
+    },
+    Failed {
+        what: String,
+        reason: String,
+    },
+    Done {
+        what: String,
+    },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -384,6 +407,7 @@ pub struct Snapshot {
     /// channel list is right the moment the window comes back.
     pub channels: Vec<ChannelView>,
     pub friends: FriendsView,
+    pub download: DownloadStatus,
 }
 
 /// Who we are friends with, and who is waiting on an answer.
@@ -407,6 +431,7 @@ impl Snapshot {
             engine: EngineStatus::Idle,
             channels: Vec::new(),
             friends: FriendsView::default(),
+            download: DownloadStatus::Idle,
         }
     }
 
@@ -442,6 +467,9 @@ impl Snapshot {
                 })
                 .collect(),
             friends: FriendsView::from(state),
+            // A download belongs to the runtime, not to lobby state; a fresh
+            // snapshot says nothing about one that may be in flight.
+            download: DownloadStatus::Idle,
         }
     }
 }
@@ -600,6 +628,8 @@ pub enum Delta {
     Directory(Vec<ChannelSummaryView>),
     /// The friend list and pending requests, replaced whole.
     Friends(FriendsView),
+    /// How a content download is going.
+    Download(DownloadStatus),
     Notice {
         level: NoticeLevel,
         text: String,

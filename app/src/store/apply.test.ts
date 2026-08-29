@@ -49,6 +49,7 @@ const snapshot: Snapshot = {
   engine: { state: 'idle' },
   channels: [],
   friends: { friends: [], requests: [] },
+  download: { state: 'idle' },
 }
 
 describe('apply', () => {

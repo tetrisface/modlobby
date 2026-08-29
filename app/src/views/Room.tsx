@@ -1,7 +1,9 @@
 import { useNavigate } from '@solidjs/router'
 import {
   For,
+  Match,
   Show,
+  Switch,
   createEffect,
   createMemo,
   createResource,
@@ -11,6 +13,7 @@ import { BotRow, PlayerRow, SpectatorRow } from '../components/PlayerRow'
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { BotView } from '../ipc/bindings/BotView'
 import type { ChatLine } from '../ipc/bindings/ChatLine'
+import type { DownloadStatus } from '../ipc/bindings/DownloadStatus'
 import type { StartRectView } from '../ipc/bindings/StartRectView'
 import type { UserView } from '../ipc/bindings/UserView'
 import { api, describeError } from '../ipc/client'
@@ -307,7 +310,7 @@ function Chips(props: { battle: BattleView }) {
             when={parts().length > 0}
             fallback={<span class='chip ok'>Content ready</span>}
           >
-            <span class='chip warn'>Missing {parts().join(', ')}</span>
+            <Missing parts={parts()} />
           </Show>
         )}
       </Show>
@@ -329,6 +332,61 @@ function Chips(props: { battle: BattleView }) {
         spectators
       </span>
     </div>
+  )
+}
+
+/**
+ * What the room needs and this machine lacks, with the means to fetch it.
+ * pr-downloader ships inside an engine, so an engine we do not have is the one
+ * thing this cannot fix — it says so rather than offering a button that fails.
+ */
+function Missing(props: { parts: string[] }) {
+  const download = () => lobby.download
+  const fetchable = () => props.parts.some((part) => part !== 'engine')
+
+  async function start() {
+    try {
+      await api.downloadMissing()
+    } catch (error) {
+      pushNotice('warning', describeError(error))
+    }
+  }
+
+  return (
+    <>
+      <span class='chip warn'>Missing {props.parts.join(', ')}</span>
+      <Switch>
+        <Match when={download().state === 'running'}>
+          {(() => {
+            const running = () =>
+              download() as Extract<DownloadStatus, { state: 'running' }>
+            const percent = () =>
+              running().total > 0
+                ? Math.round((running().current / running().total) * 100)
+                : 0
+            return (
+              <span class='chip info' title={running().what}>
+                Downloading {percent()}%
+              </span>
+            )
+          })()}
+        </Match>
+        <Match when={download().state === 'failed'}>
+          <span class='chip warn'>Download failed</span>
+          <button class='chip-choice' onClick={start}>
+            Retry
+          </button>
+        </Match>
+        <Match when={fetchable()}>
+          <button class='chip-choice' onClick={start}>
+            Download
+          </button>
+        </Match>
+        <Match when={!fetchable()}>
+          <span class='chip'>Install an engine to fetch content</span>
+        </Match>
+      </Switch>
+    </>
   )
 }
 

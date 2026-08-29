@@ -125,7 +125,9 @@ export function BattleList() {
           />
         </div>
 
-        <Show when={lobby.friends.friends.length > 0}>
+        {/* Shown while it is on even with no friends loaded: hiding the
+            control that is emptying the list would strand the reader. */}
+        <Show when={filters().friendsOnly || lobby.friends.friends.length > 0}>
           <div class='filter-group' role='group' aria-label='Friends'>
             <Choice
               label='Friends only'

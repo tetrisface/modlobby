@@ -226,6 +226,14 @@ pub async fn list_channels(app: State<'_, App>) -> Result<()> {
     Ok(())
 }
 
+/// Fetches whatever the current room needs and this machine does not have.
+/// Progress arrives as `Download` deltas.
+#[tauri::command]
+pub async fn download_missing(app: State<'_, App>) -> Result<()> {
+    app.client.download_missing().await?;
+    Ok(())
+}
+
 /// Asks the server for the friend list and the pending requests.
 #[tauri::command]
 pub async fn refresh_friends(app: State<'_, App>) -> Result<()> {
