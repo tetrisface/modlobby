@@ -29,6 +29,8 @@ export const api = {
   launch: () => invoke<void>('launch'),
   sayBattle: (text: string) => invoke<void>('say_battle', { text }),
   vote: (choice: VoteChoice) => invoke<void>('vote', { choice }),
+  setOption: (key: string, value: string) =>
+    invoke<void>('set_option', { key, value }),
   getSettings: () => invoke<Settings>('get_settings'),
   updateSettings: (settings: Settings) =>
     invoke<Settings>('update_settings', { settings }),

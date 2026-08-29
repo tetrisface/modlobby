@@ -1296,3 +1296,57 @@ input {
   font-size: 11.5px;
   color: var(--warn);
 }
+
+/* Expanded Modding: the rosters step aside so the editor gets the room. */
+.room-body.wide {
+  grid-template-columns: 0 1fr;
+}
+
+.room-body.wide .room-main {
+  display: none;
+}
+
+.setup-wide {
+  padding: 2px 9px;
+  font-size: 11px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.setup .tweaks {
+  border-top: 1px solid var(--line);
+}
+
+.v-edit {
+  justify-self: end;
+  max-width: 180px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  padding: 2px 6px;
+}
+
+select.v-edit {
+  background: var(--sunken);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+}
+
+input[type='checkbox'].v-edit {
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  accent-color: var(--accent);
+}
+
+.mm-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.minimap svg {
+  position: relative;
+}

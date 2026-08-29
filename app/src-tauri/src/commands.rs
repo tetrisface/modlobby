@@ -195,6 +195,38 @@ pub async fn say_battle(app: State<'_, App>, text: String) -> Result<()> {
     Ok(())
 }
 
+/// Sets one modoption: `!bSet <key> <value>`, in Chobby's casing.
+///
+/// SPADS decides what happens next, not us. `[bSet]` is granted as
+/// `battle,pv:player:stopped|100:0` (`commands_default.conf`), so a player
+/// below level 100 has this auto-converted into a vote by `autoCallvote`, and
+/// a spectator is refused outright. The refusal arrives as chat, which is why
+/// nothing here tries to predict it.
+#[tauri::command]
+pub async fn set_option(app: State<'_, App>, key: String, value: String) -> Result<()> {
+    if key.is_empty() || !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err(ApiError::new("input", "a modoption key is alphanumeric"));
+    }
+    // SPADS' own value pattern for a preset setting is `[A-Za-z0-9\-\_]*`
+    // (`battlePresets.conf`); anything else it will not accept anyway.
+    if !value
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+    {
+        return Err(ApiError::new(
+            "input",
+            "a modoption value is alphanumeric, `-`, `_` or `.`",
+        ));
+    }
+
+    let command = format!("!bSet {key} {value}");
+    if command.len() > spring_protocol::policy::saybattle_max_len(&command) {
+        return Err(ApiError::new("tooLong", "the command is too long to send"));
+    }
+    app.client.say(command).await?;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn vote(app: State<'_, App>, choice: String) -> Result<()> {
     if !matches!(choice.as_str(), "y" | "n" | "b") {

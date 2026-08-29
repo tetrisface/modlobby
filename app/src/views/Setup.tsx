@@ -1,28 +1,34 @@
-import { A } from '@solidjs/router'
 import {
   For,
+  Match,
   Show,
+  Switch,
   createMemo,
   createResource,
   createSignal,
   type Accessor,
 } from 'solid-js'
 import type { Kind as TweakKind } from '../ipc/bindings/Kind'
-import { api } from '../ipc/client'
+import { api, describeError } from '../ipc/client'
 import {
   MODDING_TAB,
   TWEAK_SLOTS,
   changedCount,
+  defaultText,
   displayText,
+  isOn,
   readModOptions,
   rowsOf,
   tabs,
   type Row,
   type Tab,
 } from '../lib/setup'
+import { pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
+import { Tweaks } from './Tweaks'
 
 const TABS = tabs()
+const TWEAK_GROUP = 'Tweak slots'
 
 /**
  * The room's settings, in BAR's own tabs and groups.
@@ -33,11 +39,24 @@ const TABS = tabs()
  * hold a seat — SPADS grants `bSet` as `battle,pv:player:stopped`, so a
  * spectator can neither set a value nor call a vote on one.
  */
-export function Setup() {
+export function Setup(props: {
+  wide: boolean
+  onWide: (wide: boolean) => void
+}) {
   const [tab, setTab] = createSignal<Tab>(TABS[0]!)
   const [group, setGroup] = createSignal<string | null>(null)
 
   const values = createMemo(() => readModOptions(lobby.myBattle?.scriptTags))
+
+  /**
+   * SPADS refuses `bSet` from a spectator outright and auto-converts it into a
+   * vote for a player below level 100, so holding a seat is the honest gate.
+   * What happens after the send is the host's call, not ours.
+   */
+  const editable = createMemo(() => {
+    const me = lobby.me
+    return me !== null && lobby.users[me]?.battleStatus?.player === true
+  })
 
   const changed = createMemo(() =>
     tab()
@@ -51,16 +70,42 @@ export function Setup() {
     return found ? rowsOf(found, values()) : []
   })
 
+  /** The slots group, expanded: the pane becomes the whole tweak workspace. */
+  const editing = () =>
+    props.wide && tab().key === MODDING_TAB && group() === TWEAK_GROUP
+
   function open(next: Tab) {
     setTab(next)
     setGroup(null)
+    if (next.key !== MODDING_TAB) props.onWide(false)
+  }
+
+  function editTweaks() {
+    setTab(TABS.find((entry) => entry.key === MODDING_TAB)!)
+    setGroup(TWEAK_GROUP)
+    props.onWide(true)
   }
 
   return (
     <aside class='setup'>
       <div class='setup-head'>
         <span class='t'>Setup</span>
-        <span class='note'>read-only · spectator</span>
+        <span class='note'>
+          {editable()
+            ? 'a change is proposed to the host'
+            : 'read-only · spectator'}
+        </span>
+        <Show when={tab().key === MODDING_TAB}>
+          <button
+            class='setup-wide'
+            onClick={() => props.onWide(!props.wide)}
+            title={
+              props.wide ? 'Show the rosters again' : 'Give Modding the room'
+            }
+          >
+            {props.wide ? 'Collapse' : 'Expand'}
+          </button>
+        </Show>
       </div>
 
       <div class='setup-tabs'>
@@ -87,48 +132,51 @@ export function Setup() {
         </For>
       </div>
 
-      <div class='setup-body'>
-        <nav class='groups'>
-          <button
-            class='group'
-            classList={{ on: group() === null }}
-            onClick={() => setGroup(null)}
-          >
-            Changed<span class='c'>{changed().length}</span>
-          </button>
-          <For each={tab().groups}>
-            {(entry) => (
-              <button
-                class='group'
-                classList={{ on: group() === entry.name }}
-                onClick={() => setGroup(entry.name)}
-              >
-                {entry.name || 'General'}
-                <span class='c'>{entry.options.length}</span>
-              </button>
-            )}
-          </For>
-        </nav>
-
-        <div class='setup-detail'>
-          <Show
-            when={group() !== null}
-            fallback={
-              <Changed
-                rows={changed}
-                onShowAll={() => setGroup(firstGroup())}
-              />
-            }
-          >
-            <Show
-              when={tab().key === MODDING_TAB && group() === 'Tweak slots'}
-              fallback={<Rows rows={shown()} />}
+      <Show when={!editing()} fallback={<Tweaks />}>
+        <div class='setup-body'>
+          <nav class='groups'>
+            <button
+              class='group'
+              classList={{ on: group() === null }}
+              onClick={() => setGroup(null)}
             >
-              <TweakSlots values={values()} />
+              Changed<span class='c'>{changed().length}</span>
+            </button>
+            <For each={tab().groups}>
+              {(entry) => (
+                <button
+                  class='group'
+                  classList={{ on: group() === entry.name }}
+                  onClick={() => setGroup(entry.name)}
+                >
+                  {entry.name || 'General'}
+                  <span class='c'>{entry.options.length}</span>
+                </button>
+              )}
+            </For>
+          </nav>
+
+          <div class='setup-detail'>
+            <Show
+              when={group() !== null}
+              fallback={
+                <Changed
+                  rows={changed}
+                  editable={editable()}
+                  onShowAll={() => setGroup(firstGroup())}
+                />
+              }
+            >
+              <Show
+                when={tab().key === MODDING_TAB && group() === TWEAK_GROUP}
+                fallback={<Rows rows={shown()} editable={editable()} />}
+              >
+                <TweakSlots values={values()} onEdit={editTweaks} />
+              </Show>
             </Show>
-          </Show>
+          </div>
         </div>
-      </div>
+      </Show>
     </aside>
   )
 
@@ -137,7 +185,11 @@ export function Setup() {
   }
 }
 
-function Changed(props: { rows: Accessor<Row[]>; onShowAll: () => void }) {
+function Changed(props: {
+  rows: Accessor<Row[]>
+  editable: boolean
+  onShowAll: () => void
+}) {
   return (
     <>
       <div class='setup-section'>
@@ -152,7 +204,7 @@ function Changed(props: { rows: Accessor<Row[]>; onShowAll: () => void }) {
           </p>
         }
       >
-        <Rows rows={props.rows()} />
+        <Rows rows={props.rows()} editable={props.editable} />
       </Show>
       <button class='setup-reveal' onClick={props.onShowAll}>
         Show every setting
@@ -161,7 +213,7 @@ function Changed(props: { rows: Accessor<Row[]>; onShowAll: () => void }) {
   )
 }
 
-function Rows(props: { rows: Row[] }) {
+function Rows(props: { rows: Row[]; editable: boolean }) {
   return (
     <div class='setup-rows'>
       <For
@@ -174,7 +226,12 @@ function Rows(props: { rows: Row[] }) {
             <span class='k' title={row.option.desc ?? ''}>
               {row.option.name || row.option.key}
             </span>
-            <span class='v'>{displayText(row)}</span>
+            <Show
+              when={props.editable}
+              fallback={<span class='v'>{displayText(row)}</span>}
+            >
+              <Control row={row} />
+            </Show>
           </div>
         )}
       </For>
@@ -183,11 +240,68 @@ function Rows(props: { rows: Row[] }) {
 }
 
 /**
+ * One editable setting. The value is sent when it is committed, never on
+ * every keystroke: each send is a chat command the whole room sees.
+ */
+function Control(props: { row: Row }) {
+  const value = () => props.row.current ?? defaultText(props.row.option)
+
+  async function set(next: string) {
+    if (next === value()) return
+    try {
+      await api.setOption(props.row.option.key, next)
+    } catch (error) {
+      pushNotice('warning', `${props.row.option.key}: ${describeError(error)}`)
+    }
+  }
+
+  return (
+    <Switch fallback={<span class='v'>{displayText(props.row)}</span>}>
+      <Match when={props.row.option.type === 'bool'}>
+        <input
+          class='v-edit'
+          type='checkbox'
+          checked={isOn(value())}
+          onChange={(event) =>
+            void set(event.currentTarget.checked ? '1' : '0')
+          }
+        />
+      </Match>
+      <Match when={props.row.option.type === 'number'}>
+        <input
+          class='v-edit'
+          type='number'
+          value={value()}
+          min={props.row.option.min ?? undefined}
+          max={props.row.option.max ?? undefined}
+          step={props.row.option.step ?? undefined}
+          onChange={(event) => void set(event.currentTarget.value)}
+        />
+      </Match>
+      <Match when={props.row.option.type === 'list'}>
+        <select
+          class='v-edit'
+          value={value()}
+          onChange={(event) => void set(event.currentTarget.value)}
+        >
+          <For each={props.row.option.items ?? []}>
+            {(item) => <option value={item.key}>{item.name}</option>}
+          </For>
+        </select>
+      </Match>
+    </Switch>
+  )
+}
+
+/**
  * The twenty slots, and the Lua in whichever one is open. Editing happens in
  * the full editor; this is the view a spectator can act on — read it, format
  * it, copy the command someone with a seat can run.
  */
-function TweakSlots(props: { values: Record<string, string> }) {
+function TweakSlots(props: {
+  values: Record<string, string>
+  onEdit: () => void
+}) {
   const [open, setOpen] = createSignal<string | null>(null)
 
   const filled = createMemo(() =>
@@ -255,9 +369,7 @@ function TweakSlots(props: { values: Record<string, string> }) {
         Spectators cannot set a modoption or call a vote on one. Open the editor
         to format, diff and copy the command.
       </div>
-      <A class='button' href='/room/tweaks'>
-        Open editor
-      </A>
+      <button onClick={props.onEdit}>Open editor</button>
     </>
   )
 }

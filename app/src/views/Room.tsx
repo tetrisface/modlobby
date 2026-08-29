@@ -1,5 +1,12 @@
-import { A, useNavigate } from '@solidjs/router'
-import { For, Show, createEffect, createMemo, createSignal } from 'solid-js'
+import { useNavigate } from '@solidjs/router'
+import {
+  For,
+  Show,
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+} from 'solid-js'
 import { BotRow, PlayerRow, SpectatorRow } from '../components/PlayerRow'
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { BotView } from '../ipc/bindings/BotView'
@@ -7,6 +14,7 @@ import type { ChatLine } from '../ipc/bindings/ChatLine'
 import type { StartRectView } from '../ipc/bindings/StartRectView'
 import type { UserView } from '../ipc/bindings/UserView'
 import { api, describeError } from '../ipc/client'
+import { mapImage } from '../lib/maps'
 import { readSkills, teamSkill, type Skill } from '../lib/skill'
 import { chat, pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
@@ -19,6 +27,9 @@ type Team = { allyTeam: number; users: UserView[]; bots: BotView[] }
 export function Room() {
   const navigate = useNavigate()
   const [text, setText] = createSignal('')
+  // Setup asks for the whole body when you are editing a tweak; the rosters
+  // step aside rather than the editor being squeezed into a rail.
+  const [wide, setWide] = createSignal(false)
   let log: HTMLDivElement | undefined
 
   const battle = createMemo(() => {
@@ -94,7 +105,7 @@ export function Room() {
       {(b) => (
         <section class='room'>
           <header class='room-card'>
-            <Minimap rects={b().startRects} />
+            <Minimap rects={b().startRects} mapName={b().mapName} />
             <div class='card-main'>
               <h1 title={b().title}>{b().title}</h1>
               <div class='card-meta'>
@@ -125,9 +136,6 @@ export function Room() {
                     : 'Watch the game'}
                 </button>
               </Show>
-              <A class='button' href='/room/tweaks'>
-                Tweaks
-              </A>
               <button onClick={() => api.leaveBattle()}>Leave</button>
             </div>
           </header>
@@ -135,7 +143,7 @@ export function Room() {
           <VoteBar />
           <Seat />
 
-          <div class='room-body'>
+          <div class='room-body' classList={{ wide: wide() }}>
             <div class='room-main'>
               <div class='rosters'>
                 <div class='teams'>
@@ -203,7 +211,7 @@ export function Room() {
               </div>
             </div>
 
-            <Setup />
+            <Setup wide={wide()} onWide={setWide} />
           </div>
         </section>
       )}
@@ -212,22 +220,40 @@ export function Room() {
 }
 
 /**
- * Start boxes on a plain square. `ADDSTARTRECT` is normalised to 0-200 on both
- * axes, so this is honest without the map image — which needs a CDN fetch and
- * a CSP change we have not made.
+ * Start boxes over the map, when we can find its picture, and over a plain
+ * square when we cannot. `ADDSTARTRECT` is normalised to 0-200 on both axes,
+ * so the boxes are right either way and the image is decoration on top.
  */
-function Minimap(props: { rects: StartRectView[] }) {
+function Minimap(props: { rects: StartRectView[]; mapName: string }) {
+  const [image] = createResource(
+    () => props.mapName,
+    (name) => mapImage(name),
+  )
+  const [broken, setBroken] = createSignal(false)
+
   return (
     <div class='minimap'>
+      <Show when={broken() ? undefined : image()}>
+        {(url) => (
+          <img
+            class='mm-photo'
+            src={url()}
+            alt=''
+            onError={() => setBroken(true)}
+          />
+        )}
+      </Show>
       <svg viewBox='0 0 200 200' role='img'>
         <title>Start boxes</title>
-        <rect width='200' height='200' class='mm-ground' />
-        {/* A quarter grid, so an empty square reads as a schematic waiting for
-            a map rather than as a panel that failed to load. */}
-        <path
-          class='mm-grid'
-          d='M50 0V200M100 0V200M150 0V200M0 50H200M0 100H200M0 150H200'
-        />
+        <Show when={broken() || !image()}>
+          <rect width='200' height='200' class='mm-ground' />
+          {/* A quarter grid, so an empty square reads as a schematic waiting
+              for a map rather than as a panel that failed to load. */}
+          <path
+            class='mm-grid'
+            d='M50 0V200M100 0V200M150 0V200M0 50H200M0 100H200M0 150H200'
+          />
+        </Show>
         <For each={props.rects}>
           {(rect) => (
             <g class='mm-box'>

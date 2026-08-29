@@ -47,6 +47,7 @@ pub fn run() {
             commands::launch,
             commands::say_battle,
             commands::vote,
+            commands::set_option,
             commands::get_settings,
             commands::update_settings,
             commands::has_password,
