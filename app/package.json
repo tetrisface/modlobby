@@ -4,15 +4,15 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "bun node_modules/@tauri-apps/cli/tauri.js dev",
-    "build": "bun node_modules/@tauri-apps/cli/tauri.js build",
-    "tauri": "bun node_modules/@tauri-apps/cli/tauri.js",
-    "vite:dev": "bun node_modules/vite/bin/vite.js",
-    "vite:build": "bun node_modules/vite/bin/vite.js build",
-    "typecheck": "bun node_modules/typescript/bin/tsc --noEmit",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "tauri": "tauri",
+    "vite:dev": "vite",
+    "vite:build": "vite build",
+    "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "fmt": "bun node_modules/prettier/bin/prettier.cjs --write .",
-    "check": "bun node_modules/prettier/bin/prettier.cjs --check . && bun node_modules/typescript/bin/tsc --noEmit && bun test"
+    "fmt": "prettier --write .",
+    "check": "prettier --check . && tsc --noEmit && bun test"
   },
   "dependencies": {
     "@solidjs/router": "1.0.0",

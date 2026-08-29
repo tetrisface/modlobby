@@ -1,0 +1,6 @@
+# Node is only needed by the JS tooling under `app/` (Vite, TypeScript, Prettier,
+# the Tauri CLI); bun runs the app itself. The Rust toolchain is pinned by
+# `rust-toolchain.toml`, which mise reads when `rust` is listed in
+# `idiomatic_version_file_enable_tools`.
+[tools]
+node = "26.8.1"
