@@ -1,7 +1,8 @@
-use spring_protocol::telemetry;
-use spring_protocol::{Area, Envelope, LoginRequest, ServerEvent};
+use spring_protocol::{
+    Area, Envelope, LoginRequest, MyBattleStatus, ServerEvent, Sync, battle, telemetry,
+};
 
-use crate::state::{LobbyState, Phase};
+use crate::state::{LobbyState, MyBattle, Phase};
 
 /// What the application must do in response to an event.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,6 +30,30 @@ pub enum Effect {
         flood: bool,
     },
     Notice(String),
+    /// The host accepted us into the room, as a spectator.
+    Joined {
+        id: u32,
+    },
+    JoinFailed {
+        reason: String,
+    },
+    /// We are out of the room: left, kicked, or it closed.
+    LeftBattle {
+        id: u32,
+    },
+    BattleChat {
+        from: String,
+        text: String,
+        /// `SAIDBATTLEEX`: host announcements and `/me` lines.
+        announcement: bool,
+    },
+    /// The room's game is running; the engine connects with `spring://<me>:<script_password>@<ip>:<port>`.
+    GameRunning {
+        id: u32,
+        ip: String,
+        port: u16,
+        script_password: String,
+    },
 }
 
 /// One logical connection: credentials, machine identity and the state they produce.
@@ -38,6 +63,8 @@ pub struct Session {
     hardware: Vec<(String, String)>,
     machine_hash: String,
     agreement: Vec<String>,
+    /// Script password of a `JOINBATTLE` the host has not answered yet.
+    pending_join: Option<String>,
     pub state: LobbyState,
 }
 
@@ -49,10 +76,35 @@ impl Session {
             hardware,
             machine_hash,
             agreement: Vec::new(),
+            pending_join: None,
             state: LobbyState {
                 phase: Some(Phase::Connecting),
                 ..LobbyState::default()
             },
+        }
+    }
+
+    /// Asks to join room `id` as a spectator. `script_password` is the secret the
+    /// engine later presents to the host; the caller supplies it so this stays pure.
+    pub fn join_battle(
+        &mut self,
+        id: u32,
+        password: Option<&str>,
+        script_password: String,
+    ) -> Vec<Effect> {
+        let line = battle::join_battle(id, password, &script_password);
+        self.pending_join = Some(script_password);
+        vec![Effect::Send(Envelope::queue(Area::Other, line))]
+    }
+
+    pub fn leave_battle(&mut self) -> Vec<Effect> {
+        self.pending_join = None;
+        match self.state.my_battle.take() {
+            Some(my) => vec![
+                Effect::Send(Envelope::queue(Area::Other, battle::LEAVE_BATTLE)),
+                Effect::LeftBattle { id: my.id },
+            ],
+            None => vec![],
         }
     }
 
@@ -120,7 +172,11 @@ impl Session {
                 vec![]
             }
             E::ClientStatus { name, status } => {
+                let was_in_game = state.users.get(&name).is_some_and(|u| u.status.in_game);
                 state.set_status(&name, status);
+                if status.in_game && !was_in_game && self.hosts_my_battle(&name) {
+                    return self.game_running().into_iter().collect();
+                }
                 vec![]
             }
             E::BattleOpened(opened) => {
@@ -129,6 +185,10 @@ impl Session {
             }
             E::BattleClosed { id } => {
                 state.close_battle(id);
+                if state.my_battle.as_ref().is_some_and(|my| my.id == id) {
+                    state.my_battle = None;
+                    return vec![Effect::LeftBattle { id }];
+                }
                 vec![]
             }
             E::UpdateBattleInfo {
@@ -152,6 +212,11 @@ impl Session {
             }
             E::LeftBattle { id, name } => {
                 state.leave_battle(id, &name);
+                let me = state.me.as_deref() == Some(name.as_str());
+                if me && state.my_battle.as_ref().is_some_and(|my| my.id == id) {
+                    state.my_battle = None;
+                    return vec![Effect::LeftBattle { id }];
+                }
                 vec![]
             }
             E::ClientBattleStatus { name, status, .. } => {
@@ -160,6 +225,35 @@ impl Session {
                 }
                 vec![]
             }
+            E::JoinBattle { id, game_hash } => {
+                let script_password = self.pending_join.take().unwrap_or_default();
+                state.my_battle = Some(MyBattle {
+                    id,
+                    game_hash,
+                    script_password,
+                });
+                let mut effects = vec![Effect::Joined { id }];
+                effects.extend(self.game_running());
+                effects
+            }
+            E::JoinBattleFailed { reason } => {
+                self.pending_join = None;
+                vec![Effect::JoinFailed { reason }]
+            }
+            E::RequestBattleStatus => vec![Effect::Send(Envelope::queue(
+                Area::BattleStatus,
+                MyBattleStatus::spectator(Sync::Unsynced).line(),
+            ))],
+            E::SaidBattle { name, text } => vec![Effect::BattleChat {
+                from: name,
+                text,
+                announcement: false,
+            }],
+            E::SaidBattleEx { name, text } => vec![Effect::BattleChat {
+                from: name,
+                text,
+                announcement: true,
+            }],
             E::BattleTitle { id, title } => {
                 if let Some(battle) = state.battles.get_mut(&id) {
                     battle.title = title;
@@ -184,14 +278,6 @@ impl Session {
                 flood: false,
             }],
             E::Pong => vec![],
-            E::JoinBattle { .. }
-            | E::JoinBattleFailed { .. }
-            | E::RequestBattleStatus
-            | E::SaidBattle { .. }
-            | E::SaidBattleEx { .. } => {
-                tracing::debug!("battle-room event not handled yet");
-                vec![]
-            }
             E::Unknown(raw) => {
                 tracing::debug!(command = raw.command, "unhandled command");
                 vec![]
@@ -202,11 +288,32 @@ impl Session {
             }
         }
     }
+
+    fn hosts_my_battle(&self, name: &str) -> bool {
+        self.state
+            .my_battle
+            .as_ref()
+            .and_then(|my| self.state.battles.get(&my.id))
+            .is_some_and(|battle| battle.founder == name)
+    }
+
+    /// [`Effect::GameRunning`] when our room's host is in game right now.
+    fn game_running(&self) -> Option<Effect> {
+        let my = self.state.my_battle.as_ref()?;
+        let battle = self.state.battles.get(&my.id)?;
+        let host = self.state.users.get(&battle.founder)?;
+        host.status.in_game.then(|| Effect::GameRunning {
+            id: my.id,
+            ip: battle.ip.clone(),
+            port: battle.port,
+            script_password: my.script_password.clone(),
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use spring_protocol::RawMessage;
+    use spring_protocol::{BattleStatus, RawMessage};
 
     use super::*;
 
@@ -223,6 +330,33 @@ mod tests {
             .iter()
             .flat_map(|l| session.handle(RawMessage::parse(l).into()))
             .collect()
+    }
+
+    fn sent_lines(effects: &[Effect]) -> Vec<&str> {
+        effects
+            .iter()
+            .filter_map(|e| match e {
+                Effect::Send(env) => Some(env.line.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Logged in, with one SPADS-hosted room (id 5, host `host`) on the list.
+    fn ready_with_room() -> Session {
+        let mut s = session();
+        feed(
+            &mut s,
+            &[
+                "TASSERVER 0.38 * 8201 0",
+                "ACCEPTED me",
+                "ADDUSER me SE 1 LuaLobby Chobby",
+                "ADDUSER host GB 2 SPADS",
+                "BATTLEOPENED 5 0 0 host 1.2.3.4 8452 16 0 0 h R\tv\tm\tt\tg",
+                "LOGININFOEND",
+            ],
+        );
+        s
     }
 
     #[test]
@@ -263,19 +397,8 @@ mod tests {
         assert_eq!(battle.player_count(), 1);
         assert_eq!(s.state.user_battle["alice"], 5);
         assert_eq!(s.state.user_battle["bot"], 5);
-        let sends: Vec<&Envelope> = effects
-            .iter()
-            .filter_map(|e| {
-                if let Effect::Send(env) = e {
-                    Some(env)
-                } else {
-                    None
-                }
-            })
-            .collect();
-        assert!(sends.iter().any(|e| {
-            e.line
-                .starts_with("c.telemetry.update_client_property hardware:cpuinfo ")
+        assert!(sent_lines(&effects).iter().any(|line| {
+            line.starts_with("c.telemetry.update_client_property hardware:cpuinfo ")
         }));
         assert_eq!(effects.last(), Some(&Effect::Ready));
     }
@@ -331,6 +454,130 @@ mod tests {
         let battle = &s.state.battles[&22];
         assert_eq!(battle.title, "Beginner Players | 4v4");
         assert_eq!(battle.layout.map(|l| (l.teams, l.team_size)), Some((2, 8)));
+    }
+
+    #[test]
+    fn join_flow_answers_the_status_request_as_a_spectator() {
+        let mut s = ready_with_room();
+        let effects = s.join_battle(5, None, "4242".into());
+        assert_eq!(sent_lines(&effects), ["JOINBATTLE 5 empty 4242"]);
+
+        // What teiserver sends once SPADS accepts (spring_out.ex do_join_battle).
+        let effects = feed(
+            &mut s,
+            &[
+                "JOINBATTLE 5 -1",
+                "JOINEDBATTLE 5 me 4242",
+                "REQUESTBATTLESTATUS",
+            ],
+        );
+        assert!(effects.contains(&Effect::Joined { id: 5 }));
+        let [status_line] = sent_lines(&effects)[..] else {
+            panic!("expected exactly one MYBATTLESTATUS, got {effects:?}")
+        };
+        let bits: u32 = status_line
+            .strip_prefix("MYBATTLESTATUS ")
+            .and_then(|rest| rest.split(' ').next())
+            .and_then(|bits| bits.parse().ok())
+            .expect("MYBATTLESTATUS <bits> <colour>");
+        let status = BattleStatus::from_bits(bits);
+        assert!(!status.player, "must never take a player slot");
+        assert!(!status.ready);
+        assert_eq!(
+            s.state
+                .my_battle
+                .as_ref()
+                .map(|m| (m.id, m.script_password.as_str())),
+            Some((5, "4242"))
+        );
+        assert_eq!(s.state.user_battle["me"], 5);
+    }
+
+    #[test]
+    fn host_in_game_reports_game_running_on_join_and_on_change() {
+        // Already running when we join: bot (64) + in-game (1).
+        let mut s = ready_with_room();
+        feed(&mut s, &["CLIENTSTATUS host 65"]);
+        s.join_battle(5, None, "4242".into());
+        let effects = feed(&mut s, &["JOINBATTLE 5 -1"]);
+        assert!(effects.contains(&Effect::GameRunning {
+            id: 5,
+            ip: "1.2.3.4".into(),
+            port: 8452,
+            script_password: "4242".into()
+        }));
+
+        // Starts after we joined; repeated in-game statuses do not repeat the effect.
+        let mut s = ready_with_room();
+        s.join_battle(5, None, "4242".into());
+        let effects = feed(
+            &mut s,
+            &[
+                "JOINBATTLE 5 -1",
+                "CLIENTSTATUS host 64",
+                "CLIENTSTATUS host 65",
+                "CLIENTSTATUS host 65",
+            ],
+        );
+        let running = effects
+            .iter()
+            .filter(|e| matches!(e, Effect::GameRunning { .. }))
+            .count();
+        assert_eq!(running, 1);
+    }
+
+    #[test]
+    fn join_failure_and_leaving_clear_the_room() {
+        let mut s = ready_with_room();
+        s.join_battle(5, None, "1".into());
+        assert_eq!(
+            feed(&mut s, &["JOINBATTLEFAILED Battle locked"]),
+            vec![Effect::JoinFailed {
+                reason: "Battle locked".into()
+            }]
+        );
+        assert!(s.state.my_battle.is_none());
+
+        s.join_battle(5, None, "1".into());
+        feed(&mut s, &["JOINBATTLE 5 -1", "JOINEDBATTLE 5 me 1"]);
+        assert_eq!(
+            feed(&mut s, &["LEFTBATTLE 5 me"]),
+            vec![Effect::LeftBattle { id: 5 }]
+        );
+        assert!(s.state.my_battle.is_none());
+
+        s.join_battle(5, None, "1".into());
+        feed(&mut s, &["JOINBATTLE 5 -1"]);
+        let effects = s.leave_battle();
+        assert_eq!(sent_lines(&effects), ["LEAVEBATTLE"]);
+        assert!(effects.contains(&Effect::LeftBattle { id: 5 }));
+        assert!(s.leave_battle().is_empty());
+    }
+
+    #[test]
+    fn battle_chat_becomes_effects() {
+        let mut s = ready_with_room();
+        assert_eq!(
+            feed(
+                &mut s,
+                &[
+                    "SAIDBATTLE host hello there",
+                    "SAIDBATTLEEX host * welcomes me"
+                ]
+            ),
+            vec![
+                Effect::BattleChat {
+                    from: "host".into(),
+                    text: "hello there".into(),
+                    announcement: false
+                },
+                Effect::BattleChat {
+                    from: "host".into(),
+                    text: "* welcomes me".into(),
+                    announcement: true
+                },
+            ]
+        );
     }
 
     #[test]

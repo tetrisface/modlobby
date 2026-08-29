@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use base64::prelude::*;
 use serde::Deserialize;
 
+use crate::battle::BattleStatus;
 use crate::codec::RawMessage;
 
 /// `CLIENTSTATUS` bit layout (teiserver `Spring.create_client_status/1`):
@@ -136,7 +137,7 @@ pub enum ServerEvent {
     },
     ClientBattleStatus {
         name: String,
-        status: u32,
+        status: BattleStatus,
         team_colour: u32,
     },
     JoinBattle {
@@ -263,7 +264,7 @@ fn parse(raw: &RawMessage) -> Option<ServerEvent> {
             let f = fields(a, 3)?;
             ServerEvent::ClientBattleStatus {
                 name: f[0].into(),
-                status: f[1].parse().ok()?,
+                status: BattleStatus::from_bits(f[1].parse().ok()?),
                 team_colour: f[2].parse().ok()?,
             }
         }

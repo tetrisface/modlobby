@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, HashMap};
 
-use spring_protocol::{BattleOpened, TeamLayout, UserStatus};
+use spring_protocol::{BattleOpened, BattleStatus, TeamLayout, UserStatus};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
@@ -19,8 +19,18 @@ pub struct User {
     pub user_id: Option<u64>,
     pub lobby_client: String,
     pub status: UserStatus,
-    /// Raw `CLIENTBATTLESTATUS` bits, only tracked for members of our own battle.
-    pub battle_status: Option<u32>,
+    /// `CLIENTBATTLESTATUS`; the server only sends it for members of our own room.
+    pub battle_status: Option<BattleStatus>,
+}
+
+/// The room we are in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MyBattle {
+    pub id: u32,
+    /// From the `JOINBATTLE` reply; identifies the game archive.
+    pub game_hash: String,
+    /// Secret the engine presents to the host when connecting.
+    pub script_password: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -85,6 +95,7 @@ pub struct LobbyState {
     pub battles: HashMap<u32, Battle>,
     /// Which battle each user is in, for O(1) leave/cleanup.
     pub user_battle: HashMap<String, u32>,
+    pub my_battle: Option<MyBattle>,
     pub motd: Vec<String>,
     pub comp_flags: Vec<String>,
 }

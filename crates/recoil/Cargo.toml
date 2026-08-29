@@ -1,0 +1,9 @@
+[package]
+name = "recoil"
+description = "Launching the Recoil engine: spring:// URLs, engine discovery in the BAR data dir, the launch command"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]

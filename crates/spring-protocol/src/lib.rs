@@ -6,6 +6,7 @@
 //! `BYAR-Chobby/libs/liblobby/lobby/interface*.lua` (client) and
 //! `teiserver/lib/teiserver/protocols/spring/*.ex` (server).
 
+pub mod battle;
 pub mod codec;
 pub mod event;
 pub mod hash;
@@ -14,8 +15,9 @@ pub mod policy;
 pub mod telemetry;
 pub mod transport;
 
+pub use battle::{BattleStatus, MyBattleStatus, Sync};
 pub use codec::RawMessage;
 pub use event::{BattleOpened, ServerEvent, TeamLayout, UserStatus};
 pub use login::LoginRequest;
 pub use policy::{Area, Envelope, Mode, ThrottlePolicy};
-pub use transport::{Inbound, Transport, TransportError};
+pub use transport::{Endpoint, Inbound, Transport, TransportError};

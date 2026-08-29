@@ -11,6 +11,8 @@ anyhow = { workspace = true }
 clap = { workspace = true }
 dotenvy = { workspace = true }
 lobby-core = { workspace = true }
+rand = { workspace = true }
+recoil = { workspace = true }
 spring-protocol = { workspace = true }
 sysinfo = { workspace = true }
 tokio = { workspace = true }
