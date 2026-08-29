@@ -38,6 +38,7 @@ export const api = {
     invoke<void>('clear_password', { username }),
   openSettingsFile: () => invoke<void>('open_settings_file'),
   openDataDir: () => invoke<void>('open_data_dir'),
+  openLogDir: () => invoke<void>('open_log_dir'),
 
   takeSeat: (team: number, allyTeam: number) =>
     invoke<void>('take_seat', { team, allyTeam }),

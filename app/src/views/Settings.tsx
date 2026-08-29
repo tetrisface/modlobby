@@ -166,6 +166,26 @@ export function SettingsView() {
         </button>
       </fieldset>
 
+      <fieldset>
+        <legend>Logging</legend>
+        <label>
+          Filter (a `tracing` filter, e.g. `info,spring::rx=trace`)
+          <input
+            value={draft.logging.filter}
+            onInput={(e) =>
+              setDraft('logging', 'filter', e.currentTarget.value)
+            }
+          />
+        </label>
+        <p class='muted'>
+          Both the Rust side and the webview console write one JSON-per-line
+          file per day, kept across restarts. Applies on the next start.
+        </p>
+        <button type='button' onClick={() => api.openLogDir()}>
+          Open log folder
+        </button>
+      </fieldset>
+
       <button type='submit' class='primary' disabled={saving()}>
         Save
       </button>

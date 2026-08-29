@@ -3,20 +3,16 @@
 //! transport forwards `UiMessage`s, settings changes are emitted as events.
 
 mod commands;
+mod logging;
 mod state;
 mod transport;
 
 use tauri::{Emitter, Manager};
-use tracing_subscriber::EnvFilter;
 
 pub fn run() {
     let app = state::App::open().unwrap_or_else(|err| panic!("starting modlobby: {err}"));
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new(app.settings.get().logging.filter)),
-        )
-        .init();
+    // Held for the life of the process: dropping it stops the file writer.
+    let _logging = logging::start(app.settings.dir(), &app.settings.get().logging.filter);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -44,6 +40,8 @@ pub fn run() {
             commands::login,
             commands::logout,
             commands::login_wait,
+            commands::log_message,
+            commands::open_log_dir,
             commands::join_battle,
             commands::leave_battle,
             commands::launch,

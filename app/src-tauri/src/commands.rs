@@ -251,6 +251,23 @@ pub fn clear_password(app: State<'_, App>, username: String) -> Result<()> {
     Ok(app.credentials.delete(&username)?)
 }
 
+/// The webview's console, written into the same file as everything else so a
+/// UI error and the protocol traffic around it sit on one timeline.
+#[tauri::command]
+pub fn log_message(level: String, message: String) {
+    match level.as_str() {
+        "error" => tracing::error!(target: "webview", "{message}"),
+        "warn" => tracing::warn!(target: "webview", "{message}"),
+        "debug" => tracing::debug!(target: "webview", "{message}"),
+        _ => tracing::info!(target: "webview", "{message}"),
+    }
+}
+
+#[tauri::command]
+pub fn open_log_dir(app: State<'_, App>) -> Result<()> {
+    open(app.settings.dir().join("logs"))
+}
+
 #[tauri::command]
 pub fn open_settings_file(app: State<'_, App>) -> Result<()> {
     open(app.settings.path())
