@@ -18,6 +18,7 @@ import { applySettings } from './store/settings'
 import { BattleList } from './views/BattleList'
 import { Chat } from './views/Chat'
 import { Login } from './views/Login'
+import { Replays } from './views/Replays'
 import { Room } from './views/Room'
 import { SettingsView } from './views/Settings'
 import { Tweaks } from './views/Tweaks'
@@ -59,6 +60,7 @@ function Layout(props: ParentProps) {
         <Show when={lobby.phase === 'ready'}>
           <A href='/battles'>Battles</A>
           <A href='/chat'>Chat</A>
+          <A href='/replays'>Replays</A>
           <Show when={lobby.myBattle}>
             <A href='/room'>Room</A>
             <A href='/room/tweaks'>Tweaks</A>
@@ -106,6 +108,7 @@ export function App() {
       <Route path='/login' component={Login} />
       <Route path='/battles' component={BattleList} />
       <Route path='/chat' component={Chat} />
+      <Route path='/replays' component={Replays} />
       <Route path='/room' component={Room} />
       <Route path='/room/tweaks' component={Tweaks} />
       <Route path='/settings' component={SettingsView} />

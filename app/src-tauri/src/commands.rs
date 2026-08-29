@@ -245,6 +245,34 @@ pub async fn list_channels(app: State<'_, App>) -> Result<()> {
     Ok(())
 }
 
+/// Every replay in the BAR data directory, newest first.
+#[tauri::command]
+pub fn list_replays(app: State<'_, App>) -> Result<Vec<ReplayView>> {
+    let data_dir = data_dir(&app)?;
+    Ok(content::replays::list(&data_dir)
+        .into_iter()
+        .map(ReplayView::from)
+        .collect())
+}
+
+/// Plays a replay. The engine takes a demo file where it would take a
+/// `spring://` URL, so this is the launch path with a different target.
+#[tauri::command]
+pub async fn play_replay(app: State<'_, App>, path: String) -> Result<()> {
+    let data_dir = data_dir(&app)?;
+    let replay = std::path::PathBuf::from(&path);
+    // Only from the directory we listed: a path from the front end is not a
+    // reason to hand the engine anything on the disk.
+    if replay.parent() != Some(&data_dir.join("demos")) || !replay.is_file() {
+        return Err(ApiError::new(
+            "input",
+            "not a replay in the demos directory",
+        ));
+    }
+    app.client.play_replay(data_dir, path).await?;
+    Ok(())
+}
+
 /// Fetches whatever the current room needs and this machine does not have.
 /// Progress arrives as `Download` deltas.
 #[tauri::command]
@@ -541,4 +569,29 @@ fn data_dir(app: &App) -> Result<PathBuf> {
 fn open(path: PathBuf) -> Result<()> {
     tauri_plugin_opener::open_path(path, None::<&str>)
         .map_err(|err| ApiError::new("opener", err.to_string()))
+}
+
+/// A replay as the front end lists it.
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ReplayView {
+    pub path: String,
+    pub played_at: String,
+    pub map: String,
+    pub engine: String,
+    #[ts(type = "number")]
+    pub bytes: u64,
+}
+
+impl From<content::replays::Replay> for ReplayView {
+    fn from(replay: content::replays::Replay) -> Self {
+        Self {
+            path: replay.path.to_string_lossy().into_owned(),
+            played_at: replay.played_at,
+            map: replay.map,
+            engine: replay.engine,
+            bytes: replay.bytes,
+        }
+    }
 }

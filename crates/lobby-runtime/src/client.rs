@@ -105,6 +105,11 @@ enum Command {
     DownloadMissing {
         reply: Reply<()>,
     },
+    PlayReplay {
+        data_dir: PathBuf,
+        path: String,
+        reply: Reply<()>,
+    },
     FriendAction {
         action: lobby_core::FriendAction,
         user: String,
@@ -243,6 +248,16 @@ impl Client {
         self.ask(|reply| Command::DownloadMissing { reply }).await
     }
 
+    /// Starts the engine on a replay file.
+    pub async fn play_replay(&self, data_dir: PathBuf, path: String) -> Result<(), ClientError> {
+        self.ask(|reply| Command::PlayReplay {
+            data_dir,
+            path,
+            reply,
+        })
+        .await
+    }
+
     pub async fn friend_action(
         &self,
         action: lobby_core::FriendAction,
@@ -374,6 +389,27 @@ impl Runtime {
             projector: Projector::new(),
             batcher: Batcher::default(),
         }
+    }
+
+    /// Starts the engine on a replay.
+    ///
+    /// The engine reads the demo's own header for the engine version it needs,
+    /// so the replay's name is the only hint we have about which one to use;
+    /// falling back to any installed engine beats refusing to play it.
+    fn play_replay(&mut self, data_dir: PathBuf, path: String) -> Result<(), ClientError> {
+        if self.engine.is_some() {
+            return Err(ClientError::Engine("the engine is already running".into()));
+        }
+        let version = std::path::Path::new(&path)
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .and_then(|stem| stem.rsplit_once('_').map(|(_, engine)| engine.to_owned()))
+            .unwrap_or_default();
+
+        let child = launch::spawn(&data_dir, &version, path).map_err(ClientError::Engine)?;
+        self.engine = Some(child);
+        self.set_engine(EngineStatus::Running);
+        Ok(())
     }
 
     /// Starts pr-downloader on whatever the room needs and this machine lacks.
@@ -663,6 +699,14 @@ impl Runtime {
                     Ok::<_, std::convert::Infallible>(session.list_channels())
                 })
                 .await;
+            }
+            Command::PlayReplay {
+                data_dir,
+                path,
+                reply,
+            } => {
+                let result = self.play_replay(data_dir, path);
+                let _ = reply.send(result);
             }
             Command::DownloadMissing { reply } => {
                 let result = self.start_download().await;

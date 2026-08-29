@@ -2,6 +2,7 @@ import { invoke, type Channel } from '@tauri-apps/api/core'
 import type { DiffView } from './bindings/DiffView'
 import type { Kind } from './bindings/Kind'
 import type { Prepared } from './bindings/Prepared'
+import type { ReplayView } from './bindings/ReplayView'
 import type { Settings } from './bindings/Settings'
 import type { Slot } from './bindings/Slot'
 import type { TweakView } from './bindings/TweakView'
@@ -42,6 +43,8 @@ export const api = {
     invoke<void>('say_private', { user, text }),
   listChannels: () => invoke<void>('list_channels'),
   downloadMissing: () => invoke<void>('download_missing'),
+  listReplays: () => invoke<ReplayView[]>('list_replays'),
+  playReplay: (path: string) => invoke<void>('play_replay', { path }),
   refreshFriends: () => invoke<void>('refresh_friends'),
   friendAction: (
     action: 'request' | 'accept' | 'decline' | 'remove',
