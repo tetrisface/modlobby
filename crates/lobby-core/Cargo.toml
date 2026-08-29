@@ -1,0 +1,11 @@
+[package]
+name = "lobby-core"
+description = "Authoritative client-side lobby state and the pure reducer that drives it"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+spring-protocol = { workspace = true }
+tracing = { workspace = true }

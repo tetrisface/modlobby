@@ -1,0 +1,25 @@
+[workspace]
+resolver = "3"
+members = ["crates/spring-protocol", "crates/lobby-core", "crates/robby-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96.0"
+license = "MIT"
+
+[workspace.dependencies]
+spring-protocol = { path = "crates/spring-protocol" }
+lobby-core = { path = "crates/lobby-core" }
+
+anyhow = "=1.0.104"
+base64 = "=0.23.1"
+clap = { version = "=4.6.6", features = ["derive"] }
+md-5 = "=0.11.0"
+serde = { version = "=1.0.229", features = ["derive"] }
+sysinfo = "=0.39.6"
+thiserror = "=2.0.20"
+tokio = { version = "=1.53.1", features = ["rt-multi-thread", "net", "macros", "sync", "time", "io-util", "signal"] }
+toml = "=1.1.4"
+tracing = "=0.1.44"
+tracing-subscriber = { version = "=0.3.23", features = ["env-filter"] }

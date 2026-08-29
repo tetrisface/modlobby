@@ -1,0 +1,18 @@
+[package]
+name = "spring-protocol"
+description = "Legacy SpringLobbyProtocol as spoken by teiserver: codec, typed events, throttle policy, transport actor"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+base64 = { workspace = true }
+md-5 = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+toml = { workspace = true }
