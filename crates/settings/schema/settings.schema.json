@@ -1,0 +1,170 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Settings",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "description": "Points editors at the schema next to the file.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "account": {
+      "$ref": "#/$defs/Account",
+      "default": {
+        "rememberPassword": false,
+        "username": ""
+      }
+    },
+    "battleList": {
+      "$ref": "#/$defs/BattleList",
+      "default": {
+        "hideEmpty": false,
+        "hideLocked": false,
+        "hidePassworded": false
+      }
+    },
+    "chat": {
+      "$ref": "#/$defs/Chat",
+      "default": {
+        "maxLines": 500
+      }
+    },
+    "logging": {
+      "$ref": "#/$defs/Logging",
+      "default": {
+        "filter": "info"
+      }
+    },
+    "paths": {
+      "$ref": "#/$defs/Paths",
+      "default": {
+        "dataDir": null
+      }
+    },
+    "server": {
+      "$ref": "#/$defs/Server",
+      "default": {
+        "host": "server4.beyondallreason.info",
+        "port": 8201,
+        "tls": true
+      }
+    },
+    "tweaks": {
+      "$ref": "#/$defs/Tweaks",
+      "default": {
+        "defaultSlot": "tweakdefs1",
+        "styluaConfig": null
+      }
+    }
+  },
+  "$defs": {
+    "Account": {
+      "type": "object",
+      "properties": {
+        "rememberPassword": {
+          "description": "Keep the password in the OS keyring between runs; it is never written here.",
+          "type": "boolean",
+          "default": false
+        },
+        "username": {
+          "type": "string",
+          "default": ""
+        }
+      }
+    },
+    "BattleList": {
+      "type": "object",
+      "properties": {
+        "hideEmpty": {
+          "type": "boolean",
+          "default": false
+        },
+        "hideLocked": {
+          "type": "boolean",
+          "default": false
+        },
+        "hidePassworded": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "Chat": {
+      "type": "object",
+      "properties": {
+        "maxLines": {
+          "description": "Lines kept per room before the oldest are dropped.",
+          "type": "integer",
+          "format": "uint32",
+          "default": 500,
+          "minimum": 0
+        }
+      }
+    },
+    "Logging": {
+      "type": "object",
+      "properties": {
+        "filter": {
+          "description": "A `tracing` filter, e.g. `info,spring::rx=trace`.",
+          "type": "string",
+          "default": "info"
+        }
+      }
+    },
+    "Paths": {
+      "type": "object",
+      "properties": {
+        "dataDir": {
+          "description": "The BAR data directory (`engine/`, `games/`, `maps/`); the launcher's when unset.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        }
+      }
+    },
+    "Server": {
+      "description": "Which teiserver to talk to.",
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string",
+          "default": "server4.beyondallreason.info"
+        },
+        "port": {
+          "type": "integer",
+          "format": "uint16",
+          "default": 8201,
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "tls": {
+          "description": "teiserver speaks TLS on 8201 and plain TCP on 8200.",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "Tweaks": {
+      "type": "object",
+      "properties": {
+        "defaultSlot": {
+          "description": "Slot offered when exporting a tweak, e.g. `tweakdefs1`.",
+          "type": "string",
+          "default": "tweakdefs1"
+        },
+        "styluaConfig": {
+          "description": "A `stylua.toml` to format tweak Lua with; StyLua's defaults when unset.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        }
+      }
+    }
+  }
+}

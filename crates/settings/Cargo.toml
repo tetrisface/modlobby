@@ -1,0 +1,23 @@
+[package]
+name = "settings"
+description = "User settings: a JSONC file with comments preserved, live reload, a JSON Schema, and credentials in the OS keyring"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+directories = { workspace = true }
+jsonc-parser = { workspace = true }
+keyring = { workspace = true }
+notify = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+ts-rs = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
