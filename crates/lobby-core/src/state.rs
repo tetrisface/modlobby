@@ -2,6 +2,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use spring_protocol::{BattleOpened, BattleStatus, TeamLayout, UserStatus};
 
+use crate::spads::VoteState;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
     Connecting,
@@ -23,6 +25,21 @@ pub struct User {
     pub battle_status: Option<BattleStatus>,
 }
 
+/// The prefix `SETSCRIPTTAGS` puts on modoptions.
+const MODOPTION: &str = "game/modoptions/";
+
+/// A modoption changing while we watched — the raw material for a diff.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OptionChange {
+    pub seq: u64,
+    /// Without the `game/modoptions/` prefix, e.g. `tweakdefs1`.
+    pub key: String,
+    pub from: String,
+    pub to: String,
+    /// Who did it, once the host announces it.
+    pub by: Option<String>,
+}
+
 /// The room we are in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MyBattle {
@@ -33,14 +50,87 @@ pub struct MyBattle {
     pub script_password: String,
     /// The room's script tags from `SETSCRIPTTAGS`, lowercase keys (`game/modoptions/tweakdefs`, `game/hosttype`, …).
     pub script_tags: BTreeMap<String, String>,
+    /// The vote the host is running, if any.
+    pub vote: Option<VoteState>,
+    /// Modoption changes seen this session, oldest first.
+    pub history: Vec<OptionChange>,
+    next_seq: u64,
 }
 
 impl MyBattle {
+    pub fn new(id: u32, game_hash: String, script_password: String) -> Self {
+        Self {
+            id,
+            game_hash,
+            script_password,
+            script_tags: BTreeMap::new(),
+            vote: None,
+            history: Vec::new(),
+            next_seq: 0,
+        }
+    }
+
     /// `game/modoptions/<key>` values, keyed without the prefix.
     pub fn modoptions(&self) -> impl Iterator<Item = (&str, &str)> {
-        self.script_tags.iter().filter_map(|(key, value)| {
-            Some((key.strip_prefix("game/modoptions/")?, value.as_str()))
-        })
+        self.script_tags
+            .iter()
+            .filter_map(|(key, value)| Some((key.strip_prefix(MODOPTION)?, value.as_str())))
+    }
+
+    pub fn modoption(&self, key: &str) -> &str {
+        self.script_tags
+            .get(&format!("{MODOPTION}{key}"))
+            .map_or("", String::as_str)
+    }
+
+    /// Applies `SETSCRIPTTAGS`, recording every modoption that really changed.
+    /// Returns those keys, without the prefix.
+    pub fn set_script_tags(&mut self, tags: Vec<(String, String)>) -> Vec<String> {
+        let mut changed = Vec::new();
+        for (key, value) in tags {
+            let previous = self.script_tags.insert(key.clone(), value.clone());
+            let Some(option) = key.strip_prefix(MODOPTION) else {
+                continue;
+            };
+            let from = previous.unwrap_or_default();
+            if from != value {
+                self.record(option.to_owned(), from, value, None);
+                changed.push(option.to_owned());
+            }
+        }
+        changed
+    }
+
+    /// The host's `Battle setting changed by …`. It arrives for clears too,
+    /// where SPADS sends no `SETSCRIPTTAGS` at all (`spads.pl:2625-2628`), and
+    /// it is the only place the author's name appears.
+    pub fn setting_changed(&mut self, key: String, value: String, by: String) -> bool {
+        let from = self.modoption(&key).to_owned();
+        if let Some(last) = self.history.last_mut()
+            && last.key == key
+            && last.to == value
+        {
+            last.by = Some(by);
+            return false;
+        }
+        self.script_tags
+            .insert(format!("{MODOPTION}{key}"), value.clone());
+        let changed = from != value;
+        if changed {
+            self.record(key, from, value, Some(by));
+        }
+        changed
+    }
+
+    fn record(&mut self, key: String, from: String, to: String, by: Option<String>) {
+        self.next_seq += 1;
+        self.history.push(OptionChange {
+            seq: self.next_seq,
+            key,
+            from,
+            to,
+            by,
+        });
     }
 }
 

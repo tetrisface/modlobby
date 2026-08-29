@@ -10,8 +10,8 @@ pub mod transport;
 pub use batch::Batcher;
 pub use model::{
     BattleStatusView, BattleView, BotView, ChatKind, ChatLine, Delta, EngineStatus,
-    GameRunningView, LayoutView, MyBattleView, NoticeLevel, Phase, Snapshot, StartRectView,
-    SyncView, UiMessage, UserStatusView, UserView,
+    GameRunningView, LayoutView, MyBattleView, NoticeLevel, OptionChangeView, Phase, ProposalView,
+    Snapshot, StartRectView, SyncView, UiMessage, UserStatusView, UserView, VoteView,
 };
 pub use project::Projector;
 pub use transport::{Collector, UiClosed, UiTransport};

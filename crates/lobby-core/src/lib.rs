@@ -5,7 +5,9 @@
 //! the commands it wants sent.
 
 pub mod session;
+pub mod spads;
 pub mod state;
 
 pub use session::{Effect, Session};
-pub use state::{Battle, Bot, LobbyState, MyBattle, Phase, StartRect, User};
+pub use spads::{Announcement, Proposal, VoteState};
+pub use state::{Battle, Bot, LobbyState, MyBattle, OptionChange, Phase, StartRect, User};

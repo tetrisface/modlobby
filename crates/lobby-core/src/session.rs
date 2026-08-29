@@ -2,6 +2,7 @@ use spring_protocol::{
     Area, Envelope, LoginRequest, MyBattleStatus, ServerEvent, Sync, battle, status, telemetry,
 };
 
+use crate::spads::{self, Announcement, VoteState};
 use crate::state::{Bot, LobbyState, MyBattle, Phase, StartRect};
 
 /// What the application must do in response to an event.
@@ -52,6 +53,12 @@ pub enum Effect {
         from: String,
         text: String,
     },
+    /// The room's modoptions changed; `keys` are unprefixed, e.g. `tweakdefs1`.
+    ModOptionsChanged {
+        keys: Vec<String>,
+    },
+    /// The room's vote started, moved or ended.
+    VoteChanged,
     /// The room's game is running; the engine connects with `spring://<me>:<script_password>@<ip>:<port>`.
     GameRunning {
         id: u32,
@@ -244,12 +251,7 @@ impl Session {
             }
             E::JoinBattle { id, game_hash } => {
                 let script_password = self.pending_join.take().unwrap_or_default();
-                state.my_battle = Some(MyBattle {
-                    id,
-                    game_hash,
-                    script_password,
-                    script_tags: Default::default(),
-                });
+                state.my_battle = Some(MyBattle::new(id, game_hash, script_password));
                 let mut effects = vec![Effect::Joined { id }];
                 effects.extend(self.game_running());
                 effects
@@ -267,17 +269,25 @@ impl Session {
                 text,
                 announcement: false,
             }],
-            E::SaidBattleEx { name, text } => vec![Effect::BattleChat {
-                from: name,
-                text,
-                announcement: true,
-            }],
+            E::SaidBattleEx { name, text } => {
+                let mut effects = self.host_announcement(&name, &text);
+                effects.push(Effect::BattleChat {
+                    from: name,
+                    text,
+                    announcement: true,
+                });
+                effects
+            }
             E::SaidPrivate { name, text } => vec![Effect::PrivateChat { from: name, text }],
             E::SetScriptTags { tags } => {
-                if let Some(my) = state.my_battle.as_mut() {
-                    my.script_tags.extend(tags);
+                let Some(my) = state.my_battle.as_mut() else {
+                    return vec![];
+                };
+                let keys = my.set_script_tags(tags);
+                if keys.is_empty() {
+                    return vec![];
                 }
-                vec![]
+                vec![Effect::ModOptionsChanged { keys }]
             }
             E::RemoveScriptTags { keys } => {
                 if let Some(my) = state.my_battle.as_mut() {
@@ -385,6 +395,57 @@ impl Session {
                 tracing::warn!(command = raw.command, args = raw.args, "malformed command");
                 vec![]
             }
+        }
+    }
+
+    /// SPADS announces votes and setting changes as chat. Only the room's
+    /// founder is believed — Chobby gates on the same thing
+    /// (`gui_battle_room_window.lua:4848`).
+    fn host_announcement(&mut self, from: &str, text: &str) -> Vec<Effect> {
+        if !self.hosts_my_battle(from) {
+            return vec![];
+        }
+        let Some(announcement) = spads::parse(text) else {
+            return vec![];
+        };
+        let Some(my) = self.state.my_battle.as_mut() else {
+            return vec![];
+        };
+        match announcement {
+            Announcement::VoteCalled { by, command } => {
+                my.vote = Some(VoteState::called(by, command));
+                vec![Effect::VoteChanged]
+            }
+            Announcement::VoteProgress {
+                command,
+                yes,
+                yes_needed,
+                no,
+                no_needed,
+                remaining_secs,
+            } => {
+                let vote = my
+                    .vote
+                    .get_or_insert_with(|| VoteState::called(String::new(), command));
+                vote.yes = yes;
+                vote.yes_needed = yes_needed;
+                vote.no = no;
+                vote.no_needed = no_needed;
+                vote.remaining_secs = remaining_secs;
+                vec![Effect::VoteChanged]
+            }
+            Announcement::VoteEnded { .. } | Announcement::VoteCancelled => {
+                my.vote = None;
+                vec![Effect::VoteChanged]
+            }
+            Announcement::SettingChanged { by, key, value } => {
+                if my.setting_changed(key.clone(), value, by) {
+                    return vec![Effect::ModOptionsChanged { keys: vec![key] }];
+                }
+                vec![]
+            }
+            // The BAR plugin's JSON duplicates what the text already told us.
+            Announcement::BarManager { .. } => vec![],
         }
     }
 
@@ -729,6 +790,90 @@ mod tests {
         // Leaving drops what the server stops telling us about.
         feed(&mut s, &["LEFTBATTLE 5 me"]);
         assert!(s.state.battles[&5].bots.is_empty());
+    }
+
+    /// A tweak vote as the room actually delivers it: the host announces, the
+    /// tally moves, it passes, and only then does the value land.
+    #[test]
+    fn a_tweak_vote_is_followed_from_call_to_setting() {
+        let mut s = ready_with_room();
+        s.join_battle(5, None, "1".into());
+        feed(&mut s, &["JOINBATTLE 5 -1", "JOINEDBATTLE 5 me 1"]);
+
+        let effects = feed(
+            &mut s,
+            &[
+                "SAIDBATTLEEX host * Bob called a vote for command \"bSet tweakdefs1 QUJD\" [!vote y, !vote n, !vote b]",
+            ],
+        );
+        assert!(effects.contains(&Effect::VoteChanged));
+        let vote = s.state.my_battle.as_ref().unwrap().vote.clone().unwrap();
+        assert_eq!(vote.by.as_deref(), Some("Bob"));
+        assert_eq!(
+            vote.proposal,
+            crate::Proposal::SetOption {
+                key: "tweakdefs1".into(),
+                value: "QUJD".into()
+            }
+        );
+
+        feed(
+            &mut s,
+            &[
+                "SAIDBATTLEEX host * Vote in progress: \"bSet tweakdefs1 QUJD\" [y:2/3, n:1/4(5)] (17s remaining)",
+            ],
+        );
+        let vote = s.state.my_battle.as_ref().unwrap().vote.clone().unwrap();
+        assert_eq!((vote.yes, vote.yes_needed, vote.no), (2, 3, 1));
+        assert_eq!(vote.remaining_secs, 17);
+
+        // Someone else's chat must not move the room's state.
+        feed(&mut s, &["SAIDBATTLEEX alice * Vote cancelled by alice"]);
+        assert!(s.state.my_battle.as_ref().unwrap().vote.is_some());
+
+        let effects = feed(
+            &mut s,
+            &[
+                "SAIDBATTLEEX host * Vote for command \"bSet tweakdefs1 QUJD\" passed.",
+                "SETSCRIPTTAGS game/modoptions/tweakdefs1=QUJD",
+                "SAIDBATTLEEX host * Battle setting changed by Bob (tweakdefs1=QUJD)",
+            ],
+        );
+        assert!(s.state.my_battle.as_ref().unwrap().vote.is_none());
+        assert!(effects.contains(&Effect::ModOptionsChanged {
+            keys: vec!["tweakdefs1".into()]
+        }));
+
+        let my = s.state.my_battle.as_ref().unwrap();
+        assert_eq!(my.modoption("tweakdefs1"), "QUJD");
+        // One change, attributed once the host said who did it.
+        assert_eq!(my.history.len(), 1);
+        assert_eq!(my.history[0].by.as_deref(), Some("Bob"));
+        assert_eq!(
+            (my.history[0].from.as_str(), my.history[0].to.as_str()),
+            ("", "QUJD")
+        );
+    }
+
+    /// Clearing a slot never reaches SETSCRIPTTAGS (`spads.pl:2625-2628`), so
+    /// the announcement has to carry it.
+    #[test]
+    fn a_cleared_slot_is_recorded_from_the_announcement_alone() {
+        let mut s = ready_with_room();
+        s.join_battle(5, None, "1".into());
+        feed(
+            &mut s,
+            &[
+                "JOINBATTLE 5 -1",
+                "SETSCRIPTTAGS game/modoptions/tweakdefs1=QUJD",
+                "SAIDBATTLEEX host * Battle setting changed by Bob (tweakdefs1=)",
+            ],
+        );
+        let my = s.state.my_battle.as_ref().unwrap();
+        assert_eq!(my.modoption("tweakdefs1"), "");
+        assert_eq!(my.history.len(), 2);
+        assert_eq!(my.history[1].from, "QUJD");
+        assert!(my.history[1].to.is_empty());
     }
 
     #[test]

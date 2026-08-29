@@ -440,10 +440,13 @@ impl Runtime {
                         });
                     }
                 }
+                // Projected into deltas; the runtime itself has nothing to do.
                 Effect::LoggedIn { .. }
                 | Effect::Notice(_)
                 | Effect::BattleChat { .. }
-                | Effect::PrivateChat { .. } => {}
+                | Effect::PrivateChat { .. }
+                | Effect::ModOptionsChanged { .. }
+                | Effect::VoteChanged => {}
             }
         }
     }
@@ -596,7 +599,7 @@ impl Runtime {
     fn send_snapshot(&mut self) {
         self.batcher.take();
         let snapshot = self.snapshot();
-        self.send_ui(UiMessage::Snapshot(snapshot));
+        self.send_ui(UiMessage::Snapshot(Box::new(snapshot)));
     }
 
     fn flush(&mut self) {

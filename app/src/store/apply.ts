@@ -168,6 +168,25 @@ export function applyDelta(delta: Delta): void {
         }),
       )
       return
+    case 'modOption': {
+      if (!lobby.myBattle) return
+      const { key, value, change } = delta.data
+      setLobby(
+        'myBattle',
+        produce((my) => {
+          if (!my) return
+          my.scriptTags[`game/modoptions/${key}`] = value
+          if (!change) return
+          const index = my.history.findIndex((h) => h.seq === change.seq)
+          if (index >= 0) my.history[index] = change
+          else my.history.push(change)
+        }),
+      )
+      return
+    }
+    case 'vote':
+      if (lobby.myBattle) setLobby('myBattle', 'vote', delta.data)
+      return
     case 'myBattle':
       setLobby('myBattle', delta.data)
       return

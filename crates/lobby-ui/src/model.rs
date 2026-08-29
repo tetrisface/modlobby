@@ -3,7 +3,9 @@
 
 use std::collections::BTreeMap;
 
-use lobby_core::{Battle, Bot, LobbyState, MyBattle, StartRect, User};
+use lobby_core::{
+    Battle, Bot, LobbyState, MyBattle, OptionChange, Proposal, StartRect, User, VoteState,
+};
 use serde::{Deserialize, Serialize};
 use spring_protocol::{BattleStatus, Sync, UserStatus};
 use ts_rs::TS;
@@ -234,6 +236,85 @@ impl From<&Battle> for BattleView {
     }
 }
 
+/// What a vote would do, when the room can tell.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "type", rename_all = "camelCase")]
+#[ts(export)]
+pub enum ProposalView {
+    /// A modoption change — this is what the tweak diff hangs off.
+    SetOption {
+        key: String,
+        value: String,
+    },
+    Other,
+}
+
+impl From<&Proposal> for ProposalView {
+    fn from(proposal: &Proposal) -> Self {
+        match proposal {
+            Proposal::SetOption { key, value } => ProposalView::SetOption {
+                key: key.clone(),
+                value: value.clone(),
+            },
+            Proposal::Other => ProposalView::Other,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct VoteView {
+    pub command: String,
+    pub by: Option<String>,
+    pub proposal: ProposalView,
+    pub yes: u32,
+    pub yes_needed: u32,
+    pub no: u32,
+    pub no_needed: u32,
+    pub remaining_secs: u32,
+}
+
+impl From<&VoteState> for VoteView {
+    fn from(vote: &VoteState) -> Self {
+        Self {
+            command: vote.command.clone(),
+            by: vote.by.clone(),
+            proposal: (&vote.proposal).into(),
+            yes: vote.yes,
+            yes_needed: vote.yes_needed,
+            no: vote.no,
+            no_needed: vote.no_needed,
+            remaining_secs: vote.remaining_secs,
+        }
+    }
+}
+
+/// A modoption that changed while we watched — one side of a diff.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct OptionChangeView {
+    #[ts(type = "number")]
+    pub seq: u64,
+    pub key: String,
+    pub from: String,
+    pub to: String,
+    pub by: Option<String>,
+}
+
+impl From<&OptionChange> for OptionChangeView {
+    fn from(change: &OptionChange) -> Self {
+        Self {
+            seq: change.seq,
+            key: change.key.clone(),
+            from: change.from.clone(),
+            to: change.to.clone(),
+            by: change.by.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -242,6 +323,9 @@ pub struct MyBattleView {
     pub game_hash: String,
     /// Lowercase script-tag keys (`game/modoptions/tweakdefs`, `game/hosttype`, …).
     pub script_tags: BTreeMap<String, String>,
+    pub vote: Option<VoteView>,
+    /// Modoption changes seen this session, oldest first.
+    pub history: Vec<OptionChangeView>,
 }
 
 impl From<&MyBattle> for MyBattleView {
@@ -250,6 +334,8 @@ impl From<&MyBattle> for MyBattleView {
             id: my.id,
             game_hash: my.game_hash.clone(),
             script_tags: my.script_tags.clone(),
+            vote: my.vote.as_ref().map(VoteView::from),
+            history: my.history.iter().map(OptionChangeView::from).collect(),
         }
     }
 }
@@ -418,6 +504,13 @@ pub enum Delta {
         set: Vec<(String, String)>,
         removed: Vec<String>,
     },
+    /// One modoption's current value, plus the change that produced it.
+    ModOption {
+        key: String,
+        value: String,
+        change: Option<OptionChangeView>,
+    },
+    Vote(Option<VoteView>),
     MyBattle(Option<MyBattleView>),
     GameRunning(Option<GameRunningView>),
     Engine(EngineStatus),
@@ -432,6 +525,7 @@ pub enum Delta {
 #[serde(tag = "type", content = "data", rename_all = "camelCase")]
 #[ts(export)]
 pub enum UiMessage {
-    Snapshot(Snapshot),
+    /// Boxed: a snapshot dwarfs a delta batch, and this enum is moved per message.
+    Snapshot(Box<Snapshot>),
     Deltas(Vec<Delta>),
 }

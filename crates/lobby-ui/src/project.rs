@@ -8,7 +8,7 @@ use spring_protocol::ServerEvent;
 
 use crate::model::{
     BotView, ChatKind, ChatLine, Delta, GameRunningView, LayoutView, MyBattleView, NoticeLevel,
-    Phase, StartRectView, UserView,
+    OptionChangeView, Phase, StartRectView, UserView, VoteView,
 };
 
 #[derive(Debug, Default)]
@@ -193,6 +193,28 @@ impl Projector {
             }
             Effect::PrivateChat { from, text } => {
                 out.push(Delta::Chat(self.line(from, text, ChatKind::Private)))
+            }
+            Effect::VoteChanged => {
+                let vote = state.my_battle.as_ref().and_then(|my| my.vote.as_ref());
+                out.push(Delta::Vote(vote.map(VoteView::from)));
+            }
+            Effect::ModOptionsChanged { keys } => {
+                let Some(my) = state.my_battle.as_ref() else {
+                    return;
+                };
+                for key in keys {
+                    let change = my
+                        .history
+                        .iter()
+                        .rev()
+                        .find(|change| &change.key == key)
+                        .map(OptionChangeView::from);
+                    out.push(Delta::ModOption {
+                        key: key.clone(),
+                        value: my.modoption(key).to_owned(),
+                        change,
+                    });
+                }
             }
             Effect::Notice(text) => out.push(notice(NoticeLevel::Info, text.clone())),
             Effect::JoinFailed { reason } => out.push(notice(
