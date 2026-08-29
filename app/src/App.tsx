@@ -8,6 +8,7 @@ import {
   onMount,
   type ParentProps,
 } from 'solid-js'
+import { IconSprite } from './components/icons'
 import { connectChannel } from './ipc/channel'
 import { api, describeError } from './ipc/client'
 import type { Settings } from './ipc/bindings/Settings'
@@ -51,6 +52,7 @@ function Layout(props: ParentProps) {
 
   return (
     <div class='shell'>
+      <IconSprite />
       <nav class='nav'>
         <span class='brand'>modlobby</span>
         <Show when={lobby.phase === 'ready'}>
