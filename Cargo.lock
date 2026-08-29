@@ -2741,6 +2741,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "modoptions"
+version = "0.1.0"
+dependencies = [
+ "full_moon",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "ts-rs",
+]
+
+[[package]]
 name = "muda"
 version = "0.19.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

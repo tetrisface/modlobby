@@ -8,6 +8,7 @@ members = [
     "crates/lobby-runtime",
     "crates/settings",
     "crates/tweaks",
+    "crates/modoptions",
     "crates/recoil",
     "crates/modlobby-cli",
     "app/src-tauri",
@@ -26,6 +27,7 @@ lobby-runtime = { path = "crates/lobby-runtime" }
 lobby-ui = { path = "crates/lobby-ui" }
 settings = { path = "crates/settings" }
 tweaks = { path = "crates/tweaks" }
+modoptions = { path = "crates/modoptions" }
 recoil = { path = "crates/recoil" }
 
 anyhow = "=1.0.104"

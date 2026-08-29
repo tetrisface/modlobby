@@ -1,0 +1,15 @@
+[package]
+name = "modoptions"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+full_moon = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+ts-rs = { workspace = true }
+
+[[bin]]
+name = "vendor-modoptions"
+path = "src/bin/vendor.rs"

@@ -11,6 +11,7 @@ import { readSkills, teamSkill, type Skill } from '../lib/skill'
 import { chat, pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
 import { Seat } from './Seat'
+import { Setup } from './Setup'
 import { VoteBar } from './VoteBar'
 
 type Team = { allyTeam: number; users: UserView[]; bots: BotView[] }
@@ -201,6 +202,8 @@ export function Room() {
                 </form>
               </div>
             </div>
+
+            <Setup />
           </div>
         </section>
       )}

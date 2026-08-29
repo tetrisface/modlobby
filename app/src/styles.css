@@ -408,9 +408,20 @@ input {
 
 .room-body {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: 1fr 556px;
   flex: 1;
   min-height: 0;
+}
+
+/* Below this the pane would crowd the rosters rather than sit beside them. */
+@media (max-width: 1180px) {
+  .room-body {
+    grid-template-columns: 1fr;
+  }
+
+  .setup {
+    display: none;
+  }
 }
 
 .room-main {
@@ -939,4 +950,349 @@ input {
 
 .synced {
   color: var(--ok);
+}
+
+/* ---- setup pane: BAR's tabs, opening on what differs ---- */
+
+.setup {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+}
+
+.setup-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px 0;
+}
+
+.setup-head .t {
+  font-family: var(--display);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.setup-head .note {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--faint);
+}
+
+.setup-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 8px 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.setup-tab {
+  padding: 5px 10px 6px;
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  color: var(--faint);
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 2px 2px 0 0;
+  margin-bottom: -1px;
+  white-space: nowrap;
+}
+
+.setup-tab:hover {
+  color: var(--text);
+  border-color: transparent;
+}
+
+.setup-tab.on {
+  color: var(--text);
+  background: var(--raised);
+  border-color: var(--line);
+  border-bottom: 1px solid var(--raised);
+}
+
+.setup-tab.ours {
+  color: var(--accent);
+}
+
+.badge {
+  display: inline-block;
+  margin-left: 5px;
+  padding: 0 5px;
+  border-radius: 7px;
+  background: var(--accent-deep);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 400;
+}
+
+.setup-body {
+  display: grid;
+  grid-template-columns: 132px 1fr;
+  flex: 1;
+  min-height: 0;
+}
+
+.groups {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 10px 0;
+  overflow-y: auto;
+  border-right: 1px solid var(--line);
+}
+
+.group {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 12px;
+  font-family: var(--body);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-align: left;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-left: 2px solid transparent;
+  border-radius: 0;
+}
+
+.group:hover {
+  color: var(--text);
+}
+
+.group.on {
+  color: var(--text);
+  background: var(--raised);
+  border-left-color: var(--accent);
+}
+
+.group .c {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.setup-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  overflow-y: auto;
+  background: var(--raised);
+  min-width: 0;
+}
+
+.setup-section {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--display);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.setup-section .count {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.setup-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+/* A changed row earns a marker; the rest stay quiet so it reads at a glance. */
+.opt {
+  display: grid;
+  grid-template-columns: 2px 1fr auto;
+  align-items: center;
+  gap: 9px;
+  padding: 3px 0;
+  font-size: 12.5px;
+}
+
+.opt .mark {
+  height: 14px;
+  border-radius: 1px;
+  background: transparent;
+}
+
+.opt.changed .mark {
+  background: var(--accent);
+}
+
+.opt .k {
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.opt.changed .k {
+  color: var(--text);
+}
+
+.opt .v {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.opt.changed .v {
+  color: var(--accent);
+}
+
+.setup-empty {
+  font-size: 12.5px;
+  margin: 0;
+}
+
+.setup-reveal {
+  align-self: flex-start;
+  padding: 4px 0;
+  font-family: var(--body);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--accent);
+  background: transparent;
+  border: none;
+}
+
+.setup-note {
+  padding: 7px 9px;
+  border: 1px solid rgba(242, 184, 75, 0.3);
+  border-radius: 2px;
+  background: rgba(242, 184, 75, 0.06);
+  font-size: 12px;
+  color: var(--warn);
+}
+
+.setup .button {
+  align-self: flex-start;
+  text-decoration: none;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: 5px 12px;
+  font-family: var(--display);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.slot-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3px;
+}
+
+.slot-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 6px;
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--faint);
+  background: var(--sunken);
+  border: 1px solid var(--line-soft);
+  border-radius: 2px;
+}
+
+.slot-cell.filled {
+  border-color: var(--line);
+}
+
+.slot-cell.filled .kk {
+  color: var(--accent);
+}
+
+.slot-cell.filled .vv {
+  color: var(--muted);
+}
+
+.slot-cell.on {
+  border-color: var(--accent);
+  background: var(--accent-deep);
+}
+
+.slot-cell.on .kk,
+.slot-cell.on .vv {
+  color: var(--text);
+}
+
+.slot-view {
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--sunken);
+  overflow: hidden;
+}
+
+.slot-view-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 9px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.slot-view-head .nm {
+  font-family: var(--display);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.slot-view-head .hash {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--faint);
+}
+
+.slot-lua {
+  margin: 0;
+  padding: 9px 11px;
+  max-height: 260px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.65;
+  color: var(--muted);
+}
+
+.slot-warn {
+  padding: 6px 9px;
+  border-top: 1px solid var(--line);
+  font-size: 11.5px;
+  color: var(--warn);
 }
