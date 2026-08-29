@@ -298,6 +298,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "modlobby-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "lobby-core",
+ "spring-protocol",
+ "sysinfo",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "ntapi"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -424,21 +439,6 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
-
-[[package]]
-name = "robby-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "lobby-core",
- "spring-protocol",
- "sysinfo",
- "tokio",
- "toml",
- "tracing",
- "tracing-subscriber",
-]
 
 [[package]]
 name = "serde"

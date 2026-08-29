@@ -1,4 +1,4 @@
-//! `robby-cli login`: connect to teiserver over the legacy protocol, log in as
+//! `modlobby-cli login`: connect to teiserver over the legacy protocol, log in as
 //! a Chobby-class client, and print battle/player counts as they change.
 
 mod platform;
@@ -13,7 +13,7 @@ use spring_protocol::policy::PolicyEvent;
 use spring_protocol::{Area, Inbound, LoginRequest, ThrottlePolicy, Transport};
 use tracing_subscriber::EnvFilter;
 
-const PASSWORD_ENV: &str = "ROBBY_PASSWORD";
+const PASSWORD_ENV: &str = "MODLOBBY_PASSWORD";
 
 #[derive(Parser)]
 #[command(version, about)]
@@ -24,14 +24,14 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Log in and watch the battle list; the password is read from `ROBBY_PASSWORD`.
+    /// Log in and watch the battle list; the password is read from `MODLOBBY_PASSWORD`.
     Login {
         #[arg(long)]
         username: String,
         #[arg(long, default_value = "server4.beyondallreason.info:8200")]
         server: String,
         /// Shown after `LuaLobby Chobby:`; truncated server-side.
-        #[arg(long, default_value = concat!("robby ", env!("CARGO_PKG_VERSION")))]
+        #[arg(long, default_value = concat!("modlobby ", env!("CARGO_PKG_VERSION")))]
         lobby_version: String,
         /// TOML override of the throttle policy (see `ThrottlePolicy`).
         #[arg(long)]

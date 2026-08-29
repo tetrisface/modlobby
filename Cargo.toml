@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/spring-protocol", "crates/lobby-core", "crates/robby-cli"]
+members = ["crates/spring-protocol", "crates/lobby-core", "crates/modlobby-cli"]
 
 [workspace.package]
 version = "0.1.0"

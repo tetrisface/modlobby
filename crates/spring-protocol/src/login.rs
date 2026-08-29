@@ -69,10 +69,10 @@ mod tests {
 
     #[test]
     fn login_line_matches_teiserver_regex_shape() {
-        let req = LoginRequest::new("alice", "password", "robby 0.1", "abc def");
+        let req = LoginRequest::new("alice", "password", "modlobby 0.1", "abc def");
         assert_eq!(
             req.line(),
-            "LOGIN alice X03MO1qnZdYdgyfeuILPmQ== 0 * LuaLobby Chobby:robby 0.1\tabc def\tb sp"
+            "LOGIN alice X03MO1qnZdYdgyfeuILPmQ== 0 * LuaLobby Chobby:modlobby 0.1\tabc def\tb sp"
         );
     }
 

@@ -1,5 +1,5 @@
 [package]
-name = "robby-cli"
+name = "modlobby-cli"
 description = "Command-line harness for the lobby core: log in and watch battle counts"
 version.workspace = true
 edition.workspace = true
