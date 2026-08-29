@@ -267,7 +267,16 @@ impl Session {
                 state.comp_flags = flags;
                 vec![]
             }
-            E::ServerMsg { text } => vec![Effect::Notice(text)],
+            E::ServerMsg { text } => match machine_marker(&text) {
+                // teiserver rides machine data on SERVERMSG behind an
+                // `@MARKER@` prefix (`spring_out.ex:82`). It is protocol, not
+                // prose, and a person should never be shown it.
+                Some(marker) => {
+                    tracing::debug!(marker, "server extension message");
+                    vec![]
+                }
+                None => vec![Effect::Notice(text)],
+            },
             E::LoginInfoEnd => {
                 state.phase = Some(Phase::Ready);
                 let mut effects: Vec<Effect> = self
@@ -631,8 +640,32 @@ fn private_host_password(text: &str) -> Option<String> {
     (!password.is_empty()).then_some(password)
 }
 
+/// `@NAME@ …`: teiserver's convention for data addressed to the client rather
+/// than to the person using it.
+fn machine_marker(text: &str) -> Option<&str> {
+    let (name, _) = text.strip_prefix('@')?.split_once('@')?;
+    let machine = !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_');
+    machine.then_some(name)
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_server_extension_line_is_not_shown_to_anyone() {
+        use super::machine_marker;
+        // What teiserver actually sends on connect (`spring_out.ex:82`).
+        assert_eq!(
+            machine_marker("@PROTOCOL_EXTENSIONS@ {\"ring:originator\":1}"),
+            Some("PROTOCOL_EXTENSIONS")
+        );
+        // Prose keeps its notice, including prose that merely mentions an `@`.
+        assert_eq!(machine_marker("Welcome to teiserver"), None);
+        assert_eq!(machine_marker("ask @someone about it"), None);
+        assert_eq!(machine_marker("@@"), None);
+    }
     use spring_protocol::{BattleStatus, RawMessage};
 
     use super::*;

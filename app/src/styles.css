@@ -1284,6 +1284,9 @@ input {
   padding: 9px 11px;
   max-height: 260px;
   overflow: auto;
+  /* Without this the browser anchors to the content it just inserted and the
+     tweak opens scrolled to its last line instead of its name. */
+  overflow-anchor: none;
   font-family: var(--mono);
   font-size: 11px;
   line-height: 1.65;

@@ -1,6 +1,7 @@
 import {
   For,
   Match,
+  createEffect,
   Show,
   Switch,
   createMemo,
@@ -308,6 +309,8 @@ function TweakSlots(props: {
     TWEAK_SLOTS.filter((key) => (props.values[key] ?? '') !== ''),
   )
 
+  let luaHost: HTMLPreElement | undefined
+
   const [view] = createResource(
     () => {
       const key = open()
@@ -318,6 +321,13 @@ function TweakSlots(props: {
     },
     (request) => api.tweakDecode(request.blob, request.kind),
   )
+
+  // `Show` keeps the same <pre> across slots, so a new tweak inherits the last
+  // one's scroll and opens somewhere in its middle.
+  createEffect(() => {
+    view()
+    if (luaHost) luaHost.scrollTop = 0
+  })
 
   return (
     <>
@@ -353,7 +363,9 @@ function TweakSlots(props: {
               <span class='nm'>{tweak().name ?? open()}</span>
               <span class='hash'>{tweak().summary}</span>
             </div>
-            <pre class='slot-lua'>{tweak().formatted}</pre>
+            <pre class='slot-lua' ref={luaHost}>
+              {tweak().formatted}
+            </pre>
             <Show when={tweak().diagnostics.length > 0}>
               <div class='slot-warn'>
                 <For each={tweak().diagnostics}>
