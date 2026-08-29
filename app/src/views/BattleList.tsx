@@ -1,38 +1,58 @@
 import { useNavigate } from '@solidjs/router'
 import { createVirtualizer } from '@tanstack/solid-virtual'
 import { For, Show, createMemo, createSignal } from 'solid-js'
+import type { BattleList as Filters } from '../ipc/bindings/BattleList'
+import type { BattleSort } from '../ipc/bindings/BattleSort'
 import type { BattleView } from '../ipc/bindings/BattleView'
+import type { ModeFilter } from '../ipc/bindings/ModeFilter'
 import { api, describeError } from '../ipc/client'
+import { MODES, SORTS, arrange, type Row } from '../lib/battles'
 import { pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
-import { settings } from '../store/settings'
+import { applySettings, settings } from '../store/settings'
 
 const ROW_HEIGHT = 44
+
+const DEFAULTS: Filters = {
+  showPassworded: true,
+  showLocked: true,
+  showEmpty: true,
+  showRunning: true,
+  mode: 'all',
+  sort: 'relevance',
+  sortDescending: false,
+}
 
 export function BattleList() {
   const navigate = useNavigate()
   const [search, setSearch] = createSignal('')
   let scrollRef: HTMLDivElement | undefined
 
-  const rows = createMemo(() => {
-    const filters = settings()?.battleList
-    const needle = search().trim().toLowerCase()
-    const hostInGame = (b: BattleView) =>
-      lobby.users[b.founder]?.status.inGame ?? false
-    return Object.values(lobby.battles)
-      .filter((b) => !(filters?.hidePassworded && b.passworded))
-      .filter((b) => !(filters?.hideLocked && b.locked))
-      .filter((b) => !(filters?.hideEmpty && b.playerCount === 0))
-      .filter(
-        (b) =>
-          !needle ||
-          b.title.toLowerCase().includes(needle) ||
-          b.mapName.toLowerCase().includes(needle) ||
-          b.founder.toLowerCase().includes(needle),
+  const filters = (): Filters => settings()?.battleList ?? DEFAULTS
+
+  /** Filters live in settings so the list looks the same next launch. */
+  async function update(patch: Partial<Filters>) {
+    const current = settings()
+    if (!current) return
+    try {
+      applySettings(
+        await api.updateSettings({
+          ...current,
+          battleList: { ...filters(), ...patch },
+        }),
       )
-      .sort((a, b) => b.playerCount - a.playerCount || a.id - b.id)
-      .map((b) => ({ battle: b, running: hostInGame(b) }))
-  })
+    } catch (error) {
+      pushNotice('warning', describeError(error))
+    }
+  }
+
+  const all = createMemo<Row[]>(() =>
+    Object.values(lobby.battles).map((battle) => ({
+      battle,
+      running: lobby.users[battle.founder]?.status.inGame ?? false,
+    })),
+  )
+  const rows = createMemo(() => arrange(all(), filters(), search()))
 
   const virtualizer = createVirtualizer({
     get count() {
@@ -54,72 +74,193 @@ export function BattleList() {
     }
   }
 
+  /** Clicking the sort you are already on flips it, as a table header would. */
+  function sortBy(key: BattleSort) {
+    if (key === filters().sort && key !== 'relevance')
+      return update({ sortDescending: !filters().sortDescending })
+    return update({ sort: key, sortDescending: key === 'players' })
+  }
+
+  const hidden = createMemo(() => all().length - rows().length)
+
   return (
     <section class='battles'>
       <header class='toolbar'>
         <input
-          placeholder='Search title, map, host'
+          class='search'
+          placeholder='Search title, map, host, game'
           value={search()}
           onInput={(e) => setSearch(e.currentTarget.value)}
         />
-        <span class='muted'>
-          {rows().length} rooms · {Object.keys(lobby.users).length} users
-        </span>
-      </header>
-      <div class='list' ref={scrollRef}>
-        <div
-          style={{
-            height: `${virtualizer.getTotalSize()}px`,
-            position: 'relative',
-          }}
-        >
-          <For each={virtualizer.getVirtualItems()}>
-            {(item) => {
-              const row = () => rows()[item.index]
-              return (
-                <Show when={row()}>
-                  {(r) => (
-                    <div
-                      class='battle-row'
-                      classList={{
-                        running: r().running,
-                        locked: r().battle.locked,
-                      }}
-                      style={{
-                        position: 'absolute',
-                        top: `${item.start}px`,
-                        height: `${ROW_HEIGHT}px`,
-                        width: '100%',
-                      }}
-                      onDblClick={() => join(r().battle)}
-                    >
-                      <span class='col-players'>
-                        {r().battle.playerCount}/{r().battle.maxPlayers}
-                        <small> +{r().battle.spectatorCount}</small>
-                      </span>
-                      <span class='col-layout'>
-                        {r().battle.layout
-                          ? `${r().battle.layout?.teams}x${r().battle.layout?.teamSize}`
-                          : ''}
-                      </span>
-                      <span class='col-title' title={r().battle.title}>
-                        {r().battle.title}
-                      </span>
-                      <span class='col-map'>{r().battle.mapName}</span>
-                      <span class='col-flags'>
-                        {r().running ? '▶ ' : ''}
-                        {r().battle.locked ? '🔒 ' : ''}
-                        {r().battle.passworded ? '🔑' : ''}
-                      </span>
-                      <button onClick={() => join(r().battle)}>Spectate</button>
-                    </div>
-                  )}
-                </Show>
-              )
-            }}
+
+        {/* Each says what it lets through, so an unlit one is a room type
+            you have switched off. No label needed above them. */}
+        <div class='filter-group' role='group' aria-label='Show rooms that are'>
+          <Include
+            label='Passworded'
+            on={filters().showPassworded}
+            onClick={() =>
+              update({ showPassworded: !filters().showPassworded })
+            }
+          />
+          <Include
+            label='Locked'
+            on={filters().showLocked}
+            onClick={() => update({ showLocked: !filters().showLocked })}
+          />
+          <Include
+            label='Running'
+            on={filters().showRunning}
+            onClick={() => update({ showRunning: !filters().showRunning })}
+          />
+          <Include
+            label='Empty'
+            on={filters().showEmpty}
+            onClick={() => update({ showEmpty: !filters().showEmpty })}
+          />
+        </div>
+
+        <div class='filter-group' role='group' aria-label='Mode'>
+          <For each={MODES}>
+            {(mode) => (
+              <Choice
+                label={mode.label}
+                on={filters().mode === mode.key}
+                onClick={() => update({ mode: mode.key as ModeFilter })}
+              />
+            )}
           </For>
         </div>
+
+        <div class='filter-group' role='group' aria-label='Sort'>
+          <span class='filter-label'>Sort</span>
+          <For each={SORTS}>
+            {(sort) => (
+              <Choice
+                label={
+                  filters().sort === sort.key && sort.key !== 'relevance'
+                    ? `${sort.label} ${filters().sortDescending ? '↓' : '↑'}`
+                    : sort.label
+                }
+                on={filters().sort === sort.key}
+                onClick={() => sortBy(sort.key)}
+              />
+            )}
+          </For>
+        </div>
+
+        <span class='spacer' />
+        <span class='muted count'>
+          {rows().length} rooms
+          <Show when={hidden() > 0}> · {hidden()} hidden</Show> ·{' '}
+          {Object.keys(lobby.users).length} users
+        </span>
+      </header>
+
+      <div class='list' ref={scrollRef}>
+        <Show
+          when={rows().length > 0}
+          fallback={
+            <p class='muted empty-list'>
+              <Show when={all().length > 0} fallback='No rooms open right now.'>
+                Nothing matches. {hidden()} rooms are hidden by the filters
+                above.
+              </Show>
+            </p>
+          }
+        >
+          <div
+            style={{
+              height: `${virtualizer.getTotalSize()}px`,
+              position: 'relative',
+            }}
+          >
+            <For each={virtualizer.getVirtualItems()}>
+              {(item) => {
+                const row = () => rows()[item.index]
+                return (
+                  <Show when={row()}>
+                    {(r) => (
+                      <div
+                        class='battle-row'
+                        classList={{
+                          running: r().running,
+                          locked: r().battle.locked,
+                        }}
+                        style={{
+                          position: 'absolute',
+                          top: `${item.start}px`,
+                          height: `${ROW_HEIGHT}px`,
+                          width: '100%',
+                        }}
+                        onDblClick={() => join(r().battle)}
+                      >
+                        <span class='col-players'>
+                          {r().battle.playerCount}/{r().battle.maxPlayers}
+                          <small> +{r().battle.spectatorCount}</small>
+                        </span>
+                        <span class='col-layout'>
+                          {r().battle.layout
+                            ? `${r().battle.layout?.teams}x${r().battle.layout?.teamSize}`
+                            : ''}
+                        </span>
+                        <span class='col-title' title={r().battle.title}>
+                          {r().battle.title}
+                        </span>
+                        <span class='col-map'>{r().battle.mapName}</span>
+                        <span class='col-flags'>
+                          {r().running ? '▶ ' : ''}
+                          {r().battle.locked ? '🔒 ' : ''}
+                          {r().battle.passworded ? '🔑' : ''}
+                        </span>
+                        <button onClick={() => join(r().battle)}>
+                          Spectate
+                        </button>
+                      </div>
+                    )}
+                  </Show>
+                )
+              }}
+            </For>
+          </div>
+        </Show>
       </div>
     </section>
+  )
+}
+
+/**
+ * A room type the list lets through. On is the resting state, so the eye is
+ * drawn to what you have switched off rather than to four lit chips.
+ */
+function Include(props: { label: string; on: boolean; onClick: () => void }) {
+  return (
+    <button
+      class='chip-include'
+      classList={{ off: !props.on }}
+      aria-pressed={props.on}
+      title={
+        props.on
+          ? `Hide ${props.label.toLowerCase()} rooms`
+          : `Show ${props.label.toLowerCase()} rooms`
+      }
+      onClick={props.onClick}
+    >
+      {props.label}
+    </button>
+  )
+}
+
+/** One of a set, where exactly one is active. */
+function Choice(props: { label: string; on: boolean; onClick: () => void }) {
+  return (
+    <button
+      class='chip-choice'
+      classList={{ on: props.on }}
+      aria-pressed={props.on}
+      onClick={props.onClick}
+    >
+      {props.label}
+    </button>
   )
 }

@@ -21,9 +21,13 @@
     "battleList": {
       "$ref": "#/$defs/BattleList",
       "default": {
-        "hideEmpty": false,
-        "hideLocked": false,
-        "hidePassworded": false
+        "mode": "all",
+        "showEmpty": true,
+        "showLocked": true,
+        "showPassworded": true,
+        "showRunning": true,
+        "sort": "relevance",
+        "sortDescending": false
       }
     },
     "chat": {
@@ -81,21 +85,59 @@
       }
     },
     "BattleList": {
+      "description": "Which rooms the list shows. Chobby words these the other way round, as\n\"Filter out:\" checkboxes, where ticking one means seeing less; stated\npositively, a toggle that is on means that kind of room is in the list.",
       "type": "object",
       "properties": {
-        "hideEmpty": {
-          "type": "boolean",
-          "default": false
+        "mode": {
+          "$ref": "#/$defs/ModeFilter",
+          "default": "all"
         },
-        "hideLocked": {
+        "showEmpty": {
+          "description": "Rooms nobody has joined yet.",
           "type": "boolean",
-          "default": false
+          "default": true
         },
-        "hidePassworded": {
+        "showLocked": {
+          "type": "boolean",
+          "default": true
+        },
+        "showPassworded": {
+          "type": "boolean",
+          "default": true
+        },
+        "showRunning": {
+          "description": "Rooms whose game has already started.",
+          "type": "boolean",
+          "default": true
+        },
+        "sort": {
+          "$ref": "#/$defs/BattleSort",
+          "default": "relevance"
+        },
+        "sortDescending": {
+          "description": "Largest or latest first. Ignored by `BattleSort::Relevance`, which has\na fixed order of its own.",
           "type": "boolean",
           "default": false
         }
       }
+    },
+    "BattleSort": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "players",
+            "title",
+            "map",
+            "host"
+          ]
+        },
+        {
+          "description": "Chobby's own order: joinable first, then busy, then locked, then\npassworded, with player count deciding inside each band.",
+          "type": "string",
+          "const": "relevance"
+        }
+      ]
     },
     "Chat": {
       "type": "object",
@@ -118,6 +160,27 @@
           "default": "info"
         }
       }
+    },
+    "ModeFilter": {
+      "description": "Player-versus-what. Read off the room title, which is all the list has:\nthe server only sends a room's AI once you are in it.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "all"
+          ]
+        },
+        {
+          "description": "Only rooms that look like they are against AI.",
+          "type": "string",
+          "const": "pve"
+        },
+        {
+          "description": "Only rooms that do not.",
+          "type": "string",
+          "const": "pvp"
+        }
+      ]
     },
     "Paths": {
       "type": "object",

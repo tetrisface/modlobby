@@ -103,40 +103,6 @@ export function SettingsView() {
       </fieldset>
 
       <fieldset>
-        <legend>Battle list</legend>
-        <label class='row'>
-          <input
-            type='checkbox'
-            checked={draft.battleList.hidePassworded}
-            onChange={(e) =>
-              setDraft('battleList', 'hidePassworded', e.currentTarget.checked)
-            }
-          />
-          Hide passworded rooms
-        </label>
-        <label class='row'>
-          <input
-            type='checkbox'
-            checked={draft.battleList.hideLocked}
-            onChange={(e) =>
-              setDraft('battleList', 'hideLocked', e.currentTarget.checked)
-            }
-          />
-          Hide locked rooms
-        </label>
-        <label class='row'>
-          <input
-            type='checkbox'
-            checked={draft.battleList.hideEmpty}
-            onChange={(e) =>
-              setDraft('battleList', 'hideEmpty', e.currentTarget.checked)
-            }
-          />
-          Hide empty rooms
-        </label>
-      </fieldset>
-
-      <fieldset>
         <legend>Chat</legend>
         <label>
           Lines kept
@@ -199,7 +165,15 @@ function blank(): Settings {
     server: { host: '', port: 8201, tls: true },
     account: { username: '', rememberPassword: false, autoLogin: false },
     paths: { dataDir: null },
-    battleList: { hidePassworded: false, hideLocked: false, hideEmpty: false },
+    battleList: {
+      showPassworded: true,
+      showLocked: true,
+      showEmpty: true,
+      showRunning: true,
+      mode: 'all',
+      sort: 'relevance',
+      sortDescending: false,
+    },
     chat: { maxLines: 500 },
     tweaks: { styluaConfig: null, defaultSlot: 'tweakdefs1' },
     logging: { filter: 'info' },

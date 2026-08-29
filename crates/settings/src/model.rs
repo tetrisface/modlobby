@@ -76,13 +76,68 @@ pub struct Paths {
     pub data_dir: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS, Default)]
+/// Which rooms the list shows. Chobby words these the other way round, as
+/// "Filter out:" checkboxes, where ticking one means seeing less; stated
+/// positively, a toggle that is on means that kind of room is in the list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(default, rename_all = "camelCase")]
 #[ts(export)]
 pub struct BattleList {
-    pub hide_passworded: bool,
-    pub hide_locked: bool,
-    pub hide_empty: bool,
+    pub show_passworded: bool,
+    pub show_locked: bool,
+    /// Rooms nobody has joined yet.
+    pub show_empty: bool,
+    /// Rooms whose game has already started.
+    pub show_running: bool,
+    pub mode: ModeFilter,
+    pub sort: BattleSort,
+    /// Largest or latest first. Ignored by `BattleSort::Relevance`, which has
+    /// a fixed order of its own.
+    pub sort_descending: bool,
+}
+
+impl Default for BattleList {
+    /// Everything, in Chobby's order. Narrowing the list is a choice someone
+    /// makes, never the state they are dropped into.
+    fn default() -> Self {
+        Self {
+            show_passworded: true,
+            show_locked: true,
+            show_empty: true,
+            show_running: true,
+            mode: ModeFilter::default(),
+            sort: BattleSort::default(),
+            sort_descending: false,
+        }
+    }
+}
+
+/// Player-versus-what. Read off the room title, which is all the list has:
+/// the server only sends a room's AI once you are in it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS, Default)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum ModeFilter {
+    #[default]
+    All,
+    /// Only rooms that look like they are against AI.
+    Pve,
+    /// Only rooms that do not.
+    Pvp,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS, Default)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum BattleSort {
+    /// Chobby's own order: joinable first, then busy, then locked, then
+    /// passworded, with player count deciding inside each band.
+    #[default]
+    Relevance,
+    Players,
+    Title,
+    Map,
+    Host,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
