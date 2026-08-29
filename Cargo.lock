@@ -2724,8 +2724,10 @@ dependencies = [
 name = "modlobby-app"
 version = "0.1.0"
 dependencies = [
+ "content",
  "lobby-runtime",
  "lobby-ui",
+ "recoil",
  "serde",
  "settings",
  "spring-protocol",
@@ -2736,6 +2738,7 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "ts-rs",
  "tweaks",
 ]
 
