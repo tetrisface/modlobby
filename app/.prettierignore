@@ -1,0 +1,5 @@
+src/ipc/bindings
+src-tauri
+dist
+node_modules
+bun.lock

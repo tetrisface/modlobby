@@ -12,7 +12,10 @@ use crate::file::{FILE_NAME, Store};
 
 const DEBOUNCE: Duration = Duration::from_millis(200);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Serialised for the front end as `{ changed: Settings }` or `{ invalid: string }`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
 pub enum SettingsEvent {
     /// The user changed the file and it parsed.
     Changed(crate::Settings),

@@ -1,0 +1,25 @@
+[package]
+name = "modlobby-app"
+description = "modlobby desktop app: a Tauri shell over lobby-runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "modlobby_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { workspace = true }
+
+[dependencies]
+lobby-runtime = { workspace = true }
+lobby-ui = { workspace = true }
+serde = { workspace = true }
+settings = { workspace = true }
+spring-protocol = { workspace = true }
+tauri = { workspace = true }
+tauri-plugin-opener = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
