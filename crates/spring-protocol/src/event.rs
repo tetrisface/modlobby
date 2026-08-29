@@ -161,6 +161,62 @@ pub enum ServerEvent {
         name: String,
         text: String,
     },
+    /// `SAYPRIVATE <name> <text>`: the server echoing a message we sent, which
+    /// is the only confirmation it went anywhere (`spring_out.ex:458`).
+    SentPrivate {
+        name: String,
+        text: String,
+    },
+    /// `JOIN <room>`: the join was accepted.
+    JoinedChannel {
+        room: String,
+    },
+    /// `JOINFAILED <room>\t<reason>`.
+    JoinChannelFailed {
+        room: String,
+        reason: String,
+    },
+    /// `CLIENTS <room> <name> <name> …`: who is in a channel, sent on join and
+    /// then in batches, so a later line adds to the roster rather than replacing it.
+    Clients {
+        room: String,
+        names: Vec<String>,
+    },
+    /// `JOINED <room> <name>`.
+    JoinedRoom {
+        room: String,
+        name: String,
+    },
+    /// `LEFT <room> <name>`.
+    LeftRoom {
+        room: String,
+        name: String,
+    },
+    /// `SAID <room> <name> <text>`.
+    Said {
+        room: String,
+        name: String,
+        text: String,
+    },
+    /// `SAIDEX <room> <name> <text>`: an emote, rendered as an action.
+    SaidEx {
+        room: String,
+        name: String,
+        text: String,
+    },
+    /// `CHANNELTOPIC <room> <author>`. teiserver sends no topic text with it
+    /// (`spring_out.ex:438`), so this is only ever "who set it".
+    ChannelTopic {
+        room: String,
+        author: String,
+    },
+    /// `CHANNEL <name> <members>`: one line of the channel listing.
+    ChannelListed {
+        name: String,
+        members: u32,
+    },
+    /// `ENDOFCHANNELS`.
+    EndOfChannels,
     /// `SETSCRIPTTAGS k=v\tk=v`: the room's script tags (`game/modoptions/*` among them),
     /// one full line on join and then per change. teiserver lowercases the keys.
     SetScriptTags {
@@ -342,6 +398,73 @@ fn parse(raw: &RawMessage) -> Option<ServerEvent> {
                 text: rest.into(),
             }
         }
+        "SAYPRIVATE" => {
+            let (f, rest) = split_fields(a, 1)?;
+            ServerEvent::SentPrivate {
+                name: f[0].into(),
+                text: rest.into(),
+            }
+        }
+        "JOIN" => ServerEvent::JoinedChannel { room: a.into() },
+        "JOINFAILED" => {
+            let (room, reason) = a.split_once('\t').unwrap_or((a, ""));
+            ServerEvent::JoinChannelFailed {
+                room: room.into(),
+                reason: reason.into(),
+            }
+        }
+        "CLIENTS" => {
+            let (f, rest) = split_fields(a, 1)?;
+            ServerEvent::Clients {
+                room: f[0].into(),
+                names: rest.split_whitespace().map(Into::into).collect(),
+            }
+        }
+        "JOINED" => {
+            let (f, rest) = split_fields(a, 1)?;
+            ServerEvent::JoinedRoom {
+                room: f[0].into(),
+                name: rest.into(),
+            }
+        }
+        "LEFT" => {
+            let (f, rest) = split_fields(a, 1)?;
+            ServerEvent::LeftRoom {
+                room: f[0].into(),
+                name: rest.into(),
+            }
+        }
+        "SAID" => {
+            let (f, rest) = split_fields(a, 2)?;
+            ServerEvent::Said {
+                room: f[0].into(),
+                name: f[1].into(),
+                text: rest.into(),
+            }
+        }
+        "SAIDEX" => {
+            let (f, rest) = split_fields(a, 2)?;
+            ServerEvent::SaidEx {
+                room: f[0].into(),
+                name: f[1].into(),
+                text: rest.into(),
+            }
+        }
+        "CHANNELTOPIC" => {
+            let (f, rest) = split_fields(a, 1)?;
+            ServerEvent::ChannelTopic {
+                room: f[0].into(),
+                author: rest.into(),
+            }
+        }
+        "CHANNEL" => {
+            let (f, rest) = split_fields(a, 1)?;
+            ServerEvent::ChannelListed {
+                name: f[0].into(),
+                members: rest.split_whitespace().next()?.parse().ok()?,
+            }
+        }
+        "ENDOFCHANNELS" => ServerEvent::EndOfChannels,
         "SETSCRIPTTAGS" => ServerEvent::SetScriptTags {
             tags: a
                 .split('\t')
@@ -460,6 +583,99 @@ mod tests {
 
     fn event(line: &str) -> ServerEvent {
         RawMessage::parse(line).into()
+    }
+
+    #[test]
+    fn channel_traffic_parses_into_its_own_events() {
+        assert_eq!(
+            event("JOIN main"),
+            ServerEvent::JoinedChannel {
+                room: "main".into()
+            }
+        );
+        assert_eq!(
+            event("JOINFAILED secret	You are not allowed"),
+            ServerEvent::JoinChannelFailed {
+                room: "secret".into(),
+                reason: "You are not allowed".into(),
+            }
+        );
+        assert_eq!(
+            event("CLIENTS main alice bob carol"),
+            ServerEvent::Clients {
+                room: "main".into(),
+                names: vec!["alice".into(), "bob".into(), "carol".into()],
+            }
+        );
+        assert_eq!(
+            event("JOINED main dave"),
+            ServerEvent::JoinedRoom {
+                room: "main".into(),
+                name: "dave".into(),
+            }
+        );
+        assert_eq!(
+            event("LEFT main dave"),
+            ServerEvent::LeftRoom {
+                room: "main".into(),
+                name: "dave".into(),
+            }
+        );
+        assert_eq!(
+            event("CHANNELTOPIC main alice"),
+            ServerEvent::ChannelTopic {
+                room: "main".into(),
+                author: "alice".into(),
+            }
+        );
+        assert_eq!(
+            event("CHANNEL main 412"),
+            ServerEvent::ChannelListed {
+                name: "main".into(),
+                members: 412,
+            }
+        );
+        assert_eq!(event("ENDOFCHANNELS"), ServerEvent::EndOfChannels);
+    }
+
+    #[test]
+    fn a_message_keeps_every_space_after_the_fields_it_has() {
+        assert_eq!(
+            event("SAID main alice hello  there  friend"),
+            ServerEvent::Said {
+                room: "main".into(),
+                name: "alice".into(),
+                text: "hello  there  friend".into(),
+            }
+        );
+        assert_eq!(
+            event("SAIDEX main alice waves slowly"),
+            ServerEvent::SaidEx {
+                room: "main".into(),
+                name: "alice".into(),
+                text: "waves slowly".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn our_own_private_message_comes_back_as_its_own_event() {
+        // The echo is the only confirmation a direct message was delivered, so
+        // it must not be mistaken for one arriving from someone else.
+        assert_eq!(
+            event("SAYPRIVATE bob on my way"),
+            ServerEvent::SentPrivate {
+                name: "bob".into(),
+                text: "on my way".into(),
+            }
+        );
+        assert_eq!(
+            event("SAIDPRIVATE bob see you there"),
+            ServerEvent::SaidPrivate {
+                name: "bob".into(),
+                text: "see you there".into(),
+            }
+        );
     }
 
     #[test]

@@ -135,8 +135,15 @@ impl UiTransport for Print {
                         ChatKind::Chat => "",
                         ChatKind::Announcement => "* ",
                         ChatKind::Private => "[pm] ",
+                        ChatKind::Emote => "* ",
+                        ChatKind::System => "-- ",
                     };
-                    println!("{prefix}{}: {}", line.from, line.text);
+                    println!(
+                        "{}{prefix}{}: {}",
+                        room_tag(&line.room),
+                        line.from,
+                        line.text
+                    );
                 }
                 Delta::Notice { level, text } => println!("[{level:?}] {text}"),
                 Delta::GameRunning(Some(game)) => {
@@ -316,5 +323,15 @@ fn print_summary(snapshot: &Snapshot) {
             battle.map_name,
             if battle.locked { "locked" } else { "" }
         );
+    }
+}
+
+/// Channels are worth naming in a log that carries several at once; the room
+/// we are in is not, since it is the only one.
+fn room_tag(room: &str) -> String {
+    if room == lobby_ui::BATTLE_ROOM {
+        String::new()
+    } else {
+        format!("{room} ")
     }
 }

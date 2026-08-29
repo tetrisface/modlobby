@@ -16,6 +16,7 @@ import { chat, pushNotice } from './store/chat'
 import { lobby } from './store/lobby'
 import { applySettings } from './store/settings'
 import { BattleList } from './views/BattleList'
+import { Chat } from './views/Chat'
 import { Login } from './views/Login'
 import { Room } from './views/Room'
 import { SettingsView } from './views/Settings'
@@ -57,6 +58,7 @@ function Layout(props: ParentProps) {
         <span class='brand'>modlobby</span>
         <Show when={lobby.phase === 'ready'}>
           <A href='/battles'>Battles</A>
+          <A href='/chat'>Chat</A>
           <Show when={lobby.myBattle}>
             <A href='/room'>Room</A>
             <A href='/room/tweaks'>Tweaks</A>
@@ -103,6 +105,7 @@ export function App() {
       <Route path='/' component={Home} />
       <Route path='/login' component={Login} />
       <Route path='/battles' component={BattleList} />
+      <Route path='/chat' component={Chat} />
       <Route path='/room' component={Room} />
       <Route path='/room/tweaks' component={Tweaks} />
       <Route path='/settings' component={SettingsView} />

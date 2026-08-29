@@ -1,9 +1,10 @@
 use spring_protocol::{
-    Area, Envelope, LoginRequest, MyBattleStatus, ServerEvent, Sync, battle, status, telemetry,
+    Area, Envelope, LoginRequest, MyBattleStatus, ServerEvent, Sync, battle, chat, status,
+    telemetry,
 };
 
 use crate::spads::{self, Announcement, VoteState};
-use crate::state::{Bot, LobbyState, MyBattle, Phase, StartRect};
+use crate::state::{Bot, Channel, LobbyState, MyBattle, Phase, StartRect};
 
 /// What the application must do in response to an event.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,8 +49,37 @@ pub enum Effect {
         /// `SAIDBATTLEEX`: host announcements and `/me` lines.
         announcement: bool,
     },
+    /// A message in a channel we are in.
+    ChannelChat {
+        room: String,
+        from: String,
+        text: String,
+        /// `SAIDEX`: an emote, rendered as an action rather than speech.
+        emote: bool,
+    },
+    /// We are now in a channel, with its roster as far as it has arrived.
+    ChannelJoined {
+        room: String,
+    },
+    ChannelJoinFailed {
+        room: String,
+        reason: String,
+    },
+    ChannelLeft {
+        room: String,
+    },
+    /// The roster or topic of a channel changed.
+    ChannelChanged {
+        room: String,
+    },
+    /// The server's channel directory finished arriving.
+    ChannelsListed,
     /// A direct message; the Coordinator uses these for refusals.
+    ///
+    /// `with` is the other person, which is who the conversation is filed
+    /// under whichever way the message went; `from` is who wrote it.
     PrivateChat {
+        with: String,
         from: String,
         text: String,
     },
@@ -188,6 +218,43 @@ impl Session {
             manager,
             "!privatehost",
         )?)])
+    }
+
+    /// Joins a channel. The server answers with `JOIN` or `JOINFAILED`, so
+    /// nothing is added to state here.
+    pub fn join_channel(
+        &mut self,
+        room: &str,
+        key: Option<&str>,
+    ) -> Result<Vec<Effect>, chat::BadChannel> {
+        Ok(vec![Effect::Send(chat::join(room, key)?)])
+    }
+
+    /// Leaves a channel. teiserver reports our own departure as `LEFT`, the
+    /// same as anyone else's, which is where the channel is dropped from state.
+    pub fn leave_channel(&mut self, room: &str) -> Result<Vec<Effect>, chat::BadChannel> {
+        Ok(vec![Effect::Send(chat::leave(room)?)])
+    }
+
+    /// Says something in a channel. A leading `/me ` becomes an emote, which is
+    /// how every lobby client has spelled it since the protocol was written.
+    pub fn say_channel(&mut self, room: &str, text: &str) -> Result<Vec<Effect>, chat::SayError> {
+        let envelope = match text.strip_prefix("/me ") {
+            Some(action) => chat::say_ex(room, action)?,
+            None => chat::say(room, text)?,
+        };
+        Ok(vec![Effect::Send(envelope)])
+    }
+
+    /// Sends a direct message. Nothing appears until the server echoes it back.
+    pub fn say_private(&mut self, user: &str, text: &str) -> Result<Vec<Effect>, battle::TooLong> {
+        Ok(vec![Effect::Send(battle::say_private(user, text)?)])
+    }
+
+    /// Asks for the server's channel directory, which replaces the last one.
+    pub fn list_channels(&mut self) -> Vec<Effect> {
+        self.state.directory.clear();
+        vec![Effect::Send(chat::list())]
     }
 
     /// Reports whether the room's content is installed. Only a caller that has
@@ -387,6 +454,84 @@ impl Session {
                 vec![Effect::JoinFailed { reason }]
             }
             E::RequestBattleStatus => vec![self.battle_status()],
+            E::SentPrivate { name, text } => {
+                // The server echoing us back is the only confirmation the
+                // message left, so it is what puts our own words on screen.
+                let me = state.me.clone().unwrap_or_default();
+                vec![Effect::PrivateChat {
+                    with: name,
+                    from: me,
+                    text,
+                }]
+            }
+            E::JoinedChannel { room } => {
+                self.state
+                    .channels
+                    .entry(room.clone())
+                    .or_insert_with(|| Channel {
+                        name: room.clone(),
+                        ..Channel::default()
+                    });
+                vec![Effect::ChannelJoined { room }]
+            }
+            E::JoinChannelFailed { room, reason } => {
+                vec![Effect::ChannelJoinFailed { room, reason }]
+            }
+            E::Clients { room, names } => {
+                // Sent in batches, so this adds to the roster rather than
+                // replacing it; a second batch must not erase the first.
+                let Some(channel) = self.state.channels.get_mut(&room) else {
+                    return vec![];
+                };
+                channel.members.extend(names);
+                vec![Effect::ChannelChanged { room }]
+            }
+            E::JoinedRoom { room, name } => {
+                let Some(channel) = self.state.channels.get_mut(&room) else {
+                    return vec![];
+                };
+                channel.members.insert(name);
+                vec![Effect::ChannelChanged { room }]
+            }
+            E::LeftRoom { room, name } => {
+                let Some(channel) = self.state.channels.get_mut(&room) else {
+                    return vec![];
+                };
+                // The server tells us about our own departure the same way it
+                // tells us about anyone else's.
+                if Some(&name) == self.state.me.as_ref() {
+                    self.state.channels.remove(&room);
+                    return vec![Effect::ChannelLeft { room }];
+                }
+                channel.members.remove(&name);
+                vec![Effect::ChannelChanged { room }]
+            }
+            E::ChannelTopic { room, author } => {
+                let Some(channel) = self.state.channels.get_mut(&room) else {
+                    return vec![];
+                };
+                channel.topic_author = Some(author);
+                vec![Effect::ChannelChanged { room }]
+            }
+            E::Said { room, name, text } => vec![Effect::ChannelChat {
+                room,
+                from: name,
+                text,
+                emote: false,
+            }],
+            E::SaidEx { room, name, text } => vec![Effect::ChannelChat {
+                room,
+                from: name,
+                text,
+                emote: true,
+            }],
+            E::ChannelListed { name, members } => {
+                self.state
+                    .directory
+                    .push(crate::state::ChannelSummary { name, members });
+                vec![]
+            }
+            E::EndOfChannels => vec![Effect::ChannelsListed],
             E::SaidBattle { name, text } => vec![Effect::BattleChat {
                 from: name,
                 text,
@@ -410,7 +555,11 @@ impl Session {
                         password,
                     });
                 }
-                effects.push(Effect::PrivateChat { from: name, text });
+                effects.push(Effect::PrivateChat {
+                    with: name.clone(),
+                    from: name,
+                    text,
+                });
                 effects
             }
             E::SetScriptTags { tags } => {
@@ -683,6 +832,145 @@ mod tests {
             .iter()
             .flat_map(|l| session.handle(RawMessage::parse(l).into()))
             .collect()
+    }
+
+    /// A session that believes it is logged in as `me`, without the flood.
+    fn joined_session() -> Session {
+        let mut s = session();
+        s.state.me = Some("me".into());
+        s
+    }
+
+    #[test]
+    fn a_channel_roster_is_built_from_batches_rather_than_replaced() {
+        let mut s = joined_session();
+        feed(&mut s, &["JOIN main"]);
+        // teiserver sends CLIENTS in batches; a later one must not erase the
+        // earlier one (`spring_out.ex:442`).
+        feed(&mut s, &["CLIENTS main alice bob", "CLIENTS main carol"]);
+
+        let channel = &s.state.channels["main"];
+        assert_eq!(
+            channel.members.iter().cloned().collect::<Vec<_>>(),
+            vec!["alice", "bob", "carol"]
+        );
+    }
+
+    #[test]
+    fn people_arriving_and_leaving_move_the_roster() {
+        let mut s = joined_session();
+        feed(&mut s, &["JOIN main", "CLIENTS main alice bob"]);
+        feed(&mut s, &["JOINED main carol", "LEFT main alice"]);
+
+        let members = &s.state.channels["main"].members;
+        assert!(members.contains("carol"));
+        assert!(!members.contains("alice"));
+    }
+
+    #[test]
+    fn our_own_departure_drops_the_channel_entirely() {
+        let mut s = joined_session();
+        feed(&mut s, &["JOIN main", "CLIENTS main me alice"]);
+
+        // The server reports us leaving exactly as it reports anyone else.
+        let effects = feed(&mut s, &["LEFT main me"]);
+        assert!(matches!(
+            effects.as_slice(),
+            [Effect::ChannelLeft { room }] if room == "main"
+        ));
+        assert!(!s.state.channels.contains_key("main"));
+    }
+
+    #[test]
+    fn traffic_for_a_channel_we_are_not_in_is_ignored() {
+        let mut s = joined_session();
+        assert!(feed(&mut s, &["CLIENTS other alice"]).is_empty());
+        assert!(feed(&mut s, &["JOINED other alice"]).is_empty());
+        assert!(s.state.channels.is_empty());
+    }
+
+    #[test]
+    fn a_message_and_an_emote_are_told_apart() {
+        let mut s = joined_session();
+        let effects = feed(
+            &mut s,
+            &["SAID main alice hello", "SAIDEX main alice waves"],
+        );
+        assert_eq!(
+            effects,
+            vec![
+                Effect::ChannelChat {
+                    room: "main".into(),
+                    from: "alice".into(),
+                    text: "hello".into(),
+                    emote: false,
+                },
+                Effect::ChannelChat {
+                    room: "main".into(),
+                    from: "alice".into(),
+                    text: "waves".into(),
+                    emote: true,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_private_conversation_is_filed_under_the_other_person_either_way() {
+        let mut s = joined_session();
+        let effects = feed(
+            &mut s,
+            &["SAIDPRIVATE bob you there?", "SAYPRIVATE bob on my way"],
+        );
+        assert_eq!(
+            effects,
+            vec![
+                Effect::PrivateChat {
+                    with: "bob".into(),
+                    from: "bob".into(),
+                    text: "you there?".into(),
+                },
+                // Our own message comes back from the server; both sides of the
+                // conversation file under `bob`.
+                Effect::PrivateChat {
+                    with: "bob".into(),
+                    from: "me".into(),
+                    text: "on my way".into(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn slash_me_becomes_an_emote_and_the_cap_is_enforced() {
+        let mut s = joined_session();
+        assert_eq!(
+            sent_lines(&s.say_channel("main", "hello").unwrap()),
+            vec!["SAY main hello"]
+        );
+        assert_eq!(
+            sent_lines(&s.say_channel("main", "/me waves").unwrap()),
+            vec!["SAYEX main waves"]
+        );
+        assert!(s.say_channel("main", &"x".repeat(258)).is_err());
+        assert!(s.join_channel("#main", None).is_err());
+    }
+
+    #[test]
+    fn the_directory_replaces_itself_rather_than_growing() {
+        let mut s = joined_session();
+        s.list_channels();
+        feed(
+            &mut s,
+            &["CHANNEL main 412", "CHANNEL bar 30", "ENDOFCHANNELS"],
+        );
+        assert_eq!(s.state.directory.len(), 2);
+
+        // Asking again starts over, so a shrinking server list shrinks here.
+        s.list_channels();
+        feed(&mut s, &["CHANNEL main 400", "ENDOFCHANNELS"]);
+        assert_eq!(s.state.directory.len(), 1);
+        assert_eq!(s.state.directory[0].members, 400);
     }
 
     fn sent_lines(effects: &[Effect]) -> Vec<&str> {
@@ -1184,6 +1472,7 @@ mod tests {
                 &["SAIDPRIVATE Coordinator Setting tweakdefs requires boss privileges"]
             ),
             vec![Effect::PrivateChat {
+                with: "Coordinator".into(),
                 from: "Coordinator".into(),
                 text: "Setting tweakdefs requires boss privileges".into()
             }]

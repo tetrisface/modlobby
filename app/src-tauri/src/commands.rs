@@ -195,6 +195,37 @@ pub async fn say_battle(app: State<'_, App>, text: String) -> Result<()> {
     Ok(())
 }
 
+#[tauri::command]
+pub async fn join_channel(app: State<'_, App>, room: String, key: Option<String>) -> Result<()> {
+    app.client.join_channel(room, key).await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn leave_channel(app: State<'_, App>, room: String) -> Result<()> {
+    app.client.leave_channel(room).await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn say_channel(app: State<'_, App>, room: String, text: String) -> Result<()> {
+    app.client.say_channel(room, text).await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn say_private(app: State<'_, App>, user: String, text: String) -> Result<()> {
+    app.client.say_private(user, text).await?;
+    Ok(())
+}
+
+/// Asks for the server's channel directory; it arrives as a `Directory` delta.
+#[tauri::command]
+pub async fn list_channels(app: State<'_, App>) -> Result<()> {
+    app.client.list_channels().await?;
+    Ok(())
+}
+
 /// Sets one modoption: `!bSet <key> <value>`, in Chobby's casing.
 ///
 /// SPADS decides what happens next, not us. `[bSet]` is granted as

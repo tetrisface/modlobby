@@ -75,6 +75,28 @@ enum Command {
         text: String,
         reply: Reply<()>,
     },
+    JoinChannel {
+        room: String,
+        key: Option<String>,
+        reply: Reply<()>,
+    },
+    LeaveChannel {
+        room: String,
+        reply: Reply<()>,
+    },
+    SayChannel {
+        room: String,
+        text: String,
+        reply: Reply<()>,
+    },
+    SayPrivate {
+        user: String,
+        text: String,
+        reply: Reply<()>,
+    },
+    ListChannels {
+        reply: Reply<()>,
+    },
     TakeSeat {
         team: u8,
         ally_team: u8,
@@ -173,6 +195,30 @@ impl Client {
 
     pub async fn say(&self, text: String) -> Result<(), ClientError> {
         self.ask(|reply| Command::Say { text, reply }).await
+    }
+
+    pub async fn join_channel(&self, room: String, key: Option<String>) -> Result<(), ClientError> {
+        self.ask(|reply| Command::JoinChannel { room, key, reply })
+            .await
+    }
+
+    pub async fn leave_channel(&self, room: String) -> Result<(), ClientError> {
+        self.ask(|reply| Command::LeaveChannel { room, reply })
+            .await
+    }
+
+    pub async fn say_channel(&self, room: String, text: String) -> Result<(), ClientError> {
+        self.ask(|reply| Command::SayChannel { room, text, reply })
+            .await
+    }
+
+    pub async fn say_private(&self, user: String, text: String) -> Result<(), ClientError> {
+        self.ask(|reply| Command::SayPrivate { user, text, reply })
+            .await
+    }
+
+    pub async fn list_channels(&self) -> Result<(), ClientError> {
+        self.ask(|reply| Command::ListChannels { reply }).await
     }
 
     /// Takes a player slot. Refused unless the room is passworded — see
@@ -423,6 +469,28 @@ impl Runtime {
                 };
                 let _ = reply.send(result);
             }
+            Command::JoinChannel { room, key, reply } => {
+                self.run_session(reply, |session| session.join_channel(&room, key.as_deref()))
+                    .await;
+            }
+            Command::LeaveChannel { room, reply } => {
+                self.run_session(reply, |session| session.leave_channel(&room))
+                    .await;
+            }
+            Command::SayChannel { room, text, reply } => {
+                self.run_session(reply, |session| session.say_channel(&room, &text))
+                    .await;
+            }
+            Command::SayPrivate { user, text, reply } => {
+                self.run_session(reply, |session| session.say_private(&user, &text))
+                    .await;
+            }
+            Command::ListChannels { reply } => {
+                self.run_session(reply, |session| {
+                    Ok::<_, std::convert::Infallible>(session.list_channels())
+                })
+                .await;
+            }
             Command::TakeSeat {
                 team,
                 ally_team,
@@ -536,6 +604,28 @@ impl Runtime {
         }
     }
 
+    /// Runs one session call and applies whatever it produced. The session's
+    /// own error type only ever needs to reach the caller as text.
+    async fn run_session<E: std::fmt::Display>(
+        &mut self,
+        reply: Reply<()>,
+        call: impl FnOnce(&mut lobby_core::Session) -> Result<Vec<Effect>, E>,
+    ) {
+        let Some(conn) = self.conn.as_mut() else {
+            let _ = reply.send(Err(ClientError::NotConnected));
+            return;
+        };
+        match call(&mut conn.session) {
+            Ok(effects) => {
+                let _ = reply.send(Ok(()));
+                self.apply_effects(effects).await;
+            }
+            Err(err) => {
+                let _ = reply.send(Err(ClientError::Refused(err.to_string())));
+            }
+        }
+    }
+
     async fn apply_effects(&mut self, effects: Vec<Effect>) {
         // A queue, not a loop over the argument: joining the private room we
         // asked for produces effects of its own.
@@ -616,10 +706,17 @@ impl Runtime {
                     }
                 }
                 // Projected into deltas; the runtime itself has nothing to do.
+                // Everything the projector turns into a delta on its own.
                 Effect::LoggedIn { .. }
                 | Effect::Notice(_)
                 | Effect::BattleChat { .. }
                 | Effect::PrivateChat { .. }
+                | Effect::ChannelChat { .. }
+                | Effect::ChannelJoined { .. }
+                | Effect::ChannelJoinFailed { .. }
+                | Effect::ChannelLeft { .. }
+                | Effect::ChannelChanged { .. }
+                | Effect::ChannelsListed
                 | Effect::ModOptionsChanged { .. }
                 | Effect::VoteChanged => {}
             }

@@ -224,6 +224,28 @@ pub struct LobbyState {
     pub my_battle: Option<MyBattle>,
     pub motd: Vec<String>,
     pub comp_flags: Vec<String>,
+    /// Channels we are in, by name.
+    pub channels: BTreeMap<String, Channel>,
+    /// The server's channel directory, from the last `CHANNELS` request.
+    pub directory: Vec<ChannelSummary>,
+}
+
+/// A channel we have joined.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Channel {
+    pub name: String,
+    /// Sorted, so the roster does not reshuffle between `CLIENTS` batches.
+    pub members: BTreeSet<String>,
+    /// Who last set the topic. teiserver sends no topic text with it
+    /// (`spring_out.ex:438`), so there is nothing else to keep.
+    pub topic_author: Option<String>,
+}
+
+/// One line of the server's channel directory.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChannelSummary {
+    pub name: String,
+    pub members: u32,
 }
 
 impl LobbyState {

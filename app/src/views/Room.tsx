@@ -16,7 +16,7 @@ import type { UserView } from '../ipc/bindings/UserView'
 import { api, describeError } from '../ipc/client'
 import { mapImage } from '../lib/maps'
 import { readSkills, teamSkill, type Skill } from '../lib/skill'
-import { chat, pushNotice } from '../store/chat'
+import { BATTLE_ROOM, chat, pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
 import { Seat } from './Seat'
 import { Setup } from './Setup'
@@ -75,8 +75,9 @@ export function Room() {
     if (lobby.phase === 'ready' && !lobby.myBattle)
       navigate('/battles', { replace: true })
   })
+  const lines = () => chat.rooms[BATTLE_ROOM] ?? []
   createEffect(() => {
-    chat.lines.length
+    lines().length
     log?.scrollTo({ top: log.scrollHeight })
   })
 
@@ -198,7 +199,7 @@ export function Room() {
 
               <div class='chat'>
                 <div class='chat-log' ref={log}>
-                  <For each={chat.lines}>{(line) => <Line line={line} />}</For>
+                  <For each={lines()}>{(line) => <Line line={line} />}</For>
                 </div>
                 <form class='chat-input' onSubmit={send}>
                   <input

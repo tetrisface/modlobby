@@ -7,8 +7,9 @@ use lobby_core::{Effect, LobbyState};
 use spring_protocol::ServerEvent;
 
 use crate::model::{
-    BotView, ChatKind, ChatLine, Delta, GameRunningView, LayoutView, MyBattleView, NoticeLevel,
-    OptionChangeView, Phase, StartRectView, UserView, VoteView,
+    BATTLE_ROOM, BotView, ChannelSummaryView, ChannelView, ChatKind, ChatLine, Delta,
+    GameRunningView, LayoutView, MyBattleView, NoticeLevel, OptionChangeView, Phase, StartRectView,
+    UserView, VoteView, private_room,
 };
 
 #[derive(Debug, Default)]
@@ -189,11 +190,48 @@ impl Projector {
                 } else {
                     ChatKind::Chat
                 };
-                out.push(Delta::Chat(self.line(from, text, kind)));
+                out.push(Delta::Chat(self.line(BATTLE_ROOM, from, text, kind)));
             }
-            Effect::PrivateChat { from, text } => {
-                out.push(Delta::Chat(self.line(from, text, ChatKind::Private)))
+            Effect::PrivateChat { with, from, text } => out.push(Delta::Chat(self.line(
+                &private_room(with),
+                from,
+                text,
+                ChatKind::Private,
+            ))),
+            Effect::ChannelChat {
+                room,
+                from,
+                text,
+                emote,
+            } => {
+                let kind = if *emote {
+                    ChatKind::Emote
+                } else {
+                    ChatKind::Chat
+                };
+                out.push(Delta::Chat(self.line(room, from, text, kind)));
             }
+            Effect::ChannelJoined { room } | Effect::ChannelChanged { room } => {
+                out.push(channel_delta(state, room));
+            }
+            Effect::ChannelLeft { room } => out.push(Delta::Channel {
+                name: room.clone(),
+                channel: None,
+            }),
+            Effect::ChannelJoinFailed { room, reason } => out.push(notice(
+                NoticeLevel::Warning,
+                format!("cannot join {room}: {reason}"),
+            )),
+            Effect::ChannelsListed => out.push(Delta::Directory(
+                state
+                    .directory
+                    .iter()
+                    .map(|entry| ChannelSummaryView {
+                        name: entry.name.clone(),
+                        members: entry.members,
+                    })
+                    .collect(),
+            )),
             Effect::VoteChanged => {
                 let vote = state.my_battle.as_ref().and_then(|my| my.vote.as_ref());
                 out.push(Delta::Vote(vote.map(VoteView::from)));
@@ -246,14 +284,27 @@ impl Projector {
         }
     }
 
-    fn line(&mut self, from: &str, text: &str, kind: ChatKind) -> ChatLine {
+    fn line(&mut self, room: &str, from: &str, text: &str, kind: ChatKind) -> ChatLine {
         self.seq += 1;
         ChatLine {
             seq: self.seq,
+            room: room.to_owned(),
             from: from.to_owned(),
             text: text.to_owned(),
             kind,
         }
+    }
+}
+
+/// A channel as it now stands, or its removal if we are no longer in it.
+fn channel_delta(state: &LobbyState, room: &str) -> Delta {
+    Delta::Channel {
+        name: room.to_owned(),
+        channel: state.channels.get(room).map(|channel| ChannelView {
+            name: channel.name.clone(),
+            members: channel.members.iter().cloned().collect(),
+            topic_author: channel.topic_author.clone(),
+        }),
     }
 }
 

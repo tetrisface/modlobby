@@ -370,6 +370,10 @@ pub struct Snapshot {
     pub my_battle: Option<MyBattleView>,
     pub game_running: Option<GameRunningView>,
     pub engine: EngineStatus,
+    /// Channels we are in. Chat lines are not replayed — a reload keeps
+    /// whichever backlog the front end still holds — but membership is, so the
+    /// channel list is right the moment the window comes back.
+    pub channels: Vec<ChannelView>,
 }
 
 impl Snapshot {
@@ -382,6 +386,7 @@ impl Snapshot {
             my_battle: None,
             game_running: None,
             engine: EngineStatus::Idle,
+            channels: Vec::new(),
         }
     }
 
@@ -407,6 +412,15 @@ impl Snapshot {
             my_battle: state.my_battle.as_ref().map(MyBattleView::from),
             game_running,
             engine,
+            channels: state
+                .channels
+                .values()
+                .map(|channel| ChannelView {
+                    name: channel.name.clone(),
+                    members: channel.members.iter().cloned().collect(),
+                    topic_author: channel.topic_author.clone(),
+                })
+                .collect(),
         }
     }
 }
@@ -419,6 +433,10 @@ pub enum ChatKind {
     /// `SAIDBATTLEEX`: host announcements and `/me` lines.
     Announcement,
     Private,
+    /// `SAIDEX`: an emote, written as an action rather than speech.
+    Emote,
+    /// Said by the app rather than by anyone on the server.
+    System,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -427,9 +445,40 @@ pub enum ChatKind {
 pub struct ChatLine {
     #[ts(type = "number")]
     pub seq: u64,
+    /// Where this was said. `#battle` is the room we are in, `@name` is a
+    /// private conversation, and anything else is a channel — which cannot
+    /// collide, because teiserver only accepts `\w+` as a channel name.
+    pub room: String,
     pub from: String,
     pub text: String,
     pub kind: ChatKind,
+}
+
+/// The room key for the battle we are in.
+pub const BATTLE_ROOM: &str = "#battle";
+
+/// The room key for a private conversation with someone.
+pub fn private_room(user: &str) -> String {
+    format!("@{user}")
+}
+
+/// A channel we are in, as the front end needs it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ChannelView {
+    pub name: String,
+    pub members: Vec<String>,
+    pub topic_author: Option<String>,
+}
+
+/// One line of the server's channel directory.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ChannelSummaryView {
+    pub name: String,
+    pub members: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -521,6 +570,13 @@ pub enum Delta {
     GameRunning(Option<GameRunningView>),
     Engine(EngineStatus),
     Chat(ChatLine),
+    /// A channel we are in was added, changed, or removed (`None`).
+    Channel {
+        name: String,
+        channel: Option<ChannelView>,
+    },
+    /// The server's channel directory, replaced whole.
+    Directory(Vec<ChannelSummaryView>),
     Notice {
         level: NoticeLevel,
         text: String,

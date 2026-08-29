@@ -31,6 +31,14 @@ export const api = {
   vote: (choice: VoteChoice) => invoke<void>('vote', { choice }),
   setOption: (key: string, value: string) =>
     invoke<void>('set_option', { key, value }),
+  joinChannel: (room: string, key: string | null) =>
+    invoke<void>('join_channel', { room, key }),
+  leaveChannel: (room: string) => invoke<void>('leave_channel', { room }),
+  sayChannel: (room: string, text: string) =>
+    invoke<void>('say_channel', { room, text }),
+  sayPrivate: (user: string, text: string) =>
+    invoke<void>('say_private', { user, text }),
+  listChannels: () => invoke<void>('list_channels'),
   getSettings: () => invoke<Settings>('get_settings'),
   updateSettings: (settings: Settings) =>
     invoke<Settings>('update_settings', { settings }),

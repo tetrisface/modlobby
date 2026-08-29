@@ -3,7 +3,13 @@ import type { BattleView } from '../ipc/bindings/BattleView'
 import type { Delta } from '../ipc/bindings/Delta'
 import type { Snapshot } from '../ipc/bindings/Snapshot'
 import type { UiMessage } from '../ipc/bindings/UiMessage'
-import { clearChat, pushLine, pushNotice } from './chat'
+import {
+  applyChannel,
+  applyDirectory,
+  clearChat,
+  pushLine,
+  pushNotice,
+} from './chat'
 import { emptyLobby, lobby, setLobby, type LobbyState } from './lobby'
 
 export function applyMessage(message: UiMessage): void {
@@ -24,6 +30,10 @@ export function applySnapshot(snapshot: Snapshot): void {
   for (const battle of snapshot.battles) next.battles[battle.id] = battle
   setLobby(reconcile(next))
   if (snapshot.phase === null) clearChat()
+  // Membership is replayed on reconnect; the chat backlog is not, so whatever
+  // the front end still holds stays put.
+  else
+    for (const channel of snapshot.channels) applyChannel(channel.name, channel)
 }
 
 /** Mirrors `lobby-core`: members minus spectators, the host bot counting as one. */
@@ -201,6 +211,12 @@ export function applyDelta(delta: Delta): void {
       return
     case 'chat':
       pushLine(delta.data)
+      return
+    case 'channel':
+      applyChannel(delta.data.name, delta.data.channel)
+      return
+    case 'directory':
+      applyDirectory(delta.data)
       return
     case 'notice':
       pushNotice(delta.data.level, delta.data.text)

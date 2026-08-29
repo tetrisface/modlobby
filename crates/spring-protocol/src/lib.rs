@@ -7,6 +7,7 @@
 //! `teiserver/lib/teiserver/protocols/spring/*.ex` (server).
 
 pub mod battle;
+pub mod chat;
 pub mod codec;
 pub mod event;
 pub mod hash;

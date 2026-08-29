@@ -47,6 +47,7 @@ const snapshot: Snapshot = {
   myBattle: null,
   gameRunning: null,
   engine: { state: 'idle' },
+  channels: [],
 }
 
 describe('apply', () => {
@@ -82,7 +83,13 @@ describe('apply', () => {
       },
       {
         type: 'chat',
-        data: { seq: 1, from: 'host', text: 'hi', kind: 'announcement' },
+        data: {
+          seq: 1,
+          room: '#battle',
+          from: 'host',
+          text: 'hi',
+          kind: 'announcement',
+        },
       },
       { type: 'userRemoved', data: { name: 'alice' } },
     ]
@@ -94,7 +101,7 @@ describe('apply', () => {
     expect(lobby.battles[5]?.mapName).toBe('Map v2')
     expect(lobby.users.host?.status.inGame).toBe(true)
     expect(lobby.users.alice).toBeUndefined()
-    expect(chat.lines.at(-1)?.text).toBe('hi')
+    expect(chat.rooms['#battle']!.at(-1)?.text).toBe('hi')
   })
 
   test('disconnect resets the mirror', () => {
