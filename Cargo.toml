@@ -6,6 +6,7 @@ members = [
     "crates/lobby-ui",
     "crates/lobby-runtime",
     "crates/settings",
+    "crates/tweaks",
     "crates/recoil",
     "crates/modlobby-cli",
     "app/src-tauri",
@@ -23,6 +24,7 @@ lobby-core = { path = "crates/lobby-core" }
 lobby-runtime = { path = "crates/lobby-runtime" }
 lobby-ui = { path = "crates/lobby-ui" }
 settings = { path = "crates/settings" }
+tweaks = { path = "crates/tweaks" }
 recoil = { path = "crates/recoil" }
 
 anyhow = "=1.0.104"
@@ -30,14 +32,18 @@ base64 = "=0.23.1"
 clap = { version = "=4.6.6", features = ["derive", "env"] }
 directories = "=6.0.0"
 dotenvy = "=0.15.7"
+full_moon = "=2.2.0"
 jsonc-parser = { version = "=0.33.1", features = ["cst", "serde"] }
 keyring = "=4.1.6"
 md-5 = "=0.11.0"
 notify = "=8.2.0"
 rand = "=0.10.2"
 schemars = "=1.2.2"
+sha2 = "=0.11.0"
+similar = "=3.2.0"
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
+stylua = { version = "=2.5.2", default-features = false }
 sysinfo = "=0.39.6"
 tauri = { version = "=2.11.5", features = [] }
 tauri-build = { version = "=2.6.3", features = [] }
