@@ -2,6 +2,7 @@
 //! runtime client or the settings store; errors cross as `{ code, message }`.
 
 use std::path::PathBuf;
+use std::time::{Duration, SystemTime};
 
 use lobby_runtime::{ClientError, launch};
 use lobby_ui::UiMessage;
@@ -113,7 +114,22 @@ pub async fn login(
         LOBBY_VERSION,
         app.hardware.lobby_hash.clone(),
     );
-    app.client.login(endpoint, request).await?;
+
+    // The server counts logins whether or not they succeed; sending one it
+    // would refuse only wastes the allowance.
+    if let Some(wait) = app.login_guard.wait(SystemTime::now()) {
+        return Err(throttled(wait));
+    }
+    app.login_guard.record_attempt(SystemTime::now());
+    match app.client.login(endpoint, request).await {
+        Ok(()) => app.login_guard.record_success(SystemTime::now()),
+        Err(err) => {
+            if settings::is_flood_refusal(&err.to_string()) {
+                app.login_guard.record_refusal(SystemTime::now());
+            }
+            return Err(err.into());
+        }
+    }
 
     if remember {
         app.credentials.set(&username, &password)?;
@@ -127,6 +143,24 @@ pub async fn login(
         s.account.auto_login = auto_login && remember;
     })?;
     Ok(())
+}
+
+/// Seconds a login must wait for teiserver's limit to lapse; 0 when clear.
+#[tauri::command]
+pub fn login_wait(app: State<'_, App>) -> u64 {
+    app.login_guard
+        .wait(SystemTime::now())
+        .map_or(0, |wait| wait.as_secs())
+}
+
+fn throttled(wait: Duration) -> ApiError {
+    ApiError::new(
+        "throttled",
+        format!(
+            "teiserver allows 3 logins per 10 seconds; waiting {}s",
+            wait.as_secs()
+        ),
+    )
 }
 
 #[tauri::command]

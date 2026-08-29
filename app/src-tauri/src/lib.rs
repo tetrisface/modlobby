@@ -43,6 +43,7 @@ pub fn run() {
             commands::subscribe,
             commands::login,
             commands::logout,
+            commands::login_wait,
             commands::join_battle,
             commands::leave_battle,
             commands::launch,

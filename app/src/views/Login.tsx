@@ -1,5 +1,5 @@
 import { useNavigate } from '@solidjs/router'
-import { Show, createEffect, createSignal } from 'solid-js'
+import { Show, createEffect, createSignal, onCleanup } from 'solid-js'
 import { api, describeError } from '../ipc/client'
 import { lobby } from '../store/lobby'
 import { settings } from '../store/settings'
@@ -28,6 +28,23 @@ export function Login() {
   const [hasStored, setHasStored] = createSignal(false)
   const [error, setError] = createSignal<string | null>(null)
   const [busy, setBusy] = createSignal(false)
+  /** Seconds teiserver's login limit still needs; 0 when clear. */
+  const [wait, setWait] = createSignal(0)
+
+  // The limit is three logins per ten seconds, counted per account and kept
+  // across restarts — a rebuild loop reaches it easily, so rather than failing
+  // the login we count down and go when it lapses.
+  createEffect(() => {
+    void api
+      .loginWait()
+      .then(setWait)
+      .catch(() => setWait(0))
+  })
+  createEffect(() => {
+    if (wait() <= 0) return
+    const timer = setTimeout(() => setWait((seconds) => seconds - 1), 1000)
+    onCleanup(() => clearTimeout(timer))
+  })
 
   createEffect(() => {
     const s = settings()
@@ -53,6 +70,13 @@ export function Login() {
   async function attemptAutoLogin() {
     if (autoLoginAttempted || lobby.phase !== null) return
     autoLoginAttempted = true
+    const held = await api.loginWait().catch(() => 0)
+    if (held > 0) {
+      setWait(held)
+      // Waiting it out beats failing: the rebuild that caused this is over.
+      setTimeout(() => void login(), (held + 1) * 1000)
+      return
+    }
     await login()
   }
 
@@ -69,6 +93,10 @@ export function Login() {
       )
     } catch (err) {
       setError(describeError(err))
+      void api
+        .loginWait()
+        .then(setWait)
+        .catch(() => {})
     } finally {
       setBusy(false)
     }
@@ -120,8 +148,15 @@ export function Login() {
         />
         Log in automatically on startup
       </label>
-      <button type='submit' disabled={busy() || !username().trim()}>
-        {busy() ? (phaseText[lobby.phase ?? ''] ?? 'working…') : 'Log in'}
+      <button
+        type='submit'
+        disabled={busy() || wait() > 0 || !username().trim()}
+      >
+        {wait() > 0
+          ? `throttled — ${wait()}s`
+          : busy()
+            ? (phaseText[lobby.phase ?? ''] ?? 'working…')
+            : 'Log in'}
       </button>
       <Show when={error()}>
         {(message) => <p class='error'>{message()}</p>}

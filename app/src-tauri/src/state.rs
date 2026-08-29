@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use lobby_runtime::{Client, Hardware, platform};
-use settings::{CredentialStore, KeyringStore, Store};
+use settings::{CredentialStore, KeyringStore, LoginGuard, Store};
 use spring_protocol::ThrottlePolicy;
 
 pub struct App {
@@ -12,6 +12,8 @@ pub struct App {
     pub settings: Store,
     pub credentials: Arc<dyn CredentialStore>,
     pub hardware: Hardware,
+    /// Keeps us under teiserver's login limit across restarts.
+    pub login_guard: LoginGuard,
 }
 
 impl App {
@@ -23,6 +25,7 @@ impl App {
             Client::spawn(ThrottlePolicy::default(), hardware.clone())
         });
         Ok(Self {
+            login_guard: LoginGuard::new(settings.dir()),
             client,
             settings,
             credentials: Arc::new(KeyringStore),
