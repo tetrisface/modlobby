@@ -47,6 +47,16 @@ pub fn run() {
             commands::clear_password,
             commands::open_settings_file,
             commands::open_data_dir,
+            commands::tweak_decode,
+            commands::tweak_format,
+            commands::tweak_prepare,
+            commands::tweak_send,
+            commands::tweak_clear,
+            commands::tweak_diff,
+            commands::list_drafts,
+            commands::read_draft,
+            commands::save_draft,
+            commands::delete_draft,
         ])
         .run(tauri::generate_context!())
         .expect("running modlobby");

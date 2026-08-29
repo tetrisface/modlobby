@@ -18,6 +18,7 @@
     "@solidjs/router": "1.0.0",
     "@tanstack/solid-virtual": "3.13.37",
     "@tauri-apps/api": "2.11.1",
+    "monaco-editor": "0.56.0",
     "solid-js": "1.9.15"
   },
   "devDependencies": {

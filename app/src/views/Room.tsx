@@ -1,9 +1,10 @@
-import { useNavigate } from '@solidjs/router'
+import { A, useNavigate } from '@solidjs/router'
 import { For, Show, createEffect, createMemo, createSignal } from 'solid-js'
 import type { ChatLine } from '../ipc/bindings/ChatLine'
 import { api, describeError } from '../ipc/client'
 import { chat, pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
+import { VoteBar } from './VoteBar'
 
 export function Room() {
   const navigate = useNavigate()
@@ -69,6 +70,7 @@ export function Room() {
               </p>
             </div>
             <div class='room-actions'>
+              <A href='/room/tweaks'>Tweaks</A>
               <Show when={lobby.gameRunning}>
                 <button
                   class='primary'
@@ -83,6 +85,7 @@ export function Room() {
               <button onClick={() => api.leaveBattle()}>Leave</button>
             </div>
           </header>
+          <VoteBar />
           <div class='room-body'>
             <aside class='members'>
               <h2>Players ({members().players.length})</h2>

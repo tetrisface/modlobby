@@ -2706,6 +2706,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tracing",
  "tracing-subscriber",
+ "tweaks",
 ]
 
 [[package]]

@@ -10,6 +10,7 @@ use settings::{CredentialError, Settings};
 use spring_protocol::{Endpoint, LoginRequest};
 use tauri::State;
 use tauri::ipc::Channel;
+use tweaks::{DiffView, Kind, Prepared, Slot, TweakView};
 
 use crate::state::App;
 use crate::transport::ChannelTransport;
@@ -56,6 +57,18 @@ impl From<settings::Error> for ApiError {
 impl From<CredentialError> for ApiError {
     fn from(err: CredentialError) -> Self {
         Self::new("credentials", err.to_string())
+    }
+}
+
+impl From<tweaks::Error> for ApiError {
+    fn from(err: tweaks::Error) -> Self {
+        let code = match &err {
+            tweaks::Error::Base64(_) => "base64",
+            tweaks::Error::Utf8 => "utf8",
+            tweaks::Error::Lua(_) => "lua",
+            tweaks::Error::Underscore(_) => "underscore",
+        };
+        Self::new(code, err.to_string())
     }
 }
 
@@ -188,6 +201,146 @@ pub fn open_settings_file(app: State<'_, App>) -> Result<()> {
 #[tauri::command]
 pub fn open_data_dir(app: State<'_, App>) -> Result<()> {
     open(data_dir(&app)?)
+}
+
+/// Decodes a stored slot value for display: Lua, formatted Lua, name, summary.
+#[tauri::command]
+pub fn tweak_decode(app: State<'_, App>, blob: String, kind: Kind) -> Result<TweakView> {
+    Ok(tweaks::decode(&blob, kind, &stylua(&app))?)
+}
+
+/// Formats Lua with the user's `stylua.toml`, for the editor's Format action.
+#[tauri::command]
+pub fn tweak_format(app: State<'_, App>, lua: String, kind: Kind) -> Result<String> {
+    Ok(tweaks::lua::format(&lua, kind, &stylua(&app))?)
+}
+
+/// Minifies, encodes and measures — the gauge the editor shows. Sends nothing.
+#[tauri::command]
+pub fn tweak_prepare(lua: String, slot: Slot, direct: bool) -> Result<Prepared> {
+    Ok(tweaks::prepare(&lua, slot, direct)?)
+}
+
+/// Prepares again here rather than trusting the webview, refuses anything the
+/// server would truncate, then says it in the room.
+#[tauri::command]
+pub async fn tweak_send(
+    app: State<'_, App>,
+    lua: String,
+    slot: Slot,
+    direct: bool,
+) -> Result<Prepared> {
+    let prepared = tweaks::prepare(&lua, slot, direct)?;
+    if !prepared.gauge.fits {
+        return Err(ApiError::new(
+            "tooLong",
+            format!(
+                "the command is {} characters; the server keeps {}",
+                prepared.gauge.command, prepared.gauge.cap
+            ),
+        ));
+    }
+    app.client.say(prepared.command.clone()).await?;
+    Ok(prepared)
+}
+
+/// Clears a slot the way Chobby does, with the literal `0`.
+#[tauri::command]
+pub async fn tweak_clear(app: State<'_, App>, slot: Slot) -> Result<()> {
+    app.client.say(tweaks::command::clear(slot)).await?;
+    Ok(())
+}
+
+/// Both sides formatted, then diffed — what a vote would change.
+#[tauri::command]
+pub fn tweak_diff(
+    app: State<'_, App>,
+    kind: Kind,
+    current: String,
+    proposed: String,
+) -> Result<DiffView> {
+    let config = stylua(&app);
+    let side = |blob: &str| {
+        if blob.is_empty() {
+            return String::new();
+        }
+        tweaks::decode(blob, kind, &config).map_or_else(|_| blob.to_owned(), |view| view.formatted)
+    };
+    Ok(tweaks::diff::diff(&side(&current), &side(&proposed)))
+}
+
+#[tauri::command]
+pub fn list_drafts(app: State<'_, App>) -> Result<Vec<String>> {
+    let dir = drafts_dir(&app);
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Ok(Vec::new());
+    };
+    let mut names: Vec<String> = entries
+        .filter_map(std::result::Result::ok)
+        .filter_map(|entry| {
+            let path = entry.path();
+            (path.extension()? == "lua")
+                .then(|| path.file_stem()?.to_str().map(str::to_owned))
+                .flatten()
+        })
+        .collect();
+    names.sort();
+    Ok(names)
+}
+
+#[tauri::command]
+pub fn read_draft(app: State<'_, App>, name: String) -> Result<String> {
+    let path = draft_path(&app, &name)?;
+    std::fs::read_to_string(&path).map_err(|err| ApiError::new("draft", err.to_string()))
+}
+
+/// Drafts are plain `.lua` files beside the settings, so they can be edited,
+/// backed up and version-controlled like anything else.
+#[tauri::command]
+pub fn save_draft(app: State<'_, App>, name: String, lua: String) -> Result<()> {
+    let path = draft_path(&app, &name)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|err| ApiError::new("draft", err.to_string()))?;
+    }
+    std::fs::write(&path, lua).map_err(|err| ApiError::new("draft", err.to_string()))
+}
+
+#[tauri::command]
+pub fn delete_draft(app: State<'_, App>, name: String) -> Result<()> {
+    let path = draft_path(&app, &name)?;
+    match std::fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(ApiError::new("draft", err.to_string())),
+    }
+}
+
+fn stylua(app: &App) -> tweaks::Config {
+    let path = app.settings.get().tweaks.stylua_config;
+    tweaks::lua::load_config(path.as_deref()).unwrap_or_default()
+}
+
+fn drafts_dir(app: &App) -> PathBuf {
+    app.settings.dir().join("drafts")
+}
+
+/// Keeps a draft name to one path segment; it comes from the webview.
+fn draft_path(app: &App, name: &str) -> Result<PathBuf> {
+    let safe: String = name
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || "-_ ".contains(c) {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let safe = safe.trim();
+    if safe.is_empty() {
+        return Err(ApiError::new("input", "a draft needs a name"));
+    }
+    Ok(drafts_dir(app).join(format!("{safe}.lua")))
 }
 
 fn data_dir(app: &App) -> Result<PathBuf> {
