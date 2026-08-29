@@ -31,8 +31,11 @@ function Layout(props: ParentProps) {
       pushNotice('error', describeError(error))
     }
   })
-  onMount(async () => {
-    const unlisten = await listen<SettingsEvent>('settings', (event) => {
+  onMount(() => {
+    // `listen` resolves after a round trip. Registering the cleanup on the
+    // promise keeps it inside this component's owner — awaiting first would
+    // leave the owner behind and the listener would never be removed.
+    const pending = listen<SettingsEvent>('settings', (event) => {
       if ('changed' in event.payload) {
         applySettings(event.payload.changed)
         pushNotice('info', 'settings reloaded')
@@ -43,7 +46,7 @@ function Layout(props: ParentProps) {
         )
       }
     })
-    onCleanup(unlisten)
+    onCleanup(() => void pending.then((unlisten) => unlisten()))
   })
 
   return (
