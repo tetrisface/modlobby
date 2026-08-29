@@ -228,6 +228,10 @@ pub struct LobbyState {
     pub channels: BTreeMap<String, Channel>,
     /// The server's channel directory, from the last `CHANNELS` request.
     pub directory: Vec<ChannelSummary>,
+    /// Who we are friends with.
+    pub friends: BTreeSet<String>,
+    /// Who has asked to be, and is waiting on an answer.
+    pub friend_requests: BTreeSet<String>,
 }
 
 /// A channel we have joined.

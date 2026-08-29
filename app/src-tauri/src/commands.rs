@@ -226,6 +226,27 @@ pub async fn list_channels(app: State<'_, App>) -> Result<()> {
     Ok(())
 }
 
+/// Asks the server for the friend list and the pending requests.
+#[tauri::command]
+pub async fn refresh_friends(app: State<'_, App>) -> Result<()> {
+    app.client.refresh_friends().await?;
+    Ok(())
+}
+
+/// `request`, `accept`, `decline` or `remove`. The server announces nothing
+/// when a friendship changes, so the runtime asks for the listings afterwards.
+#[tauri::command]
+pub async fn friend_action(app: State<'_, App>, action: String, user: String) -> Result<()> {
+    let action: lobby_runtime::FriendAction =
+        action
+            .parse()
+            .map_err(|err: lobby_runtime::UnknownFriendAction| {
+                ApiError::new("input", err.to_string())
+            })?;
+    app.client.friend_action(action, user).await?;
+    Ok(())
+}
+
 /// Sets one modoption: `!bSet <key> <value>`, in Chobby's casing.
 ///
 /// SPADS decides what happens next, not us. `[bSet]` is granted as

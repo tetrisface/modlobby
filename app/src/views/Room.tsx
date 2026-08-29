@@ -37,6 +37,9 @@ export function Room() {
     return id === undefined ? undefined : lobby.battles[id]
   })
 
+  const friends = createMemo(() => new Set(lobby.friends.friends))
+  const isFriend = (name: string) => friends().has(name)
+
   /** SPADS keys its player tags by lowercased name. */
   const skills = createMemo(() => readSkills(lobby.myBattle?.scriptTags))
   const skillOf = (name: string): Skill | null =>
@@ -171,6 +174,7 @@ export function Room() {
                               user={user}
                               skill={skillOf(user.name)}
                               me={user.name === lobby.me}
+                              friend={isFriend(user.name)}
                             />
                           )}
                         </For>
@@ -190,7 +194,11 @@ export function Room() {
                   <div class='spectator-list'>
                     <For each={occupants().spectators}>
                       {(user) => (
-                        <SpectatorRow user={user} me={user.name === lobby.me} />
+                        <SpectatorRow
+                          user={user}
+                          me={user.name === lobby.me}
+                          friend={isFriend(user.name)}
+                        />
                       )}
                     </For>
                   </div>

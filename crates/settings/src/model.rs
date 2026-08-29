@@ -89,6 +89,9 @@ pub struct BattleList {
     pub show_empty: bool,
     /// Rooms whose game has already started.
     pub show_running: bool,
+    /// Narrow the list to rooms with a friend in them. Off by default: it
+    /// empties the list for anyone who has not added anybody.
+    pub friends_only: bool,
     pub mode: ModeFilter,
     pub sort: BattleSort,
     /// Largest or latest first. Ignored by `BattleSort::Relevance`, which has
@@ -105,6 +108,7 @@ impl Default for BattleList {
             show_locked: true,
             show_empty: true,
             show_running: true,
+            friends_only: false,
             mode: ModeFilter::default(),
             sort: BattleSort::default(),
             sort_descending: false,

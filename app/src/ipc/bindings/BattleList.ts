@@ -15,7 +15,12 @@ showEmpty: boolean,
 /**
  * Rooms whose game has already started.
  */
-showRunning: boolean, mode: ModeFilter, sort: BattleSort, 
+showRunning: boolean, 
+/**
+ * Narrow the list to rooms with a friend in them. Off by default: it
+ * empties the list for anyone who has not added anybody.
+ */
+friendsOnly: boolean, mode: ModeFilter, sort: BattleSort, 
 /**
  * Largest or latest first. Ignored by `BattleSort::Relevance`, which has
  * a fixed order of its own.

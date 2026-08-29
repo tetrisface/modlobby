@@ -1,4 +1,11 @@
-import { For, Show, createEffect, createMemo, createSignal } from 'solid-js'
+import {
+  For,
+  Show,
+  createEffect,
+  createMemo,
+  createSignal,
+  onMount,
+} from 'solid-js'
 import type { ChatLine } from '../ipc/bindings/ChatLine'
 import { api, describeError } from '../ipc/client'
 import {
@@ -42,6 +49,10 @@ export function Chat() {
 
   const lines = () => chat.rooms[room()] ?? []
   const members = () => chat.channels[room()]?.members ?? []
+
+  // The server never announces a friendship changing, so the list is asked
+  // for when this view opens.
+  onMount(() => void act('friends', () => api.refreshFriends()))
 
   createEffect(() => {
     watchRoom(room())
@@ -172,6 +183,59 @@ export function Chat() {
                 on={room() === key}
                 onClick={setRoom}
               />
+            )}
+          </For>
+        </Show>
+
+        <Show when={lobby.friends.requests.length > 0}>
+          <div class='room-list-head'>
+            <span class='filter-label'>Wants to be friends</span>
+          </div>
+          <For each={lobby.friends.requests}>
+            {(name) => (
+              <div class='friend-request'>
+                <span class='room-name'>{name}</span>
+                <button
+                  class='chip-choice'
+                  title={`Accept ${name}`}
+                  onClick={() =>
+                    void act('accept', () => api.friendAction('accept', name))
+                  }
+                >
+                  Yes
+                </button>
+                <button
+                  class='chip-choice'
+                  title={`Decline ${name}`}
+                  onClick={() =>
+                    void act('decline', () => api.friendAction('decline', name))
+                  }
+                >
+                  No
+                </button>
+              </div>
+            )}
+          </For>
+        </Show>
+
+        <Show when={lobby.friends.friends.length > 0}>
+          <div class='room-list-head'>
+            <span class='filter-label'>Friends</span>
+          </div>
+          <For each={lobby.friends.friends}>
+            {(name) => (
+              <button
+                class='room-tab friend'
+                onClick={() => {
+                  ensureRoom(privateRoom(name))
+                  setRoom(privateRoom(name))
+                }}
+              >
+                <span class='room-name'>{name}</span>
+                <Show when={lobby.users[name]}>
+                  <span class='room-count'>online</span>
+                </Show>
+              </button>
             )}
           </For>
         </Show>

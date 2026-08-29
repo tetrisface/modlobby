@@ -39,6 +39,11 @@ export const api = {
   sayPrivate: (user: string, text: string) =>
     invoke<void>('say_private', { user, text }),
   listChannels: () => invoke<void>('list_channels'),
+  refreshFriends: () => invoke<void>('refresh_friends'),
+  friendAction: (
+    action: 'request' | 'accept' | 'decline' | 'remove',
+    user: string,
+  ) => invoke<void>('friend_action', { action, user }),
   getSettings: () => invoke<Settings>('get_settings'),
   updateSettings: (settings: Settings) =>
     invoke<Settings>('update_settings', { settings }),

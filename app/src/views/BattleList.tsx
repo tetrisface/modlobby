@@ -18,6 +18,7 @@ const DEFAULTS: Filters = {
   showLocked: true,
   showEmpty: true,
   showRunning: true,
+  friendsOnly: false,
   mode: 'all',
   sort: 'relevance',
   sortDescending: false,
@@ -46,12 +47,16 @@ export function BattleList() {
     }
   }
 
-  const all = createMemo<Row[]>(() =>
-    Object.values(lobby.battles).map((battle) => ({
+  const friends = createMemo(() => new Set(lobby.friends.friends))
+
+  const all = createMemo<Row[]>(() => {
+    const known = friends()
+    return Object.values(lobby.battles).map((battle) => ({
       battle,
       running: lobby.users[battle.founder]?.status.inGame ?? false,
-    })),
-  )
+      hasFriend: battle.members.some((name) => known.has(name)),
+    }))
+  })
   const rows = createMemo(() => arrange(all(), filters(), search()))
 
   const virtualizer = createVirtualizer({
@@ -119,6 +124,16 @@ export function BattleList() {
             onClick={() => update({ showEmpty: !filters().showEmpty })}
           />
         </div>
+
+        <Show when={lobby.friends.friends.length > 0}>
+          <div class='filter-group' role='group' aria-label='Friends'>
+            <Choice
+              label='Friends only'
+              on={filters().friendsOnly}
+              onClick={() => update({ friendsOnly: !filters().friendsOnly })}
+            />
+          </div>
+        </Show>
 
         <div class='filter-group' role='group' aria-label='Mode'>
           <For each={MODES}>

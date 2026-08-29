@@ -97,6 +97,14 @@ enum Command {
     ListChannels {
         reply: Reply<()>,
     },
+    RefreshFriends {
+        reply: Reply<()>,
+    },
+    FriendAction {
+        action: lobby_core::FriendAction,
+        user: String,
+        reply: Reply<()>,
+    },
     TakeSeat {
         team: u8,
         ally_team: u8,
@@ -219,6 +227,23 @@ impl Client {
 
     pub async fn list_channels(&self) -> Result<(), ClientError> {
         self.ask(|reply| Command::ListChannels { reply }).await
+    }
+
+    pub async fn refresh_friends(&self) -> Result<(), ClientError> {
+        self.ask(|reply| Command::RefreshFriends { reply }).await
+    }
+
+    pub async fn friend_action(
+        &self,
+        action: lobby_core::FriendAction,
+        user: String,
+    ) -> Result<(), ClientError> {
+        self.ask(|reply| Command::FriendAction {
+            action,
+            user,
+            reply,
+        })
+        .await
     }
 
     /// Takes a player slot. Refused unless the room is passworded — see
@@ -491,6 +516,22 @@ impl Runtime {
                 })
                 .await;
             }
+            Command::RefreshFriends { reply } => {
+                self.run_session(reply, |session| {
+                    Ok::<_, std::convert::Infallible>(session.refresh_friends())
+                })
+                .await;
+            }
+            Command::FriendAction {
+                action,
+                user,
+                reply,
+            } => {
+                self.run_session(reply, |session| {
+                    Ok::<_, std::convert::Infallible>(session.friend_action(action, &user))
+                })
+                .await;
+            }
             Command::TakeSeat {
                 team,
                 ally_team,
@@ -717,6 +758,7 @@ impl Runtime {
                 | Effect::ChannelLeft { .. }
                 | Effect::ChannelChanged { .. }
                 | Effect::ChannelsListed
+                | Effect::FriendsChanged
                 | Effect::ModOptionsChanged { .. }
                 | Effect::VoteChanged => {}
             }

@@ -236,6 +236,15 @@ impl From<&Battle> for BattleView {
     }
 }
 
+impl From<&LobbyState> for FriendsView {
+    fn from(state: &LobbyState) -> Self {
+        Self {
+            friends: state.friends.iter().cloned().collect(),
+            requests: state.friend_requests.iter().cloned().collect(),
+        }
+    }
+}
+
 /// What a vote would do, when the room can tell.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -374,6 +383,16 @@ pub struct Snapshot {
     /// whichever backlog the front end still holds — but membership is, so the
     /// channel list is right the moment the window comes back.
     pub channels: Vec<ChannelView>,
+    pub friends: FriendsView,
+}
+
+/// Who we are friends with, and who is waiting on an answer.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct FriendsView {
+    pub friends: Vec<String>,
+    pub requests: Vec<String>,
 }
 
 impl Snapshot {
@@ -387,6 +406,7 @@ impl Snapshot {
             game_running: None,
             engine: EngineStatus::Idle,
             channels: Vec::new(),
+            friends: FriendsView::default(),
         }
     }
 
@@ -421,6 +441,7 @@ impl Snapshot {
                     topic_author: channel.topic_author.clone(),
                 })
                 .collect(),
+            friends: FriendsView::from(state),
         }
     }
 }
@@ -577,6 +598,8 @@ pub enum Delta {
     },
     /// The server's channel directory, replaced whole.
     Directory(Vec<ChannelSummaryView>),
+    /// The friend list and pending requests, replaced whole.
+    Friends(FriendsView),
     Notice {
         level: NoticeLevel,
         text: String,

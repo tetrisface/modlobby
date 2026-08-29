@@ -8,6 +8,6 @@ pub mod session;
 pub mod spads;
 pub mod state;
 
-pub use session::{Effect, SeatError, Session};
+pub use session::{Effect, FriendAction, SeatError, Session, UnknownFriendAction};
 pub use spads::{Announcement, Proposal, VoteState};
 pub use state::{Battle, Bot, LobbyState, MyBattle, OptionChange, Phase, StartRect, User};

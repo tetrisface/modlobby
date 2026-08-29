@@ -217,6 +217,22 @@ pub enum ServerEvent {
     },
     /// `ENDOFCHANNELS`.
     EndOfChannels,
+    /// `FRIENDLISTBEGIN`: the friend list that follows replaces the last one.
+    FriendListBegin,
+    /// `FRIENDLIST userName=<name>`.
+    Friend {
+        name: String,
+    },
+    /// `FRIENDLISTEND`.
+    FriendListEnd,
+    /// `FRIENDREQUESTLISTBEGIN`.
+    FriendRequestListBegin,
+    /// `FRIENDREQUESTLIST userName=<name>`: someone wants to be friends.
+    FriendRequest {
+        name: String,
+    },
+    /// `FRIENDREQUESTLISTEND`.
+    FriendRequestListEnd,
     /// `SETSCRIPTTAGS k=v\tk=v`: the room's script tags (`game/modoptions/*` among them),
     /// one full line on join and then per change. teiserver lowercases the keys.
     SetScriptTags {
@@ -465,6 +481,16 @@ fn parse(raw: &RawMessage) -> Option<ServerEvent> {
             }
         }
         "ENDOFCHANNELS" => ServerEvent::EndOfChannels,
+        "FRIENDLISTBEGIN" => ServerEvent::FriendListBegin,
+        "FRIENDLISTEND" => ServerEvent::FriendListEnd,
+        "FRIENDREQUESTLISTBEGIN" => ServerEvent::FriendRequestListBegin,
+        "FRIENDREQUESTLISTEND" => ServerEvent::FriendRequestListEnd,
+        "FRIENDLIST" => ServerEvent::Friend {
+            name: named_user(a)?.into(),
+        },
+        "FRIENDREQUESTLIST" => ServerEvent::FriendRequest {
+            name: named_user(a)?.into(),
+        },
         "SETSCRIPTTAGS" => ServerEvent::SetScriptTags {
             tags: a
                 .split('\t')
@@ -565,6 +591,13 @@ fn parse_battle_teams(encoded: &str) -> Option<Vec<(u32, TeamLayout)>> {
 }
 
 /// The first `n` space-separated fields and the untouched remainder.
+/// `userName=<name>`, the shape every friend line uses. teiserver itself only
+/// looks at what follows the `=`, so this does the same.
+fn named_user(args: &str) -> Option<&str> {
+    let name = args.split_once('=').map(|(_, name)| name)?.trim();
+    (!name.is_empty()).then_some(name)
+}
+
 fn split_fields(args: &str, n: usize) -> Option<(Vec<&str>, &str)> {
     let mut parts = args.splitn(n + 1, ' ');
     let fields: Vec<&str> = parts.by_ref().take(n).collect();

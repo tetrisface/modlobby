@@ -14,6 +14,7 @@ export function PlayerRow(props: {
   user: UserView
   skill: Skill | null
   me: boolean
+  friend?: boolean
 }) {
   return (
     <Show when={props.user.battleStatus}>
@@ -24,7 +25,10 @@ export function PlayerRow(props: {
           <RankIcon status={props.user.status} />
           <SkillCell skill={props.skill} />
           <SideIcon side={battle().side} />
-          <span class='pname' classList={{ me: props.me }}>
+          <span
+            class='pname'
+            classList={{ me: props.me, friend: props.friend }}
+          >
             {props.user.name}
           </span>
         </div>
@@ -53,14 +57,22 @@ export function BotRow(props: { bot: BotView }) {
 }
 
 /** No status and no faction: Chobby hides both for spectators, and so do we. */
-export function SpectatorRow(props: { user: UserView; me: boolean }) {
+export function SpectatorRow(props: {
+  user: UserView
+  me: boolean
+  friend?: boolean
+}) {
   return (
     <div class='spectator'>
       <Flag country={props.user.country} />
       <RankIcon status={props.user.status} />
       <span
         class='pname'
-        classList={{ me: props.me, bot: props.user.status.bot }}
+        classList={{
+          me: props.me,
+          friend: props.friend,
+          bot: props.user.status.bot,
+        }}
       >
         {props.user.name}
       </span>

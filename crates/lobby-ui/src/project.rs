@@ -7,7 +7,7 @@ use lobby_core::{Effect, LobbyState};
 use spring_protocol::ServerEvent;
 
 use crate::model::{
-    BATTLE_ROOM, BotView, ChannelSummaryView, ChannelView, ChatKind, ChatLine, Delta,
+    BATTLE_ROOM, BotView, ChannelSummaryView, ChannelView, ChatKind, ChatLine, Delta, FriendsView,
     GameRunningView, LayoutView, MyBattleView, NoticeLevel, OptionChangeView, Phase, StartRectView,
     UserView, VoteView, private_room,
 };
@@ -222,6 +222,7 @@ impl Projector {
                 NoticeLevel::Warning,
                 format!("cannot join {room}: {reason}"),
             )),
+            Effect::FriendsChanged => out.push(Delta::Friends(FriendsView::from(state))),
             Effect::ChannelsListed => out.push(Delta::Directory(
                 state
                     .directory

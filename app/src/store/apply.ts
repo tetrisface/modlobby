@@ -25,6 +25,7 @@ export function applySnapshot(snapshot: Snapshot): void {
     myBattle: snapshot.myBattle,
     gameRunning: snapshot.gameRunning,
     engine: snapshot.engine,
+    friends: snapshot.friends,
   }
   for (const user of snapshot.users) next.users[user.name] = user
   for (const battle of snapshot.battles) next.battles[battle.id] = battle
@@ -217,6 +218,9 @@ export function applyDelta(delta: Delta): void {
       return
     case 'directory':
       applyDirectory(delta.data)
+      return
+    case 'friends':
+      setLobby('friends', delta.data)
       return
     case 'notice':
       pushNotice(delta.data.level, delta.data.text)

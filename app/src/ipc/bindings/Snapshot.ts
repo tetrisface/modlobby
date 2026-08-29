@@ -2,6 +2,7 @@
 import type { BattleView } from "./BattleView";
 import type { ChannelView } from "./ChannelView";
 import type { EngineStatus } from "./EngineStatus";
+import type { FriendsView } from "./FriendsView";
 import type { GameRunningView } from "./GameRunningView";
 import type { MyBattleView } from "./MyBattleView";
 import type { Phase } from "./Phase";
@@ -13,4 +14,4 @@ export type Snapshot = { phase: Phase | null, me: string | null, users: Array<Us
  * whichever backlog the front end still holds — but membership is, so the
  * channel list is right the moment the window comes back.
  */
-channels: Array<ChannelView>, };
+channels: Array<ChannelView>, friends: FriendsView, };

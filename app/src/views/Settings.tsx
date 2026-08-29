@@ -170,6 +170,7 @@ function blank(): Settings {
       showLocked: true,
       showEmpty: true,
       showRunning: true,
+      friendsOnly: false,
       mode: 'all',
       sort: 'relevance',
       sortDescending: false,

@@ -21,6 +21,7 @@
     "battleList": {
       "$ref": "#/$defs/BattleList",
       "default": {
+        "friendsOnly": false,
         "mode": "all",
         "showEmpty": true,
         "showLocked": true,
@@ -88,6 +89,11 @@
       "description": "Which rooms the list shows. Chobby words these the other way round, as\n\"Filter out:\" checkboxes, where ticking one means seeing less; stated\npositively, a toggle that is on means that kind of room is in the list.",
       "type": "object",
       "properties": {
+        "friendsOnly": {
+          "description": "Narrow the list to rooms with a friend in them. Off by default: it\nempties the list for anyone who has not added anybody.",
+          "type": "boolean",
+          "default": false
+        },
         "mode": {
           "$ref": "#/$defs/ModeFilter",
           "default": "all"

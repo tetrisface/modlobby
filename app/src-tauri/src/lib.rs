@@ -53,6 +53,8 @@ pub fn run() {
             commands::say_channel,
             commands::say_private,
             commands::list_channels,
+            commands::refresh_friends,
+            commands::friend_action,
             commands::get_settings,
             commands::update_settings,
             commands::has_password,

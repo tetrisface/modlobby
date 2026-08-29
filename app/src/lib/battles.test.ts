@@ -30,9 +30,14 @@ function battle(over: Partial<BattleView> = {}): BattleView {
   }
 }
 
-const row = (over: Partial<BattleView> = {}, running = false): Row => ({
+const row = (
+  over: Partial<BattleView> = {},
+  running = false,
+  hasFriend = false,
+): Row => ({
   battle: battle(over),
   running,
+  hasFriend,
 })
 
 const filters = (over: Partial<BattleList> = {}): BattleList => ({
@@ -40,6 +45,7 @@ const filters = (over: Partial<BattleList> = {}): BattleList => ({
   showLocked: true,
   showEmpty: true,
   showRunning: true,
+  friendsOnly: false,
   mode: 'all',
   sort: 'relevance',
   sortDescending: false,
@@ -93,6 +99,19 @@ describe('mode', () => {
     expect(titles(arrange(rows, filters({ mode: 'pvp' }), ''))).toEqual([
       'SuPrEmE MuFF | 8v8',
     ])
+  })
+})
+
+describe('friends only', () => {
+  test('narrows the list to rooms with someone you know in them', () => {
+    const rows = [
+      row({ title: 'with a friend' }, false, true),
+      row({ title: 'strangers' }),
+    ]
+    expect(titles(arrange(rows, filters({ friendsOnly: true }), ''))).toEqual([
+      'with a friend',
+    ])
+    expect(titles(arrange(rows, filters(), '')).length).toBe(2)
   })
 })
 

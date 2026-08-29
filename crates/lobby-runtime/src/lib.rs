@@ -7,4 +7,6 @@ pub mod launch;
 pub mod platform;
 
 pub use client::{Client, ClientError, Connector};
+/// Re-exported so callers do not need `lobby-core` just to name an action.
+pub use lobby_core::{FriendAction, UnknownFriendAction};
 pub use platform::Hardware;

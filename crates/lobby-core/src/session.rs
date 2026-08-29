@@ -1,5 +1,5 @@
 use spring_protocol::{
-    Area, Envelope, LoginRequest, MyBattleStatus, ServerEvent, Sync, battle, chat, status,
+    Area, Envelope, LoginRequest, MyBattleStatus, ServerEvent, Sync, battle, chat, friends, status,
     telemetry,
 };
 
@@ -74,6 +74,8 @@ pub enum Effect {
     },
     /// The server's channel directory finished arriving.
     ChannelsListed,
+    /// The friend list or the pending requests changed.
+    FriendsChanged,
     /// A direct message; the Coordinator uses these for refusals.
     ///
     /// `with` is the other person, which is who the conversation is filed
@@ -124,7 +126,38 @@ pub struct Session {
     /// Whether this machine has the room's engine, game and map. Claiming to be
     /// synced when we are not makes the host start a game we cannot join.
     synced: bool,
+    /// A friend listing part-way through arriving. Held aside so a listing that
+    /// is cut off never half-replaces the one we have.
+    collecting_friends: Option<std::collections::BTreeSet<String>>,
+    collecting_requests: Option<std::collections::BTreeSet<String>>,
     pub state: LobbyState,
+}
+
+/// What to do about a friendship.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FriendAction {
+    Request,
+    Accept,
+    Decline,
+    Remove,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("no such friend action: {0}")]
+pub struct UnknownFriendAction(String);
+
+impl std::str::FromStr for FriendAction {
+    type Err = UnknownFriendAction;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        match text {
+            "request" => Ok(Self::Request),
+            "accept" => Ok(Self::Accept),
+            "decline" => Ok(Self::Decline),
+            "remove" => Ok(Self::Remove),
+            other => Err(UnknownFriendAction(other.to_owned())),
+        }
+    }
 }
 
 /// Why taking a player slot was refused.
@@ -147,6 +180,8 @@ impl Session {
             machine_hash,
             agreement: Vec::new(),
             pending_join: None,
+            collecting_friends: None,
+            collecting_requests: None,
             seat: None,
             private_host: None,
             synced: false,
@@ -249,6 +284,28 @@ impl Session {
     /// Sends a direct message. Nothing appears until the server echoes it back.
     pub fn say_private(&mut self, user: &str, text: &str) -> Result<Vec<Effect>, battle::TooLong> {
         Ok(vec![Effect::Send(battle::say_private(user, text)?)])
+    }
+
+    /// Asks for both friend listings; each replaces what it had.
+    pub fn refresh_friends(&mut self) -> Vec<Effect> {
+        vec![
+            Effect::Send(friends::list()),
+            Effect::Send(friends::list_requests()),
+        ]
+    }
+
+    /// Acts on a friendship, then asks for the listings again — the server
+    /// sends nothing of its own accord when one changes.
+    pub fn friend_action(&mut self, action: FriendAction, user: &str) -> Vec<Effect> {
+        let envelope = match action {
+            FriendAction::Request => friends::request(user),
+            FriendAction::Accept => friends::accept(user),
+            FriendAction::Decline => friends::decline(user),
+            FriendAction::Remove => friends::remove(user),
+        };
+        let mut effects = vec![Effect::Send(envelope)];
+        effects.extend(self.refresh_friends());
+        effects
     }
 
     /// Asks for the server's channel directory, which replaces the last one.
@@ -532,6 +589,43 @@ impl Session {
                 vec![]
             }
             E::EndOfChannels => vec![Effect::ChannelsListed],
+            // Both listings arrive whole, so each one is collected into a
+            // fresh set and swapped in at the end: a friend removed elsewhere
+            // has to disappear here too.
+            E::FriendListBegin => {
+                self.collecting_friends = Some(std::collections::BTreeSet::new());
+                vec![]
+            }
+            E::Friend { name } => {
+                if let Some(collecting) = self.collecting_friends.as_mut() {
+                    collecting.insert(name);
+                }
+                vec![]
+            }
+            E::FriendListEnd => {
+                let Some(collected) = self.collecting_friends.take() else {
+                    return vec![];
+                };
+                self.state.friends = collected;
+                vec![Effect::FriendsChanged]
+            }
+            E::FriendRequestListBegin => {
+                self.collecting_requests = Some(std::collections::BTreeSet::new());
+                vec![]
+            }
+            E::FriendRequest { name } => {
+                if let Some(collecting) = self.collecting_requests.as_mut() {
+                    collecting.insert(name);
+                }
+                vec![]
+            }
+            E::FriendRequestListEnd => {
+                let Some(collected) = self.collecting_requests.take() else {
+                    return vec![];
+                };
+                self.state.friend_requests = collected;
+                vec![Effect::FriendsChanged]
+            }
             E::SaidBattle { name, text } => vec![Effect::BattleChat {
                 from: name,
                 text,
@@ -971,6 +1065,89 @@ mod tests {
         feed(&mut s, &["CHANNEL main 400", "ENDOFCHANNELS"]);
         assert_eq!(s.state.directory.len(), 1);
         assert_eq!(s.state.directory[0].members, 400);
+    }
+
+    #[test]
+    fn a_friend_listing_replaces_the_last_one_whole() {
+        let mut s = joined_session();
+        feed(
+            &mut s,
+            &[
+                "FRIENDLISTBEGIN",
+                "FRIENDLIST userName=alice",
+                "FRIENDLIST userName=bob",
+                "FRIENDLISTEND",
+            ],
+        );
+        assert_eq!(
+            s.state.friends.iter().cloned().collect::<Vec<_>>(),
+            vec!["alice", "bob"]
+        );
+
+        // Someone unfriended elsewhere has to disappear here too, which only
+        // works because the listing replaces rather than merges.
+        feed(
+            &mut s,
+            &[
+                "FRIENDLISTBEGIN",
+                "FRIENDLIST userName=alice",
+                "FRIENDLISTEND",
+            ],
+        );
+        assert_eq!(
+            s.state.friends.iter().cloned().collect::<Vec<_>>(),
+            vec!["alice"]
+        );
+    }
+
+    #[test]
+    fn a_listing_cut_off_part_way_leaves_the_old_one_standing() {
+        let mut s = joined_session();
+        feed(
+            &mut s,
+            &[
+                "FRIENDLISTBEGIN",
+                "FRIENDLIST userName=alice",
+                "FRIENDLISTEND",
+            ],
+        );
+        // Begin, one name, and then nothing: without the end marker the
+        // half-built set must not be swapped in.
+        feed(&mut s, &["FRIENDLISTBEGIN", "FRIENDLIST userName=zoe"]);
+        assert_eq!(
+            s.state.friends.iter().cloned().collect::<Vec<_>>(),
+            vec!["alice"]
+        );
+    }
+
+    #[test]
+    fn requests_are_kept_apart_from_friends() {
+        let mut s = joined_session();
+        feed(
+            &mut s,
+            &[
+                "FRIENDREQUESTLISTBEGIN",
+                "FRIENDREQUESTLIST userName=carol",
+                "FRIENDREQUESTLISTEND",
+            ],
+        );
+        assert!(s.state.friends.is_empty());
+        assert!(s.state.friend_requests.contains("carol"));
+    }
+
+    #[test]
+    fn acting_on_a_friendship_asks_for_the_listings_again() {
+        let mut s = joined_session();
+        // The server announces nothing when a friendship changes, so the only
+        // way to see the result is to ask.
+        assert_eq!(
+            sent_lines(&s.friend_action(FriendAction::Accept, "carol")),
+            vec![
+                "ACCEPTFRIENDREQUEST userName=carol",
+                "FRIENDLIST",
+                "FRIENDREQUESTLIST"
+            ]
+        );
     }
 
     fn sent_lines(effects: &[Effect]) -> Vec<&str> {

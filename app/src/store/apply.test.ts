@@ -48,6 +48,7 @@ const snapshot: Snapshot = {
   gameRunning: null,
   engine: { state: 'idle' },
   channels: [],
+  friends: { friends: [], requests: [] },
 }
 
 describe('apply', () => {

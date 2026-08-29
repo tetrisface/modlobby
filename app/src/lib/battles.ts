@@ -12,7 +12,12 @@ import type { BattleList } from '../ipc/bindings/BattleList'
 import type { BattleSort } from '../ipc/bindings/BattleSort'
 import type { ModeFilter } from '../ipc/bindings/ModeFilter'
 
-export type Row = { battle: BattleView; running: boolean }
+export type Row = {
+  battle: BattleView
+  running: boolean
+  /** Whether anyone in the room is a friend. */
+  hasFriend: boolean
+}
 
 /**
  * Whether a room looks like it is against AI.
@@ -52,6 +57,7 @@ export function matches(battle: BattleView, query: string): boolean {
 
 export function keep(row: Row, filters: BattleList, query: string): boolean {
   const { battle } = row
+  if (filters.friendsOnly && !row.hasFriend) return false
   if (!filters.showPassworded && battle.passworded) return false
   if (!filters.showLocked && battle.locked) return false
   if (!filters.showRunning && row.running) return false
