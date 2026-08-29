@@ -22,6 +22,7 @@ pub struct Settings {
     pub battle_list: BattleList,
     pub chat: Chat,
     pub notifications: Notifications,
+    pub play: Play,
     pub tweaks: Tweaks,
     pub logging: Logging,
 }
@@ -143,6 +144,20 @@ pub enum BattleSort {
     Title,
     Map,
     Host,
+}
+
+/// Playing rather than watching.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS, Default)]
+#[serde(default, rename_all = "camelCase")]
+#[ts(export)]
+pub struct Play {
+    /// Whether a seat may be taken in a public room.
+    ///
+    /// Off by default, and deliberately so: in a public room a slot belongs to
+    /// a real player waiting for a game, and a client that takes one to try
+    /// something out has spoiled someone's evening. Turn it on when you mean
+    /// to play; a room of your own (`!privatehost`) never needs it.
+    pub in_public_rooms: bool,
 }
 
 /// What is worth interrupting someone for.

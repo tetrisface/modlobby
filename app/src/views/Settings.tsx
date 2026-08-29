@@ -103,6 +103,24 @@ export function SettingsView() {
       </fieldset>
 
       <fieldset>
+        <legend>Playing</legend>
+        <label class='row'>
+          <input
+            type='checkbox'
+            checked={draft.play.inPublicRooms}
+            onChange={(e) =>
+              setDraft('play', 'inPublicRooms', e.currentTarget.checked)
+            }
+          />
+          Let me take a seat in public rooms
+        </label>
+        <p class='muted'>
+          Off by default. A slot in a public room belongs to someone waiting for
+          a game; a room of your own never needs this.
+        </p>
+      </fieldset>
+
+      <fieldset>
         <legend>Notifications</legend>
         <p class='muted'>Raised only while the window is in the background.</p>
         <label class='row'>
@@ -204,6 +222,7 @@ function blank(): Settings {
     server: { host: '', port: 8201, tls: true },
     account: { username: '', rememberPassword: false, autoLogin: false },
     paths: { dataDir: null },
+    play: { inPublicRooms: false },
     notifications: {
       enabled: true,
       privateMessage: true,

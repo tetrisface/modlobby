@@ -26,6 +26,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::launch;
 use crate::platform::Hardware;
+use crate::reconnect;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ClientError {
@@ -126,11 +127,25 @@ enum Command {
         ally_team: u8,
         reply: Reply<()>,
     },
+    SetReady {
+        ready: bool,
+        reply: Reply<()>,
+    },
+    SetSide {
+        side: u8,
+        reply: Reply<()>,
+    },
+    AllowPublicSeat(bool),
     ReleaseSeat,
     SetDataDir(Option<PathBuf>),
     RequestPrivateHost {
         region: String,
         reply: Reply<String>,
+    },
+    /// Joins an empty public autohost in a region, making it ours.
+    HostPublic {
+        region: String,
+        reply: Reply<u32>,
     },
     Shutdown,
 }
@@ -293,6 +308,21 @@ impl Client {
         .await
     }
 
+    /// Says whether we are ready to start. Only a player can be.
+    pub async fn set_ready(&self, ready: bool) -> Result<(), ClientError> {
+        self.ask(|reply| Command::SetReady { ready, reply }).await
+    }
+
+    /// Picks a faction: 0 Armada, 1 Cortex, 2 Random, 3 Legion.
+    pub async fn set_side(&self, side: u8) -> Result<(), ClientError> {
+        self.ask(|reply| Command::SetSide { side, reply }).await
+    }
+
+    /// Whether a seat may be taken in a public room at all.
+    pub async fn allow_public_seat(&self, allow: bool) -> Result<(), ClientError> {
+        self.send(Command::AllowPublicSeat(allow)).await
+    }
+
     /// Takes a player slot. Refused unless the room is passworded — see
     /// [`lobby_core::SeatError`]; in a public room the slot is someone else's.
     pub async fn take_seat(&self, team: u8, ally_team: u8) -> Result<(), ClientError> {
@@ -315,6 +345,13 @@ impl Client {
 
     /// Asks a cluster manager in `region` for a room of our own; the runtime
     /// joins it when it appears. Returns the manager it asked.
+    /// Joins an empty public autohost in a region; the first person in it
+    /// becomes its boss, which is how a public room of your own is made.
+    pub async fn host_public(&self, region: String) -> Result<u32, ClientError> {
+        self.ask(|reply| Command::HostPublic { region, reply })
+            .await
+    }
+
     pub async fn request_private_host(&self, region: String) -> Result<String, ClientError> {
         self.ask(|reply| Command::RequestPrivateHost { region, reply })
             .await
@@ -345,6 +382,16 @@ enum Next {
     Inbound(Inbound),
     EngineExited(std::io::Result<ExitStatus>),
     Download(DownloadEvent),
+    Reconnect,
+}
+
+/// Completes when a reconnection attempt falls due, and never when none is
+/// wanted — so the arm simply does not fire while we are connected.
+async fn sleep_until_due(policy: &reconnect::Reconnect) {
+    match policy.until_due(Instant::now()) {
+        Some(wait) => tokio::time::sleep(wait).await,
+        None => std::future::pending().await,
+    }
 }
 
 struct Runtime {
@@ -365,6 +412,12 @@ struct Runtime {
     /// The room's (engine, game, map) the content check last ran against;
     /// scanning the rapid index is too slow to repeat per message.
     checked: Option<(String, String, String)>,
+    /// How to log in again, kept from the last successful attempt so a drop
+    /// can be recovered from without the user typing anything.
+    credentials: Option<(spring_protocol::Endpoint, LoginRequest)>,
+    reconnect: reconnect::Reconnect,
+    /// Carried across reconnects, since the session is rebuilt each time.
+    allow_public_seat: bool,
     /// What a running pr-downloader was asked for, or `None` when none is.
     downloading: Option<String>,
     download_tx: mpsc::Sender<DownloadEvent>,
@@ -405,6 +458,9 @@ impl Runtime {
             join_reply: None,
             data_dir: None,
             checked: None,
+            credentials: None,
+            reconnect: reconnect::Reconnect::default(),
+            allow_public_seat: false,
             downloading: None,
             download_tx,
             download_rx,
@@ -644,6 +700,7 @@ impl Runtime {
                 inbound = recv_inbound(&mut self.conn) => Next::Inbound(inbound),
                 status = wait_engine(&mut self.engine) => Next::EngineExited(status),
                 Some(event) = self.download_rx.recv() => Next::Download(event),
+                () = sleep_until_due(&self.reconnect) => Next::Reconnect,
             };
             match next {
                 Next::Command(Command::Shutdown) => {
@@ -653,6 +710,7 @@ impl Runtime {
                 }
                 Next::Command(command) => self.handle_command(command).await,
                 Next::Download(event) => self.on_download(event).await,
+                Next::Reconnect => self.try_reconnect().await,
                 Next::Inbound(inbound) => {
                     self.handle_inbound(inbound).await;
                     while let Some(more) = self.try_recv_inbound() {
@@ -681,7 +739,12 @@ impl Runtime {
                 request,
                 reply,
             } => self.connect(endpoint, request, reply).await,
-            Command::Logout => self.disconnect().await,
+            Command::Logout => {
+                // Asked for: stop trying to come back.
+                self.credentials = None;
+                self.reconnect.stop();
+                self.disconnect().await;
+            }
             Command::Snapshot(tx) => {
                 let _ = tx.send(self.snapshot());
             }
@@ -788,6 +851,20 @@ impl Runtime {
                 })
                 .await;
             }
+            Command::SetReady { ready, reply } => {
+                self.run_session(reply, |session| session.set_ready(ready))
+                    .await;
+            }
+            Command::SetSide { side, reply } => {
+                self.run_session(reply, |session| session.set_side(side))
+                    .await;
+            }
+            Command::AllowPublicSeat(allow) => {
+                self.allow_public_seat = allow;
+                if let Some(conn) = self.conn.as_mut() {
+                    conn.session.allow_public_seat(allow);
+                }
+            }
             Command::TakeSeat {
                 team,
                 ally_team,
@@ -820,12 +897,33 @@ impl Runtime {
                 let effects = conn.session.release_seat();
                 self.apply_effects(effects).await;
             }
+            Command::HostPublic { region, reply } => {
+                let Some(conn) = self.conn.as_mut() else {
+                    let _ = reply.send(Err(ClientError::NotConnected));
+                    return;
+                };
+                let Some(id) = conn.session.empty_public_host(&region) else {
+                    let _ = reply.send(Err(ClientError::Refused(format!(
+                        "no empty autohost in {region} right now"
+                    ))));
+                    return;
+                };
+                let script_password = format!("{}{}", rand::random::<u16>(), rand::random::<u16>());
+                let effects = conn.session.join_battle(id, None, script_password);
+                let _ = reply.send(Ok(id));
+                self.apply_effects(effects).await;
+            }
             Command::RequestPrivateHost { region, reply } => {
                 let Some(conn) = self.conn.as_mut() else {
                     let _ = reply.send(Err(ClientError::NotConnected));
                     return;
                 };
-                let Some(manager) = conn.session.cluster_managers(&region).first().copied() else {
+                // Weighted by how loaded each cluster already is, so requests
+                // spread instead of piling onto whichever sorts first.
+                let Some(manager) = conn
+                    .session
+                    .pick_cluster_manager(&region, rand::random::<f64>())
+                else {
                     let _ = reply.send(Err(ClientError::Refused(format!(
                         "no cluster manager online for {region}"
                     ))));
@@ -851,15 +949,19 @@ impl Runtime {
             let _ = reply.send(Err(ClientError::AlreadyConnected));
             return;
         }
+        self.credentials = Some((endpoint.clone(), request.clone()));
         self.batcher.push(Delta::Phase(Some(Phase::Connecting)));
         self.flush();
         match (self.connector)(endpoint, self.policy.clone()).await {
             Ok((transport, inbound)) => {
-                let session = Session::new(
+                let mut session = Session::new(
                     request,
                     self.hardware.properties.clone(),
                     self.hardware.machine_hash.clone(),
                 );
+                // A fresh session starts guarded; the setting has to be
+                // reapplied, or a reconnect would quietly revoke the choice.
+                session.allow_public_seat(self.allow_public_seat);
                 self.conn = Some(Connection {
                     transport,
                     inbound,
@@ -955,6 +1057,7 @@ impl Runtime {
                     }
                 }
                 Effect::Ready => {
+                    self.reconnect.stop();
                     self.reply_login(Ok(()));
                     self.send_snapshot();
                     // The server volunteers nothing about friendships, so the
@@ -1032,6 +1135,7 @@ impl Runtime {
                 | Effect::ChannelChanged { .. }
                 | Effect::ChannelsListed
                 | Effect::FriendsChanged
+                | Effect::BossChanged
                 | Effect::Rung { .. }
                 | Effect::ModOptionsChanged { .. }
                 | Effect::VoteChanged => {}
@@ -1060,7 +1164,15 @@ impl Runtime {
     }
 
     /// The server said no (before or after login): answer whoever waits, then drop the link.
+    /// A refusal we can do nothing about, except when it is the server telling
+    /// us to wait — which is the one refusal worth answering by waiting.
     async fn refuse(&mut self, reason: String) {
+        let transient = reason.to_ascii_lowercase().contains("flood protection");
+        if transient && self.credentials.is_some() {
+            self.reconnect
+                .disconnected(Instant::now(), false, rand::random::<f64>());
+            tracing::info!(reason, "login refused as flooding; will wait and retry");
+        }
         self.reply_login(Err(ClientError::Refused(reason.clone())));
         self.reply_join(Err(ClientError::Refused(reason)));
         if let Some(conn) = self.conn.take() {
@@ -1073,16 +1185,40 @@ impl Runtime {
 
     fn connection_lost(&mut self, reason: String) {
         tracing::warn!(reason, "connection lost");
+        // A drop while a game is running gets the longer wait: it was probably
+        // the server, and everyone in that game is about to try at once.
+        let in_game = self.game.is_some() || self.engine.is_some();
+        if self.credentials.is_some() {
+            self.reconnect
+                .disconnected(Instant::now(), in_game, rand::random::<f64>());
+        }
         self.reply_login(Err(ClientError::Refused(reason.clone())));
         self.reply_join(Err(ClientError::Refused(reason.clone())));
         self.conn = None;
         self.game = None;
         self.auto_launch = None;
+        let text = if self.reconnect.is_armed() {
+            format!("connection lost: {reason} — trying again shortly")
+        } else {
+            format!("connection lost: {reason}")
+        };
         self.batcher.push(Delta::Notice {
             level: lobby_ui::NoticeLevel::Error,
-            text: format!("connection lost: {reason}"),
+            text,
         });
         self.batcher.push(Delta::Phase(None));
+    }
+
+    /// Tries the last known credentials again.
+    async fn try_reconnect(&mut self) {
+        let Some((endpoint, request)) = self.credentials.clone() else {
+            self.reconnect.stop();
+            return;
+        };
+        self.reconnect.attempted(Instant::now());
+        tracing::info!("reconnecting");
+        let (tx, _rx) = oneshot::channel();
+        self.connect(endpoint, request, tx).await;
     }
 
     async fn disconnect(&mut self) {

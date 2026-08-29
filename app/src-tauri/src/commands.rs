@@ -301,6 +301,20 @@ pub async fn start_skirmish(
     Ok(())
 }
 
+/// Says whether we are ready to start. Only a player can be.
+#[tauri::command]
+pub async fn set_ready(app: State<'_, App>, ready: bool) -> Result<()> {
+    app.client.set_ready(ready).await?;
+    Ok(())
+}
+
+/// Picks a faction: 0 Armada, 1 Cortex, 2 Random, 3 Legion.
+#[tauri::command]
+pub async fn set_side(app: State<'_, App>, side: u8) -> Result<()> {
+    app.client.set_side(side).await?;
+    Ok(())
+}
+
 /// Every replay in the BAR data directory, newest first.
 #[tauri::command]
 pub fn list_replays(app: State<'_, App>) -> Result<Vec<ReplayView>> {
@@ -418,6 +432,12 @@ pub async fn release_seat(app: State<'_, App>) -> Result<()> {
 #[tauri::command]
 pub async fn request_private_host(app: State<'_, App>, region: String) -> Result<String> {
     Ok(app.client.request_private_host(region).await?)
+}
+
+/// Joins an empty public autohost in a region, which makes it your room.
+#[tauri::command]
+pub async fn host_public(app: State<'_, App>, region: String) -> Result<u32> {
+    Ok(app.client.host_public(region).await?)
 }
 
 #[tauri::command]

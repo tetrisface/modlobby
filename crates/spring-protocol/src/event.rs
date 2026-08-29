@@ -233,10 +233,22 @@ pub enum ServerEvent {
     },
     /// `FRIENDREQUESTLISTEND`.
     FriendRequestListEnd,
+    /// `IGNORELISTBEGIN`: the list that follows replaces the last one.
+    IgnoreListBegin,
+    /// `IGNORELIST userName=<name>`.
+    Ignored {
+        name: String,
+    },
+    /// `IGNORELISTEND`.
+    IgnoreListEnd,
     /// `RING <name>`: someone is summoning us to a room.
     Ring {
         name: String,
     },
+    /// `FORCEQUITBATTLE`: we have been removed from the room we were in. The
+    /// server has already forgotten us (`spring_tcp_server.ex:1046`), so this
+    /// is a statement rather than a request.
+    ForceQuitBattle,
     /// `SETSCRIPTTAGS k=v\tk=v`: the room's script tags (`game/modoptions/*` among them),
     /// one full line on join and then per change. teiserver lowercases the keys.
     SetScriptTags {
@@ -486,6 +498,12 @@ fn parse(raw: &RawMessage) -> Option<ServerEvent> {
         }
         "ENDOFCHANNELS" => ServerEvent::EndOfChannels,
         "RING" => ServerEvent::Ring { name: a.into() },
+        "FORCEQUITBATTLE" => ServerEvent::ForceQuitBattle,
+        "IGNORELISTBEGIN" => ServerEvent::IgnoreListBegin,
+        "IGNORELISTEND" => ServerEvent::IgnoreListEnd,
+        "IGNORELIST" => ServerEvent::Ignored {
+            name: named_user(a)?.into(),
+        },
         "FRIENDLISTBEGIN" => ServerEvent::FriendListBegin,
         "FRIENDLISTEND" => ServerEvent::FriendListEnd,
         "FRIENDREQUESTLISTBEGIN" => ServerEvent::FriendRequestListBegin,
@@ -674,6 +692,7 @@ mod tests {
             }
         );
         assert_eq!(event("ENDOFCHANNELS"), ServerEvent::EndOfChannels);
+        assert_eq!(event("FORCEQUITBATTLE"), ServerEvent::ForceQuitBattle);
     }
 
     #[test]

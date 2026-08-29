@@ -37,6 +37,20 @@ pub fn remove(user: &str) -> Envelope {
     command("UNFRIEND", user)
 }
 
+/// Asks for the ignore list, answered between `IGNORELISTBEGIN` and `IGNORELISTEND`.
+pub fn list_ignored() -> Envelope {
+    Envelope::queue(Area::ChannelChat, "IGNORELIST")
+}
+
+/// Stops the server relaying anything from someone.
+pub fn ignore(user: &str) -> Envelope {
+    command("IGNORE", user)
+}
+
+pub fn unignore(user: &str) -> Envelope {
+    command("UNIGNORE", user)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -50,8 +64,15 @@ mod tests {
     }
 
     #[test]
-    fn the_two_listings_are_asked_for_without_arguments() {
+    fn the_listings_are_asked_for_without_arguments() {
         assert_eq!(list().line, "FRIENDLIST");
         assert_eq!(list_requests().line, "FRIENDREQUESTLIST");
+        assert_eq!(list_ignored().line, "IGNORELIST");
+    }
+
+    #[test]
+    fn ignoring_uses_the_same_shape_as_friending() {
+        assert_eq!(ignore("nuisance").line, "IGNORE userName=nuisance");
+        assert_eq!(unignore("nuisance").line, "UNIGNORE userName=nuisance");
     }
 }

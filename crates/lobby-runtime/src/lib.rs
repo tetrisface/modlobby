@@ -5,6 +5,7 @@
 pub mod client;
 pub mod launch;
 pub mod platform;
+pub mod reconnect;
 
 pub use client::{Client, ClientError, Connector};
 /// Re-exported so callers do not need `lobby-core` just to name an action.

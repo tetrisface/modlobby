@@ -1,16 +1,26 @@
-import { Show, createMemo, createSignal } from 'solid-js'
+import { For, Show, createMemo, createSignal } from 'solid-js'
+import { SideIcon } from '../components/icons'
 import { api, describeError } from '../ipc/client'
 import { pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
+import { settings } from '../store/settings'
 
 const REGIONS = ['EU', 'US', 'AU', 'EA']
 
+/** side 2 is Random; Legion needs its modoption, so it is offered last. */
+const SIDES = [
+  { id: 0, label: 'Armada' },
+  { id: 1, label: 'Cortex' },
+  { id: 2, label: 'Random' },
+  { id: 3, label: 'Legion' },
+]
+
 /**
- * Taking a seat and getting a room to take it in.
+ * Playing rather than watching.
  *
- * modlobby spectates public rooms and never takes a slot in one — that slot is
- * someone else's game. A room a cluster manager made on request is passworded
- * and ours, which is the condition the runtime enforces.
+ * A seat in a public room is refused unless the owner has said otherwise —
+ * that slot belongs to a real player waiting for a game. A room a cluster
+ * manager made on request is passworded and ours, and needs no such licence.
  */
 export function Seat() {
   const [region, setRegion] = createSignal(REGIONS[0] as string)
@@ -20,11 +30,50 @@ export function Seat() {
     const id = lobby.myBattle?.id
     return id === undefined ? undefined : lobby.battles[id]
   })
-  const seated = createMemo(
-    () =>
-      lobby.me !== null &&
-      (lobby.users[lobby.me]?.battleStatus?.player ?? false),
+  const me = createMemo(() =>
+    lobby.me === null ? undefined : lobby.users[lobby.me],
   )
+  const seat = () => me()?.battleStatus
+  const seated = () => seat()?.player ?? false
+  /** Ours if it was given to us, or if SPADS says we are bossing it. */
+  const ours = () =>
+    (room()?.passworded ?? false) ||
+    (lobby.myBattle?.boss !== null && lobby.myBattle?.boss === lobby.me)
+  const allowed = () => ours() || (settings()?.play.inPublicRooms ?? false)
+
+  /**
+   * Ally teams already in use, plus the next free one — you can join a side or
+   * open a new one, and nothing else would mean anything.
+   */
+  const allyTeams = createMemo(() => {
+    const battle = room()
+    if (!battle) return [0]
+    const used = new Set<number>()
+    for (const name of battle.members) {
+      const status = lobby.users[name]?.battleStatus
+      if (status?.player) used.add(status.allyTeam)
+    }
+    for (const bot of battle.bots) used.add(bot.status.allyTeam)
+    const sorted = [...used].sort((a, b) => a - b)
+    const next = sorted.length === 0 ? 0 : (sorted[sorted.length - 1] ?? 0) + 1
+    return [...sorted, next]
+  })
+
+  /** The lowest team number nobody holds, so two players never collide. */
+  function freeTeam(): number {
+    const battle = room()
+    const taken = new Set<number>()
+    if (battle) {
+      for (const name of battle.members) {
+        const status = lobby.users[name]?.battleStatus
+        if (status?.player && name !== lobby.me) taken.add(status.team)
+      }
+      for (const bot of battle.bots) taken.add(bot.status.team)
+    }
+    let team = 0
+    while (taken.has(team)) team += 1
+    return team
+  }
 
   async function act(what: string, run: () => Promise<void>) {
     setBusy(true)
@@ -40,32 +89,66 @@ export function Seat() {
   return (
     <div class='seat'>
       <Show
-        when={room()?.passworded}
+        when={allowed()}
         fallback={
           <span class='muted'>
             Spectating. A seat here would take a real player's slot — host a
-            room to play.
+            room to play, or allow public seats in Settings.
           </span>
         }
       >
         <Show
           when={seated()}
           fallback={
-            <button
-              class='primary'
-              disabled={busy()}
-              onClick={() => act('take a seat', () => api.takeSeat(0, 0))}
-            >
-              Take a seat
-            </button>
+            <>
+              <span class='muted'>Spectating.</span>
+              <For each={allyTeams()}>
+                {(ally, index) => (
+                  <button
+                    disabled={busy()}
+                    onClick={() =>
+                      act('take a seat', () => api.takeSeat(freeTeam(), ally))
+                    }
+                  >
+                    {index() === allyTeams().length - 1
+                      ? `New team ${ally + 1}`
+                      : `Join team ${ally + 1}`}
+                  </button>
+                )}
+              </For>
+            </>
           }
         >
-          <span>Playing on team 0</span>
+          <span>Team {(seat()?.allyTeam ?? 0) + 1}</span>
+
+          <button
+            class={seat()?.ready ? 'primary' : ''}
+            disabled={busy()}
+            onClick={() =>
+              act('ready', () => api.setReady(!(seat()?.ready ?? false)))
+            }
+          >
+            {seat()?.ready ? 'Ready' : 'Not ready'}
+          </button>
+
+          <select
+            value={String(seat()?.side ?? 0)}
+            disabled={busy()}
+            onChange={(e) =>
+              act('faction', () => api.setSide(Number(e.currentTarget.value)))
+            }
+          >
+            <For each={SIDES}>
+              {(side) => <option value={String(side.id)}>{side.label}</option>}
+            </For>
+          </select>
+          <SideIcon side={seat()?.side ?? 0} />
+
           <button
             disabled={busy()}
             onClick={() => act('spectate', () => api.releaseSeat())}
           >
-            Back to spectating
+            Spectate
           </button>
         </Show>
       </Show>
@@ -96,6 +179,19 @@ export function Seat() {
           <option value={r}>{r}</option>
         ))}
       </select>
+      {/* Both halves of Chobby's Host button: an empty autohost is a listed
+          room you boss, `!privatehost` is a passworded one made on request. */}
+      <button
+        disabled={busy()}
+        onClick={() =>
+          act('host a room', async () => {
+            await api.hostPublic(region())
+            pushNotice('info', 'joined an empty room; you are its boss')
+          })
+        }
+      >
+        Host a public room
+      </button>
       <button
         disabled={busy()}
         onClick={() =>
@@ -108,7 +204,7 @@ export function Seat() {
           })
         }
       >
-        Host a private room
+        Private room
       </button>
     </div>
   )

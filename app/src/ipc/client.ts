@@ -55,7 +55,7 @@ export const api = {
   playReplay: (path: string) => invoke<void>('play_replay', { path }),
   refreshFriends: () => invoke<void>('refresh_friends'),
   friendAction: (
-    action: 'request' | 'accept' | 'decline' | 'remove',
+    action: 'request' | 'accept' | 'decline' | 'remove' | 'ignore' | 'unignore',
     user: string,
   ) => invoke<void>('friend_action', { action, user }),
   getSettings: () => invoke<Settings>('get_settings'),
@@ -72,8 +72,11 @@ export const api = {
   takeSeat: (team: number, allyTeam: number) =>
     invoke<void>('take_seat', { team, allyTeam }),
   releaseSeat: () => invoke<void>('release_seat'),
+  setReady: (ready: boolean) => invoke<void>('set_ready', { ready }),
+  setSide: (side: number) => invoke<void>('set_side', { side }),
   requestPrivateHost: (region: string) =>
     invoke<string>('request_private_host', { region }),
+  hostPublic: (region: string) => invoke<number>('host_public', { region }),
 
   tweakDecode: (blob: string, kind: Kind) =>
     invoke<TweakView>('tweak_decode', { blob, kind }),

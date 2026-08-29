@@ -43,6 +43,8 @@ pub struct OptionChange {
 /// The room we are in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MyBattle {
+    /// Who SPADS says is bossing this room, when it has said.
+    pub boss: Option<String>,
     pub id: u32,
     /// From the `JOINBATTLE` reply; identifies the game archive.
     pub game_hash: String,
@@ -60,6 +62,7 @@ pub struct MyBattle {
 impl MyBattle {
     pub fn new(id: u32, game_hash: String, script_password: String) -> Self {
         Self {
+            boss: None,
             id,
             game_hash,
             script_password,
@@ -232,6 +235,8 @@ pub struct LobbyState {
     pub friends: BTreeSet<String>,
     /// Who has asked to be, and is waiting on an answer.
     pub friend_requests: BTreeSet<String>,
+    /// Who the server no longer relays anything from.
+    pub ignored: BTreeSet<String>,
 }
 
 /// A channel we have joined.

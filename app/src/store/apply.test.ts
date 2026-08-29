@@ -48,7 +48,7 @@ const snapshot: Snapshot = {
   gameRunning: null,
   engine: { state: 'idle' },
   channels: [],
-  friends: { friends: [], requests: [] },
+  friends: { friends: [], requests: [], ignored: [] },
   download: { state: 'idle' },
 }
 

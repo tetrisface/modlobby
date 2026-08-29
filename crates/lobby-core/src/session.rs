@@ -76,6 +76,8 @@ pub enum Effect {
     ChannelsListed,
     /// The friend list or the pending requests changed.
     FriendsChanged,
+    /// Who is bossing our room changed.
+    BossChanged,
     /// Someone is summoning us; Chobby alerts on this unconditionally, because
     /// it is a person asking for you rather than the room making noise.
     Rung {
@@ -125,7 +127,10 @@ pub struct Session {
     /// Script password of a `JOINBATTLE` the host has not answered yet.
     pending_join: Option<String>,
     /// The seat we hold in our room; `None` is a spectator.
-    seat: Option<(u8, u8)>,
+    seat: Option<Seat>,
+    /// Whether a seat may be taken in a public room. Off unless the owner says
+    /// otherwise: in a public room a slot is a real player's game.
+    allow_public_seat: bool,
     /// A `!privatehost` we asked for and the password it came back with.
     private_host: Option<String>,
     /// Whether this machine has the room's engine, game and map. Claiming to be
@@ -135,6 +140,7 @@ pub struct Session {
     /// is cut off never half-replaces the one we have.
     collecting_friends: Option<std::collections::BTreeSet<String>>,
     collecting_requests: Option<std::collections::BTreeSet<String>>,
+    collecting_ignored: Option<std::collections::BTreeSet<String>>,
     pub state: LobbyState,
 }
 
@@ -145,6 +151,8 @@ pub enum FriendAction {
     Accept,
     Decline,
     Remove,
+    Ignore,
+    Unignore,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -160,6 +168,8 @@ impl std::str::FromStr for FriendAction {
             "accept" => Ok(Self::Accept),
             "decline" => Ok(Self::Decline),
             "remove" => Ok(Self::Remove),
+            "ignore" => Ok(Self::Ignore),
+            "unignore" => Ok(Self::Unignore),
             other => Err(UnknownFriendAction(other.to_owned())),
         }
     }
@@ -174,6 +184,18 @@ pub enum SeatError {
     /// rooms it was given, which is what a `!privatehost` password proves.
     #[error("this room is public; modlobby only takes a seat in a passworded room")]
     PublicRoom,
+    /// Ready and faction belong to a player; a spectator has neither.
+    #[error("you are spectating")]
+    Spectating,
+}
+
+/// The seat we hold, and what we have said about it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Seat {
+    pub team: u8,
+    pub ally_team: u8,
+    pub ready: bool,
+    pub side: u8,
 }
 
 impl Session {
@@ -187,7 +209,9 @@ impl Session {
             pending_join: None,
             collecting_friends: None,
             collecting_requests: None,
+            collecting_ignored: None,
             seat: None,
+            allow_public_seat: false,
             private_host: None,
             synced: false,
             state: LobbyState {
@@ -199,15 +223,26 @@ impl Session {
 
     /// Asks to join room `id` as a spectator. `script_password` is the secret the
     /// engine later presents to the host; the caller supplies it so this stays pure.
+    /// Joins a room, leaving the one we are in first.
+    ///
+    /// teiserver keeps one room per client, so a `JOINBATTLE` sent while still
+    /// in another is simply ignored — which looks exactly like nothing
+    /// happening.
     pub fn join_battle(
         &mut self,
         id: u32,
         password: Option<&str>,
         script_password: String,
     ) -> Vec<Effect> {
+        let mut effects = match self.state.my_battle.as_ref() {
+            Some(my) if my.id == id => return vec![],
+            Some(_) => self.leave_battle(),
+            None => Vec::new(),
+        };
         let line = battle::join_battle(id, password, &script_password);
         self.pending_join = Some(script_password);
-        vec![Effect::Send(Envelope::queue(Area::Other, line))]
+        effects.push(Effect::Send(Envelope::queue(Area::Other, line)));
+        effects
     }
 
     /// Announces whether we are in a game. SPADS admits a mid-game joiner to the
@@ -230,10 +265,50 @@ impl Session {
             .as_ref()
             .and_then(|my| self.state.battles.get(&my.id))
             .ok_or(SeatError::NotInARoom)?;
-        if !room.passworded {
+        // Ours if it was given to us (passworded), or if SPADS says we are
+        // bossing it — which is what joining an empty autohost makes you.
+        let ours = room.passworded
+            || self
+                .state
+                .my_battle
+                .as_ref()
+                .and_then(|my| my.boss.as_deref())
+                .is_some_and(|boss| Some(boss) == self.state.me.as_deref());
+        if !ours && !self.allow_public_seat {
             return Err(SeatError::PublicRoom);
         }
-        self.seat = Some((team, ally_team));
+        // Ready never survives sitting down: a seat taken is not a game agreed to.
+        self.seat = Some(Seat {
+            team,
+            ally_team,
+            ready: false,
+            side: self.seat.map_or(0, |seat| seat.side),
+        });
+        Ok(vec![self.battle_status()])
+    }
+
+    /// Whether a seat may be taken in a public room at all.
+    pub fn allow_public_seat(&mut self, allow: bool) {
+        self.allow_public_seat = allow;
+    }
+
+    /// Says we are ready, or not. Only a player can be either.
+    pub fn set_ready(&mut self, ready: bool) -> Result<Vec<Effect>, SeatError> {
+        let seat = self.seat.as_mut().ok_or(SeatError::Spectating)?;
+        if seat.ready == ready {
+            return Ok(vec![]);
+        }
+        seat.ready = ready;
+        Ok(vec![self.battle_status()])
+    }
+
+    /// Picks a faction: 0 Armada, 1 Cortex, 2 Random, 3 Legion.
+    pub fn set_side(&mut self, side: u8) -> Result<Vec<Effect>, SeatError> {
+        let seat = self.seat.as_mut().ok_or(SeatError::Spectating)?;
+        if seat.side == side {
+            return Ok(vec![]);
+        }
+        seat.side = side;
         Ok(vec![self.battle_status()])
     }
 
@@ -246,7 +321,7 @@ impl Session {
         vec![self.battle_status()]
     }
 
-    pub fn seat(&self) -> Option<(u8, u8)> {
+    pub fn seat(&self) -> Option<Seat> {
         self.seat
     }
 
@@ -296,6 +371,7 @@ impl Session {
         vec![
             Effect::Send(friends::list()),
             Effect::Send(friends::list_requests()),
+            Effect::Send(friends::list_ignored()),
         ]
     }
 
@@ -307,6 +383,8 @@ impl Session {
             FriendAction::Accept => friends::accept(user),
             FriendAction::Decline => friends::decline(user),
             FriendAction::Remove => friends::remove(user),
+            FriendAction::Ignore => friends::ignore(user),
+            FriendAction::Unignore => friends::unignore(user),
         };
         let mut effects = vec![Effect::Send(envelope)];
         effects.extend(self.refresh_friends());
@@ -343,7 +421,9 @@ impl Session {
             Sync::Unsynced
         };
         let status = match self.seat {
-            Some((team, ally_team)) => MyBattleStatus::player(sync, team, ally_team),
+            Some(seat) => MyBattleStatus::player(sync, seat.team, seat.ally_team)
+                .ready(seat.ready)
+                .side(seat.side),
             None => MyBattleStatus::spectator(sync),
         };
         Effect::Send(Envelope::queue(Area::BattleStatus, status.line()))
@@ -598,6 +678,19 @@ impl Session {
             // fresh set and swapped in at the end: a friend removed elsewhere
             // has to disappear here too.
             E::Ring { name } => vec![Effect::Rung { by: name }],
+            E::ForceQuitBattle => {
+                // The server has already dropped us; keeping the room on screen
+                // would leave every action in it silently doing nothing.
+                let Some(my) = state.my_battle.take() else {
+                    return vec![];
+                };
+                state.forget_room_details(my.id);
+                self.seat = None;
+                vec![
+                    Effect::Notice("you were removed from the room".into()),
+                    Effect::LeftBattle { id: my.id },
+                ]
+            }
             E::FriendListBegin => {
                 self.collecting_friends = Some(std::collections::BTreeSet::new());
                 vec![]
@@ -613,6 +706,23 @@ impl Session {
                     return vec![];
                 };
                 self.state.friends = collected;
+                vec![Effect::FriendsChanged]
+            }
+            E::IgnoreListBegin => {
+                self.collecting_ignored = Some(std::collections::BTreeSet::new());
+                vec![]
+            }
+            E::Ignored { name } => {
+                if let Some(collecting) = self.collecting_ignored.as_mut() {
+                    collecting.insert(name);
+                }
+                vec![]
+            }
+            E::IgnoreListEnd => {
+                let Some(collected) = self.collecting_ignored.take() else {
+                    return vec![];
+                };
+                self.state.ignored = collected;
                 vec![Effect::FriendsChanged]
             }
             E::FriendRequestListBegin => {
@@ -828,7 +938,18 @@ impl Session {
                 vec![]
             }
             // The BAR plugin's JSON duplicates what the text already told us.
-            Announcement::BarManager { .. } => vec![],
+            Announcement::BarManager { json } => {
+                // The room's own statement of who is in charge of it.
+                let boss = spads::boss(&json);
+                let Some(my) = self.state.my_battle.as_mut() else {
+                    return vec![];
+                };
+                if my.boss == boss {
+                    return vec![];
+                }
+                my.boss = boss;
+                vec![Effect::BossChanged]
+            }
         }
     }
 
@@ -854,6 +975,80 @@ impl Session {
             .collect();
         names.sort_unstable();
         names
+    }
+
+    /// How many rooms a cluster is already running.
+    ///
+    /// A manager `Host[EU1]` runs instances named `Host[EU1][012]`, and each
+    /// instance is one room, so counting the instances counts the load.
+    fn cluster_load(&self, manager: &str) -> u32 {
+        let prefix = format!("{}[", manager.trim_end_matches(']'));
+        self.state
+            .users
+            .values()
+            .filter(|user| {
+                user.status.bot
+                    && user.name.starts_with(&prefix)
+                    && user.name.ends_with(']')
+                    && user.name.len() > prefix.len() + 1
+            })
+            .count() as u32
+    }
+
+    /// Picks a cluster manager in a region, favouring the emptiest.
+    ///
+    /// Chobby weights by `(1 - current/limit) * (limit - current)` and draws
+    /// against the total (`battle_list_window.lua:1453`), which spreads rooms
+    /// across clusters instead of piling every request onto whichever name
+    /// happens to sort first. `roll` is a fresh number in `0.0..1.0`.
+    pub fn pick_cluster_manager(&self, region: &str, roll: f64) -> Option<&str> {
+        /// Chobby's default when a cluster reports no capacity of its own.
+        const LIMIT: f64 = 80.0;
+
+        let weighted: Vec<(&str, f64)> = self
+            .cluster_managers(region)
+            .into_iter()
+            .map(|manager| {
+                let current = f64::from(self.cluster_load(manager)).min(LIMIT);
+                let weight = (1.0 - current / LIMIT) * (LIMIT - current);
+                (manager, weight.max(0.0))
+            })
+            .collect();
+
+        let total: f64 = weighted.iter().map(|(_, weight)| weight).sum();
+        if total <= 0.0 {
+            // Every cluster is full, or none reported capacity; the caller
+            // still deserves an answer rather than silence.
+            return weighted.first().map(|(manager, _)| *manager);
+        }
+
+        let mut drawn = roll.clamp(0.0, 1.0) * total;
+        for (manager, weight) in &weighted {
+            drawn -= weight;
+            if drawn <= 0.0 {
+                return Some(manager);
+            }
+        }
+        weighted.last().map(|(manager, _)| *manager)
+    }
+
+    /// An autohost room in this region that nobody is in.
+    ///
+    /// Joining one is how Chobby's Host button makes a *public* room: the
+    /// autohost is already listed, and the first person in it becomes its boss.
+    pub fn empty_public_host(&self, region: &str) -> Option<u32> {
+        let prefix = format!("Host[{}", region.to_ascii_uppercase());
+        self.state
+            .battles
+            .values()
+            .filter(|battle| {
+                battle.founder.starts_with(&prefix)
+                    && !battle.passworded
+                    && !battle.locked
+                    && battle.player_count() == 0
+            })
+            .map(|battle| battle.id)
+            .min()
     }
 
     fn hosts_my_battle(&self, name: &str) -> bool {
@@ -1151,9 +1346,220 @@ mod tests {
             vec![
                 "ACCEPTFRIENDREQUEST userName=carol",
                 "FRIENDLIST",
-                "FRIENDREQUESTLIST"
+                "FRIENDREQUESTLIST",
+                "IGNORELIST"
             ]
         );
+    }
+
+    #[test]
+    fn a_kick_drops_the_room_rather_than_leaving_it_on_screen() {
+        let mut s = joined_session();
+        feed(
+            &mut s,
+            &[
+                "BATTLEOPENED 7 0 0 host 1.2.3.4 8452 16 0 0 -1 Recoil	2026.07.04	Supreme Isthmus v2.1	a room	BAR test",
+                "JOINBATTLE 7 hash",
+            ],
+        );
+        assert!(s.state.my_battle.is_some());
+
+        // The server has already forgotten us by the time this arrives, so
+        // there is nothing to send back — only state to correct.
+        let effects = feed(&mut s, &["FORCEQUITBATTLE"]);
+        assert!(s.state.my_battle.is_none());
+        assert!(sent_lines(&effects).is_empty(), "a kick is not a request");
+        assert!(matches!(
+            effects.as_slice(),
+            [Effect::Notice(_), Effect::LeftBattle { id: 7 }]
+        ));
+    }
+
+    #[test]
+    fn a_kick_when_we_are_in_no_room_changes_nothing() {
+        let mut s = joined_session();
+        assert!(feed(&mut s, &["FORCEQUITBATTLE"]).is_empty());
+    }
+
+    /// The `MYBATTLESTATUS` a set of effects carries, decoded.
+    #[test]
+    fn the_emptiest_cluster_is_favoured_over_the_first_by_name() {
+        let mut s = joined_session();
+        // Two managers: EU1 already running three rooms, EU2 running none.
+        for name in [
+            "Host[EU1]",
+            "Host[EU1][001]",
+            "Host[EU1][002]",
+            "Host[EU1][003]",
+            "Host[EU2]",
+        ] {
+            feed(&mut s, &[&format!("ADDUSER {name} EU 0 modlobby")]);
+            feed(&mut s, &[&format!("CLIENTSTATUS {name} 64")]);
+        }
+
+        // Sorting by name alone would always answer EU1; weighting by how
+        // loaded each one is puts most of the draw on EU2.
+        assert_eq!(s.pick_cluster_manager("EU", 0.99), Some("Host[EU2]"));
+        assert_eq!(s.pick_cluster_manager("EU", 0.0), Some("Host[EU1]"));
+    }
+
+    #[test]
+    fn a_region_with_no_managers_offers_nothing() {
+        let s = joined_session();
+        assert_eq!(s.pick_cluster_manager("EU", 0.5), None);
+    }
+
+    #[test]
+    fn an_empty_public_autohost_is_one_you_can_take_over() {
+        let mut s = joined_session();
+        feed(
+            &mut s,
+            &[
+                // Busy: someone is already in it.
+                "BATTLEOPENED 1 0 0 Host[EU1][001] 1.2.3.4 8452 16 0 0 -1 R	v	m	t	g",
+                "JOINEDBATTLE 1 alice",
+                // Passworded: not a public room.
+                "BATTLEOPENED 2 0 0 Host[EU1][002] 1.2.3.4 8452 16 1 0 -1 R	v	m	t	g",
+                // Empty and open.
+                "BATTLEOPENED 3 0 0 Host[EU1][003] 1.2.3.4 8452 16 0 0 -1 R	v	m	t	g",
+                // Another region.
+                "BATTLEOPENED 4 0 0 Host[US1][001] 1.2.3.4 8452 16 0 0 -1 R	v	m	t	g",
+            ],
+        );
+
+        assert_eq!(s.empty_public_host("EU"), Some(3));
+        assert_eq!(s.empty_public_host("US"), Some(4));
+        assert_eq!(s.empty_public_host("AU"), None);
+    }
+
+    fn sent_status(effects: &[Effect]) -> spring_protocol::BattleStatus {
+        let [Effect::Send(env)] = effects else {
+            panic!("expected one status, got {effects:?}")
+        };
+        let rest = env
+            .line
+            .strip_prefix("MYBATTLESTATUS ")
+            .expect("a status line");
+        let bits: u32 = rest.split(' ').next().unwrap().parse().unwrap();
+        spring_protocol::BattleStatus::from_bits(bits)
+    }
+
+    /// A session sitting in a public room, ready to try for a seat.
+    fn in_a_public_room() -> Session {
+        let mut s = joined_session();
+        feed(
+            &mut s,
+            &[
+                "BATTLEOPENED 3 0 0 host 1.2.3.4 8452 16 0 0 -1 R	v	m	t	g",
+                "JOINBATTLE 3 hash",
+            ],
+        );
+        s
+    }
+
+    #[test]
+    fn joining_a_second_room_leaves_the_first() {
+        let mut s = in_a_public_room();
+        feed(
+            &mut s,
+            &["BATTLEOPENED 4 0 0 other 1.2.3.4 8452 16 0 0 -1 R	v	m	t	g"],
+        );
+
+        // Without the LEAVEBATTLE the server ignores the join outright, and
+        // the app sits in the old room believing it moved.
+        let effects = s.join_battle(4, None, "pw".into());
+        let lines = sent_lines(&effects);
+        assert_eq!(lines.len(), 2, "leave then join, got {lines:?}");
+        assert_eq!(lines[0], "LEAVEBATTLE");
+        assert!(lines[1].starts_with("JOINBATTLE 4"));
+    }
+
+    #[test]
+    fn joining_the_room_we_are_already_in_does_nothing() {
+        let mut s = in_a_public_room();
+        assert!(s.join_battle(3, None, "pw".into()).is_empty());
+    }
+
+    #[test]
+    fn a_room_we_boss_is_ours_without_any_licence() {
+        let mut s = in_a_public_room();
+        assert!(matches!(s.take_seat(0, 0), Err(SeatError::PublicRoom)));
+
+        // Joining an empty autohost makes you its boss, and SPADS says so.
+        feed(
+            &mut s,
+            &[r#"SAIDBATTLEEX host * BarManager|{"BattleStateChanged": {"boss": "me"}}"#],
+        );
+        assert!(s.take_seat(0, 0).is_ok(), "our own room needs no licence");
+
+        // Somebody else bossing it does not make it ours.
+        feed(
+            &mut s,
+            &[r#"SAIDBATTLEEX host * BarManager|{"BattleStateChanged": {"boss": "alice"}}"#],
+        );
+        s.release_seat();
+        assert!(matches!(s.take_seat(0, 0), Err(SeatError::PublicRoom)));
+    }
+
+    #[test]
+    fn a_public_seat_is_refused_until_the_owner_allows_it() {
+        let mut s = in_a_public_room();
+        assert!(matches!(s.take_seat(0, 0), Err(SeatError::PublicRoom)));
+
+        // The guard is a decision, not a law of nature.
+        s.allow_public_seat(true);
+        assert!(s.take_seat(0, 0).is_ok());
+    }
+
+    #[test]
+    fn ready_and_faction_ride_on_the_battle_status() {
+        let mut s = in_a_public_room();
+        s.allow_public_seat(true);
+        s.take_seat(3, 1).unwrap();
+
+        let ready = sent_status(&s.set_ready(true).unwrap());
+        assert!(ready.ready);
+        assert_eq!((ready.team, ready.ally_team), (3, 1));
+
+        let side = sent_status(&s.set_side(2).unwrap());
+        assert_eq!(side.side, 2);
+        // Setting ready did not lose the faction, nor the other way round.
+        assert!(side.ready);
+    }
+
+    #[test]
+    fn saying_the_same_thing_twice_sends_nothing() {
+        let mut s = in_a_public_room();
+        s.allow_public_seat(true);
+        s.take_seat(0, 0).unwrap();
+        s.set_ready(true).unwrap();
+        assert!(
+            s.set_ready(true).unwrap().is_empty(),
+            "the room already knows"
+        );
+        assert!(s.set_side(0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_spectator_is_neither_ready_nor_a_faction() {
+        let mut s = in_a_public_room();
+        assert!(matches!(s.set_ready(true), Err(SeatError::Spectating)));
+        assert!(matches!(s.set_side(1), Err(SeatError::Spectating)));
+    }
+
+    #[test]
+    fn sitting_down_again_is_not_a_game_agreed_to() {
+        let mut s = in_a_public_room();
+        s.allow_public_seat(true);
+        s.take_seat(0, 0).unwrap();
+        s.set_side(3).unwrap();
+        s.set_ready(true).unwrap();
+
+        // Moving to another team clears ready but keeps the faction: one is a
+        // statement about this arrangement, the other is a preference.
+        let moved = sent_status(&s.take_seat(1, 1).unwrap());
+        assert!(!moved.ready);
+        assert_eq!(moved.side, 3);
     }
 
     fn sent_lines(effects: &[Effect]) -> Vec<&str> {
@@ -1576,7 +1982,10 @@ mod tests {
         feed(&mut s, &["JOINBATTLE 9 -1", "JOINEDBATTLE 9 me 1"]);
 
         let taken = s.take_seat(2, 1).expect("a passworded room is ours");
-        assert_eq!(s.seat(), Some((2, 1)));
+        assert_eq!(
+            s.seat().map(|seat| (seat.team, seat.ally_team)),
+            Some((2, 1))
+        );
         let decoded = status(&taken);
         assert!(decoded.player);
         assert_eq!((decoded.team, decoded.ally_team), (2, 1));

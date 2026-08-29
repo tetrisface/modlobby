@@ -241,6 +241,7 @@ impl From<&LobbyState> for FriendsView {
         Self {
             friends: state.friends.iter().cloned().collect(),
             requests: state.friend_requests.iter().cloned().collect(),
+            ignored: state.ignored.iter().cloned().collect(),
         }
     }
 }
@@ -328,6 +329,8 @@ impl From<&OptionChange> for OptionChangeView {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct MyBattleView {
+    /// Who SPADS says is bossing the room, when it has said.
+    pub boss: Option<String>,
     pub id: u32,
     pub game_hash: String,
     /// Lowercase script-tag keys (`game/modoptions/tweakdefs`, `game/hosttype`, …).
@@ -340,6 +343,7 @@ pub struct MyBattleView {
 impl From<&MyBattle> for MyBattleView {
     fn from(my: &MyBattle) -> Self {
         Self {
+            boss: my.boss.clone(),
             id: my.id,
             game_hash: my.game_hash.clone(),
             script_tags: my.script_tags.clone(),
@@ -428,6 +432,8 @@ pub struct Snapshot {
 pub struct FriendsView {
     pub friends: Vec<String>,
     pub requests: Vec<String>,
+    /// Who the server no longer relays anything from.
+    pub ignored: Vec<String>,
 }
 
 impl Snapshot {

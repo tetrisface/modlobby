@@ -2,7 +2,11 @@
 import type { OptionChangeView } from "./OptionChangeView";
 import type { VoteView } from "./VoteView";
 
-export type MyBattleView = { id: number, gameHash: string, 
+export type MyBattleView = { 
+/**
+ * Who SPADS says is bossing the room, when it has said.
+ */
+boss: string | null, id: number, gameHash: string, 
 /**
  * Lowercase script-tag keys (`game/modoptions/tweakdefs`, `game/hosttype`, …).
  */

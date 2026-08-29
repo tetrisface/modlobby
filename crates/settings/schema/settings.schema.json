@@ -59,6 +59,12 @@
         "dataDir": null
       }
     },
+    "play": {
+      "$ref": "#/$defs/Play",
+      "default": {
+        "inPublicRooms": false
+      }
+    },
     "server": {
       "$ref": "#/$defs/Server",
       "default": {
@@ -238,6 +244,17 @@
             "null"
           ],
           "default": null
+        }
+      }
+    },
+    "Play": {
+      "description": "Playing rather than watching.",
+      "type": "object",
+      "properties": {
+        "inPublicRooms": {
+          "description": "Whether a seat may be taken in a public room.\n\nOff by default, and deliberately so: in a public room a slot belongs to\na real player waiting for a game, and a client that takes one to try\nsomething out has spoiled someone's evening. Turn it on when you mean\nto play; a room of your own (`!privatehost`) never needs it.",
+          "type": "boolean",
+          "default": false
         }
       }
     },

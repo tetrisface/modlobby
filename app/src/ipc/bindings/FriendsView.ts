@@ -3,4 +3,8 @@
 /**
  * Who we are friends with, and who is waiting on an answer.
  */
-export type FriendsView = { friends: Array<string>, requests: Array<string>, };
+export type FriendsView = { friends: Array<string>, requests: Array<string>, 
+/**
+ * Who the server no longer relays anything from.
+ */
+ignored: Array<string>, };

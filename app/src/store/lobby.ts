@@ -33,7 +33,7 @@ export function emptyLobby(): LobbyState {
     gameRunning: null,
     engine: { state: 'idle' },
     content: null,
-    friends: { friends: [], requests: [] },
+    friends: { friends: [], requests: [], ignored: [] },
     download: { state: 'idle' },
   }
 }

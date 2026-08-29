@@ -37,6 +37,22 @@ pub enum Announcement {
     BarManager { json: String },
 }
 
+/// Who SPADS says is bossing the room, from a `BattleStateChanged` payload.
+///
+/// The BAR plugin reports the room's state as JSON, and `boss` is the one
+/// field that says whose room it is: an empty autohost makes the first person
+/// to speak up its boss, and a boss may change every setting in it. An empty
+/// string means nobody.
+pub fn boss(json: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(json).ok()?;
+    let boss = value
+        .get("BattleStateChanged")?
+        .get("boss")?
+        .as_str()?
+        .trim();
+    (!boss.is_empty()).then(|| boss.to_owned())
+}
+
 /// Parses one `SAIDBATTLEEX` line from the founder. Everything SPADS says is
 /// prefixed `* ` (`spads.pl:2932`); anything unrecognised stays chat.
 pub fn parse(text: &str) -> Option<Announcement> {
@@ -175,6 +191,21 @@ impl VoteState {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_boss_is_read_off_the_state_payload() {
+        use super::boss;
+        // What a live room actually sends.
+        let json = r#"{"BattleStateChanged": {"locked": "unlocked", "teamSize": "4", "boss": "idifixnl"}}"#;
+        assert_eq!(boss(json), Some("idifixnl".into()));
+
+        // A room with nobody in charge says so with an empty string.
+        assert_eq!(boss(r#"{"BattleStateChanged": {"boss": ""}}"#), None);
+
+        // Anything else is not a claim about who is in charge.
+        assert_eq!(boss(r#"{"onVoteStart": {}}"#), None);
+        assert_eq!(boss("not json"), None);
+    }
+
     use super::*;
 
     #[test]

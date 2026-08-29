@@ -22,13 +22,18 @@ pub fn run() {
             let handle = tauri_app.handle().clone();
             let client = app.client.clone();
             let data_dir = app.settings.get().paths.data_dir;
+            let in_public = app.settings.get().play.in_public_rooms;
             tauri::async_runtime::spawn(async move {
                 // The content check needs to know where BAR keeps its files,
                 // both now and whenever the setting changes.
                 let _ = client.set_data_dir(data_dir).await;
+                let _ = client.allow_public_seat(in_public).await;
                 while let Some(event) = watch.events.recv().await {
                     if let settings::SettingsEvent::Changed(settings) = &event {
                         let _ = client.set_data_dir(settings.paths.data_dir.clone()).await;
+                        let _ = client
+                            .allow_public_seat(settings.play.in_public_rooms)
+                            .await;
                     }
                     let _ = handle.emit("settings", &event);
                 }
@@ -71,8 +76,11 @@ pub fn run() {
             commands::open_settings_file,
             commands::open_data_dir,
             commands::take_seat,
+            commands::set_ready,
+            commands::set_side,
             commands::release_seat,
             commands::request_private_host,
+            commands::host_public,
             commands::tweak_decode,
             commands::tweak_format,
             commands::tweak_prepare,

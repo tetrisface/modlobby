@@ -110,6 +110,11 @@ export function Chat() {
         if (body) return act('message', () => api.sayPrivate(who, body))
         return
       }
+      case 'ignore':
+      case 'unignore': {
+        if (!argument) return pushSystem(room(), `usage: /${command} <user>`)
+        return act(command, () => api.friendAction(command, argument))
+      }
       case 'channels':
         setShowDirectory(true)
         return act('channels', () => api.listChannels())
@@ -240,6 +245,30 @@ export function Chat() {
           </For>
         </Show>
 
+        <Show when={lobby.friends.ignored.length > 0}>
+          <div class='room-list-head'>
+            <span class='filter-label'>Ignored</span>
+          </div>
+          <For each={lobby.friends.ignored}>
+            {(name) => (
+              <div class='friend-request'>
+                <span class='room-name muted'>{name}</span>
+                <button
+                  class='chip-choice'
+                  title={`Stop ignoring ${name}`}
+                  onClick={() =>
+                    void act('unignore', () =>
+                      api.friendAction('unignore', name),
+                    )
+                  }
+                >
+                  Undo
+                </button>
+              </div>
+            )}
+          </For>
+        </Show>
+
         <Show when={privates().length > 0}>
           <div class='room-list-head'>
             <span class='filter-label'>People</span>
@@ -317,7 +346,7 @@ export function Chat() {
             placeholder={
               room() === BATTLE_ROOM
                 ? 'Say something, or a !command'
-                : 'Say something, or /join /leave /msg /channels'
+                : 'Say something, or /join /leave /msg /ignore /channels'
             }
           />
           <button type='submit'>Send</button>

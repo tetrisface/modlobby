@@ -234,6 +234,11 @@ impl Projector {
                 format!("cannot join {room}: {reason}"),
             )),
             Effect::FriendsChanged => out.push(Delta::Friends(FriendsView::from(state))),
+            Effect::BossChanged => {
+                out.push(Delta::MyBattle(
+                    state.my_battle.as_ref().map(MyBattleView::from),
+                ));
+            }
             Effect::Rung { by } => out.push(Delta::Alert {
                 kind: AlertKind::Ring,
                 text: format!("{by} is asking for you"),
