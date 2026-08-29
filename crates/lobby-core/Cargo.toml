@@ -8,4 +8,5 @@ license.workspace = true
 
 [dependencies]
 spring-protocol = { workspace = true }
+thiserror = { workspace = true }
 tracing = { workspace = true }

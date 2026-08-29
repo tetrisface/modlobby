@@ -75,6 +75,16 @@ enum Command {
         text: String,
         reply: Reply<()>,
     },
+    TakeSeat {
+        team: u8,
+        ally_team: u8,
+        reply: Reply<()>,
+    },
+    ReleaseSeat,
+    RequestPrivateHost {
+        region: String,
+        reply: Reply<String>,
+    },
     Shutdown,
 }
 
@@ -162,6 +172,28 @@ impl Client {
 
     pub async fn say(&self, text: String) -> Result<(), ClientError> {
         self.ask(|reply| Command::Say { text, reply }).await
+    }
+
+    /// Takes a player slot. Refused unless the room is passworded — see
+    /// [`lobby_core::SeatError`]; in a public room the slot is someone else's.
+    pub async fn take_seat(&self, team: u8, ally_team: u8) -> Result<(), ClientError> {
+        self.ask(|reply| Command::TakeSeat {
+            team,
+            ally_team,
+            reply,
+        })
+        .await
+    }
+
+    pub async fn release_seat(&self) -> Result<(), ClientError> {
+        self.send(Command::ReleaseSeat).await
+    }
+
+    /// Asks a cluster manager in `region` for a room of our own; the runtime
+    /// joins it when it appears. Returns the manager it asked.
+    pub async fn request_private_host(&self, region: String) -> Result<String, ClientError> {
+        self.ask(|reply| Command::RequestPrivateHost { region, reply })
+            .await
     }
 
     /// Leaves the room, closes the connection and stops the runtime. A running
@@ -324,6 +356,54 @@ impl Runtime {
                 };
                 let _ = reply.send(result);
             }
+            Command::TakeSeat {
+                team,
+                ally_team,
+                reply,
+            } => {
+                let Some(conn) = self.conn.as_mut() else {
+                    let _ = reply.send(Err(ClientError::NotConnected));
+                    return;
+                };
+                match conn.session.take_seat(team, ally_team) {
+                    Ok(effects) => {
+                        let _ = reply.send(Ok(()));
+                        self.apply_effects(effects).await;
+                    }
+                    Err(err) => {
+                        let _ = reply.send(Err(ClientError::Refused(err.to_string())));
+                    }
+                }
+            }
+            Command::ReleaseSeat => {
+                let Some(conn) = self.conn.as_mut() else {
+                    return;
+                };
+                let effects = conn.session.release_seat();
+                self.apply_effects(effects).await;
+            }
+            Command::RequestPrivateHost { region, reply } => {
+                let Some(conn) = self.conn.as_mut() else {
+                    let _ = reply.send(Err(ClientError::NotConnected));
+                    return;
+                };
+                let Some(manager) = conn.session.cluster_managers(&region).first().copied() else {
+                    let _ = reply.send(Err(ClientError::Refused(format!(
+                        "no cluster manager online for {region}"
+                    ))));
+                    return;
+                };
+                let manager = manager.to_owned();
+                match conn.session.request_private_host(&manager) {
+                    Ok(effects) => {
+                        let _ = reply.send(Ok(manager));
+                        self.apply_effects(effects).await;
+                    }
+                    Err(err) => {
+                        let _ = reply.send(Err(ClientError::Refused(err.to_string())));
+                    }
+                }
+            }
             Command::Shutdown => unreachable!("handled by the run loop"),
         }
     }
@@ -384,8 +464,30 @@ impl Runtime {
     }
 
     async fn apply_effects(&mut self, effects: Vec<Effect>) {
-        for effect in effects {
+        // A queue, not a loop over the argument: joining the private room we
+        // asked for produces effects of its own.
+        let mut queue: std::collections::VecDeque<Effect> = effects.into();
+        while let Some(effect) = queue.pop_front() {
             match effect {
+                // The room a cluster manager made for us; joining it is the
+                // whole point of having asked.
+                Effect::PrivateHostReady { id, password } => {
+                    let Some(conn) = self.conn.as_mut() else {
+                        continue;
+                    };
+                    let script_password =
+                        format!("{}{}", rand::random::<u16>(), rand::random::<u16>());
+                    let effects = conn
+                        .session
+                        .join_battle(id, Some(&password), script_password);
+                    queue.extend(effects);
+                }
+                Effect::PrivateHostOffered { manager, password } => {
+                    self.batcher.push(Delta::Notice {
+                        level: lobby_ui::NoticeLevel::Info,
+                        text: format!("{manager} is starting a room; password {password}"),
+                    });
+                }
                 Effect::Send(envelope) => {
                     if let Err(err) = self.send_line(envelope).await {
                         self.connection_lost(err.to_string());

@@ -167,6 +167,27 @@ pub async fn vote(app: State<'_, App>, choice: String) -> Result<()> {
     Ok(())
 }
 
+/// Takes a player slot. The runtime refuses this in a public room — a slot
+/// there belongs to someone else — so it only succeeds in a room we were given.
+#[tauri::command]
+pub async fn take_seat(app: State<'_, App>, team: u8, ally_team: u8) -> Result<()> {
+    app.client.take_seat(team, ally_team).await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn release_seat(app: State<'_, App>) -> Result<()> {
+    app.client.release_seat().await?;
+    Ok(())
+}
+
+/// Asks a cluster manager for a room of our own; the runtime joins it when it
+/// appears. This is the sandbox where taking a seat is allowed.
+#[tauri::command]
+pub async fn request_private_host(app: State<'_, App>, region: String) -> Result<String> {
+    Ok(app.client.request_private_host(region).await?)
+}
+
 #[tauri::command]
 pub fn get_settings(app: State<'_, App>) -> Settings {
     app.settings.get()

@@ -4,6 +4,7 @@ import type { ChatLine } from '../ipc/bindings/ChatLine'
 import { api, describeError } from '../ipc/client'
 import { chat, pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
+import { Seat } from './Seat'
 import { VoteBar } from './VoteBar'
 
 export function Room() {
@@ -86,6 +87,7 @@ export function Room() {
             </div>
           </header>
           <VoteBar />
+          <Seat />
           <div class='room-body'>
             <aside class='members'>
               <h2>Players ({members().players.length})</h2>

@@ -34,6 +34,12 @@ export const api = {
   openSettingsFile: () => invoke<void>('open_settings_file'),
   openDataDir: () => invoke<void>('open_data_dir'),
 
+  takeSeat: (team: number, allyTeam: number) =>
+    invoke<void>('take_seat', { team, allyTeam }),
+  releaseSeat: () => invoke<void>('release_seat'),
+  requestPrivateHost: (region: string) =>
+    invoke<string>('request_private_host', { region }),
+
   tweakDecode: (blob: string, kind: Kind) =>
     invoke<TweakView>('tweak_decode', { blob, kind }),
   tweakFormat: (lua: string, kind: Kind) =>

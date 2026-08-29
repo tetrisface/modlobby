@@ -216,6 +216,8 @@ impl Projector {
                     });
                 }
             }
+            // The runtime acts on these; the notices are the runtime's own.
+            Effect::PrivateHostOffered { .. } | Effect::PrivateHostReady { .. } => {}
             Effect::Notice(text) => out.push(notice(NoticeLevel::Info, text.clone())),
             Effect::JoinFailed { reason } => out.push(notice(
                 NoticeLevel::Warning,

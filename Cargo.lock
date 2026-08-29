@@ -2565,6 +2565,7 @@ name = "lobby-core"
 version = "0.1.0"
 dependencies = [
  "spring-protocol",
+ "thiserror 2.0.20",
  "tracing",
 ]
 

@@ -54,22 +54,76 @@ impl BattleStatus {
     }
 }
 
-/// The status this client reports about itself.
-///
-/// Only constructible as a spectator, on purpose: until the battle-room flow is
-/// verified against live rooms, modlobby must never take a player slot.
+/// The seat this client asks for. teiserver creates every joining client as a
+/// spectator (`data/client.ex:36`) and only bit 10 changes that, so
+/// [`MyBattleStatus::spectator`] is the only status that can never take a slot
+/// from someone. [`MyBattleStatus::player`] exists for rooms we control; the
+/// decision to use it belongs to the layer that knows which room this is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MyBattleStatus {
     sync: Sync,
+    seat: Option<Seat>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Seat {
+    team: u8,
+    ally_team: u8,
+    ready: bool,
+    side: u8,
 }
 
 impl MyBattleStatus {
     pub fn spectator(sync: Sync) -> Self {
-        Self { sync }
+        Self { sync, seat: None }
+    }
+
+    /// Takes a player slot on `team` within `ally_team`. Callers must be sure
+    /// of the room: in a public room this displaces a real player.
+    pub fn player(sync: Sync, team: u8, ally_team: u8) -> Self {
+        Self {
+            sync,
+            seat: Some(Seat {
+                team,
+                ally_team,
+                ready: false,
+                side: 0,
+            }),
+        }
+    }
+
+    pub fn ready(mut self, ready: bool) -> Self {
+        if let Some(seat) = self.seat.as_mut() {
+            seat.ready = ready;
+        }
+        self
+    }
+
+    pub fn side(mut self, side: u8) -> Self {
+        if let Some(seat) = self.seat.as_mut() {
+            seat.side = side;
+        }
+        self
+    }
+
+    pub fn is_player(self) -> bool {
+        self.seat.is_some()
     }
 
     pub fn bits(self) -> u32 {
-        (self.sync as u32) << 22
+        let sync = (self.sync as u32) << 22;
+        let Some(seat) = self.seat else {
+            return sync;
+        };
+        let team = seat.team as u32;
+        let ally = seat.ally_team as u32;
+        sync | (u32::from(seat.ready) << 1)
+            | ((team & 0xF) << 2)
+            | ((ally & 0xF) << 6)
+            | (1 << 10)
+            | (((team >> 4) & 0xF) << 18)
+            | ((seat.side as u32 & 0xF) << 24)
+            | (((ally >> 4) & 0xF) << 28)
     }
 
     /// `MYBATTLESTATUS <bits> <team colour>` (`spring_in.ex` `do_handle("MYBATTLESTATUS", …)`).
@@ -97,6 +151,20 @@ pub const LEAVE_BATTLE: &str = "LEAVEBATTLE";
 pub struct TooLong {
     pub len: usize,
     pub max: usize,
+}
+
+/// `SAYPRIVATE <user> <text>`: how a cluster manager is asked for a private
+/// room (`!privatehost`). teiserver caps these at 257 characters like ordinary chat.
+pub fn say_private(user: &str, text: &str) -> Result<Envelope, TooLong> {
+    let len = text.chars().count();
+    let max = saybattle_max_len(text);
+    if len > max {
+        return Err(TooLong { len, max });
+    }
+    Ok(Envelope::queue(
+        Area::ChannelChat,
+        format!("SAYPRIVATE {user} {text}"),
+    ))
 }
 
 /// `SAYBATTLE <text>`. `!`/`$` lines are SPADS commands and go through the
@@ -164,17 +232,46 @@ mod tests {
     }
 
     #[test]
-    fn our_status_is_always_a_spectator() {
+    fn a_spectator_status_can_never_carry_a_seat() {
         for sync in [Sync::Bot, Sync::Synced, Sync::Unsynced] {
-            let decoded = BattleStatus::from_bits(MyBattleStatus::spectator(sync).bits());
+            let status = MyBattleStatus::spectator(sync);
+            let decoded = BattleStatus::from_bits(status.bits());
+            assert!(!status.is_player());
             assert!(!decoded.player);
             assert!(!decoded.ready);
             assert_eq!(decoded.sync, sync);
+            // The modifiers only apply to a seat, so they cannot create one.
+            assert_eq!(status.ready(true).side(3).bits(), status.bits());
         }
         assert_eq!(
             MyBattleStatus::spectator(Sync::Unsynced).line(),
             "MYBATTLESTATUS 8388608 0"
         );
+    }
+
+    /// The encoder must round-trip through the decoder teiserver shares.
+    #[test]
+    fn a_player_status_round_trips_including_the_wide_team_bits() {
+        let status = MyBattleStatus::player(Sync::Synced, 3, 1)
+            .ready(true)
+            .side(2);
+        let decoded = BattleStatus::from_bits(status.bits());
+        assert_eq!(
+            decoded,
+            BattleStatus {
+                ready: true,
+                team: 3,
+                ally_team: 1,
+                player: true,
+                handicap: 0,
+                sync: Sync::Synced,
+                side: 2
+            }
+        );
+        // Teams above 15 use the extension bits at 18-21 and 28-31.
+        let wide = BattleStatus::from_bits(MyBattleStatus::player(Sync::Synced, 20, 17).bits());
+        assert_eq!((wide.team, wide.ally_team), (20, 17));
+        assert!(wide.player && !wide.ready);
     }
 
     #[test]

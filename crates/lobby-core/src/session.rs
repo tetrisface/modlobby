@@ -59,6 +59,16 @@ pub enum Effect {
     },
     /// The room's vote started, moved or ended.
     VoteChanged,
+    /// A cluster manager answered `!privatehost` with a room password.
+    PrivateHostOffered {
+        manager: String,
+        password: String,
+    },
+    /// The private room asked for has appeared on the list.
+    PrivateHostReady {
+        id: u32,
+        password: String,
+    },
     /// The room's game is running; the engine connects with `spring://<me>:<script_password>@<ip>:<port>`.
     GameRunning {
         id: u32,
@@ -77,7 +87,22 @@ pub struct Session {
     agreement: Vec<String>,
     /// Script password of a `JOINBATTLE` the host has not answered yet.
     pending_join: Option<String>,
+    /// The seat we hold in our room; `None` is a spectator.
+    seat: Option<(u8, u8)>,
+    /// A `!privatehost` we asked for and the password it came back with.
+    private_host: Option<String>,
     pub state: LobbyState,
+}
+
+/// Why taking a player slot was refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum SeatError {
+    #[error("not in a battle")]
+    NotInARoom,
+    /// In a public room a seat belongs to someone else; modlobby only plays in
+    /// rooms it was given, which is what a `!privatehost` password proves.
+    #[error("this room is public; modlobby only takes a seat in a passworded room")]
+    PublicRoom,
 }
 
 impl Session {
@@ -89,6 +114,8 @@ impl Session {
             machine_hash,
             agreement: Vec::new(),
             pending_join: None,
+            seat: None,
+            private_host: None,
             state: LobbyState {
                 phase: Some(Phase::Connecting),
                 ..LobbyState::default()
@@ -119,8 +146,57 @@ impl Session {
         ))]
     }
 
+    /// Takes a player slot, which is refused unless the room is passworded —
+    /// in a public room the slot is someone else's. Pair it with a deliberate
+    /// action from the user; nothing here does it on its own.
+    pub fn take_seat(&mut self, team: u8, ally_team: u8) -> Result<Vec<Effect>, SeatError> {
+        let room = self
+            .state
+            .my_battle
+            .as_ref()
+            .and_then(|my| self.state.battles.get(&my.id))
+            .ok_or(SeatError::NotInARoom)?;
+        if !room.passworded {
+            return Err(SeatError::PublicRoom);
+        }
+        self.seat = Some((team, ally_team));
+        Ok(vec![self.battle_status()])
+    }
+
+    /// Goes back to spectating; always allowed.
+    pub fn release_seat(&mut self) -> Vec<Effect> {
+        self.seat = None;
+        if self.state.my_battle.is_none() {
+            return vec![];
+        }
+        vec![self.battle_status()]
+    }
+
+    pub fn seat(&self) -> Option<(u8, u8)> {
+        self.seat
+    }
+
+    /// Asks a cluster manager for a room of our own (`!privatehost`); it
+    /// answers privately with a password (`battle_list_window.lua:1632-1645`).
+    pub fn request_private_host(&mut self, manager: &str) -> Result<Vec<Effect>, battle::TooLong> {
+        self.private_host = None;
+        Ok(vec![Effect::Send(battle::say_private(
+            manager,
+            "!privatehost",
+        )?)])
+    }
+
+    fn battle_status(&self) -> Effect {
+        let status = match self.seat {
+            Some((team, ally_team)) => MyBattleStatus::player(Sync::Unsynced, team, ally_team),
+            None => MyBattleStatus::spectator(Sync::Unsynced),
+        };
+        Effect::Send(Envelope::queue(Area::BattleStatus, status.line()))
+    }
+
     pub fn leave_battle(&mut self) -> Vec<Effect> {
         self.pending_join = None;
+        self.seat = None;
         let Some(my) = self.state.my_battle.take() else {
             return vec![];
         };
@@ -203,8 +279,23 @@ impl Session {
                 vec![]
             }
             E::BattleOpened(opened) => {
+                // The private room a cluster manager spun up for us carries our
+                // name in its title (`battle_list_window.lua:1664`).
+                let mine = self.private_host.as_ref().and_then(|password| {
+                    let me = state.me.as_deref()?;
+                    opened
+                        .title
+                        .starts_with(me)
+                        .then(|| (opened.id, password.clone()))
+                });
                 state.open_battle(*opened);
-                vec![]
+                match mine {
+                    Some((id, password)) => {
+                        self.private_host = None;
+                        vec![Effect::PrivateHostReady { id, password }]
+                    }
+                    None => vec![],
+                }
             }
             E::BattleClosed { id } => {
                 state.close_battle(id);
@@ -260,10 +351,7 @@ impl Session {
                 self.pending_join = None;
                 vec![Effect::JoinFailed { reason }]
             }
-            E::RequestBattleStatus => vec![Effect::Send(Envelope::queue(
-                Area::BattleStatus,
-                MyBattleStatus::spectator(Sync::Unsynced).line(),
-            ))],
+            E::RequestBattleStatus => vec![self.battle_status()],
             E::SaidBattle { name, text } => vec![Effect::BattleChat {
                 from: name,
                 text,
@@ -278,7 +366,18 @@ impl Session {
                 });
                 effects
             }
-            E::SaidPrivate { name, text } => vec![Effect::PrivateChat { from: name, text }],
+            E::SaidPrivate { name, text } => {
+                let mut effects = Vec::new();
+                if let Some(password) = private_host_password(&text) {
+                    self.private_host = Some(password.clone());
+                    effects.push(Effect::PrivateHostOffered {
+                        manager: name.clone(),
+                        password,
+                    });
+                }
+                effects.push(Effect::PrivateChat { from: name, text });
+                effects
+            }
             E::SetScriptTags { tags } => {
                 let Some(my) = state.my_battle.as_mut() else {
                     return vec![];
@@ -449,6 +548,30 @@ impl Session {
         }
     }
 
+    /// Cluster managers, the bots that spin up rooms: `Host[EU1]`, `Host[AU2]`.
+    /// A `region` of `"EU"` matches any of that region's managers.
+    pub fn cluster_managers(&self, region: &str) -> Vec<&str> {
+        let prefix = format!("Host[{}", region.to_ascii_uppercase());
+        // Chobby's `^Host%[%a+%d+%]$`: a manager, not one of its instances
+        // (`Host[EU1][03]`), which is why nothing may follow the bracket.
+        let is_manager = |name: &str| {
+            name.strip_prefix(&prefix)
+                .and_then(|rest| rest.strip_suffix(']'))
+                .is_some_and(|digits| {
+                    !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit())
+                })
+        };
+        let mut names: Vec<&str> = self
+            .state
+            .users
+            .values()
+            .filter(|user| user.status.bot && is_manager(&user.name))
+            .map(|user| user.name.as_str())
+            .collect();
+        names.sort_unstable();
+        names
+    }
+
     fn hosts_my_battle(&self, name: &str) -> bool {
         self.state
             .my_battle
@@ -469,6 +592,17 @@ impl Session {
             script_password: my.script_password.clone(),
         })
     }
+}
+
+/// `… Starting a new private instance in …, password=XXXX` — the reply Chobby
+/// scrapes at `battle_list_window.lua:1634-1637`.
+fn private_host_password(text: &str) -> Option<String> {
+    let (_, rest) = text.split_once("password=")?;
+    let password: String = rest
+        .chars()
+        .take_while(char::is_ascii_alphanumeric)
+        .collect();
+    (!password.is_empty()).then_some(password)
 }
 
 #[cfg(test)]
@@ -874,6 +1008,112 @@ mod tests {
         assert_eq!(my.history.len(), 2);
         assert_eq!(my.history[1].from, "QUJD");
         assert!(my.history[1].to.is_empty());
+    }
+
+    /// The safety property this project runs on: a seat is only ever taken in a
+    /// room we were given, and only when asked for.
+    #[test]
+    fn a_seat_is_refused_in_a_public_room_and_granted_in_a_private_one() {
+        let mut s = ready_with_room();
+        assert_eq!(s.take_seat(0, 0), Err(SeatError::NotInARoom));
+
+        s.join_battle(5, None, "1".into());
+        feed(&mut s, &["JOINBATTLE 5 -1", "JOINEDBATTLE 5 me 1"]);
+        assert_eq!(s.take_seat(0, 0), Err(SeatError::PublicRoom));
+        assert_eq!(s.seat(), None);
+
+        // What the room answers while we are a spectator.
+        let status = |effects: &[Effect]| {
+            let [Effect::Send(env)] = effects else {
+                panic!("expected one status, got {effects:?}")
+            };
+            let rest = env
+                .line
+                .strip_prefix("MYBATTLESTATUS ")
+                .expect("a status line");
+            let bits: u32 = rest.split(' ').next().unwrap().parse().unwrap();
+            BattleStatus::from_bits(bits)
+        };
+        assert!(!status(&feed(&mut s, &["REQUESTBATTLESTATUS"])).player);
+
+        // A passworded room is one a cluster manager gave us.
+        feed(
+            &mut s,
+            &["BATTLEOPENED 9 0 0 host2 1.2.3.4 8452 16 1 0 h R\tv\tm\tt\tg"],
+        );
+        s.leave_battle();
+        s.join_battle(9, Some("pw"), "1".into());
+        feed(&mut s, &["JOINBATTLE 9 -1", "JOINEDBATTLE 9 me 1"]);
+
+        let taken = s.take_seat(2, 1).expect("a passworded room is ours");
+        assert_eq!(s.seat(), Some((2, 1)));
+        let decoded = status(&taken);
+        assert!(decoded.player);
+        assert_eq!((decoded.team, decoded.ally_team), (2, 1));
+        // And the room's later question gets the same answer.
+        assert!(status(&feed(&mut s, &["REQUESTBATTLESTATUS"])).player);
+
+        assert!(!status(&s.release_seat()).player);
+        assert_eq!(s.seat(), None);
+        // Leaving forgets the seat, so the next room starts as a spectator.
+        s.take_seat(2, 1).unwrap();
+        s.leave_battle();
+        assert_eq!(s.seat(), None);
+    }
+
+    #[test]
+    fn a_private_host_is_asked_for_and_recognised_when_it_appears() {
+        let mut s = ready_with_room();
+        feed(
+            &mut s,
+            &[
+                "ADDUSER Host[EU1] DE 9 SPADS",
+                "ADDUSER Host[EU2] DE 10 SPADS",
+                "ADDUSER Host[EU1][03] DE 11 SPADS",
+                "ADDUSER Host[AU1] AU 12 SPADS",
+                "CLIENTSTATUS Host[EU1] 64",
+                "CLIENTSTATUS Host[EU2] 64",
+                "CLIENTSTATUS Host[EU1][03] 64",
+                "CLIENTSTATUS Host[AU1] 64",
+            ],
+        );
+        assert_eq!(s.cluster_managers("eu"), ["Host[EU1]", "Host[EU2]"]);
+        assert_eq!(s.cluster_managers("AU"), ["Host[AU1]"]);
+
+        let asked = s.request_private_host("Host[EU1]").unwrap();
+        assert!(
+            matches!(&asked[..], [Effect::Send(env)] if env.line == "SAYPRIVATE Host[EU1] !privatehost")
+        );
+
+        let offered = feed(
+            &mut s,
+            &[
+                "SAIDPRIVATE Host[EU1] Starting a new private instance in EU, password=ab12 - please wait",
+            ],
+        );
+        assert!(offered.contains(&Effect::PrivateHostOffered {
+            manager: "Host[EU1]".into(),
+            password: "ab12".into()
+        }));
+
+        // Someone else's room is not ours; ours carries our name in the title.
+        assert!(
+            feed(
+                &mut s,
+                &["BATTLEOPENED 20 0 0 Host[EU1][04] 1.2.3.4 8452 16 1 0 h R\tv\tm\tsomeone else\tg"],
+            )
+            .is_empty()
+        );
+        let ready = feed(
+            &mut s,
+            &[
+                "BATTLEOPENED 21 0 0 Host[EU1][05] 1.2.3.4 8452 16 1 0 h R\tv\tm\tme's private room\tg",
+            ],
+        );
+        assert!(ready.contains(&Effect::PrivateHostReady {
+            id: 21,
+            password: "ab12".into()
+        }));
     }
 
     #[test]
