@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use spring_protocol::{BattleOpened, BattleStatus, TeamLayout, UserStatus};
 
@@ -31,6 +31,36 @@ pub struct MyBattle {
     pub game_hash: String,
     /// Secret the engine presents to the host when connecting.
     pub script_password: String,
+    /// The room's script tags from `SETSCRIPTTAGS`, lowercase keys (`game/modoptions/tweakdefs`, `game/hosttype`, …).
+    pub script_tags: BTreeMap<String, String>,
+}
+
+impl MyBattle {
+    /// `game/modoptions/<key>` values, keyed without the prefix.
+    pub fn modoptions(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.script_tags.iter().filter_map(|(key, value)| {
+            Some((key.strip_prefix("game/modoptions/")?, value.as_str()))
+        })
+    }
+}
+
+/// An AI in the room (`ADDBOT`): owned by a member, plays on a team.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Bot {
+    pub name: String,
+    pub owner: String,
+    pub status: BattleStatus,
+    pub team_colour: u32,
+    pub ai: String,
+}
+
+/// An ally team's start box (`ADDSTARTRECT`), in map fractions out of 200.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StartRect {
+    pub left: u16,
+    pub top: u16,
+    pub right: u16,
+    pub bottom: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,6 +84,10 @@ pub struct Battle {
     pub spectator_count: u32,
     /// From `s.battle.teams`; absent until the server sends it.
     pub layout: Option<TeamLayout>,
+    /// Only known for our own room; cleared when we leave it.
+    pub bots: BTreeMap<String, Bot>,
+    /// Keyed by ally team; only known for our own room.
+    pub start_rects: BTreeMap<u8, StartRect>,
 }
 
 impl Battle {
@@ -61,6 +95,8 @@ impl Battle {
         Self {
             id: b.id,
             members: BTreeSet::from([b.founder.clone()]),
+            bots: BTreeMap::new(),
+            start_rects: BTreeMap::new(),
             founder: b.founder,
             ip: b.ip,
             port: b.port,
@@ -162,6 +198,20 @@ impl LobbyState {
             battle.members.remove(name);
         }
         self.user_battle.remove(name);
+    }
+
+    /// The battle we are in, if it is still on the list.
+    pub fn my_room_mut(&mut self) -> Option<&mut Battle> {
+        let id = self.my_battle.as_ref()?.id;
+        self.battles.get_mut(&id)
+    }
+
+    /// Drops the room-only details (bots, start boxes) the server stops updating once we leave.
+    pub fn forget_room_details(&mut self, id: u32) {
+        if let Some(battle) = self.battles.get_mut(&id) {
+            battle.bots.clear();
+            battle.start_rects.clear();
+        }
     }
 
     /// Battles ordered by player count, most populated first.

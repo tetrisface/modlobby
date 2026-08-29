@@ -5,6 +5,8 @@
 //! 11–17 handicap · 18–21 team bits 5–8 · 22–23 sync (1 synced, 2 unsynced, 0 bot) ·
 //! 24–27 side · 28–31 ally-team bits 5–8.
 
+use crate::policy::{Area, Envelope, saybattle_max_len};
+
 /// Whether a client has the engine, game and map the room needs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Sync {
@@ -89,9 +91,57 @@ pub fn join_battle(id: u32, password: Option<&str>, script_password: &str) -> St
 
 pub const LEAVE_BATTLE: &str = "LEAVEBATTLE";
 
+/// Chat text longer than teiserver keeps; sending it would arrive truncated.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("message is {len} characters, the server keeps {max}")]
+pub struct TooLong {
+    pub len: usize,
+    pub max: usize,
+}
+
+/// `SAYBATTLE <text>`. `!`/`$` lines are SPADS commands and go through the
+/// command bucket of the throttle policy; everything else is chat.
+pub fn say_battle(text: &str) -> Result<Envelope, TooLong> {
+    let len = text.chars().count();
+    let max = saybattle_max_len(text);
+    if len > max {
+        return Err(TooLong { len, max });
+    }
+    let area = if text.starts_with(['!', '$']) {
+        Area::BattleCommand
+    } else {
+        Area::BattleChat
+    };
+    Ok(Envelope::queue(area, format!("SAYBATTLE {text}")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn say_battle_picks_the_bucket_and_enforces_the_cap() {
+        let chat = say_battle("hello").unwrap();
+        assert_eq!(
+            (chat.area, chat.line.as_str()),
+            (Area::BattleChat, "SAYBATTLE hello")
+        );
+        assert_eq!(say_battle("!vote y").unwrap().area, Area::BattleCommand);
+        assert_eq!(
+            say_battle("$welcome-message hi").unwrap().area,
+            Area::BattleCommand
+        );
+
+        assert!(say_battle(&"x".repeat(257)).is_ok());
+        assert_eq!(
+            say_battle(&"x".repeat(258)),
+            Err(TooLong { len: 258, max: 257 })
+        );
+        let prefix = "!bSet tweakdefs1 ";
+        let blob = "A".repeat(16_385 - prefix.len());
+        assert!(say_battle(&format!("{prefix}{blob}")).is_ok());
+        assert!(say_battle(&format!("{prefix}{blob}A")).is_err());
+    }
 
     #[test]
     fn decodes_teiserver_layout() {

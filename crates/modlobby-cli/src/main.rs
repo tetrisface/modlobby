@@ -323,6 +323,7 @@ async fn run(conn: Connection, mode: Mode) -> anyhow::Result<()> {
                     );
                 }
                 Effect::Notice(text) => println!("server: {text}"),
+                Effect::PrivateChat { from, text } => println!("[pm] {from}: {text}"),
             }
         }
     }

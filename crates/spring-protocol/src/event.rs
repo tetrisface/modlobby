@@ -156,6 +156,50 @@ pub enum ServerEvent {
         name: String,
         text: String,
     },
+    /// `SAIDPRIVATE <name> <text>`: direct messages, including the Coordinator's refusals.
+    SaidPrivate {
+        name: String,
+        text: String,
+    },
+    /// `SETSCRIPTTAGS k=v\tk=v`: the room's script tags (`game/modoptions/*` among them),
+    /// one full line on join and then per change. teiserver lowercases the keys.
+    SetScriptTags {
+        tags: Vec<(String, String)>,
+    },
+    /// `REMOVESCRIPTTAGS k k`.
+    RemoveScriptTags {
+        keys: Vec<String>,
+    },
+    /// `ADDBOT <battle> <name> <owner> <status> <colour> <ai>`.
+    AddBot {
+        id: u32,
+        name: String,
+        owner: String,
+        status: BattleStatus,
+        team_colour: u32,
+        ai: String,
+    },
+    UpdateBot {
+        id: u32,
+        name: String,
+        status: BattleStatus,
+        team_colour: u32,
+    },
+    RemoveBot {
+        id: u32,
+        name: String,
+    },
+    /// `ADDSTARTRECT <ally team> <left> <top> <right> <bottom>`, map fractions out of 200.
+    AddStartRect {
+        ally_team: u8,
+        left: u16,
+        top: u16,
+        right: u16,
+        bottom: u16,
+    },
+    RemoveStartRect {
+        ally_team: u8,
+    },
     /// `s.battle.update_lobby_title <id>\t<title>`.
     BattleTitle {
         id: u32,
@@ -291,6 +335,63 @@ fn parse(raw: &RawMessage) -> Option<ServerEvent> {
                 text: rest.into(),
             }
         }
+        "SAIDPRIVATE" => {
+            let (f, rest) = split_fields(a, 1)?;
+            ServerEvent::SaidPrivate {
+                name: f[0].into(),
+                text: rest.into(),
+            }
+        }
+        "SETSCRIPTTAGS" => ServerEvent::SetScriptTags {
+            tags: a
+                .split('\t')
+                .filter_map(|tag| tag.split_once('='))
+                .map(|(key, value)| (key.trim().to_ascii_lowercase(), value.to_owned()))
+                .collect(),
+        },
+        "REMOVESCRIPTTAGS" => ServerEvent::RemoveScriptTags {
+            keys: a.split_whitespace().map(str::to_ascii_lowercase).collect(),
+        },
+        "ADDBOT" => {
+            let (f, rest) = split_fields(a, 5)?;
+            ServerEvent::AddBot {
+                id: f[0].parse().ok()?,
+                name: f[1].into(),
+                owner: f[2].into(),
+                status: BattleStatus::from_bits(f[3].parse().ok()?),
+                team_colour: f[4].parse().ok()?,
+                ai: rest.into(),
+            }
+        }
+        "UPDATEBOT" => {
+            let f = fields(a, 4)?;
+            ServerEvent::UpdateBot {
+                id: f[0].parse().ok()?,
+                name: f[1].into(),
+                status: BattleStatus::from_bits(f[2].parse().ok()?),
+                team_colour: f[3].parse().ok()?,
+            }
+        }
+        "REMOVEBOT" => {
+            let f = fields(a, 2)?;
+            ServerEvent::RemoveBot {
+                id: f[0].parse().ok()?,
+                name: f[1].into(),
+            }
+        }
+        "ADDSTARTRECT" => {
+            let f = fields(a, 5)?;
+            ServerEvent::AddStartRect {
+                ally_team: f[0].parse().ok()?,
+                left: f[1].parse().ok()?,
+                top: f[2].parse().ok()?,
+                right: f[3].parse().ok()?,
+                bottom: f[4].parse().ok()?,
+            }
+        }
+        "REMOVESTARTRECT" => ServerEvent::RemoveStartRect {
+            ally_team: a.trim().parse().ok()?,
+        },
         "s.battle.update_lobby_title" => {
             let (id, title) = a.split_once('\t')?;
             ServerEvent::BattleTitle {
@@ -469,6 +570,73 @@ mod tests {
             event("s.battle.teams !!!"),
             ServerEvent::Malformed(_)
         ));
+    }
+
+    #[test]
+    fn script_tags_split_on_tab_and_lowercase_keys() {
+        // Shape of the 177-tag line captured on joining room 3843 (2026-08-29).
+        let line = "SETSCRIPTTAGS game/modoptions/allowpausegameplay=1\tgame/modoptions/tweakdefs=\tGAME/HostType=SPADS\tgame/players/tetrisface/skill=[14.61]\tbroken";
+        assert_eq!(
+            event(line),
+            ServerEvent::SetScriptTags {
+                tags: vec![
+                    ("game/modoptions/allowpausegameplay".into(), "1".into()),
+                    ("game/modoptions/tweakdefs".into(), String::new()),
+                    ("game/hosttype".into(), "SPADS".into()),
+                    ("game/players/tetrisface/skill".into(), "[14.61]".into()),
+                ]
+            }
+        );
+        assert_eq!(
+            event("REMOVESCRIPTTAGS game/modoptions/Foo game/modoptions/bar"),
+            ServerEvent::RemoveScriptTags {
+                keys: vec!["game/modoptions/foo".into(), "game/modoptions/bar".into()]
+            }
+        );
+    }
+
+    #[test]
+    fn bots_and_start_rects() {
+        let ServerEvent::AddBot {
+            id,
+            name,
+            owner,
+            status,
+            ai,
+            ..
+        } = event("ADDBOT 5 RaptorsAI Host[EU2][001] 4195330 16777215 BARb")
+        else {
+            panic!("not AddBot")
+        };
+        assert_eq!(
+            (id, name.as_str(), owner.as_str(), ai.as_str()),
+            (5, "RaptorsAI", "Host[EU2][001]", "BARb")
+        );
+        assert!(status.player && status.ready);
+        assert_eq!(
+            event("ADDSTARTRECT 1 0 0 200 40"),
+            ServerEvent::AddStartRect {
+                ally_team: 1,
+                left: 0,
+                top: 0,
+                right: 200,
+                bottom: 40
+            }
+        );
+        assert_eq!(
+            event("REMOVEBOT 5 RaptorsAI"),
+            ServerEvent::RemoveBot {
+                id: 5,
+                name: "RaptorsAI".into()
+            }
+        );
+        assert_eq!(
+            event("SAIDPRIVATE Coordinator Setting tweakdefs requires boss privileges"),
+            ServerEvent::SaidPrivate {
+                name: "Coordinator".into(),
+                text: "Setting tweakdefs requires boss privileges".into()
+            }
+        );
     }
 
     #[test]

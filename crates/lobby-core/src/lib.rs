@@ -8,4 +8,4 @@ pub mod session;
 pub mod state;
 
 pub use session::{Effect, Session};
-pub use state::{Battle, LobbyState, Phase, User};
+pub use state::{Battle, Bot, LobbyState, MyBattle, Phase, StartRect, User};

@@ -2,7 +2,7 @@ use spring_protocol::{
     Area, Envelope, LoginRequest, MyBattleStatus, ServerEvent, Sync, battle, status, telemetry,
 };
 
-use crate::state::{LobbyState, MyBattle, Phase};
+use crate::state::{Bot, LobbyState, MyBattle, Phase, StartRect};
 
 /// What the application must do in response to an event.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -46,6 +46,11 @@ pub enum Effect {
         text: String,
         /// `SAIDBATTLEEX`: host announcements and `/me` lines.
         announcement: bool,
+    },
+    /// A direct message; the Coordinator uses these for refusals.
+    PrivateChat {
+        from: String,
+        text: String,
     },
     /// The room's game is running; the engine connects with `spring://<me>:<script_password>@<ip>:<port>`.
     GameRunning {
@@ -109,13 +114,14 @@ impl Session {
 
     pub fn leave_battle(&mut self) -> Vec<Effect> {
         self.pending_join = None;
-        match self.state.my_battle.take() {
-            Some(my) => vec![
-                Effect::Send(Envelope::queue(Area::Other, battle::LEAVE_BATTLE)),
-                Effect::LeftBattle { id: my.id },
-            ],
-            None => vec![],
-        }
+        let Some(my) = self.state.my_battle.take() else {
+            return vec![];
+        };
+        self.state.forget_room_details(my.id);
+        vec![
+            Effect::Send(Envelope::queue(Area::Other, battle::LEAVE_BATTLE)),
+            Effect::LeftBattle { id: my.id },
+        ]
     }
 
     pub fn handle(&mut self, event: ServerEvent) -> Vec<Effect> {
@@ -225,6 +231,7 @@ impl Session {
                 let me = state.me.as_deref() == Some(name.as_str());
                 if me && state.my_battle.as_ref().is_some_and(|my| my.id == id) {
                     state.my_battle = None;
+                    state.forget_room_details(id);
                     return vec![Effect::LeftBattle { id }];
                 }
                 vec![]
@@ -241,6 +248,7 @@ impl Session {
                     id,
                     game_hash,
                     script_password,
+                    script_tags: Default::default(),
                 });
                 let mut effects = vec![Effect::Joined { id }];
                 effects.extend(self.game_running());
@@ -264,6 +272,87 @@ impl Session {
                 text,
                 announcement: true,
             }],
+            E::SaidPrivate { name, text } => vec![Effect::PrivateChat { from: name, text }],
+            E::SetScriptTags { tags } => {
+                if let Some(my) = state.my_battle.as_mut() {
+                    my.script_tags.extend(tags);
+                }
+                vec![]
+            }
+            E::RemoveScriptTags { keys } => {
+                if let Some(my) = state.my_battle.as_mut() {
+                    for key in &keys {
+                        my.script_tags.remove(key);
+                    }
+                }
+                vec![]
+            }
+            E::AddBot {
+                id,
+                name,
+                owner,
+                status,
+                team_colour,
+                ai,
+            } => {
+                if let Some(battle) = state.battles.get_mut(&id) {
+                    let bot = Bot {
+                        name: name.clone(),
+                        owner,
+                        status,
+                        team_colour,
+                        ai,
+                    };
+                    battle.bots.insert(name, bot);
+                }
+                vec![]
+            }
+            E::UpdateBot {
+                id,
+                name,
+                status,
+                team_colour,
+            } => {
+                let bot = state
+                    .battles
+                    .get_mut(&id)
+                    .and_then(|battle| battle.bots.get_mut(&name));
+                if let Some(bot) = bot {
+                    bot.status = status;
+                    bot.team_colour = team_colour;
+                }
+                vec![]
+            }
+            E::RemoveBot { id, name } => {
+                if let Some(battle) = state.battles.get_mut(&id) {
+                    battle.bots.remove(&name);
+                }
+                vec![]
+            }
+            E::AddStartRect {
+                ally_team,
+                left,
+                top,
+                right,
+                bottom,
+            } => {
+                if let Some(battle) = state.my_room_mut() {
+                    let rect = StartRect {
+                        left,
+                        top,
+                        right,
+                        bottom,
+                    };
+                    battle.start_rects.insert(ally_team, rect);
+                }
+                vec![]
+            }
+            E::RemoveStartRect { ally_team } => {
+                if let Some(battle) = state.my_room_mut() {
+                    battle.start_rects.remove(&ally_team);
+                }
+                vec![]
+            }
             E::BattleTitle { id, title } => {
                 if let Some(battle) = state.battles.get_mut(&id) {
                     battle.title = title;
@@ -594,6 +683,66 @@ mod tests {
                     announcement: true
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn room_details_follow_script_tags_bots_and_start_boxes() {
+        let mut s = ready_with_room();
+        s.join_battle(5, None, "1".into());
+        feed(
+            &mut s,
+            &[
+                "JOINBATTLE 5 -1",
+                "JOINEDBATTLE 5 me 1",
+                "SETSCRIPTTAGS game/modoptions/tweakdefs=abc\tgame/hosttype=SPADS",
+                "ADDBOT 5 RaptorsAI host 4195330 16777215 BARb",
+                "ADDSTARTRECT 1 0 0 200 40",
+            ],
+        );
+        let my = s.state.my_battle.as_ref().unwrap();
+        assert_eq!(my.modoptions().collect::<Vec<_>>(), [("tweakdefs", "abc")]);
+        assert_eq!(my.script_tags["game/hosttype"], "SPADS");
+        let room = &s.state.battles[&5];
+        assert_eq!(room.bots["RaptorsAI"].ai, "BARb");
+        assert!(room.bots["RaptorsAI"].status.player);
+        assert_eq!(room.start_rects[&1].bottom, 40);
+
+        feed(
+            &mut s,
+            &[
+                "SETSCRIPTTAGS game/modoptions/tweakdefs=def",
+                "UPDATEBOT 5 RaptorsAI 0 16777215",
+                "REMOVESTARTRECT 1",
+            ],
+        );
+        assert_eq!(
+            s.state.my_battle.as_ref().unwrap().script_tags["game/modoptions/tweakdefs"],
+            "def"
+        );
+        assert!(!s.state.battles[&5].bots["RaptorsAI"].status.player);
+        assert!(s.state.battles[&5].start_rects.is_empty());
+
+        feed(&mut s, &["REMOVESCRIPTTAGS game/modoptions/tweakdefs"]);
+        assert_eq!(s.state.my_battle.as_ref().unwrap().modoptions().count(), 0);
+
+        // Leaving drops what the server stops telling us about.
+        feed(&mut s, &["LEFTBATTLE 5 me"]);
+        assert!(s.state.battles[&5].bots.is_empty());
+    }
+
+    #[test]
+    fn private_messages_become_effects() {
+        let mut s = ready_with_room();
+        assert_eq!(
+            feed(
+                &mut s,
+                &["SAIDPRIVATE Coordinator Setting tweakdefs requires boss privileges"]
+            ),
+            vec![Effect::PrivateChat {
+                from: "Coordinator".into(),
+                text: "Setting tweakdefs requires boss privileges".into()
+            }]
         );
     }
 

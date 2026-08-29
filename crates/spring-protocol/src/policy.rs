@@ -512,7 +512,8 @@ impl Scheduler {
     }
 }
 
-/// teiserver's `SAYBATTLE` length cap for a given message (`spring_in.ex`).
+/// teiserver's `SAYBATTLE` cap for a message (`spring_in.ex`): `String.slice(0..n)` is an
+/// inclusive range, so each class allows `n + 1` characters.
 pub fn saybattle_max_len(message: &str) -> usize {
     const LONG_PREFIXES: [&str; 4] = [
         "$welcome-message",
@@ -522,11 +523,11 @@ pub fn saybattle_max_len(message: &str) -> usize {
     ];
     let lower = message.to_ascii_lowercase();
     if lower.starts_with("!bset tweakdefs") || lower.starts_with("!bset tweakunits") {
-        16_384
+        16_385
     } else if LONG_PREFIXES.iter().any(|p| lower.starts_with(p)) {
-        1024
+        1025
     } else {
-        256
+        257
     }
 }
 
@@ -642,9 +643,9 @@ mod tests {
 
     #[test]
     fn saybattle_length_classes() {
-        assert_eq!(saybattle_max_len("hello"), 256);
-        assert_eq!(saybattle_max_len("!mode ffa"), 1024);
-        assert_eq!(saybattle_max_len("!bSet tweakDefs abc"), 16_384);
+        assert_eq!(saybattle_max_len("hello"), 257);
+        assert_eq!(saybattle_max_len("!mode ffa"), 1025);
+        assert_eq!(saybattle_max_len("!bSet tweakDefs abc"), 16_385);
     }
 
     #[test]
