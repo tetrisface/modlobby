@@ -269,3 +269,100 @@ mod tests {
         assert_eq!(archive_stem("a/b\\c"), "abc");
     }
 }
+
+impl Library {
+    /// Every game version whose package is actually on the disk, newest name
+    /// first. Rapid lists far more than is installed, so the `.sdp` decides.
+    pub fn installed_games(&self) -> Vec<String> {
+        let mut names: Vec<String> = Vec::new();
+        for index in self.rapid_indexes() {
+            let Ok(file) = std::fs::File::open(&index) else {
+                continue;
+            };
+            for line in BufReader::new(GzDecoder::new(file))
+                .lines()
+                .map_while(Result::ok)
+            {
+                // tag,md5,depends,name
+                let mut fields = line.split(',');
+                let (Some(_tag), Some(md5), Some(_depends), Some(name)) =
+                    (fields.next(), fields.next(), fields.next(), fields.next())
+                else {
+                    continue;
+                };
+                let name = name.trim();
+                if name.is_empty() {
+                    continue;
+                }
+                if self
+                    .data_dir
+                    .join("packages")
+                    .join(format!("{md5}.sdp"))
+                    .exists()
+                {
+                    names.push(name.to_owned());
+                }
+            }
+        }
+        names.sort();
+        names.dedup();
+        names.reverse();
+        names
+    }
+
+    /// The archive file name of every installed map, without its extension.
+    ///
+    /// This is the lowercased, underscored form — `acidicquarry_5.17` — not
+    /// the spring name the engine wants in a start script. Recovering the
+    /// capitalisation is the caller's problem, because nothing on disk records it.
+    pub fn installed_map_files(&self) -> Vec<String> {
+        let Ok(entries) = std::fs::read_dir(self.data_dir.join("maps")) else {
+            return Vec::new();
+        };
+        let mut names: Vec<String> = entries
+            .filter_map(Result::ok)
+            .filter_map(|entry| {
+                let path = entry.path();
+                let extension = path.extension()?.to_str()?;
+                if extension != "sd7" && extension != "sdz" {
+                    return None;
+                }
+                Some(path.file_stem()?.to_str()?.to_owned())
+            })
+            .collect();
+        names.sort();
+        names
+    }
+}
+
+#[cfg(test)]
+mod listing_tests {
+    use super::*;
+
+    #[test]
+    fn only_maps_are_listed_and_only_by_stem() {
+        let dir = tempfile::tempdir().unwrap();
+        let maps = dir.path().join("maps");
+        std::fs::create_dir_all(&maps).unwrap();
+        for name in [
+            "acidicquarry_5.17.sd7",
+            "acidicquarry_5.17.sd7.md5.gz",
+            "old_map.sdz",
+            "notes.txt",
+        ] {
+            std::fs::write(maps.join(name), b"x").unwrap();
+        }
+
+        assert_eq!(
+            Library::new(dir.path()).installed_map_files(),
+            vec!["acidicquarry_5.17", "old_map"]
+        );
+    }
+
+    #[test]
+    fn a_directory_with_no_maps_lists_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(Library::new(dir.path()).installed_map_files().is_empty());
+        assert!(Library::new(dir.path()).installed_games().is_empty());
+    }
+}

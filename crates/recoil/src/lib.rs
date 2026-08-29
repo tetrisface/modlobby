@@ -4,6 +4,8 @@
 //! No I/O beyond reading the engine directory; spawning is the caller's job so
 //! the command line stays unit-testable.
 
+pub mod script;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -361,4 +363,49 @@ mod download_tests {
         assert_eq!(Progress::parse("Downloading something 1/2"), None);
         assert_eq!(Progress::parse(""), None);
     }
+}
+
+/// Every engine version installed, newest name first.
+pub fn installed_engines(data_dir: &Path) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(data_dir.join("engine")) else {
+        return Vec::new();
+    };
+    let mut versions: Vec<String> = entries
+        .filter_map(Result::ok)
+        .filter(|entry| entry.path().join(ENGINE_BINARY).is_file())
+        .filter_map(|entry| {
+            let name = entry.file_name().to_str()?.to_owned();
+            // The launcher names them `recoil_<version>`; anything else is
+            // taken as the version itself, which is how `find_engine` reads them.
+            Some(
+                name.rsplit_once('_')
+                    .map_or(name.clone(), |(_, v)| v.to_owned()),
+            )
+        })
+        .collect();
+    versions.sort();
+    versions.dedup();
+    versions.reverse();
+    versions
+}
+
+/// The skirmish AIs any installed engine ships.
+pub fn installed_ais(data_dir: &Path) -> Vec<String> {
+    let Ok(engines) = std::fs::read_dir(data_dir.join("engine")) else {
+        return Vec::new();
+    };
+    let mut ais: Vec<String> = engines
+        .filter_map(Result::ok)
+        .flat_map(|engine| {
+            std::fs::read_dir(engine.path().join("AI").join("Skirmish"))
+                .into_iter()
+                .flatten()
+                .filter_map(Result::ok)
+                .filter(|ai| ai.path().is_dir())
+                .filter_map(|ai| ai.file_name().to_str().map(str::to_owned))
+        })
+        .collect();
+    ais.sort();
+    ais.dedup();
+    ais
 }

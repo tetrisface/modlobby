@@ -245,6 +245,62 @@ pub async fn list_channels(app: State<'_, App>) -> Result<()> {
     Ok(())
 }
 
+/// What this machine can start a game with.
+#[tauri::command]
+pub fn skirmish_options(app: State<'_, App>) -> Result<SkirmishOptions> {
+    let data_dir = data_dir(&app)?;
+    let library = content::Library::new(&data_dir);
+    Ok(SkirmishOptions {
+        games: library.installed_games(),
+        maps: library.installed_map_files(),
+        engines: recoil::installed_engines(&data_dir),
+        ais: recoil::installed_ais(&data_dir),
+    })
+}
+
+/// Starts a game against AI with no server involved.
+#[tauri::command]
+pub async fn start_skirmish(
+    app: State<'_, App>,
+    game: String,
+    map: String,
+    engine: String,
+    opponents: Vec<String>,
+) -> Result<()> {
+    let data_dir = data_dir(&app)?;
+    if game.is_empty() || map.is_empty() || engine.is_empty() {
+        return Err(ApiError::new("input", "pick a game, a map and an engine"));
+    }
+    // A skirmish needs no account, so someone who has never logged in still
+    // needs a name to appear under.
+    let username = app.settings.get().account.username;
+    let player = if username.trim().is_empty() {
+        "Player".to_owned()
+    } else {
+        username
+    };
+
+    let skirmish = recoil::script::Skirmish {
+        game,
+        map,
+        player,
+        start_pos: recoil::script::StartPos::InGame,
+        opponents: opponents
+            .into_iter()
+            .enumerate()
+            .map(|(index, short_name)| recoil::script::Ai {
+                name: format!("{short_name} {}", index + 1),
+                short_name,
+            })
+            .collect(),
+        modoptions: Vec::new(),
+    };
+    app.client
+        .start_skirmish(data_dir, engine, skirmish)
+        .await?;
+    Ok(())
+}
+
 /// Every replay in the BAR data directory, newest first.
 #[tauri::command]
 pub fn list_replays(app: State<'_, App>) -> Result<Vec<ReplayView>> {
@@ -594,4 +650,16 @@ impl From<content::replays::Replay> for ReplayView {
             bytes: replay.bytes,
         }
     }
+}
+
+/// What a skirmish can be built from on this machine.
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SkirmishOptions {
+    pub games: Vec<String>,
+    /// Archive file names, lowercased and underscored.
+    pub maps: Vec<String>,
+    pub engines: Vec<String>,
+    pub ais: Vec<String>,
 }

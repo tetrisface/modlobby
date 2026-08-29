@@ -17,37 +17,49 @@ const INDEX_URL =
 const CACHE_KEY = 'modlobby.mapImages'
 const CACHE_DAYS = 1
 
-type Cache = { fetchedAt: number; images: Record<string, string> }
-type IndexEntry = { springName?: string; images?: { preview?: string } }
+type Cache = {
+  fetchedAt: number
+  images: Record<string, string>
+  /** Archive file name without its extension, to the map's spring name. */
+  names: Record<string, string>
+}
+type IndexEntry = {
+  springName?: string
+  filename?: string
+  images?: { preview?: string }
+}
 
-let pending: Promise<Record<string, string>> | null = null
+type Index = { images: Record<string, string>; names: Record<string, string> }
 
-function readCache(): Record<string, string> | null {
+let pending: Promise<Index> | null = null
+
+function readCache(): Index | null {
   try {
     const raw = localStorage.getItem(CACHE_KEY)
     if (!raw) return null
     const cache = JSON.parse(raw) as Cache
     const age = Date.now() - cache.fetchedAt
     if (age > CACHE_DAYS * 86_400_000) return null
-    return cache.images
+    if (!cache.names) return null
+    return { images: cache.images, names: cache.names }
   } catch {
     // A private window, cleared site data, or storage the webview refuses.
     return null
   }
 }
 
-function writeCache(images: Record<string, string>) {
+function writeCache(index: Index) {
   try {
     localStorage.setItem(
       CACHE_KEY,
-      JSON.stringify({ fetchedAt: Date.now(), images } satisfies Cache),
+      JSON.stringify({ fetchedAt: Date.now(), ...index } satisfies Cache),
     )
   } catch {
     // Losing the cache costs one fetch, so it is not worth reporting.
   }
 }
 
-async function load(): Promise<Record<string, string>> {
+async function load(): Promise<Index> {
   const cached = readCache()
   if (cached) return cached
 
@@ -55,24 +67,45 @@ async function load(): Promise<Record<string, string>> {
   if (!response.ok) throw new Error(`map index: ${response.status}`)
 
   const entries = (await response.json()) as IndexEntry[]
-  const images: Record<string, string> = {}
+  const index: Index = { images: {}, names: {} }
   for (const entry of entries) {
     const name = entry.springName
+    if (!name) continue
     const preview = entry.images?.preview
-    if (name && preview) images[name] = preview
+    if (preview) index.images[name] = preview
+    // `acidicquarry_5.17.sd7` is what sits in the maps directory; the stem is
+    // what a caller listing that directory has to match on.
+    const file = entry.filename?.replace(/\.sd[7z]$/i, '')
+    if (file) index.names[file] = name
   }
 
-  writeCache(images)
-  return images
+  writeCache(index)
+  return index
+}
+
+/**
+ * Archive file name (without extension) to the map's spring name.
+ *
+ * A start script needs the spring name, and nothing on disk records the
+ * capitalisation the engine expects — only this index does.
+ */
+export async function mapNames(): Promise<Record<string, string>> {
+  try {
+    pending ??= load()
+    return (await pending).names
+  } catch {
+    pending = null
+    return {}
+  }
 }
 
 /** The preview URL for a spring map name, or null if we cannot find one. */
 export async function mapImage(springName: string): Promise<string | null> {
   if (!springName) return null
   try {
-    // One in-flight load, however many rooms ask at once.
+    // One in-flight load, however many callers ask at once.
     pending ??= load()
-    return (await pending)[springName] ?? null
+    return (await pending).images[springName] ?? null
   } catch {
     // Offline, blocked, or the index moved: the schematic still draws.
     pending = null

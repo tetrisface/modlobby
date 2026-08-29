@@ -21,6 +21,7 @@ import { Login } from './views/Login'
 import { Replays } from './views/Replays'
 import { Room } from './views/Room'
 import { SettingsView } from './views/Settings'
+import { Skirmish } from './views/Skirmish'
 import { Tweaks } from './views/Tweaks'
 
 type SettingsEvent = { changed: Settings } | { invalid: string }
@@ -57,6 +58,7 @@ function Layout(props: ParentProps) {
       <IconSprite />
       <nav class='nav'>
         <span class='brand'>modlobby</span>
+        <A href='/skirmish'>Skirmish</A>
         <Show when={lobby.phase === 'ready'}>
           <A href='/battles'>Battles</A>
           <A href='/chat'>Chat</A>
@@ -109,6 +111,7 @@ export function App() {
       <Route path='/battles' component={BattleList} />
       <Route path='/chat' component={Chat} />
       <Route path='/replays' component={Replays} />
+      <Route path='/skirmish' component={Skirmish} />
       <Route path='/room' component={Room} />
       <Route path='/room/tweaks' component={Tweaks} />
       <Route path='/settings' component={SettingsView} />

@@ -110,6 +110,12 @@ enum Command {
         path: String,
         reply: Reply<()>,
     },
+    StartSkirmish {
+        data_dir: PathBuf,
+        engine_version: String,
+        skirmish: Box<recoil::script::Skirmish>,
+        reply: Reply<()>,
+    },
     FriendAction {
         action: lobby_core::FriendAction,
         user: String,
@@ -246,6 +252,22 @@ impl Client {
     /// Fetches the game and map the current room needs and we do not have.
     pub async fn download_missing(&self) -> Result<(), ClientError> {
         self.ask(|reply| Command::DownloadMissing { reply }).await
+    }
+
+    /// Starts a game against AI with no server involved.
+    pub async fn start_skirmish(
+        &self,
+        data_dir: PathBuf,
+        engine_version: String,
+        skirmish: recoil::script::Skirmish,
+    ) -> Result<(), ClientError> {
+        self.ask(|reply| Command::StartSkirmish {
+            data_dir,
+            engine_version,
+            skirmish: Box::new(skirmish),
+            reply,
+        })
+        .await
     }
 
     /// Starts the engine on a replay file.
@@ -389,6 +411,35 @@ impl Runtime {
             projector: Projector::new(),
             batcher: Batcher::default(),
         }
+    }
+
+    /// Writes the start script and starts the engine on it.
+    ///
+    /// The script goes in the data directory the engine is already reading
+    /// under `--isolation`, so it needs no extra path allowance, and it is
+    /// overwritten each time rather than accumulating.
+    fn start_skirmish(
+        &mut self,
+        data_dir: PathBuf,
+        engine_version: &str,
+        skirmish: &recoil::script::Skirmish,
+    ) -> Result<(), ClientError> {
+        if self.engine.is_some() {
+            return Err(ClientError::Engine("the engine is already running".into()));
+        }
+        let path = data_dir.join("modlobby-skirmish.txt");
+        std::fs::write(&path, skirmish.script())
+            .map_err(|err| ClientError::Engine(format!("writing the start script: {err}")))?;
+
+        let child = launch::spawn(
+            &data_dir,
+            engine_version,
+            path.to_string_lossy().into_owned(),
+        )
+        .map_err(ClientError::Engine)?;
+        self.engine = Some(child);
+        self.set_engine(EngineStatus::Running);
+        Ok(())
     }
 
     /// Starts the engine on a replay.
@@ -699,6 +750,15 @@ impl Runtime {
                     Ok::<_, std::convert::Infallible>(session.list_channels())
                 })
                 .await;
+            }
+            Command::StartSkirmish {
+                data_dir,
+                engine_version,
+                skirmish,
+                reply,
+            } => {
+                let result = self.start_skirmish(data_dir, &engine_version, &skirmish);
+                let _ = reply.send(result);
             }
             Command::PlayReplay {
                 data_dir,

@@ -3,6 +3,7 @@ import type { DiffView } from './bindings/DiffView'
 import type { Kind } from './bindings/Kind'
 import type { Prepared } from './bindings/Prepared'
 import type { ReplayView } from './bindings/ReplayView'
+import type { SkirmishOptions } from './bindings/SkirmishOptions'
 import type { Settings } from './bindings/Settings'
 import type { Slot } from './bindings/Slot'
 import type { TweakView } from './bindings/TweakView'
@@ -43,6 +44,13 @@ export const api = {
     invoke<void>('say_private', { user, text }),
   listChannels: () => invoke<void>('list_channels'),
   downloadMissing: () => invoke<void>('download_missing'),
+  skirmishOptions: () => invoke<SkirmishOptions>('skirmish_options'),
+  startSkirmish: (
+    game: string,
+    map: string,
+    engine: string,
+    opponents: string[],
+  ) => invoke<void>('start_skirmish', { game, map, engine, opponents }),
   listReplays: () => invoke<ReplayView[]>('list_replays'),
   playReplay: (path: string) => invoke<void>('play_replay', { path }),
   refreshFriends: () => invoke<void>('refresh_friends'),
