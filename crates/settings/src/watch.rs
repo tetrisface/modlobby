@@ -30,9 +30,11 @@ pub struct Watch {
 }
 
 impl Store {
-    /// Starts watching; must be called on a tokio runtime.
+    /// Starts watching. Debouncing and re-reading happen on a plain thread —
+    /// the file work is blocking anyway — so this can be called from anywhere,
+    /// including a Tauri setup hook where no tokio runtime is entered yet.
     pub fn watch(&self) -> Result<Watch, notify::Error> {
-        let (raw_tx, mut raw_rx) = mpsc::unbounded_channel::<()>();
+        let (raw_tx, raw_rx) = std::sync::mpsc::channel::<()>();
         let mut watcher =
             notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
                 let Ok(event) = event else {
@@ -46,21 +48,23 @@ impl Store {
 
         let (tx, events) = mpsc::channel(8);
         let store = self.clone();
-        tokio::spawn(async move {
-            while raw_rx.recv().await.is_some() {
-                // Coalesce the burst an editor produces for one save.
-                tokio::time::sleep(DEBOUNCE).await;
-                while raw_rx.try_recv().is_ok() {}
-                let event = match store.reload() {
-                    Ok(Some(settings)) => SettingsEvent::Changed(settings),
-                    Ok(None) => continue,
-                    Err(err) => SettingsEvent::Invalid(err.to_string()),
-                };
-                if tx.send(event).await.is_err() {
-                    return;
+        std::thread::Builder::new()
+            .name("settings-watch".into())
+            .spawn(move || {
+                while raw_rx.recv().is_ok() {
+                    // Coalesce the burst an editor produces for one save.
+                    while raw_rx.recv_timeout(DEBOUNCE).is_ok() {}
+                    let event = match store.reload() {
+                        Ok(Some(settings)) => SettingsEvent::Changed(settings),
+                        Ok(None) => continue,
+                        Err(err) => SettingsEvent::Invalid(err.to_string()),
+                    };
+                    if tx.blocking_send(event).is_err() {
+                        return;
+                    }
                 }
-            }
-        });
+            })
+            .expect("spawning the settings watch thread");
         Ok(Watch {
             _watcher: watcher,
             events,
