@@ -160,6 +160,20 @@ impl Session {
                 }
                 vec![]
             }
+            E::BattleTitle { id, title } => {
+                if let Some(battle) = state.battles.get_mut(&id) {
+                    battle.title = title;
+                }
+                vec![]
+            }
+            E::BattleTeams { layouts } => {
+                for (id, layout) in layouts {
+                    if let Some(battle) = state.battles.get_mut(&id) {
+                        battle.layout = Some(layout);
+                    }
+                }
+                vec![]
+            }
             E::Redirect { host, port } => vec![Effect::Redirect { host, port }],
             E::Disconnect { reason } => {
                 let flood = reason.contains("Flood");
@@ -235,7 +249,6 @@ mod tests {
                 "ADDUSER alice DE 3 LuaLobby Chobby",
                 "BATTLEOPENED 5 0 0 bot 1.2.3.4 8452 16 0 0 h Recoil\t2026.07.04\tMap One\tTitle\tBeyond All Reason test-1",
                 "UPDATEBATTLEINFO 5 1 0 h Map One",
-                "JOINEDBATTLE 5 bot",
                 "JOINEDBATTLE 5 alice",
                 "CLIENTSTATUS bot 64",
                 "LOGININFOEND",
@@ -249,6 +262,7 @@ mod tests {
         assert_eq!(battle.spectator_count, 1);
         assert_eq!(battle.player_count(), 1);
         assert_eq!(s.state.user_battle["alice"], 5);
+        assert_eq!(s.state.user_battle["bot"], 5);
         let sends: Vec<&Envelope> = effects
             .iter()
             .filter_map(|e| {
@@ -282,6 +296,41 @@ mod tests {
         );
         assert!(s.state.battles.is_empty());
         assert!(s.state.user_battle.is_empty());
+    }
+
+    #[test]
+    fn founder_counts_without_a_joinedbattle_line() {
+        // Captured 2026-08-29: a full 8v8 with three human spectators. The host
+        // never gets a JOINEDBATTLE but is counted in UPDATEBATTLEINFO's spectators.
+        let mut s = session();
+        let mut lines = vec![
+            "BATTLEOPENED 57 0 0 Host[US4][000] 144.126.147.151 53200 16 0 0 -590370561 spring\t2026.07.04\tSupreme Isthmus v2.1\tSuPrEmE MuFF | 8v8\tBeyond All Reason test-31115-21dbf79".to_owned(),
+            "UPDATEBATTLEINFO 57 4 0 -590370561 Supreme Isthmus v2.1".to_owned(),
+        ];
+        lines.extend((0..19).map(|i| format!("JOINEDBATTLE 57 player{i}")));
+        for line in &lines {
+            s.handle(RawMessage::parse(line).into());
+        }
+        let battle = &s.state.battles[&57];
+        assert_eq!(battle.members.len(), 20);
+        assert_eq!(battle.player_count(), 16);
+        assert_eq!(s.state.user_battle["Host[US4][000]"], 57);
+    }
+
+    #[test]
+    fn battle_title_and_teams_update_the_room() {
+        let mut s = session();
+        feed(
+            &mut s,
+            &[
+                "BATTLEOPENED 22 0 0 bot 1.2.3.4 8452 16 0 0 h R\tv\tm\told title\tg",
+                "s.battle.update_lobby_title 22\tBeginner Players | 4v4",
+                "s.battle.teams eyIyMiI6eyJuYlRlYW1zIjoyLCJ0ZWFtU2l6ZSI6OH19",
+            ],
+        );
+        let battle = &s.state.battles[&22];
+        assert_eq!(battle.title, "Beginner Players | 4v4");
+        assert_eq!(battle.layout.map(|l| (l.teams, l.team_size)), Some((2, 8)));
     }
 
     #[test]

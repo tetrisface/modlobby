@@ -24,9 +24,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Log in and watch the battle list; the password is read from `MODLOBBY_PASSWORD`.
+    /// Log in and watch the battle list. The password is read from `MODLOBBY_PASSWORD`;
+    /// a `.env` in the working directory is loaded first.
     Login {
-        #[arg(long)]
+        #[arg(long, env = "MODLOBBY_USERNAME")]
         username: String,
         #[arg(long, default_value = "server4.beyondallreason.info:8200")]
         server: String,
@@ -49,10 +50,16 @@ enum Command {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let dotenv = dotenvy::dotenv();
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
         .with_target(true)
         .init();
+    match dotenv {
+        Ok(path) => tracing::debug!(path = %path.display(), "loaded .env"),
+        Err(err) if err.not_found() => {}
+        Err(err) => tracing::warn!(%err, "ignoring .env"),
+    }
     match Cli::parse().command {
         Command::Policy => {
             print!("{}", toml::to_string_pretty(&ThrottlePolicy::default())?);
@@ -199,10 +206,13 @@ fn print_summary(session: &Session) {
     );
     for battle in state.battles_by_players().into_iter().take(10) {
         println!(
-            "  {:>4}  {:>2} players {:>2} specs  {:<40.40}  {:<28.28}  {}",
+            "  {:>4}  {:>2} players {:>2} specs  {:>4}  {:<40.40}  {:<28.28}  {}",
             battle.id,
             battle.player_count(),
             battle.spectator_count,
+            battle
+                .layout
+                .map_or(String::new(), |l| format!("{}x{}", l.teams, l.team_size)),
             battle.title,
             battle.map_name,
             if battle.locked { "locked" } else { "" }

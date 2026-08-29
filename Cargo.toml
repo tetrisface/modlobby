@@ -14,9 +14,11 @@ lobby-core = { path = "crates/lobby-core" }
 
 anyhow = "=1.0.104"
 base64 = "=0.23.1"
-clap = { version = "=4.6.6", features = ["derive"] }
+clap = { version = "=4.6.6", features = ["derive", "env"] }
+dotenvy = "=0.15.7"
 md-5 = "=0.11.0"
 serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
 sysinfo = "=0.39.6"
 thiserror = "=2.0.20"
 tokio = { version = "=1.53.1", features = ["rt-multi-thread", "net", "macros", "sync", "time", "io-util", "signal"] }

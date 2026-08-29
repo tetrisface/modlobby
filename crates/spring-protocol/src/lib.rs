@@ -15,7 +15,7 @@ pub mod telemetry;
 pub mod transport;
 
 pub use codec::RawMessage;
-pub use event::{BattleOpened, ServerEvent, UserStatus};
+pub use event::{BattleOpened, ServerEvent, TeamLayout, UserStatus};
 pub use login::LoginRequest;
 pub use policy::{Area, Envelope, Mode, ThrottlePolicy};
 pub use transport::{Inbound, Transport, TransportError};

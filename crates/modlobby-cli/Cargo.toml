@@ -9,6 +9,7 @@ license.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true }
+dotenvy = { workspace = true }
 lobby-core = { workspace = true }
 spring-protocol = { workspace = true }
 sysinfo = { workspace = true }

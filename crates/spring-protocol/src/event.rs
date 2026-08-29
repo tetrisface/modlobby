@@ -3,6 +3,11 @@
 //! Wire formats are taken from teiserver's `spring_out.ex` `do_reply/2`
 //! clauses; anything not modelled yet surfaces as [`ServerEvent::Unknown`].
 
+use std::collections::BTreeMap;
+
+use base64::prelude::*;
+use serde::Deserialize;
+
 use crate::codec::RawMessage;
 
 /// `CLIENTSTATUS` bit layout (teiserver `Spring.create_client_status/1`):
@@ -47,6 +52,15 @@ pub struct BattleOpened {
     pub map_name: String,
     pub title: String,
     pub game_name: String,
+}
+
+/// Team layout teiserver attaches to a battle (`s.battle.teams`), e.g. 2 x 8 for an 8v8.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub struct TeamLayout {
+    #[serde(rename = "nbTeams")]
+    pub teams: u32,
+    #[serde(rename = "teamSize")]
+    pub team_size: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -140,6 +154,15 @@ pub enum ServerEvent {
     SaidBattleEx {
         name: String,
         text: String,
+    },
+    /// `s.battle.update_lobby_title <id>\t<title>`.
+    BattleTitle {
+        id: u32,
+        title: String,
+    },
+    /// `s.battle.teams <base64 json>` with `{"<id>": {"nbTeams", "teamSize"}}` for one or more battles.
+    BattleTeams {
+        layouts: Vec<(u32, TeamLayout)>,
     },
     /// `s.system.disconnect <reason>`; reason `Flood protection` also blocks re-login for ~10 s.
     Disconnect {
@@ -267,6 +290,16 @@ fn parse(raw: &RawMessage) -> Option<ServerEvent> {
                 text: rest.into(),
             }
         }
+        "s.battle.update_lobby_title" => {
+            let (id, title) = a.split_once('\t')?;
+            ServerEvent::BattleTitle {
+                id: id.parse().ok()?,
+                title: title.into(),
+            }
+        }
+        "s.battle.teams" => ServerEvent::BattleTeams {
+            layouts: parse_battle_teams(a.trim())?,
+        },
         "s.system.disconnect" => ServerEvent::Disconnect { reason: a.into() },
         "s.system.shutdown" => ServerEvent::Shutdown,
         _ => ServerEvent::Unknown(raw.clone()),
@@ -295,6 +328,15 @@ fn parse_battle_opened(args: &str) -> Option<BattleOpened> {
         title: tab()?,
         game_name: tab()?,
     })
+}
+
+/// teiserver encodes the JSON without padding (`Base.encode64(padding: false)`).
+fn parse_battle_teams(encoded: &str) -> Option<Vec<(u32, TeamLayout)>> {
+    let json = BASE64_STANDARD_NO_PAD
+        .decode(encoded.trim_end_matches('='))
+        .ok()?;
+    let layouts: BTreeMap<u32, TeamLayout> = serde_json::from_slice(&json).ok()?;
+    Some(layouts.into_iter().collect())
 }
 
 /// The first `n` space-separated fields and the untouched remainder.
@@ -386,6 +428,46 @@ mod tests {
                 script_password: None
             }
         );
+    }
+
+    #[test]
+    fn battle_title_splits_on_tab() {
+        assert_eq!(
+            event(
+                "s.battle.update_lobby_title 22\tBeginner Players 6 vs 1 EPIC Scavenger MetalMap | 4v4"
+            ),
+            ServerEvent::BattleTitle {
+                id: 22,
+                title: "Beginner Players 6 vs 1 EPIC Scavenger MetalMap | 4v4".into()
+            }
+        );
+    }
+
+    #[test]
+    fn battle_teams_decodes_unpadded_base64_json() {
+        // Captured 2026-08-29: {"22":{"nbTeams":2,"teamSize":8}}
+        assert_eq!(
+            event("s.battle.teams eyIyMiI6eyJuYlRlYW1zIjoyLCJ0ZWFtU2l6ZSI6OH19"),
+            ServerEvent::BattleTeams {
+                layouts: vec![(
+                    22,
+                    TeamLayout {
+                        teams: 2,
+                        team_size: 8
+                    }
+                )]
+            }
+        );
+        // A length that would carry padding in the padded alphabet.
+        let unpadded = BASE64_STANDARD_NO_PAD.encode(r#"{"7":{"nbTeams":1,"teamSize":16}}"#);
+        assert!(matches!(
+            event(&format!("s.battle.teams {unpadded}")),
+            ServerEvent::BattleTeams { layouts } if layouts == [(7, TeamLayout { teams: 1, team_size: 16 })]
+        ));
+        assert!(matches!(
+            event("s.battle.teams !!!"),
+            ServerEvent::Malformed(_)
+        ));
     }
 
     #[test]

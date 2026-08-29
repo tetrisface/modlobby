@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, HashMap};
 
-use spring_protocol::{BattleOpened, UserStatus};
+use spring_protocol::{BattleOpened, TeamLayout, UserStatus};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
@@ -38,15 +38,19 @@ pub struct Battle {
     pub engine_version: String,
     pub title: String,
     pub game_name: String,
-    /// Everyone who `JOINEDBATTLE`, host bot and spectators included.
+    /// Everyone in the room, host bot and spectators included. The founder is
+    /// never announced with `JOINEDBATTLE`; `BATTLEOPENED` implies it.
     pub members: BTreeSet<String>,
     pub spectator_count: u32,
+    /// From `s.battle.teams`; absent until the server sends it.
+    pub layout: Option<TeamLayout>,
 }
 
 impl Battle {
     fn from_opened(b: BattleOpened) -> Self {
         Self {
             id: b.id,
+            members: BTreeSet::from([b.founder.clone()]),
             founder: b.founder,
             ip: b.ip,
             port: b.port,
@@ -59,8 +63,9 @@ impl Battle {
             engine_version: b.engine_version,
             title: b.title,
             game_name: b.game_name,
-            members: BTreeSet::new(),
-            spectator_count: 0,
+            // The founder spectates its own room until UPDATEBATTLEINFO says otherwise.
+            spectator_count: 1,
+            layout: None,
         }
     }
 
@@ -120,6 +125,7 @@ impl LobbyState {
     }
 
     pub fn open_battle(&mut self, opened: BattleOpened) {
+        self.user_battle.insert(opened.founder.clone(), opened.id);
         self.battles.insert(opened.id, Battle::from_opened(opened));
     }
 
