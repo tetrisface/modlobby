@@ -15,6 +15,9 @@
     "check": "prettier --check . && tsc --noEmit && bun test"
   },
   "dependencies": {
+    "@fontsource/chakra-petch": "5.3.0",
+    "@fontsource/ibm-plex-mono": "5.3.0",
+    "@fontsource/ibm-plex-sans": "5.3.0",
     "@solidjs/router": "1.0.0",
     "@tanstack/solid-virtual": "3.13.37",
     "@tauri-apps/api": "2.11.1",

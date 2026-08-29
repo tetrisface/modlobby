@@ -219,6 +219,12 @@ function Minimap(props: { rects: StartRectView[] }) {
       <svg viewBox='0 0 200 200' role='img'>
         <title>Start boxes</title>
         <rect width='200' height='200' class='mm-ground' />
+        {/* A quarter grid, so an empty square reads as a schematic waiting for
+            a map rather than as a panel that failed to load. */}
+        <path
+          class='mm-grid'
+          d='M50 0V200M100 0V200M150 0V200M0 50H200M0 100H200M0 150H200'
+        />
         <For each={props.rects}>
           {(rect) => (
             <g class='mm-box'>
