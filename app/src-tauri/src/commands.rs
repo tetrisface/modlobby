@@ -89,6 +89,7 @@ pub async fn login(
     username: String,
     password: Option<String>,
     remember: bool,
+    auto_login: bool,
 ) -> Result<()> {
     if username.trim().is_empty() {
         return Err(ApiError::new("input", "a username is required"));
@@ -122,6 +123,8 @@ pub async fn login(
     app.settings.update(|s| {
         s.account.username = username;
         s.account.remember_password = remember;
+        // Without a remembered password there is nothing to log in with.
+        s.account.auto_login = auto_login && remember;
     })?;
     Ok(())
 }

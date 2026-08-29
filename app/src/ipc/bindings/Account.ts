@@ -4,4 +4,9 @@ export type Account = { username: string,
 /**
  * Keep the password in the OS keyring between runs; it is never written here.
  */
-rememberPassword: boolean, };
+rememberPassword: boolean, 
+/**
+ * Log in on startup with the remembered password. Without one there is
+ * nothing to log in with, so this does nothing on its own.
+ */
+autoLogin: boolean, };

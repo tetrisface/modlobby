@@ -59,14 +59,47 @@ export function SettingsView() {
             }
           />
         </label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Account</legend>
         <label class='row'>
           <input
             type='checkbox'
-            checked={draft.server.tls}
-            onChange={(e) => setDraft('server', 'tls', e.currentTarget.checked)}
+            checked={draft.account.rememberPassword}
+            onChange={(e) => {
+              setDraft('account', 'rememberPassword', e.currentTarget.checked)
+              if (!e.currentTarget.checked)
+                setDraft('account', 'autoLogin', false)
+            }}
           />
-          TLS (8201); off for plain 8200
+          Remember the password (OS keyring)
         </label>
+        <label class='row'>
+          <input
+            type='checkbox'
+            checked={draft.account.autoLogin}
+            disabled={!draft.account.rememberPassword}
+            onChange={(e) =>
+              setDraft('account', 'autoLogin', e.currentTarget.checked)
+            }
+          />
+          Log in automatically on startup
+        </label>
+        <Show when={draft.account.username}>
+          <button
+            type='button'
+            onClick={() =>
+              void api.clearPassword(draft.account.username).then(() => {
+                setDraft('account', 'rememberPassword', false)
+                setDraft('account', 'autoLogin', false)
+                pushNotice('info', 'forgot the stored password')
+              })
+            }
+          >
+            Forget the stored password
+          </button>
+        </Show>
       </fieldset>
 
       <fieldset>
@@ -136,9 +169,6 @@ export function SettingsView() {
       <button type='submit' class='primary' disabled={saving()}>
         Save
       </button>
-      <Show when={draft.account.username}>
-        <p class='muted'>Account: {draft.account.username}</p>
-      </Show>
     </form>
   )
 }
@@ -147,7 +177,7 @@ function blank(): Settings {
   return {
     $schema: null,
     server: { host: '', port: 8201, tls: true },
-    account: { username: '', rememberPassword: false },
+    account: { username: '', rememberPassword: false, autoLogin: false },
     paths: { dataDir: null },
     battleList: { hidePassworded: false, hideLocked: false, hideEmpty: false },
     chat: { maxLines: 500 },

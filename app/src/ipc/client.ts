@@ -15,8 +15,12 @@ export type VoteChoice = 'y' | 'n' | 'b'
 export const api = {
   subscribe: (channel: Channel<UiMessage>) =>
     invoke<void>('subscribe', { channel }),
-  login: (username: string, password: string | null, remember: boolean) =>
-    invoke<void>('login', { username, password, remember }),
+  login: (
+    username: string,
+    password: string | null,
+    remember: boolean,
+    autoLogin: boolean,
+  ) => invoke<void>('login', { username, password, remember, autoLogin }),
   logout: () => invoke<void>('logout'),
   joinBattle: (id: number, password: string | null) =>
     invoke<void>('join_battle', { id, password }),

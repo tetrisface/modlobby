@@ -13,6 +13,7 @@
     "account": {
       "$ref": "#/$defs/Account",
       "default": {
+        "autoLogin": false,
         "rememberPassword": false,
         "username": ""
       }
@@ -63,6 +64,11 @@
     "Account": {
       "type": "object",
       "properties": {
+        "autoLogin": {
+          "description": "Log in on startup with the remembered password. Without one there is\nnothing to log in with, so this does nothing on its own.",
+          "type": "boolean",
+          "default": false
+        },
         "rememberPassword": {
           "description": "Keep the password in the OS keyring between runs; it is never written here.",
           "type": "boolean",

@@ -63,6 +63,9 @@ pub struct Account {
     pub username: String,
     /// Keep the password in the OS keyring between runs; it is never written here.
     pub remember_password: bool,
+    /// Log in on startup with the remembered password. Without one there is
+    /// nothing to log in with, so this does nothing on its own.
+    pub auto_login: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS, Default)]

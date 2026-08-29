@@ -10,11 +10,21 @@ const phaseText: Record<string, string> = {
   loading: 'loading the lobby…',
 }
 
+/** What a stored password looks like: present, and not readable. */
+const MASKED = '••••••••'
+
+/**
+ * Auto-login is attempted once per run, not once per mount — otherwise
+ * returning to this view after logging out would immediately log back in.
+ */
+let autoLoginAttempted = false
+
 export function Login() {
   const navigate = useNavigate()
   const [username, setUsername] = createSignal('')
   const [password, setPassword] = createSignal('')
   const [remember, setRemember] = createSignal(false)
+  const [autoLogin, setAutoLogin] = createSignal(false)
   const [hasStored, setHasStored] = createSignal(false)
   const [error, setError] = createSignal<string | null>(null)
   const [busy, setBusy] = createSignal(false)
@@ -24,10 +34,14 @@ export function Login() {
     if (!s || username()) return
     setUsername(s.account.username)
     setRemember(s.account.rememberPassword)
+    setAutoLogin(s.account.autoLogin)
     if (s.account.rememberPassword && s.account.username) {
-      api
+      void api
         .hasPassword(s.account.username)
-        .then(setHasStored)
+        .then(async (stored) => {
+          setHasStored(stored)
+          if (stored && s.account.autoLogin) await attemptAutoLogin()
+        })
         .catch(() => setHasStored(false))
     }
   })
@@ -36,17 +50,33 @@ export function Login() {
     if (lobby.phase === 'ready') navigate('/battles', { replace: true })
   })
 
-  async function submit(event: Event) {
-    event.preventDefault()
+  async function attemptAutoLogin() {
+    if (autoLoginAttempted || lobby.phase !== null) return
+    autoLoginAttempted = true
+    await login()
+  }
+
+  /** Sends the typed password, or falls back to the remembered one. */
+  async function login() {
     setError(null)
     setBusy(true)
     try {
-      await api.login(username().trim(), password() || null, remember())
+      await api.login(
+        username().trim(),
+        password() || null,
+        remember(),
+        autoLogin(),
+      )
     } catch (err) {
       setError(describeError(err))
     } finally {
       setBusy(false)
     }
+  }
+
+  function submit(event: Event) {
+    event.preventDefault()
+    void login()
   }
 
   return (
@@ -66,7 +96,7 @@ export function Login() {
           type='password'
           value={password()}
           onInput={(e) => setPassword(e.currentTarget.value)}
-          placeholder={hasStored() ? 'remembered' : ''}
+          placeholder={hasStored() ? MASKED : ''}
           autocomplete='current-password'
         />
       </label>
@@ -74,9 +104,21 @@ export function Login() {
         <input
           type='checkbox'
           checked={remember()}
-          onChange={(e) => setRemember(e.currentTarget.checked)}
+          onChange={(e) => {
+            setRemember(e.currentTarget.checked)
+            if (!e.currentTarget.checked) setAutoLogin(false)
+          }}
         />
         Remember the password (OS keyring)
+      </label>
+      <label class='row'>
+        <input
+          type='checkbox'
+          checked={autoLogin()}
+          disabled={!remember()}
+          onChange={(e) => setAutoLogin(e.currentTarget.checked)}
+        />
+        Log in automatically on startup
       </label>
       <button type='submit' disabled={busy() || !username().trim()}>
         {busy() ? (phaseText[lobby.phase ?? ''] ?? 'working…') : 'Log in'}
@@ -86,7 +128,6 @@ export function Login() {
       </Show>
       <p class='muted'>
         Server: {settings()?.server.host}:{settings()?.server.port}
-        {settings()?.server.tls ? ' (TLS)' : ' (plain)'}
       </p>
     </form>
   )
