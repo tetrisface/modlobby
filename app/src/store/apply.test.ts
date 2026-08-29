@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest'
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { Delta } from '../ipc/bindings/Delta'
 import type { Snapshot } from '../ipc/bindings/Snapshot'
