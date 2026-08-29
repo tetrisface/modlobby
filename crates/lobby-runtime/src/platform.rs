@@ -12,6 +12,17 @@ pub struct Hardware {
     pub machine_hash: String,
 }
 
+impl Hardware {
+    /// Fixed values for tests and headless runs.
+    pub fn stub() -> Self {
+        Self {
+            properties: vec![("hardware:osinfo".into(), "test".into())],
+            lobby_hash: "test test".into(),
+            machine_hash: "test".into(),
+        }
+    }
+}
+
 pub fn detect() -> Hardware {
     let system = System::new_all();
     let os = format!(

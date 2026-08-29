@@ -1,6 +1,6 @@
 [package]
 name = "modlobby-cli"
-description = "Command-line harness for the lobby core: log in and watch battle counts"
+description = "Command-line harness for the lobby runtime: watch the list, spectate a room, launch the engine"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,11 +10,9 @@ license.workspace = true
 anyhow = { workspace = true }
 clap = { workspace = true }
 dotenvy = { workspace = true }
-lobby-core = { workspace = true }
-rand = { workspace = true }
-recoil = { workspace = true }
+lobby-runtime = { workspace = true }
+lobby-ui = { workspace = true }
 spring-protocol = { workspace = true }
-sysinfo = { workspace = true }
 tokio = { workspace = true }
 toml = { workspace = true }
 tracing = { workspace = true }

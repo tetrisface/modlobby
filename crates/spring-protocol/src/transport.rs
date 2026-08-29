@@ -103,15 +103,16 @@ impl Transport {
         let stream = TcpStream::connect((endpoint.host.as_str(), endpoint.port)).await?;
         stream.set_nodelay(true)?;
         if !endpoint.tls {
-            return Ok(Self::spawn(stream, policy));
+            return Ok(Self::from_stream(stream, policy));
         }
         let name = ServerName::try_from(endpoint.host.clone())
             .map_err(|_| TransportError::ServerName(endpoint.host.clone()))?;
         let stream = tls_connector().connect(name, stream).await?;
-        Ok(Self::spawn(stream, policy))
+        Ok(Self::from_stream(stream, policy))
     }
 
-    fn spawn<S>(stream: S, policy: ThrottlePolicy) -> (Self, mpsc::Receiver<Inbound>)
+    /// Runs the protocol over any stream: the socket in production, an in-memory duplex in tests.
+    pub fn from_stream<S>(stream: S, policy: ThrottlePolicy) -> (Self, mpsc::Receiver<Inbound>)
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {

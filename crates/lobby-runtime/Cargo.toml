@@ -1,0 +1,18 @@
+[package]
+name = "lobby-runtime"
+description = "The tokio actor behind every front end: connection, reducer, engine child, UI transport"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+lobby-core = { workspace = true }
+lobby-ui = { workspace = true }
+rand = { workspace = true }
+recoil = { workspace = true }
+spring-protocol = { workspace = true }
+sysinfo = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }

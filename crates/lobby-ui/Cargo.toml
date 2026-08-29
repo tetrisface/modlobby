@@ -1,0 +1,16 @@
+[package]
+name = "lobby-ui"
+description = "The UI contract: snapshot and delta types (exported to TypeScript), projection from core events, batching, and the UiTransport seam"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+lobby-core = { workspace = true }
+serde = { workspace = true }
+spring-protocol = { workspace = true }
+ts-rs = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
