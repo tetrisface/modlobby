@@ -196,6 +196,9 @@ export function applyDelta(delta: Delta): void {
     case 'engine':
       setLobby('engine', delta.data)
       return
+    case 'content':
+      setLobby('content', delta.data)
+      return
     case 'chat':
       pushLine(delta.data)
       return

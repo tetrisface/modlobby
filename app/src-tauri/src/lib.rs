@@ -23,8 +23,16 @@ pub fn run() {
         .setup(move |tauri_app| {
             let mut watch = app.settings.watch()?;
             let handle = tauri_app.handle().clone();
+            let client = app.client.clone();
+            let data_dir = app.settings.get().paths.data_dir;
             tauri::async_runtime::spawn(async move {
+                // The content check needs to know where BAR keeps its files,
+                // both now and whenever the setting changes.
+                let _ = client.set_data_dir(data_dir).await;
                 while let Some(event) = watch.events.recv().await {
+                    if let settings::SettingsEvent::Changed(settings) = &event {
+                        let _ = client.set_data_dir(settings.paths.data_dir.clone()).await;
+                    }
                     let _ = handle.emit("settings", &event);
                 }
             });

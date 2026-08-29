@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "crates/spring-protocol",
+    "crates/content",
     "crates/lobby-core",
     "crates/lobby-ui",
     "crates/lobby-runtime",
@@ -30,8 +31,10 @@ recoil = { path = "crates/recoil" }
 anyhow = "=1.0.104"
 base64 = "=0.23.1"
 clap = { version = "=4.6.6", features = ["derive", "env"] }
+content = { path = "crates/content" }
 directories = "=6.0.0"
 dotenvy = "=0.15.7"
+flate2 = "=1.1.10"
 full_moon = "=2.2.0"
 jsonc-parser = { version = "=0.33.1", features = ["cst", "serde"] }
 keyring = "=4.1.6"

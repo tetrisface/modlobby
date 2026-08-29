@@ -511,6 +511,12 @@ pub enum Delta {
         change: Option<OptionChangeView>,
     },
     Vote(Option<VoteView>),
+    /// Whether the room's engine, game and map are installed here.
+    Content {
+        engine: bool,
+        game: bool,
+        map: bool,
+    },
     MyBattle(Option<MyBattleView>),
     GameRunning(Option<GameRunningView>),
     Engine(EngineStatus),

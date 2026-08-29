@@ -1,0 +1,17 @@
+[package]
+name = "content"
+description = "What this machine has installed: engines, games via the rapid index, and maps"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+flate2 = { workspace = true }
+recoil = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+ts-rs = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

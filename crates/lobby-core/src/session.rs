@@ -91,6 +91,9 @@ pub struct Session {
     seat: Option<(u8, u8)>,
     /// A `!privatehost` we asked for and the password it came back with.
     private_host: Option<String>,
+    /// Whether this machine has the room's engine, game and map. Claiming to be
+    /// synced when we are not makes the host start a game we cannot join.
+    synced: bool,
     pub state: LobbyState,
 }
 
@@ -116,6 +119,7 @@ impl Session {
             pending_join: None,
             seat: None,
             private_host: None,
+            synced: false,
             state: LobbyState {
                 phase: Some(Phase::Connecting),
                 ..LobbyState::default()
@@ -186,10 +190,32 @@ impl Session {
         )?)])
     }
 
+    /// Reports whether the room's content is installed. Only a caller that has
+    /// actually looked at the disk should say `true`.
+    pub fn set_synced(&mut self, synced: bool) -> Vec<Effect> {
+        if self.synced == synced {
+            return vec![];
+        }
+        self.synced = synced;
+        if self.state.my_battle.is_none() {
+            return vec![];
+        }
+        vec![self.battle_status()]
+    }
+
+    pub fn is_synced(&self) -> bool {
+        self.synced
+    }
+
     fn battle_status(&self) -> Effect {
+        let sync = if self.synced {
+            Sync::Synced
+        } else {
+            Sync::Unsynced
+        };
         let status = match self.seat {
-            Some((team, ally_team)) => MyBattleStatus::player(Sync::Unsynced, team, ally_team),
-            None => MyBattleStatus::spectator(Sync::Unsynced),
+            Some((team, ally_team)) => MyBattleStatus::player(sync, team, ally_team),
+            None => MyBattleStatus::spectator(sync),
         };
         Effect::Send(Envelope::queue(Area::BattleStatus, status.line()))
     }

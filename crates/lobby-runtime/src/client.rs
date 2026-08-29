@@ -81,6 +81,7 @@ enum Command {
         reply: Reply<()>,
     },
     ReleaseSeat,
+    SetDataDir(Option<PathBuf>),
     RequestPrivateHost {
         region: String,
         reply: Reply<String>,
@@ -189,6 +190,11 @@ impl Client {
         self.send(Command::ReleaseSeat).await
     }
 
+    /// Points the content check at a data directory; `None` uses the launcher's.
+    pub async fn set_data_dir(&self, data_dir: Option<PathBuf>) -> Result<(), ClientError> {
+        self.send(Command::SetDataDir(data_dir)).await
+    }
+
     /// Asks a cluster manager in `region` for a room of our own; the runtime
     /// joins it when it appears. Returns the manager it asked.
     pub async fn request_private_host(&self, region: String) -> Result<String, ClientError> {
@@ -235,6 +241,11 @@ struct Runtime {
     auto_launch: Option<PathBuf>,
     login_reply: Option<Reply<()>>,
     join_reply: Option<Reply<()>>,
+    /// Where BAR's content lives; `None` falls back to the launcher's directory.
+    data_dir: Option<PathBuf>,
+    /// The room's (engine, game, map) the content check last ran against;
+    /// scanning the rapid index is too slow to repeat per message.
+    checked: Option<(String, String, String)>,
     projector: Projector,
     batcher: Batcher,
 }
@@ -259,9 +270,64 @@ impl Runtime {
             auto_launch: None,
             login_reply: None,
             join_reply: None,
+            data_dir: None,
+            checked: None,
             projector: Projector::new(),
             batcher: Batcher::default(),
         }
+    }
+
+    /// Re-checks the room's content when what it asks for changes, and tells
+    /// the room whether we are synced. Nothing claims sync without a disk check.
+    async fn refresh_content(&mut self) {
+        let Some(conn) = self.conn.as_ref() else {
+            self.checked = None;
+            return;
+        };
+        let room = conn
+            .session
+            .state
+            .my_battle
+            .as_ref()
+            .and_then(|my| conn.session.state.battles.get(&my.id));
+        let Some(room) = room else {
+            if self.checked.take().is_some() {
+                self.set_synced(false).await;
+            }
+            return;
+        };
+        let key = (
+            room.engine_version.clone(),
+            room.game_name.clone(),
+            room.map_name.clone(),
+        );
+        if self.checked.as_ref() == Some(&key) {
+            return;
+        }
+        let Some(data_dir) = self.data_dir() else {
+            return;
+        };
+        let available = content::Library::new(data_dir).check(&key.0, &key.1, &key.2);
+        self.checked = Some(key);
+        self.batcher.push(Delta::Content {
+            engine: available.engine,
+            game: available.game,
+            map: available.map,
+        });
+        self.set_synced(available.complete()).await;
+    }
+
+    async fn set_synced(&mut self, synced: bool) {
+        let Some(conn) = self.conn.as_mut() else {
+            return;
+        };
+        let effects = conn.session.set_synced(synced);
+        self.apply_effects(effects).await;
+    }
+
+    /// Where BAR keeps its content: the setting when given, else the launcher's.
+    fn data_dir(&self) -> Option<PathBuf> {
+        self.data_dir.clone().or_else(launch::default_data_dir)
     }
 
     async fn run(mut self) {
@@ -286,6 +352,7 @@ impl Runtime {
                     while let Some(more) = self.try_recv_inbound() {
                         self.handle_inbound(more).await;
                     }
+                    self.refresh_content().await;
                 }
                 Next::EngineExited(status) => self.engine_exited(status).await,
             }
@@ -374,6 +441,12 @@ impl Runtime {
                         let _ = reply.send(Err(ClientError::Refused(err.to_string())));
                     }
                 }
+            }
+            Command::SetDataDir(data_dir) => {
+                self.data_dir = data_dir;
+                // Re-check against the new directory.
+                self.checked = None;
+                self.refresh_content().await;
             }
             Command::ReleaseSeat => {
                 let Some(conn) = self.conn.as_mut() else {
@@ -634,11 +707,24 @@ impl Runtime {
             };
             let state = &conn.session.state;
             let me = state.me.clone().unwrap_or_default();
-            let engine_version = state
+            let room = state
                 .battles
                 .get(&game.view.id)
-                .map(|b| b.engine_version.clone())
                 .ok_or_else(|| ClientError::Engine("the room is gone".into()))?;
+            // Better a message naming what is missing than an engine that
+            // starts and cannot join.
+            let available = content::Library::new(&data_dir).check(
+                &room.engine_version,
+                &room.game_name,
+                &room.map_name,
+            );
+            if !available.complete() {
+                return Err(ClientError::Engine(format!(
+                    "this room needs content you do not have: {}",
+                    available.missing().join(", ")
+                )));
+            }
+            let engine_version = room.engine_version.clone();
             let url = recoil::spring_url(&me, &game.script_password, &game.view.ip, game.view.port);
             (engine_version, url, conn.session.set_in_game(true))
         };

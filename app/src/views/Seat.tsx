@@ -70,6 +70,23 @@ export function Seat() {
         </Show>
       </Show>
 
+      <Show when={lobby.content}>
+        {(content) => {
+          const missing = () =>
+            (['engine', 'game', 'map'] as const).filter(
+              (what) => !content()[what],
+            )
+          return (
+            <Show
+              when={missing().length}
+              fallback={<span class='synced'>content ready</span>}
+            >
+              <span class='error'>missing {missing().join(', ')}</span>
+            </Show>
+          )
+        }}
+      </Show>
+
       <span class='spacer' />
       <select
         value={region()}

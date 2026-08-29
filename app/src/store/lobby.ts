@@ -15,6 +15,8 @@ export type LobbyState = {
   myBattle: MyBattleView | null
   gameRunning: GameRunningView | null
   engine: EngineStatus
+  /** Whether this machine has the room's engine, game and map. */
+  content: { engine: boolean; game: boolean; map: boolean } | null
 }
 
 export function emptyLobby(): LobbyState {
@@ -26,6 +28,7 @@ export function emptyLobby(): LobbyState {
     myBattle: null,
     gameRunning: null,
     engine: { state: 'idle' },
+    content: null,
   }
 }
 

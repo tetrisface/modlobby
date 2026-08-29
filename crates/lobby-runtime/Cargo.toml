@@ -7,6 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+content = { workspace = true }
 lobby-core = { workspace = true }
 lobby-ui = { workspace = true }
 rand = { workspace = true }
