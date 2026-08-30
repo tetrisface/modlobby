@@ -77,8 +77,17 @@ pub(crate) type Result<T> = std::result::Result<T, ApiError>;
 
 /// Installs the channel the runtime streams into; a snapshot arrives at once.
 #[tauri::command]
-pub async fn subscribe(app: State<'_, App>, channel: Channel<UiMessage>) -> Result<()> {
-    app.client.subscribe(ChannelTransport(channel)).await?;
+pub async fn subscribe(
+    app: State<'_, App>,
+    overlay: State<'_, std::sync::Arc<crate::overlay::Controller>>,
+    channel: Channel<UiMessage>,
+) -> Result<()> {
+    app.client
+        .subscribe(ChannelTransport {
+            channel,
+            overlay: overlay.inner().clone(),
+        })
+        .await?;
     Ok(())
 }
 
@@ -408,6 +417,18 @@ pub async fn flash_engine(app: State<'_, App>) -> Result<bool> {
         return Ok(false);
     };
     Ok(crate::flash::flash_process(pid))
+}
+
+/// Whether the window is currently sitting over a running game.
+#[tauri::command]
+pub fn overlay_active(overlay: State<'_, std::sync::Arc<crate::overlay::Controller>>) -> bool {
+    overlay.is_over()
+}
+
+/// The same thing the hotkey does, for people who would rather click.
+#[tauri::command]
+pub fn overlay_toggle(overlay: State<'_, std::sync::Arc<crate::overlay::Controller>>) {
+    overlay.hotkey();
 }
 
 /// Marks us away, or back.

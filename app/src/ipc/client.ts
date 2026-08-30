@@ -52,6 +52,8 @@ export const api = {
   stopDownload: () => invoke<void>('stop_download'),
   ring: (user: string) => invoke<void>('ring', { user }),
   setAway: (away: boolean) => invoke<void>('set_away', { away }),
+  overlayActive: () => invoke<boolean>('overlay_active'),
+  overlayToggle: () => invoke<void>('overlay_toggle'),
   flashEngine: () => invoke<boolean>('flash_engine'),
   requestGameStatus: (founder: string) =>
     invoke<void>('request_game_status', { founder }),

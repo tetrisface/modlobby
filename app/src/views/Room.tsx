@@ -24,6 +24,7 @@ import { mapImage, sized } from '../lib/maps'
 import { readSkills, teamSkill, type Skill } from '../lib/skill'
 import { BATTLE_ROOM, chat, pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
+import { settings } from '../store/settings'
 import { HostBar } from './HostBar'
 import { PveScore } from './PveScore'
 import { Seat } from './Seat'
@@ -150,15 +151,25 @@ export function Room() {
             </div>
             <div class='card-actions'>
               <Show when={lobby.gameRunning}>
-                <button
-                  class='primary'
-                  disabled={lobby.engine.state === 'running'}
-                  onClick={launch}
+                {/* While our own engine runs, the useful button is not another
+                    launch — it is the way back to the game the lobby is
+                    sitting on top of. */}
+                <Show
+                  when={lobby.engine.state === 'running'}
+                  fallback={
+                    <button class='primary' onClick={launch}>
+                      Watch the game
+                    </button>
+                  }
                 >
-                  {lobby.engine.state === 'running'
-                    ? 'Engine running'
-                    : 'Watch the game'}
-                </button>
+                  <button
+                    class='primary'
+                    title={`Or press ${settings()?.overlay.hotkey ?? 'the overlay shortcut'}`}
+                    onClick={() => void api.overlayToggle()}
+                  >
+                    Back to game
+                  </button>
+                </Show>
               </Show>
               <button onClick={() => api.leaveBattle()}>Leave</button>
             </div>

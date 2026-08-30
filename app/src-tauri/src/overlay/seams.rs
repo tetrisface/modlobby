@@ -25,17 +25,3 @@ pub trait Hotkeys: Send + Sync {
     fn register(&self, accelerator: &str);
     fn unregister(&self);
 }
-
-/// Nothing to do, for the platforms where there is nothing to be done.
-///
-/// macOS bounces a dock icon for the *application*, and Wayland deliberately
-/// refuses to let one window raise itself over another at all — so on those
-/// the overlay still shows and hides, it just cannot hand focus back, which is
-/// worth logging once rather than failing.
-pub struct NoForeground;
-
-impl ForegroundControl for NoForeground {
-    fn focus(&self, pid: u32) {
-        tracing::debug!(pid, "no way to focus another process's window here");
-    }
-}

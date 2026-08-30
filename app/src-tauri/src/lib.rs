@@ -13,6 +13,15 @@ mod win;
 
 use tauri::{Emitter, Manager};
 
+/// The overlay's slice of the settings file.
+fn overlay_settings(settings: &settings::Settings) -> overlay::OverlaySettings {
+    overlay::OverlaySettings {
+        enabled: settings.overlay.enabled,
+        hotkey: settings.overlay.hotkey.clone(),
+        return_focus_to_game: settings.overlay.return_focus_to_game,
+    }
+}
+
 pub fn run() {
     let app = state::App::open().unwrap_or_else(|err| panic!("starting modlobby: {err}"));
     // Held for the life of the process: dropping it stops the file writer.
@@ -24,7 +33,37 @@ pub fn run() {
         // Where the window was and how big it was, kept between runs — a lobby
         // is a window you arrange once and then live with.
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(
+            // The handler fires on press and release; only one of those is an
+            // instruction.
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    use tauri_plugin_global_shortcut::ShortcutState;
+                    if event.state() != ShortcutState::Pressed {
+                        return;
+                    }
+                    if let Some(overlay) = app.try_state::<std::sync::Arc<overlay::Controller>>() {
+                        overlay.hotkey();
+                    }
+                })
+                .build(),
+        )
         .setup(move |tauri_app| {
+            // The overlay needs a window, so it is built here rather than in
+            // `App::open`, and Tauri holds it beside the app state.
+            let controller = std::sync::Arc::new(overlay::Controller::new(
+                overlay_settings(&app.settings.get()),
+                std::sync::Arc::new(overlay::surface::TauriSurface::new(
+                    overlay::surface::main_window(tauri_app.handle())
+                        .ok_or("the main window is missing")?,
+                )),
+                std::sync::Arc::new(overlay::foreground::Windows),
+                std::sync::Arc::new(overlay::hotkey::GlobalHotkey::new(
+                    tauri_app.handle().clone(),
+                )),
+            ));
+            tauri_app.manage(controller.clone());
+
             let mut watch = app.settings.watch()?;
             let handle = tauri_app.handle().clone();
             let client = app.client.clone();
@@ -44,6 +83,7 @@ pub fn run() {
                             .allow_public_seat(settings.play.in_public_rooms)
                             .await;
                         let _ = client.set_auto_launch(settings.play.auto_launch).await;
+                        controller.settings_changed(overlay_settings(settings));
                     }
                     let _ = handle.emit("settings", &event);
                 }
@@ -75,6 +115,8 @@ pub fn run() {
             commands::stop_download,
             commands::ring,
             commands::set_away,
+            commands::overlay_active,
+            commands::overlay_toggle,
             commands::flash_engine,
             commands::remember_played,
             commands::game_modoptions,

@@ -169,6 +169,54 @@ export function SettingsView() {
         </fieldset>
 
         <fieldset>
+          <legend>Overlay</legend>
+          <label class='row'>
+            <input
+              type='checkbox'
+              checked={draft.overlay.enabled}
+              onChange={(e) =>
+                setDraft('overlay', 'enabled', e.currentTarget.checked)
+              }
+            />
+            Raise the lobby over a running game
+          </label>
+          <label>
+            Shortcut
+            <input
+              value={draft.overlay.hotkey}
+              placeholder='Alt+Shift+L'
+              disabled={!draft.overlay.enabled}
+              onInput={(e) =>
+                setDraft('overlay', 'hotkey', e.currentTarget.value)
+              }
+            />
+          </label>
+          <p class='muted'>
+            Held only while a game runs, so the lobby never owns a key while it
+            sits idle. While held it does beat the game, so a combination BAR
+            uses would be taken away from it. The default was picked on that
+            basis: BAR binds <code>L</code> plain and with Shift, and binds only
+            two Alt+Shift combinations in the whole game, neither of them this
+            one.
+          </p>
+          <label class='row'>
+            <input
+              type='checkbox'
+              checked={draft.overlay.returnFocusToGame}
+              disabled={!draft.overlay.enabled}
+              onChange={(e) =>
+                setDraft(
+                  'overlay',
+                  'returnFocusToGame',
+                  e.currentTarget.checked,
+                )
+              }
+            />
+            Put the game back in front when I dismiss it
+          </label>
+        </fieldset>
+
+        <fieldset>
           <legend>Playing</legend>
           <label class='row'>
             <input
@@ -470,6 +518,11 @@ function blank(): Settings {
       sortDescending: false,
     },
     chat: { filterHostChatter: true, maxLines: 3000, channels: ['main'] },
+    overlay: {
+      enabled: true,
+      hotkey: 'Alt+Shift+L',
+      returnFocusToGame: true,
+    },
     tweaks: { styluaConfig: null, defaultSlot: 'tweakdefs1' },
     logging: { filter: 'info' },
   }

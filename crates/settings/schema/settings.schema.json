@@ -59,6 +59,14 @@
         "vote": "lobby"
       }
     },
+    "overlay": {
+      "$ref": "#/$defs/Overlay",
+      "default": {
+        "enabled": true,
+        "hotkey": "Alt+Shift+L",
+        "returnFocusToGame": true
+      }
+    },
     "paths": {
       "$ref": "#/$defs/Paths",
       "default": {
@@ -296,6 +304,26 @@
           "description": "A vote opened in your room.",
           "$ref": "#/$defs/Alert",
           "default": "lobby"
+        }
+      }
+    },
+    "Overlay": {
+      "description": "The lobby raised over a running game by a hotkey.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "hotkey": {
+          "description": "A Tauri accelerator, e.g. `Alt+Shift+L`.\n\nA global hotkey beats the focused window, so a collision does not\nmerely conflict — it silently eats a game action for as long as a game\nis running. The default was checked against BAR's shipped binds: `sc_l`\nis taken plain and with Shift (cycling fire state), and the whole game\nbinds only two Alt+Shift combinations, neither of them this one.",
+          "type": "string",
+          "default": "Alt+Shift+L"
+        },
+        "returnFocusToGame": {
+          "description": "Whether hiding the overlay should put the game back in front.",
+          "type": "boolean",
+          "default": true
         }
       }
     },

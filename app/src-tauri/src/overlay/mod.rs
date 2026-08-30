@@ -9,11 +9,12 @@
 //! [`state`] decides; everything that touches the operating system is a trait
 //! it knows nothing about.
 
-// The executor that applies these effects is the next piece. Until it exists
-// the decision layer is unreachable from the app — but not untested, which is
-// the point of building it in this order.
-#![allow(dead_code)]
-
+pub mod controller;
+pub mod foreground;
+pub mod hotkey;
+pub mod seams;
 pub mod state;
+pub mod surface;
 
-pub use state::{Effect, Input, Overlay, OverlaySettings, step};
+pub use controller::Controller;
+pub use state::OverlaySettings;

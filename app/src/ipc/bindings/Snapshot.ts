@@ -9,6 +9,10 @@ import type { MyBattleView } from "./MyBattleView";
 import type { Phase } from "./Phase";
 import type { UserView } from "./UserView";
 
+/**
+ * `Default` is "nothing has happened yet", which is what a test that cares
+ * about one field wants and what a fresh session is.
+ */
 export type Snapshot = { phase: Phase | null, me: string | null, users: Array<UserView>, battles: Array<BattleView>, myBattle: MyBattleView | null, gameRunning: GameRunningView | null, engine: EngineStatus, 
 /**
  * Channels we are in. Chat lines are not replayed — a reload keeps

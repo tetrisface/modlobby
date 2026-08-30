@@ -45,6 +45,11 @@ function loaded(): Settings {
       sortDescending: false,
     },
     chat: { filterHostChatter: true, maxLines: 3000, channels: ['main'] },
+    overlay: {
+      enabled: true,
+      hotkey: 'Alt+Shift+L',
+      returnFocusToGame: true,
+    },
     tweaks: { styluaConfig: null, defaultSlot: 'tweakdefs1' },
     logging: { filter: 'info' },
   }

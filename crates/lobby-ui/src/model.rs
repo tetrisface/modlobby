@@ -380,10 +380,11 @@ pub struct GameRunningView {
     pub port: u16,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "state", rename_all = "camelCase")]
 #[ts(export)]
 pub enum EngineStatus {
+    #[default]
     Idle,
     Running {
         /// The engine's process id, when it still has one.
@@ -414,10 +415,11 @@ pub enum AlertKind {
 }
 
 /// A pr-downloader run, and how far along it is.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "state", rename_all = "camelCase")]
 #[ts(export)]
 pub enum DownloadStatus {
+    #[default]
     Idle,
     Running {
         /// What was asked for, for the label.
@@ -436,7 +438,9 @@ pub enum DownloadStatus {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+/// `Default` is "nothing has happened yet", which is what a test that cares
+/// about one field wants and what a fresh session is.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct Snapshot {

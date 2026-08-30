@@ -22,6 +22,7 @@ pub struct Settings {
     pub battle_list: BattleList,
     pub chat: Chat,
     pub notifications: Notifications,
+    pub overlay: Overlay,
     pub play: Play,
     pub tweaks: Tweaks,
     pub logging: Logging,
@@ -201,6 +202,34 @@ impl Default for Play {
             pve_stats: true,
             // Nothing remembered yet, and this is a lobby.
             last_was_player: true,
+        }
+    }
+}
+
+/// The lobby raised over a running game by a hotkey.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(default, rename_all = "camelCase")]
+#[ts(export)]
+pub struct Overlay {
+    pub enabled: bool,
+    /// A Tauri accelerator, e.g. `Alt+Shift+L`.
+    ///
+    /// A global hotkey beats the focused window, so a collision does not
+    /// merely conflict — it silently eats a game action for as long as a game
+    /// is running. The default was checked against BAR's shipped binds: `sc_l`
+    /// is taken plain and with Shift (cycling fire state), and the whole game
+    /// binds only two Alt+Shift combinations, neither of them this one.
+    pub hotkey: String,
+    /// Whether hiding the overlay should put the game back in front.
+    pub return_focus_to_game: bool,
+}
+
+impl Default for Overlay {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            hotkey: "Alt+Shift+L".into(),
+            return_focus_to_game: true,
         }
     }
 }
