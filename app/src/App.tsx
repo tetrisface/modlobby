@@ -29,6 +29,15 @@ import { Tweaks } from './views/Tweaks'
 type SettingsEvent = { changed: Settings } | { invalid: string }
 
 function Layout(props: ParentProps) {
+  /**
+   * Everything unread, anywhere. A notification is only raised while the
+   * window is in the background, so without this a message that arrives while
+   * you are reading the battle list leaves no mark at all.
+   */
+  const unread = () =>
+    Object.values(chat.unread).reduce((total, count) => total + count, 0)
+  const named = () => Object.values(chat.named).some(Boolean)
+
   /** What the server says about us, which is what everyone else can see. */
   const away = () => (lobby.me ? lobby.users[lobby.me]?.status.away : false)
 
@@ -97,7 +106,14 @@ function Layout(props: ParentProps) {
         <A href='/skirmish'>Skirmish</A>
         <Show when={lobby.phase === 'ready'}>
           <A href='/battles'>Battles</A>
-          <A href='/chat'>Chat</A>
+          <A href='/chat'>
+            Chat
+            <Show when={unread() > 0}>
+              <span class='badge' classList={{ named: named() }}>
+                {unread()}
+              </span>
+            </Show>
+          </A>
           <A href='/replays'>Replays</A>
           <Show when={lobby.myBattle}>
             <A href='/room'>Room</A>

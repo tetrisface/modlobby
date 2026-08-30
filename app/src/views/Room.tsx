@@ -116,7 +116,24 @@ export function Room() {
               <h1 title={b().title}>{b().title}</h1>
               <div class='card-meta'>
                 <span>
-                  Map <b>{b().mapName}</b>
+                  Map{' '}
+                  {/* The page Chobby opens for a map, so the link lands where
+                      people already expect it to. */}
+                  <b
+                    class='chat-link'
+                    title='Open this map on beyondallreason.info'
+                    onClick={() =>
+                      void api
+                        .openUrl(
+                          `https://www.beyondallreason.info/maps?mapname=${encodeURIComponent(b().mapName)}`,
+                        )
+                        .catch((error) =>
+                          pushNotice('warning', describeError(error)),
+                        )
+                    }
+                  >
+                    {b().mapName}
+                  </b>
                 </span>
                 <span>
                   Host <b>{b().founder}</b>
