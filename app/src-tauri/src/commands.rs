@@ -425,6 +425,12 @@ pub fn overlay_active(overlay: State<'_, std::sync::Arc<crate::overlay::Controll
     overlay.is_over()
 }
 
+/// Stops the running game, leaving the lobby up. Answers whether there was one.
+#[tauri::command]
+pub async fn stop_game(app: State<'_, App>) -> Result<bool> {
+    Ok(app.client.stop_engine().await?)
+}
+
 /// The same thing the hotkey does, for people who would rather click.
 #[tauri::command]
 pub fn overlay_toggle(overlay: State<'_, std::sync::Arc<crate::overlay::Controller>>) {

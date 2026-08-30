@@ -2359,6 +2359,23 @@ html.overlay .shell {
   }
 }
 
+/* Bottom-right rather than over the nav: the nav is where you go to *use*
+   the lobby, and these are about leaving it. */
+.overlay-chrome {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 40;
+}
+
+.overlay-chrome .quit {
+  border-color: var(--error);
+  color: var(--error);
+}
+
 .overlay-close {
   position: absolute;
   top: 6px;
@@ -2369,7 +2386,6 @@ html.overlay .shell {
   font-size: 17px;
   line-height: 1;
   border-radius: 50%;
-  z-index: 40;
 }
 
 .bot-remove {

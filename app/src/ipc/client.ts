@@ -62,6 +62,7 @@ export const api = {
   setAway: (away: boolean) => invoke<void>('set_away', { away }),
   overlayActive: () => invoke<boolean>('overlay_active'),
   overlayToggle: () => invoke<void>('overlay_toggle'),
+  stopGame: () => invoke<boolean>('stop_game'),
   flashEngine: () => invoke<boolean>('flash_engine'),
   requestGameStatus: (founder: string) =>
     invoke<void>('request_game_status', { founder }),

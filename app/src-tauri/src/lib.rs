@@ -4,6 +4,7 @@
 
 mod commands;
 mod flash;
+mod ingame;
 mod logging;
 mod overlay;
 mod presets;
@@ -33,6 +34,41 @@ fn overlay_config_dir(settings: &settings::Settings) -> Option<std::path::PathBu
         .overlay
         .enabled
         .then(|| settings::config_dir().join("engine"))
+}
+
+/// The live in-game socket, or nothing if it could not be bound.
+///
+/// Dropping it takes the widget back out of the user's data directory, which
+/// is why it is held rather than leaked and why the exit handler reaches for
+/// it explicitly.
+type InGameHandle = std::sync::Arc<std::sync::Mutex<Option<ingame::InGame>>>;
+
+/// What the in-game widget is allowed to do, and who decides.
+///
+/// The overlay controller answers "is this our game", so a game launched from
+/// another lobby while modlobby is open is told `no` and keeps its own Escape.
+struct InGameActions {
+    overlay: std::sync::Arc<overlay::Controller>,
+    client: lobby_runtime::Client,
+}
+
+impl ingame::Actions for InGameActions {
+    fn raise(&self) -> bool {
+        self.overlay.raise()
+    }
+
+    fn quit_game(&self) -> bool {
+        if !self.overlay.armed_for_game() {
+            return false;
+        }
+        // The widget is waiting on a reply, so this cannot block on the
+        // runtime; the answer is "yes, this is ours and the stop is on its way".
+        let client = self.client.clone();
+        tauri::async_runtime::spawn(async move {
+            let _ = client.stop_engine().await;
+        });
+        true
+    }
 }
 
 pub fn run() {
@@ -76,6 +112,42 @@ pub fn run() {
                 )),
             ));
             tauri_app.manage(controller.clone());
+
+            // Escape inside a game. The listener is bound before anything is
+            // written, so the widget always names a port that answers.
+            let actions = std::sync::Arc::new(InGameActions {
+                overlay: controller.clone(),
+                client: app.client.clone(),
+            });
+            let widget_dir = app
+                .settings
+                .get()
+                .paths
+                .data_dir
+                .or_else(lobby_runtime::launch::default_data_dir);
+            let want_widget = app.settings.get().overlay.in_game_escape;
+            // Held by the app so it lives as long as the process, and so the
+            // exit handler can drop it — dropping is what removes the widget.
+            let held: InGameHandle = std::sync::Arc::new(std::sync::Mutex::new(None));
+            tauri_app.manage(held.clone());
+            tauri::async_runtime::spawn(async move {
+                match ingame::InGame::start(actions).await {
+                    Ok(mut ingame) => {
+                        if let (true, Some(dir)) = (want_widget, widget_dir.as_deref()) {
+                            match ingame.install(dir) {
+                                Ok(path) => tracing::info!(
+                                    path = %path.display(),
+                                    port = ingame.port,
+                                    "in-game Escape widget installed"
+                                ),
+                                Err(err) => tracing::warn!(%err, "could not install the widget"),
+                            }
+                        }
+                        *held.lock().expect("in-game") = Some(ingame);
+                    }
+                    Err(err) => tracing::warn!(%err, "no in-game control socket"),
+                }
+            });
 
             let mut watch = app.settings.watch()?;
             let handle = tauri_app.handle().clone();
@@ -137,6 +209,7 @@ pub fn run() {
             commands::set_away,
             commands::overlay_active,
             commands::overlay_toggle,
+            commands::stop_game,
             commands::flash_engine,
             commands::remember_played,
             commands::game_modoptions,
@@ -184,6 +257,16 @@ pub fn run() {
             commands::save_draft,
             commands::delete_draft,
         ])
-        .run(tauri::generate_context!())
-        .expect("running modlobby");
+        .build(tauri::generate_context!())
+        .expect("building modlobby")
+        .run(|handle, event| {
+            // Leaving a widget behind that talks to a port nobody answers is
+            // harmless — it stops consuming Escape — but tidying up is the
+            // whole promise, so it is done on the way out.
+            if matches!(event, tauri::RunEvent::Exit)
+                && let Some(held) = handle.try_state::<InGameHandle>()
+            {
+                drop(held.lock().expect("in-game").take());
+            }
+        });
 }

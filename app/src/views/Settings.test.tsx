@@ -49,6 +49,7 @@ function loaded(): Settings {
       enabled: true,
       hotkey: 'Alt+Shift+L',
       returnFocusToGame: true,
+      inGameEscape: true,
     },
     tweaks: { styluaConfig: null, defaultSlot: 'tweakdefs1' },
     logging: { filter: 'info' },

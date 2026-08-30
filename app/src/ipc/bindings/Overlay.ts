@@ -17,4 +17,15 @@ hotkey: string,
 /**
  * Whether hiding the overlay should put the game back in front.
  */
-returnFocusToGame: boolean, };
+returnFocusToGame: boolean, 
+/**
+ * Whether Escape inside a game should raise the lobby.
+ *
+ * The engine gives an outside program no way to see Escape, so this is
+ * the one feature that puts a file of ours in the BAR data directory: a
+ * small widget in `LuaUI/Widgets/`. It draws nothing, it is removed when
+ * modlobby exits, and it leaves the key alone unless modlobby answers —
+ * so a game launched from Chobby behaves exactly as it always did. It is
+ * still someone else's directory, which is why it is a setting.
+ */
+inGameEscape: boolean, };

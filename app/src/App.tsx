@@ -51,6 +51,13 @@ function Layout(props: ParentProps) {
    * mid-overlay was not there for the event.
    */
   const [over, setOver] = createSignal(false)
+  // Quitting a game by mis-clicking once would be unforgivable, so the
+  // button asks again. The doubt resets whenever the overlay comes or goes.
+  const [confirmQuit, setConfirmQuit] = createSignal(false)
+  createEffect(() => {
+    over()
+    setConfirmQuit(false)
+  })
   onMount(() => {
     void api.overlayActive().then(setOver)
     const pending = listen<boolean>('overlay', (event) =>
@@ -188,6 +195,33 @@ function Layout(props: ParentProps) {
       <Notices />
       <PlayerMenu />
       <Show when={over()}>
+        {/* The three things you can do standing here, in the order you are
+            likely to want them: carry on in the lobby (already true, so no
+            button), go back, or stop playing. */}
+        <div class='overlay-chrome'>
+          <button
+            onClick={() => {
+              if (!confirmQuit()) {
+                setConfirmQuit(true)
+                return
+              }
+              void api
+                .stopGame()
+                .catch((error) => pushNotice('warning', describeError(error)))
+            }}
+            class='quit'
+            title='Ends the game and comes back here'
+          >
+            {confirmQuit() ? 'Really quit?' : 'Quit game'}
+          </button>
+          <button
+            class='primary'
+            title='Or press Escape'
+            onClick={() => void api.overlayToggle()}
+          >
+            Back to game
+          </button>
+        </div>
         <button
           class='overlay-close'
           title='Back to game (Esc)'

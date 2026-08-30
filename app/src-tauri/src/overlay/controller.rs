@@ -56,6 +56,24 @@ impl Controller {
         self.overlay.lock().expect("overlay").is_over()
     }
 
+    /// Whether a game of ours is running with the overlay switched on.
+    pub fn armed_for_game(&self) -> bool {
+        self.overlay.lock().expect("overlay").armed_for_game()
+    }
+
+    /// Raises the lobby if it is not already up. Unlike the hotkey this never
+    /// lowers it: the in-game Escape is a one-way door out of the game.
+    pub fn raise(&self) -> bool {
+        if !self.armed_for_game() {
+            return false;
+        }
+        if self.is_over() {
+            return true;
+        }
+        self.hotkey();
+        true
+    }
+
     fn drive(&self, input: Input) {
         // The lock is released before anything touches a window: a window call
         // can re-enter through an event handler, and holding this across one

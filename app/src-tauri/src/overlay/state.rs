@@ -107,6 +107,15 @@ impl Overlay {
         self.entered && self.visible
     }
 
+    /// Whether a game *we* launched is running and the overlay is switched on.
+    ///
+    /// The in-game widget asks this before it consumes Escape: a game started
+    /// from another lobby while modlobby happens to be open must keep its own
+    /// Escape, and only this side knows whose game it is.
+    pub fn armed_for_game(&self) -> bool {
+        self.armed()
+    }
+
     pub fn step(&mut self, input: Input) -> Vec<Effect> {
         let mut out = Vec::new();
         match input {

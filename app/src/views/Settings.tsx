@@ -214,6 +214,26 @@ export function SettingsView() {
             />
             Put the game back in front when I dismiss it
           </label>
+          <label class='row'>
+            <input
+              type='checkbox'
+              checked={draft.overlay.inGameEscape}
+              disabled={!draft.overlay.enabled}
+              onChange={(e) =>
+                setDraft('overlay', 'inGameEscape', e.currentTarget.checked)
+              }
+            />
+            Escape in a game opens the lobby
+          </label>
+          <p class='muted'>
+            The engine gives an outside program no way to see Escape, so this is
+            the one thing that puts a file of modlobby's in your Beyond All
+            Reason folder: a small widget in <code>LuaUI/Widgets</code>. It
+            draws nothing, it comes back out when modlobby closes, and it only
+            takes the key when modlobby answers — so a game you start from
+            Chobby keeps its own Escape. Escape with units selected still
+            deselects them, as always.
+          </p>
           <p class='muted'>
             Nothing can be drawn over an exclusive full-screen game, so if your
             engine is set that way, modlobby launches it against its own copy of
@@ -530,6 +550,7 @@ function blank(): Settings {
       enabled: true,
       hotkey: 'Alt+Shift+L',
       returnFocusToGame: true,
+      inGameEscape: true,
     },
     tweaks: { styluaConfig: null, defaultSlot: 'tweakdefs1' },
     logging: { filter: 'info' },

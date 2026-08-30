@@ -136,6 +136,9 @@ enum Command {
     EnginePid {
         reply: Reply<Option<u32>>,
     },
+    StopEngine {
+        reply: Reply<bool>,
+    },
     RequestGameStatus {
         founder: String,
         reply: Reply<()>,
@@ -363,6 +366,15 @@ impl Client {
     /// window. `None` when no engine of ours is running.
     pub async fn engine_pid(&self) -> Result<Option<u32>, ClientError> {
         self.ask(|reply| Command::EnginePid { reply }).await
+    }
+
+    /// Stops the running game, if there is one. Answers whether there was.
+    ///
+    /// Asking the process to stop rather than telling the engine to quit: we
+    /// have no channel into a running game, and a game being ended on purpose
+    /// has nothing to save.
+    pub async fn stop_engine(&self) -> Result<bool, ClientError> {
+        self.ask(|reply| Command::StopEngine { reply }).await
     }
 
     /// Starts a game against AI with no server involved.
@@ -1026,6 +1038,16 @@ impl Runtime {
             }
             Command::EnginePid { reply } => {
                 let _ = reply.send(Ok(self.engine.as_ref().and_then(Child::id)));
+            }
+            Command::StopEngine { reply } => {
+                // The child is left in place: the exit is noticed by the same
+                // `wait_engine` arm that handles a game closing itself, so
+                // there is one path to "the game ended" rather than two.
+                let running = match self.engine.as_mut() {
+                    Some(child) => child.start_kill().is_ok(),
+                    None => false,
+                };
+                let _ = reply.send(Ok(running));
             }
             Command::SetAutoLaunch { always, reply } => {
                 self.auto_launch_always = always;

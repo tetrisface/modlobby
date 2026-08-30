@@ -64,6 +64,7 @@
       "default": {
         "enabled": true,
         "hotkey": "Alt+Shift+L",
+        "inGameEscape": true,
         "returnFocusToGame": true
       }
     },
@@ -319,6 +320,11 @@
           "description": "A Tauri accelerator, e.g. `Alt+Shift+L`.\n\nA global hotkey beats the focused window, so a collision does not\nmerely conflict — it silently eats a game action for as long as a game\nis running. The default was checked against BAR's shipped binds: `sc_l`\nis taken plain and with Shift (cycling fire state), and the whole game\nbinds only two Alt+Shift combinations, neither of them this one.",
           "type": "string",
           "default": "Alt+Shift+L"
+        },
+        "inGameEscape": {
+          "description": "Whether Escape inside a game should raise the lobby.\n\nThe engine gives an outside program no way to see Escape, so this is\nthe one feature that puts a file of ours in the BAR data directory: a\nsmall widget in `LuaUI/Widgets/`. It draws nothing, it is removed when\nmodlobby exits, and it leaves the key alone unless modlobby answers —\nso a game launched from Chobby behaves exactly as it always did. It is\nstill someone else's directory, which is why it is a setting.",
+          "type": "boolean",
+          "default": true
         },
         "returnFocusToGame": {
           "description": "Whether hiding the overlay should put the game back in front.",

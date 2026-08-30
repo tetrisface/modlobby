@@ -17,6 +17,8 @@ tauri-build = { workspace = true }
 content = { workspace = true }
 recoil = { workspace = true }
 lobby-runtime = { workspace = true }
+rand = { workspace = true }
+tokio = { workspace = true }
 lobby-ui = { workspace = true }
 serde = { workspace = true }
 settings = { workspace = true }
@@ -41,3 +43,6 @@ tracing = { workspace = true }
 tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true }
 ts-rs = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

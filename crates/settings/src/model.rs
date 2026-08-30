@@ -222,6 +222,15 @@ pub struct Overlay {
     pub hotkey: String,
     /// Whether hiding the overlay should put the game back in front.
     pub return_focus_to_game: bool,
+    /// Whether Escape inside a game should raise the lobby.
+    ///
+    /// The engine gives an outside program no way to see Escape, so this is
+    /// the one feature that puts a file of ours in the BAR data directory: a
+    /// small widget in `LuaUI/Widgets/`. It draws nothing, it is removed when
+    /// modlobby exits, and it leaves the key alone unless modlobby answers —
+    /// so a game launched from Chobby behaves exactly as it always did. It is
+    /// still someone else's directory, which is why it is a setting.
+    pub in_game_escape: bool,
 }
 
 impl Default for Overlay {
@@ -230,6 +239,7 @@ impl Default for Overlay {
             enabled: true,
             hotkey: "Alt+Shift+L".into(),
             return_focus_to_game: true,
+            in_game_escape: true,
         }
     }
 }
