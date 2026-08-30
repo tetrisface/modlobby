@@ -46,6 +46,35 @@
   box-sizing: border-box;
 }
 
+/* Thumb only: no track behind it and no stepper buttons at the ends. A
+   scrollbar here says how far down you are and nothing else — the panes it
+   sits in are dense enough already. */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-button {
+  display: none;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--faint);
+  background-clip: content-box;
+}
+
 body {
   margin: 0;
   background: var(--bg);
@@ -696,18 +725,24 @@ input {
 
 /* The one view that is a document rather than a pane: every other one fills
    the window and scrolls something inside itself, which is why `.main` clips.
-   The vertical space is padding rather than margin so it survives scrolling —
-   a bottom margin on an overflowing box is dropped, taking the last field's
-   breathing room with it. */
+   The scroller is the full width of the window and the column is centred
+   inside it, so the scrollbar rides the window's edge rather than the edge of
+   a 560px column floating in the middle of it. The vertical space is padding
+   rather than margin because a bottom margin on an overflowing box is dropped,
+   taking the last field's breathing room with it. */
 .settings {
-  max-width: 560px;
   height: 100%;
   overflow-y: auto;
-  margin: 0 auto;
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 16px;
   padding: 24px 16px;
+}
+
+.settings > * {
+  width: 100%;
+  max-width: 560px;
 }
 
 .settings fieldset {
@@ -1979,4 +2014,12 @@ button.link:hover {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.saved-mark {
+  margin-left: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--faint);
 }

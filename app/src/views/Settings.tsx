@@ -1,37 +1,100 @@
-import { For, Show, createEffect, createSignal } from 'solid-js'
+import { For, Show, createEffect, createSignal, onCleanup } from 'solid-js'
 import { createStore, unwrap } from 'solid-js/store'
 import type { Settings } from '../ipc/bindings/Settings'
 import { api, describeError } from '../ipc/client'
 import { pushNotice } from '../store/chat'
 import { applySettings, settings } from '../store/settings'
 
+/** Long enough that typing a hostname is one write rather than twelve. */
+const SAVE_AFTER = 600
+
+/**
+ * The draft as a string, with object keys in a fixed order.
+ *
+ * Used only to answer "has anything actually changed": the settings that come
+ * back from Rust and the draft cloned from them agree on key order, but
+ * [`blank`] need not, and a spurious first save would write the placeholder
+ * over the file.
+ */
+function fingerprint(value: unknown): string {
+  return JSON.stringify(value, (_key, held: unknown) =>
+    held && typeof held === 'object' && !Array.isArray(held)
+      ? Object.fromEntries(
+          Object.entries(held).sort(([a], [b]) => a.localeCompare(b)),
+        )
+      : held,
+  )
+}
+
+/**
+ * A number field's value, or `null` while it is not one yet.
+ *
+ * `Number('')` is `0`, and with a save button that only ever showed as a
+ * momentary zero on screen. Saving on its own, it would be written to the file
+ * the instant you cleared the field to type a new port.
+ */
+function counted(text: string): number | null {
+  const value = Number(text)
+  return text.trim() === '' || !Number.isFinite(value) || value <= 0
+    ? null
+    : value
+}
+
 export function SettingsView() {
   const [draft, setDraft] = createStore<Settings>(
     structuredClone(unwrap(settings())) ?? blank(),
   )
-  const [saving, setSaving] = createSignal(false)
+  const [state, setState] = createSignal<'clean' | 'saving' | 'saved'>('clean')
+
+  /** What is in the file, as far as we know. */
+  let saved = fingerprint(unwrap(settings()) ?? blank())
+  let pending: ReturnType<typeof setTimeout> | undefined
 
   createEffect(() => {
     const current = settings()
-    if (current) setDraft(structuredClone(unwrap(current)))
+    if (!current) return
+    // An edit made in the file, or our own write coming back. Either way this
+    // is now what the file says, so it is neither a change to save nor one to
+    // draw attention to.
+    saved = fingerprint(current)
+    setDraft(structuredClone(unwrap(current)))
   })
 
-  async function save(event: Event) {
-    event.preventDefault()
-    setSaving(true)
+  // Reading the whole draft is what subscribes this to every field in it.
+  createEffect(() => {
+    const now = fingerprint(draft)
+    if (now === saved) return
+    clearTimeout(pending)
+    pending = setTimeout(() => void save(), SAVE_AFTER)
+  })
+
+  onCleanup(() => clearTimeout(pending))
+
+  async function save() {
+    setState('saving')
     try {
-      applySettings(await api.updateSettings(structuredClone(unwrap(draft))))
-      pushNotice('info', 'settings saved')
+      const written = await api.updateSettings(structuredClone(unwrap(draft)))
+      saved = fingerprint(written)
+      applySettings(written)
+      setState('saved')
     } catch (error) {
+      // The draft keeps the rejected value so it can be corrected rather than
+      // silently reverted; the file still holds the last good one.
+      setState('clean')
       pushNotice('error', describeError(error))
-    } finally {
-      setSaving(false)
     }
   }
 
   return (
-    <form class='settings' onSubmit={save}>
-      <h1>Settings</h1>
+    <form class='settings' onSubmit={(event) => event.preventDefault()}>
+      <h1>
+        Settings
+        <Show when={state() !== 'clean'}>
+          <span class='saved-mark'>
+            {state() === 'saving' ? 'saving…' : 'saved'}
+          </span>
+        </Show>
+      </h1>
       <p class='muted'>
         Stored as JSONC you can edit by hand; the app reloads it live and keeps
         your comments.{' '}
@@ -54,9 +117,10 @@ export function SettingsView() {
           <input
             type='number'
             value={draft.server.port}
-            onInput={(e) =>
-              setDraft('server', 'port', Number(e.currentTarget.value))
-            }
+            onInput={(e) => {
+              const port = counted(e.currentTarget.value)
+              if (port !== null) setDraft('server', 'port', port)
+            }}
           />
         </label>
       </fieldset>
@@ -168,9 +232,10 @@ export function SettingsView() {
           <input
             type='number'
             value={draft.chat.maxLines}
-            onInput={(e) =>
-              setDraft('chat', 'maxLines', Number(e.currentTarget.value))
-            }
+            onInput={(e) => {
+              const lines = counted(e.currentTarget.value)
+              if (lines !== null) setDraft('chat', 'maxLines', lines)
+            }}
           />
         </label>
       </fieldset>
@@ -210,10 +275,6 @@ export function SettingsView() {
           Open log folder
         </button>
       </fieldset>
-
-      <button type='submit' class='primary' disabled={saving()}>
-        Save
-      </button>
     </form>
   )
 }
