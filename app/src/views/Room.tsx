@@ -28,6 +28,7 @@ import { settings } from '../store/settings'
 import { HostBar } from './HostBar'
 import { PveScore } from './PveScore'
 import { Seat } from './Seat'
+import { StartBoxes } from './StartBoxes'
 import { Setup } from './Setup'
 import { VoteBar } from './VoteBar'
 
@@ -181,6 +182,10 @@ export function Room() {
 
           <PveScore />
           <VoteBar />
+          <StartBoxes
+            teams={Math.max(occupants().teams.length, 2)}
+            mapName={b().mapName}
+          />
           <HostBar />
           <Seat />
 

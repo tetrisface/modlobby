@@ -2417,3 +2417,101 @@ html.overlay .shell {
   stroke-width: 1.5;
   stroke-dasharray: 4 3;
 }
+
+/* ---- what a start-box vote would do ---- */
+
+.box-diff {
+  grid-column: 1 / -1;
+  margin-top: 8px;
+}
+
+.box-diff h2 {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 6px;
+}
+
+.box-pair {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.box-arrow {
+  color: var(--muted);
+  font-size: 16px;
+}
+
+.box-panel {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.box-panel figcaption {
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+
+.box-map {
+  position: relative;
+  width: 132px;
+  height: 132px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+  background: #0d1218;
+}
+
+.box-map img,
+.box-map svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.box-map img {
+  object-fit: cover;
+}
+
+.box-panel path {
+  fill: color-mix(in srgb, var(--muted) 25%, transparent);
+  stroke: var(--muted);
+  stroke-width: 1.5;
+}
+
+.box-panel.after path {
+  fill: color-mix(in srgb, var(--accent) 26%, transparent);
+  stroke: var(--accent);
+}
+
+.box-panel text {
+  fill: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.65);
+  stroke-width: 3;
+}
+
+.box-history {
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12.5px;
+}
+
+.box-history > summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.box-history[open] > summary {
+  margin-bottom: 8px;
+}

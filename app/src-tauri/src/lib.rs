@@ -212,6 +212,7 @@ pub fn run() {
             commands::overlay_toggle,
             commands::stop_game,
             boxes::start_boxes,
+            boxes::decode_boxes,
             commands::flash_engine,
             commands::remember_played,
             commands::game_modoptions,

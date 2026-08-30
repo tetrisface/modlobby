@@ -66,6 +66,8 @@ export const api = {
   stopGame: () => invoke<boolean>('stop_game'),
   startBoxes: (teams: number) =>
     invoke<BoxesView | null>('start_boxes', { teams }),
+  decodeBoxes: (raw: string, teams: number) =>
+    invoke<[number, number][][] | null>('decode_boxes', { raw, teams }),
   flashEngine: () => invoke<boolean>('flash_engine'),
   requestGameStatus: (founder: string) =>
     invoke<void>('request_game_status', { founder }),

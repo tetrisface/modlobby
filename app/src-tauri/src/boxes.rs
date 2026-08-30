@@ -52,6 +52,39 @@ pub async fn start_boxes(app: State<'_, App>, teams: u32) -> Result<Option<Boxes
     Ok(from_tags(&my.script_tags, teams))
 }
 
+/// The boxes in one blob, for showing what a vote or a past change did.
+///
+/// Takes either modoption's value: an override is one arrangement, a set is
+/// many and has to be asked for a team count, exactly as the game would.
+/// `None` covers a cleared slot and a blob that will not decode — a proposal
+/// nobody can read is worth showing as unreadable rather than as empty.
+#[tauri::command]
+pub fn decode_boxes(raw: String, teams: u32) -> Option<Vec<Vec<[f32; 2]>>> {
+    if raw.is_empty() || raw == "0" {
+        return None;
+    }
+    let arrangement = startbox::decode_override(&raw).ok().or_else(|| {
+        let set = startbox::decode_set(&raw).ok()?;
+        startbox::resolve(None, &set, teams).map(|(held, _)| held)
+    })?;
+    Some(polygons(&arrangement))
+}
+
+/// One arrangement flattened into drawable polygons in the 0-200 space.
+fn polygons(arrangement: &startbox::Arrangement) -> Vec<Vec<[f32; 2]>> {
+    arrangement
+        .startboxes
+        .iter()
+        .map(|shape| {
+            shape
+                .corners()
+                .into_iter()
+                .map(|point| [point.x, point.y])
+                .collect()
+        })
+        .collect()
+}
+
 /// The decision, given the room's script tags. Separated from the command so
 /// it can be tested without a lobby.
 fn from_tags(tags: &BTreeMap<String, String>, teams: u32) -> Option<BoxesView> {
@@ -71,17 +104,7 @@ fn from_tags(tags: &BTreeMap<String, String>, teams: u32) -> Option<BoxesView> {
     let (arrangement, source) = startbox::resolve(over.as_ref(), &set, teams)?;
 
     Some(BoxesView {
-        polys: arrangement
-            .startboxes
-            .iter()
-            .map(|shape| {
-                shape
-                    .corners()
-                    .into_iter()
-                    .map(|point| [point.x, point.y])
-                    .collect()
-            })
-            .collect(),
+        polys: polygons(&arrangement),
         source: match source {
             startbox::Source::Override => "override",
             startbox::Source::Set => "set",
@@ -183,6 +206,26 @@ mod tests {
         .expect("boxes");
         assert_eq!(view.source, "set");
         assert_eq!(view.polys.len(), 4);
+    }
+
+    #[test]
+    fn one_blob_can_be_read_back_for_a_diff() {
+        let raw = startbox::encode_override(&arrangement(3)).unwrap();
+        let polys = decode_boxes(raw, 3).expect("boxes");
+        assert_eq!(polys.len(), 3);
+
+        // A set needs the team count, the same way the game asks for one.
+        let mut set = BTreeMap::new();
+        set.insert(2, arrangement(2));
+        let raw = startbox::encode_set(&set).unwrap();
+        assert_eq!(decode_boxes(raw, 2).map(|p| p.len()), Some(2));
+    }
+
+    #[test]
+    fn an_empty_or_unreadable_blob_decodes_to_nothing() {
+        assert!(decode_boxes(String::new(), 2).is_none());
+        assert!(decode_boxes("0".into(), 2).is_none());
+        assert!(decode_boxes("not-a-blob".into(), 2).is_none());
     }
 
     #[test]
