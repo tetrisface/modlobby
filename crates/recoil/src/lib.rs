@@ -5,6 +5,7 @@
 //! the command line stays unit-testable.
 
 pub mod script;
+pub mod script_read;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

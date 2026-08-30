@@ -7,9 +7,11 @@
 //! each was made, changed and last used, and interoperates with that one in
 //! both directions.
 
+pub mod apply;
 pub mod chobby;
 pub mod model;
 pub mod store;
 
+pub use apply::{Plan, PlannedBox, Room, Sections, plan};
 pub use model::{Book, Preset, Stamp, StartBox, VERSION};
 pub use store::{Error, Store};

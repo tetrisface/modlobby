@@ -13,6 +13,7 @@
 //!   how BAR names the archives (`Supreme Isthmus v2.1` →
 //!   `supreme_isthmus_v2.1.sd7`).
 
+pub mod demo;
 pub mod replays;
 
 use std::io::{BufRead, BufReader};

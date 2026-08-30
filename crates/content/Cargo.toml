@@ -10,6 +10,7 @@ license.workspace = true
 flate2 = { workspace = true }
 recoil = { workspace = true }
 serde = { workspace = true }
+thiserror = { workspace = true }
 tracing = { workspace = true }
 ts-rs = { workspace = true }
 
