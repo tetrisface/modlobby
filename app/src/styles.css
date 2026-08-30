@@ -2128,3 +2128,100 @@ button.link:hover {
   color: var(--faint);
   cursor: help;
 }
+
+/* ---- saved room setups ---- */
+
+.presets {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.preset-table {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.preset-rows {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.preset-row {
+  display: grid;
+  grid-template-columns: 1fr 220px 90px 110px 110px 110px;
+  gap: 12px;
+  align-items: center;
+  padding: 0 16px;
+  height: 34px;
+  border-bottom: 1px solid var(--line-soft);
+  cursor: pointer;
+}
+
+.preset-row:not(.head):hover {
+  background: var(--raised);
+}
+
+.preset-row.on {
+  background: var(--raised);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.preset-row.head {
+  height: 30px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--line);
+  cursor: default;
+  background: var(--panel);
+}
+
+.preset-head {
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.preset-head:hover,
+.preset-head.on {
+  color: var(--text);
+}
+
+.preset-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preset-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+
+.preset-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--sunken);
+  flex-shrink: 0;
+}

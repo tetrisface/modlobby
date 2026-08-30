@@ -43,9 +43,14 @@ pub struct Preset {
     /// until there is a reason to read it.
     #[ts(type = "Record<string, unknown>")]
     pub bots: serde_json::Map<String, serde_json::Value>,
+    // Seconds, and JSON carries them as numbers; `bigint` on the TypeScript
+    // side would be a lie that every date calculation then has to undo.
+    #[ts(type = "number")]
     pub created: Stamp,
+    #[ts(type = "number")]
     pub updated: Stamp,
     /// `None` until it has been applied to a room once.
+    #[ts(type = "number | null")]
     pub last_used: Option<Stamp>,
 }
 
@@ -94,8 +99,9 @@ impl Preset {
 }
 
 /// The file we keep, with a version so a future shape can be told from this one.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
 pub struct Book {
     pub version: u32,
     pub presets: Vec<Preset>,

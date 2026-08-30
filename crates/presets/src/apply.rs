@@ -56,10 +56,11 @@ impl Default for Sections {
 pub struct Plan {
     /// Chat lines, in order. Every one is a SPADS command.
     pub lines: Vec<String>,
-    /// Ally teams whose start box the preset names, and the box.
+    /// Ally teams whose start box the preset names, and the box. For showing
+    /// what is about to happen; the wire form is one of the `lines`.
     pub start_boxes: Vec<PlannedBox>,
-    /// Whether every start box in the room should be cleared first.
-    pub clear_start_boxes: bool,
+    /// Set when the preset has boxes that could not be turned into a line.
+    pub start_boxes_unsent: bool,
     /// Settings the room already has, which is why they are not in `lines`.
     pub already_set: usize,
 }
@@ -81,6 +82,9 @@ pub struct Room {
     pub map: Option<String>,
     pub modoptions: BTreeMap<String, String>,
 }
+
+/// The modoption BAR reads a custom startbox arrangement from.
+pub const START_BOX_OVERRIDE: &str = "mapmetadata_startbox_override";
 
 /// The SPADS command for one room setting, where there is one.
 ///
@@ -141,8 +145,10 @@ pub fn plan(preset: &Preset, room: &Room, sections: Sections) -> Plan {
         }
     }
 
-    let start_boxes = if sections.start_boxes {
-        preset
+    let mut start_boxes = Vec::new();
+    let mut start_boxes_unsent = false;
+    if sections.start_boxes && !preset.start_boxes.is_empty() {
+        start_boxes = preset
             .start_boxes
             .iter()
             .map(|(ally, held)| PlannedBox {
@@ -152,16 +158,65 @@ pub fn plan(preset: &Preset, room: &Room, sections: Sections) -> Plan {
                 right: held.right,
                 bottom: held.bottom,
             })
-            .collect()
-    } else {
-        Vec::new()
-    };
+            .collect();
+
+        // Not `ADDSTARTRECT`. That is a mod command on teiserver — founder,
+        // moderator or coordinator only (`lobby.ex:746`) — so from a boss it
+        // is dropped in silence. The modoption BAR added for custom
+        // arrangements is an ordinary `!bSet`, which a boss may send.
+        let arrangement =
+            startbox::Arrangement {
+                startboxes: (0..=preset.start_boxes.keys().copied().max().unwrap_or(0))
+                    .map(|ally| {
+                        let held = preset.start_boxes.get(&ally).copied().unwrap_or(
+                            crate::model::StartBox {
+                                left: 0,
+                                top: 0,
+                                right: 200,
+                                bottom: 200,
+                            },
+                        );
+                        startbox::Box {
+                            poly: vec![
+                                startbox::Point {
+                                    x: f32::from(held.left),
+                                    y: f32::from(held.top),
+                                    strength: None,
+                                },
+                                startbox::Point {
+                                    x: f32::from(held.right),
+                                    y: f32::from(held.bottom),
+                                    strength: None,
+                                },
+                            ],
+                        }
+                    })
+                    .collect(),
+            };
+
+        // Without the reset, an arrangement the room already has is left
+        // alone: combining presets should not have the second one's boxes
+        // silently replace the first one's.
+        let occupied = room
+            .modoptions
+            .get(START_BOX_OVERRIDE)
+            .is_some_and(|held| !held.is_empty());
+        match startbox::encode_override(&arrangement) {
+            Ok(encoded) if sections.reset || !occupied => {
+                if room.modoptions.get(START_BOX_OVERRIDE) == Some(&encoded) {
+                    already_set += 1;
+                } else {
+                    lines.push(format!("!bSet {START_BOX_OVERRIDE} {encoded}"));
+                }
+            }
+            Ok(_) => start_boxes_unsent = true,
+            Err(_) => start_boxes_unsent = true,
+        }
+    }
 
     Plan {
-        // Clearing the old boxes belongs with resetting the room. Combining
-        // two presets should add a side, not throw away the other one's.
-        clear_start_boxes: sections.start_boxes && sections.reset && !start_boxes.is_empty(),
         start_boxes,
+        start_boxes_unsent,
         lines,
         already_set,
     }
@@ -237,7 +292,7 @@ mod tests {
         let plan = plan(&preset(), &Room::default(), sections);
         // Nothing that would clear what a previous preset just put in.
         assert!(!plan.lines.iter().any(|line| line.starts_with("!preset")));
-        assert!(!plan.clear_start_boxes);
+        assert!(!plan.start_boxes_unsent);
         // But its own settings still go out.
         assert!(plan.lines.contains(&"!bSet raptor_endless 1".into()));
         assert_eq!(plan.start_boxes.len(), 1, "its own boxes are still added");
@@ -262,6 +317,62 @@ mod tests {
         preset.battle.insert("locked".into(), "0".into());
         let plan = plan(&preset, &Room::default(), Sections::default());
         assert!(plan.lines.contains(&"!unlock".into()));
+    }
+
+    #[test]
+    fn start_boxes_go_out_as_the_modoption_a_boss_may_set() {
+        let plan = plan(&preset(), &Room::default(), Sections::default());
+        let line = plan
+            .lines
+            .iter()
+            .find(|line| line.contains(START_BOX_OVERRIDE))
+            .expect("an arrangement line");
+        // Not ADDSTARTRECT: teiserver takes that from the founder only, and
+        // drops it from anybody else without a word.
+        assert!(line.starts_with("!bSet "));
+        assert!(!plan.start_boxes_unsent);
+        assert_eq!(plan.start_boxes.len(), 1, "and still shown as boxes");
+    }
+
+    #[test]
+    fn an_arrangement_the_room_already_has_is_not_sent_again() {
+        let first = plan(&preset(), &Room::default(), Sections::default());
+        let encoded = first
+            .lines
+            .iter()
+            .find_map(|line| line.strip_prefix(&format!("!bSet {START_BOX_OVERRIDE} ")))
+            .expect("an arrangement")
+            .to_owned();
+
+        let mut room = Room::default();
+        room.modoptions.insert(START_BOX_OVERRIDE.into(), encoded);
+        let again = plan(&preset(), &room, Sections::default());
+        assert!(
+            !again
+                .lines
+                .iter()
+                .any(|line| line.contains(START_BOX_OVERRIDE))
+        );
+    }
+
+    #[test]
+    fn combining_leaves_an_arrangement_the_room_already_has_alone() {
+        let mut room = Room::default();
+        room.modoptions
+            .insert(START_BOX_OVERRIDE.into(), "somebody else's".into());
+        let sections = Sections {
+            reset: false,
+            ..Sections::default()
+        };
+        let plan = plan(&preset(), &room, sections);
+        assert!(
+            !plan
+                .lines
+                .iter()
+                .any(|line| line.contains(START_BOX_OVERRIDE))
+        );
+        // And says so, rather than looking as though it applied.
+        assert!(plan.start_boxes_unsent);
     }
 
     #[test]

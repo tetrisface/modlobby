@@ -16,6 +16,8 @@ pub struct App {
     pub login_guard: LoginGuard,
     /// The room to offer back after a restart.
     pub rejoin: RejoinMemory,
+    /// Saved room setups, next to the settings they sit beside.
+    pub presets: presets::Store,
 }
 
 impl App {
@@ -29,6 +31,7 @@ impl App {
         Ok(Self {
             login_guard: LoginGuard::new(settings.dir()),
             rejoin: RejoinMemory::new(settings.dir()),
+            presets: presets::Store::new(settings.dir()),
             client,
             settings,
             credentials: Arc::new(KeyringStore),

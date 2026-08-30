@@ -26,7 +26,7 @@ pub struct ApiError {
 }
 
 impl ApiError {
-    fn new(code: &'static str, message: impl Into<String>) -> Self {
+    pub(crate) fn new(code: &'static str, message: impl Into<String>) -> Self {
         Self {
             code,
             message: message.into(),
@@ -73,7 +73,7 @@ impl From<tweaks::Error> for ApiError {
     }
 }
 
-type Result<T> = std::result::Result<T, ApiError>;
+pub(crate) type Result<T> = std::result::Result<T, ApiError>;
 
 /// Installs the channel the runtime streams into; a snapshot arrives at once.
 #[tauri::command]

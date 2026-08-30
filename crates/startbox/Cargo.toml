@@ -1,0 +1,19 @@
+[package]
+name = "startbox"
+description = "BAR's startbox arrangements: the base64url(zlib(json)) modoptions, and the resolution order the game enforces"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+base64 = { workspace = true }
+flate2 = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+ts-rs = { workspace = true }
+
+[dev-dependencies]
+# Only for the example that decodes a real presets file.
+serde_json = { workspace = true }

@@ -4,6 +4,9 @@ import type { Kind } from './bindings/Kind'
 import type { Prepared } from './bindings/Prepared'
 import type { ReplayView } from './bindings/ReplayView'
 import type { SkirmishOptions } from './bindings/SkirmishOptions'
+import type { Book } from './bindings/Book'
+import type { Plan } from './bindings/Plan'
+import type { Sections } from './bindings/Sections'
 import type { Settings } from './bindings/Settings'
 import type { Slot } from './bindings/Slot'
 import type { TweakView } from './bindings/TweakView'
@@ -50,6 +53,24 @@ export const api = {
   flashEngine: () => invoke<boolean>('flash_engine'),
   requestGameStatus: (founder: string) =>
     invoke<void>('request_game_status', { founder }),
+
+  // ---- saved room setups ----
+  listPresets: () => invoke<Book>('list_presets'),
+  chobbyPresetsPath: () => invoke<string | null>('chobby_presets_path'),
+  savePreset: (name: string) => invoke<Book>('save_preset', { name }),
+  presetFromReplay: (path: string, name: string) =>
+    invoke<Book>('preset_from_replay', { path, name }),
+  deletePreset: (name: string) => invoke<Book>('delete_preset', { name }),
+  renamePreset: (from: string, to: string) =>
+    invoke<Book>('rename_preset', { from, to }),
+  planPreset: (name: string, sections: Sections) =>
+    invoke<Plan>('plan_preset', { name, sections }),
+  applyPreset: (name: string, sections: Sections) =>
+    invoke<Plan>('apply_preset', { name, sections }),
+  importPresets: (path: string | null) =>
+    invoke<{ book: Book; skipped: number }>('import_presets', { path }),
+  exportPresets: (path: string | null, names: string[]) =>
+    invoke<number>('export_presets', { path, names }),
   rememberPlayed: (played: boolean) =>
     invoke<Settings>('remember_played', { played }),
   rememberChannels: (channels: string[]) =>

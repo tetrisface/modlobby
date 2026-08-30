@@ -2729,6 +2729,7 @@ dependencies = [
  "content",
  "lobby-runtime",
  "lobby-ui",
+ "presets",
  "recoil",
  "serde",
  "settings",
@@ -3501,6 +3502,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+ "startbox",
  "tempfile",
  "thiserror 2.0.20",
  "ts-rs",
@@ -4357,6 +4359,18 @@ name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
+
+[[package]]
+name = "startbox"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "flate2",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "ts-rs",
+]
 
 [[package]]
 name = "string_cache"

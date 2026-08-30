@@ -22,6 +22,7 @@ serde = { workspace = true }
 settings = { workspace = true }
 spring-protocol = { workspace = true }
 tauri = { workspace = true }
+presets = { workspace = true }
 tauri-plugin-notification = { workspace = true }
 tauri-plugin-opener = { workspace = true }
 tauri-plugin-window-state = { workspace = true }

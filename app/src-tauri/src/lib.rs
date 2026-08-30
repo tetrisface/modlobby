@@ -5,6 +5,7 @@
 mod commands;
 mod flash;
 mod logging;
+mod presets;
 mod state;
 mod transport;
 
@@ -71,6 +72,16 @@ pub fn run() {
             commands::set_away,
             commands::flash_engine,
             commands::remember_played,
+            presets::list_presets,
+            presets::chobby_presets_path,
+            presets::save_preset,
+            presets::preset_from_replay,
+            presets::delete_preset,
+            presets::rename_preset,
+            presets::plan_preset,
+            presets::apply_preset,
+            presets::import_presets,
+            presets::export_presets,
             commands::request_game_status,
             commands::remember_channels,
             commands::skirmish_options,
