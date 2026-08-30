@@ -1,4 +1,10 @@
-import { Show, createEffect, createResource, createSignal } from 'solid-js'
+import {
+  Show,
+  createEffect,
+  createResource,
+  createSignal,
+  onCleanup,
+} from 'solid-js'
 import { api } from '../ipc/client'
 import { lobby } from '../store/lobby'
 
@@ -13,17 +19,33 @@ import { lobby } from '../store/lobby'
  * ever sent: the service's own note is that the estimate represents a generic
  * team and does not use the identities or ratings of whoever is present.
  */
+/** How long the room has to stop changing before it is worth asking again. */
+const QUIET_FOR = 2500
+
 export function PveScore() {
-  /** Re-asked when the room's settings change, not on a timer. */
-  const [key, setKey] = createSignal(0)
+  /**
+   * Re-asked when the room settles, not on every change.
+   *
+   * A host applying a preset changes a hundred settings in a couple of
+   * minutes, and each one arrives as its own script tag. Asking per change
+   * would put a hundred requests on somebody else's service to answer a
+   * question whose answer only matters once the changes stop.
+   */
+  const [settled, setSettled] = createSignal(0)
+  let pending: ReturnType<typeof setTimeout> | undefined
+
   createEffect(() => {
     // Reading these is what subscribes us to them.
     void lobby.myBattle?.scriptTags
     void lobby.myBattle?.id
-    setKey((held) => held + 1)
+    clearTimeout(pending)
+    pending = setTimeout(() => setSettled((held) => held + 1), QUIET_FOR)
   })
+  onCleanup(() => clearTimeout(pending))
 
-  const [score] = createResource(key, () => api.pveScore().catch(() => null))
+  const [score] = createResource(settled, () =>
+    api.pveScore().catch(() => null),
+  )
 
   const percent = (value: number | null) =>
     value === null ? '—' : `${Math.round(value * 100)}%`
