@@ -1255,11 +1255,13 @@ impl Runtime {
                     ip,
                     port,
                     script_password,
+                    just_started,
                 } => {
                     // Raised once here rather than in the projector: the
                     // effect fires whenever the host's status changes, and
-                    // `self.game` already tracks whether it is news.
-                    if self.game.is_none() {
+                    // `self.game` already tracks whether it is news. Walking
+                    // into a game already under way is not news of a start.
+                    if just_started && self.game.is_none() {
                         self.batcher.push(Delta::Alert {
                             kind: lobby_ui::AlertKind::GameStarting,
                             text: "your room's game has started".into(),
@@ -1270,13 +1272,24 @@ impl Runtime {
                         script_password,
                     });
                     // Either somebody asked to launch before the game existed,
-                    // or the setting says a game we are in starting is reason
-                    // enough. Never without the content: that only produces an
+                    // or a game started around us and the setting says that is
+                    // reason enough.
+                    //
+                    // `just_started` is the whole distinction: joining a room
+                    // whose game is already under way reports the same running
+                    // game, and launching on that would drop anyone who
+                    // wandered in to look straight into a match they had not
+                    // asked to watch. Chobby draws the same line — it offers
+                    // to watch, and starts on its own only when the game does.
+                    // Never without the content either: that only produces an
                     // engine that quits with a sync error.
                     let wanted = self.auto_launch.take().or_else(|| {
-                        (self.auto_launch_always && self.content_ready && self.engine.is_none())
-                            .then(|| self.data_dir())
-                            .flatten()
+                        (just_started
+                            && self.auto_launch_always
+                            && self.content_ready
+                            && self.engine.is_none())
+                        .then(|| self.data_dir())
+                        .flatten()
                     });
                     if let Some(data_dir) = wanted
                         && let Err(err) = self.launch_engine(data_dir).await

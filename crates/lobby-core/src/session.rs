@@ -119,6 +119,14 @@ pub enum Effect {
         ip: String,
         port: u16,
         script_password: String,
+        /// Whether the game began just now, rather than having been under way
+        /// before we got here.
+        ///
+        /// The two are the same connection but not the same event. Walking
+        /// into a room with a game in progress is an invitation to watch;
+        /// a game starting around you is the thing you came for. Only the
+        /// second is a reason to do anything on somebody's behalf.
+        just_started: bool,
     },
     /// Our room's host came back out of its game.
     GameStopped,
@@ -597,7 +605,8 @@ impl Session {
                     return vec![];
                 }
                 if status.in_game {
-                    return self.game_running().into_iter().collect();
+                    // The host's bit went up while we were standing here.
+                    return self.game_running(true).into_iter().collect();
                 }
                 // The bit going the other way is the only sign a game ended.
                 // Without this the room goes on offering to connect you to one
@@ -670,7 +679,9 @@ impl Session {
                 let script_password = self.pending_join.take().unwrap_or_default();
                 state.my_battle = Some(MyBattle::new(id, game_hash, script_password));
                 let mut effects = vec![Effect::Joined { id }];
-                effects.extend(self.game_running());
+                // Already under way before we arrived: worth saying, not worth
+                // acting on.
+                effects.extend(self.game_running(false));
                 effects
             }
             E::JoinBattleFailed { reason } => {
@@ -1160,7 +1171,7 @@ impl Session {
     }
 
     /// [`Effect::GameRunning`] when our room's host is in game right now.
-    fn game_running(&self) -> Option<Effect> {
+    fn game_running(&self, just_started: bool) -> Option<Effect> {
         let my = self.state.my_battle.as_ref()?;
         let battle = self.state.battles.get(&my.id)?;
         let host = self.state.users.get(&battle.founder)?;
@@ -1169,6 +1180,7 @@ impl Session {
             ip: battle.ip.clone(),
             port: battle.port,
             script_password: my.script_password.clone(),
+            just_started,
         })
     }
 }
@@ -1853,17 +1865,49 @@ mod tests {
     }
 
     #[test]
+    fn walking_into_a_running_game_is_told_apart_from_one_starting() {
+        // The distinction the whole auto-launch behaviour rests on. Both are
+        // the same running game and the same connection details; only one is
+        // a reason to start an engine for somebody.
+        let started = |effects: &[Effect]| {
+            effects.iter().find_map(|effect| match effect {
+                Effect::GameRunning { just_started, .. } => Some(*just_started),
+                _ => None,
+            })
+        };
+
+        // Joining a room whose host is already in game.
+        let mut s = ready_with_room();
+        feed(&mut s, &["CLIENTSTATUS host 65"]);
+        s.join_battle(5, None, "4242".into());
+        assert_eq!(started(&feed(&mut s, &["JOINBATTLE 5 -1"])), Some(false));
+
+        // The same room, the game starting while we stand in it.
+        let mut s = ready_with_room();
+        s.join_battle(5, None, "4242".into());
+        feed(&mut s, &["JOINBATTLE 5 -1", "CLIENTSTATUS host 64"]);
+        assert_eq!(
+            started(&feed(&mut s, &["CLIENTSTATUS host 65"])),
+            Some(true)
+        );
+    }
+
+    #[test]
     fn host_in_game_reports_game_running_on_join_and_on_change() {
         // Already running when we join: bot (64) + in-game (1).
         let mut s = ready_with_room();
         feed(&mut s, &["CLIENTSTATUS host 65"]);
         s.join_battle(5, None, "4242".into());
         let effects = feed(&mut s, &["JOINBATTLE 5 -1"]);
+        // Reported, but marked as something that was already under way: it is
+        // an invitation to watch, not a game starting around us, and nothing
+        // should be launched on somebody's behalf for it.
         assert!(effects.contains(&Effect::GameRunning {
             id: 5,
             ip: "1.2.3.4".into(),
             port: 8452,
-            script_password: "4242".into()
+            script_password: "4242".into(),
+            just_started: false,
         }));
 
         // Starts after we joined; repeated in-game statuses do not repeat the effect.
