@@ -31,7 +31,7 @@ pub fn run() {
                 // both now and whenever the setting changes.
                 let _ = client.set_data_dir(data_dir).await;
                 let _ = client.allow_public_seat(in_public).await;
-                while let Some(event) = watch.events.recv().await {
+                while let Some(event) = watch.recv().await {
                     if let settings::SettingsEvent::Changed(settings) = &event {
                         let _ = client.set_data_dir(settings.paths.data_dir.clone()).await;
                         let _ = client
@@ -68,6 +68,7 @@ pub fn run() {
             commands::stop_download,
             commands::ring,
             commands::set_away,
+            commands::remember_channels,
             commands::skirmish_options,
             commands::start_skirmish,
             commands::list_replays,

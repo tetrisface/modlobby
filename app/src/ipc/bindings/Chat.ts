@@ -4,4 +4,10 @@ export type Chat = {
 /**
  * Lines kept per room before the oldest are dropped.
  */
-maxLines: number, };
+maxLines: number, 
+/**
+ * Channels to rejoin at login. The server forgets you were in them the
+ * moment you disconnect, so remembering is the client's job — and keeping
+ * it here means you can also just write one in.
+ */
+channels: Array<string>, };

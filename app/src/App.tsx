@@ -4,6 +4,7 @@ import {
   For,
   Show,
   createEffect,
+  createSignal,
   onCleanup,
   onMount,
   type ParentProps,
@@ -30,6 +31,37 @@ type SettingsEvent = { changed: Settings } | { invalid: string }
 function Layout(props: ParentProps) {
   /** What the server says about us, which is what everyone else can see. */
   const away = () => (lobby.me ? lobby.users[lobby.me]?.status.away : false)
+
+  /**
+   * Channels are rejoined once a session.
+   *
+   * The server forgets your channels the moment you disconnect, so a client
+   * that does not remember them leaves you rejoining `#main` by hand on every
+   * launch. The list is read from the file here rather than from the settings
+   * signal: this runs the instant the lobby is ready, and a signal that has
+   * not arrived yet looks exactly like a user with no channels.
+   *
+   * What gets written back is driven by joining and leaving, never by a diff
+   * of what happens to be open — that would save an empty list in the moment
+   * between asking to join and being let in, which is precisely when this
+   * effect fires.
+   */
+  let restored = false
+
+  createEffect(() => {
+    if (lobby.phase !== 'ready' || restored) return
+    restored = true
+    void (async () => {
+      try {
+        const saved = await api.getSettings()
+        for (const name of saved.chat.channels) {
+          if (!(name in chat.channels)) await api.joinChannel(name, null)
+        }
+      } catch (error) {
+        pushNotice('warning', describeError(error))
+      }
+    })()
+  })
 
   onMount(async () => {
     try {

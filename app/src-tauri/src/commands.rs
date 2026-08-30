@@ -473,6 +473,16 @@ pub fn update_settings(app: State<'_, App>, settings: Settings) -> Result<Settin
     Ok(app.settings.update(|current| *current = settings)?)
 }
 
+/// Records which channels to rejoin next time. Written on its own rather than
+/// through the whole settings object, so a join never races a setting the user
+/// is editing in the file at the same moment.
+#[tauri::command]
+pub fn remember_channels(app: State<'_, App>, channels: Vec<String>) -> Result<Settings> {
+    Ok(app
+        .settings
+        .update(|current| current.chat.channels = channels)?)
+}
+
 #[tauri::command]
 pub fn has_password(app: State<'_, App>, username: String) -> Result<bool> {
     Ok(app.credentials.get(&username)?.is_some())

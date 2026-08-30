@@ -204,11 +204,19 @@ impl Default for Notifications {
 pub struct Chat {
     /// Lines kept per room before the oldest are dropped.
     pub max_lines: u32,
+    /// Channels to rejoin at login. The server forgets you were in them the
+    /// moment you disconnect, so remembering is the client's job — and keeping
+    /// it here means you can also just write one in.
+    pub channels: Vec<String>,
 }
 
 impl Default for Chat {
     fn default() -> Self {
-        Self { max_lines: 500 }
+        Self {
+            max_lines: 500,
+            // Where the server puts everyone, and where the announcements are.
+            channels: vec!["main".into()],
+        }
     }
 }
 

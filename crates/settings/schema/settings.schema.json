@@ -34,6 +34,9 @@
     "chat": {
       "$ref": "#/$defs/Chat",
       "default": {
+        "channels": [
+          "main"
+        ],
         "maxLines": 500
       }
     },
@@ -166,6 +169,16 @@
     "Chat": {
       "type": "object",
       "properties": {
+        "channels": {
+          "description": "Channels to rejoin at login. The server forgets you were in them the\nmoment you disconnect, so remembering is the client's job — and keeping\nit here means you can also just write one in.",
+          "type": "array",
+          "default": [
+            "main"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
         "maxLines": {
           "description": "Lines kept per room before the oldest are dropped.",
           "type": "integer",

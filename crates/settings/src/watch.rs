@@ -17,16 +17,31 @@ const DEBOUNCE: Duration = Duration::from_millis(200);
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub enum SettingsEvent {
-    /// The user changed the file and it parsed.
-    Changed(crate::Settings),
+    /// The user changed the file and it parsed. Boxed because settings are
+    /// much larger than the message that says they would not parse.
+    Changed(Box<crate::Settings>),
     /// The user changed the file and it did not parse; the previous settings stay in force.
     Invalid(String),
 }
 
 /// A running watcher; dropping it stops the events.
+///
+/// The receiver is deliberately private, reached only through [`Watch::recv`].
+/// A public field invites `spawn(async move { watch.events.recv().await })`,
+/// which in edition 2024 captures that one field and leaves the OS watcher
+/// behind to be dropped — the file then stops being watched with no error
+/// anywhere. A method call captures the whole struct, so the mistake cannot
+/// be made.
 pub struct Watch {
     _watcher: RecommendedWatcher,
-    pub events: mpsc::Receiver<SettingsEvent>,
+    events: mpsc::Receiver<SettingsEvent>,
+}
+
+impl Watch {
+    /// The next change to the file, or `None` once the watch has stopped.
+    pub async fn recv(&mut self) -> Option<SettingsEvent> {
+        self.events.recv().await
+    }
 }
 
 impl Store {
@@ -55,7 +70,7 @@ impl Store {
                     // Coalesce the burst an editor produces for one save.
                     while raw_rx.recv_timeout(DEBOUNCE).is_ok() {}
                     let event = match store.reload() {
-                        Ok(Some(settings)) => SettingsEvent::Changed(settings),
+                        Ok(Some(settings)) => SettingsEvent::Changed(Box::new(settings)),
                         Ok(None) => continue,
                         Err(err) => SettingsEvent::Invalid(err.to_string()),
                     };
@@ -90,7 +105,7 @@ mod tests {
         let external = "{ \"chat\": { \"maxLines\": 77 } }";
         std::fs::write(store.path(), external).unwrap();
 
-        let event = tokio::time::timeout(Duration::from_secs(5), watch.events.recv())
+        let event = tokio::time::timeout(Duration::from_secs(5), watch.recv())
             .await
             .expect("an event within 5 s")
             .expect("watcher alive");
@@ -101,7 +116,7 @@ mod tests {
         assert_eq!(store.get().chat.max_lines, 77);
 
         std::fs::write(store.path(), "{ broken").unwrap();
-        let event = tokio::time::timeout(Duration::from_secs(5), watch.events.recv())
+        let event = tokio::time::timeout(Duration::from_secs(5), watch.recv())
             .await
             .expect("an event within 5 s")
             .expect("watcher alive");

@@ -244,7 +244,7 @@ function blank(): Settings {
       sort: 'relevance',
       sortDescending: false,
     },
-    chat: { maxLines: 500 },
+    chat: { maxLines: 500, channels: ['main'] },
     tweaks: { styluaConfig: null, defaultSlot: 'tweakdefs1' },
     logging: { filter: 'info' },
   }

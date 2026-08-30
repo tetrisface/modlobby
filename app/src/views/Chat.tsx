@@ -26,6 +26,7 @@ import {
 import { Composer } from '../components/Composer'
 import { Linkify } from '../components/Linkify'
 import { showPlayerMenu } from '../components/PlayerMenu'
+import { rememberChannel } from '../store/channels'
 import { lobby } from '../store/lobby'
 
 /**
@@ -151,12 +152,18 @@ export function Chat() {
         // so without this the command would look like it did nothing.
         if (argument in chat.channels) return setRoom(argument)
         setJoining(argument)
-        return act('join', () => api.joinChannel(argument, null))
+        return act('join', async () => {
+          await api.joinChannel(argument, null)
+          await rememberChannel(argument, true)
+        })
       case 'leave': {
         const target = argument || room()
         if (target === BATTLE_ROOM || isPrivate(target))
           return pushSystem(room(), 'that is not a channel')
-        return act('leave', () => api.leaveChannel(target))
+        return act('leave', async () => {
+          await api.leaveChannel(target)
+          await rememberChannel(target, false)
+        })
       }
       case 'msg':
       case 'pm': {
@@ -418,7 +425,10 @@ export function Chat() {
                 disabled={entry.name in chat.channels}
                 onClick={() => {
                   setJoining(entry.name)
-                  void act('join', () => api.joinChannel(entry.name, null))
+                  void act('join', async () => {
+                    await api.joinChannel(entry.name, null)
+                    await rememberChannel(entry.name, true)
+                  })
                 }}
               >
                 <span class='room-name'>{entry.name}</span>
@@ -444,7 +454,13 @@ export function Chat() {
           <span class='spacer' />
           <Show when={!isPrivate(room()) && room() !== BATTLE_ROOM}>
             <button
-              onClick={() => void act('leave', () => api.leaveChannel(room()))}
+              onClick={() =>
+                void act('leave', async () => {
+                  const where = room()
+                  await api.leaveChannel(where)
+                  await rememberChannel(where, false)
+                })
+              }
             >
               Leave
             </button>
