@@ -174,6 +174,8 @@ pub struct Notifications {
     pub private_message: bool,
     /// Someone said your name in a channel or in your room.
     pub mention: bool,
+    /// A friend logged in.
+    pub friend_online: bool,
     /// A vote opened in your room.
     pub vote: bool,
     /// Your room's game started.
@@ -188,6 +190,7 @@ impl Default for Notifications {
             enabled: true,
             private_message: true,
             mention: true,
+            friend_online: true,
             vote: true,
             game_starting: true,
             ring: true,

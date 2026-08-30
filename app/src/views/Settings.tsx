@@ -138,6 +138,7 @@ export function SettingsView() {
             [
               ['privateMessage', 'A direct message'],
               ['mention', 'Someone says my name'],
+              ['friendOnline', 'A friend comes online'],
               ['ring', 'Someone rings me'],
               ['vote', 'A vote opens in my room'],
               ['gameStarting', "My room's game starts"],
@@ -228,6 +229,7 @@ function blank(): Settings {
       enabled: true,
       privateMessage: true,
       mention: true,
+      friendOnline: true,
       vote: true,
       gameStarting: true,
       ring: true,

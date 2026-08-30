@@ -64,6 +64,15 @@ impl Projector {
                     let battle_id = state.user_battle.get(name).copied();
                     out.push(Delta::UserAdded(UserView::new(user, battle_id)));
                 }
+                // Only after the lobby is ready, which is why this is safe:
+                // logging in brings seventeen hundred of these at once, and
+                // nothing is projected until that flood is over.
+                if state.friends.contains(name) {
+                    out.push(Delta::Alert {
+                        kind: AlertKind::FriendOnline,
+                        text: format!("{name} is online"),
+                    });
+                }
             }
             E::RemoveUser { name } => out.push(Delta::UserRemoved { name: name.clone() }),
             E::ClientStatus { name, status } => out.push(Delta::UserStatus {

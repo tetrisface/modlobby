@@ -47,6 +47,7 @@
       "$ref": "#/$defs/Notifications",
       "default": {
         "enabled": true,
+        "friendOnline": true,
         "gameStarting": true,
         "mention": true,
         "privateMessage": true,
@@ -210,6 +211,11 @@
       "type": "object",
       "properties": {
         "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "friendOnline": {
+          "description": "A friend logged in.",
           "type": "boolean",
           "default": true
         },

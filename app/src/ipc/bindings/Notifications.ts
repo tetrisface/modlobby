@@ -17,6 +17,10 @@ privateMessage: boolean,
  */
 mention: boolean, 
 /**
+ * A friend logged in.
+ */
+friendOnline: boolean, 
+/**
  * A vote opened in your room.
  */
 vote: boolean, 

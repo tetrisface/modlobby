@@ -379,6 +379,7 @@ pub enum EngineStatus {
 pub enum AlertKind {
     PrivateMessage,
     Mention,
+    FriendOnline,
     Vote,
     GameStarting,
     Ring,

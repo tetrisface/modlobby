@@ -17,6 +17,9 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        // Where the window was and how big it was, kept between runs — a lobby
+        // is a window you arrange once and then live with.
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(move |tauri_app| {
             let mut watch = app.settings.watch()?;
             let handle = tauri_app.handle().clone();

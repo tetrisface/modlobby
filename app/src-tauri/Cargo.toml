@@ -24,6 +24,7 @@ spring-protocol = { workspace = true }
 tauri = { workspace = true }
 tauri-plugin-notification = { workspace = true }
 tauri-plugin-opener = { workspace = true }
+tauri-plugin-window-state = { workspace = true }
 tweaks = { workspace = true }
 tracing = { workspace = true }
 tracing-appender = { workspace = true }
