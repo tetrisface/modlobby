@@ -1862,6 +1862,8 @@ input[type='checkbox'].v-edit {
 
 .occupants {
   position: fixed;
+  /* Whichever side the pointer is not on: the row spans the window, so a card
+     pinned to one edge always covers half of what you are reading. */
   right: 22px;
   width: 300px;
   max-height: 300px;
@@ -1876,6 +1878,16 @@ input[type='checkbox'].v-edit {
   box-shadow: 0 12px 28px rgb(0 0 0 / 45%);
   pointer-events: none;
   z-index: 40;
+}
+
+.occupants.left {
+  right: auto;
+  left: 22px;
+}
+
+.occupants-running {
+  color: var(--text);
+  cursor: help;
 }
 
 .occupants-head {

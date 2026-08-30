@@ -17,7 +17,11 @@ import type { ModeFilter } from '../ipc/bindings/ModeFilter'
 import { RankIcon } from '../components/icons'
 import { api, describeError } from '../ipc/client'
 import { elapsed } from '../lib/running'
-import { askAboutGame, noteRunning, running } from '../store/running'
+import {
+  askAboutGame,
+  noteRunning,
+  running as runningGames,
+} from '../store/running'
 import { MODES, SORTS, arrange, type Row } from '../lib/battles'
 import { mapImages } from '../lib/maps'
 import { pushNotice } from '../store/chat'
@@ -153,7 +157,7 @@ export function BattleList() {
    * nothing to go back to.
    */
   const [remembered, setRemembered] = createSignal<number | null>(null)
-  const [peek, setPeek] = createSignal<{ id: number; top: number } | null>(null)
+  const [peek, setPeek] = createSignal<Peek | null>(null)
   const [asking, setAsking] = createSignal<BattleView | null>(null)
   onMount(async () => {
     try {
@@ -338,6 +342,13 @@ export function BattleList() {
                             id: r().battle.id,
                             top: event.currentTarget.getBoundingClientRect()
                               .top,
+                            // Which half the pointer is in decides which side
+                            // the card sits on, so it never covers what you
+                            // are pointing at.
+                            side:
+                              event.clientX > window.innerWidth / 2
+                                ? 'left'
+                                : 'right',
                           })
                           // Resting on a running room is what asks its host
                           // how long the game has been going.
@@ -363,7 +374,9 @@ export function BattleList() {
                         </span>
                         <span class='col-map'>{r().battle.mapName}</span>
                         <span class='col-flags'>
-                          <Show when={r().running && running()[r().battle.id]}>
+                          <Show
+                            when={r().running && runningGames()[r().battle.id]}
+                          >
                             {(going) => (
                               <span
                                 class='running-for'
@@ -386,7 +399,7 @@ export function BattleList() {
           </div>
         </Show>
 
-        <Occupants peek={peek()} />
+        <Occupants peek={peek()} now={now()} />
 
         <Show when={asking()}>
           {(battle) => (
@@ -414,9 +427,33 @@ export function BattleList() {
  * the server sends battle status for the room you are in and no other, so
  * there is no way to say who here is playing and who is watching.
  */
-function Occupants(props: { peek: { id: number; top: number } | null }) {
+type Peek = { id: number; top: number; side: 'left' | 'right' }
+
+function Occupants(props: { peek: Peek | null; now: number }) {
   const battle = () =>
     props.peek === null ? undefined : lobby.battles[props.peek.id]
+
+  /**
+   * How long this room's game has been going, when it is going.
+   *
+   * Worth having here as well as in the row, because the answer usually
+   * arrives after you have moved on: the host is asked at most once every
+   * 400ms and only about the room the pointer settled on, so the reply lands
+   * a moment later. Coming back to the row is how you read it, and the `+`
+   * falling away is how you know the host answered rather than that we are
+   * still counting from when we first looked.
+   */
+  const running = () => {
+    const id = props.peek?.id
+    if (id === undefined) return undefined
+    const held = runningGames()[id]
+    if (
+      !held ||
+      !(lobby.users[battle()?.founder ?? '']?.status.inGame ?? false)
+    )
+      return undefined
+    return elapsed(held, props.now)
+  }
 
   /** Friends first, then everyone else; the host bot is not a person. */
   const people = createMemo(() => {
@@ -435,6 +472,7 @@ function Occupants(props: { peek: { id: number; top: number } | null }) {
     <Show when={props.peek && people().length > 0}>
       <aside
         class='occupants'
+        classList={{ left: props.peek?.side === 'left' }}
         style={{
           // Kept clear of the bottom edge; the pointer is on the row, so the
           // card can sit anywhere that does not cover it.
@@ -443,6 +481,17 @@ function Occupants(props: { peek: { id: number; top: number } | null }) {
       >
         <div class='occupants-head'>
           {people().length} here
+          <Show when={running()}>
+            {(going) => (
+              <span
+                class='occupants-running'
+                title='How long this game has been running. A + means the host has not answered yet, so this is only as long as we have been watching.'
+              >
+                {' · running '}
+                {going()}
+              </span>
+            )}
+          </Show>
           <Show when={battle()?.founder}>
             {(host) => <span class='muted'> · hosted by {host()}</span>}
           </Show>
