@@ -113,6 +113,10 @@ enum Command {
         user: String,
         reply: Reply<()>,
     },
+    SetAway {
+        away: bool,
+        reply: Reply<()>,
+    },
     PlayReplay {
         data_dir: PathBuf,
         path: String,
@@ -284,6 +288,11 @@ impl Client {
     /// Rings someone, which is how you tell a player the room is waiting.
     pub async fn ring(&self, user: String) -> Result<(), ClientError> {
         self.ask(|reply| Command::Ring { user, reply }).await
+    }
+
+    /// Marks us away, so nobody waits on someone who has stepped out.
+    pub async fn set_away(&self, away: bool) -> Result<(), ClientError> {
+        self.ask(|reply| Command::SetAway { away, reply }).await
     }
 
     /// Starts a game against AI with no server involved.
@@ -911,6 +920,12 @@ impl Runtime {
                     Err(ClientError::Refused("nothing is downloading".into()))
                 };
                 let _ = reply.send(answer);
+            }
+            Command::SetAway { away, reply } => {
+                self.run_session(reply, |session| {
+                    Ok::<_, std::convert::Infallible>(session.set_away(away))
+                })
+                .await;
             }
             Command::Ring { user, reply } => {
                 self.run_session(reply, |session| {

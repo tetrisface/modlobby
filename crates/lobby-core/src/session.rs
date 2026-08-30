@@ -141,6 +141,10 @@ pub struct Session {
     /// Whether this machine has the room's engine, game and map. Claiming to be
     /// synced when we are not makes the host start a game we cannot join.
     synced: bool,
+    /// The two bits `MYSTATUS` carries. Kept together because the command
+    /// carries both at once and there is no way to send one alone.
+    in_game: bool,
+    away: bool,
     /// A friend listing part-way through arriving. Held aside so a listing that
     /// is cut off never half-replaces the one we have.
     collecting_friends: Option<std::collections::BTreeSet<String>>,
@@ -219,6 +223,8 @@ impl Session {
             allow_public_seat: false,
             private_host: None,
             synced: false,
+            in_game: false,
+            away: false,
             state: LobbyState {
                 phase: Some(Phase::Connecting),
                 ..LobbyState::default()
@@ -254,10 +260,23 @@ impl Session {
     /// running game only after seeing this bit (`spads.pl` `cbClientStatus`), so it
     /// must go out before the engine connects.
     pub fn set_in_game(&mut self, in_game: bool) -> Vec<Effect> {
-        vec![Effect::Send(Envelope::queue(
+        self.in_game = in_game;
+        vec![self.status()]
+    }
+
+    /// Marks us away, or back. One `MYSTATUS` carries both bits, so each is
+    /// remembered here — sending one without the other would silently claim we
+    /// had left the game we are in.
+    pub fn set_away(&mut self, away: bool) -> Vec<Effect> {
+        self.away = away;
+        vec![self.status()]
+    }
+
+    fn status(&self) -> Effect {
+        Effect::Send(Envelope::queue(
             Area::Status,
-            status::my_status(in_game, false),
-        ))]
+            status::my_status(self.in_game, self.away),
+        ))
     }
 
     /// Takes a player slot, which is refused unless the room is passworded —
@@ -1826,6 +1845,15 @@ mod tests {
         let mut s = ready_with_room();
         assert_eq!(sent_lines(&s.set_in_game(true)), ["MYSTATUS 1"]);
         assert_eq!(sent_lines(&s.set_in_game(false)), ["MYSTATUS 0"]);
+    }
+
+    #[test]
+    fn away_and_in_game_are_sent_together_because_the_command_carries_both() {
+        let mut s = session();
+        assert_eq!(sent_lines(&s.set_away(true)), ["MYSTATUS 2"]);
+        // Going into a game must not quietly say we came back.
+        assert_eq!(sent_lines(&s.set_in_game(true)), ["MYSTATUS 3"]);
+        assert_eq!(sent_lines(&s.set_away(false)), ["MYSTATUS 1"]);
     }
 
     #[test]

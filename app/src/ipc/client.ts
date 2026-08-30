@@ -46,6 +46,7 @@ export const api = {
   downloadMissing: () => invoke<void>('download_missing'),
   stopDownload: () => invoke<void>('stop_download'),
   ring: (user: string) => invoke<void>('ring', { user }),
+  setAway: (away: boolean) => invoke<void>('set_away', { away }),
   skirmishOptions: () => invoke<SkirmishOptions>('skirmish_options'),
   startSkirmish: (
     game: string,

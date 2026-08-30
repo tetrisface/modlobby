@@ -28,6 +28,9 @@ import { Tweaks } from './views/Tweaks'
 type SettingsEvent = { changed: Settings } | { invalid: string }
 
 function Layout(props: ParentProps) {
+  /** What the server says about us, which is what everyone else can see. */
+  const away = () => (lobby.me ? lobby.users[lobby.me]?.status.away : false)
+
   onMount(async () => {
     try {
       applySettings(await api.getSettings())
@@ -76,6 +79,20 @@ function Layout(props: ParentProps) {
           fallback={<span class='muted'>not logged in</span>}
         >
           <span>{lobby.me}</span>
+          {/* The server keeps this bit, so what it says is what everyone else
+              sees — no local guess to drift out of step with it. */}
+          <button
+            class='chip-choice'
+            classList={{ on: away() }}
+            title={
+              away()
+                ? 'Everyone sees you as away'
+                : 'Tell everyone you have stepped out'
+            }
+            onClick={() => void api.setAway(!away())}
+          >
+            Away
+          </button>
           <button onClick={() => api.logout()}>Log out</button>
         </Show>
       </nav>

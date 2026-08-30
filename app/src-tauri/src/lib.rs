@@ -64,6 +64,7 @@ pub fn run() {
             commands::download_missing,
             commands::stop_download,
             commands::ring,
+            commands::set_away,
             commands::skirmish_options,
             commands::start_skirmish,
             commands::list_replays,

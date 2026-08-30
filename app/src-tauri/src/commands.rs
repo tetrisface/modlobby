@@ -351,6 +351,13 @@ pub async fn download_missing(app: State<'_, App>) -> Result<()> {
     Ok(())
 }
 
+/// Marks us away, or back.
+#[tauri::command]
+pub async fn set_away(app: State<'_, App>, away: bool) -> Result<()> {
+    app.client.set_away(away).await?;
+    Ok(())
+}
+
 /// Rings someone in the room, which is how a host says the game is waiting.
 #[tauri::command]
 pub async fn ring(app: State<'_, App>, user: String) -> Result<()> {
