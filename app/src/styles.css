@@ -1862,9 +1862,8 @@ input[type='checkbox'].v-edit {
 
 .occupants {
   position: fixed;
-  /* Whichever side the pointer is not on: the row spans the window, so a card
-     pinned to one edge always covers half of what you are reading. */
-  right: 22px;
+  /* `left` is set from the pointer; see `cardLeft` in BattleList.tsx, which
+     knows this width. */
   width: 300px;
   max-height: 300px;
   overflow: hidden;
@@ -1878,11 +1877,6 @@ input[type='checkbox'].v-edit {
   box-shadow: 0 12px 28px rgb(0 0 0 / 45%);
   pointer-events: none;
   z-index: 40;
-}
-
-.occupants.left {
-  right: auto;
-  left: 22px;
 }
 
 .occupants-running {

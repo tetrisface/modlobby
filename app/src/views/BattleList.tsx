@@ -158,6 +158,12 @@ export function BattleList() {
    */
   const [remembered, setRemembered] = createSignal<number | null>(null)
   const [peek, setPeek] = createSignal<Peek | null>(null)
+  /**
+   * Where the pointer is, kept apart from `peek` on purpose: rolling it into
+   * that object would make the card's name list re-sort on every mouse move,
+   * for a change that only moves a box sideways.
+   */
+  const [pointerX, setPointerX] = createSignal(0)
   const [asking, setAsking] = createSignal<BattleView | null>(null)
   onMount(async () => {
     try {
@@ -308,6 +314,7 @@ export function BattleList() {
               position: 'relative',
             }}
             onMouseLeave={() => setPeek(null)}
+            onMouseMove={(event) => setPointerX(event.clientX)}
           >
             <For each={virtualizer.getVirtualItems()}>
               {(item) => {
@@ -338,17 +345,11 @@ export function BattleList() {
                           }
                         }}
                         onMouseEnter={(event) => {
+                          setPointerX(event.clientX)
                           setPeek({
                             id: r().battle.id,
                             top: event.currentTarget.getBoundingClientRect()
                               .top,
-                            // Which half the pointer is in decides which side
-                            // the card sits on, so it never covers what you
-                            // are pointing at.
-                            side:
-                              event.clientX > window.innerWidth / 2
-                                ? 'left'
-                                : 'right',
                           })
                           // Resting on a running room is what asks its host
                           // how long the game has been going.
@@ -399,7 +400,7 @@ export function BattleList() {
           </div>
         </Show>
 
-        <Occupants peek={peek()} now={now()} />
+        <Occupants peek={peek()} now={now()} x={pointerX()} />
 
         <Show when={asking()}>
           {(battle) => (
@@ -427,9 +428,33 @@ export function BattleList() {
  * the server sends battle status for the room you are in and no other, so
  * there is no way to say who here is playing and who is watching.
  */
-type Peek = { id: number; top: number; side: 'left' | 'right' }
+type Peek = { id: number; top: number }
 
-function Occupants(props: { peek: Peek | null; now: number }) {
+/** Kept in step with `.occupants` in the stylesheet. */
+const CARD_WIDTH = 300
+/** Chobby's own tooltip offset (`gui_tooltip.lua:1262`). */
+const CARD_GAP = 20
+
+/**
+ * Where the card goes for a pointer at `x`.
+ *
+ * Beside the pointer, as Chobby's tooltip does, rather than pinned to an edge:
+ * a row spans the whole window, so an edge-pinned card always covers half of
+ * what is being read, and flipping between the two edges moves it further than
+ * the eye wants to travel.
+ *
+ * One deliberate difference from Chobby, which clamps to the right edge when
+ * the tooltip would overflow (`gui_tooltip.lua:1276`): clamping leaves the card
+ * sitting under the cursor near that edge, which is the covering-things
+ * complaint this set out to fix. It opens to the left of the pointer instead.
+ */
+export function cardLeft(x: number, viewport: number): number {
+  const right = x + CARD_GAP
+  if (right + CARD_WIDTH <= viewport - CARD_GAP) return right
+  return Math.max(CARD_GAP, x - CARD_GAP - CARD_WIDTH)
+}
+
+function Occupants(props: { peek: Peek | null; now: number; x: number }) {
   const battle = () =>
     props.peek === null ? undefined : lobby.battles[props.peek.id]
 
@@ -472,11 +497,11 @@ function Occupants(props: { peek: Peek | null; now: number }) {
     <Show when={props.peek && people().length > 0}>
       <aside
         class='occupants'
-        classList={{ left: props.peek?.side === 'left' }}
         style={{
           // Kept clear of the bottom edge; the pointer is on the row, so the
           // card can sit anywhere that does not cover it.
           top: `${Math.min(props.peek!.top, window.innerHeight - 320)}px`,
+          left: `${cardLeft(props.x, window.innerWidth)}px`,
         }}
       >
         <div class='occupants-head'>
