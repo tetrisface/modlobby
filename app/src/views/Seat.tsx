@@ -1,9 +1,9 @@
-import { For, Show, createMemo, createSignal } from 'solid-js'
+import { For, Show, createEffect, createMemo, createSignal } from 'solid-js'
 import { SideIcon } from '../components/icons'
 import { api, describeError } from '../ipc/client'
 import { pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
-import { settings } from '../store/settings'
+import { applySettings, settings } from '../store/settings'
 
 const REGIONS = ['EU', 'US', 'AU', 'EA']
 
@@ -61,6 +61,27 @@ export function Seat() {
     return [...sorted, next]
   })
 
+  /** The ally team a seat would join: the emptiest one already in play. */
+  function freeAlly(): number {
+    const battle = room()
+    if (!battle) return 0
+    const held = new Map<number, number>()
+    for (const name of battle.members) {
+      const status = lobby.users[name]?.battleStatus
+      if (status?.player)
+        held.set(status.allyTeam, (held.get(status.allyTeam) ?? 0) + 1)
+    }
+    for (const bot of battle.bots)
+      held.set(bot.status.allyTeam, (held.get(bot.status.allyTeam) ?? 0) + 1)
+    const teams = allyTeams()
+    // The last entry is always the new, empty one; prefer a side that exists.
+    const existing = teams.slice(0, -1)
+    if (existing.length === 0) return teams[0] ?? 0
+    return existing.reduce((best, ally) =>
+      (held.get(ally) ?? 0) < (held.get(best) ?? 0) ? ally : best,
+    )
+  }
+
   /** The lowest team number nobody holds, so two players never collide. */
   function freeTeam(): number {
     const battle = room()
@@ -75,6 +96,35 @@ export function Seat() {
     let team = 0
     while (taken.has(team)) team += 1
     return team
+  }
+
+  /**
+   * Sits down on arrival when that is the posture, once per room.
+   *
+   * Once, so that leaving your seat is not immediately undone — and leaving it
+   * also changes what `remember` remembers, so the next room agrees with what
+   * you just did.
+   */
+  let seatedIn: number | undefined
+  createEffect(() => {
+    const battle = room()
+    const play = settings()?.play
+    if (!battle || !play || seated() || !allowed()) return
+    if (seatedIn === battle.id) return
+    const wanted =
+      play.joinAs === 'remember' ? play.lastWasPlayer : play.joinAs === 'player'
+    if (!wanted) return
+    seatedIn = battle.id
+    void act('take a seat', () => api.takeSeat(freeTeam(), freeAlly()))
+  })
+
+  /** What `remember` remembers, kept current by what you actually do. */
+  async function remember(played: boolean) {
+    try {
+      applySettings(await api.rememberPlayed(played))
+    } catch {
+      // A preference we could not write is not worth interrupting a game for.
+    }
   }
 
   async function act(what: string, run: () => Promise<void>) {
@@ -106,7 +156,10 @@ export function Seat() {
                   <button
                     disabled={busy()}
                     onClick={() =>
-                      act('take a seat', () => api.takeSeat(freeTeam(), ally))
+                      act('take a seat', async () => {
+                        await api.takeSeat(freeTeam(), ally)
+                        await remember(true)
+                      })
                     }
                   >
                     {index() === allyTeams().length - 1
@@ -152,7 +205,12 @@ export function Seat() {
 
           <button
             disabled={busy()}
-            onClick={() => act('spectate', () => api.releaseSeat())}
+            onClick={() =>
+              act('spectate', async () => {
+                await api.releaseSeat()
+                await remember(false)
+              })
+            }
           >
             Spectate
           </button>

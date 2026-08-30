@@ -67,7 +67,9 @@
     "play": {
       "$ref": "#/$defs/Play",
       "default": {
-        "inPublicRooms": true
+        "inPublicRooms": true,
+        "joinAs": "remember",
+        "lastWasPlayer": true
       }
     },
     "server": {
@@ -208,6 +210,15 @@
         }
       }
     },
+    "JoinAs": {
+      "description": "What sitting down in a room you just joined should mean.\n\nChobby's three, under the same names it gives them\n(`gui_settings_window.lua:906`): remember what you did last time, or always\none or the other.",
+      "type": "string",
+      "enum": [
+        "remember",
+        "spectator",
+        "player"
+      ]
+    },
     "Logging": {
       "type": "object",
       "properties": {
@@ -299,6 +310,16 @@
       "properties": {
         "inPublicRooms": {
           "description": "Whether a seat may be taken in a public room.\n\nOn: this is a lobby, and sitting down in a room is what it is for. It\nstays a setting because a client driving the protocol without a person\nbehind it should be able to say it is only watching.",
+          "type": "boolean",
+          "default": true
+        },
+        "joinAs": {
+          "description": "Whether joining a room seats you.",
+          "$ref": "#/$defs/JoinAs",
+          "default": "remember"
+        },
+        "lastWasPlayer": {
+          "description": "What [`JoinAs::Remember`] remembers: whether you played last time.\nWritten when you take or leave a seat, never chosen directly.",
           "type": "boolean",
           "default": true
         }

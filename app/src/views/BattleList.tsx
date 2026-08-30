@@ -121,6 +121,18 @@ export function BattleList() {
     await enter(battle, null)
   }
 
+  /**
+   * What clicking a room does, as Chobby asks it: remember what you did last
+   * time, or always one or the other (`gui_settings_window.lua:906`).
+   */
+  const posture = (): 'player' | 'spectator' => {
+    const play = settings()?.play
+    if (!play) return 'spectator'
+    if (play.joinAs === 'remember')
+      return play.lastWasPlayer ? 'player' : 'spectator'
+    return play.joinAs
+  }
+
   async function enter(battle: BattleView, password: string | null) {
     try {
       await api.joinBattle(battle.id, password)
@@ -315,7 +327,16 @@ export function BattleList() {
                           height: `${ROW_HEIGHT}px`,
                           width: '100%',
                         }}
-                        onDblClick={() => join(r().battle)}
+                        role='button'
+                        tabindex={0}
+                        title={`${posture() === 'player' ? 'Join' : 'Watch'} ${r().battle.title}`}
+                        onClick={() => join(r().battle)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            join(r().battle)
+                          }
+                        }}
                         onMouseEnter={(event) =>
                           setPeek({
                             id: r().battle.id,
@@ -356,9 +377,6 @@ export function BattleList() {
                           {r().battle.locked ? '🔒 ' : ''}
                           {r().battle.passworded ? '🔑' : ''}
                         </span>
-                        <button onClick={() => join(r().battle)}>
-                          Spectate
-                        </button>
                       </div>
                     )}
                   </Show>

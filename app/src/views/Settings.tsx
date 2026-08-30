@@ -169,6 +169,40 @@ export function SettingsView() {
         </fieldset>
 
         <fieldset>
+          <legend>Joining</legend>
+          <p class='muted'>
+            Clicking a room in the list joins it. This is what that means.
+          </p>
+          <div
+            class='choice-row'
+            title='Remember last does what you did in the room before this one — take a seat and it plays, spectate and it watches.'
+          >
+            <span>Join rooms as</span>
+            <div class='choice'>
+              <For
+                each={
+                  [
+                    ['remember', 'Remember last'],
+                    ['spectator', 'Always spectator'],
+                    ['player', 'Always player'],
+                  ] as const
+                }
+              >
+                {([how, label]) => (
+                  <button
+                    type='button'
+                    classList={{ on: draft.play.joinAs === how }}
+                    onClick={() => setDraft('play', 'joinAs', how)}
+                  >
+                    {label}
+                  </button>
+                )}
+              </For>
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset>
           <legend>Notifications</legend>
           <p class='muted'>
             <b>In lobby</b> puts a line in the corner of this window.{' '}
@@ -219,9 +253,9 @@ export function SettingsView() {
             }
           >
             {([key, label, hint]) => (
-              <div class='alert-row' title={hint}>
+              <div class='choice-row' title={hint}>
                 <span>{label}</span>
-                <div class='alert-choice'>
+                <div class='choice'>
                   <For
                     each={
                       [
@@ -355,7 +389,7 @@ function blank(): Settings {
     server: { host: '', port: 8201, tls: true },
     account: { username: '', rememberPassword: false, autoLogin: false },
     paths: { dataDir: null },
-    play: { inPublicRooms: true },
+    play: { inPublicRooms: true, joinAs: 'remember', lastWasPlayer: true },
     notifications: {
       privateMessage: 'desktop',
       mention: 'desktop',

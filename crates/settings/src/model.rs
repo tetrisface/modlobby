@@ -146,6 +146,20 @@ pub enum BattleSort {
     Host,
 }
 
+/// What sitting down in a room you just joined should mean.
+///
+/// Chobby's three, under the same names it gives them
+/// (`gui_settings_window.lua:906`): remember what you did last time, or always
+/// one or the other.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum JoinAs {
+    Remember,
+    Spectator,
+    Player,
+}
+
 /// Playing rather than watching.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(default, rename_all = "camelCase")]
@@ -157,12 +171,20 @@ pub struct Play {
     /// stays a setting because a client driving the protocol without a person
     /// behind it should be able to say it is only watching.
     pub in_public_rooms: bool,
+    /// Whether joining a room seats you.
+    pub join_as: JoinAs,
+    /// What [`JoinAs::Remember`] remembers: whether you played last time.
+    /// Written when you take or leave a seat, never chosen directly.
+    pub last_was_player: bool,
 }
 
 impl Default for Play {
     fn default() -> Self {
         Self {
             in_public_rooms: true,
+            join_as: JoinAs::Remember,
+            // Nothing remembered yet, and this is a lobby.
+            last_was_player: true,
         }
     }
 }

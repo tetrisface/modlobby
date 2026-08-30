@@ -18,7 +18,7 @@ function loaded(): Settings {
     server: { host: 'server4', port: 8201, tls: true },
     account: { username: 'me', rememberPassword: false, autoLogin: false },
     paths: { dataDir: null },
-    play: { inPublicRooms: true },
+    play: { inPublicRooms: true, joinAs: 'remember', lastWasPlayer: true },
     notifications: {
       privateMessage: 'desktop',
       mention: 'desktop',
@@ -46,7 +46,7 @@ function loaded(): Settings {
 
 /** The three buttons of one notification row, by the row's label. */
 function choiceFor(container: HTMLElement, label: string) {
-  const row = [...container.querySelectorAll('.alert-row')].find((element) =>
+  const row = [...container.querySelectorAll('.choice-row')].find((element) =>
     element.textContent?.startsWith(label),
   )
   if (!row) throw new Error(`no row for ${label}`)

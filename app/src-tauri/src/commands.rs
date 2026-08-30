@@ -351,6 +351,16 @@ pub async fn download_missing(app: State<'_, App>) -> Result<()> {
     Ok(())
 }
 
+/// Records whether the last room was joined as a player, which is what the
+/// `remember` join posture remembers. Written on its own so taking a seat does
+/// not rewrite every other setting.
+#[tauri::command]
+pub fn remember_played(app: State<'_, App>, played: bool) -> Result<Settings> {
+    Ok(app
+        .settings
+        .update(|current| current.play.last_was_player = played)?)
+}
+
 /// Flashes the taskbar entry of the running engine, if it has a window yet.
 ///
 /// Answers whether it did, so the caller can fall back to flashing the lobby:
