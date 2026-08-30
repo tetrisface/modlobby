@@ -1,12 +1,20 @@
 /**
  * BAR's modoptions, arranged into the tabs a room shows.
  *
- * The table is vendored from the game submodule by `cargo run -p modoptions
- * --bin vendor-modoptions`; nothing here reads Lua. Tab order, group names and
- * defaults are all BAR's own — the one thing we impose is the Modding tab.
+ * The table is the game's own `modoptions.lua`, read out of the copy already
+ * installed on this machine and parsed by the `modoptions` crate. It is not
+ * shipped with the app: the descriptions in it are BAR's writing under GPL v2,
+ * and a lobby has no need to redistribute them when every player already has
+ * the file. bar-lobby reads it the same way (`game-provider.ts:200`), and
+ * Chobby asks the engine's Lua VM for it.
+ *
+ * The happy side effect is that the table can never be out of date with the
+ * game a room is actually running.
+ *
+ * Tab order, group names and defaults are all BAR's own — the one thing we
+ * impose is the Modding tab.
  */
 
-import schema from '../data/modoptions.json'
 import type { ModOption } from '../ipc/bindings/ModOption'
 import type { OptionValue } from '../ipc/bindings/OptionValue'
 
@@ -19,8 +27,6 @@ export type Row = {
   current: string | null
   changed: boolean
 }
-
-const OPTIONS = schema as ModOption[]
 
 /** Chobby nulls this section outright (`gui_modoptions_panel.lua:1242`). */
 const DROPPED_SECTION = 'dev'
@@ -93,8 +99,8 @@ function groupsOf(options: ModOption[]): Group[] {
   return groups
 }
 
-function moddingTab(): Tab {
-  const byKey = new Map(OPTIONS.map((option) => [option.key, option]))
+function moddingTab(options: ModOption[]): Tab {
+  const byKey = new Map(options.map((option) => [option.key, option]))
   const groups: Group[] = [
     {
       name: 'Tweak slots',
@@ -128,26 +134,28 @@ function moddingTab(): Tab {
  * treated as zero so it lands between Experimental and Cheats. Modding goes
  * last, next to Cheats, where the tweak slots used to live.
  */
-export function tabs(): Tab[] {
-  const sections = OPTIONS.filter(
-    (option) =>
-      option.type === 'section' &&
-      !option.hidden &&
-      option.key !== DROPPED_SECTION,
-  ).sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0))
+export function tabs(options: ModOption[]): Tab[] {
+  const sections = options
+    .filter(
+      (option) =>
+        option.type === 'section' &&
+        !option.hidden &&
+        option.key !== DROPPED_SECTION,
+    )
+    .sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0))
 
   const declared = sections.map((section) => ({
     key: section.key,
     name: section.name ?? section.key,
     desc: section.desc ?? '',
     groups: groupsOf(
-      OPTIONS.filter(
+      options.filter(
         (option) => option.section === section.key && !MOVED.has(option.key),
       ),
     ),
   }))
 
-  return [...declared, moddingTab()]
+  return [...declared, moddingTab(options)]
 }
 
 /** Modoptions the room has set, keyed without the `game/modoptions/` prefix. */

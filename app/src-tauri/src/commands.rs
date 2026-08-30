@@ -359,6 +359,34 @@ pub async fn request_game_status(app: State<'_, App>, founder: String) -> Result
     Ok(())
 }
 
+/// BAR's modoption table, read out of the installed game.
+///
+/// Not shipped with the app. The names and descriptions in `modoptions.lua`
+/// are BAR's writing under GPL v2, and every player already has the file — so
+/// this reads theirs rather than redistributing a copy, which is what
+/// bar-lobby and Chobby both do. It also means the table always matches the
+/// game version the room is actually running.
+///
+/// An empty answer means the game is not installed yet; the room falls back to
+/// showing the settings it can see without their descriptions.
+#[tauri::command]
+pub fn game_modoptions(app: State<'_, App>, game: String) -> Result<Vec<modoptions::ModOption>> {
+    let Some(dir) = app
+        .settings
+        .get()
+        .paths
+        .data_dir
+        .or_else(lobby_runtime::launch::default_data_dir)
+    else {
+        return Ok(Vec::new());
+    };
+    let Some(bytes) = content::Library::new(dir).game_file(&game, "modoptions.lua") else {
+        return Ok(Vec::new());
+    };
+    modoptions::parse(&String::from_utf8_lossy(&bytes))
+        .map_err(|err| ApiError::new("modoptions", err.to_string()))
+}
+
 /// Records whether the last room was joined as a player, which is what the
 /// `remember` join posture remembers. Written on its own so taking a seat does
 /// not rewrite every other setting.

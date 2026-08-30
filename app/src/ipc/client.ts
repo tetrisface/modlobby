@@ -5,6 +5,7 @@ import type { Prepared } from './bindings/Prepared'
 import type { ReplayView } from './bindings/ReplayView'
 import type { SkirmishOptions } from './bindings/SkirmishOptions'
 import type { Book } from './bindings/Book'
+import type { ModOption } from './bindings/ModOption'
 import type { Plan } from './bindings/Plan'
 import type { Score } from './bindings/Score'
 import type { Sections } from './bindings/Sections'
@@ -58,6 +59,8 @@ export const api = {
   pveScore: () => invoke<Score | null>('pve_score'),
 
   // ---- saved room setups ----
+  gameModOptions: (game: string) =>
+    invoke<ModOption[]>('game_modoptions', { game }),
   listPresets: () => invoke<Book>('list_presets'),
   chobbyPresetsPath: () => invoke<string | null>('chobby_presets_path'),
   savePreset: (name: string) => invoke<Book>('save_preset', { name }),

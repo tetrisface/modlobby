@@ -15,4 +15,6 @@ tracing = { workspace = true }
 ts-rs = { workspace = true }
 
 [dev-dependencies]
+# Only for the example that reads a real install.
+modoptions = { workspace = true }
 tempfile = { workspace = true }

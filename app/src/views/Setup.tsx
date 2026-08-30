@@ -28,8 +28,10 @@ import { pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
 import { Tweaks } from './Tweaks'
 
-const TABS = tabs()
 const TWEAK_GROUP = 'Tweak slots'
+
+/** Shown before the game is installed, when there is no table to read. */
+const NO_TABS: Tab = { key: '', name: '', desc: '', groups: [] }
 
 /**
  * The room's settings, in BAR's own tabs and groups.
@@ -44,7 +46,26 @@ export function Setup(props: {
   wide: boolean
   onWide: (wide: boolean) => void
 }) {
-  const [tab, setTab] = createSignal<Tab>(TABS[0]!)
+  /**
+   * The game's own option table, read from the copy installed on this machine
+   * rather than shipped with the app — see `lib/setup`. Re-read when the room
+   * changes game, which is also what keeps it matching the version in play.
+   */
+  const [catalogue] = createResource(
+    () => lobby.battles[lobby.myBattle?.id ?? -1]?.gameName,
+    (game) => api.gameModOptions(game).catch(() => []),
+  )
+  const TABS = createMemo(() => tabs(catalogue() ?? []))
+
+  /**
+   * The chosen tab is held as a key rather than as the tab itself: the table
+   * is re-read when the room changes game, and a held object would then be a
+   * tab from the previous catalogue.
+   */
+  const [tabKey, setTabKey] = createSignal<string | null>(null)
+  const tab = (): Tab =>
+    TABS().find((entry) => entry.key === tabKey()) ?? TABS()[0] ?? NO_TABS
+  const setTab = (next: Tab | undefined) => setTabKey(next?.key ?? null)
   const [group, setGroup] = createSignal<string | null>(null)
 
   const values = createMemo(() => readModOptions(lobby.myBattle?.scriptTags))
@@ -82,7 +103,7 @@ export function Setup(props: {
   }
 
   function editTweaks() {
-    setTab(TABS.find((entry) => entry.key === MODDING_TAB)!)
+    setTab(TABS().find((entry) => entry.key === MODDING_TAB))
     setGroup(TWEAK_GROUP)
     props.onWide(true)
   }
@@ -110,7 +131,7 @@ export function Setup(props: {
       </div>
 
       <div class='setup-tabs'>
-        <For each={TABS}>
+        <For each={TABS()}>
           {(entry) => {
             const count = createMemo(() => changedCount(entry, values()))
             return (

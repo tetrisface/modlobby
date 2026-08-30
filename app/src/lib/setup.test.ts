@@ -10,8 +10,9 @@ import {
   tabs,
   type Tab,
 } from './setup'
+import { fixtureOptions } from './setup.fixture'
 
-const TABS = tabs()
+const TABS = tabs(fixtureOptions())
 const byKey = (key: string): Tab => {
   const tab = TABS.find((entry) => entry.key === key)
   if (!tab) throw new Error(`no tab ${key}`)

@@ -22,6 +22,7 @@ serde = { workspace = true }
 settings = { workspace = true }
 spring-protocol = { workspace = true }
 tauri = { workspace = true }
+modoptions = { workspace = true }
 presets = { workspace = true }
 pve = { workspace = true }
 tauri-plugin-notification = { workspace = true }

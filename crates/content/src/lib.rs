@@ -13,6 +13,7 @@
 //!   how BAR names the archives (`Supreme Isthmus v2.1` →
 //!   `supreme_isthmus_v2.1.sd7`).
 
+pub mod archive;
 pub mod demo;
 pub mod replays;
 
@@ -112,6 +113,20 @@ impl Library {
                 .join(format!("{md5}.sdp"))
                 .exists()
         })
+    }
+
+    /// One file out of the installed game, by the version a room reports.
+    ///
+    /// Rapid first, then an unpacked `games/*.sdd` for anyone running a
+    /// checkout of the game itself. `None` when the game is not installed,
+    /// which is a normal state and not an error.
+    pub fn game_file(&self, display_name: &str, file: &str) -> Option<Vec<u8>> {
+        if let Some(md5) = self.rapid_md5(display_name)
+            && let Ok(bytes) = archive::from_package(&self.data_dir, &md5, file)
+        {
+            return Some(bytes);
+        }
+        archive::from_unpacked(&self.data_dir, file)
     }
 
     /// Scans every rapid index for the version with this display name.

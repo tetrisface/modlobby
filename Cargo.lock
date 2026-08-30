@@ -762,6 +762,7 @@ name = "content"
 version = "0.1.0"
 dependencies = [
  "flate2",
+ "modoptions",
  "recoil",
  "serde",
  "tempfile",
@@ -2729,6 +2730,7 @@ dependencies = [
  "content",
  "lobby-runtime",
  "lobby-ui",
+ "modoptions",
  "presets",
  "pve",
  "recoil",
