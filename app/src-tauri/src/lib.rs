@@ -75,6 +75,7 @@ pub fn run() {
             commands::clear_password,
             commands::open_settings_file,
             commands::open_data_dir,
+            commands::open_url,
             commands::take_seat,
             commands::set_ready,
             commands::set_side,

@@ -493,6 +493,24 @@ pub fn open_data_dir(app: State<'_, App>) -> Result<()> {
     open(data_dir(&app)?)
 }
 
+/// Opens a link from chat in the system browser.
+///
+/// Only `http` and `https`: chat is text other people wrote, and handing an
+/// arbitrary scheme to the shell would let anyone in a channel decide what
+/// this machine opens.
+#[tauri::command]
+pub fn open_url(url: String) -> Result<()> {
+    let allowed = url.starts_with("https://") || url.starts_with("http://");
+    // Quotes and control characters have no business in a URL and are how a
+    // crafted line would try to break out of whatever opens it.
+    let suspicious = url.chars().any(char::is_control) || url.contains('"') || url.contains("'");
+    if !allowed || suspicious {
+        return Err(ApiError::new("input", "only http and https links open"));
+    }
+    tauri_plugin_opener::open_url(url, None::<&str>)
+        .map_err(|err| ApiError::new("opener", err.to_string()))
+}
+
 /// Decodes a stored slot value for display: Lua, formatted Lua, name, summary.
 #[tauri::command]
 pub fn tweak_decode(app: State<'_, App>, blob: String, kind: Kind) -> Result<TweakView> {

@@ -22,6 +22,7 @@ import {
   openPrivates,
   watchRoom,
 } from '../store/chat'
+import { Linkify } from '../components/Linkify'
 import { showPlayerMenu } from '../components/PlayerMenu'
 import { lobby } from '../store/lobby'
 
@@ -411,7 +412,9 @@ function Line(props: { line: ChatLine; me: string | null }) {
       >
         {props.line.from}
       </span>
-      <span class='text'>{props.line.text}</span>
+      <span class='text'>
+        <Linkify text={props.line.text} />
+      </span>
     </div>
   )
 }

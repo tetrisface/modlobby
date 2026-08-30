@@ -9,6 +9,7 @@ import {
   createResource,
   createSignal,
 } from 'solid-js'
+import { Linkify } from '../components/Linkify'
 import { showPlayerMenu } from '../components/PlayerMenu'
 import { BotRow, PlayerRow, SpectatorRow } from '../components/PlayerRow'
 import type { BattleView } from '../ipc/bindings/BattleView'
@@ -409,7 +410,9 @@ function Line(props: { line: ChatLine }) {
       >
         {props.line.from}
       </span>
-      <span class='text'>{props.line.text}</span>
+      <span class='text'>
+        <Linkify text={props.line.text} />
+      </span>
     </div>
   )
 }

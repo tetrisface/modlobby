@@ -1770,3 +1770,11 @@ input[type='checkbox'].v-edit {
   font-family: var(--mono);
   font-size: 12px;
 }
+
+.chat-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
