@@ -212,7 +212,27 @@ export function Room() {
                           )}
                         </For>
                         <For each={team.bots}>
-                          {(bot) => <BotRow bot={bot} />}
+                          {(bot) => (
+                            <BotRow
+                              bot={bot}
+                              onRemove={
+                                // The server would refuse anyone else; not
+                                // drawing the button beats a silent refusal.
+                                bot.owner === lobby.me ||
+                                lobby.myBattle?.boss === lobby.me
+                                  ? () =>
+                                      void api
+                                        .removeBot(bot.name)
+                                        .catch((error) =>
+                                          pushNotice(
+                                            'warning',
+                                            describeError(error),
+                                          ),
+                                        )
+                                  : undefined
+                              }
+                            />
+                          )}
                         </For>
                       </section>
                     )}

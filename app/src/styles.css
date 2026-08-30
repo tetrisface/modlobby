@@ -706,6 +706,12 @@ input {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  /* Its own paint layer. Without it, WebView2 smears stale lines over new
+     ones after the window has been hidden and shown while messages arrived --
+     double-drawn text offset by half a row. Scroll anchoring is also off,
+     since the log is scrolled to the bottom by hand on every line. */
+  contain: paint;
+  overflow-anchor: none;
 }
 
 /* A fixed, right-aligned speaker column: the eye finds the message at one x
@@ -2312,4 +2318,77 @@ button.link:hover {
     animation: none;
     opacity: 0.45;
   }
+}
+
+/* ---- the window while it sits over a running game ----
+
+   The window covers the game's monitor, but the page dresses as a modal: the
+   lobby in a centred card, the game visible through a dimmed scrim around it.
+   Every way out a modal has -- Esc, a click on the scrim, the X -- hands the
+   game back. The scrim needs the window itself to be transparent
+   (tauri.conf.json), which costs nothing the rest of the time: body paints an
+   opaque ground everywhere below. */
+
+html.overlay body {
+  background: rgba(5, 8, 12, 0.55);
+}
+
+html.overlay .shell {
+  position: fixed;
+  inset: 40px;
+  /* The base rule says 100vh, and an explicit height beats `bottom`. */
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+  animation: overlay-in 140ms ease-out;
+  background: var(--bg);
+}
+
+@keyframes overlay-in {
+  from {
+    opacity: 0.4;
+    transform: scale(0.985);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.overlay .shell {
+    animation: none;
+  }
+}
+
+.overlay-close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: 17px;
+  line-height: 1;
+  border-radius: 50%;
+  z-index: 40;
+}
+
+.bot-remove {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1;
+  border-radius: 50%;
+  opacity: 0;
+}
+
+.player:hover .bot-remove,
+.bot-remove:focus-visible {
+  opacity: 1;
+}
+
+.add-ai {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }

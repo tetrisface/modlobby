@@ -438,6 +438,29 @@ pub async fn set_away(app: State<'_, App>, away: bool) -> Result<()> {
     Ok(())
 }
 
+/// Adds an AI to the room. It runs on this machine when the game starts.
+#[tauri::command]
+pub async fn add_bot(
+    app: State<'_, App>,
+    name: String,
+    ai: String,
+    team: u8,
+    ally_team: u8,
+    colour: u32,
+) -> Result<()> {
+    app.client
+        .add_bot(name, ai, team, ally_team, colour)
+        .await?;
+    Ok(())
+}
+
+/// Removes an AI by name; whether we may is the server's call.
+#[tauri::command]
+pub async fn remove_bot(app: State<'_, App>, name: String) -> Result<()> {
+    app.client.remove_bot(name).await?;
+    Ok(())
+}
+
 /// Rings someone in the room, which is how a host says the game is waiting.
 #[tauri::command]
 pub async fn ring(app: State<'_, App>, user: String) -> Result<()> {

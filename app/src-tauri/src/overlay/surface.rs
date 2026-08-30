@@ -10,7 +10,7 @@
 
 use std::sync::Mutex;
 
-use tauri::{Manager, PhysicalPosition, PhysicalSize, WebviewWindow};
+use tauri::{Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewWindow};
 
 use super::seams::WindowSurface;
 
@@ -77,7 +77,15 @@ impl TauriSurface {
 
 impl WindowSurface for TauriSurface {
     fn set_overlay(&self, over: bool) {
-        if over { self.enter() } else { self.leave() }
+        if over {
+            self.enter()
+        } else {
+            self.leave()
+        }
+        // The page dresses differently over a game — a centred card on a
+        // see-through scrim, Esc and click-outside to leave — so it is told.
+        // A webview that reloads mid-overlay asks `overlay_active` instead.
+        let _ = self.window.emit("overlay", over);
     }
 
     fn show(&self) {

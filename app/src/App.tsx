@@ -12,6 +12,7 @@ import {
 import { IconSprite } from './components/icons'
 import { PlayerMenu } from './components/PlayerMenu'
 import { connectChannel } from './ipc/channel'
+import { clickLeavesOverlay, escapeLeavesOverlay } from './lib/overlay'
 import { api, describeError } from './ipc/client'
 import type { Settings } from './ipc/bindings/Settings'
 import { chat, pushNotice } from './store/chat'
@@ -40,6 +41,39 @@ function Layout(props: ParentProps) {
 
   /** What the server says about us, which is what everyone else can see. */
   const away = () => (lobby.me ? lobby.users[lobby.me]?.status.away : false)
+
+  /**
+   * Whether the window is sitting over a running game.
+   *
+   * Over a game the page dresses as a modal: a centred card on a see-through
+   * scrim, and every way out a modal has — Esc, a click on the scrim, an X —
+   * hands the game back. Seeded by asking, because a webview that reloads
+   * mid-overlay was not there for the event.
+   */
+  const [over, setOver] = createSignal(false)
+  onMount(() => {
+    void api.overlayActive().then(setOver)
+    const pending = listen<boolean>('overlay', (event) =>
+      setOver(event.payload),
+    )
+    onCleanup(() => void pending.then((unlisten) => unlisten()))
+
+    const keys = (event: KeyboardEvent) => {
+      if (over() && escapeLeavesOverlay(event)) void api.overlayToggle()
+    }
+    const clicks = (event: MouseEvent) => {
+      if (over() && clickLeavesOverlay(event.target)) void api.overlayToggle()
+    }
+    window.addEventListener('keydown', keys)
+    window.addEventListener('mousedown', clicks)
+    onCleanup(() => {
+      window.removeEventListener('keydown', keys)
+      window.removeEventListener('mousedown', clicks)
+    })
+  })
+  createEffect(() =>
+    document.documentElement.classList.toggle('overlay', over()),
+  )
 
   /**
    * Channels are rejoined once a session.
@@ -153,6 +187,16 @@ function Layout(props: ParentProps) {
       <main class='main'>{props.children}</main>
       <Notices />
       <PlayerMenu />
+      <Show when={over()}>
+        <button
+          class='overlay-close'
+          title='Back to game (Esc)'
+          aria-label='Back to game'
+          onClick={() => void api.overlayToggle()}
+        >
+          ×
+        </button>
+      </Show>
     </div>
   )
 }

@@ -132,6 +132,8 @@ pub fn run() {
             commands::download_missing,
             commands::stop_download,
             commands::ring,
+            commands::add_bot,
+            commands::remove_bot,
             commands::set_away,
             commands::overlay_active,
             commands::overlay_toggle,

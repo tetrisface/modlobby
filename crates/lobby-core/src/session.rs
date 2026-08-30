@@ -436,6 +436,29 @@ impl Session {
         vec![Effect::Send(battle::ring(user))]
     }
 
+    /// Adds an AI to the room, seated and ready.
+    ///
+    /// The AI runs on this machine when the game starts, so the caller names
+    /// one that is installed here. Whether the room lets us is the server's
+    /// call — SPADS answers a refusal in chat, where it will be seen.
+    pub fn add_bot(
+        &mut self,
+        name: &str,
+        ai: &str,
+        team: u8,
+        ally_team: u8,
+        colour: u32,
+    ) -> Vec<Effect> {
+        let status =
+            battle::MyBattleStatus::player(battle::Sync::Synced, team, ally_team).ready(true);
+        vec![Effect::Send(battle::add_bot(name, ai, status, colour))]
+    }
+
+    /// Removes an AI by name; the server decides whether we may.
+    pub fn remove_bot(&mut self, name: &str) -> Vec<Effect> {
+        vec![Effect::Send(battle::remove_bot(name))]
+    }
+
     /// Asks for both friend listings; each replaces what it had.
     pub fn refresh_friends(&mut self) -> Vec<Effect> {
         vec![

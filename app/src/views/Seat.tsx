@@ -223,6 +223,8 @@ export function Seat() {
         </Show>
       </Show>
 
+      <AddAi busy={busy()} act={act} freeTeam={freeTeam} freeAlly={freeAlly} />
+
       <Show when={lobby.content}>
         {(content) => {
           const missing = () =>
@@ -277,5 +279,83 @@ export function Seat() {
         Private room
       </button>
     </div>
+  )
+}
+
+/** Colours the engine can tell apart at a glance, as 0xBBGGRR. */
+const BOT_COLOURS = [0x4b73f2, 0x3fd07f, 0x2fb8f0, 0x9e5ce8, 0x50a0ff, 0x8fd04b]
+
+/**
+ * An AI for the room.
+ *
+ * The AI runs on this machine when the game starts, which is why the choices
+ * are what is installed here and why there is nothing to offer until the
+ * engine list has been read. Whether the room takes it is the host's call —
+ * SPADS answers a refusal in chat, where it can be seen.
+ */
+function AddAi(props: {
+  busy: boolean
+  act: (what: string, run: () => Promise<void>) => Promise<void>
+  freeTeam: () => number
+  freeAlly: () => number
+}) {
+  const [ais, setAis] = createSignal<string[]>([])
+  const [ai, setAi] = createSignal('')
+
+  createEffect(() => {
+    if (!lobby.myBattle) return
+    api
+      .skirmishOptions()
+      .then((options) => {
+        setAis(options.ais)
+        if (!ai() && options.ais.length > 0) setAi(options.ais[0] as string)
+      })
+      // No data directory means no AIs to run; the control just stays away.
+      .catch(() => setAis([]))
+  })
+
+  /** `BARb`, then `BARb2` — never a name the room already holds. */
+  function unusedName(base: string): string {
+    const battle = lobby.myBattle && lobby.battles[lobby.myBattle.id]
+    const taken = new Set((battle?.bots ?? []).map((bot) => bot.name))
+    if (!taken.has(base)) return base
+    let n = 2
+    while (taken.has(`${base}${n}`)) n += 1
+    return `${base}${n}`
+  }
+
+  return (
+    <Show when={ais().length > 0}>
+      <span class='add-ai'>
+        <select
+          value={ai()}
+          disabled={props.busy}
+          onChange={(e) => setAi(e.currentTarget.value)}
+        >
+          <For each={ais()}>
+            {(name) => <option value={name}>{name}</option>}
+          </For>
+        </select>
+        <button
+          disabled={props.busy || !ai()}
+          title='The AI plays from this machine'
+          onClick={() =>
+            props.act('add an AI', () =>
+              api.addBot(
+                unusedName(ai()),
+                ai(),
+                props.freeTeam(),
+                props.freeAlly(),
+                BOT_COLOURS[
+                  Math.floor(Math.random() * BOT_COLOURS.length)
+                ] as number,
+              ),
+            )
+          }
+        >
+          Add AI
+        </button>
+      </span>
+    </Show>
   )
 }

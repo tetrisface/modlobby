@@ -113,6 +113,18 @@ enum Command {
         user: String,
         reply: Reply<()>,
     },
+    AddBot {
+        name: String,
+        ai: String,
+        team: u8,
+        ally_team: u8,
+        colour: u32,
+        reply: Reply<()>,
+    },
+    RemoveBot {
+        name: String,
+        reply: Reply<()>,
+    },
     SetAway {
         away: bool,
         reply: Reply<()>,
@@ -303,6 +315,30 @@ impl Client {
     /// Rings someone, which is how you tell a player the room is waiting.
     pub async fn ring(&self, user: String) -> Result<(), ClientError> {
         self.ask(|reply| Command::Ring { user, reply }).await
+    }
+
+    /// Adds an AI to the room; it runs on this machine when the game starts.
+    pub async fn add_bot(
+        &self,
+        name: String,
+        ai: String,
+        team: u8,
+        ally_team: u8,
+        colour: u32,
+    ) -> Result<(), ClientError> {
+        self.ask(|reply| Command::AddBot {
+            name,
+            ai,
+            team,
+            ally_team,
+            colour,
+            reply,
+        })
+        .await
+    }
+
+    pub async fn remove_bot(&self, name: String) -> Result<(), ClientError> {
+        self.ask(|reply| Command::RemoveBot { name, reply }).await
     }
 
     /// Whether the engine starts on its own when the room's game does.
@@ -1004,6 +1040,27 @@ impl Runtime {
             Command::Ring { user, reply } => {
                 self.run_session(reply, |session| {
                     Ok::<_, std::convert::Infallible>(session.ring(&user))
+                })
+                .await;
+            }
+            Command::AddBot {
+                name,
+                ai,
+                team,
+                ally_team,
+                colour,
+                reply,
+            } => {
+                self.run_session(reply, |session| {
+                    Ok::<_, std::convert::Infallible>(
+                        session.add_bot(&name, &ai, team, ally_team, colour),
+                    )
+                })
+                .await;
+            }
+            Command::RemoveBot { name, reply } => {
+                self.run_session(reply, |session| {
+                    Ok::<_, std::convert::Infallible>(session.remove_bot(&name))
                 })
                 .await;
             }

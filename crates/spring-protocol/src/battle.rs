@@ -175,6 +175,24 @@ pub fn ring(user: &str) -> Envelope {
     Envelope::queue(Area::Ring, format!("RING {user}"))
 }
 
+/// `ADDBOT <name> <status> <colour> <ai>` (`spring_in.ex` regex
+/// `(\S+) (\d+) (\d+) (.+)`) — the name takes no spaces, the AI may.
+///
+/// The client that sends this hosts the AI: the engine on *this* machine runs
+/// it when the game starts, which is why the AI has to be installed here and
+/// why the status is a player seat of ours to give it.
+pub fn add_bot(name: &str, ai: &str, status: MyBattleStatus, colour: u32) -> Envelope {
+    Envelope::queue(
+        Area::Other,
+        format!("ADDBOT {name} {} {colour} {ai}", status.bits()),
+    )
+}
+
+/// `REMOVEBOT <name>`. The server checks the right to remove, not us.
+pub fn remove_bot(name: &str) -> Envelope {
+    Envelope::queue(Area::Other, format!("REMOVEBOT {name}"))
+}
+
 /// `SAYBATTLE <text>`. `!`/`$` lines are SPADS commands and go through the
 /// command bucket of the throttle policy; everything else is chat.
 pub fn say_battle(text: &str) -> Result<Envelope, TooLong> {
@@ -194,6 +212,16 @@ pub fn say_battle(text: &str) -> Result<Envelope, TooLong> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn add_bot_is_a_seated_ready_player_line() {
+        let status = MyBattleStatus::player(Sync::Synced, 3, 1).ready(true);
+        let envelope = add_bot("BARb1", "BARb", status, 255);
+        // ready(1<<1) | team 3(<<2) | ally 1(<<6) | player(1<<10) | synced(1<<22)
+        let bits = (1 << 1) | (3 << 2) | (1 << 6) | (1 << 10) | (1 << 22);
+        assert_eq!(envelope.line, format!("ADDBOT BARb1 {bits} 255 BARb"));
+        assert_eq!(remove_bot("BARb1").line, "REMOVEBOT BARb1");
+    }
 
     #[test]
     fn say_battle_picks_the_bucket_and_enforces_the_cap() {

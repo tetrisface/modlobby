@@ -41,7 +41,7 @@ export function PlayerRow(props: {
 }
 
 /** An AI seat. It holds a team but has no lobby account behind it. */
-export function BotRow(props: { bot: BotView }) {
+export function BotRow(props: { bot: BotView; onRemove?: () => void }) {
   return (
     <div class='player'>
       <span />
@@ -55,6 +55,16 @@ export function BotRow(props: { bot: BotView }) {
       <span class='pname bot' title={`${props.bot.ai} · ${props.bot.owner}`}>
         {props.bot.name}
       </span>
+      <Show when={props.onRemove}>
+        <button
+          class='bot-remove'
+          title={`Remove ${props.bot.name}`}
+          aria-label={`Remove ${props.bot.name}`}
+          onClick={() => props.onRemove?.()}
+        >
+          ×
+        </button>
+      </Show>
     </div>
   )
 }
