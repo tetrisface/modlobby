@@ -1374,8 +1374,13 @@ input {
 }
 
 /* Expanded Modding: the rosters step aside so the editor gets the room. */
+/* One track, not a zero-width one beside it. `display: none` takes the room
+   pane out of the grid altogether, so with two tracks declared the setup pane
+   auto-places into the first — the one that is 0 wide — and renders entirely
+   on its overflow: tabs stacked one per line, and the tweak editor's `1fr`
+   column collapsed to a sliver. */
 .room-body.wide {
-  grid-template-columns: 0 1fr;
+  grid-template-columns: 1fr;
 }
 
 .room-body.wide .room-main {
