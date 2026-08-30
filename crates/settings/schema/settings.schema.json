@@ -37,6 +37,7 @@
         "channels": [
           "main"
         ],
+        "filterHostChatter": true,
         "maxLines": 3000
       }
     },
@@ -200,6 +201,11 @@
           "items": {
             "type": "string"
           }
+        },
+        "filterHostChatter": {
+          "description": "Whether to drop the host's machine-readable lines rather than show them.\n\nSPADS rides structured state on battle chat as `BarManager|{…}`, which\nthis already parses into the room. Chobby hides the same lines behind\nthe same default, calling it \"filter bot chatter\"\n(`gui_settings_window.lua:1146`).",
+          "type": "boolean",
+          "default": true
         },
         "maxLines": {
           "description": "Lines kept per room before the oldest are dropped.",

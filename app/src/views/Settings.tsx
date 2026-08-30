@@ -169,6 +169,25 @@ export function SettingsView() {
         </fieldset>
 
         <fieldset>
+          <legend>Chat</legend>
+          <label class='row'>
+            <input
+              type='checkbox'
+              checked={draft.chat.filterHostChatter}
+              onChange={(e) =>
+                setDraft('chat', 'filterHostChatter', e.currentTarget.checked)
+              }
+            />
+            Filter bot chatter
+          </label>
+          <p class='muted'>
+            SPADS rides the room's state on battle chat as
+            <code> BarManager|&#123;…&#125;</code>, which this reads and turns
+            into the room you see. Off, those lines are shown as they arrive.
+          </p>
+        </fieldset>
+
+        <fieldset>
           <legend>Joining</legend>
           <p class='muted'>
             Clicking a room in the list joins it. This is what that means.
@@ -347,7 +366,7 @@ export function SettingsView() {
         </fieldset>
 
         <fieldset>
-          <legend>Chat</legend>
+          <legend>Chat log</legend>
           <label>
             Lines kept
             <input
@@ -409,7 +428,7 @@ function blank(): Settings {
       sort: 'relevance',
       sortDescending: false,
     },
-    chat: { maxLines: 3000, channels: ['main'] },
+    chat: { filterHostChatter: true, maxLines: 3000, channels: ['main'] },
     tweaks: { styluaConfig: null, defaultSlot: 'tweakdefs1' },
     logging: { filter: 'info' },
   }

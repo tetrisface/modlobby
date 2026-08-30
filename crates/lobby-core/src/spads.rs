@@ -55,6 +55,13 @@ pub fn boss(json: &str) -> Option<String> {
 
 /// Parses one `SAIDBATTLEEX` line from the founder. Everything SPADS says is
 /// prefixed `* ` (`spads.pl:2932`); anything unrecognised stays chat.
+/// Whether a host line is machine-readable rather than something a person is
+/// meant to read. Cheap enough to ask on every line.
+pub fn is_machine(text: &str) -> bool {
+    text.strip_prefix("* ")
+        .is_some_and(|body| body.starts_with("BarManager|"))
+}
+
 pub fn parse(text: &str) -> Option<Announcement> {
     let body = text.strip_prefix("* ")?;
 

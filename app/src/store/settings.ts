@@ -8,4 +8,5 @@ export const [settings, setSettingsSignal] = createSignal<Settings | null>(null)
 export function applySettings(next: Settings): void {
   setSettingsSignal(next)
   setChat('maxLines', next.chat.maxLines)
+  setChat('filterHostChatter', next.chat.filterHostChatter)
 }

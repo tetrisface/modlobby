@@ -274,6 +274,13 @@ impl Default for Notifications {
 #[serde(default, rename_all = "camelCase")]
 #[ts(export)]
 pub struct Chat {
+    /// Whether to drop the host's machine-readable lines rather than show them.
+    ///
+    /// SPADS rides structured state on battle chat as `BarManager|{…}`, which
+    /// this already parses into the room. Chobby hides the same lines behind
+    /// the same default, calling it "filter bot chatter"
+    /// (`gui_settings_window.lua:1146`).
+    pub filter_host_chatter: bool,
     /// Lines kept per room before the oldest are dropped.
     pub max_lines: u32,
     /// Channels to rejoin at login. The server forgets you were in them the
@@ -285,6 +292,7 @@ pub struct Chat {
 impl Default for Chat {
     fn default() -> Self {
         Self {
+            filter_host_chatter: true,
             max_lines: 3000,
             // Where the server puts everyone, and where the announcements are.
             channels: vec!["main".into()],

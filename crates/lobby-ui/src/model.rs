@@ -523,6 +523,10 @@ pub enum ChatKind {
     Emote,
     /// Said by the app rather than by anyone on the server.
     System,
+    /// A host line written for a program to read, not a person: the
+    /// `BarManager|{…}` side-channel. Already parsed into room state by the
+    /// time it gets here, so showing it is a debugging choice.
+    Machine,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

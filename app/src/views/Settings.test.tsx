@@ -38,7 +38,7 @@ function loaded(): Settings {
       sort: 'relevance',
       sortDescending: false,
     },
-    chat: { maxLines: 3000, channels: ['main'] },
+    chat: { filterHostChatter: true, maxLines: 3000, channels: ['main'] },
     tweaks: { styluaConfig: null, defaultSlot: 'tweakdefs1' },
     logging: { filter: 'info' },
   }

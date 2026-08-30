@@ -142,6 +142,9 @@ impl UiTransport for Print {
                         ChatKind::Private => "[pm] ",
                         ChatKind::Emote => "* ",
                         ChatKind::System => "-- ",
+                        // Kept in the harness: watching the host's own state
+                        // go past is most of what this tool is for.
+                        ChatKind::Machine => "~ ",
                     };
                     println!(
                         "{}{prefix}{}: {}",

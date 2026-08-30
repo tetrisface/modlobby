@@ -23,6 +23,8 @@ export type ChatState = {
   channels: Record<string, ChannelView>
   /** The server's channel directory, from the last request. */
   directory: ChannelSummaryView[]
+  /** Whether to drop the host's machine-readable lines. Pushed from settings. */
+  filterHostChatter: boolean
   /** Rooms with something unread, by key. */
   unread: Record<string, number>
   /** Rooms where one of those lines named us — worth more than a count. */
@@ -36,6 +38,7 @@ function empty(): ChatState {
     rooms: { [BATTLE_ROOM]: [], [SERVER_ROOM]: [] },
     channels: {},
     directory: [],
+    filterHostChatter: true,
     unread: {},
     named: {},
     notices: [],
@@ -57,6 +60,9 @@ export function watchRoom(room: string): void {
 }
 
 export function pushLine(line: ChatLine): void {
+  // Dropped rather than hidden at render: a line nobody will read should not
+  // be taking up the backlog or an unread count either.
+  if (line.kind === 'machine' && chat.filterHostChatter) return
   setChat(
     produce((state) => {
       const lines = state.rooms[line.room] ?? []

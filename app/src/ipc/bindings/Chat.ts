@@ -2,6 +2,15 @@
 
 export type Chat = { 
 /**
+ * Whether to drop the host's machine-readable lines rather than show them.
+ *
+ * SPADS rides structured state on battle chat as `BarManager|{…}`, which
+ * this already parses into the room. Chobby hides the same lines behind
+ * the same default, calling it "filter bot chatter"
+ * (`gui_settings_window.lua:1146`).
+ */
+filterHostChatter: boolean, 
+/**
  * Lines kept per room before the oldest are dropped.
  */
 maxLines: number, 

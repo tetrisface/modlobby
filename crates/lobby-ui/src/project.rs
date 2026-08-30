@@ -198,10 +198,10 @@ impl Projector {
                 text,
                 announcement,
             } => {
-                let kind = if *announcement {
-                    ChatKind::Announcement
-                } else {
-                    ChatKind::Chat
+                let kind = match () {
+                    () if lobby_core::spads::is_machine(text) => ChatKind::Machine,
+                    () if *announcement => ChatKind::Announcement,
+                    () => ChatKind::Chat,
                 };
                 let line = self.line(state, BATTLE_ROOM, from, text, kind);
                 alert_if_named(&line, out);
