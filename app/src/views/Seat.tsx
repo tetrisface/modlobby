@@ -104,6 +104,12 @@ export function Seat() {
    * Once, so that leaving your seat is not immediately undone — and leaving it
    * also changes what `remember` remembers, so the next room agrees with what
    * you just did.
+   *
+   * The team is picked from the members known at that moment, which on a busy
+   * room may be a moment before the last of them has arrived. Two people can
+   * therefore land on one team number, exactly as they can when a person
+   * clicks the button the instant they walk in — and it matters as little,
+   * because SPADS assigns teams itself when the game starts.
    */
   let seatedIn: number | undefined
   createEffect(() => {

@@ -1,5 +1,22 @@
 //! Serialisable views of the core state. Field names are camelCase on the wire;
 //! integers that JSON carries as numbers are typed `number` for TypeScript.
+//!
+//! # Why this is still JSON
+//!
+//! Measured on a full server, 2026-08-30: a login snapshot of 1750 users and
+//! 280 battles is 547 KiB and encodes in about 3 ms release; a steady-state
+//! delta is 131 bytes, batched at 50 ms. The snapshot is paid once per login or
+//! webview reload, and nothing else here is hot.
+//!
+//! A binary format would not obviously help, and could hurt. The front end
+//! keeps its state in Solid stores, which take plain objects and `reconcile`
+//! them; FlatBuffers hands out accessors over a buffer, so those objects would
+//! have to be built in hand-written JavaScript instead of by `JSON.parse`,
+//! which is native. Zero copy only pays if the components read the accessors
+//! directly, which is a different front end from this one.
+//!
+//! Tauri can carry bytes (`InvokeResponseBody::Raw`) whenever that changes.
+//! Take a profile first.
 
 use std::collections::BTreeMap;
 
