@@ -62,6 +62,19 @@ enum Command {
         reply: Reply<()>,
     },
     Logout,
+    /// Creates an account on a connection of its own, then hangs up.
+    Register {
+        endpoint: Endpoint,
+        request: LoginRequest,
+        email: String,
+        password: String,
+        reply: Reply<()>,
+    },
+    /// Confirms the emailed code for an account that has just been created.
+    ConfirmAgreement {
+        code: String,
+        reply: Reply<()>,
+    },
     Snapshot(oneshot::Sender<Snapshot>),
     JoinBattle {
         id: u32,
@@ -246,6 +259,33 @@ impl Client {
 
     pub async fn logout(&self) -> Result<(), ClientError> {
         self.send(Command::Logout).await
+    }
+
+    /// Creates an account. Resolves when the server has accepted or refused it.
+    ///
+    /// The account cannot log in yet: the server emails a code that
+    /// [`Self::confirm_agreement`] carries back.
+    pub async fn register(
+        &self,
+        endpoint: Endpoint,
+        request: LoginRequest,
+        email: String,
+        password: String,
+    ) -> Result<(), ClientError> {
+        self.ask(|reply| Command::Register {
+            endpoint,
+            request,
+            email,
+            password,
+            reply,
+        })
+        .await
+    }
+
+    /// Sends the emailed agreement code for the account now logging in.
+    pub async fn confirm_agreement(&self, code: String) -> Result<(), ClientError> {
+        self.ask(|reply| Command::ConfirmAgreement { code, reply })
+            .await
     }
 
     pub async fn snapshot(&self) -> Result<Snapshot, ClientError> {
@@ -526,6 +566,8 @@ struct Runtime {
     /// it produces an engine that quits with a sync error.
     content_ready: bool,
     login_reply: Option<Reply<()>>,
+    /// Waiting on `REGISTRATIONACCEPTED`/`REGISTRATIONDENIED`.
+    register_reply: Option<Reply<()>>,
     join_reply: Option<Reply<()>>,
     /// Where BAR's content lives; `None` falls back to the launcher's directory.
     data_dir: Option<PathBuf>,
@@ -590,6 +632,7 @@ impl Runtime {
             auto_launch_always: true,
             content_ready: false,
             login_reply: None,
+            register_reply: None,
             join_reply: None,
             data_dir: None,
             overlay_config_dir: None,
@@ -1192,7 +1235,61 @@ impl Runtime {
                     }
                 }
             }
+            Command::Register {
+                endpoint,
+                request,
+                email,
+                password,
+                reply,
+            } => {
+                self.register(endpoint, request, email, password, reply)
+                    .await
+            }
+            Command::ConfirmAgreement { code, reply } => {
+                self.run_session(reply, |session| {
+                    Ok::<_, std::convert::Infallible>(session.confirm_agreement(&code))
+                })
+                .await;
+            }
             Command::Shutdown => unreachable!("handled by the run loop"),
+        }
+    }
+
+    /// Opens a connection whose only purpose is to create an account.
+    ///
+    /// Separate from `connect` because it must not become a logged-in session:
+    /// the server answers `REGISTER` and leaves the connection unauthenticated,
+    /// and someone registering is by definition not logged in yet.
+    async fn register(
+        &mut self,
+        endpoint: Endpoint,
+        request: LoginRequest,
+        email: String,
+        password: String,
+        reply: Reply<()>,
+    ) {
+        if self.conn.is_some() {
+            let _ = reply.send(Err(ClientError::AlreadyConnected));
+            return;
+        }
+        match (self.connector)(endpoint, self.policy.clone()).await {
+            Ok((transport, inbound)) => {
+                let session = Session::new(
+                    request,
+                    self.hardware.properties.clone(),
+                    self.hardware.machine_hash.clone(),
+                )
+                .registering(email, password);
+                self.conn = Some(Connection {
+                    transport,
+                    inbound,
+                    session,
+                });
+                self.register_reply = Some(reply);
+            }
+            Err(err) => {
+                let _ = reply.send(Err(err.into()));
+            }
         }
     }
 
@@ -1323,8 +1420,33 @@ impl Runtime {
                 }
                 Effect::LoginDenied { reason } => self.refuse(reason).await,
                 Effect::AgreementRequired { .. } => {
-                    self.refuse("the account must accept the user agreement first".into())
-                        .await
+                    // Not a refusal: an account that has just been created is
+                    // expected to land here, and the code it needs is in an
+                    // email. Hanging up would throw away the very connection
+                    // that can confirm it.
+                    self.batcher.push(Delta::Notice {
+                        level: lobby_ui::NoticeLevel::Warning,
+                        text: "this account must confirm the emailed code before it can log in"
+                            .into(),
+                    });
+                    if let Some(reply) = self.login_reply.take() {
+                        let _ = reply.send(Err(ClientError::Refused(
+                            "confirm the code emailed to you".into(),
+                        )));
+                    }
+                }
+                Effect::Registered => {
+                    if let Some(reply) = self.register_reply.take() {
+                        let _ = reply.send(Ok(()));
+                    }
+                    // The connection has done its one job.
+                    self.disconnect().await;
+                }
+                Effect::RegistrationDenied { reason } => {
+                    if let Some(reply) = self.register_reply.take() {
+                        let _ = reply.send(Err(ClientError::Refused(reason)));
+                    }
+                    self.disconnect().await;
                 }
                 Effect::Redirect { host, port } => {
                     self.refuse(format!(

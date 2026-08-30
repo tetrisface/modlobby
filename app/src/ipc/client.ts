@@ -30,6 +30,10 @@ export const api = {
     autoLogin: boolean,
   ) => invoke<void>('login', { username, password, remember, autoLogin }),
   logout: () => invoke<void>('logout'),
+  register: (username: string, password: string, email: string) =>
+    invoke<void>('register', { username, password, email }),
+  confirmAgreement: (code: string) =>
+    invoke<void>('confirm_agreement', { code }),
   loginWait: () => invoke<number>('login_wait'),
   joinBattle: (id: number, password: string | null) =>
     invoke<void>('join_battle', { id, password }),

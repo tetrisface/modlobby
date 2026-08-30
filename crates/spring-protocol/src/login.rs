@@ -148,3 +148,76 @@ mod tests {
         assert!(!format!("{req:?}").contains("X03MO1qnZdYdgyfeuILPmQ=="));
     }
 }
+
+/// `REGISTER <username> <base64(md5(password))> <email>`.
+///
+/// teiserver's regex is `(\S+) (\S+) (\S+)` (`spring_in.ex:336`), so none of
+/// the three may contain a space — which is already true of a valid name and
+/// an email address. The password is hashed exactly as `LOGIN` hashes it.
+pub fn register(username: &str, password: &str, email: &str) -> String {
+    format!("REGISTER {username} {} {email}", hash::md5_base64(password))
+}
+
+/// `CONFIRMAGREEMENT <code>`, the code being the one the server emailed.
+///
+/// A fresh account is `unverified` until this arrives, and the server answers
+/// a login from one with the agreement text rather than with a session.
+pub fn confirm_agreement(code: &str) -> String {
+    format!("CONFIRMAGREEMENT {code}")
+}
+
+/// Why a name would be refused, checked here so the answer is immediate.
+///
+/// Mirrors `CacheUser.valid_name?` (`cache_user.ex:350-364`) for the two rules
+/// that are purely mechanical. The rest — reserved words, an acceptable-name
+/// check, whether it is taken — only the server can answer, and it does.
+pub fn name_problem(name: &str) -> Option<String> {
+    if name.trim().is_empty() {
+        return Some("a username is required".into());
+    }
+    if name.len() > MAX_USERNAME {
+        return Some(format!("at most {MAX_USERNAME} characters"));
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '[' | ']' | '_'))
+    {
+        return Some("only a-z, A-Z, 0-9, [, ] and _ are allowed".into());
+    }
+    None
+}
+
+/// teiserver's `teiserver.Username max length` default.
+const MAX_USERNAME: usize = 20;
+
+#[cfg(test)]
+mod register_tests {
+    use super::*;
+
+    #[test]
+    fn register_hashes_the_password_the_way_login_does() {
+        // The same password and hash the `LOGIN` test uses, so that the two
+        // being identical is visible rather than asserted.
+        assert_eq!(
+            register("alice", "password", "a@b.c"),
+            "REGISTER alice X03MO1qnZdYdgyfeuILPmQ== a@b.c"
+        );
+    }
+
+    #[test]
+    fn confirming_carries_only_the_code() {
+        assert_eq!(confirm_agreement("A1B2C3"), "CONFIRMAGREEMENT A1B2C3");
+    }
+
+    #[test]
+    fn a_name_the_server_would_refuse_is_refused_here_first() {
+        assert!(name_problem("alice").is_none());
+        assert!(name_problem("Al_ice[1]").is_none());
+
+        assert!(name_problem("").is_some());
+        assert!(name_problem("has space").is_some());
+        assert!(name_problem("çedilla").is_some());
+        assert!(name_problem(&"a".repeat(21)).is_some());
+        assert!(name_problem(&"a".repeat(20)).is_none());
+    }
+}

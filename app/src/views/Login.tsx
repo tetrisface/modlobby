@@ -21,6 +21,18 @@ let autoLoginAttempted = false
 
 export function Login() {
   const navigate = useNavigate()
+  /**
+   * Logging in, or creating an account.
+   *
+   * Same form either way: an account needs a username and a password, and
+   * registering needs an email as well. Making it a second view would mean
+   * typing the same two things twice.
+   */
+  const [mode, setMode] = createSignal<'login' | 'register'>('login')
+  const [email, setEmail] = createSignal('')
+  /** Set once the server has taken the registration and emailed a code. */
+  const [awaitingCode, setAwaitingCode] = createSignal(false)
+  const [code, setCode] = createSignal('')
   const [username, setUsername] = createSignal('')
   const [password, setPassword] = createSignal('')
   const [remember, setRemember] = createSignal(false)
@@ -102,14 +114,48 @@ export function Login() {
     }
   }
 
+  async function register() {
+    setBusy(true)
+    setError(null)
+    try {
+      await api.register(username().trim(), password(), email().trim())
+      // The account exists but cannot log in yet; the server has emailed a
+      // code, and the first login is what asks for it.
+      setAwaitingCode(true)
+    } catch (err) {
+      setError(describeError(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function confirm() {
+    setBusy(true)
+    setError(null)
+    try {
+      // The code is confirmed on a live connection, so a login is started and
+      // the code answers the agreement the server replies with.
+      await api.confirmAgreement(code().trim())
+      setAwaitingCode(false)
+      setMode('login')
+      await login()
+    } catch (err) {
+      setError(describeError(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   function submit(event: Event) {
     event.preventDefault()
-    void login()
+    if (awaitingCode()) void confirm()
+    else if (mode() === 'register') void register()
+    else void login()
   }
 
   return (
     <form class='login' onSubmit={submit}>
-      <h1>Log in</h1>
+      <h1>{mode() === 'register' ? 'Create an account' : 'Log in'}</h1>
       <label>
         Username
         <input
@@ -128,6 +174,30 @@ export function Login() {
           autocomplete='current-password'
         />
       </label>
+      <Show when={mode() === 'register'}>
+        <label>
+          Email
+          <input
+            type='email'
+            value={email()}
+            onInput={(e) => setEmail(e.currentTarget.value)}
+            autocomplete='email'
+          />
+        </label>
+        <p class='muted'>
+          Used to send the code that activates the account, and to recover it.
+        </p>
+      </Show>
+      <Show when={awaitingCode()}>
+        <label>
+          Code from the email
+          <input
+            value={code()}
+            onInput={(e) => setCode(e.currentTarget.value)}
+            autocomplete='one-time-code'
+          />
+        </label>
+      </Show>
       <label class='row'>
         <input
           type='checkbox'
@@ -156,10 +226,28 @@ export function Login() {
           ? `throttled — ${wait()}s`
           : busy()
             ? (phaseText[lobby.phase ?? ''] ?? 'working…')
-            : 'Log in'}
+            : awaitingCode()
+              ? 'Confirm and log in'
+              : mode() === 'register'
+                ? 'Create account'
+                : 'Log in'}
       </button>
       <Show when={error()}>
         {(message) => <p class='error'>{message()}</p>}
+      </Show>
+      <Show when={!awaitingCode()}>
+        <button
+          type='button'
+          class='link'
+          onClick={() => {
+            setMode(mode() === 'login' ? 'register' : 'login')
+            setError(null)
+          }}
+        >
+          {mode() === 'login'
+            ? 'No account yet? Create one'
+            : 'Already have an account? Log in'}
+        </button>
       </Show>
       <p class='muted'>
         Server: {settings()?.server.host}:{settings()?.server.port}

@@ -1,6 +1,6 @@
 use spring_protocol::{
-    Area, Envelope, LoginRequest, MyBattleStatus, ServerEvent, Sync, battle, chat, friends, status,
-    telemetry,
+    Area, Envelope, LoginRequest, MyBattleStatus, ServerEvent, Sync, battle, chat, friends, login,
+    status, telemetry,
 };
 
 use crate::spads::{self, Announcement, VoteState};
@@ -21,6 +21,12 @@ pub enum Effect {
     /// The account must confirm the user agreement (email code) before it can log in.
     AgreementRequired {
         text: Vec<String>,
+    },
+    /// The account was created. It still has to log in and confirm the code
+    /// the server has just emailed.
+    Registered,
+    RegistrationDenied {
+        reason: String,
     },
     Redirect {
         host: String,
@@ -138,9 +144,21 @@ pub enum Effect {
     },
 }
 
+/// Whether this connection exists to log in or to create an account.
+///
+/// The server takes `REGISTER` from an unauthenticated connection and answers
+/// it without opening a session, so the two differ only in what is sent when
+/// the server says hello.
+#[derive(Debug, Clone)]
+enum Intent {
+    Login,
+    Register { email: String, password: String },
+}
+
 /// One logical connection: credentials, machine identity and the state they produce.
 #[derive(Debug)]
 pub struct Session {
+    intent: Intent,
     login: LoginRequest,
     hardware: Vec<(String, String)>,
     machine_hash: String,
@@ -227,6 +245,7 @@ impl Session {
     /// `hardware` are the `hardware:*` telemetry properties uploaded after login (see [`telemetry`]).
     pub fn new(login: LoginRequest, hardware: Vec<(String, String)>, machine_hash: String) -> Self {
         Self {
+            intent: Intent::Login,
             login,
             hardware,
             machine_hash,
@@ -246,6 +265,30 @@ impl Session {
                 ..LobbyState::default()
             },
         }
+    }
+
+    /// Makes this connection a registration rather than a login.
+    ///
+    /// The server takes `REGISTER` before any login, and answers it with
+    /// `REGISTRATIONACCEPTED`/`REGISTRATIONDENIED` rather than a session — so
+    /// the difference is entirely in what gets sent on `Welcome`, and nothing
+    /// downstream needs to know.
+    #[must_use]
+    pub fn registering(mut self, email: impl Into<String>, password: impl Into<String>) -> Self {
+        self.intent = Intent::Register {
+            email: email.into(),
+            password: password.into(),
+        };
+        self
+    }
+
+    /// Confirms the emailed agreement code for an account that has just been
+    /// created; the server then lets it log in.
+    pub fn confirm_agreement(&mut self, code: &str) -> Vec<Effect> {
+        vec![Effect::Send(Envelope::queue(
+            Area::Login,
+            login::confirm_agreement(code),
+        ))]
     }
 
     /// Asks to join room `id` as a spectator. `script_password` is the secret the
@@ -542,10 +585,13 @@ impl Session {
             E::Welcome { server_version, .. } => {
                 tracing::info!(server_version, "connected");
                 state.phase = Some(Phase::AwaitingLogin);
-                vec![Effect::Send(Envelope::queue(
-                    Area::Login,
-                    self.login.line(),
-                ))]
+                let line = match &self.intent {
+                    Intent::Login => self.login.line(),
+                    Intent::Register { email, password } => {
+                        login::register(&self.login.username, password, email)
+                    }
+                };
+                vec![Effect::Send(Envelope::queue(Area::Login, line))]
             }
             E::Accepted { username } => {
                 state.phase = Some(Phase::Loading);
@@ -561,6 +607,8 @@ impl Session {
             E::AgreementEnd => vec![Effect::AgreementRequired {
                 text: std::mem::take(&mut self.agreement),
             }],
+            E::RegistrationAccepted => vec![Effect::Registered],
+            E::RegistrationDenied { reason } => vec![Effect::RegistrationDenied { reason }],
             E::Motd { line } => {
                 state.motd.push(line);
                 vec![]
@@ -1255,6 +1303,57 @@ mod tests {
             vec![("hardware:cpuinfo".into(), "cpu".into())],
             "MH".into(),
         )
+    }
+
+    #[test]
+    fn registering_sends_register_instead_of_login() {
+        let mut session = session().registering("a@b.c", "pw");
+        let effects = feed(&mut session, &["TASSERVER 0.38 * 8201 0"]);
+        let [Effect::Send(envelope)] = &effects[..] else {
+            panic!("expected one line, got {effects:?}");
+        };
+        // Same bucket as a login, since the server rate-limits both, and the
+        // password is hashed the same way.
+        assert_eq!(envelope.area, Area::Login);
+
+        // The name comes from the login request, not the email, and the
+        // password is hashed exactly as a login would hash it — which is the
+        // contract that matters, so it is asserted against a login rather than
+        // against a hash copied into the test.
+        let hash = LoginRequest::new("me", "pw", "test", "h h")
+            .line()
+            .split_whitespace()
+            .nth(2)
+            .expect("the hash")
+            .to_owned();
+        assert_eq!(envelope.line, format!("REGISTER me {hash} a@b.c"));
+    }
+
+    #[test]
+    fn the_server_accepting_or_refusing_is_reported_once() {
+        let mut accepted = session().registering("a@b.c", "pw");
+        assert_eq!(
+            feed(&mut accepted, &["REGISTRATIONACCEPTED"]),
+            vec![Effect::Registered]
+        );
+
+        let mut denied = session().registering("a@b.c", "pw");
+        assert_eq!(
+            feed(&mut denied, &["REGISTRATIONDENIED Username already taken"]),
+            vec![Effect::RegistrationDenied {
+                reason: "Username already taken".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn confirming_the_agreement_carries_the_emailed_code() {
+        let mut session = session();
+        let effects = session.confirm_agreement("A1B2C3");
+        let [Effect::Send(envelope)] = &effects[..] else {
+            panic!("expected one line");
+        };
+        assert_eq!(envelope.line, "CONFIRMAGREEMENT A1B2C3");
     }
 
     fn feed(session: &mut Session, lines: &[&str]) -> Vec<Effect> {

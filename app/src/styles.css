@@ -2515,3 +2515,17 @@ html.overlay .shell {
 .box-history[open] > summary {
   margin-bottom: 8px;
 }
+
+/* A button that reads as prose, for switching between logging in and
+   registering: it is a change of mind, not an action. */
+button.link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font-weight: 500;
+  letter-spacing: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  align-self: center;
+}

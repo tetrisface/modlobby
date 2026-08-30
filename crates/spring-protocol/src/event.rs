@@ -85,6 +85,11 @@ pub enum ServerEvent {
         line: String,
     },
     AgreementEnd,
+    /// The account was created; it still has to log in and confirm.
+    RegistrationAccepted,
+    RegistrationDenied {
+        reason: String,
+    },
     Motd {
         line: String,
     },
@@ -330,6 +335,8 @@ fn parse(raw: &RawMessage) -> Option<ServerEvent> {
         "QUEUED" => ServerEvent::Queued,
         "AGREEMENT" => ServerEvent::Agreement { line: a.into() },
         "AGREEMENTEND" => ServerEvent::AgreementEnd,
+        "REGISTRATIONACCEPTED" => ServerEvent::RegistrationAccepted,
+        "REGISTRATIONDENIED" => ServerEvent::RegistrationDenied { reason: a.into() },
         "MOTD" => ServerEvent::Motd { line: a.into() },
         "SERVERMSG" => ServerEvent::ServerMsg { text: a.into() },
         "COMPFLAGS" => ServerEvent::CompFlags {

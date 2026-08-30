@@ -172,6 +172,62 @@ fn throttled(wait: Duration) -> ApiError {
     )
 }
 
+/// Creates an account, then leaves the connection closed.
+///
+/// The account cannot log in yet: the server emails a code, and
+/// [`confirm_agreement`] carries it back during the first login attempt.
+#[tauri::command]
+pub async fn register(
+    app: State<'_, App>,
+    username: String,
+    password: String,
+    email: String,
+) -> Result<()> {
+    if let Some(problem) = spring_protocol::login::name_problem(&username) {
+        return Err(ApiError::new("input", problem));
+    }
+    if password.is_empty() {
+        return Err(ApiError::new("input", "a password is required"));
+    }
+    if !email.contains('@') || email.contains(' ') {
+        return Err(ApiError::new("input", "an email address is required"));
+    }
+
+    let server = app.settings.get().server;
+    let endpoint = Endpoint {
+        host: server.host,
+        port: server.port,
+        tls: server.tls,
+    };
+    let request = LoginRequest::new(
+        &username,
+        &password,
+        LOBBY_VERSION,
+        app.hardware.lobby_hash.clone(),
+    );
+
+    // The server counts a registration against the same allowance a login
+    // uses, so the guard applies here too.
+    if let Some(wait) = app.login_guard.wait(SystemTime::now()) {
+        return Err(throttled(wait));
+    }
+    app.login_guard.record_attempt(SystemTime::now());
+    app.client
+        .register(endpoint, request, email, password)
+        .await?;
+    Ok(())
+}
+
+/// Sends the emailed code for an account that is logging in for the first time.
+#[tauri::command]
+pub async fn confirm_agreement(app: State<'_, App>, code: String) -> Result<()> {
+    if code.trim().is_empty() {
+        return Err(ApiError::new("input", "the emailed code is required"));
+    }
+    app.client.confirm_agreement(code.trim().to_owned()).await?;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn logout(app: State<'_, App>) -> Result<()> {
     app.client.logout().await?;

@@ -337,6 +337,9 @@ impl Projector {
                 NoticeLevel::Error,
                 "the account must accept the user agreement first".into(),
             )),
+            // Registration is reported to whoever asked for it, through the
+            // command's own reply; a notice as well would say it twice.
+            Effect::Registered | Effect::RegistrationDenied { .. } => {}
             Effect::Redirect { host, port } => out.push(notice(
                 NoticeLevel::Error,
                 format!(

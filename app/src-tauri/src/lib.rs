@@ -186,6 +186,8 @@ pub fn run() {
             commands::subscribe,
             commands::login,
             commands::logout,
+            commands::register,
+            commands::confirm_agreement,
             commands::login_wait,
             commands::log_message,
             commands::open_log_dir,
