@@ -20,7 +20,7 @@ import type { DownloadStatus } from '../ipc/bindings/DownloadStatus'
 import type { StartRectView } from '../ipc/bindings/StartRectView'
 import type { UserView } from '../ipc/bindings/UserView'
 import { api, describeError } from '../ipc/client'
-import { mapImage } from '../lib/maps'
+import { mapImage, sized } from '../lib/maps'
 import { readSkills, teamSkill, type Skill } from '../lib/skill'
 import { BATTLE_ROOM, chat, pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
@@ -255,7 +255,12 @@ export function Room() {
 function Minimap(props: { rects: StartRectView[]; mapName: string }) {
   const [image] = createResource(
     () => props.mapName,
-    (name) => mapImage(name),
+    async (name) => {
+      const url = await mapImage(name)
+      // The minimap column is 132px square; ask for it at that scale rather
+      // than downscaling a 1024px picture into it.
+      return url === null ? null : sized(url, 384)
+    },
   )
   const [broken, setBroken] = createSignal(false)
 

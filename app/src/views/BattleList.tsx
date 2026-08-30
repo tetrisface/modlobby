@@ -23,7 +23,7 @@ import {
   running as runningGames,
 } from '../store/running'
 import { MODES, SORTS, arrange, type Row } from '../lib/battles'
-import { mapImages } from '../lib/maps'
+import { mapImages, sized } from '../lib/maps'
 import { pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
 import { applySettings, settings } from '../store/settings'
@@ -336,7 +336,6 @@ export function BattleList() {
                         }}
                         role='button'
                         tabindex={0}
-                        title={`${posture() === 'player' ? 'Join' : 'Watch'} ${r().battle.title}`}
                         onClick={() => join(r().battle)}
                         onKeyDown={(event) => {
                           if (event.key === 'Enter' || event.key === ' ') {
@@ -358,7 +357,7 @@ export function BattleList() {
                         }}
                       >
                         <MapThumb
-                          src={previews()?.[r().battle.mapName]}
+                          src={thumbnail(previews()?.[r().battle.mapName])}
                           alt={r().battle.mapName}
                         />
                         <span class='col-players'>
@@ -370,9 +369,7 @@ export function BattleList() {
                             ? `${r().battle.layout?.teams}x${r().battle.layout?.teamSize}`
                             : ''}
                         </span>
-                        <span class='col-title' title={r().battle.title}>
-                          {r().battle.title}
-                        </span>
+                        <span class='col-title'>{r().battle.title}</span>
                         <span class='col-map'>{r().battle.mapName}</span>
                         <span class='col-flags'>
                           <Show
@@ -594,6 +591,10 @@ function PasswordDialog(props: {
     </div>
   )
 }
+
+/** `.col-thumb` is 52px wide; three times that survives a high-density screen. */
+const thumbnail = (url: string | undefined) =>
+  url === undefined ? undefined : sized(url, 160)
 
 /** A room's map, when the index knows it; an empty frame when it does not. */
 function MapThumb(props: { src: string | undefined; alt: string }) {

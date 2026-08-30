@@ -90,6 +90,25 @@ async function load(): Promise<Index> {
  * the first scroll. Returns empty when the index cannot be reached, which the
  * caller renders as no picture rather than as an error.
  */
+/**
+ * The same picture, asked for at the size it will be drawn.
+ *
+ * The published URL is an imagor transform with the size in its path — a
+ * 1024px fit-in at quality 75 — and the server is unsigned, so the size can be
+ * asked for. That is worth doing twice over: a battle-list thumbnail is 52px
+ * wide, and letting the browser take 1024px down to that is a twenty-fold
+ * downscale done with a fast filter, which is what makes a map look like
+ * gravel. Asking imagor for it instead resamples with libvips, and the
+ * download goes from 198 KiB to 27 KiB.
+ *
+ * A URL that is not shaped like that transform is returned untouched.
+ */
+export function sized(url: string, pixels: number): string {
+  return url
+    .replace(/\/fit-in\/\d+x\d+\//, `/fit-in/${pixels}x${pixels}/`)
+    .replace(/quality\(\d+\)/, 'quality(90)')
+}
+
 export async function mapImages(): Promise<Record<string, string>> {
   try {
     pending ??= load()
