@@ -3,4 +3,4 @@
 /**
  * Why an alert was raised, so the front end can honour the setting for it.
  */
-export type AlertKind = "privateMessage" | "vote" | "gameStarting" | "ring";
+export type AlertKind = "privateMessage" | "mention" | "vote" | "gameStarting" | "ring";

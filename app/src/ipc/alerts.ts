@@ -36,6 +36,8 @@ function wanted(kind: AlertKind): boolean {
   switch (kind) {
     case 'privateMessage':
       return notifications.privateMessage
+    case 'mention':
+      return notifications.mention
     case 'vote':
       return notifications.vote
     case 'gameStarting':
@@ -47,6 +49,7 @@ function wanted(kind: AlertKind): boolean {
 
 const TITLES: Record<AlertKind, string> = {
   privateMessage: 'modlobby — message',
+  mention: 'modlobby — you were named',
   vote: 'modlobby — vote',
   gameStarting: 'modlobby — game starting',
   ring: 'modlobby — someone wants you',

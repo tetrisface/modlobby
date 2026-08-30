@@ -25,6 +25,8 @@ export type ChatState = {
   directory: ChannelSummaryView[]
   /** Rooms with something unread, by key. */
   unread: Record<string, number>
+  /** Rooms where one of those lines named us — worth more than a count. */
+  named: Record<string, boolean>
   notices: Notice[]
   maxLines: number
 }
@@ -35,6 +37,7 @@ function empty(): ChatState {
     channels: {},
     directory: [],
     unread: {},
+    named: {},
     notices: [],
     maxLines: 500,
   }
@@ -50,6 +53,7 @@ let watching = BATTLE_ROOM
 export function watchRoom(room: string): void {
   watching = room
   setChat('unread', room, 0)
+  setChat('named', room, false)
 }
 
 export function pushLine(line: ChatLine): void {
@@ -60,8 +64,10 @@ export function pushLine(line: ChatLine): void {
       if (lines.length > state.maxLines)
         lines.splice(0, lines.length - state.maxLines)
       state.rooms[line.room] = lines
-      if (line.room !== watching)
+      if (line.room !== watching) {
         state.unread[line.room] = (state.unread[line.room] ?? 0) + 1
+        if (line.mention) state.named[line.room] = true
+      }
     }),
   )
 }
@@ -85,6 +91,7 @@ export function pushSystem(room: string, text: string): void {
     from: '',
     text,
     kind: 'system',
+    mention: false,
     at: Math.floor(Date.now() / 1000),
   })
 }
@@ -98,6 +105,7 @@ export function applyChannel(name: string, channel: ChannelView | null): void {
       } else {
         delete state.channels[name]
         delete state.unread[name]
+        delete state.named[name]
       }
     }),
   )

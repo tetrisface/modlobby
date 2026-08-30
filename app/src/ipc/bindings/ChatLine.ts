@@ -9,6 +9,12 @@ export type ChatLine = { seq: number,
  */
 room: string, from: string, text: string, kind: ChatKind, 
 /**
+ * Whether this line names us. Decided here rather than in the front end
+ * because this is where we know who we are, and because a name match is
+ * the kind of thing that deserves a test.
+ */
+mention: boolean, 
+/**
  * Unix seconds when this reached us. The protocol carries no time of its
  * own, so it is stamped on arrival — near enough for reading a backlog,
  * and honest about being our clock rather than the sender's.

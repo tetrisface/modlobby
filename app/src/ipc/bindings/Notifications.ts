@@ -13,6 +13,10 @@ export type Notifications = { enabled: boolean,
  */
 privateMessage: boolean, 
 /**
+ * Someone said your name in a channel or in your room.
+ */
+mention: boolean, 
+/**
  * A vote opened in your room.
  */
 vote: boolean, 

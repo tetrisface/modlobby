@@ -6,6 +6,7 @@
 use lobby_core::{Effect, LobbyState};
 use spring_protocol::ServerEvent;
 
+use crate::mention;
 use crate::model::{
     AlertKind, BATTLE_ROOM, BotView, ChannelSummaryView, ChannelView, ChatKind, ChatLine, Delta,
     FriendsView, GameRunningView, LayoutView, MyBattleView, NoticeLevel, OptionChangeView, Phase,
@@ -192,7 +193,9 @@ impl Projector {
                 } else {
                     ChatKind::Chat
                 };
-                out.push(Delta::Chat(self.line(BATTLE_ROOM, from, text, kind)));
+                let line = self.line(state, BATTLE_ROOM, from, text, kind);
+                alert_if_named(&line, out);
+                out.push(Delta::Chat(line));
             }
             Effect::PrivateChat { with, from, text } => {
                 // Our own message echoed back is not something to be told about.
@@ -203,6 +206,7 @@ impl Projector {
                     });
                 }
                 out.push(Delta::Chat(self.line(
+                    state,
                     &private_room(with),
                     from,
                     text,
@@ -220,7 +224,9 @@ impl Projector {
                 } else {
                     ChatKind::Chat
                 };
-                out.push(Delta::Chat(self.line(room, from, text, kind)));
+                let line = self.line(state, room, from, text, kind);
+                alert_if_named(&line, out);
+                out.push(Delta::Chat(line));
             }
             Effect::ChannelJoined { room } | Effect::ChannelChanged { room } => {
                 out.push(channel_delta(state, room));
@@ -240,6 +246,7 @@ impl Projector {
                 ));
             }
             Effect::ServerSaid { text } => out.push(Delta::Chat(self.line(
+                state,
                 SERVER_ROOM,
                 "server",
                 text,
@@ -322,19 +329,48 @@ impl Projector {
         }
     }
 
-    fn line(&mut self, room: &str, from: &str, text: &str, kind: ChatKind) -> ChatLine {
+    fn line(
+        &mut self,
+        state: &LobbyState,
+        room: &str,
+        from: &str,
+        text: &str,
+        kind: ChatKind,
+    ) -> ChatLine {
         self.seq += 1;
+        // Our own words are not somebody calling us, and a private message is
+        // already addressed to us by being one.
+        let talking_to_us = Some(from) != state.me.as_deref()
+            && kind != ChatKind::Private
+            && state
+                .me
+                .as_deref()
+                .is_some_and(|me| mention::mentions(text, me));
         ChatLine {
             seq: self.seq,
             room: room.to_owned(),
             from: from.to_owned(),
             text: text.to_owned(),
             kind,
+            mention: talking_to_us,
             at: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|since| since.as_secs())
                 .unwrap_or_default(),
         }
+    }
+}
+
+/// Raises an alert for a line that named us.
+///
+/// A private message already alerts on its own; this is for the channel and
+/// battle-room lines, where a name goes past in traffic nobody reads in full.
+fn alert_if_named(line: &ChatLine, out: &mut Vec<Delta>) {
+    if line.mention {
+        out.push(Delta::Alert {
+            kind: AlertKind::Mention,
+            text: format!("{}: {}", line.from, line.text),
+        });
     }
 }
 

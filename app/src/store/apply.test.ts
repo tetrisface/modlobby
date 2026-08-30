@@ -91,6 +91,7 @@ describe('apply', () => {
           from: 'host',
           text: 'hi',
           kind: 'announcement',
+          mention: false,
           at: 0,
         },
       },

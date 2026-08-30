@@ -403,7 +403,10 @@ function Missing(props: { parts: string[] }) {
 
 function Line(props: { line: ChatLine }) {
   return (
-    <div class={`line ${props.line.kind}`}>
+    <div
+      class={`line ${props.line.kind}`}
+      classList={{ named: props.line.mention }}
+    >
       <span class='at'>{clock(props.line.at)}</span>
       <span
         class='from'

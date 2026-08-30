@@ -48,6 +48,7 @@
       "default": {
         "enabled": true,
         "gameStarting": true,
+        "mention": true,
         "privateMessage": true,
         "ring": true,
         "vote": true
@@ -214,6 +215,11 @@
         },
         "gameStarting": {
           "description": "Your room's game started.",
+          "type": "boolean",
+          "default": true
+        },
+        "mention": {
+          "description": "Someone said your name in a channel or in your room.",
           "type": "boolean",
           "default": true
         },

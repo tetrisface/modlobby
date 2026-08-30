@@ -137,6 +137,7 @@ export function SettingsView() {
           each={
             [
               ['privateMessage', 'A direct message'],
+              ['mention', 'Someone says my name'],
               ['ring', 'Someone rings me'],
               ['vote', 'A vote opens in my room'],
               ['gameStarting', "My room's game starts"],
@@ -226,6 +227,7 @@ function blank(): Settings {
     notifications: {
       enabled: true,
       privateMessage: true,
+      mention: true,
       vote: true,
       gameStarting: true,
       ring: true,

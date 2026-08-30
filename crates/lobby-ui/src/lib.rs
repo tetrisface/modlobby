@@ -3,6 +3,7 @@
 //! TypeScript side is generated from it (`ts-rs`, on `cargo test`).
 
 pub mod batch;
+pub mod mention;
 pub mod model;
 pub mod project;
 pub mod transport;

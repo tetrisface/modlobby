@@ -172,6 +172,8 @@ pub struct Notifications {
     pub enabled: bool,
     /// Someone messaged you directly.
     pub private_message: bool,
+    /// Someone said your name in a channel or in your room.
+    pub mention: bool,
     /// A vote opened in your room.
     pub vote: bool,
     /// Your room's game started.
@@ -185,6 +187,7 @@ impl Default for Notifications {
         Self {
             enabled: true,
             private_message: true,
+            mention: true,
             vote: true,
             game_starting: true,
             ring: true,

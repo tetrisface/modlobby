@@ -434,7 +434,9 @@ function Tab(props: {
     >
       <span class='room-name'>{props.label}</span>
       <Show when={chat.unread[props.room]}>
-        <span class='badge'>{chat.unread[props.room]}</span>
+        <span class='badge' classList={{ named: chat.named[props.room] }}>
+          {chat.unread[props.room]}
+        </span>
       </Show>
     </button>
   )
@@ -443,7 +445,10 @@ function Tab(props: {
 function Line(props: { line: ChatLine; me: string | null }) {
   const mine = () => props.line.from === props.me
   return (
-    <div class={`line ${props.line.kind}`} classList={{ mine: mine() }}>
+    <div
+      class={`line ${props.line.kind}`}
+      classList={{ mine: mine(), named: props.line.mention }}
+    >
       <span class='at' title={new Date(props.line.at * 1000).toLocaleString()}>
         {clock(props.line.at)}
       </span>
