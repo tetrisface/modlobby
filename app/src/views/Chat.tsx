@@ -37,6 +37,7 @@ export function Chat() {
   const [room, setRoom] = createSignal(BATTLE_ROOM)
   const [text, setText] = createSignal('')
   const [showDirectory, setShowDirectory] = createSignal(false)
+  const [findPerson, setFindPerson] = createSignal('')
   let log: HTMLDivElement | undefined
 
   // These read the store, so they recompute as channels and people come and go.
@@ -48,6 +49,20 @@ export function Chat() {
     chat.rooms
     return openPrivates()
   })
+  /** Online users matching the search, friends first, capped so it stays a list. */
+  const people = createMemo(() => {
+    const needle = findPerson().trim().toLowerCase()
+    if (needle.length < 2) return []
+    const friends = new Set(lobby.friends.friends)
+    return Object.keys(lobby.users)
+      .filter((name) => name.toLowerCase().includes(needle))
+      .sort((a, b) => {
+        const known = Number(friends.has(b)) - Number(friends.has(a))
+        return known || a.localeCompare(b)
+      })
+      .slice(0, 30)
+  })
+
   const rooms = createMemo(() => [
     BATTLE_ROOM,
     SERVER_ROOM,
@@ -177,6 +192,38 @@ export function Chat() {
             Browse
           </button>
         </div>
+
+        {/* Everyone online is already in the store, so finding someone is a
+            filter rather than a request — and it beats `/msg` with an exact
+            name when the name you want is `[Crd]XxStormKittyxX`. */}
+        <input
+          class='find-person'
+          placeholder='Find someone'
+          value={findPerson()}
+          onInput={(e) => setFindPerson(e.currentTarget.value)}
+        />
+        <Show when={findPerson().trim().length > 1}>
+          <For
+            each={people()}
+            fallback={<p class='muted setup-empty'>Nobody by that name.</p>}
+          >
+            {(name) => (
+              <button
+                class='room-tab'
+                onClick={() => {
+                  ensureRoom(privateRoom(name))
+                  setRoom(privateRoom(name))
+                  setFindPerson('')
+                }}
+              >
+                <span class='room-name'>{name}</span>
+                <Show when={lobby.friends.friends.includes(name)}>
+                  <span class='room-count'>friend</span>
+                </Show>
+              </button>
+            )}
+          </For>
+        </Show>
 
         <Tab
           room={BATTLE_ROOM}
