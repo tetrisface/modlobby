@@ -694,13 +694,20 @@ input {
   flex: 1;
 }
 
+/* The one view that is a document rather than a pane: every other one fills
+   the window and scrolls something inside itself, which is why `.main` clips.
+   The vertical space is padding rather than margin so it survives scrolling —
+   a bottom margin on an overflowing box is dropped, taking the last field's
+   breathing room with it. */
 .settings {
   max-width: 560px;
-  margin: 24px auto;
+  height: 100%;
+  overflow-y: auto;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 0 16px;
+  padding: 24px 16px;
 }
 
 .settings fieldset {
