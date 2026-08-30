@@ -402,7 +402,11 @@ function Line(props: { line: ChatLine; me: string | null }) {
       <span
         class='from'
         onClick={(event) =>
-          props.line.from && showPlayerMenu(props.line.from, event)
+          // A system line's "from" names the app or the server, not a person
+          // there is anything to be done about.
+          props.line.kind !== 'system' &&
+          props.line.from &&
+          showPlayerMenu(props.line.from, event)
         }
       >
         {props.line.from}

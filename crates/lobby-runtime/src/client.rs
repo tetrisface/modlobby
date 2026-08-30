@@ -1334,10 +1334,24 @@ impl Runtime {
     }
 
     /// A snapshot supersedes whatever deltas were waiting.
+    /// Sends the whole state, dropping the pending deltas it supersedes.
+    ///
+    /// Chat is the exception: a snapshot says nothing about what anyone said,
+    /// so discarding batched chat would silently swallow whatever arrived in
+    /// the moment before it — which is exactly when the message of the day and
+    /// the first channel traffic land.
     fn send_snapshot(&mut self) {
-        self.batcher.take();
+        let kept: Vec<Delta> = self
+            .batcher
+            .take()
+            .into_iter()
+            .filter(|delta| matches!(delta, Delta::Chat(_)))
+            .collect();
         let snapshot = self.snapshot();
         self.send_ui(UiMessage::Snapshot(Box::new(snapshot)));
+        if !kept.is_empty() {
+            self.send_ui(UiMessage::Deltas(kept));
+        }
     }
 
     fn flush(&mut self) {

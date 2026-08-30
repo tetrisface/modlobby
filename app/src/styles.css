@@ -1723,3 +1723,8 @@ input[type='checkbox'].v-edit {
 .chat-log .line {
   grid-template-columns: 40px 108px 1fr;
 }
+
+.line.system .from,
+.line.system .at {
+  cursor: default;
+}
