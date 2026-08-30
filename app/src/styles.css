@@ -2091,3 +2091,11 @@ button.link:hover {
   color: var(--text);
   border-bottom-color: var(--accent);
 }
+
+.running-for {
+  margin-right: 6px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--faint);
+  cursor: help;
+}

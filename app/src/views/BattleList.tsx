@@ -3,9 +3,11 @@ import { createVirtualizer } from '@tanstack/solid-virtual'
 import {
   For,
   Show,
+  createEffect,
   createMemo,
   createResource,
   createSignal,
+  onCleanup,
   onMount,
 } from 'solid-js'
 import type { BattleList as Filters } from '../ipc/bindings/BattleList'
@@ -14,6 +16,7 @@ import type { BattleView } from '../ipc/bindings/BattleView'
 import type { ModeFilter } from '../ipc/bindings/ModeFilter'
 import { RankIcon } from '../components/icons'
 import { api, describeError } from '../ipc/client'
+import { elapsed, track, type Running } from '../lib/running'
 import { MODES, SORTS, arrange, type Row } from '../lib/battles'
 import { mapImages } from '../lib/maps'
 import { pushNotice } from '../store/chat'
@@ -70,6 +73,31 @@ export function BattleList() {
     }))
   })
   const rows = createMemo(() => arrange(all(), filters(), search()))
+
+  /**
+   * How long each running game has been going.
+   *
+   * Kept here rather than in the store because it is an observation this
+   * window made, not something the server said — see `lib/running`.
+   */
+  const [times, setTimes] = createSignal<Record<number, Running>>({})
+  const [now, setNow] = createSignal(Date.now())
+  let looked = false
+
+  createEffect(() => {
+    const going = new Set(
+      all()
+        .filter((row) => row.running)
+        .map((row) => row.battle.id),
+    )
+    setTimes((held) => track(held, going, looked, Date.now()))
+    // Anything running at the first look was already running before it.
+    if (lobby.phase === 'ready') looked = true
+  })
+
+  // A minute is the resolution the label has, so it is the rate it needs.
+  const tick = setInterval(() => setNow(Date.now()), 30_000)
+  onCleanup(() => clearInterval(tick))
 
   const virtualizer = createVirtualizer({
     get count() {
@@ -314,6 +342,16 @@ export function BattleList() {
                         </span>
                         <span class='col-map'>{r().battle.mapName}</span>
                         <span class='col-flags'>
+                          <Show when={r().running && times()[r().battle.id]}>
+                            {(going) => (
+                              <span
+                                class='running-for'
+                                title='How long this game has been running. A + means it was already going when you logged in, so this is the least it can be.'
+                              >
+                                {elapsed(going(), now())}
+                              </span>
+                            )}
+                          </Show>
                           {r().running ? '▶ ' : ''}
                           {r().battle.locked ? '🔒 ' : ''}
                           {r().battle.passworded ? '🔑' : ''}
