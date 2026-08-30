@@ -14,6 +14,7 @@ import {
   SERVER_ROOM,
   chat,
   ensureRoom,
+  closePrivate,
   isPrivate,
   partner,
   privateRoom,
@@ -27,6 +28,8 @@ import { Composer } from '../components/Composer'
 import { Linkify } from '../components/Linkify'
 import { showPlayerMenu } from '../components/PlayerMenu'
 import { rememberChannel } from '../store/channels'
+import { TabStrip, type Tab as StripTab } from '../components/TabStrip'
+import { ordered } from '../lib/reorder'
 import { lobby } from '../store/lobby'
 
 /**
@@ -89,6 +92,46 @@ export function Chat() {
     ...channels(),
     ...privates(),
   ])
+
+  /**
+   * The reader's own tab order, kept for this session only.
+   *
+   * Not persisted: where you like your conversations depends on which ones are
+   * open, and half of them are people who happened to message you today. A
+   * saved order would mostly describe a room you are no longer in.
+   */
+  const [order, setOrder] = createSignal<string[]>([])
+
+  /** What is open, in the reader's order, with new arrivals at the end. */
+  const tabs = createMemo<StripTab[]>(() =>
+    ordered(rooms(), order()).map((key) => ({
+      key,
+      label:
+        key === BATTLE_ROOM
+          ? 'Battle room'
+          : key === SERVER_ROOM
+            ? 'Server'
+            : key,
+      badge: chat.unread[key],
+      urgent: chat.named[key],
+      // The battle room and the server are always there; a channel or a person
+      // is something you opened and can close.
+      closable: key !== BATTLE_ROOM && key !== SERVER_ROOM,
+      title: isPrivate(key) ? `Messages with ${key}` : key,
+    })),
+  )
+
+  async function close(key: string) {
+    if (isPrivate(key)) {
+      // A conversation with a person is only ours; nothing to tell the server.
+      closePrivate(key)
+      return
+    }
+    await act('leave', async () => {
+      await api.leaveChannel(key)
+      await rememberChannel(key, false)
+    })
+  }
 
   const lines = () => chat.rooms[room()] ?? []
   const members = () => chat.channels[room()]?.members ?? []
@@ -440,6 +483,15 @@ export function Chat() {
       </aside>
 
       <div class='chat-main'>
+        {/* What is open, in the reader's order. The list on the left is for
+            finding a conversation; this is for living in the ones you have. */}
+        <TabStrip
+          tabs={tabs()}
+          active={room()}
+          onSelect={setRoom}
+          onClose={(key) => void close(key)}
+          onReorder={setOrder}
+        />
         <header class='chat-head'>
           <h1>{title()}</h1>
           <Show when={members().length > 0}>

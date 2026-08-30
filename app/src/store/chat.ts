@@ -88,6 +88,30 @@ export function ensureRoom(room: string): void {
   )
 }
 
+/**
+ * Forgets a private conversation, which is entirely a local matter.
+ *
+ * There is nothing to tell the server: a private room exists only because
+ * somebody spoke. Closing it drops what was said, and the next message from
+ * that person opens it again with the conversation starting fresh — which is
+ * what closing it asked for.
+ */
+export function closePrivate(room: string): void {
+  if (!isPrivate(room)) return
+  setChat('rooms', (rooms) => {
+    const { [room]: _gone, ...rest } = rooms
+    return rest
+  })
+  setChat('unread', (unread) => {
+    const { [room]: _gone, ...rest } = unread
+    return rest
+  })
+  setChat('named', (named) => {
+    const { [room]: _gone, ...rest } = named
+    return rest
+  })
+}
+
 /** A line from the app rather than from anyone on the server. */
 export function pushSystem(room: string, text: string): void {
   noticeSeq -= 1

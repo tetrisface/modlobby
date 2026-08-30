@@ -2589,3 +2589,91 @@ button.link {
     opacity: 0.4;
   }
 }
+
+/* ---- the open conversations, as tabs ---- */
+
+.tab-strip {
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  padding: 0 8px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tab-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.tab-strip .tab {
+  display: flex;
+  align-items: center;
+  background: var(--raised);
+  border-top: 2px solid transparent;
+  max-width: 200px;
+  flex-shrink: 0;
+}
+
+.tab-strip .tab.on {
+  background: var(--bg);
+  border-top-color: var(--accent);
+}
+
+/* The gap the dragged tab would land in, shown on the side it came from so the
+   row does not jump while the pointer is still moving. */
+.tab-strip .tab.over {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.tab-strip .tab.dragging {
+  opacity: 0.4;
+}
+
+.tab-strip .tab > button {
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 7px 4px 7px 11px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tab-strip .tab.on > button {
+  color: var(--text);
+}
+
+.tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-close {
+  background: none;
+  border: none;
+  border-radius: 50%;
+  padding: 0;
+  width: 18px;
+  height: 18px;
+  margin-right: 6px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--faint);
+  opacity: 0;
+}
+
+.tab:hover .tab-close,
+.tab.on .tab-close,
+.tab-close:focus-visible {
+  opacity: 1;
+}
+
+.tab-close:hover {
+  background: var(--line);
+  color: var(--text);
+}
