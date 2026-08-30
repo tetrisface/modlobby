@@ -1823,6 +1823,9 @@ input[type='checkbox'].v-edit {
 }
 
 .occupants-names span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -12,6 +12,7 @@ import type { BattleList as Filters } from '../ipc/bindings/BattleList'
 import type { BattleSort } from '../ipc/bindings/BattleSort'
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { ModeFilter } from '../ipc/bindings/ModeFilter'
+import { RankIcon } from '../components/icons'
 import { api, describeError } from '../ipc/client'
 import { MODES, SORTS, arrange, type Row } from '../lib/battles'
 import { mapImages } from '../lib/maps'
@@ -374,6 +375,12 @@ function Occupants(props: { peek: { id: number; top: number } | null }) {
                   me: name === lobby.me,
                 }}
               >
+                {/* The chevron is the one thing about a stranger everybody
+                    already reads, and it is the difference between a room
+                    worth joining and one you will be carried through. */}
+                <Show when={lobby.users[name]}>
+                  {(who) => <RankIcon status={who().status} />}
+                </Show>
                 {name}
               </span>
             )}
