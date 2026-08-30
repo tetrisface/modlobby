@@ -24,7 +24,6 @@ import { Replays } from './views/Replays'
 import { Room } from './views/Room'
 import { SettingsView } from './views/Settings'
 import { Skirmish } from './views/Skirmish'
-import { Tweaks } from './views/Tweaks'
 
 type SettingsEvent = { changed: Settings } | { invalid: string }
 
@@ -117,7 +116,6 @@ function Layout(props: ParentProps) {
           <A href='/replays'>Replays</A>
           <Show when={lobby.myBattle}>
             <A href='/room'>Room</A>
-            <A href='/room/tweaks'>Tweaks</A>
           </Show>
         </Show>
         <A href='/settings'>Settings</A>
@@ -180,7 +178,10 @@ export function App() {
       <Route path='/replays' component={Replays} />
       <Route path='/skirmish' component={Skirmish} />
       <Route path='/room' component={Room} />
-      <Route path='/room/tweaks' component={Tweaks} />
+      {/* The tweak editor lives inside the room's setup pane, which is where
+          the slots it edits are listed. It was reachable here as well, drawing
+          the same component with none of that around it. */}
+      <Route path='/room/tweaks' component={Room} />
       <Route path='/settings' component={SettingsView} />
     </HashRouter>
   )

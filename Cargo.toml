@@ -9,6 +9,7 @@ members = [
     "crates/settings",
     "crates/tweaks",
     "crates/modoptions",
+    "crates/presets",
     "crates/recoil",
     "crates/modlobby-cli",
     "app/src-tauri",
@@ -26,6 +27,7 @@ lobby-core = { path = "crates/lobby-core" }
 lobby-runtime = { path = "crates/lobby-runtime" }
 lobby-ui = { path = "crates/lobby-ui" }
 settings = { path = "crates/settings" }
+presets = { path = "crates/presets" }
 tweaks = { path = "crates/tweaks" }
 modoptions = { path = "crates/modoptions" }
 recoil = { path = "crates/recoil" }
