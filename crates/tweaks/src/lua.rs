@@ -55,21 +55,40 @@ fn unwrap_return(formatted: &str) -> String {
     lines.join("\n")
 }
 
-/// Drops whitespace and comments — except a leading `--` name line — and keeps
-/// exactly the spaces that stop two tokens from fusing. For `Kind::Units`,
-/// string literals are also escaped so the blob can never contain `_`
+/// Drops whitespace and comments — except the header block — and keeps exactly
+/// the spaces that stop two tokens from fusing. For `Kind::Units`, string
+/// literals are also escaped so the blob can never contain `_`
 /// (see [`crate::base64url`]).
+///
+/// The whole leading run of comments is kept, not just the first line. What
+/// people actually publish looks like
+///
+/// ```text
+/// --NuttyB v1.52 Cortex Com
+/// -- Authors: ChrispyNut, BackBash
+/// -- docs.google.com/spreadsheets/d/1QSVsuAAM…
+/// ```
+///
+/// — a name, who wrote it, and where it is documented. Keeping only the first
+/// line meant that editing somebody else's tweak here quietly stripped their
+/// credit and the link to their notes.
 pub fn minify(source: &str, kind: Kind) -> Result<String, Error> {
+    const NEWLINE: char = 0x0A as char;
     let tokens = lex(source)?;
     let mut out = String::with_capacity(source.len());
 
     let mut rest = tokens.as_slice();
-    if let Some(first) = rest.first()
-        && let TokenType::SingleLineComment { comment } = first.token_type()
-    {
-        out.push_str("--");
-        out.push_str(comment.trim_end());
-        out.push('\n');
+    while let Some(first) = rest.first() {
+        match first.token_type() {
+            TokenType::SingleLineComment { comment } => {
+                out.push_str("--");
+                out.push_str(comment.trim_end());
+                out.push(NEWLINE);
+            }
+            // The newlines between them, and any indent before the first.
+            TokenType::Whitespace { .. } => {}
+            _ => break,
+        }
         rest = &rest[1..];
     }
 
@@ -187,13 +206,28 @@ mod tests {
     }
 
     #[test]
-    fn minify_keeps_the_name_and_the_meaning() {
-        let source = "-- Sphere spawner v3\n-- notes\nlocal a = 1\nfor i = 1, 10 do\n  a = a - -i -- inline\nend\nreturn a .. 'x'\n";
+    fn minify_keeps_the_header_and_the_meaning() {
+        // Three header lines, which is what a published tweak carries: a
+        // name, its authors, and a link to where it is documented.
+        let source = "--NuttyB v1.52 Cortex Com
+-- Authors: ChrispyNut, BackBash
+-- docs.example/1QSV
+local a = 1
+for i = 1, 10 do
+  a = a - -i -- inline
+end
+return a .. 'x'
+";
         let minified = minify(source, Kind::Defs).unwrap();
-        assert!(minified.starts_with("-- Sphere spawner v3\n"));
+        assert!(minified.starts_with(
+            "--NuttyB v1.52 Cortex Com
+-- Authors: ChrispyNut, BackBash
+-- docs.example/1QSV
+"
+        ));
         assert!(
-            !minified.contains("notes"),
-            "only the first comment is a name"
+            minified.contains("ChrispyNut"),
+            "the header is somebody's credit, not noise"
         );
         assert!(!minified.contains("inline"));
         assert!(minified.contains("a- -i"), "{minified}");

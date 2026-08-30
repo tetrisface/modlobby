@@ -116,7 +116,15 @@ mod tests {
     /// the way the room will show it.
     #[test]
     fn prepare_then_decode_survives_the_round_trip() {
-        let lua = "-- Sphere spawner v3\n-- an explanation nobody needs on the wire\nlocal count = 4\nfor i = 1, count do\n  UnitDefs.armcom.metalcost = UnitDefs.armcom.metalcost - i\nend\n";
+        // The header shape people actually publish: a name, then credit,
+        // then where it is written up.
+        let lua = "-- Sphere spawner v3
+-- Authors: someone
+local count = 4
+for i = 1, count do
+  UnitDefs.armcom.metalcost = UnitDefs.armcom.metalcost - i -- inline
+end
+";
         let slot = Slot::Defs(1);
         let prepared = prepare(lua, slot, true).unwrap();
 
@@ -127,7 +135,9 @@ mod tests {
         let view = decode(&prepared.blob, slot.kind(), &Config::default()).unwrap();
         assert_eq!(view.name.as_deref(), Some("Sphere spawner v3"));
         assert!(view.diagnostics.is_empty());
-        assert!(!view.lua.contains("nobody needs"), "comments cost bytes");
+        // The header survives whole; a comment inside the body does not.
+        assert!(view.lua.contains("Authors: someone"), "credit is not noise");
+        assert!(!view.lua.contains("inline"), "comments cost bytes");
         assert!(view.formatted.contains("UnitDefs.armcom.metalcost"));
         // Formatting is display only: what we would send again is unchanged.
         assert_eq!(

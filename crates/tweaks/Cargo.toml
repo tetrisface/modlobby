@@ -17,3 +17,8 @@ stylua = { workspace = true }
 thiserror = { workspace = true }
 toml = { workspace = true }
 ts-rs = { workspace = true }
+
+[dev-dependencies]
+# Only for `examples/header_survival.rs`, which checks the minifier against a
+# real `optionsPresets.json` rather than against fixtures we wrote ourselves.
+serde_json = { workspace = true }
