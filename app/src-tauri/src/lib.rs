@@ -9,6 +9,7 @@ mod overlay;
 mod presets;
 mod state;
 mod transport;
+mod win;
 
 use tauri::{Emitter, Manager};
 
