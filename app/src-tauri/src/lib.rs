@@ -2,6 +2,7 @@
 //! Nothing in here knows the protocol; commands translate calls, the channel
 //! transport forwards `UiMessage`s, settings changes are emitted as events.
 
+mod boxes;
 mod commands;
 mod flash;
 mod ingame;
@@ -210,6 +211,7 @@ pub fn run() {
             commands::overlay_active,
             commands::overlay_toggle,
             commands::stop_game,
+            boxes::start_boxes,
             commands::flash_engine,
             commands::remember_played,
             commands::game_modoptions,

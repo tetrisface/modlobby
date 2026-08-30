@@ -23,6 +23,7 @@ lobby-ui = { workspace = true }
 serde = { workspace = true }
 settings = { workspace = true }
 spring-protocol = { workspace = true }
+startbox = { workspace = true }
 tauri = { workspace = true }
 modoptions = { workspace = true }
 presets = { workspace = true }

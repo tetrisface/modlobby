@@ -4,6 +4,7 @@ import type { Kind } from './bindings/Kind'
 import type { Prepared } from './bindings/Prepared'
 import type { ReplayView } from './bindings/ReplayView'
 import type { SkirmishOptions } from './bindings/SkirmishOptions'
+import type { BoxesView } from './bindings/BoxesView'
 import type { Book } from './bindings/Book'
 import type { ModOption } from './bindings/ModOption'
 import type { Plan } from './bindings/Plan'
@@ -63,6 +64,8 @@ export const api = {
   overlayActive: () => invoke<boolean>('overlay_active'),
   overlayToggle: () => invoke<void>('overlay_toggle'),
   stopGame: () => invoke<boolean>('stop_game'),
+  startBoxes: (teams: number) =>
+    invoke<BoxesView | null>('start_boxes', { teams }),
   flashEngine: () => invoke<boolean>('flash_engine'),
   requestGameStatus: (founder: string) =>
     invoke<void>('request_game_status', { founder }),

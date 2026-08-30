@@ -113,7 +113,11 @@ export function Room() {
       {(b) => (
         <section class='room'>
           <header class='room-card'>
-            <Minimap rects={b().startRects} mapName={b().mapName} />
+            <Minimap
+              rects={b().startRects}
+              mapName={b().mapName}
+              teams={occupants().teams.length}
+            />
             <div class='card-main'>
               <h1 title={b().title}>{b().title}</h1>
               <div class='card-meta'>
@@ -283,7 +287,11 @@ export function Room() {
  * square when we cannot. `ADDSTARTRECT` is normalised to 0-200 on both axes,
  * so the boxes are right either way and the image is decoration on top.
  */
-function Minimap(props: { rects: StartRectView[]; mapName: string }) {
+function Minimap(props: {
+  rects: StartRectView[]
+  mapName: string
+  teams: number
+}) {
   const [image] = createResource(
     () => props.mapName,
     async (name) => {
@@ -294,6 +302,23 @@ function Minimap(props: { rects: StartRectView[]; mapName: string }) {
     },
   )
   const [broken, setBroken] = createSignal(false)
+
+  /**
+   * The modoption boxes, which are a different system from `props.rects`.
+   *
+   * Asked for whenever the room's team count changes, because that is what
+   * selects an arrangement out of the map's set. `null` means the modoptions
+   * say nothing and the start rects are the whole story.
+   */
+  const [boxes] = createResource(
+    () => (props.teams > 0 ? props.teams : 1),
+    (teams: number) => api.startBoxes(teams).catch(() => null),
+  )
+
+  /** `M x y L x y … Z` for one polygon in the 0-200 space. */
+  const outline = (poly: [number, number][]) =>
+    poly.map(([x, y], at) => `${at === 0 ? 'M' : 'L'}${x} ${y}`).join(' ') +
+    ' Z'
 
   return (
     <div class='minimap'>
@@ -318,6 +343,21 @@ function Minimap(props: { rects: StartRectView[]; mapName: string }) {
             d='M50 0V200M100 0V200M150 0V200M0 50H200M0 100H200M0 150H200'
           />
         </Show>
+        {/* The modoption arrangement, when one applies. Drawn under the
+            protocol rects so that a room using both shows which is which. */}
+        <For each={boxes()?.polys ?? []}>
+          {(poly, index) => (
+            <g class='mm-box meta'>
+              <path d={outline(poly as [number, number][])} />
+              <text
+                x={poly.reduce((sum, p) => sum + p[0], 0) / poly.length}
+                y={poly.reduce((sum, p) => sum + p[1], 0) / poly.length + 6}
+              >
+                {index() + 1}
+              </text>
+            </g>
+          )}
+        </For>
         <For each={props.rects}>
           {(rect) => (
             <g class='mm-box'>
@@ -337,8 +377,29 @@ function Minimap(props: { rects: StartRectView[]; mapName: string }) {
           )}
         </For>
       </svg>
-      <Show when={props.rects.length > 0}>
-        <span class='mm-tag'>start boxes · {props.rects.length}</span>
+      {/* Which system the game will actually read, since a room can carry
+          both and they need not agree. */}
+      <Show
+        when={boxes()}
+        fallback={
+          <Show when={props.rects.length > 0}>
+            <span class='mm-tag'>start boxes · {props.rects.length}</span>
+          </Show>
+        }
+      >
+        {(resolved) => (
+          <span
+            class='mm-tag'
+            title={
+              resolved().source === 'override'
+                ? 'Set for this room, overriding the map'
+                : `The map's own boxes for ${resolved().teams} teams`
+            }
+          >
+            {resolved().source === 'override' ? 'custom' : 'map'} boxes ·{' '}
+            {resolved().polys.length}
+          </span>
+        )}
       </Show>
     </div>
   )
