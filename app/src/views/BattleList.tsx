@@ -15,9 +15,11 @@ import type { BattleSort } from '../ipc/bindings/BattleSort'
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { ModeFilter } from '../ipc/bindings/ModeFilter'
 import { RankIcon } from '../components/icons'
+import { Thinking } from '../components/Thinking'
 import { api, describeError } from '../ipc/client'
 import { elapsed } from '../lib/running'
 import {
+  asking as askingAbout,
   askAboutGame,
   noteRunning,
   running as runningGames,
@@ -372,6 +374,14 @@ export function BattleList() {
                         <span class='col-title'>{r().battle.title}</span>
                         <span class='col-map'>{r().battle.mapName}</span>
                         <span class='col-flags'>
+                          {/* The host is being asked how long its game has
+                              been going; without this the answer arrives out
+                              of nowhere a second later. */}
+                          <Show when={askingAbout() === r().battle.id}>
+                            <span class='running-for'>
+                              <Thinking title='asking the host how long this game has been running' />
+                            </span>
+                          </Show>
                           <Show
                             when={r().running && runningGames()[r().battle.id]}
                           >

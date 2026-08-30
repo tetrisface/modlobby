@@ -22,6 +22,7 @@ function loaded(): Settings {
       inPublicRooms: true,
       joinAs: 'remember',
       lastWasPlayer: true,
+      autoLaunch: true,
       pveStats: true,
     },
     notifications: {

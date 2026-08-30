@@ -68,6 +68,7 @@
     "play": {
       "$ref": "#/$defs/Play",
       "default": {
+        "autoLaunch": true,
         "inPublicRooms": true,
         "joinAs": "remember",
         "lastWasPlayer": true,
@@ -315,6 +316,11 @@
       "description": "Playing rather than watching.",
       "type": "object",
       "properties": {
+        "autoLaunch": {
+          "description": "Whether the engine starts on its own when your room's game does.\n\nOn, as it is in Chobby (`gui_settings_window.lua:888`), because a game\nyou are in starting is the moment you want to be in it — spectating\nincluded, which is the case that otherwise means watching the room and\npressing a button. Only ever fires when the content is already on disk.",
+          "type": "boolean",
+          "default": true
+        },
         "inPublicRooms": {
           "description": "Whether a seat may be taken in a public room.\n\nOn: this is a lobby, and sitting down in a room is what it is for. It\nstays a setting because a client driving the protocol without a person\nbehind it should be able to say it is only watching.",
           "type": "boolean",

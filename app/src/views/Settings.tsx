@@ -169,6 +169,25 @@ export function SettingsView() {
         </fieldset>
 
         <fieldset>
+          <legend>Playing</legend>
+          <label class='row'>
+            <input
+              type='checkbox'
+              checked={draft.play.autoLaunch}
+              onChange={(e) =>
+                setDraft('play', 'autoLaunch', e.currentTarget.checked)
+              }
+            />
+            Start the game automatically
+          </label>
+          <p class='muted'>
+            When your room's game starts, the engine starts with it — while
+            spectating too, which is otherwise the case that means watching the
+            room and pressing a button. Never without the content on disk.
+          </p>
+        </fieldset>
+
+        <fieldset>
           <legend>Chat</legend>
           <label class='row'>
             <input
@@ -428,6 +447,7 @@ function blank(): Settings {
       inPublicRooms: true,
       joinAs: 'remember',
       lastWasPlayer: true,
+      autoLaunch: true,
       pveStats: true,
     },
     notifications: {

@@ -5,6 +5,7 @@ import {
   createSignal,
   onCleanup,
 } from 'solid-js'
+import { Thinking } from '../components/Thinking'
 import { api } from '../ipc/client'
 import { lobby } from '../store/lobby'
 
@@ -20,7 +21,7 @@ import { lobby } from '../store/lobby'
  * team and does not use the identities or ratings of whoever is present.
  */
 /** How long the room has to stop changing before it is worth asking again. */
-const QUIET_FOR = 2500
+const QUIET_FOR = 3000
 
 export function PveScore() {
   /**
@@ -51,58 +52,68 @@ export function PveScore() {
     value === null ? '—' : `${Math.round(value * 100)}%`
 
   return (
-    <Show when={score()}>
-      {(held) => (
-        <div class='pve-score'>
-          <span class='filter-label'>PvE</span>
+    <Show when={score.loading || score()}>
+      <div class='pve-score'>
+        <span class='filter-label'>PvE</span>
 
-          <Show
-            when={held().challenge !== null}
-            fallback={
-              <span
-                class='muted'
-                title='This setup has not been placed among played games yet.'
+        {/* Asking takes a moment and the answer is a bare number, so without
+            this it appears from nowhere and reads as a glitch. */}
+        <Show when={score.loading}>
+          <Thinking title='asking how hard this setup is' />
+        </Show>
+
+        <Show when={score()}>
+          {(held) => (
+            <>
+              <Show
+                when={held().challenge !== null}
+                fallback={
+                  <span
+                    class='muted'
+                    title='This setup has not been placed among played games yet.'
+                  >
+                    unplaced
+                  </span>
+                }
               >
-                unplaced
-              </span>
-            }
-          >
-            <span
-              class='pve-figure'
-              title='Absolute difficulty on a 0-34 scale. 17 is an estimated even game for a representative human team; higher is harder.'
-            >
-              Challenge <b>{held().challenge?.toFixed(1)}</b>
-            </span>
-          </Show>
+                <span
+                  class='pve-figure'
+                  title='Absolute difficulty on a 0-34 scale. 17 is an estimated even game for a representative human team; higher is harder.'
+                >
+                  Challenge <b>{held().challenge?.toFixed(1)}</b>
+                </span>
+              </Show>
 
-          <Show when={held().winChance !== null}>
-            <span
-              class='pve-figure'
-              title='Estimated chance a representative current BAR human team wins this map and setup. The people in this room are not part of that estimate.'
-            >
-              Win <b>{percent(held().winChance)}</b>
-            </span>
-          </Show>
+              <Show when={held().winChance !== null}>
+                <span
+                  class='pve-figure'
+                  title='Estimated chance a representative current BAR human team wins this map and setup. The people in this room are not part of that estimate.'
+                >
+                  Win <b>{percent(held().winChance)}</b>
+                </span>
+              </Show>
 
-          <Show when={held().percentile !== null}>
-            <span
-              class='muted'
-              title='Where this setup sits among eligible played games for this opponent.'
-            >
-              harder than {Math.round(held().percentile ?? 0)}%
-            </span>
-          </Show>
+              <Show when={held().percentile !== null}>
+                <span
+                  class='muted'
+                  title='Where this setup sits among eligible played games for this opponent.'
+                >
+                  harder than {Math.round(held().percentile ?? 0)}%
+                </span>
+              </Show>
 
-          <Show when={held().bestEffort}>
-            <span
-              class='chip warn'
-              title='This room uses settings the service has not catalogued, so these are best-effort estimates rather than an exact match.'
-            >
-              best effort
-            </span>
-          </Show>
-        </div>
-      )}
+              <Show when={held().bestEffort}>
+                <span
+                  class='chip warn'
+                  title='This room uses settings the service has not catalogued, so these are best-effort estimates rather than an exact match.'
+                >
+                  best effort
+                </span>
+              </Show>
+            </>
+          )}
+        </Show>
+      </div>
     </Show>
   )
 }

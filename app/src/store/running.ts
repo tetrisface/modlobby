@@ -26,6 +26,7 @@ export function noteRunning(ids: ReadonlySet<number>, settled: boolean): void {
 /** What a host told us, which beats anything we watched. */
 export function noteToldStart(id: number, secondsAgo: number): void {
   answered.add(id)
+  if (asking() === id) setAsking(null)
   setRunning((held) => told(held, id, secondsAgo, Date.now()))
 }
 
@@ -44,6 +45,20 @@ let wanted: { id: number; founder: string } | null = null
 let nextAsk = 0
 let timer: ReturnType<typeof setTimeout> | undefined
 
+/**
+ * The room a question is out for, so the row can say so.
+ *
+ * A host may simply never answer — it is a private message to an autohost, not
+ * a request with a status code — so this clears itself after a while rather
+ * than waiting for a reply that is not coming.
+ */
+const [asking, setAsking] = createSignal<number | null>(null)
+export { asking }
+
+/** Long enough for a host to reply, short enough not to sit there lying. */
+const GIVE_UP_AFTER = 8000
+let giveUp: ReturnType<typeof setTimeout> | undefined
+
 export function askAboutGame(id: number, founder: string): void {
   if (answered.has(id)) return
   wanted = { id, founder }
@@ -55,8 +70,12 @@ export function askAboutGame(id: number, founder: string): void {
     wanted = null
     if (!ask || answered.has(ask.id)) return
     nextAsk = Date.now() + ASK_EVERY
+    setAsking(ask.id)
+    clearTimeout(giveUp)
+    giveUp = setTimeout(() => setAsking(null), GIVE_UP_AFTER)
     void api.requestGameStatus(ask.founder).catch(() => {
       // A host that will not answer is not worth a notice; the estimate stands.
+      setAsking(null)
     })
   }, wait)
 }

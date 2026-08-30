@@ -18,6 +18,15 @@ inPublicRooms: boolean,
  */
 joinAs: JoinAs, 
 /**
+ * Whether the engine starts on its own when your room's game does.
+ *
+ * On, as it is in Chobby (`gui_settings_window.lua:888`), because a game
+ * you are in starting is the moment you want to be in it — spectating
+ * included, which is the case that otherwise means watching the room and
+ * pressing a button. Only ever fires when the content is already on disk.
+ */
+autoLaunch: boolean, 
+/**
  * Whether to ask BAR's PvE Stats service what a PvE room scores.
  *
  * On, because the number is the point of looking at a PvE room before

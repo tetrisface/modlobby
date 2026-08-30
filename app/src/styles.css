@@ -2262,3 +2262,49 @@ button.link:hover {
   padding-bottom: 2px;
   cursor: default;
 }
+
+/* ---- something is being asked for ---- */
+
+.thinking {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  vertical-align: middle;
+}
+
+.thinking i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--faint);
+  opacity: 0.25;
+  animation: thinking 1.2s infinite ease-in-out;
+}
+
+.thinking i:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.thinking i:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes thinking {
+  0%,
+  70%,
+  100% {
+    opacity: 0.25;
+  }
+
+  35% {
+    opacity: 1;
+  }
+}
+
+/* A cycling dot is decoration; someone who asked for less motion gets none. */
+@media (prefers-reduced-motion: reduce) {
+  .thinking i {
+    animation: none;
+    opacity: 0.45;
+  }
+}

@@ -117,6 +117,10 @@ enum Command {
         away: bool,
         reply: Reply<()>,
     },
+    SetAutoLaunch {
+        always: bool,
+        reply: Reply<()>,
+    },
     EnginePid {
         reply: Reply<Option<u32>>,
     },
@@ -297,6 +301,12 @@ impl Client {
         self.ask(|reply| Command::Ring { user, reply }).await
     }
 
+    /// Whether the engine starts on its own when the room's game does.
+    pub async fn set_auto_launch(&self, always: bool) -> Result<(), ClientError> {
+        self.ask(|reply| Command::SetAutoLaunch { always, reply })
+            .await
+    }
+
     /// Marks us away, so nobody waits on someone who has stepped out.
     pub async fn set_away(&self, away: bool) -> Result<(), ClientError> {
         self.ask(|reply| Command::SetAway { away, reply }).await
@@ -451,6 +461,12 @@ struct Runtime {
     engine_status: EngineStatus,
     game: Option<Game>,
     auto_launch: Option<PathBuf>,
+    /// Whether to start the engine ourselves when the room's game starts.
+    /// Pushed from settings, like the data directory.
+    auto_launch_always: bool,
+    /// Whether this machine has everything the room needs. Launching without
+    /// it produces an engine that quits with a sync error.
+    content_ready: bool,
     login_reply: Option<Reply<()>>,
     join_reply: Option<Reply<()>>,
     /// Where BAR's content lives; `None` falls back to the launcher's directory.
@@ -509,6 +525,8 @@ impl Runtime {
             engine_status: EngineStatus::Idle,
             game: None,
             auto_launch: None,
+            auto_launch_always: true,
+            content_ready: false,
             login_reply: None,
             join_reply: None,
             data_dir: None,
@@ -753,6 +771,7 @@ impl Runtime {
             game: available.game,
             map: available.map,
         });
+        self.content_ready = available.complete();
         self.set_synced(available.complete()).await;
 
         // Joining a room you have no map for is a request for the map: there is
@@ -947,6 +966,10 @@ impl Runtime {
             }
             Command::EnginePid { reply } => {
                 let _ = reply.send(Ok(self.engine.as_ref().and_then(Child::id)));
+            }
+            Command::SetAutoLaunch { always, reply } => {
+                self.auto_launch_always = always;
+                let _ = reply.send(Ok(()));
             }
             Command::SetAway { away, reply } => {
                 self.run_session(reply, |session| {
@@ -1246,7 +1269,16 @@ impl Runtime {
                         view: GameRunningView { id, ip, port },
                         script_password,
                     });
-                    if let Some(data_dir) = self.auto_launch.take()
+                    // Either somebody asked to launch before the game existed,
+                    // or the setting says a game we are in starting is reason
+                    // enough. Never without the content: that only produces an
+                    // engine that quits with a sync error.
+                    let wanted = self.auto_launch.take().or_else(|| {
+                        (self.auto_launch_always && self.content_ready && self.engine.is_none())
+                            .then(|| self.data_dir())
+                            .flatten()
+                    });
+                    if let Some(data_dir) = wanted
                         && let Err(err) = self.launch_engine(data_dir).await
                     {
                         self.batcher.push(Delta::Notice {
