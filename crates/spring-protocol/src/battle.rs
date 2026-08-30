@@ -167,6 +167,14 @@ pub fn say_private(user: &str, text: &str) -> Result<Envelope, TooLong> {
     ))
 }
 
+/// `RING <user>`: summons someone to the room they are already sitting in,
+/// which is how you tell a player who has wandered off that the game is
+/// waiting on them. It has its own throttle bucket because the server treats
+/// it as the nuisance it can be.
+pub fn ring(user: &str) -> Envelope {
+    Envelope::queue(Area::Ring, format!("RING {user}"))
+}
+
 /// `SAYBATTLE <text>`. `!`/`$` lines are SPADS commands and go through the
 /// command bucket of the throttle policy; everything else is chat.
 pub fn say_battle(text: &str) -> Result<Envelope, TooLong> {

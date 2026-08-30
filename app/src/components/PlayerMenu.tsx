@@ -41,6 +41,9 @@ export function PlayerMenu() {
     document.removeEventListener('keydown', onKey)
   })
 
+  /** A SPADS command, sent the way anyone would type it into the room. */
+  const say = (command: string) => api.sayBattle(command)
+
   async function act(what: string, run: () => Promise<void>) {
     close()
     try {
@@ -71,6 +74,10 @@ export function PlayerMenu() {
           return lobby.battles[id]
         }
 
+        /** Whether SPADS would take our word for it in this room. */
+        const bossing = () =>
+          lobby.myBattle?.boss !== null && lobby.myBattle?.boss === lobby.me
+
         const items = () => {
           const entries: Array<[string, () => Promise<void> | void]> = [
             [
@@ -81,6 +88,20 @@ export function PlayerMenu() {
               },
             ],
           ]
+          // In the same room, and it is ours to run: SPADS takes these as
+          // chat, so they need nothing but the words a host would type.
+          const together =
+            user()?.battleId !== null &&
+            user()?.battleId === lobby.myBattle?.id &&
+            !isMe()
+          if (together) {
+            entries.push(['Ring', () => api.ring(name())])
+          }
+          if (together && bossing()) {
+            entries.push(['Move to spectators', () => say(`!spec ${name()}`)])
+            entries.push(['Kick from the room', () => say(`!kick ${name()}`)])
+          }
+
           const room = theirRoom()
           if (room) {
             entries.push([

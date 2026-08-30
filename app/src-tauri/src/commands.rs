@@ -351,6 +351,13 @@ pub async fn download_missing(app: State<'_, App>) -> Result<()> {
     Ok(())
 }
 
+/// Rings someone in the room, which is how a host says the game is waiting.
+#[tauri::command]
+pub async fn ring(app: State<'_, App>, user: String) -> Result<()> {
+    app.client.ring(user).await?;
+    Ok(())
+}
+
 /// Stops the running download. What it already wrote stays on disk, and
 /// pr-downloader picks up from there when it is asked again.
 #[tauri::command]

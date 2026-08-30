@@ -1,3 +1,4 @@
+import { createVirtualizer } from '@tanstack/solid-virtual'
 import {
   For,
   Show,
@@ -33,11 +34,21 @@ import { lobby } from '../store/lobby'
  * from one place, but it stays in the battle room as well — you should not
  * have to leave the players to read what they are saying.
  */
+const ROSTER_ROW = 19
+
 export function Chat() {
   const [room, setRoom] = createSignal(BATTLE_ROOM)
   const [text, setText] = createSignal('')
   const [showDirectory, setShowDirectory] = createSignal(false)
   const [findPerson, setFindPerson] = createSignal('')
+  const [showMembers, setShowMembers] = createSignal(false)
+  /**
+   * A channel we have asked to join. The server answers a join with the
+   * channel's state rather than an acknowledgement, so the reader is taken
+   * there when it arrives — asking to join and then staying where you were is
+   * not what anyone means by it.
+   */
+  const [joining, setJoining] = createSignal<string | null>(null)
   let log: HTMLDivElement | undefined
 
   // These read the store, so they recompute as channels and people come and go.
@@ -80,6 +91,15 @@ export function Chat() {
 
   const lines = () => chat.rooms[room()] ?? []
   const members = () => chat.channels[room()]?.members ?? []
+  /** Friends first, then alphabetical — the same order as everywhere else. */
+  const sortedMembers = createMemo(() =>
+    [...members()].sort((a, b) => {
+      const known =
+        Number(lobby.friends.friends.includes(b)) -
+        Number(lobby.friends.friends.includes(a))
+      return known || a.localeCompare(b)
+    }),
+  )
 
   // The server never announces a friendship changing, so the list is asked
   // for when this view opens.
@@ -91,6 +111,14 @@ export function Chat() {
   createEffect(() => {
     lines().length
     log?.scrollTo({ top: log.scrollHeight })
+  })
+
+  createEffect(() => {
+    const wanted = joining()
+    if (wanted !== null && wanted in chat.channels) {
+      setRoom(wanted)
+      setJoining(null)
+    }
   })
 
   /** A room that has gone away leaves the reader somewhere that still exists. */
@@ -122,6 +150,7 @@ export function Chat() {
         // teiserver does not answer a join for a channel you are already in,
         // so without this the command would look like it did nothing.
         if (argument in chat.channels) return setRoom(argument)
+        setJoining(argument)
         return act('join', () => api.joinChannel(argument, null))
       case 'leave': {
         const target = argument || room()
@@ -372,9 +401,10 @@ export function Chat() {
               <button
                 class='room-tab'
                 disabled={entry.name in chat.channels}
-                onClick={() =>
+                onClick={() => {
+                  setJoining(entry.name)
                   void act('join', () => api.joinChannel(entry.name, null))
-                }
+                }}
               >
                 <span class='room-name'>{entry.name}</span>
                 <span class='room-count'>{entry.members}</span>
@@ -388,7 +418,13 @@ export function Chat() {
         <header class='chat-head'>
           <h1>{title()}</h1>
           <Show when={members().length > 0}>
-            <span class='muted'>{members().length} here</span>
+            <button
+              class='link'
+              title='Who is in this channel'
+              onClick={() => setShowMembers(!showMembers())}
+            >
+              {members().length} here
+            </button>
           </Show>
           <span class='spacer' />
           <Show when={!isPrivate(room()) && room() !== BATTLE_ROOM}>
@@ -400,18 +436,27 @@ export function Chat() {
           </Show>
         </header>
 
-        <div class='chat-log' ref={log}>
-          <For
-            each={lines()}
-            fallback={
-              <p class='muted setup-empty'>
-                Nothing here yet. <code>/join &lt;channel&gt;</code> or{' '}
-                <code>/msg &lt;user&gt; …</code>
-              </p>
-            }
-          >
-            {(line) => <Line line={line} me={lobby.me} />}
-          </For>
+        {/* The roster is a column beside the log rather than a list above it:
+            a channel with two hundred people in it would otherwise push the
+            conversation off the screen. */}
+        <div class='chat-body' classList={{ roster: showMembers() }}>
+          <div class='chat-log' ref={log}>
+            <For
+              each={lines()}
+              fallback={
+                <p class='muted setup-empty'>
+                  Nothing here yet. <code>/join &lt;channel&gt;</code> or{' '}
+                  <code>/msg &lt;user&gt; …</code>
+                </p>
+              }
+            >
+              {(line) => <Line line={line} me={lobby.me} />}
+            </For>
+          </div>
+
+          <Show when={showMembers() && members().length > 0}>
+            <Roster names={sortedMembers()} />
+          </Show>
         </div>
 
         <form class='chat-input' onSubmit={submit}>
@@ -489,4 +534,65 @@ function clock(at: number): string {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+/**
+ * Who is in a channel.
+ *
+ * `#main` holds most of the server — seventeen hundred people on a quiet
+ * evening — so the rows are virtualised like the battle list. Drawing them all
+ * does not merely cost time: the column grows to their full height and pushes
+ * the conversation off the screen.
+ */
+function Roster(props: { names: string[] }) {
+  let scrollRef: HTMLElement | undefined
+
+  const virtualizer = createVirtualizer({
+    get count() {
+      return props.names.length
+    },
+    getScrollElement: () => scrollRef ?? null,
+    estimateSize: () => ROSTER_ROW,
+    overscan: 12,
+  })
+
+  return (
+    <aside class='chat-roster' ref={scrollRef}>
+      <div
+        style={{
+          height: `${virtualizer.getTotalSize()}px`,
+          position: 'relative',
+          width: '100%',
+        }}
+      >
+        <For each={virtualizer.getVirtualItems()}>
+          {(item) => {
+            const name = () => props.names[item.index]
+            return (
+              <Show when={name()}>
+                {(who) => (
+                  <button
+                    class='pname'
+                    classList={{
+                      me: who() === lobby.me,
+                      friend: lobby.friends.friends.includes(who()),
+                    }}
+                    style={{
+                      position: 'absolute',
+                      top: `${item.start}px`,
+                      height: `${ROSTER_ROW}px`,
+                      width: '100%',
+                    }}
+                    onClick={(event) => showPlayerMenu(who(), event)}
+                  >
+                    {who()}
+                  </button>
+                )}
+              </Show>
+            )
+          }}
+        </For>
+      </div>
+    </aside>
+  )
 }

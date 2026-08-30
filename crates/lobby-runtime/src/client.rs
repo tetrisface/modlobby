@@ -109,6 +109,10 @@ enum Command {
     StopDownload {
         reply: Reply<()>,
     },
+    Ring {
+        user: String,
+        reply: Reply<()>,
+    },
     PlayReplay {
         data_dir: PathBuf,
         path: String,
@@ -275,6 +279,11 @@ impl Client {
     /// Stops the running download, leaving whatever it already wrote.
     pub async fn stop_download(&self) -> Result<(), ClientError> {
         self.ask(|reply| Command::StopDownload { reply }).await
+    }
+
+    /// Rings someone, which is how you tell a player the room is waiting.
+    pub async fn ring(&self, user: String) -> Result<(), ClientError> {
+        self.ask(|reply| Command::Ring { user, reply }).await
     }
 
     /// Starts a game against AI with no server involved.
@@ -902,6 +911,12 @@ impl Runtime {
                     Err(ClientError::Refused("nothing is downloading".into()))
                 };
                 let _ = reply.send(answer);
+            }
+            Command::Ring { user, reply } => {
+                self.run_session(reply, |session| {
+                    Ok::<_, std::convert::Infallible>(session.ring(&user))
+                })
+                .await;
             }
             Command::RefreshFriends { reply } => {
                 self.run_session(reply, |session| {

@@ -45,6 +45,7 @@ export const api = {
   listChannels: () => invoke<void>('list_channels'),
   downloadMissing: () => invoke<void>('download_missing'),
   stopDownload: () => invoke<void>('stop_download'),
+  ring: (user: string) => invoke<void>('ring', { user }),
   skirmishOptions: () => invoke<SkirmishOptions>('skirmish_options'),
   startSkirmish: (
     game: string,

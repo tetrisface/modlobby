@@ -371,6 +371,11 @@ impl Session {
         Ok(vec![Effect::Send(battle::say_private(user, text)?)])
     }
 
+    /// Rings someone: the lobby's way of saying the game is waiting on you.
+    pub fn ring(&mut self, user: &str) -> Vec<Effect> {
+        vec![Effect::Send(battle::ring(user))]
+    }
+
     /// Asks for both friend listings; each replaces what it had.
     pub fn refresh_friends(&mut self) -> Vec<Effect> {
         vec![

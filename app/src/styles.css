@@ -28,6 +28,9 @@
   --sig2: #997318;
   --sig3: #664d10;
   --me: #cc4de6;
+  /* Friends read as friendly rather than as another faction: mint, kept clear
+     of the magenta that means you and the blue that means a link. */
+  --friend: #6fd39b;
 
   /* Faction, never team: player colours are assigned at game start. */
   --armada: #4f8cff;
@@ -1826,7 +1829,7 @@ input[type='checkbox'].v-edit {
 }
 
 .occupants-names .friend {
-  color: var(--accent);
+  color: var(--friend);
 }
 
 .occupants-names .me {
@@ -1857,4 +1860,64 @@ input[type='checkbox'].v-edit {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ---- channel roster ---- */
+
+.chat-body {
+  display: grid;
+  grid-template-columns: 1fr;
+  min-height: 0;
+  min-width: 0;
+}
+
+.chat-body.roster {
+  grid-template-columns: 1fr 190px;
+}
+
+.chat-roster {
+  position: relative;
+  padding: 8px 10px;
+  min-height: 0;
+  overflow-y: auto;
+  border-left: 1px solid var(--line);
+  background: var(--sunken);
+}
+
+.chat-roster .pname {
+  background: none;
+  border: 0;
+  padding: 1px 2px;
+  text-align: left;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-roster .pname.friend {
+  color: var(--friend);
+}
+
+.chat-roster .pname.me {
+  color: var(--me);
+}
+
+.chat-roster .pname:hover {
+  color: var(--accent);
+}
+
+button.link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: inherit;
+}
+
+button.link:hover {
+  color: var(--accent);
 }
