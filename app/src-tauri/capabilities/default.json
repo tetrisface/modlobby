@@ -1,12 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window: IPC to the lobby runtime, opening local paths, and OS notifications.",
+  "description": "The main window: IPC to the lobby runtime, opening local paths, OS notifications, and flashing the taskbar entry when one is raised.",
   "windows": [
     "main"
   ],
   "permissions": [
     "core:default",
+    "core:window:allow-request-user-attention",
     "opener:default",
     "notification:default"
   ]

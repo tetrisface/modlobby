@@ -120,7 +120,7 @@
           "const": "lobby"
         },
         {
-          "description": "A desktop notification while the window is in the background, and the\nlobby's corner when it is not — a toast for something already on screen\nis noise, which is the line Chobby draws too.",
+          "description": "A desktop notification and a flashing taskbar entry, and only while\nthe window is in the background: a toast for something already on\nscreen is noise, which is the line Chobby draws too. Never the\nlobby's corner — that is what `Lobby` is for, and a choice that did\nboth would not be a choice.",
           "type": "string",
           "const": "desktop"
         }

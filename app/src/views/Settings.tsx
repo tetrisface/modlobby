@@ -172,9 +172,10 @@ export function SettingsView() {
           <legend>Notifications</legend>
           <p class='muted'>
             <b>In lobby</b> puts a line in the corner of this window.{' '}
-            <b>Desktop</b> raises a real notification from your operating
-            system, but only while modlobby is in the background — when you are
-            looking at it you get the line in the corner instead.
+            <b>Desktop</b> raises a notification from your operating system and
+            flashes modlobby in the taskbar, while it is in the background — and
+            nothing at all while you are looking at it, since you are already
+            here. The two never both happen.
           </p>
           <For
             each={

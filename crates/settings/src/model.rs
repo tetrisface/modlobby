@@ -176,9 +176,11 @@ pub enum Alert {
     Off,
     /// A message in the lobby's own corner, which you see when you look.
     Lobby,
-    /// A desktop notification while the window is in the background, and the
-    /// lobby's corner when it is not — a toast for something already on screen
-    /// is noise, which is the line Chobby draws too.
+    /// A desktop notification and a flashing taskbar entry, and only while
+    /// the window is in the background: a toast for something already on
+    /// screen is noise, which is the line Chobby draws too. Never the
+    /// lobby's corner — that is what `Lobby` is for, and a choice that did
+    /// both would not be a choice.
     Desktop,
 }
 
