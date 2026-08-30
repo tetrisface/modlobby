@@ -53,11 +53,28 @@ function Layout(props: ParentProps) {
   const [over, setOver] = createSignal(false)
   // Quitting a game by mis-clicking once would be unforgivable, so the
   // button asks again. The doubt resets whenever the overlay comes or goes.
-  const [confirmQuit, setConfirmQuit] = createSignal(false)
+  const [confirming, setConfirming] = createSignal<'leave' | 'quit' | null>(
+    null,
+  )
   createEffect(() => {
     over()
-    setConfirmQuit(false)
+    setConfirming(null)
   })
+
+  /**
+   * Two clicks for anything that ends a game in progress.
+   *
+   * The first arms it and the second does it, and arming one disarms the
+   * other — so a mis-click never ends a match, and never quits the lobby.
+   */
+  function guarded(which: 'leave' | 'quit', run: () => void) {
+    if (confirming() !== which) {
+      setConfirming(which)
+      return
+    }
+    setConfirming(null)
+    run()
+  }
   onMount(() => {
     void api.overlayActive().then(setOver)
     const pending = listen<boolean>('overlay', (event) =>
@@ -200,19 +217,28 @@ function Layout(props: ParentProps) {
             button), go back, or stop playing. */}
         <div class='overlay-chrome'>
           <button
-            onClick={() => {
-              if (!confirmQuit()) {
-                setConfirmQuit(true)
-                return
-              }
-              void api
-                .stopGame()
-                .catch((error) => pushNotice('warning', describeError(error)))
-            }}
             class='quit'
-            title='Ends the game and comes back here'
+            title='Ends the game and leaves you here in the lobby'
+            onClick={() =>
+              guarded(
+                'leave',
+                () =>
+                  void api
+                    .stopGame()
+                    .catch((error) =>
+                      pushNotice('warning', describeError(error)),
+                    ),
+              )
+            }
           >
-            {confirmQuit() ? 'Really quit?' : 'Quit game'}
+            {confirming() === 'leave' ? 'End the game?' : 'Leave game'}
+          </button>
+          <button
+            class='quit'
+            title='Ends the game and closes modlobby'
+            onClick={() => guarded('quit', () => void api.quitAll())}
+          >
+            {confirming() === 'quit' ? 'Quit everything?' : 'Quit'}
           </button>
           <button
             class='primary'

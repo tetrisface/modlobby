@@ -214,6 +214,7 @@ pub fn run() {
             commands::overlay_active,
             commands::overlay_toggle,
             commands::stop_game,
+            commands::quit_all,
             boxes::start_boxes,
             boxes::decode_boxes,
             engine::download_engine,

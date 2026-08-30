@@ -487,6 +487,18 @@ pub async fn stop_game(app: State<'_, App>) -> Result<bool> {
     Ok(app.client.stop_engine().await?)
 }
 
+/// Ends the game and closes modlobby, which is what a game's own Quit does.
+///
+/// The engine is stopped first and its exit is not waited for: the process is
+/// already going away, and waiting would only risk hanging on a game that is
+/// slow to die.
+#[tauri::command]
+pub async fn quit_all(app: State<'_, App>, handle: tauri::AppHandle) -> Result<()> {
+    let _ = app.client.stop_engine().await;
+    handle.exit(0);
+    Ok(())
+}
+
 /// The same thing the hotkey does, for people who would rather click.
 #[tauri::command]
 pub fn overlay_toggle(overlay: State<'_, std::sync::Arc<crate::overlay::Controller>>) {
