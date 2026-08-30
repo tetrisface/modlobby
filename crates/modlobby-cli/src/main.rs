@@ -162,7 +162,15 @@ impl UiTransport for Print {
                 }
                 Delta::MyBattle(Some(my)) => println!("joined battle {} as a spectator", my.id),
                 Delta::MyBattle(None) => println!("left the battle"),
-                Delta::Engine(EngineStatus::Running) => println!("engine launched"),
+                Delta::Engine(EngineStatus::Running { pid }) => {
+                    println!(
+                        "engine launched{}",
+                        match pid {
+                            Some(pid) => format!(" (pid {pid})"),
+                            None => String::new(),
+                        }
+                    )
+                }
                 Delta::Engine(EngineStatus::Exited { code }) => println!("engine exited: {code:?}"),
                 _ => {}
             }
@@ -260,7 +268,7 @@ async fn spectate(
                 if snapshot.phase.is_none() {
                     bail!("disconnected");
                 }
-                let engine_running = snapshot.engine == EngineStatus::Running;
+                let engine_running = matches!(snapshot.engine, EngineStatus::Running { .. });
                 if !engine_running && deadline.is_some_and(|d| Instant::now() >= d) {
                     return Ok(());
                 }

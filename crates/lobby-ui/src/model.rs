@@ -385,8 +385,18 @@ pub struct GameRunningView {
 #[ts(export)]
 pub enum EngineStatus {
     Idle,
-    Running,
-    Exited { code: Option<i32> },
+    Running {
+        /// The engine's process id, when it still has one.
+        ///
+        /// `Option` because a reaped child has none, and because it is only
+        /// ever a hint: what it is for is finding the game's window, which may
+        /// not exist yet while the engine is loading.
+        #[ts(type = "number | null")]
+        pid: Option<u32>,
+    },
+    Exited {
+        code: Option<i32>,
+    },
 }
 
 /// Why an alert was raised, so the front end can honour the setting for it.

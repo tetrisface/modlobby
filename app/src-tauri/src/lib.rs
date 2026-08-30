@@ -5,6 +5,7 @@
 mod commands;
 mod flash;
 mod logging;
+mod overlay;
 mod presets;
 mod state;
 mod transport;

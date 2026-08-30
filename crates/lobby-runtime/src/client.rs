@@ -569,8 +569,9 @@ impl Runtime {
             path.to_string_lossy().into_owned(),
         )
         .map_err(ClientError::Engine)?;
+        let pid = child.id();
         self.engine = Some(child);
-        self.set_engine(EngineStatus::Running);
+        self.set_engine(EngineStatus::Running { pid });
         Ok(())
     }
 
@@ -590,8 +591,9 @@ impl Runtime {
             .unwrap_or_default();
 
         let child = launch::spawn(&data_dir, &version, path).map_err(ClientError::Engine)?;
+        let pid = child.id();
         self.engine = Some(child);
-        self.set_engine(EngineStatus::Running);
+        self.set_engine(EngineStatus::Running { pid });
         Ok(())
     }
 
@@ -1465,8 +1467,9 @@ impl Runtime {
             }
         }
         let child = launch::spawn(&data_dir, &engine_version, url).map_err(ClientError::Engine)?;
+        let pid = child.id();
         self.engine = Some(child);
-        self.set_engine(EngineStatus::Running);
+        self.set_engine(EngineStatus::Running { pid });
         Ok(())
     }
 
