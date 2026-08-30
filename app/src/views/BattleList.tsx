@@ -105,6 +105,7 @@ export function BattleList() {
    * nothing to go back to.
    */
   const [remembered, setRemembered] = createSignal<number | null>(null)
+  const [peek, setPeek] = createSignal<{ id: number; top: number } | null>(null)
   onMount(async () => {
     try {
       setRemembered(await api.rememberedBattle())
@@ -253,6 +254,7 @@ export function BattleList() {
               height: `${virtualizer.getTotalSize()}px`,
               position: 'relative',
             }}
+            onMouseLeave={() => setPeek(null)}
           >
             <For each={virtualizer.getVirtualItems()}>
               {(item) => {
@@ -273,6 +275,13 @@ export function BattleList() {
                           width: '100%',
                         }}
                         onDblClick={() => join(r().battle)}
+                        onMouseEnter={(event) =>
+                          setPeek({
+                            id: r().battle.id,
+                            top: event.currentTarget.getBoundingClientRect()
+                              .top,
+                          })
+                        }
                       >
                         <MapThumb
                           src={previews()?.[r().battle.mapName]}
@@ -307,8 +316,74 @@ export function BattleList() {
             </For>
           </div>
         </Show>
+
+        <Occupants peek={peek()} />
       </div>
     </section>
+  )
+}
+
+/**
+ * Who is already in a room, shown while the pointer rests on it.
+ *
+ * The counts answer "is there room"; this answers "is it worth joining" —
+ * which is the question you actually have, and the one that otherwise costs a
+ * join and a leave to answer. Only names are knowable from outside a room:
+ * the server sends battle status for the room you are in and no other, so
+ * there is no way to say who here is playing and who is watching.
+ */
+function Occupants(props: { peek: { id: number; top: number } | null }) {
+  const battle = () =>
+    props.peek === null ? undefined : lobby.battles[props.peek.id]
+
+  /** Friends first, then everyone else; the host bot is not a person. */
+  const people = createMemo(() => {
+    const room = battle()
+    if (!room) return []
+    const friends = new Set(lobby.friends.friends)
+    return room.members
+      .filter((name) => name !== room.founder)
+      .sort((a, b) => {
+        const known = Number(friends.has(b)) - Number(friends.has(a))
+        return known || a.localeCompare(b)
+      })
+  })
+
+  return (
+    <Show when={props.peek && people().length > 0}>
+      <aside
+        class='occupants'
+        style={{
+          // Kept clear of the bottom edge; the pointer is on the row, so the
+          // card can sit anywhere that does not cover it.
+          top: `${Math.min(props.peek!.top, window.innerHeight - 320)}px`,
+        }}
+      >
+        <div class='occupants-head'>
+          {people().length} here
+          <Show when={battle()?.founder}>
+            {(host) => <span class='muted'> · hosted by {host()}</span>}
+          </Show>
+        </div>
+        <div class='occupants-names'>
+          <For each={people().slice(0, 28)}>
+            {(name) => (
+              <span
+                classList={{
+                  friend: lobby.friends.friends.includes(name),
+                  me: name === lobby.me,
+                }}
+              >
+                {name}
+              </span>
+            )}
+          </For>
+        </div>
+        <Show when={people().length > 28}>
+          <div class='muted'>and {people().length - 28} more</div>
+        </Show>
+      </aside>
+    </Show>
   )
 }
 

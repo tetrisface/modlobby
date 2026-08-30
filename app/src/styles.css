@@ -1783,3 +1783,52 @@ input[type='checkbox'].v-edit {
   margin: 0 10px 6px;
   width: calc(100% - 20px);
 }
+
+/* ---- who is in a room, on hover ---- */
+
+.occupants {
+  position: fixed;
+  right: 22px;
+  width: 300px;
+  max-height: 300px;
+  overflow: hidden;
+  padding: 9px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: 0 12px 28px rgb(0 0 0 / 45%);
+  pointer-events: none;
+  z-index: 40;
+}
+
+.occupants-head {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+}
+
+.occupants-names {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px 10px;
+  overflow: hidden;
+  font-size: 12px;
+}
+
+.occupants-names span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.occupants-names .friend {
+  color: var(--accent);
+}
+
+.occupants-names .me {
+  font-weight: 600;
+}
