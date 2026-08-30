@@ -26,6 +26,15 @@ use ts_rs::TS;
 /// The service the in-game widget talks to (`include/remote.lua:16-18`).
 pub const ENDPOINT: &str = "http://d29i3oohxql6zz.cloudfront.net/api/v1/stats";
 
+/// The request body limit the widget documents for this service.
+///
+/// Worth knowing because a heavily modded room gets close to it: the biggest
+/// room in a real presets file on this machine serialises to 237 KiB, of which
+/// 233 KiB is base64 tweak Lua. The settings are what the service matches on,
+/// so they cannot simply be dropped — but a room that would not fit is worth
+/// saying so about rather than sending and reading back a bare 413.
+pub const BODY_LIMIT: usize = 256 * 1024;
+
 /// Which PvE opponent a room is set up against.
 ///
 /// The widget reads this from the LuaAI on each team; a lobby reads it from
@@ -111,6 +120,8 @@ pub struct Score {
 pub enum Error {
     #[error("this room is not a PvE setup")]
     NotPve,
+    #[error("this room's settings are {size} KiB, past the {limit} KiB the service takes")]
+    TooBig { size: usize, limit: usize },
     #[error("pve stats: {0}")]
     Request(String),
     #[error("pve stats answered with something unexpected: {0}")]
@@ -146,9 +157,18 @@ pub async fn fetch(ask: &Ask) -> Result<Score, Error> {
         .build()
         .map_err(|err| Error::Request(err.to_string()))?;
 
+    let body = serde_json::to_vec(ask).map_err(|err| Error::Request(err.to_string()))?;
+    if body.len() > BODY_LIMIT {
+        return Err(Error::TooBig {
+            size: body.len() / 1024,
+            limit: BODY_LIMIT / 1024,
+        });
+    }
+
     let response = client
         .post(ENDPOINT)
-        .json(ask)
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .body(body)
         .send()
         .await
         .map_err(|err| Error::Request(err.to_string()))?;
@@ -222,6 +242,26 @@ mod tests {
         // Anything else it might say is not that.
         let other = serde_json::json!({"degradation": {"reason": "something else"}});
         assert!(!read(&other).best_effort);
+    }
+
+    #[test]
+    fn a_room_too_big_for_the_service_is_named_as_such() {
+        // Twenty filled tweak slots is what gets a room near the limit, and
+        // 233 KiB of the 237 in the largest real one is exactly that.
+        let mut settings = BTreeMap::new();
+        for slot in 0..20 {
+            settings.insert(format!("tweakdefs{slot}"), "A".repeat(16_000));
+        }
+        let ask = Ask {
+            ai_type: AiType::Raptors.as_str(),
+            map: "Full Metal Plate 1.7".into(),
+            game_settings: settings,
+            encounter_context: Encounter {
+                human_team_size: 8,
+                enemy_ai_count: None,
+            },
+        };
+        assert!(serde_json::to_vec(&ask).unwrap().len() > BODY_LIMIT);
     }
 
     #[test]
