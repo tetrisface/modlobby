@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { elapsed, track, type Running } from './running'
+import { elapsed, told, track, type Running } from './running'
 
 const at = (minute: number) => minute * 60_000
 
@@ -38,6 +38,38 @@ describe('timing a game nobody told us the start of', () => {
     expect(track(first, new Set([2]), true, at(3))).toEqual({
       2: { since: at(0), exact: true },
     })
+  })
+})
+
+describe('a start we were told', () => {
+  test('replaces a floor with the real thing', () => {
+    const guessed = track({}, new Set([7]), false, at(30))
+    expect(guessed[7]).toEqual({ since: at(30), exact: false })
+    const known = told(guessed, 7, 28 * 60 + 4, at(30))
+    expect(known[7]).toEqual({
+      since: at(30) - (28 * 60 + 4) * 1000,
+      exact: true,
+    })
+  })
+
+  test('replaces an exact we only thought we had', () => {
+    // A room can appear with its game already going, and then the moment we
+    // first looked is not the start at all.
+    const assumed = track({}, new Set([7]), true, at(30))
+    expect(assumed[7]?.exact).toBe(true)
+    expect(told(assumed, 7, 600, at(30))[7]?.since).toBe(at(20))
+  })
+
+  test('a later tick keeps what we were told', () => {
+    const known = told({}, 7, 600, at(30))
+    const ticked = track(known, new Set([7]), true, at(31))
+    expect(ticked[7]).toEqual(known[7])
+  })
+
+  test('it says nothing about anyone else', () => {
+    const both = track({}, new Set([7, 8]), true, at(30))
+    const known = told(both, 7, 600, at(30))
+    expect(known[8]).toEqual(both[8])
   })
 })
 

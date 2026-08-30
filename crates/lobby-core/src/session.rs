@@ -122,6 +122,12 @@ pub enum Effect {
     },
     /// Our room's host came back out of its game.
     GameStopped,
+    /// How long our room's game had been going when we walked in, from SPADS's
+    /// welcome message — the only place this protocol states it.
+    GameInProgress {
+        id: u32,
+        elapsed_secs: u64,
+    },
 }
 
 /// One logical connection: credentials, machine identity and the state they produce.
@@ -984,6 +990,14 @@ impl Session {
             Announcement::VoteEnded { .. } | Announcement::VoteCancelled => {
                 my.vote = None;
                 vec![Effect::VoteChanged]
+            }
+            // The one statement of a game's age this protocol carries, and it
+            // is addressed to us alone as we walk in.
+            Announcement::GameInProgress { elapsed_secs } => {
+                vec![Effect::GameInProgress {
+                    id: my.id,
+                    elapsed_secs,
+                }]
             }
             Announcement::SettingChanged { by, key, value } => {
                 if my.setting_changed(key.clone(), value, by) {

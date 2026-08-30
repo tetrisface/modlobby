@@ -22,6 +22,27 @@ export type Running = {
 }
 
 /**
+ * A start we were told rather than guessed.
+ *
+ * SPADS states a game's age in its welcome message, to you alone, as you walk
+ * into a room whose game is already going. It is the only place on this
+ * protocol that says it, and it beats anything we observed — including an
+ * `exact` we thought we had, since a room can appear with its game already
+ * running and we would have started counting from zero.
+ */
+export function told(
+  previous: Readonly<Record<number, Running>>,
+  id: number,
+  secondsAgo: number,
+  now: number,
+): Record<number, Running> {
+  return {
+    ...previous,
+    [id]: { since: now - secondsAgo * 1000, exact: true },
+  }
+}
+
+/**
  * The new record of what is running, given what was running before.
  *
  * Pure, so the awkward cases can be tested: a game seen for the first time at

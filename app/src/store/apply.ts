@@ -3,6 +3,7 @@ import type { BattleView } from '../ipc/bindings/BattleView'
 import type { Delta } from '../ipc/bindings/Delta'
 import type { Snapshot } from '../ipc/bindings/Snapshot'
 import type { UiMessage } from '../ipc/bindings/UiMessage'
+import { noteToldStart } from './running'
 import {
   applyChannel,
   applyDirectory,
@@ -205,6 +206,9 @@ export function applyDelta(delta: Delta): void {
       return
     case 'gameRunning':
       setLobby('gameRunning', delta.data)
+      return
+    case 'gameStartedAgo':
+      noteToldStart(delta.data.id, delta.data.seconds)
       return
     case 'engine':
       setLobby('engine', delta.data)

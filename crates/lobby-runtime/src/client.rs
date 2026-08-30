@@ -1243,6 +1243,7 @@ impl Runtime {
                 // Projected into deltas; the runtime itself has nothing to do.
                 // Everything the projector turns into a delta on its own.
                 Effect::LoggedIn { .. }
+                | Effect::GameInProgress { .. }
                 | Effect::Notice(_)
                 | Effect::BattleChat { .. }
                 | Effect::PrivateChat { .. }

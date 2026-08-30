@@ -672,6 +672,13 @@ pub enum Delta {
     },
     MyBattle(Option<MyBattleView>),
     GameRunning(Option<GameRunningView>),
+    /// How long a room's game had already been going when we walked into it.
+    /// The only statement of a game's age this protocol carries.
+    GameStartedAgo {
+        id: u32,
+        #[ts(type = "number")]
+        seconds: u64,
+    },
     Engine(EngineStatus),
     Chat(ChatLine),
     /// A channel we are in was added, changed, or removed (`None`).

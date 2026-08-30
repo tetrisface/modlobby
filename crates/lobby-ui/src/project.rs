@@ -186,6 +186,10 @@ impl Projector {
                 out.push(Delta::GameRunning(None));
             }
             Effect::GameStopped => out.push(Delta::GameRunning(None)),
+            Effect::GameInProgress { id, elapsed_secs } => out.push(Delta::GameStartedAgo {
+                id: *id,
+                seconds: *elapsed_secs,
+            }),
             Effect::GameRunning { id, ip, port, .. } => {
                 out.push(Delta::GameRunning(Some(GameRunningView {
                     id: *id,

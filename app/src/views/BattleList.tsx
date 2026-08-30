@@ -16,7 +16,8 @@ import type { BattleView } from '../ipc/bindings/BattleView'
 import type { ModeFilter } from '../ipc/bindings/ModeFilter'
 import { RankIcon } from '../components/icons'
 import { api, describeError } from '../ipc/client'
-import { elapsed, track, type Running } from '../lib/running'
+import { elapsed } from '../lib/running'
+import { noteRunning, running } from '../store/running'
 import { MODES, SORTS, arrange, type Row } from '../lib/battles'
 import { mapImages } from '../lib/maps'
 import { pushNotice } from '../store/chat'
@@ -74,13 +75,8 @@ export function BattleList() {
   })
   const rows = createMemo(() => arrange(all(), filters(), search()))
 
-  /**
-   * How long each running game has been going.
-   *
-   * Kept here rather than in the store because it is an observation this
-   * window made, not something the server said — see `lib/running`.
-   */
-  const [times, setTimes] = createSignal<Record<number, Running>>({})
+  // How long each running game has been going. The store holds it, because a
+  // host can also tell us outright — see `store/running`.
   const [now, setNow] = createSignal(Date.now())
   let looked = false
 
@@ -90,7 +86,7 @@ export function BattleList() {
         .filter((row) => row.running)
         .map((row) => row.battle.id),
     )
-    setTimes((held) => track(held, going, looked, Date.now()))
+    noteRunning(going, looked)
     // Anything running at the first look was already running before it.
     if (lobby.phase === 'ready') looked = true
   })
@@ -363,7 +359,7 @@ export function BattleList() {
                         </span>
                         <span class='col-map'>{r().battle.mapName}</span>
                         <span class='col-flags'>
-                          <Show when={r().running && times()[r().battle.id]}>
+                          <Show when={r().running && running()[r().battle.id]}>
                             {(going) => (
                               <span
                                 class='running-for'

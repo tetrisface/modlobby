@@ -35,6 +35,48 @@ pub enum Announcement {
     },
     /// `* BarManager|{…}`: the structured side-channel the BAR plugin adds.
     BarManager { json: String },
+    /// `* A game is in progress since 28 minutes and 4 seconds.`
+    ///
+    /// Part of SPADS's welcome message, sent to you alone as you walk into a
+    /// room whose game is already going (`welcomeMsg`, whose default is
+    /// `Hi %u (%d), welcome to %n …|!A game is in progress since %t.|!…`).
+    /// It is the only place on this protocol that a game's age is stated: the
+    /// battle list carries no start time, and Chobby's own `runningSince` is
+    /// dead code on this server — every assignment to it in liblobby is
+    /// commented out (`lobby.lua:1208,1383`), left over from Zero-K, whose
+    /// server does send it.
+    GameInProgress { elapsed_secs: u64 },
+}
+
+/// Seconds from the way SPADS writes a duration out in words.
+///
+/// Written leniently on purpose. The exact phrasing is assembled by SPADS from
+/// however many units are non-zero — "45 seconds", "28 minutes and 4 seconds",
+/// "1 hour, 5 minutes and 3 seconds" — so rather than trying to match the
+/// shape, this picks out every `<number> <unit>` pair and adds them up. An
+/// unknown unit contributes nothing instead of poisoning the whole line.
+fn spoken_duration(text: &str) -> Option<u64> {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let mut total = 0_u64;
+    let mut found = false;
+
+    for pair in words.windows(2) {
+        let Ok(count) = pair[0].parse::<u64>() else {
+            continue;
+        };
+        let unit = pair[1].trim_end_matches([',', '.']);
+        let seconds = match unit.trim_end_matches('s') {
+            "second" => 1,
+            "minute" => 60,
+            "hour" => 3_600,
+            "day" => 86_400,
+            _ => continue,
+        };
+        total += count * seconds;
+        found = true;
+    }
+
+    found.then_some(total)
 }
 
 /// Who SPADS says is bossing the room, from a `BattleStateChanged` payload.
@@ -67,6 +109,11 @@ pub fn parse(text: &str) -> Option<Announcement> {
 
     if let Some(json) = body.strip_prefix("BarManager|") {
         return Some(Announcement::BarManager { json: json.into() });
+    }
+    if let Some(since) = body.strip_prefix("A game is in progress since ")
+        && let Some(elapsed_secs) = spoken_duration(since)
+    {
+        return Some(Announcement::GameInProgress { elapsed_secs });
     }
     if let Some(rest) = body.strip_prefix("Vote in progress: ") {
         return parse_progress(rest);
@@ -198,6 +245,43 @@ impl VoteState {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn a_game_in_progress_is_read_out_of_the_welcome() {
+        // The line as it arrives, from SPADS's `welcomeMsg` default.
+        assert_eq!(
+            parse("* A game is in progress since 28 minutes and 4 seconds."),
+            Some(Announcement::GameInProgress {
+                elapsed_secs: 28 * 60 + 4
+            })
+        );
+    }
+
+    #[test]
+    fn however_many_units_it_happens_to_use() {
+        // SPADS assembles the phrase from whichever units are non-zero, so the
+        // shape is not fixed and the parse does not depend on it.
+        assert_eq!(spoken_duration("45 seconds"), Some(45));
+        assert_eq!(spoken_duration("1 minute and 1 second"), Some(61));
+        assert_eq!(
+            spoken_duration("1 hour, 5 minutes and 3 seconds"),
+            Some(3_600 + 300 + 3)
+        );
+        assert_eq!(
+            spoken_duration("2 days and 1 hour"),
+            Some(2 * 86_400 + 3_600)
+        );
+    }
+
+    #[test]
+    fn a_line_with_no_duration_in_it_is_not_one() {
+        assert_eq!(spoken_duration("ages"), None);
+        assert_eq!(spoken_duration("7 parsecs"), None);
+        // A sentence that merely resembles it stays chat.
+        assert_eq!(parse("* A game is in progress since ages ago."), None);
+    }
+
     #[test]
     fn the_boss_is_read_off_the_state_payload() {
         use super::boss;
@@ -212,8 +296,6 @@ mod tests {
         assert_eq!(boss(r#"{"onVoteStart": {}}"#), None);
         assert_eq!(boss("not json"), None);
     }
-
-    use super::*;
 
     #[test]
     fn the_vote_lifecycle_spads_actually_prints() {
