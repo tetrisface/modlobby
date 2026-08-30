@@ -22,6 +22,7 @@ import { mapImage } from '../lib/maps'
 import { readSkills, teamSkill, type Skill } from '../lib/skill'
 import { BATTLE_ROOM, chat, pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
+import { HostBar } from './HostBar'
 import { Seat } from './Seat'
 import { Setup } from './Setup'
 import { VoteBar } from './VoteBar'
@@ -149,6 +150,7 @@ export function Room() {
           </header>
 
           <VoteBar />
+          <HostBar />
           <Seat />
 
           <div class='room-body' classList={{ wide: wide() }}>

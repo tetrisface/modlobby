@@ -1745,3 +1745,28 @@ input[type='checkbox'].v-edit {
   object-fit: cover;
   display: block;
 }
+
+.host-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  background: var(--raised);
+  border-bottom: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  font-size: 12.5px;
+}
+
+.host-size {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 6px;
+  color: var(--muted);
+}
+
+.host-size input {
+  width: 56px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
