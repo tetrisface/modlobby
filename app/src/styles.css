@@ -222,7 +222,7 @@ input {
 
 .battle-row {
   display: grid;
-  grid-template-columns: 80px 48px 1fr 220px 64px 90px;
+  grid-template-columns: 56px 80px 48px 1fr 220px 64px 90px;
   align-items: center;
   gap: 12px;
   padding: 0 16px;
@@ -1727,4 +1727,21 @@ input[type='checkbox'].v-edit {
 .line.system .from,
 .line.system .at {
   cursor: default;
+}
+
+.col-thumb {
+  display: block;
+  width: 52px;
+  height: 34px;
+  border: 1px solid var(--line-soft);
+  border-radius: 2px;
+  overflow: hidden;
+  background: #0d1218;
+}
+
+.col-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }

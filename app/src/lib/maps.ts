@@ -84,6 +84,23 @@ async function load(): Promise<Index> {
 }
 
 /**
+ * Every preview URL by spring name, for a list that wants many at once.
+ *
+ * One shared load: asking per row would start a hundred identical fetches on
+ * the first scroll. Returns empty when the index cannot be reached, which the
+ * caller renders as no picture rather than as an error.
+ */
+export async function mapImages(): Promise<Record<string, string>> {
+  try {
+    pending ??= load()
+    return (await pending).images
+  } catch {
+    pending = null
+    return {}
+  }
+}
+
+/**
  * Archive file name (without extension) to the map's spring name.
  *
  * A start script needs the spring name, and nothing on disk records the

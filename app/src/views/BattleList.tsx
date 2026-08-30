@@ -1,12 +1,20 @@
 import { useNavigate } from '@solidjs/router'
 import { createVirtualizer } from '@tanstack/solid-virtual'
-import { For, Show, createMemo, createSignal, onMount } from 'solid-js'
+import {
+  For,
+  Show,
+  createMemo,
+  createResource,
+  createSignal,
+  onMount,
+} from 'solid-js'
 import type { BattleList as Filters } from '../ipc/bindings/BattleList'
 import type { BattleSort } from '../ipc/bindings/BattleSort'
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { ModeFilter } from '../ipc/bindings/ModeFilter'
 import { api, describeError } from '../ipc/client'
 import { MODES, SORTS, arrange, type Row } from '../lib/battles'
+import { mapImages } from '../lib/maps'
 import { pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
 import { applySettings, settings } from '../store/settings'
@@ -46,6 +54,9 @@ export function BattleList() {
       pushNotice('warning', describeError(error))
     }
   }
+
+  // One shared load for the whole list; a row without a picture just shows none.
+  const [previews] = createResource(mapImages)
 
   const friends = createMemo(() => new Set(lobby.friends.friends))
 
@@ -263,6 +274,10 @@ export function BattleList() {
                         }}
                         onDblClick={() => join(r().battle)}
                       >
+                        <MapThumb
+                          src={previews()?.[r().battle.mapName]}
+                          alt={r().battle.mapName}
+                        />
                         <span class='col-players'>
                           {r().battle.playerCount}/{r().battle.maxPlayers}
                           <small> +{r().battle.spectatorCount}</small>
@@ -294,6 +309,20 @@ export function BattleList() {
         </Show>
       </div>
     </section>
+  )
+}
+
+/** A room's map, when the index knows it; an empty frame when it does not. */
+function MapThumb(props: { src: string | undefined; alt: string }) {
+  const [broken, setBroken] = createSignal(false)
+  return (
+    <span class='col-thumb'>
+      <Show when={broken() ? undefined : props.src}>
+        {(src) => (
+          <img src={src()} alt={props.alt} onError={() => setBroken(true)} />
+        )}
+      </Show>
+    </span>
   )
 }
 
