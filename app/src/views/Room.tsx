@@ -9,6 +9,7 @@ import {
   createResource,
   createSignal,
 } from 'solid-js'
+import { Composer } from '../components/Composer'
 import { Linkify } from '../components/Linkify'
 import { showPlayerMenu } from '../components/PlayerMenu'
 import { BotRow, PlayerRow, SpectatorRow } from '../components/PlayerRow'
@@ -32,7 +33,6 @@ type Team = { allyTeam: number; users: UserView[]; bots: BotView[] }
 
 export function Room() {
   const navigate = useNavigate()
-  const [text, setText] = createSignal('')
   // Setup asks for the whole body when you are editing a tweak; the rosters
   // step aside rather than the editor being squeezed into a rail.
   const [wide, setWide] = createSignal(false)
@@ -90,13 +90,9 @@ export function Room() {
     log?.scrollTo({ top: log.scrollHeight })
   })
 
-  async function send(event: Event) {
-    event.preventDefault()
-    const line = text().trim()
-    if (!line) return
+  async function send(line: string) {
     try {
-      await api.sayBattle(line)
-      setText('')
+      await api.sayBattle(line.trim())
     } catch (error) {
       pushNotice('warning', describeError(error))
     }
@@ -216,14 +212,11 @@ export function Room() {
                 <div class='chat-log' ref={log}>
                   <For each={lines()}>{(line) => <Line line={line} />}</For>
                 </div>
-                <form class='chat-input' onSubmit={send}>
-                  <input
-                    value={text()}
-                    onInput={(e) => setText(e.currentTarget.value)}
-                    placeholder='Say something, or a !command'
-                  />
-                  <button type='submit'>Send</button>
-                </form>
+                <Composer
+                  placeholder='Say something, or a !command'
+                  names={() => b().members}
+                  onSend={(line) => void send(line)}
+                />
               </div>
             </div>
 

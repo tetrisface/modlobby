@@ -23,6 +23,7 @@ import {
   openPrivates,
   watchRoom,
 } from '../store/chat'
+import { Composer } from '../components/Composer'
 import { Linkify } from '../components/Linkify'
 import { showPlayerMenu } from '../components/PlayerMenu'
 import { lobby } from '../store/lobby'
@@ -38,7 +39,6 @@ const ROSTER_ROW = 19
 
 export function Chat() {
   const [room, setRoom] = createSignal(BATTLE_ROOM)
-  const [text, setText] = createSignal('')
   const [showDirectory, setShowDirectory] = createSignal(false)
   const [findPerson, setFindPerson] = createSignal('')
   const [showMembers, setShowMembers] = createSignal(false)
@@ -196,13 +196,28 @@ export function Chat() {
     return act('say', () => api.sayChannel(where, body))
   }
 
-  async function submit(event: Event) {
-    event.preventDefault()
-    const input = text().trim()
+  function submit(line: string) {
+    const input = line.trim()
     if (!input) return
-    setText('')
-    if (input.startsWith('/') && !input.startsWith('/me ')) return run(input)
-    return send(input)
+    if (input.startsWith('/') && !input.startsWith('/me ')) {
+      void run(input)
+      return
+    }
+    void send(input)
+  }
+
+  /**
+   * Whose names Tab may finish here: the channel's members, or the people in
+   * the room, or — in a private conversation — the one person in it.
+   */
+  const nameable = () => {
+    const where = room()
+    if (isPrivate(where)) return [partner(where)]
+    if (where === BATTLE_ROOM) {
+      const id = lobby.myBattle?.id
+      return id === undefined ? [] : (lobby.battles[id]?.members ?? [])
+    }
+    return members()
   }
 
   const title = () => {
@@ -459,18 +474,15 @@ export function Chat() {
           </Show>
         </div>
 
-        <form class='chat-input' onSubmit={submit}>
-          <input
-            value={text()}
-            onInput={(e) => setText(e.currentTarget.value)}
-            placeholder={
-              room() === BATTLE_ROOM
-                ? 'Say something, or a !command'
-                : 'Say something, or /join /leave /msg /ignore /channels'
-            }
-          />
-          <button type='submit'>Send</button>
-        </form>
+        <Composer
+          placeholder={
+            room() === BATTLE_ROOM
+              ? 'Say something, or a !command'
+              : 'Say something, or /join /leave /msg /ignore /channels'
+          }
+          names={nameable}
+          onSend={submit}
+        />
       </div>
     </section>
   )
