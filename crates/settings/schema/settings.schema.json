@@ -37,7 +37,7 @@
         "channels": [
           "main"
         ],
-        "maxLines": 500
+        "maxLines": 3000
       }
     },
     "logging": {
@@ -67,7 +67,7 @@
     "play": {
       "$ref": "#/$defs/Play",
       "default": {
-        "inPublicRooms": false
+        "inPublicRooms": true
       }
     },
     "server": {
@@ -203,7 +203,7 @@
           "description": "Lines kept per room before the oldest are dropped.",
           "type": "integer",
           "format": "uint32",
-          "default": 500,
+          "default": 3000,
           "minimum": 0
         }
       }
@@ -298,9 +298,9 @@
       "type": "object",
       "properties": {
         "inPublicRooms": {
-          "description": "Whether a seat may be taken in a public room.\n\nOff by default, and deliberately so: in a public room a slot belongs to\na real player waiting for a game, and a client that takes one to try\nsomething out has spoiled someone's evening. Turn it on when you mean\nto play; a room of your own (`!privatehost`) never needs it.",
+          "description": "Whether a seat may be taken in a public room.\n\nOn: this is a lobby, and sitting down in a room is what it is for. It\nstays a setting because a client driving the protocol without a person\nbehind it should be able to say it is only watching.",
           "type": "boolean",
-          "default": false
+          "default": true
         }
       }
     },

@@ -2063,3 +2063,31 @@ button.link:hover {
   background: var(--accent-deep);
   color: var(--accent);
 }
+
+/* ---- settings tabs ---- */
+
+.tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tab {
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 5px 12px 6px;
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  color: var(--faint);
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tab.on {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}

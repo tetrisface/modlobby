@@ -191,9 +191,9 @@ impl std::str::FromStr for FriendAction {
 pub enum SeatError {
     #[error("not in a battle")]
     NotInARoom,
-    /// In a public room a seat belongs to someone else; modlobby only plays in
-    /// rooms it was given, which is what a `!privatehost` password proves.
-    #[error("this room is public; modlobby only takes a seat in a passworded room")]
+    /// Seats in public rooms were declined for this session. A room that is
+    /// ours — passworded, or one SPADS says we boss — is never refused.
+    #[error("this session is watching only; seats are turned off in settings")]
     PublicRoom,
     /// Ready and faction belong to a player; a spectator has neither.
     #[error("you are spectating")]
@@ -281,9 +281,12 @@ impl Session {
         ))
     }
 
-    /// Takes a player slot, which is refused unless the room is passworded —
-    /// in a public room the slot is someone else's. Pair it with a deliberate
-    /// action from the user; nothing here does it on its own.
+    /// Takes a player slot.
+    ///
+    /// Refused only when seats in public rooms have been turned off, which is
+    /// how a client with nobody at the keyboard says it is watching; a room
+    /// that is ours is always ours to sit in. Nothing here does it on its own —
+    /// it is always a deliberate action from the user.
     pub fn take_seat(&mut self, team: u8, ally_team: u8) -> Result<Vec<Effect>, SeatError> {
         let room = self
             .state

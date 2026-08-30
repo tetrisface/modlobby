@@ -7,9 +7,8 @@ export type Play = {
 /**
  * Whether a seat may be taken in a public room.
  *
- * Off by default, and deliberately so: in a public room a slot belongs to
- * a real player waiting for a game, and a client that takes one to try
- * something out has spoiled someone's evening. Turn it on when you mean
- * to play; a room of your own (`!privatehost`) never needs it.
+ * On: this is a lobby, and sitting down in a room is what it is for. It
+ * stays a setting because a client driving the protocol without a person
+ * behind it should be able to say it is only watching.
  */
 inPublicRooms: boolean, };

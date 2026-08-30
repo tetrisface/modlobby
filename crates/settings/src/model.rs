@@ -147,17 +147,24 @@ pub enum BattleSort {
 }
 
 /// Playing rather than watching.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(default, rename_all = "camelCase")]
 #[ts(export)]
 pub struct Play {
     /// Whether a seat may be taken in a public room.
     ///
-    /// Off by default, and deliberately so: in a public room a slot belongs to
-    /// a real player waiting for a game, and a client that takes one to try
-    /// something out has spoiled someone's evening. Turn it on when you mean
-    /// to play; a room of your own (`!privatehost`) never needs it.
+    /// On: this is a lobby, and sitting down in a room is what it is for. It
+    /// stays a setting because a client driving the protocol without a person
+    /// behind it should be able to say it is only watching.
     pub in_public_rooms: bool,
+}
+
+impl Default for Play {
+    fn default() -> Self {
+        Self {
+            in_public_rooms: true,
+        }
+    }
 }
 
 /// How loudly to say that something happened.
@@ -254,7 +261,7 @@ pub struct Chat {
 impl Default for Chat {
     fn default() -> Self {
         Self {
-            max_lines: 500,
+            max_lines: 3000,
             // Where the server puts everyone, and where the announcements are.
             channels: vec!["main".into()],
         }

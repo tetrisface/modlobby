@@ -45,6 +45,7 @@ export function SettingsView() {
     structuredClone(unwrap(settings())) ?? blank(),
   )
   const [state, setState] = createSignal<'clean' | 'saving' | 'saved'>('clean')
+  const [tab, setTab] = createSignal<'general' | 'advanced'>('general')
 
   /** What is in the file, as far as we know. */
   let saved = fingerprint(unwrap(settings()) ?? blank())
@@ -95,6 +96,28 @@ export function SettingsView() {
           </span>
         </Show>
       </h1>
+
+      <div class='tabs'>
+        <For
+          each={
+            [
+              ['general', 'General'],
+              ['advanced', 'Advanced'],
+            ] as const
+          }
+        >
+          {([key, label]) => (
+            <button
+              type='button'
+              class='tab'
+              classList={{ on: tab() === key }}
+              onClick={() => setTab(key)}
+            >
+              {label}
+            </button>
+          )}
+        </For>
+      </div>
       <p class='muted'>
         Stored as JSONC you can edit by hand; the app reloads it live and keeps
         your comments.{' '}
@@ -103,215 +126,224 @@ export function SettingsView() {
         </button>
       </p>
 
-      <fieldset>
-        <legend>Server</legend>
-        <label>
-          Host
-          <input
-            value={draft.server.host}
-            onInput={(e) => setDraft('server', 'host', e.currentTarget.value)}
-          />
-        </label>
-        <label>
-          Port
-          <input
-            type='number'
-            value={draft.server.port}
-            onInput={(e) => {
-              const port = counted(e.currentTarget.value)
-              if (port !== null) setDraft('server', 'port', port)
-            }}
-          />
-        </label>
-      </fieldset>
+      <Show when={tab() === 'general'}>
+        <fieldset>
+          <legend>Account</legend>
+          <label class='row'>
+            <input
+              type='checkbox'
+              checked={draft.account.rememberPassword}
+              onChange={(e) => {
+                setDraft('account', 'rememberPassword', e.currentTarget.checked)
+                if (!e.currentTarget.checked)
+                  setDraft('account', 'autoLogin', false)
+              }}
+            />
+            Remember the password (OS keyring)
+          </label>
+          <label class='row'>
+            <input
+              type='checkbox'
+              checked={draft.account.autoLogin}
+              disabled={!draft.account.rememberPassword}
+              onChange={(e) =>
+                setDraft('account', 'autoLogin', e.currentTarget.checked)
+              }
+            />
+            Log in automatically on startup
+          </label>
+          <Show when={draft.account.username}>
+            <button
+              type='button'
+              onClick={() =>
+                void api.clearPassword(draft.account.username).then(() => {
+                  setDraft('account', 'rememberPassword', false)
+                  setDraft('account', 'autoLogin', false)
+                  pushNotice('info', 'forgot the stored password')
+                })
+              }
+            >
+              Forget the stored password
+            </button>
+          </Show>
+        </fieldset>
 
-      <fieldset>
-        <legend>Account</legend>
-        <label class='row'>
-          <input
-            type='checkbox'
-            checked={draft.account.rememberPassword}
-            onChange={(e) => {
-              setDraft('account', 'rememberPassword', e.currentTarget.checked)
-              if (!e.currentTarget.checked)
-                setDraft('account', 'autoLogin', false)
-            }}
-          />
-          Remember the password (OS keyring)
-        </label>
-        <label class='row'>
-          <input
-            type='checkbox'
-            checked={draft.account.autoLogin}
-            disabled={!draft.account.rememberPassword}
-            onChange={(e) =>
-              setDraft('account', 'autoLogin', e.currentTarget.checked)
-            }
-          />
-          Log in automatically on startup
-        </label>
-        <Show when={draft.account.username}>
-          <button
-            type='button'
-            onClick={() =>
-              void api.clearPassword(draft.account.username).then(() => {
-                setDraft('account', 'rememberPassword', false)
-                setDraft('account', 'autoLogin', false)
-                pushNotice('info', 'forgot the stored password')
-              })
+        <fieldset>
+          <legend>Notifications</legend>
+          <p class='muted'>
+            <b>In lobby</b> puts a line in the corner of this window.{' '}
+            <b>Desktop</b> raises a real notification from your operating
+            system, but only while modlobby is in the background — when you are
+            looking at it you get the line in the corner instead.
+          </p>
+          <For
+            each={
+              [
+                [
+                  'privateMessage',
+                  'A direct message',
+                  'Someone sends you a private message. Your own messages never count.',
+                ],
+                [
+                  'mention',
+                  'Someone says my name',
+                  'Your name appears in a channel or in your battle room, as a word rather than inside a longer one.',
+                ],
+                [
+                  'ring',
+                  'Someone rings me',
+                  'Someone in your room rings you, which is how a host says the game is waiting on you.',
+                ],
+                [
+                  'friendOnline',
+                  'A friend comes online',
+                  'Someone on your friends list logs in. Never raised for the crowd that arrives when you log in yourself.',
+                ],
+                [
+                  'vote',
+                  'A vote opens in my room',
+                  'A vote is called in the room you are in — a map change, a balance, a start.',
+                ],
+                [
+                  'gameStarting',
+                  "My room's game starts",
+                  'The host of your room goes in-game, which is the moment you can connect to it.',
+                ],
+                [
+                  'gameEnded',
+                  "My room's game finishes",
+                  'The host comes back out of the game, which is when the room starts filling for the next one.',
+                ],
+              ] as const
             }
           >
-            Forget the stored password
-          </button>
-        </Show>
-      </fieldset>
-
-      <fieldset>
-        <legend>Playing</legend>
-        <label class='row'>
-          <input
-            type='checkbox'
-            checked={draft.play.inPublicRooms}
-            onChange={(e) =>
-              setDraft('play', 'inPublicRooms', e.currentTarget.checked)
-            }
-          />
-          Let me take a seat in public rooms
-        </label>
-        <p class='muted'>
-          Off by default. A slot in a public room belongs to someone waiting for
-          a game; a room of your own never needs this.
-        </p>
-      </fieldset>
-
-      <fieldset>
-        <legend>Notifications</legend>
-        <p class='muted'>
-          <b>In lobby</b> puts a line in the corner of this window.{' '}
-          <b>Desktop</b> raises a real notification from your operating system,
-          but only while modlobby is in the background — when you are looking at
-          it you get the line in the corner instead.
-        </p>
-        <For
-          each={
-            [
-              [
-                'privateMessage',
-                'A direct message',
-                'Someone sends you a private message. Your own messages never count.',
-              ],
-              [
-                'mention',
-                'Someone says my name',
-                'Your name appears in a channel or in your battle room, as a word rather than inside a longer one.',
-              ],
-              [
-                'ring',
-                'Someone rings me',
-                'Someone in your room rings you, which is how a host says the game is waiting on you.',
-              ],
-              [
-                'friendOnline',
-                'A friend comes online',
-                'Someone on your friends list logs in. Never raised for the crowd that arrives when you log in yourself.',
-              ],
-              [
-                'vote',
-                'A vote opens in my room',
-                'A vote is called in the room you are in — a map change, a balance, a start.',
-              ],
-              [
-                'gameStarting',
-                "My room's game starts",
-                'The host of your room goes in-game, which is the moment you can connect to it.',
-              ],
-              [
-                'gameEnded',
-                "My room's game finishes",
-                'The host comes back out of the game, which is when the room starts filling for the next one.',
-              ],
-            ] as const
-          }
-        >
-          {([key, label, hint]) => (
-            <div class='alert-row' title={hint}>
-              <span>{label}</span>
-              <div class='alert-choice'>
-                <For
-                  each={
-                    [
-                      ['off', 'Off'],
-                      ['lobby', 'In lobby'],
-                      ['desktop', 'Desktop'],
-                    ] as const
-                  }
-                >
-                  {([where, name]) => (
-                    <button
-                      type='button'
-                      classList={{ on: draft.notifications[key] === where }}
-                      onClick={() => setDraft('notifications', key, where)}
-                    >
-                      {name}
-                    </button>
-                  )}
-                </For>
+            {([key, label, hint]) => (
+              <div class='alert-row' title={hint}>
+                <span>{label}</span>
+                <div class='alert-choice'>
+                  <For
+                    each={
+                      [
+                        ['off', 'Off'],
+                        ['lobby', 'In lobby'],
+                        ['desktop', 'Desktop'],
+                      ] as const
+                    }
+                  >
+                    {([where, name]) => (
+                      <button
+                        type='button'
+                        classList={{ on: draft.notifications[key] === where }}
+                        onClick={() => setDraft('notifications', key, where)}
+                      >
+                        {name}
+                      </button>
+                    )}
+                  </For>
+                </div>
               </div>
-            </div>
-          )}
-        </For>
-      </fieldset>
+            )}
+          </For>
+        </fieldset>
 
-      <fieldset>
-        <legend>Chat</legend>
-        <label>
-          Lines kept
-          <input
-            type='number'
-            value={draft.chat.maxLines}
-            onInput={(e) => {
-              const lines = counted(e.currentTarget.value)
-              if (lines !== null) setDraft('chat', 'maxLines', lines)
-            }}
-          />
-        </label>
-      </fieldset>
+        <fieldset>
+          <legend>Paths</legend>
+          <label>
+            BAR data directory (blank = the launcher's)
+            <input
+              value={draft.paths.dataDir ?? ''}
+              onInput={(e) =>
+                setDraft('paths', 'dataDir', e.currentTarget.value || null)
+              }
+            />
+          </label>
+          <button type='button' onClick={() => api.openDataDir()}>
+            Open data directory
+          </button>
+        </fieldset>
 
-      <fieldset>
-        <legend>Paths</legend>
-        <label>
-          BAR data directory (blank = the launcher's)
-          <input
-            value={draft.paths.dataDir ?? ''}
-            onInput={(e) =>
-              setDraft('paths', 'dataDir', e.currentTarget.value || null)
-            }
-          />
-        </label>
-        <button type='button' onClick={() => api.openDataDir()}>
-          Open data directory
-        </button>
-      </fieldset>
+        <fieldset>
+          <legend>Logging</legend>
+          <label>
+            Filter (a `tracing` filter, e.g. `info,spring::rx=trace`)
+            <input
+              value={draft.logging.filter}
+              onInput={(e) =>
+                setDraft('logging', 'filter', e.currentTarget.value)
+              }
+            />
+          </label>
+          <p class='muted'>
+            Both the Rust side and the webview console write one JSON-per-line
+            file per day, kept across restarts. Applies on the next start.
+          </p>
+          <button type='button' onClick={() => api.openLogDir()}>
+            Open log folder
+          </button>
+        </fieldset>
+      </Show>
 
-      <fieldset>
-        <legend>Logging</legend>
-        <label>
-          Filter (a `tracing` filter, e.g. `info,spring::rx=trace`)
-          <input
-            value={draft.logging.filter}
-            onInput={(e) =>
-              setDraft('logging', 'filter', e.currentTarget.value)
-            }
-          />
-        </label>
+      <Show when={tab() === 'advanced'}>
         <p class='muted'>
-          Both the Rust side and the webview console write one JSON-per-line
-          file per day, kept across restarts. Applies on the next start.
+          Things you should not need. The defaults are what the game's own
+          server expects, and a seat in a public room is a real player's game.
         </p>
-        <button type='button' onClick={() => api.openLogDir()}>
-          Open log folder
-        </button>
-      </fieldset>
+
+        <fieldset>
+          <legend>Server</legend>
+          <label>
+            Host
+            <input
+              value={draft.server.host}
+              onInput={(e) => setDraft('server', 'host', e.currentTarget.value)}
+            />
+          </label>
+          <label>
+            Port
+            <input
+              type='number'
+              value={draft.server.port}
+              onInput={(e) => {
+                const port = counted(e.currentTarget.value)
+                if (port !== null) setDraft('server', 'port', port)
+              }}
+            />
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Chat</legend>
+          <label>
+            Lines kept
+            <input
+              type='number'
+              value={draft.chat.maxLines}
+              onInput={(e) => {
+                const lines = counted(e.currentTarget.value)
+                if (lines !== null) setDraft('chat', 'maxLines', lines)
+              }}
+            />
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Playing</legend>
+          <label class='row'>
+            <input
+              type='checkbox'
+              checked={draft.play.inPublicRooms}
+              onChange={(e) =>
+                setDraft('play', 'inPublicRooms', e.currentTarget.checked)
+              }
+            />
+            Let me take a seat in public rooms
+          </label>
+          <p class='muted'>
+            On, because this is a lobby. Turn it off to watch only — a room of
+            your own is yours to sit in either way.
+          </p>
+        </fieldset>
+      </Show>
     </form>
   )
 }
@@ -322,7 +354,7 @@ function blank(): Settings {
     server: { host: '', port: 8201, tls: true },
     account: { username: '', rememberPassword: false, autoLogin: false },
     paths: { dataDir: null },
-    play: { inPublicRooms: false },
+    play: { inPublicRooms: true },
     notifications: {
       privateMessage: 'desktop',
       mention: 'desktop',
@@ -342,7 +374,7 @@ function blank(): Settings {
       sort: 'relevance',
       sortDescending: false,
     },
-    chat: { maxLines: 500, channels: ['main'] },
+    chat: { maxLines: 3000, channels: ['main'] },
     tweaks: { styluaConfig: null, defaultSlot: 'tweakdefs1' },
     logging: { filter: 'info' },
   }

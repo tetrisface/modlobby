@@ -18,9 +18,10 @@ const SIDES = [
 /**
  * Playing rather than watching.
  *
- * A seat in a public room is refused unless the owner has said otherwise —
- * that slot belongs to a real player waiting for a game. A room a cluster
- * manager made on request is passworded and ours, and needs no such licence.
+ * Sitting down is what a lobby is for, so the seats are simply here. The
+ * setting behind them exists for a client with nobody at the keyboard, and a
+ * room of your own — passworded, or one SPADS says you boss — never consults
+ * it at all.
  */
 export function Seat() {
   const [region, setRegion] = createSignal(REGIONS[0] as string)
@@ -92,10 +93,7 @@ export function Seat() {
       <Show
         when={allowed()}
         fallback={
-          <span class='muted'>
-            Spectating. A seat here would take a real player's slot — host a
-            room to play, or allow public seats in Settings.
-          </span>
+          <span class='muted'>Spectating; seats are off in Settings.</span>
         }
       >
         <Show
