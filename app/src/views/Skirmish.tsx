@@ -1,4 +1,5 @@
 import { For, Show, createMemo, createResource, createSignal } from 'solid-js'
+import { GetEngine } from '../components/GetEngine'
 import { api, describeError } from '../ipc/client'
 import { mapNames } from '../lib/maps'
 import { pushNotice } from '../store/chat'
@@ -11,8 +12,18 @@ import { lobby } from '../store/lobby'
  * this needs nothing from the lobby at all — it works logged out, and it works
  * when the server is down.
  */
+/**
+ * The engine to offer when none is installed.
+ *
+ * A machine with nothing has no way to know what to fetch, and any answer is
+ * better than an empty list nobody can act on. This is the version BAR ships
+ * with (`BYAR-Chobby/dist_cfg/config.json`), and it is only ever a starting
+ * point — a room names its own, and joining one fetches that.
+ */
+const FALLBACK_ENGINE = '2026.07.04'
+
 export function Skirmish() {
-  const [options] = createResource(async () => {
+  const [options, { refetch: refetchOptions }] = createResource(async () => {
     try {
       return await api.skirmishOptions()
     } catch (error) {
@@ -114,17 +125,27 @@ export function Skirmish() {
                 </select>
               </label>
 
-              <label>
-                Engine
-                <select
-                  value={chosenEngine()}
-                  onChange={(e) => setEngine(e.currentTarget.value)}
-                >
-                  <For each={installed().engines}>
-                    {(name) => <option value={name}>{name}</option>}
-                  </For>
-                </select>
-              </label>
+              <Show
+                when={installed().engines.length > 0}
+                fallback={
+                  <GetEngine
+                    version={FALLBACK_ENGINE}
+                    onDone={() => void refetchOptions()}
+                  />
+                }
+              >
+                <label>
+                  Engine
+                  <select
+                    value={chosenEngine()}
+                    onChange={(e) => setEngine(e.currentTarget.value)}
+                  >
+                    <For each={installed().engines}>
+                      {(name) => <option value={name}>{name}</option>}
+                    </For>
+                  </select>
+                </label>
+              </Show>
 
               <label>
                 Opponent

@@ -18,6 +18,8 @@ content = { workspace = true }
 recoil = { workspace = true }
 lobby-runtime = { workspace = true }
 rand = { workspace = true }
+reqwest = { workspace = true }
+sevenz-rust2 = { workspace = true }
 tokio = { workspace = true }
 lobby-ui = { workspace = true }
 serde = { workspace = true }

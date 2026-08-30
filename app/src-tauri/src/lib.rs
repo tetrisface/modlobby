@@ -4,6 +4,7 @@
 
 mod boxes;
 mod commands;
+mod engine;
 mod flash;
 mod ingame;
 mod logging;
@@ -215,6 +216,7 @@ pub fn run() {
             commands::stop_game,
             boxes::start_boxes,
             boxes::decode_boxes,
+            engine::download_engine,
             commands::flash_engine,
             commands::remember_played,
             commands::game_modoptions,

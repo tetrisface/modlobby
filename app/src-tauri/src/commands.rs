@@ -848,6 +848,26 @@ fn draft_path(app: &App, name: &str) -> Result<PathBuf> {
     Ok(drafts_dir(app).join(format!("{safe}.lua")))
 }
 
+/// Where BAR's content should live, whether or not it does yet.
+///
+/// [`data_dir`] refuses when there is no install, which is right for anything
+/// that needs content — but wrong for the one job of putting content there.
+pub(crate) fn data_dir_or_default(app: &App) -> Result<PathBuf> {
+    if let Some(set) = app.settings.get().paths.data_dir {
+        return Ok(set);
+    }
+    if let Some(found) = launch::default_data_dir() {
+        return Ok(found);
+    }
+    // The launcher's own location, which is where BAR would have installed to.
+    let local = std::env::var_os("LOCALAPPDATA")
+        .ok_or_else(|| ApiError::new("input", "no BAR data directory; set paths.dataDir"))?;
+    Ok(PathBuf::from(local)
+        .join("Programs")
+        .join("Beyond-All-Reason")
+        .join("data"))
+}
+
 fn data_dir(app: &App) -> Result<PathBuf> {
     app.settings
         .get()

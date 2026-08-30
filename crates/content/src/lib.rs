@@ -15,6 +15,7 @@
 
 pub mod archive;
 pub mod demo;
+pub mod release;
 pub mod replays;
 
 use std::io::{BufRead, BufReader};
