@@ -231,6 +231,18 @@ pub async fn pve_score(app: State<'_, App>) -> Result<Option<pve::Score>> {
             human_team_size: room.player_count,
             enemy_ai_count: matches!(kind, pve::AiType::Barbarian)
                 .then_some(room.bots.len() as u32),
+            // One per seated human. The service derives its `Player Handicap`
+            // column from the average of these, and a governed column it
+            // cannot derive counts as missing rather than defaulted — which is
+            // what makes it decline to score the room at all.
+            human_player_income_multipliers: room
+                .members
+                .iter()
+                .filter_map(|name| snapshot.users.iter().find(|user| &user.name == name))
+                .filter_map(|user| user.battle_status.as_ref())
+                .filter(|status| status.player)
+                .map(|status| pve::income_multiplier(status.handicap))
+                .collect(),
         },
     };
 

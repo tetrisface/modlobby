@@ -94,6 +94,26 @@ pub struct Encounter {
     /// in as many words.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enemy_ai_count: Option<u32>,
+    /// One income multiplier per seated human, `1.0` being no handicap.
+    ///
+    /// Not optional in practice. The service derives its `Player Handicap`
+    /// column from the average of these, and a governed column it cannot
+    /// derive is a *missing* column rather than a defaulted one — which
+    /// suppresses the difficulty estimate entirely. Sending an empty list is
+    /// how a request comes back with a histogram, a closest match, and no
+    /// score at all.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub human_player_income_multipliers: Vec<f64>,
+}
+
+/// The income multiplier a seated player's handicap amounts to.
+///
+/// `MYBATTLESTATUS` carries handicap as a percentage in bits 11-17; the
+/// service works in multipliers, and derives the column as the average of
+/// `(multiplier - 1) * 100` — so a room where nobody is handicapped is a list
+/// of `1.0`, which is not the same thing as no list at all.
+pub fn income_multiplier(handicap_percent: u8) -> f64 {
+    1.0 + f64::from(handicap_percent) / 100.0
 }
 
 /// What the room scores.
@@ -259,9 +279,36 @@ mod tests {
             encounter_context: Encounter {
                 human_team_size: 8,
                 enemy_ai_count: None,
+                human_player_income_multipliers: vec![1.0; 8],
             },
         };
         assert!(serde_json::to_vec(&ask).unwrap().len() > BODY_LIMIT);
+    }
+
+    #[test]
+    fn a_handicap_becomes_the_multiplier_the_service_averages() {
+        assert_eq!(income_multiplier(0), 1.0);
+        assert_eq!(income_multiplier(50), 1.5);
+        assert_eq!(income_multiplier(100), 2.0);
+    }
+
+    #[test]
+    fn an_unhandicapped_room_still_sends_a_multiplier_for_every_seat() {
+        // The distinction that decides whether a score comes back at all: a
+        // room where nobody is handicapped is a list of 1.0, not an empty list.
+        let ask = Ask {
+            ai_type: AiType::Raptors.as_str(),
+            map: "Comet Catcher Remake 1.8".into(),
+            game_settings: BTreeMap::new(),
+            encounter_context: Encounter {
+                human_team_size: 3,
+                enemy_ai_count: None,
+                human_player_income_multipliers: vec![1.0, 1.0, 1.0],
+            },
+        };
+        let json = serde_json::to_string(&ask).unwrap();
+        assert!(json.contains("human_player_income_multipliers"));
+        assert!(json.contains("[1.0,1.0,1.0]"));
     }
 
     #[test]
@@ -273,11 +320,17 @@ mod tests {
             encounter_context: Encounter {
                 human_team_size: 8,
                 enemy_ai_count: None,
+                human_player_income_multipliers: vec![1.0],
             },
         };
         let json = serde_json::to_string(&ask).unwrap();
-        assert!(!json.contains("player"));
+        // Named for what it guards, not for the word: the encounter context
+        // legitimately talks about players in the aggregate. What must never
+        // appear is anything identifying one.
+        assert!(!json.contains("player_names"));
+        assert!(!json.contains("player_ids"));
         assert!(!json.contains("account"));
+        assert!(!json.contains("game_id"));
         assert!(json.contains("human_team_size"));
     }
 }
