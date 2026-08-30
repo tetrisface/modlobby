@@ -63,7 +63,12 @@ struct Connection {
     /// Plain TCP instead of TLS (what Chobby does on 8200).
     #[arg(long)]
     plain: bool,
-    /// Shown after `LuaLobby Chobby:`; truncated server-side.
+    /// Announced client. teiserver stores the leading `[a-zA-Z ]+` of
+    /// `<name>:<version>` and gives unlisted names the filtered `:full` feed,
+    /// where other rooms' rosters read empty.
+    #[arg(long, default_value = spring_protocol::login::CHOBBY_CLIENT)]
+    client_name: String,
+    /// Shown after `<client>:`; truncated server-side.
     #[arg(long, default_value = concat!("modlobby ", env!("CARGO_PKG_VERSION")))]
     lobby_version: String,
     /// TOML override of the throttle policy (see `ThrottlePolicy`).
@@ -184,7 +189,8 @@ async fn connect(conn: &Connection) -> anyhow::Result<Client> {
         &password,
         &conn.lobby_version,
         hardware.lobby_hash.clone(),
-    );
+    )
+    .client_name(&conn.client_name);
 
     let client = Client::spawn(policy, hardware);
     client.subscribe(Print).await?;

@@ -187,6 +187,9 @@ pub enum SeatError {
     /// Ready and faction belong to a player; a spectator has neither.
     #[error("you are spectating")]
     Spectating,
+    /// The room's game has already started.
+    #[error("this room's game has already started; watch it instead")]
+    GameInProgress,
 }
 
 /// The seat we hold, and what we have said about it.
@@ -265,6 +268,18 @@ impl Session {
             .as_ref()
             .and_then(|my| self.state.battles.get(&my.id))
             .ok_or(SeatError::NotInARoom)?;
+        // A slot in a room whose game has already started is not a slot: the
+        // engine will not admit a latecomer as a player, SPADS has already
+        // built its script, and claiming one disturbs a game in progress.
+        if self
+            .state
+            .users
+            .get(&room.founder)
+            .is_some_and(|host| host.status.in_game)
+        {
+            return Err(SeatError::GameInProgress);
+        }
+
         // Ours if it was given to us (passworded), or if SPADS says we are
         // bossing it — which is what joining an empty autohost makes you.
         let ours = room.passworded
@@ -1450,6 +1465,7 @@ mod tests {
         feed(
             &mut s,
             &[
+                "ADDUSER host EU 0 SPADS",
                 "BATTLEOPENED 3 0 0 host 1.2.3.4 8452 16 0 0 -1 R	v	m	t	g",
                 "JOINBATTLE 3 hash",
             ],
@@ -1478,6 +1494,23 @@ mod tests {
     fn joining_the_room_we_are_already_in_does_nothing() {
         let mut s = in_a_public_room();
         assert!(s.join_battle(3, None, "pw".into()).is_empty());
+    }
+
+    #[test]
+    fn no_seat_is_taken_in_a_game_already_running() {
+        let mut s = in_a_public_room();
+        s.allow_public_seat(true);
+        assert!(s.take_seat(0, 0).is_ok(), "fine before it starts");
+        s.release_seat();
+
+        // The host going in game means the script is built and the engine will
+        // not admit a latecomer as a player. Watching is the only thing left.
+        feed(&mut s, &["CLIENTSTATUS host 1"]);
+        assert!(matches!(s.take_seat(0, 0), Err(SeatError::GameInProgress)));
+
+        // And it is allowed again once the game ends.
+        feed(&mut s, &["CLIENTSTATUS host 0"]);
+        assert!(s.take_seat(0, 0).is_ok());
     }
 
     #[test]
