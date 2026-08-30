@@ -120,6 +120,8 @@ pub enum Effect {
         port: u16,
         script_password: String,
     },
+    /// Our room's host came back out of its game.
+    GameStopped,
 }
 
 /// One logical connection: credentials, machine identity and the state they produce.
@@ -560,10 +562,16 @@ impl Session {
             E::ClientStatus { name, status } => {
                 let was_in_game = state.users.get(&name).is_some_and(|u| u.status.in_game);
                 state.set_status(&name, status);
-                if status.in_game && !was_in_game && self.hosts_my_battle(&name) {
+                if !self.hosts_my_battle(&name) || status.in_game == was_in_game {
+                    return vec![];
+                }
+                if status.in_game {
                     return self.game_running().into_iter().collect();
                 }
-                vec![]
+                // The bit going the other way is the only sign a game ended.
+                // Without this the room goes on offering to connect you to one
+                // that finished, for as long as you stay in it.
+                vec![Effect::GameStopped]
             }
             E::BattleOpened(opened) => {
                 // The private room a cluster manager spun up for us carries our
@@ -1777,6 +1785,22 @@ mod tests {
             Some((5, "4242"))
         );
         assert_eq!(s.state.user_battle["me"], 5);
+    }
+
+    #[test]
+    fn the_host_leaving_its_game_is_what_says_the_game_ended() {
+        let mut s = ready_with_room();
+        s.join_battle(5, None, "4242".into());
+        feed(&mut s, &["JOINBATTLE 5 -1", "CLIENTSTATUS host 65"]);
+
+        // The same bit going back down. Nothing else on the wire says a game
+        // finished, and a room that never hears it goes on offering to connect
+        // you to one that is over.
+        let effects = feed(&mut s, &["CLIENTSTATUS host 64"]);
+        assert!(effects.contains(&Effect::GameStopped));
+
+        // Said once: a status line that changes something else is not news.
+        assert!(!feed(&mut s, &["CLIENTSTATUS host 64"]).contains(&Effect::GameStopped));
     }
 
     #[test]

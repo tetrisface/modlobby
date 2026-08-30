@@ -130,12 +130,20 @@ export function openRooms(): string[] {
   return [BATTLE_ROOM, SERVER_ROOM, ...openChannels(), ...openPrivates()]
 }
 
+/** How long a message sits in the corner before it goes. */
+const NOTICE_LIFE = 9_000
+
 export function pushNotice(level: NoticeLevel, text: string): void {
   noticeSeq += 1
-  setChat('notices', (notices) => [
-    ...notices.slice(-19),
-    { seq: noticeSeq, level, text },
-  ])
+  const seq = noticeSeq
+  setChat('notices', (notices) => [...notices.slice(-19), { seq, level, text }])
+  // They leave on their own: these are alerts as much as errors now, and a
+  // corner that only ever fills up is a log nobody asked for.
+  setTimeout(() => {
+    setChat('notices', (notices) =>
+      notices.filter((notice) => notice.seq !== seq),
+    )
+  }, NOTICE_LIFE)
 }
 
 export function clearChat(): void {

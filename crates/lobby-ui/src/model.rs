@@ -380,6 +380,7 @@ pub enum AlertKind {
     PrivateMessage,
     Mention,
     FriendOnline,
+    GameEnded,
     Vote,
     GameStarting,
     Ring,

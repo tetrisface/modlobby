@@ -185,6 +185,7 @@ impl Projector {
                 out.push(Delta::MyBattle(None));
                 out.push(Delta::GameRunning(None));
             }
+            Effect::GameStopped => out.push(Delta::GameRunning(None)),
             Effect::GameRunning { id, ip, port, .. } => {
                 out.push(Delta::GameRunning(Some(GameRunningView {
                     id: *id,

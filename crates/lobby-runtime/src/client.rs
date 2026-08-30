@@ -1192,6 +1192,14 @@ impl Runtime {
                 Effect::Joined { .. } => self.reply_join(Ok(())),
                 Effect::JoinFailed { reason } => self.reply_join(Err(ClientError::Refused(reason))),
                 Effect::LeftBattle { .. } => self.game = None,
+                Effect::GameStopped => {
+                    if self.game.take().is_some() {
+                        self.batcher.push(Delta::Alert {
+                            kind: lobby_ui::AlertKind::GameEnded,
+                            text: "your room's game has finished".into(),
+                        });
+                    }
+                }
                 Effect::GameRunning {
                     id,
                     ip,

@@ -160,40 +160,81 @@ pub struct Play {
     pub in_public_rooms: bool,
 }
 
-/// What is worth interrupting someone for.
+/// How loudly to say that something happened.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(export)]
+pub enum Alert {
+    /// Say nothing.
+    Off,
+    /// A message in the lobby's own corner, which you see when you look.
+    Lobby,
+    /// A desktop notification while the window is in the background, and the
+    /// lobby's corner when it is not — a toast for something already on screen
+    /// is noise, which is the line Chobby draws too.
+    Desktop,
+}
+
+/// Accepts the `true`/`false` this used to be.
 ///
-/// Only raised while the window is not focused: a toast for something already
-/// on screen is noise. Chobby draws the same line, alerting only when its
-/// window is in the background.
+/// Every setting under `notifications` was a boolean before there was anywhere
+/// but the desktop to put one. A file written then must keep working: an
+/// unreadable value here is not a field that falls back to its default, it is
+/// a settings file that will not parse at all.
+impl<'de> Deserialize<'de> for Alert {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Written {
+            Named(String),
+            Legacy(bool),
+        }
+
+        Ok(match Written::deserialize(deserializer)? {
+            Written::Legacy(true) => Alert::Desktop,
+            Written::Legacy(false) => Alert::Off,
+            Written::Named(name) => match name.to_ascii_lowercase().as_str() {
+                "off" | "none" | "false" => Alert::Off,
+                "lobby" => Alert::Lobby,
+                _ => Alert::Desktop,
+            },
+        })
+    }
+}
+
+/// What is worth saying something about, and where.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(default, rename_all = "camelCase")]
 #[ts(export)]
 pub struct Notifications {
-    pub enabled: bool,
     /// Someone messaged you directly.
-    pub private_message: bool,
+    pub private_message: Alert,
     /// Someone said your name in a channel or in your room.
-    pub mention: bool,
-    /// A friend logged in.
-    pub friend_online: bool,
-    /// A vote opened in your room.
-    pub vote: bool,
-    /// Your room's game started.
-    pub game_starting: bool,
+    pub mention: Alert,
     /// Someone rang you.
-    pub ring: bool,
+    pub ring: Alert,
+    /// A friend logged in.
+    pub friend_online: Alert,
+    /// A vote opened in your room.
+    pub vote: Alert,
+    /// Your room's game started.
+    pub game_starting: Alert,
+    /// Your room's game finished.
+    pub game_ended: Alert,
 }
 
 impl Default for Notifications {
     fn default() -> Self {
         Self {
-            enabled: true,
-            private_message: true,
-            mention: true,
-            friend_online: true,
-            vote: true,
-            game_starting: true,
-            ring: true,
+            // Addressed to you by name: worth pulling you back for.
+            private_message: Alert::Desktop,
+            mention: Alert::Desktop,
+            ring: Alert::Desktop,
+            game_starting: Alert::Desktop,
+            // True, but not worth taking over the screen for.
+            friend_online: Alert::Lobby,
+            vote: Alert::Lobby,
+            game_ended: Alert::Lobby,
         }
     }
 }
@@ -271,6 +312,33 @@ mod tests {
         assert_eq!(s.chat.max_lines, 7);
         assert_eq!(s.server, Server::default());
         assert_eq!(s.tweaks.default_slot, "tweakdefs1");
+    }
+
+    #[test]
+    fn a_file_written_before_alerts_had_places_still_parses() {
+        // What every one of these was until there was somewhere other than the
+        // desktop to put a notification. A file like this must not be the
+        // reason the app refuses to start.
+        let s: Settings = serde_json::from_str(
+            r#"{"notifications":{"enabled":true,"privateMessage":true,"vote":false}}"#,
+        )
+        .unwrap();
+        assert_eq!(s.notifications.private_message, Alert::Desktop);
+        assert_eq!(s.notifications.vote, Alert::Off);
+        // A field that was never written keeps its default rather than the
+        // reading of whatever the file happened to say about its neighbours.
+        assert_eq!(s.notifications.game_ended, Alert::Lobby);
+    }
+
+    #[test]
+    fn a_place_is_read_by_name_however_it_is_written() {
+        let s: Settings = serde_json::from_str(
+            r#"{"notifications":{"mention":"lobby","ring":"OFF","vote":"desktop"}}"#,
+        )
+        .unwrap();
+        assert_eq!(s.notifications.mention, Alert::Lobby);
+        assert_eq!(s.notifications.ring, Alert::Off);
+        assert_eq!(s.notifications.vote, Alert::Desktop);
     }
 
     /// `schema/settings.schema.json` is what editors read; keep it in sync.

@@ -186,41 +186,78 @@ export function SettingsView() {
 
       <fieldset>
         <legend>Notifications</legend>
-        <p class='muted'>Raised only while the window is in the background.</p>
-        <label class='row'>
-          <input
-            type='checkbox'
-            checked={draft.notifications.enabled}
-            onChange={(e) =>
-              setDraft('notifications', 'enabled', e.currentTarget.checked)
-            }
-          />
-          Notify me
-        </label>
+        <p class='muted'>
+          <b>In lobby</b> puts a line in the corner of this window.{' '}
+          <b>Desktop</b> raises a real notification from your operating system,
+          but only while modlobby is in the background — when you are looking at
+          it you get the line in the corner instead.
+        </p>
         <For
           each={
             [
-              ['privateMessage', 'A direct message'],
-              ['mention', 'Someone says my name'],
-              ['friendOnline', 'A friend comes online'],
-              ['ring', 'Someone rings me'],
-              ['vote', 'A vote opens in my room'],
-              ['gameStarting', "My room's game starts"],
+              [
+                'privateMessage',
+                'A direct message',
+                'Someone sends you a private message. Your own messages never count.',
+              ],
+              [
+                'mention',
+                'Someone says my name',
+                'Your name appears in a channel or in your battle room, as a word rather than inside a longer one.',
+              ],
+              [
+                'ring',
+                'Someone rings me',
+                'Someone in your room rings you, which is how a host says the game is waiting on you.',
+              ],
+              [
+                'friendOnline',
+                'A friend comes online',
+                'Someone on your friends list logs in. Never raised for the crowd that arrives when you log in yourself.',
+              ],
+              [
+                'vote',
+                'A vote opens in my room',
+                'A vote is called in the room you are in — a map change, a balance, a start.',
+              ],
+              [
+                'gameStarting',
+                "My room's game starts",
+                'The host of your room goes in-game, which is the moment you can connect to it.',
+              ],
+              [
+                'gameEnded',
+                "My room's game finishes",
+                'The host comes back out of the game, which is when the room starts filling for the next one.',
+              ],
             ] as const
           }
         >
-          {([key, label]) => (
-            <label class='row'>
-              <input
-                type='checkbox'
-                disabled={!draft.notifications.enabled}
-                checked={draft.notifications[key]}
-                onChange={(e) =>
-                  setDraft('notifications', key, e.currentTarget.checked)
-                }
-              />
-              {label}
-            </label>
+          {([key, label, hint]) => (
+            <div class='alert-row' title={hint}>
+              <span>{label}</span>
+              <div class='alert-choice'>
+                <For
+                  each={
+                    [
+                      ['off', 'Off'],
+                      ['lobby', 'In lobby'],
+                      ['desktop', 'Desktop'],
+                    ] as const
+                  }
+                >
+                  {([where, name]) => (
+                    <button
+                      type='button'
+                      classList={{ on: draft.notifications[key] === where }}
+                      onClick={() => setDraft('notifications', key, where)}
+                    >
+                      {name}
+                    </button>
+                  )}
+                </For>
+              </div>
+            </div>
           )}
         </For>
       </fieldset>
@@ -287,13 +324,13 @@ function blank(): Settings {
     paths: { dataDir: null },
     play: { inPublicRooms: false },
     notifications: {
-      enabled: true,
-      privateMessage: true,
-      mention: true,
-      friendOnline: true,
-      vote: true,
-      gameStarting: true,
-      ring: true,
+      privateMessage: 'desktop',
+      mention: 'desktop',
+      ring: 'desktop',
+      friendOnline: 'lobby',
+      vote: 'lobby',
+      gameStarting: 'desktop',
+      gameEnded: 'lobby',
     },
     battleList: {
       showPassworded: true,

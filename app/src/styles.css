@@ -2023,3 +2023,43 @@ button.link:hover {
   font-weight: 400;
   color: var(--faint);
 }
+
+/* ---- where each kind of alert goes ---- */
+
+.alert-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+  cursor: help;
+}
+
+.alert-choice {
+  display: flex;
+  flex-shrink: 0;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.alert-choice button {
+  border: 0;
+  border-radius: 0;
+  padding: 3px 9px;
+  font-size: 11px;
+  background: var(--sunken);
+  color: var(--muted);
+}
+
+.alert-choice button + button {
+  border-left: 1px solid var(--line);
+}
+
+.alert-choice button:hover {
+  color: var(--text);
+}
+
+.alert-choice button.on {
+  background: var(--accent-deep);
+  color: var(--accent);
+}

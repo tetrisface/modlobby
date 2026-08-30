@@ -3,16 +3,23 @@ import {
   requestPermission,
   sendNotification,
 } from '@tauri-apps/plugin-notification'
+import type { Alert } from './bindings/Alert'
 import type { AlertKind } from './bindings/AlertKind'
+import { pushNotice } from '../store/chat'
 import { settings } from '../store/settings'
 
 /**
- * Raising an OS notification for something worth interrupting for.
+ * Saying that something happened, as loudly as the settings ask for.
  *
- * Only while the window is in the background: a toast for something already on
- * screen is noise, which is the same line Chobby draws
- * (`api_notification_handler.lua`). Permission is asked for once, lazily, so a
- * user who never enables notifications is never prompted.
+ * Each kind of event is set to one of three things. `off` says nothing.
+ * `lobby` puts a line in the lobby's own corner. `desktop` raises a real
+ * notification — but only while the window is in the background, falling back
+ * to the corner when it is not, because a desktop toast for something already
+ * on screen is noise. Chobby draws the same line
+ * (`api_notification_handler.lua`).
+ *
+ * Permission is asked for once, lazily, so someone who sets everything to
+ * `lobby` or `off` is never prompted for it.
  */
 
 let permission: Promise<boolean> | null = null
@@ -29,10 +36,10 @@ function allowed(): Promise<boolean> {
   return permission
 }
 
-/** Which setting governs each kind. */
-function wanted(kind: AlertKind): boolean {
+/** Where this kind of event is meant to be said, if anywhere. */
+function wanted(kind: AlertKind): Alert {
   const notifications = settings()?.notifications
-  if (!notifications?.enabled) return false
+  if (!notifications) return 'off'
   switch (kind) {
     case 'privateMessage':
       return notifications.privateMessage
@@ -44,6 +51,8 @@ function wanted(kind: AlertKind): boolean {
       return notifications.vote
     case 'gameStarting':
       return notifications.gameStarting
+    case 'gameEnded':
+      return notifications.gameEnded
     case 'ring':
       return notifications.ring
   }
@@ -55,17 +64,20 @@ const TITLES: Record<AlertKind, string> = {
   friendOnline: 'modlobby — a friend is online',
   vote: 'modlobby — vote',
   gameStarting: 'modlobby — game starting',
+  gameEnded: 'modlobby — game finished',
   ring: 'modlobby — someone wants you',
 }
 
 export async function raise(kind: AlertKind, body: string): Promise<void> {
-  if (document.hasFocus()) return
-  if (!wanted(kind)) return
-  if (!(await allowed())) return
+  const where = wanted(kind)
+  if (where === 'off') return
+  if (where === 'lobby' || document.hasFocus()) return pushNotice('info', body)
+
+  if (!(await allowed())) return pushNotice('info', body)
   try {
     sendNotification({ title: TITLES[kind], body })
   } catch {
-    // A desktop that refuses notifications is not an error worth reporting;
-    // the line is in the app either way.
+    // A desktop that refuses notifications is not a reason to lose the event.
+    pushNotice('info', body)
   }
 }
