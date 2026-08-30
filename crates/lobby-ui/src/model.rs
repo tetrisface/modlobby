@@ -518,10 +518,20 @@ pub struct ChatLine {
     pub from: String,
     pub text: String,
     pub kind: ChatKind,
+    /// Unix seconds when this reached us. The protocol carries no time of its
+    /// own, so it is stamped on arrival — near enough for reading a backlog,
+    /// and honest about being our clock rather than the sender's.
+    #[ts(type = "number")]
+    pub at: u64,
 }
 
 /// The room key for the battle we are in.
 pub const BATTLE_ROOM: &str = "#battle";
+
+/// Where the server's own words go: the message of the day, and anything it
+/// broadcasts. They belong in a room you can scroll back through rather than
+/// in a toast that disappears.
+pub const SERVER_ROOM: &str = "#server";
 
 /// The room key for a private conversation with someone.
 pub fn private_room(user: &str) -> String {

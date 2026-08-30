@@ -9,6 +9,7 @@ import {
   type ParentProps,
 } from 'solid-js'
 import { IconSprite } from './components/icons'
+import { PlayerMenu } from './components/PlayerMenu'
 import { connectChannel } from './ipc/channel'
 import { api, describeError } from './ipc/client'
 import type { Settings } from './ipc/bindings/Settings'
@@ -80,6 +81,7 @@ function Layout(props: ParentProps) {
       </nav>
       <main class='main'>{props.children}</main>
       <Notices />
+      <PlayerMenu />
     </div>
   )
 }

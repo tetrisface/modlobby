@@ -9,7 +9,7 @@ use spring_protocol::ServerEvent;
 use crate::model::{
     AlertKind, BATTLE_ROOM, BotView, ChannelSummaryView, ChannelView, ChatKind, ChatLine, Delta,
     FriendsView, GameRunningView, LayoutView, MyBattleView, NoticeLevel, OptionChangeView, Phase,
-    StartRectView, UserView, VoteView, private_room,
+    SERVER_ROOM, StartRectView, UserView, VoteView, private_room,
 };
 
 #[derive(Debug, Default)]
@@ -239,6 +239,12 @@ impl Projector {
                     state.my_battle.as_ref().map(MyBattleView::from),
                 ));
             }
+            Effect::ServerSaid { text } => out.push(Delta::Chat(self.line(
+                SERVER_ROOM,
+                "server",
+                text,
+                ChatKind::System,
+            ))),
             Effect::Rung { by } => out.push(Delta::Alert {
                 kind: AlertKind::Ring,
                 text: format!("{by} is asking for you"),
@@ -324,6 +330,10 @@ impl Projector {
             from: from.to_owned(),
             text: text.to_owned(),
             kind,
+            at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|since| since.as_secs())
+                .unwrap_or_default(),
         }
     }
 }

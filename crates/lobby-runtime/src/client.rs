@@ -1136,6 +1136,7 @@ impl Runtime {
                 | Effect::ChannelsListed
                 | Effect::FriendsChanged
                 | Effect::BossChanged
+                | Effect::ServerSaid { .. }
                 | Effect::Rung { .. }
                 | Effect::ModOptionsChanged { .. }
                 | Effect::VoteChanged => {}

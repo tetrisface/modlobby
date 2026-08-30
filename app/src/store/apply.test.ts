@@ -91,6 +91,7 @@ describe('apply', () => {
           from: 'host',
           text: 'hi',
           kind: 'announcement',
+          at: 0,
         },
       },
       { type: 'userRemoved', data: { name: 'alice' } },

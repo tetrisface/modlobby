@@ -78,6 +78,11 @@ pub enum Effect {
     FriendsChanged,
     /// Who is bossing our room changed.
     BossChanged,
+    /// The server said something to everyone: the message of the day, or a
+    /// broadcast.
+    ServerSaid {
+        text: String,
+    },
     /// Someone is summoning us; Chobby alerts on this unconditionally, because
     /// it is a person asking for you rather than the room making noise.
     Rung {
@@ -187,9 +192,6 @@ pub enum SeatError {
     /// Ready and faction belong to a player; a spectator has neither.
     #[error("you are spectating")]
     Spectating,
-    /// The room's game has already started.
-    #[error("this room's game has already started; watch it instead")]
-    GameInProgress,
 }
 
 /// The seat we hold, and what we have said about it.
@@ -268,18 +270,6 @@ impl Session {
             .as_ref()
             .and_then(|my| self.state.battles.get(&my.id))
             .ok_or(SeatError::NotInARoom)?;
-        // A slot in a room whose game has already started is not a slot: the
-        // engine will not admit a latecomer as a player, SPADS has already
-        // built its script, and claiming one disturbs a game in progress.
-        if self
-            .state
-            .users
-            .get(&room.founder)
-            .is_some_and(|host| host.status.in_game)
-        {
-            return Err(SeatError::GameInProgress);
-        }
-
         // Ours if it was given to us (passworded), or if SPADS says we are
         // bossing it — which is what joining an empty autohost makes you.
         let ours = room.passworded
@@ -499,7 +489,12 @@ impl Session {
                     tracing::debug!(marker, "server extension message");
                     vec![]
                 }
-                None => vec![Effect::Notice(text)],
+                // Kept as well as flashed: a broadcast you were away for is
+                // still worth being able to scroll back to.
+                None => vec![
+                    Effect::ServerSaid { text: text.clone() },
+                    Effect::Notice(text),
+                ],
             },
             E::LoginInfoEnd => {
                 state.phase = Some(Phase::Ready);
@@ -513,6 +508,15 @@ impl Session {
                         ))
                     })
                     .collect();
+                // The message of the day arrives before the login is complete,
+                // so it is replayed here — in order, once there is somewhere
+                // for it to go.
+                effects.extend(
+                    state
+                        .motd
+                        .iter()
+                        .map(|line| Effect::ServerSaid { text: line.clone() }),
+                );
                 effects.push(Effect::Ready);
                 effects
             }
@@ -1497,19 +1501,14 @@ mod tests {
     }
 
     #[test]
-    fn no_seat_is_taken_in_a_game_already_running() {
+    fn a_seat_may_be_taken_while_the_current_game_runs() {
         let mut s = in_a_public_room();
         s.allow_public_seat(true);
-        assert!(s.take_seat(0, 0).is_ok(), "fine before it starts");
-        s.release_seat();
 
-        // The host going in game means the script is built and the engine will
-        // not admit a latecomer as a player. Watching is the only thing left.
+        // Sitting down during a game is how you join the *next* one: SPADS has
+        // the lineup ready when this one ends. Refusing it would make the
+        // commonest thing anyone does in a busy room impossible.
         feed(&mut s, &["CLIENTSTATUS host 1"]);
-        assert!(matches!(s.take_seat(0, 0), Err(SeatError::GameInProgress)));
-
-        // And it is allowed again once the game ends.
-        feed(&mut s, &["CLIENTSTATUS host 0"]);
         assert!(s.take_seat(0, 0).is_ok());
     }
 

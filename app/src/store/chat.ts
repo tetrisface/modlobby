@@ -9,6 +9,9 @@ export type Notice = { seq: number; level: NoticeLevel; text: string }
 /** The room key for the battle we are in; `lobby-ui` writes the same string. */
 export const BATTLE_ROOM = '#battle'
 
+/** Where the server's own words go: the message of the day, and broadcasts. */
+export const SERVER_ROOM = '#server'
+
 export const privateRoom = (user: string) => `@${user}`
 export const isPrivate = (room: string) => room.startsWith('@')
 export const partner = (room: string) => room.slice(1)
@@ -28,7 +31,7 @@ export type ChatState = {
 
 function empty(): ChatState {
   return {
-    rooms: { [BATTLE_ROOM]: [] },
+    rooms: { [BATTLE_ROOM]: [], [SERVER_ROOM]: [] },
     channels: {},
     directory: [],
     unread: {},
@@ -76,7 +79,14 @@ export function ensureRoom(room: string): void {
 /** A line from the app rather than from anyone on the server. */
 export function pushSystem(room: string, text: string): void {
   noticeSeq -= 1
-  pushLine({ seq: noticeSeq, room, from: '', text, kind: 'system' })
+  pushLine({
+    seq: noticeSeq,
+    room,
+    from: '',
+    text,
+    kind: 'system',
+    at: Math.floor(Date.now() / 1000),
+  })
 }
 
 export function applyChannel(name: string, channel: ChannelView | null): void {
@@ -109,7 +119,7 @@ export function openPrivates(): string[] {
 
 /** Every room that can be selected, for checking one still exists. */
 export function openRooms(): string[] {
-  return [BATTLE_ROOM, ...openChannels(), ...openPrivates()]
+  return [BATTLE_ROOM, SERVER_ROOM, ...openChannels(), ...openPrivates()]
 }
 
 export function pushNotice(level: NoticeLevel, text: string): void {

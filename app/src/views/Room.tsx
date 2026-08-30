@@ -9,6 +9,7 @@ import {
   createResource,
   createSignal,
 } from 'solid-js'
+import { showPlayerMenu } from '../components/PlayerMenu'
 import { BotRow, PlayerRow, SpectatorRow } from '../components/PlayerRow'
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { BotView } from '../ipc/bindings/BotView'
@@ -393,8 +394,25 @@ function Missing(props: { parts: string[] }) {
 function Line(props: { line: ChatLine }) {
   return (
     <div class={`line ${props.line.kind}`}>
-      <span class='from'>{props.line.from}</span>
+      <span class='at'>{clock(props.line.at)}</span>
+      <span
+        class='from'
+        onClick={(event) =>
+          props.line.from && showPlayerMenu(props.line.from, event)
+        }
+      >
+        {props.line.from}
+      </span>
       <span class='text'>{props.line.text}</span>
     </div>
   )
+}
+
+/** `14:07` — the hour and minute is all a backlog needs. */
+function clock(at: number): string {
+  if (!at) return ''
+  return new Date(at * 1000).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }

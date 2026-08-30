@@ -1660,3 +1660,66 @@ input[type='checkbox'].v-edit {
   flex-direction: column;
   gap: 1px;
 }
+
+/* ---- what you can do about a person ---- */
+
+.player-menu {
+  position: fixed;
+  z-index: 20;
+  min-width: 150px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+}
+
+.player-menu-name {
+  padding: 4px 12px 6px;
+  margin-bottom: 2px;
+  font-family: var(--display);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.player-menu button {
+  padding: 5px 12px;
+  text-align: left;
+  font-family: var(--body);
+  font-size: 12.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+
+.player-menu button:hover {
+  background: var(--raised);
+}
+
+.pname,
+.chat-log .from {
+  cursor: pointer;
+}
+
+.line .at {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--line);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.chat-log .line {
+  grid-template-columns: 40px 108px 1fr;
+}

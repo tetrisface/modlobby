@@ -10,6 +10,7 @@ import type { ChatLine } from '../ipc/bindings/ChatLine'
 import { api, describeError } from '../ipc/client'
 import {
   BATTLE_ROOM,
+  SERVER_ROOM,
   chat,
   ensureRoom,
   isPrivate,
@@ -21,6 +22,7 @@ import {
   openPrivates,
   watchRoom,
 } from '../store/chat'
+import { showPlayerMenu } from '../components/PlayerMenu'
 import { lobby } from '../store/lobby'
 
 /**
@@ -45,7 +47,12 @@ export function Chat() {
     chat.rooms
     return openPrivates()
   })
-  const rooms = createMemo(() => [BATTLE_ROOM, ...channels(), ...privates()])
+  const rooms = createMemo(() => [
+    BATTLE_ROOM,
+    SERVER_ROOM,
+    ...channels(),
+    ...privates(),
+  ])
 
   const lines = () => chat.rooms[room()] ?? []
   const members = () => chat.channels[room()]?.members ?? []
@@ -128,6 +135,8 @@ export function Chat() {
 
   async function send(body: string) {
     const where = room()
+    if (where === SERVER_ROOM)
+      return pushSystem(where, 'nobody is listening in here')
     if (where === BATTLE_ROOM) return act('say', () => api.sayBattle(body))
     if (isPrivate(where))
       return act('say', () => api.sayPrivate(partner(where), body))
@@ -146,6 +155,7 @@ export function Chat() {
   const title = () => {
     const where = room()
     if (where === BATTLE_ROOM) return 'Battle room'
+    if (where === SERVER_ROOM) return 'Server'
     return isPrivate(where) ? partner(where) : where
   }
 
@@ -171,6 +181,12 @@ export function Chat() {
           room={BATTLE_ROOM}
           label='Battle room'
           on={room() === BATTLE_ROOM}
+          onClick={setRoom}
+        />
+        <Tab
+          room={SERVER_ROOM}
+          label='Server'
+          on={room() === SERVER_ROOM}
           onClick={setRoom}
         />
 
@@ -380,8 +396,27 @@ function Line(props: { line: ChatLine; me: string | null }) {
   const mine = () => props.line.from === props.me
   return (
     <div class={`line ${props.line.kind}`} classList={{ mine: mine() }}>
-      <span class='from'>{props.line.from}</span>
+      <span class='at' title={new Date(props.line.at * 1000).toLocaleString()}>
+        {clock(props.line.at)}
+      </span>
+      <span
+        class='from'
+        onClick={(event) =>
+          props.line.from && showPlayerMenu(props.line.from, event)
+        }
+      >
+        {props.line.from}
+      </span>
       <span class='text'>{props.line.text}</span>
     </div>
   )
+}
+
+/** `14:07` — the hour and minute is all a backlog needs. */
+function clock(at: number): string {
+  if (!at) return ''
+  return new Date(at * 1000).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }

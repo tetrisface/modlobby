@@ -7,4 +7,10 @@ export type ChatLine = { seq: number,
  * private conversation, and anything else is a channel — which cannot
  * collide, because teiserver only accepts `\w+` as a channel name.
  */
-room: string, from: string, text: string, kind: ChatKind, };
+room: string, from: string, text: string, kind: ChatKind, 
+/**
+ * Unix seconds when this reached us. The protocol carries no time of its
+ * own, so it is stamped on arrival — near enough for reading a backlog,
+ * and honest about being our clock rather than the sender's.
+ */
+at: number, };

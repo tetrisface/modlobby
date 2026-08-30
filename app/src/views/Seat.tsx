@@ -39,15 +39,8 @@ export function Seat() {
   const ours = () =>
     (room()?.passworded ?? false) ||
     (lobby.myBattle?.boss !== null && lobby.myBattle?.boss === lobby.me)
-  /**
-   * A room whose game has started has no seat to take: the engine will not
-   * admit a latecomer as a player, and claiming a slot disturbs a game already
-   * in progress. The runtime refuses it too; this is so the button never
-   * appears in the first place.
-   */
   const running = () => lobby.gameRunning !== null
-  const allowed = () =>
-    !running() && (ours() || (settings()?.play.inPublicRooms ?? false))
+  const allowed = () => ours() || (settings()?.play.inPublicRooms ?? false)
 
   /**
    * Ally teams already in use, plus the next free one — you can join a side or
@@ -100,12 +93,8 @@ export function Seat() {
         when={allowed()}
         fallback={
           <span class='muted'>
-            <Show
-              when={running()}
-              fallback="Spectating. A seat here would take a real player's slot — host a room to play, or allow public seats in Settings."
-            >
-              This game has already started — you can watch it.
-            </Show>
+            Spectating. A seat here would take a real player's slot — host a
+            room to play, or allow public seats in Settings.
           </span>
         }
       >
@@ -131,7 +120,14 @@ export function Seat() {
             </>
           }
         >
-          <span>Team {(seat()?.allyTeam ?? 0) + 1}</span>
+          <span>
+            Team {(seat()?.allyTeam ?? 0) + 1}
+            {/* Sitting down mid-game puts you in the lineup for the next one,
+                which is worth saying so nobody waits for this one to let them in. */}
+            <Show when={running()}>
+              <span class='muted'> · next game</span>
+            </Show>
+          </span>
 
           <button
             class={seat()?.ready ? 'primary' : ''}

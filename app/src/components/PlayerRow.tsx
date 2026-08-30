@@ -3,6 +3,7 @@ import type { BotView } from '../ipc/bindings/BotView'
 import type { UserView } from '../ipc/bindings/UserView'
 import { type Skill, skillText, skillTier, skillTitle } from '../lib/skill'
 import { Flag, RankIcon, SideIcon, StatusIcon } from './icons'
+import { showPlayerMenu } from './PlayerMenu'
 
 /**
  * One player, in Chobby's column order: status, country, rank, skill, faction,
@@ -28,6 +29,8 @@ export function PlayerRow(props: {
           <span
             class='pname'
             classList={{ me: props.me, friend: props.friend }}
+            onClick={(event) => showPlayerMenu(props.user.name, event)}
+            onContextMenu={(event) => showPlayerMenu(props.user.name, event)}
           >
             {props.user.name}
           </span>
@@ -73,6 +76,8 @@ export function SpectatorRow(props: {
           friend: props.friend,
           bot: props.user.status.bot,
         }}
+        onClick={(event) => showPlayerMenu(props.user.name, event)}
+        onContextMenu={(event) => showPlayerMenu(props.user.name, event)}
       >
         {props.user.name}
       </span>
