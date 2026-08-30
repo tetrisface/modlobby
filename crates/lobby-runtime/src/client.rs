@@ -160,6 +160,10 @@ enum Command {
     AllowPublicSeat(bool),
     ReleaseSeat,
     SetDataDir(Option<PathBuf>),
+    /// Where to keep a config to launch with when the user's own settings
+    /// would put the game in exclusive full screen. `None` while the
+    /// overlay is switched off, which is also when nothing is written.
+    SetOverlayConfigDir(Option<PathBuf>),
     RequestPrivateHost {
         region: String,
         reply: Reply<String>,
@@ -399,6 +403,12 @@ impl Client {
         self.send(Command::SetDataDir(data_dir)).await
     }
 
+    /// Where a borderless config may be kept, or `None` to launch with the
+    /// user's settings exactly as they are.
+    pub async fn set_overlay_config_dir(&self, dir: Option<PathBuf>) -> Result<(), ClientError> {
+        self.send(Command::SetOverlayConfigDir(dir)).await
+    }
+
     /// Asks a cluster manager in `region` for a room of our own; the runtime
     /// joins it when it appears. Returns the manager it asked.
     /// Joins an empty public autohost in a region; the first person in it
@@ -471,6 +481,10 @@ struct Runtime {
     join_reply: Option<Reply<()>>,
     /// Where BAR's content lives; `None` falls back to the launcher's directory.
     data_dir: Option<PathBuf>,
+    /// Where to put a config that gets the game borderless, when the user's
+    /// own would not let the overlay cover it. `None` leaves their settings
+    /// entirely alone, which is also what happens when they already work.
+    overlay_config_dir: Option<PathBuf>,
     /// The room's (engine, game, map) the content check last ran against;
     /// scanning the rapid index is too slow to repeat per message.
     checked: Option<(String, String, String)>,
@@ -530,6 +544,7 @@ impl Runtime {
             login_reply: None,
             join_reply: None,
             data_dir: None,
+            overlay_config_dir: None,
             checked: None,
             credentials: None,
             reconnect: reconnect::Reconnect::default(),
@@ -567,6 +582,7 @@ impl Runtime {
             &data_dir,
             engine_version,
             path.to_string_lossy().into_owned(),
+            self.overlay_config_dir.as_deref(),
         )
         .map_err(ClientError::Engine)?;
         let pid = child.id();
@@ -590,7 +606,13 @@ impl Runtime {
             .and_then(|stem| stem.rsplit_once('_').map(|(_, engine)| engine.to_owned()))
             .unwrap_or_default();
 
-        let child = launch::spawn(&data_dir, &version, path).map_err(ClientError::Engine)?;
+        let child = launch::spawn(
+            &data_dir,
+            &version,
+            path,
+            self.overlay_config_dir.as_deref(),
+        )
+        .map_err(ClientError::Engine)?;
         let pid = child.id();
         self.engine = Some(child);
         self.set_engine(EngineStatus::Running { pid });
@@ -1034,6 +1056,7 @@ impl Runtime {
                     }
                 }
             }
+            Command::SetOverlayConfigDir(dir) => self.overlay_config_dir = dir,
             Command::SetDataDir(data_dir) => {
                 self.data_dir = data_dir;
                 // Re-check against the new directory.
@@ -1466,7 +1489,13 @@ impl Runtime {
                 self.send_line(envelope).await?;
             }
         }
-        let child = launch::spawn(&data_dir, &engine_version, url).map_err(ClientError::Engine)?;
+        let child = launch::spawn(
+            &data_dir,
+            &engine_version,
+            url,
+            self.overlay_config_dir.as_deref(),
+        )
+        .map_err(ClientError::Engine)?;
         let pid = child.id();
         self.engine = Some(child);
         self.set_engine(EngineStatus::Running { pid });

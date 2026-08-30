@@ -22,6 +22,19 @@ fn overlay_settings(settings: &settings::Settings) -> overlay::OverlaySettings {
     }
 }
 
+/// Where a borderless copy of the engine config may be kept, or `None` to
+/// launch against the user's settings exactly as they are.
+///
+/// Switched off with the overlay, because that is the only thing the copy is
+/// for: someone who is not using the overlay should get the game they
+/// configured, and nothing of ours should appear on disk.
+fn overlay_config_dir(settings: &settings::Settings) -> Option<std::path::PathBuf> {
+    settings
+        .overlay
+        .enabled
+        .then(|| settings::config_dir().join("engine"))
+}
+
 pub fn run() {
     let app = state::App::open().unwrap_or_else(|err| panic!("starting modlobby: {err}"));
     // Held for the life of the process: dropping it stops the file writer.
@@ -70,12 +83,14 @@ pub fn run() {
             let data_dir = app.settings.get().paths.data_dir;
             let in_public = app.settings.get().play.in_public_rooms;
             let auto_launch = app.settings.get().play.auto_launch;
+            let engine_config = overlay_config_dir(&app.settings.get());
             tauri::async_runtime::spawn(async move {
                 // The content check needs to know where BAR keeps its files,
                 // both now and whenever the setting changes.
                 let _ = client.set_data_dir(data_dir).await;
                 let _ = client.allow_public_seat(in_public).await;
                 let _ = client.set_auto_launch(auto_launch).await;
+                let _ = client.set_overlay_config_dir(engine_config).await;
                 while let Some(event) = watch.recv().await {
                     if let settings::SettingsEvent::Changed(settings) = &event {
                         let _ = client.set_data_dir(settings.paths.data_dir.clone()).await;
@@ -83,6 +98,9 @@ pub fn run() {
                             .allow_public_seat(settings.play.in_public_rooms)
                             .await;
                         let _ = client.set_auto_launch(settings.play.auto_launch).await;
+                        let _ = client
+                            .set_overlay_config_dir(overlay_config_dir(settings))
+                            .await;
                         controller.settings_changed(overlay_settings(settings));
                     }
                     let _ = handle.emit("settings", &event);

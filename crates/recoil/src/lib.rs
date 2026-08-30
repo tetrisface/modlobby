@@ -6,6 +6,9 @@
 
 pub mod script;
 pub mod script_read;
+pub mod window_mode;
+
+pub use window_mode::{WindowMode, window_mode};
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -46,6 +49,12 @@ pub struct Launch {
     pub data_dir: PathBuf,
     /// A `spring://` URL or a start-script path.
     pub target: String,
+    /// `--config`, when the user's own settings would defeat the overlay.
+    ///
+    /// Exclusive: the engine reads and writes only this file, which is how
+    /// their `springsettings.cfg` survives a modlobby launch untouched. See
+    /// [`window_mode::borderless_config`].
+    pub config: Option<PathBuf>,
 }
 
 impl Launch {
@@ -55,8 +64,11 @@ impl Launch {
         cmd.current_dir(&self.engine_dir)
             .arg("--write-dir")
             .arg(&self.data_dir)
-            .arg("--isolation")
-            .arg(&self.target);
+            .arg("--isolation");
+        if let Some(config) = &self.config {
+            cmd.arg("--config").arg(config);
+        }
+        cmd.arg(&self.target);
         cmd
     }
 }
@@ -94,6 +106,7 @@ mod tests {
             engine_dir: "C:/e".into(),
             data_dir: "C:/d".into(),
             target: "spring://me:1@h:2".into(),
+            config: None,
         };
         let cmd = launch.command();
         let args: Vec<String> = cmd
@@ -105,6 +118,32 @@ mod tests {
             ["--write-dir", "C:/d", "--isolation", "spring://me:1@h:2"]
         );
         assert!(cmd.get_program().to_string_lossy().ends_with(ENGINE_BINARY));
+    }
+
+    #[test]
+    fn a_borderless_config_goes_on_the_command_line_before_the_target() {
+        let launch = Launch {
+            engine_dir: "C:/e".into(),
+            data_dir: "C:/d".into(),
+            target: "spring://me:1@h:2".into(),
+            config: Some("C:/mine/springsettings.cfg".into()),
+        };
+        let args: Vec<String> = launch
+            .command()
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            args,
+            [
+                "--write-dir",
+                "C:/d",
+                "--isolation",
+                "--config",
+                "C:/mine/springsettings.cfg",
+                "spring://me:1@h:2",
+            ]
+        );
     }
 }
 

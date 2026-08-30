@@ -214,6 +214,14 @@ export function SettingsView() {
             />
             Put the game back in front when I dismiss it
           </label>
+          <p class='muted'>
+            Nothing can be drawn over an exclusive full-screen game, so if your
+            engine is set that way, modlobby launches it against its own copy of
+            your settings with borderless full screen instead. Your{' '}
+            <code>springsettings.cfg</code> is never written to — not by
+            modlobby, and not by the game it starts — so Chobby finds it exactly
+            as you left it.
+          </p>
         </fieldset>
 
         <fieldset>

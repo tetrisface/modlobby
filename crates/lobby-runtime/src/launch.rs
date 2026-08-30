@@ -16,7 +16,17 @@ pub fn default_data_dir() -> Option<PathBuf> {
 
 /// Finds `engine_version` under `data_dir/engine` and starts it on `target`
 /// (a `spring://` URL or a start script).
-pub fn spawn(data_dir: &Path, engine_version: &str, target: String) -> Result<Child, String> {
+///
+/// `overlay_config_dir` is where a borderless copy of the user's settings may
+/// be kept, when they have the overlay on and their own settings would put the
+/// game in exclusive full screen. Passing `None`, or having settings that
+/// already work, launches against their configuration untouched.
+pub fn spawn(
+    data_dir: &Path,
+    engine_version: &str,
+    target: String,
+    overlay_config_dir: Option<&Path>,
+) -> Result<Child, String> {
     let engine_dir = recoil::find_engine(data_dir, engine_version).ok_or_else(|| {
         format!(
             "no engine {engine_version} with {} under {}",
@@ -24,10 +34,20 @@ pub fn spawn(data_dir: &Path, engine_version: &str, target: String) -> Result<Ch
             data_dir.join("engine").display()
         )
     })?;
+    // A failure here is not worth refusing to play over: the game still
+    // runs, the overlay just cannot cover it.
+    let config = overlay_config_dir.and_then(|dir| {
+        recoil::window_mode::borderless_config(data_dir, engine_version, dir)
+            .inspect_err(|err| tracing::warn!(%err, "no borderless config; overlay may not show"))
+            .ok()
+            .flatten()
+    });
+
     let launch = recoil::Launch {
         engine_dir,
         data_dir: data_dir.to_path_buf(),
         target,
+        config,
     };
     tracing::info!(engine = %launch.engine_dir.display(), "launching");
     tokio::process::Command::from(launch.command())
