@@ -72,6 +72,7 @@ pub fn run() {
             commands::set_away,
             commands::flash_engine,
             commands::remember_played,
+            presets::pve_score,
             presets::list_presets,
             presets::chobby_presets_path,
             presets::save_preset,

@@ -191,6 +191,55 @@ pub async fn apply_preset(
     Ok(plan)
 }
 
+/// What BAR's PvE Stats service says the current room scores.
+///
+/// Answers `None` rather than an error for a room that is not PvE, or when the
+/// setting is off: neither is a failure, and a panel that says nothing is the
+/// right outcome for both.
+#[tauri::command]
+pub async fn pve_score(app: State<'_, App>) -> Result<Option<pve::Score>> {
+    if !app.settings.get().play.pve_stats {
+        return Ok(None);
+    }
+    let snapshot = app.client.snapshot().await?;
+    let Some(my) = snapshot.my_battle.as_ref() else {
+        return Ok(None);
+    };
+    let Some(room) = snapshot.battles.iter().find(|battle| battle.id == my.id) else {
+        return Ok(None);
+    };
+
+    let ai_names: Vec<String> = room.bots.iter().map(|bot| bot.ai.clone()).collect();
+    let Some(kind) = pve::ai_type(&ai_names) else {
+        return Ok(None);
+    };
+
+    let ask = pve::Ask {
+        ai_type: kind.as_str(),
+        map: room.map_name.clone(),
+        game_settings: my
+            .script_tags
+            .iter()
+            .filter_map(|(key, value)| {
+                Some((
+                    key.strip_prefix("game/modoptions/")?.to_owned(),
+                    value.clone(),
+                ))
+            })
+            .collect(),
+        encounter_context: pve::Encounter {
+            human_team_size: room.player_count,
+            enemy_ai_count: matches!(kind, pve::AiType::Barbarian)
+                .then_some(room.bots.len() as u32),
+        },
+    };
+
+    pve::fetch(&ask)
+        .await
+        .map(Some)
+        .map_err(|err| ApiError::new("pve", err.to_string()))
+}
+
 /// Brings in everything from Chobby's file.
 #[tauri::command]
 pub fn import_presets(app: State<'_, App>, path: Option<String>) -> Result<Imported> {

@@ -173,6 +173,13 @@ pub struct Play {
     pub in_public_rooms: bool,
     /// Whether joining a room seats you.
     pub join_as: JoinAs,
+    /// Whether to ask BAR's PvE Stats service what a PvE room scores.
+    ///
+    /// On, because the number is the point of looking at a PvE room before
+    /// joining it. It sends the map, the settings and the team size to a
+    /// third-party service over plain HTTP — never a name or an account — so
+    /// it stays something that can be turned off.
+    pub pve_stats: bool,
     /// What [`JoinAs::Remember`] remembers: whether you played last time.
     /// Written when you take or leave a seat, never chosen directly.
     pub last_was_player: bool,
@@ -183,6 +190,7 @@ impl Default for Play {
         Self {
             in_public_rooms: true,
             join_as: JoinAs::Remember,
+            pve_stats: true,
             // Nothing remembered yet, and this is a lobby.
             last_was_player: true,
         }

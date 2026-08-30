@@ -25,6 +25,7 @@ import { readSkills, teamSkill, type Skill } from '../lib/skill'
 import { BATTLE_ROOM, chat, pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
 import { HostBar } from './HostBar'
+import { PveScore } from './PveScore'
 import { Seat } from './Seat'
 import { Setup } from './Setup'
 import { VoteBar } from './VoteBar'
@@ -163,6 +164,7 @@ export function Room() {
             </div>
           </header>
 
+          <PveScore />
           <VoteBar />
           <HostBar />
           <Seat />

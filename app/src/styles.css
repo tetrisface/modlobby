@@ -1655,7 +1655,7 @@ input[type='checkbox'].v-edit {
 
 .replay-row {
   display: grid;
-  grid-template-columns: 165px 1fr 100px 90px 90px;
+  grid-template-columns: 165px 1fr 100px 90px 96px 90px;
   align-items: center;
   gap: 12px;
   padding: 0 16px;
@@ -2224,4 +2224,26 @@ button.link:hover {
   border-top: 1px solid var(--line);
   background: var(--sunken);
   flex-shrink: 0;
+}
+
+/* ---- what a PvE room scores ---- */
+
+.pve-score {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 16px;
+  background: var(--sunken);
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.pve-figure {
+  cursor: help;
+}
+
+.pve-figure b {
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
 }

@@ -385,6 +385,22 @@ export function SettingsView() {
           <label class='row'>
             <input
               type='checkbox'
+              checked={draft.play.pveStats}
+              onChange={(e) =>
+                setDraft('play', 'pveStats', e.currentTarget.checked)
+              }
+            />
+            Show what a PvE room scores
+          </label>
+          <p class='muted'>
+            Asks BAR's PvE Stats service — the one the in-game widget uses — for
+            a challenge score and win chance. Sends the map, the settings and
+            the team size over plain HTTP; never a name or an account.
+          </p>
+
+          <label class='row'>
+            <input
+              type='checkbox'
               checked={draft.play.inPublicRooms}
               onChange={(e) =>
                 setDraft('play', 'inPublicRooms', e.currentTarget.checked)
@@ -408,7 +424,12 @@ function blank(): Settings {
     server: { host: '', port: 8201, tls: true },
     account: { username: '', rememberPassword: false, autoLogin: false },
     paths: { dataDir: null },
-    play: { inPublicRooms: true, joinAs: 'remember', lastWasPlayer: true },
+    play: {
+      inPublicRooms: true,
+      joinAs: 'remember',
+      lastWasPlayer: true,
+      pveStats: true,
+    },
     notifications: {
       privateMessage: 'desktop',
       mention: 'desktop',

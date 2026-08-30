@@ -18,7 +18,12 @@ function loaded(): Settings {
     server: { host: 'server4', port: 8201, tls: true },
     account: { username: 'me', rememberPassword: false, autoLogin: false },
     paths: { dataDir: null },
-    play: { inPublicRooms: true, joinAs: 'remember', lastWasPlayer: true },
+    play: {
+      inPublicRooms: true,
+      joinAs: 'remember',
+      lastWasPlayer: true,
+      pveStats: true,
+    },
     notifications: {
       privateMessage: 'desktop',
       mention: 'desktop',

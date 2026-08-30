@@ -11,6 +11,7 @@ members = [
     "crates/modoptions",
     "crates/presets",
     "crates/startbox",
+    "crates/pve",
     "crates/recoil",
     "crates/modlobby-cli",
     "app/src-tauri",
@@ -30,6 +31,7 @@ lobby-ui = { path = "crates/lobby-ui" }
 settings = { path = "crates/settings" }
 presets = { path = "crates/presets" }
 startbox = { path = "crates/startbox" }
+pve = { path = "crates/pve" }
 tweaks = { path = "crates/tweaks" }
 modoptions = { path = "crates/modoptions" }
 recoil = { path = "crates/recoil" }
@@ -59,6 +61,8 @@ tauri-build = { version = "=2.6.3", features = [] }
 tauri-plugin-notification = "=2.3.3"
 tauri-plugin-opener = "=2.5.4"
 tauri-plugin-window-state = "=2.4.1"
+# Already in the tree via Tauri; only http:// is needed, so no TLS features.
+reqwest = { version = "=0.13.4", default-features = false, features = ["json"] }
 windows-sys = "=0.61.2"
 tempfile = "=3.27.0"
 thiserror = "=2.0.20"

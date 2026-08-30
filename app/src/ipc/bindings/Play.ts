@@ -18,6 +18,15 @@ inPublicRooms: boolean,
  */
 joinAs: JoinAs, 
 /**
+ * Whether to ask BAR's PvE Stats service what a PvE room scores.
+ *
+ * On, because the number is the point of looking at a PvE room before
+ * joining it. It sends the map, the settings and the team size to a
+ * third-party service over plain HTTP — never a name or an account — so
+ * it stays something that can be turned off.
+ */
+pveStats: boolean, 
+/**
  * What [`JoinAs::Remember`] remembers: whether you played last time.
  * Written when you take or leave a seat, never chosen directly.
  */

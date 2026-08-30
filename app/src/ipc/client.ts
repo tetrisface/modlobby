@@ -6,6 +6,7 @@ import type { ReplayView } from './bindings/ReplayView'
 import type { SkirmishOptions } from './bindings/SkirmishOptions'
 import type { Book } from './bindings/Book'
 import type { Plan } from './bindings/Plan'
+import type { Score } from './bindings/Score'
 import type { Sections } from './bindings/Sections'
 import type { Settings } from './bindings/Settings'
 import type { Slot } from './bindings/Slot'
@@ -53,6 +54,8 @@ export const api = {
   flashEngine: () => invoke<boolean>('flash_engine'),
   requestGameStatus: (founder: string) =>
     invoke<void>('request_game_status', { founder }),
+
+  pveScore: () => invoke<Score | null>('pve_score'),
 
   // ---- saved room setups ----
   listPresets: () => invoke<Book>('list_presets'),

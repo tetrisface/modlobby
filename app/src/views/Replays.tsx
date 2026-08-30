@@ -1,5 +1,6 @@
 import { createVirtualizer } from '@tanstack/solid-virtual'
 import { For, Show, createMemo, createResource, createSignal } from 'solid-js'
+import { Ask } from '../components/Ask'
 import type { ReplayView } from '../ipc/bindings/ReplayView'
 import { api, describeError } from '../ipc/client'
 import { pushNotice } from '../store/chat'
@@ -17,6 +18,7 @@ const ROW_HEIGHT = 40
  */
 export function Replays() {
   const [search, setSearch] = createSignal('')
+  const [saving, setSaving] = createSignal<ReplayView | null>(null)
   let scrollRef: HTMLDivElement | undefined
 
   const [replays, { refetch }] = createResource(async () => {
@@ -120,6 +122,15 @@ export function Replays() {
                         <span class='col-size'>
                           {Math.round(r().bytes / 1024)} kB
                         </span>
+                        {/* Every replay carries the start script that made
+                            the game, which is a whole room setup — and the
+                            only way to get one from a game you were not in. */}
+                        <button
+                          title="Save this game's settings as a preset"
+                          onClick={() => setSaving(r())}
+                        >
+                          To preset
+                        </button>
                         <button
                           disabled={lobby.engine.state === 'running'}
                           onClick={() => void play(r())}
@@ -135,6 +146,28 @@ export function Replays() {
           </div>
         </Show>
       </div>
+
+      <Show when={saving()}>
+        {(replay) => (
+          <Ask
+            title='Save as preset'
+            hint={`The map, the modoptions and the start boxes from ${replay().map}.`}
+            initial={`${replay().map} ${replay().playedAt}`}
+            confirm='Save'
+            onCancel={() => setSaving(null)}
+            onAnswer={(name) => {
+              const path = replay().path
+              setSaving(null)
+              void api
+                .presetFromReplay(path, name)
+                .then(() =>
+                  pushNotice('info', `saved ${name}; it is in Presets`),
+                )
+                .catch((error) => pushNotice('warning', describeError(error)))
+            }}
+          />
+        )}
+      </Show>
     </section>
   )
 }
