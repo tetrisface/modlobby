@@ -106,6 +106,15 @@ function Layout(props: ParentProps) {
         <A href='/skirmish'>Skirmish</A>
         <Show when={lobby.phase === 'ready'}>
           <A href='/battles'>Battles</A>
+          {/* Always in this slot, whether or not there is a room to go to.
+              Rendering it only when in one made every link to its right jump
+              sideways the moment you joined. */}
+          <Show
+            when={lobby.myBattle}
+            fallback={<span class='nav-absent'>Room</span>}
+          >
+            <A href='/room'>Room</A>
+          </Show>
           <A href='/chat'>
             Chat
             <Show when={unread() > 0}>
@@ -116,9 +125,6 @@ function Layout(props: ParentProps) {
           </A>
           <A href='/replays'>Replays</A>
           <A href='/presets'>Presets</A>
-          <Show when={lobby.myBattle}>
-            <A href='/room'>Room</A>
-          </Show>
         </Show>
         <A href='/settings'>Settings</A>
         <span class='spacer' />

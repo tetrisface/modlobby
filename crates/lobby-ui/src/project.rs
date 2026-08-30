@@ -212,14 +212,18 @@ impl Projector {
                 out.push(Delta::Chat(line));
             }
             Effect::PrivateChat { with, from, text } => {
-                // Our own message echoed back is not something to be told about.
-                if Some(from) != state.me.as_ref() {
+                let machine = lobby_core::spads::is_machine(text);
+                // Our own message echoed back is not something to be told
+                // about, and neither is a host answering a question we asked
+                // it: the reply to `!#JSONRPC status game` is a wall of JSON,
+                // and alerting on it puts that wall on screen.
+                if !machine && Some(from) != state.me.as_ref() {
                     out.push(Delta::Alert {
                         kind: AlertKind::PrivateMessage,
                         text: format!("{from}: {text}"),
                     });
                 }
-                let kind = if lobby_core::spads::is_machine(text) {
+                let kind = if machine {
                     ChatKind::Machine
                 } else {
                     ChatKind::Private
@@ -358,9 +362,11 @@ impl Projector {
     ) -> ChatLine {
         self.seq += 1;
         // Our own words are not somebody calling us, and a private message is
-        // already addressed to us by being one.
+        // already addressed to us by being one. Nor is a machine line, which
+        // can carry your name without addressing you — SPADS lists the room's
+        // bosses inside its `BattleStateChanged` JSON.
         let talking_to_us = Some(from) != state.me.as_deref()
-            && kind != ChatKind::Private
+            && !matches!(kind, ChatKind::Private | ChatKind::Machine)
             && state
                 .me
                 .as_deref()
@@ -430,6 +436,75 @@ mod tests {
         let event: ServerEvent = RawMessage::parse(line).into();
         let effects = s.handle(event.clone());
         p.project(&event, &effects, &s.state)
+    }
+
+    /// Logged in and past the flood, which is when anything is projected.
+    fn live() -> (Session, Projector) {
+        let mut s = session();
+        let mut p = Projector::new();
+        for line in ["TASSERVER 0.38 * 8201 0", "ACCEPTED me", "LOGININFOEND"] {
+            step(&mut s, &mut p, line);
+        }
+        (s, p)
+    }
+
+    #[test]
+    fn a_hosts_json_answer_is_not_something_to_alert_about() {
+        let (mut s, mut p) = live();
+        // The reply to `!#JSONRPC status game`, which is what asking a host how
+        // long its game has been running gets back: a wall of JSON carrying
+        // every client in the room. Alerting on it puts that wall on screen.
+        let deltas = step(
+            &mut s,
+            &mut p,
+            r#"SAIDPRIVATE Host[EU2][007] !#JSONRPC {"result":{"game":{"clients":[{"Name":"someone"}]}},"id":1}"#,
+        );
+        assert!(
+            !deltas
+                .iter()
+                .any(|delta| matches!(delta, Delta::Alert { .. })),
+            "{deltas:?}"
+        );
+        let [Delta::Chat(line)] = &deltas[..] else {
+            panic!("expected one chat line, got {deltas:?}")
+        };
+        assert_eq!(line.kind, ChatKind::Machine, "and it is filterable");
+    }
+
+    #[test]
+    fn an_actual_private_message_still_alerts() {
+        let (mut s, mut p) = live();
+        let deltas = step(&mut s, &mut p, "SAIDPRIVATE friend are you playing?");
+        assert!(deltas.iter().any(|delta| matches!(
+            delta,
+            Delta::Alert {
+                kind: AlertKind::PrivateMessage,
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn a_machine_line_naming_you_is_not_a_mention() {
+        let (mut s, mut p) = live();
+        // SPADS lists the room's bosses inside its own JSON, so a machine line
+        // carries your name without addressing you.
+        let deltas = step(
+            &mut s,
+            &mut p,
+            r#"SAIDBATTLEEX host * BarManager|{"BattleStateChanged": {"boss": "me,someone"}}"#,
+        );
+        assert!(
+            !deltas
+                .iter()
+                .any(|delta| matches!(delta, Delta::Alert { .. })),
+            "{deltas:?}"
+        );
+        for delta in &deltas {
+            if let Delta::Chat(line) = delta {
+                assert!(!line.mention, "a boss list is not somebody calling you");
+            }
+        }
     }
 
     #[test]

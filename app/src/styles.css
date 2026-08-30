@@ -2247,3 +2247,12 @@ button.link:hover {
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
+
+/* A nav slot with nowhere to go yet: it keeps its place so the links beside
+   it never move, and reads as unavailable rather than as a link. */
+.nav-absent {
+  color: var(--faint);
+  font-size: 13px;
+  padding-bottom: 2px;
+  cursor: default;
+}
