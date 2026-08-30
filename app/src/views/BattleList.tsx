@@ -17,7 +17,7 @@ import type { ModeFilter } from '../ipc/bindings/ModeFilter'
 import { RankIcon } from '../components/icons'
 import { api, describeError } from '../ipc/client'
 import { elapsed } from '../lib/running'
-import { noteRunning, running } from '../store/running'
+import { askAboutGame, noteRunning, running } from '../store/running'
 import { MODES, SORTS, arrange, type Row } from '../lib/battles'
 import { mapImages } from '../lib/maps'
 import { pushNotice } from '../store/chat'
@@ -333,13 +333,17 @@ export function BattleList() {
                             join(r().battle)
                           }
                         }}
-                        onMouseEnter={(event) =>
+                        onMouseEnter={(event) => {
                           setPeek({
                             id: r().battle.id,
                             top: event.currentTarget.getBoundingClientRect()
                               .top,
                           })
-                        }
+                          // Resting on a running room is what asks its host
+                          // how long the game has been going.
+                          if (r().running)
+                            askAboutGame(r().battle.id, r().battle.founder)
+                        }}
                       >
                         <MapThumb
                           src={previews()?.[r().battle.mapName]}

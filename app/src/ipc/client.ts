@@ -48,6 +48,8 @@ export const api = {
   ring: (user: string) => invoke<void>('ring', { user }),
   setAway: (away: boolean) => invoke<void>('set_away', { away }),
   flashEngine: () => invoke<boolean>('flash_engine'),
+  requestGameStatus: (founder: string) =>
+    invoke<void>('request_game_status', { founder }),
   rememberPlayed: (played: boolean) =>
     invoke<Settings>('remember_played', { played }),
   rememberChannels: (channels: string[]) =>

@@ -71,6 +71,7 @@ pub fn run() {
             commands::set_away,
             commands::flash_engine,
             commands::remember_played,
+            commands::request_game_status,
             commands::remember_channels,
             commands::skirmish_options,
             commands::start_skirmish,

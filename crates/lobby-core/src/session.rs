@@ -401,6 +401,28 @@ impl Session {
         Ok(vec![Effect::Send(battle::say_private(user, text)?)])
     }
 
+    /// Asks a host how long its game has been going.
+    ///
+    /// The only way to learn that about a room you are not in: SPADS answers a
+    /// JSON-RPC request carried on a private message. Ask sparingly — it is a
+    /// message to a real account, and hovering a list would otherwise send one
+    /// per row.
+    pub fn request_game_status(&mut self, founder: &str) -> Result<Vec<Effect>, battle::TooLong> {
+        Ok(vec![Effect::Send(battle::say_private(
+            founder,
+            spads::GAME_STATUS_REQUEST,
+        )?)])
+    }
+
+    /// The battle a host runs, if we can see one.
+    fn battle_hosted_by(&self, founder: &str) -> Option<u32> {
+        self.state
+            .battles
+            .values()
+            .find(|battle| battle.founder == founder)
+            .map(|battle| battle.id)
+    }
+
     /// Rings someone: the lobby's way of saying the game is waiting on you.
     pub fn ring(&mut self, user: &str) -> Vec<Effect> {
         vec![Effect::Send(battle::ring(user))]
@@ -818,6 +840,16 @@ impl Session {
             }
             E::SaidPrivate { name, text } => {
                 let mut effects = Vec::new();
+                // A host answering what we asked about its game, on the side
+                // channel SPADS carries over private messages.
+                if let Some(spads::RpcStatus::Game { seconds, .. }) = spads::parse_rpc(&text)
+                    && let Some(id) = self.battle_hosted_by(&name)
+                {
+                    effects.push(Effect::GameInProgress {
+                        id,
+                        elapsed_secs: seconds,
+                    });
+                }
                 if let Some(password) = private_host_password(&text) {
                     self.private_host = Some(password.clone());
                     effects.push(Effect::PrivateHostOffered {

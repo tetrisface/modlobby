@@ -219,12 +219,17 @@ impl Projector {
                         text: format!("{from}: {text}"),
                     });
                 }
+                let kind = if lobby_core::spads::is_machine(text) {
+                    ChatKind::Machine
+                } else {
+                    ChatKind::Private
+                };
                 out.push(Delta::Chat(self.line(
                     state,
                     &private_room(with),
                     from,
                     text,
-                    ChatKind::Private,
+                    kind,
                 )));
             }
             Effect::ChannelChat {

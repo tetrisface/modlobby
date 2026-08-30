@@ -40,11 +40,12 @@ pub enum Announcement {
     /// Part of SPADS's welcome message, sent to you alone as you walk into a
     /// room whose game is already going (`welcomeMsg`, whose default is
     /// `Hi %u (%d), welcome to %n …|!A game is in progress since %t.|!…`).
-    /// It is the only place on this protocol that a game's age is stated: the
-    /// battle list carries no start time, and Chobby's own `runningSince` is
-    /// dead code on this server — every assignment to it in liblobby is
-    /// commented out (`lobby.lua:1208,1383`), left over from Zero-K, whose
-    /// server does send it.
+    /// One of the two places a game's age can be had. The other is asking the
+    /// host outright — see [`GAME_STATUS_REQUEST`] — which works for a room
+    /// you have not joined. What does *not* carry it is the battle list:
+    /// `BATTLEOPENED` has no such field, and Chobby's `runningSince` is dead
+    /// code here, commented out in liblobby (`lobby.lua:1208,1383`) as a
+    /// Zero-K leftover.
     GameInProgress { elapsed_secs: u64 },
 }
 
@@ -97,11 +98,68 @@ pub fn boss(json: &str) -> Option<String> {
 
 /// Parses one `SAIDBATTLEEX` line from the founder. Everything SPADS says is
 /// prefixed `* ` (`spads.pl:2932`); anything unrecognised stays chat.
-/// Whether a host line is machine-readable rather than something a person is
-/// meant to read. Cheap enough to ask on every line.
+/// Whether a line is machine-readable rather than something a person is meant
+/// to read. Cheap enough to ask on every line.
 pub fn is_machine(text: &str) -> bool {
-    text.strip_prefix("* ")
-        .is_some_and(|body| body.starts_with("BarManager|"))
+    text.starts_with(RPC_PREFIX)
+        || text
+            .strip_prefix("* ")
+            .is_some_and(|body| body.starts_with("BarManager|"))
+}
+
+/// How SPADS marks a JSON-RPC request or answer on a private message.
+pub const RPC_PREFIX: &str = "!#JSONRPC ";
+
+/// Asks a host how long its game has been going.
+///
+/// SPADS answers `status` over a JSON-RPC side-channel carried on ordinary
+/// private messages, and this is the one request that states a running game's
+/// age. It is what Chobby's battle tooltip sends, byte for byte
+/// (`liblobby/lobby/lobby.lua:1399`), which is how a tooltip can say "running
+/// for 23m 52s" about a room nobody has joined.
+pub const GAME_STATUS_REQUEST: &str =
+    r#"!#JSONRPC {"jsonrpc": "2.0", "method": "status", "params": ["game"], "id": 1}"#;
+
+/// What a host answered about itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RpcStatus {
+    /// A game is up. `waiting` is SPADS choosing start positions rather than
+    /// playing yet, which it still counts as time on the clock.
+    Game { seconds: u64, waiting: bool },
+    /// No game running, and how long since the last one ended when it says.
+    Lobby { since_last_game: Option<u64> },
+}
+
+/// Reads one `!#JSONRPC` answer.
+///
+/// Both shapes come back on the same channel and are told apart by which keys
+/// are present, exactly as Chobby tells them apart (`lobby.lua:1758-1797`):
+/// `result.game.status` carries `gameTime`, `result.battleLobby.status`
+/// carries `delaySinceLastGame`.
+pub fn parse_rpc(text: &str) -> Option<RpcStatus> {
+    let json = text.strip_prefix(RPC_PREFIX)?;
+    let rpc: serde_json::Value = serde_json::from_str(json).ok()?;
+    let result = rpc.get("result")?;
+
+    if let Some(status) = result.get("game").and_then(|game| game.get("status"))
+        && let Some(seconds) = status.get("gameTime").and_then(serde_json::Value::as_u64)
+    {
+        return Some(RpcStatus::Game {
+            seconds,
+            waiting: status.get("gameStatus").and_then(serde_json::Value::as_str)
+                == Some("waiting"),
+        });
+    }
+
+    let status = result
+        .get("battleLobby")
+        .and_then(|lobby| lobby.get("status"))?;
+    status.get("battleStatus")?;
+    Some(RpcStatus::Lobby {
+        since_last_game: status
+            .get("delaySinceLastGame")
+            .and_then(serde_json::Value::as_u64),
+    })
 }
 
 pub fn parse(text: &str) -> Option<Announcement> {
@@ -246,6 +304,59 @@ impl VoteState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_host_answers_how_long_its_game_has_been_going() {
+        let answer = r#"!#JSONRPC {"jsonrpc":"2.0","result":{"game":{"status":{"gameTime":1432,"gameStatus":"running"}}},"id":1}"#;
+        assert_eq!(
+            parse_rpc(answer),
+            Some(RpcStatus::Game {
+                seconds: 1432,
+                waiting: false
+            })
+        );
+    }
+
+    #[test]
+    fn choosing_start_positions_is_still_time_on_the_clock() {
+        let answer = r#"!#JSONRPC {"jsonrpc":"2.0","result":{"game":{"status":{"gameTime":12,"gameStatus":"waiting"}}},"id":1}"#;
+        assert_eq!(
+            parse_rpc(answer),
+            Some(RpcStatus::Game {
+                seconds: 12,
+                waiting: true
+            })
+        );
+    }
+
+    #[test]
+    fn a_room_with_no_game_says_how_long_since_the_last_one() {
+        let answer = r#"!#JSONRPC {"jsonrpc":"2.0","result":{"battleLobby":{"status":{"battleStatus":"waiting","delaySinceLastGame":300}}},"id":1}"#;
+        assert_eq!(
+            parse_rpc(answer),
+            Some(RpcStatus::Lobby {
+                since_last_game: Some(300)
+            })
+        );
+        // A host that has never run one answers null, which is not a failure.
+        let fresh = r#"!#JSONRPC {"jsonrpc":"2.0","result":{"battleLobby":{"status":{"battleStatus":"waiting","delaySinceLastGame":null}}},"id":1}"#;
+        assert_eq!(
+            parse_rpc(fresh),
+            Some(RpcStatus::Lobby {
+                since_last_game: None
+            })
+        );
+    }
+
+    #[test]
+    fn anything_else_on_that_channel_is_not_an_answer() {
+        assert_eq!(parse_rpc("hello"), None);
+        assert_eq!(parse_rpc("!#JSONRPC not json"), None);
+        // The request we sent, echoed back to us.
+        assert_eq!(parse_rpc(GAME_STATUS_REQUEST), None);
+        // Machine either way, so neither belongs in the chat log.
+        assert!(is_machine(GAME_STATUS_REQUEST));
+    }
 
     #[test]
     fn a_game_in_progress_is_read_out_of_the_welcome() {

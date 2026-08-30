@@ -120,6 +120,10 @@ enum Command {
     EnginePid {
         reply: Reply<Option<u32>>,
     },
+    RequestGameStatus {
+        founder: String,
+        reply: Reply<()>,
+    },
     PlayReplay {
         data_dir: PathBuf,
         path: String,
@@ -296,6 +300,13 @@ impl Client {
     /// Marks us away, so nobody waits on someone who has stepped out.
     pub async fn set_away(&self, away: bool) -> Result<(), ClientError> {
         self.ask(|reply| Command::SetAway { away, reply }).await
+    }
+
+    /// Asks a host how long its game has been going. The answer arrives as a
+    /// delta, not as a return value: it comes back as a private message.
+    pub async fn request_game_status(&self, founder: String) -> Result<(), ClientError> {
+        self.ask(|reply| Command::RequestGameStatus { founder, reply })
+            .await
     }
 
     /// The running engine's process id, for whoever needs to point at its
@@ -929,6 +940,10 @@ impl Runtime {
                     Err(ClientError::Refused("nothing is downloading".into()))
                 };
                 let _ = reply.send(answer);
+            }
+            Command::RequestGameStatus { founder, reply } => {
+                self.run_session(reply, |session| session.request_game_status(&founder))
+                    .await;
             }
             Command::EnginePid { reply } => {
                 let _ = reply.send(Ok(self.engine.as_ref().and_then(Child::id)));

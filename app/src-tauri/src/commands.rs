@@ -351,6 +351,14 @@ pub async fn download_missing(app: State<'_, App>) -> Result<()> {
     Ok(())
 }
 
+/// Asks a room's host how long its game has been going. The answer comes back
+/// as a `GameStartedAgo` delta, because SPADS replies by private message.
+#[tauri::command]
+pub async fn request_game_status(app: State<'_, App>, founder: String) -> Result<()> {
+    app.client.request_game_status(founder).await?;
+    Ok(())
+}
+
 /// Records whether the last room was joined as a player, which is what the
 /// `remember` join posture remembers. Written on its own so taking a seat does
 /// not rewrite every other setting.
