@@ -63,6 +63,14 @@ export function Chat() {
       .slice(0, 30)
   })
 
+  /** Friends, online ones first: an offline friend is not one you can talk to. */
+  const friends = createMemo(() =>
+    [...lobby.friends.friends].sort((a, b) => {
+      const here = Number(b in lobby.users) - Number(a in lobby.users)
+      return here || a.localeCompare(b)
+    }),
+  )
+
   const rooms = createMemo(() => [
     BATTLE_ROOM,
     SERVER_ROOM,
@@ -203,6 +211,9 @@ export function Chat() {
           onInput={(e) => setFindPerson(e.currentTarget.value)}
         />
         <Show when={findPerson().trim().length > 1}>
+          <div class='room-list-head'>
+            <span class='filter-label'>Matches</span>
+          </div>
           <For
             each={people()}
             fallback={<p class='muted setup-empty'>Nobody by that name.</p>}
@@ -291,7 +302,7 @@ export function Chat() {
           <div class='room-list-head'>
             <span class='filter-label'>Friends</span>
           </div>
-          <For each={lobby.friends.friends}>
+          <For each={friends()}>
             {(name) => (
               <button
                 class='room-tab friend'

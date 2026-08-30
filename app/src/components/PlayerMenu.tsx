@@ -2,6 +2,7 @@ import { For, Show, createSignal, onCleanup } from 'solid-js'
 import { api, describeError } from '../ipc/client'
 import { ensureRoom, privateRoom, pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
+import { Flag, RankIcon } from './icons'
 
 /**
  * What you can do about a person, reachable from wherever their name appears.
@@ -57,6 +58,19 @@ export function PlayerMenu() {
         const isIgnored = () => lobby.friends.ignored.includes(name())
         const isMe = () => name() === lobby.me
 
+        const user = () => lobby.users[name()]
+        /**
+         * The room they are in, when it is one we can see and not the one we
+         * are already standing in — where they are is only news if it is
+         * somewhere else.
+         */
+        const theirRoom = () => {
+          const id = user()?.battleId
+          if (id === null || id === undefined || id === lobby.myBattle?.id)
+            return undefined
+          return lobby.battles[id]
+        }
+
         const items = () => {
           const entries: Array<[string, () => Promise<void> | void]> = [
             [
@@ -67,6 +81,23 @@ export function PlayerMenu() {
               },
             ],
           ]
+          const room = theirRoom()
+          if (room) {
+            entries.push([
+              'Go to their room',
+              async () => {
+                // Passworded rooms are the host's business; the list is where
+                // you get asked for one.
+                if (room.passworded) {
+                  pushNotice('info', `${room.title} needs a password`)
+                  location.hash = '#/battles'
+                  return
+                }
+                await api.joinBattle(room.id, null)
+                location.hash = '#/room'
+              },
+            ])
+          }
           if (isMe()) return entries
           entries.push(
             isFriend()
@@ -88,6 +119,27 @@ export function PlayerMenu() {
             onMouseDown={(event) => event.stopPropagation()}
           >
             <div class='player-menu-name'>{name()}</div>
+            <Show when={user()}>
+              {(who) => (
+                <div class='player-menu-about'>
+                  <Flag country={who().country} />
+                  <RankIcon status={who().status} />
+                  <Show when={who().status.inGame}>
+                    <span class='chip warn'>in game</span>
+                  </Show>
+                  <Show when={who().status.away}>
+                    <span class='chip'>away</span>
+                  </Show>
+                </div>
+              )}
+            </Show>
+            <Show when={theirRoom()}>
+              {(room) => (
+                <div class='player-menu-about muted' title={room().title}>
+                  in {room().title}
+                </div>
+              )}
+            </Show>
             <For each={items()}>
               {([label, run]) => (
                 <button

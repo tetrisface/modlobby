@@ -1845,3 +1845,16 @@ input[type='checkbox'].v-edit {
   color: var(--bg);
   font-weight: 600;
 }
+
+.player-menu-about {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px 5px;
+  font-size: 11px;
+  color: var(--muted);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
