@@ -1929,3 +1929,47 @@ button.link:hover {
   margin-left: 5px;
   vertical-align: 1px;
 }
+
+/* ---- a question that does not stop the lobby ---- */
+
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: rgb(6 9 12 / 62%);
+}
+
+.sheet-card {
+  width: min(340px, calc(100vw - 40px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  box-shadow: 0 18px 44px rgb(0 0 0 / 55%);
+}
+
+.sheet-card h2 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sheet-card p {
+  margin: 0;
+  font-size: 12px;
+}
+
+.sheet-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

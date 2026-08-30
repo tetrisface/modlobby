@@ -80,9 +80,20 @@ export function BattleList() {
     overscan: 10,
   })
 
+  /**
+   * A passworded room asks first.
+   *
+   * Not with `window.prompt`: it stops the whole page until it is answered —
+   * chat, the battle list and every timer with it — and WebKitGTK, which is
+   * the webview everywhere that is not Windows, refuses it outright and hands
+   * back `null`, so a passworded room could never be joined there at all.
+   */
   async function join(battle: BattleView) {
-    const password = battle.passworded ? window.prompt('Room password') : null
-    if (battle.passworded && password === null) return
+    if (battle.passworded) return setAsking(battle)
+    await enter(battle, null)
+  }
+
+  async function enter(battle: BattleView, password: string | null) {
     try {
       await api.joinBattle(battle.id, password)
       navigate('/room')
@@ -107,6 +118,7 @@ export function BattleList() {
    */
   const [remembered, setRemembered] = createSignal<number | null>(null)
   const [peek, setPeek] = createSignal<{ id: number; top: number } | null>(null)
+  const [asking, setAsking] = createSignal<BattleView | null>(null)
   onMount(async () => {
     try {
       setRemembered(await api.rememberedBattle())
@@ -319,6 +331,19 @@ export function BattleList() {
         </Show>
 
         <Occupants peek={peek()} />
+
+        <Show when={asking()}>
+          {(battle) => (
+            <PasswordDialog
+              title={battle().title}
+              onCancel={() => setAsking(null)}
+              onEnter={(password) => {
+                setAsking(null)
+                void enter(battle(), password)
+              }}
+            />
+          )}
+        </Show>
       </div>
     </section>
   )
@@ -391,6 +416,52 @@ function Occupants(props: { peek: { id: number; top: number } | null }) {
         </Show>
       </aside>
     </Show>
+  )
+}
+
+/** Asks for a room's password without stopping the rest of the lobby. */
+function PasswordDialog(props: {
+  title: string
+  onEnter: (password: string) => void
+  onCancel: () => void
+}) {
+  const [password, setPassword] = createSignal('')
+  let field: HTMLInputElement | undefined
+
+  onMount(() => field?.focus())
+
+  return (
+    <div class='sheet' onMouseDown={props.onCancel}>
+      <form
+        class='sheet-card'
+        onMouseDown={(event) => event.stopPropagation()}
+        onSubmit={(event) => {
+          event.preventDefault()
+          props.onEnter(password())
+        }}
+      >
+        <h2>{props.title}</h2>
+        <p class='muted'>This room needs a password.</p>
+        <input
+          ref={field}
+          type='password'
+          value={password()}
+          placeholder='Password'
+          onInput={(event) => setPassword(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') props.onCancel()
+          }}
+        />
+        <div class='sheet-actions'>
+          <button type='button' onClick={props.onCancel}>
+            Cancel
+          </button>
+          <button class='primary' type='submit'>
+            Join
+          </button>
+        </div>
+      </form>
+    </div>
   )
 }
 

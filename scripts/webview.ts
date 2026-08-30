@@ -18,6 +18,7 @@
  */
 
 const PORT = process.env.MODLOBBY_DEBUG_PORT ?? '9222'
+const TIMEOUT_MS = Number(process.env.MODLOBBY_DEBUG_TIMEOUT ?? 10_000)
 
 type Target = { type: string; webSocketDebuggerUrl: string }
 
@@ -49,35 +50,60 @@ socket.onmessage = (event) => {
 }
 await new Promise((resolve) => (socket.onopen = resolve))
 
+/**
+ * One request, with a deadline.
+ *
+ * A navigation destroys the page's execution context, and an `evaluate` that
+ * was in flight when that happens is never answered. Without a deadline this
+ * script waits for that answer forever, is killed from outside, and leaves the
+ * debugger session attached — after which every later run appears to hang and
+ * the app looks wedged when it is perfectly idle.
+ */
 function send(method: string, params: unknown = {}): Promise<Message> {
   const id = (nextId += 1)
-  return new Promise((resolve) => {
-    waiting.set(id, resolve)
+  return new Promise((resolve, reject) => {
+    const giveUp = setTimeout(() => {
+      waiting.delete(id)
+      reject(new Error(`${method} went unanswered after ${TIMEOUT_MS}ms`))
+    }, TIMEOUT_MS)
+    waiting.set(id, (message) => {
+      clearTimeout(giveUp)
+      resolve(message)
+    })
     socket.send(JSON.stringify({ id, method, params }))
   })
 }
 
 const [, , command, argument] = Bun.argv
 
-if (command === 'eval') {
-  const answer = await send('Runtime.evaluate', {
-    expression: argument,
-    returnByValue: true,
-    // So an expression can be an async function call and still be waited for.
-    awaitPromise: true,
-  })
-  const result = answer.result?.result as
-    { value?: unknown; description?: string } | undefined
-  console.log(
-    JSON.stringify(result?.value ?? result?.description ?? null, null, 1),
-  )
-} else if (command === 'shot') {
-  const answer = await send('Page.captureScreenshot', { format: 'png' })
-  const data = (answer.result?.data as string) ?? ''
-  await Bun.write(argument!, Buffer.from(data, 'base64'))
-  console.log(`wrote ${argument}`)
-} else {
-  console.error('usage: webview.ts eval <expression> | shot <file.png>')
+// Whatever happens, hand the session back: an attached debugger that nobody
+// is talking to is what makes the next run look like a hung app.
+process.on('exit', () => socket.close())
+
+try {
+  if (command === 'eval') {
+    const answer = await send('Runtime.evaluate', {
+      expression: argument,
+      returnByValue: true,
+      // So an expression can be an async function call and still be waited for.
+      awaitPromise: true,
+    })
+    const result = answer.result?.result as
+      { value?: unknown; description?: string } | undefined
+    console.log(
+      JSON.stringify(result?.value ?? result?.description ?? null, null, 1),
+    )
+  } else if (command === 'shot') {
+    const answer = await send('Page.captureScreenshot', { format: 'png' })
+    const data = (answer.result?.data as string) ?? ''
+    await Bun.write(argument!, Buffer.from(data, 'base64'))
+    console.log(`wrote ${argument}`)
+  } else {
+    console.error('usage: webview.ts eval <expression> | shot <file.png>')
+    process.exit(1)
+  }
+} catch (error) {
+  console.error(String(error))
   process.exit(1)
 }
 
