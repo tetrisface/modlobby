@@ -6,6 +6,7 @@ import {
 } from '@tauri-apps/plugin-notification'
 import type { Alert } from './bindings/Alert'
 import type { AlertKind } from './bindings/AlertKind'
+import { api } from './client'
 import { pushNotice } from '../store/chat'
 import { settings } from '../store/settings'
 
@@ -113,7 +114,7 @@ export async function raise(kind: AlertKind, body: string): Promise<void> {
   if (what === 'nothing') return
   if (what === 'lobby') return pushNotice('info', body)
 
-  flash()
+  void flash(kind)
   if (!(await allowed())) return cannot()
   try {
     sendNotification({ title: TITLES[kind], body })
@@ -122,19 +123,31 @@ export async function raise(kind: AlertKind, body: string): Promise<void> {
   }
 }
 
+/** Alerts about the game itself, which is the window you would rather see. */
+const ABOUT_THE_GAME: ReadonlySet<AlertKind> = new Set<AlertKind>([
+  'gameStarting',
+  'gameEnded',
+])
+
 /**
- * Flashes this window in the taskbar until it is looked at.
+ * Flashes a taskbar entry until it is looked at.
  *
- * `Critical` is the flag pair Chobby uses: caption and tray, and no stopping
- * until the window comes to the foreground.
+ * Which one depends on what happened. A game starting or finishing is news
+ * about the engine's window, and that is where you are going to look — the
+ * lobby is behind it and flashing it would point at the wrong thing. Anything
+ * else is news about the lobby.
+ *
+ * The engine is a process we spawned rather than a window we own, so that half
+ * goes through Rust and `FlashWindowEx`; it answers whether it found a window
+ * at all, since a game that is still loading has none yet and one that has
+ * exited has none any more. Either way something flashes.
  */
-function flash(): void {
+async function flash(kind: AlertKind): Promise<void> {
   try {
-    void getCurrentWindow()
-      .requestUserAttention(UserAttentionType.Critical)
-      .catch(() => {})
+    if (ABOUT_THE_GAME.has(kind) && (await api.flashEngine())) return
+    await getCurrentWindow().requestUserAttention(UserAttentionType.Critical)
   } catch {
-    // A platform without a taskbar to flash is not an error; the notification
-    // is the point and it has already gone out.
+    // A platform with no taskbar to flash is not an error; the notification is
+    // the point and it has already gone out.
   }
 }

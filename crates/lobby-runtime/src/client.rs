@@ -117,6 +117,9 @@ enum Command {
         away: bool,
         reply: Reply<()>,
     },
+    EnginePid {
+        reply: Reply<Option<u32>>,
+    },
     PlayReplay {
         data_dir: PathBuf,
         path: String,
@@ -293,6 +296,12 @@ impl Client {
     /// Marks us away, so nobody waits on someone who has stepped out.
     pub async fn set_away(&self, away: bool) -> Result<(), ClientError> {
         self.ask(|reply| Command::SetAway { away, reply }).await
+    }
+
+    /// The running engine's process id, for whoever needs to point at its
+    /// window. `None` when no engine of ours is running.
+    pub async fn engine_pid(&self) -> Result<Option<u32>, ClientError> {
+        self.ask(|reply| Command::EnginePid { reply }).await
     }
 
     /// Starts a game against AI with no server involved.
@@ -920,6 +929,9 @@ impl Runtime {
                     Err(ClientError::Refused("nothing is downloading".into()))
                 };
                 let _ = reply.send(answer);
+            }
+            Command::EnginePid { reply } => {
+                let _ = reply.send(Ok(self.engine.as_ref().and_then(Child::id)));
             }
             Command::SetAway { away, reply } => {
                 self.run_session(reply, |session| {

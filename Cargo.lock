@@ -2742,6 +2742,7 @@ dependencies = [
  "tracing-subscriber",
  "ts-rs",
  "tweaks",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

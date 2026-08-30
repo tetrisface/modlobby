@@ -25,6 +25,13 @@ tauri = { workspace = true }
 tauri-plugin-notification = { workspace = true }
 tauri-plugin-opener = { workspace = true }
 tauri-plugin-window-state = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+# Only to flash the engine's taskbar entry, which is a window we do not own.
+windows-sys = { workspace = true, features = [
+  "Win32_Foundation",
+  "Win32_UI_WindowsAndMessaging",
+] }
 tweaks = { workspace = true }
 tracing = { workspace = true }
 tracing-appender = { workspace = true }

@@ -351,6 +351,19 @@ pub async fn download_missing(app: State<'_, App>) -> Result<()> {
     Ok(())
 }
 
+/// Flashes the taskbar entry of the running engine, if it has a window yet.
+///
+/// Answers whether it did, so the caller can fall back to flashing the lobby:
+/// when a game is starting the engine may not have opened a window, and when
+/// one has ended it may already be gone.
+#[tauri::command]
+pub async fn flash_engine(app: State<'_, App>) -> Result<bool> {
+    let Some(pid) = app.client.engine_pid().await? else {
+        return Ok(false);
+    };
+    Ok(crate::flash::flash_process(pid))
+}
+
 /// Marks us away, or back.
 #[tauri::command]
 pub async fn set_away(app: State<'_, App>, away: bool) -> Result<()> {

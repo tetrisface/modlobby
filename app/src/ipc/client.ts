@@ -47,6 +47,7 @@ export const api = {
   stopDownload: () => invoke<void>('stop_download'),
   ring: (user: string) => invoke<void>('ring', { user }),
   setAway: (away: boolean) => invoke<void>('set_away', { away }),
+  flashEngine: () => invoke<boolean>('flash_engine'),
   rememberChannels: (channels: string[]) =>
     invoke<Settings>('remember_channels', { channels }),
   skirmishOptions: () => invoke<SkirmishOptions>('skirmish_options'),

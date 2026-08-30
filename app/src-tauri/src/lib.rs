@@ -3,6 +3,7 @@
 //! transport forwards `UiMessage`s, settings changes are emitted as events.
 
 mod commands;
+mod flash;
 mod logging;
 mod state;
 mod transport;
@@ -68,6 +69,7 @@ pub fn run() {
             commands::stop_download,
             commands::ring,
             commands::set_away,
+            commands::flash_engine,
             commands::remember_channels,
             commands::skirmish_options,
             commands::start_skirmish,
