@@ -44,8 +44,31 @@ export function PveScore() {
   })
   onCleanup(() => clearTimeout(pending))
 
-  const [score] = createResource(settled, () =>
-    api.pveScore().catch(() => null),
+  /**
+   * Whether this room has a PvE opponent in it at all.
+   *
+   * Decided here as well as in Rust, which stays authoritative for what is
+   * sent. This one only decides whether to ask — without it a room with no AI
+   * in it flashes "PvE" and a row of dots before the answer comes back null,
+   * and every settings change in every ordinary room costs a round trip to
+   * find out nothing.
+   */
+  const isPve = () => {
+    const id = lobby.myBattle?.id
+    const room = id === undefined ? undefined : lobby.battles[id]
+    const names = (room?.bots ?? [])
+      .map((bot) => bot.ai.toLowerCase())
+      .join(' ')
+    const raptors = names.includes('raptor')
+    const scavengers = names.includes('scavenger')
+    // Both at once is not a setup the model knows, so it is not asked about.
+    if (raptors && scavengers) return false
+    return raptors || scavengers || names.includes('barb')
+  }
+
+  const [score] = createResource(
+    () => (isPve() ? settled() : undefined),
+    () => api.pveScore().catch(() => null),
   )
 
   const percent = (value: number | null) =>
