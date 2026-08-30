@@ -44,6 +44,7 @@ export const api = {
     invoke<void>('say_private', { user, text }),
   listChannels: () => invoke<void>('list_channels'),
   downloadMissing: () => invoke<void>('download_missing'),
+  stopDownload: () => invoke<void>('stop_download'),
   skirmishOptions: () => invoke<SkirmishOptions>('skirmish_options'),
   startSkirmish: (
     game: string,

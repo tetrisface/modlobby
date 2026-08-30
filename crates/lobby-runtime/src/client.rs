@@ -106,6 +106,9 @@ enum Command {
     DownloadMissing {
         reply: Reply<()>,
     },
+    StopDownload {
+        reply: Reply<()>,
+    },
     PlayReplay {
         data_dir: PathBuf,
         path: String,
@@ -269,6 +272,11 @@ impl Client {
         self.ask(|reply| Command::DownloadMissing { reply }).await
     }
 
+    /// Stops the running download, leaving whatever it already wrote.
+    pub async fn stop_download(&self) -> Result<(), ClientError> {
+        self.ask(|reply| Command::StopDownload { reply }).await
+    }
+
     /// Starts a game against AI with no server involved.
     pub async fn start_skirmish(
         &self,
@@ -420,6 +428,15 @@ struct Runtime {
     allow_public_seat: bool,
     /// What a running pr-downloader was asked for, or `None` when none is.
     downloading: Option<String>,
+    /// Stops the running child. Dropping it is what the child watches for.
+    download_stop: Option<oneshot::Sender<()>>,
+    /// Set while a stop we asked for is still on its way, so the child dying
+    /// is reported as stopped rather than as a failure.
+    download_stopping: bool,
+    /// The room contents we have already fetched for once. A map the CDN does
+    /// not have would otherwise be retried forever, since every failed
+    /// download ends in another content check.
+    auto_fetched: Option<(String, String, String)>,
     download_tx: mpsc::Sender<DownloadEvent>,
     download_rx: mpsc::Receiver<DownloadEvent>,
     projector: Projector,
@@ -462,6 +479,9 @@ impl Runtime {
             reconnect: reconnect::Reconnect::default(),
             allow_public_seat: false,
             downloading: None,
+            download_stop: None,
+            download_stopping: false,
+            auto_fetched: None,
             download_tx,
             download_rx,
             projector: Projector::new(),
@@ -568,7 +588,10 @@ impl Runtime {
             .map_err(ClientError::Refused)?;
         let stdout = child.stdout.take();
 
+        let (stop_tx, stop_rx) = oneshot::channel();
         self.downloading = Some(what.clone());
+        self.download_stop = Some(stop_tx);
+        self.download_stopping = false;
         self.batcher.push(Delta::Download(DownloadStatus::Running {
             what: what.clone(),
             current: 0,
@@ -577,22 +600,36 @@ impl Runtime {
 
         let events = self.download_tx.clone();
         tokio::spawn(async move {
-            if let Some(mut stdout) = stdout {
-                // Read raw rather than by line: pr-downloader redraws progress
-                // with carriage returns, so a line reader would see one
-                // enormous line at the end and no progress at all.
-                let mut buffer = String::new();
-                let mut chunk = [0_u8; 4096];
-                while let Ok(read) = stdout.read(&mut chunk).await {
-                    if read == 0 {
-                        break;
-                    }
-                    buffer.push_str(&String::from_utf8_lossy(&chunk[..read]));
-                    for line in recoil::split_output(&mut buffer) {
-                        if let Some(progress) = recoil::Progress::parse(&line) {
-                            let _ = events.send(DownloadEvent::Progress(progress)).await;
+            let progress = events.clone();
+            let pump = async move {
+                if let Some(mut stdout) = stdout {
+                    // Read raw rather than by line: pr-downloader redraws progress
+                    // with carriage returns, so a line reader would see one
+                    // enormous line at the end and no progress at all.
+                    let mut buffer = String::new();
+                    let mut chunk = [0_u8; 4096];
+                    while let Ok(read) = stdout.read(&mut chunk).await {
+                        if read == 0 {
+                            break;
+                        }
+                        buffer.push_str(&String::from_utf8_lossy(&chunk[..read]));
+                        for line in recoil::split_output(&mut buffer) {
+                            if let Some(step) = recoil::Progress::parse(&line) {
+                                let _ = progress.send(DownloadEvent::Progress(step)).await;
+                            }
                         }
                     }
+                }
+            };
+            // The stop side owns a sender the runtime drops; either the pump
+            // finishing or that drop ends the wait, and only then is the child
+            // asked to stop — pr-downloader leaves a partial file behind, which
+            // its own resume handles on the next attempt.
+            tokio::pin!(pump);
+            tokio::select! {
+                () = &mut pump => {}
+                _ = stop_rx => {
+                    let _ = child.start_kill();
                 }
             }
             let status = child.wait().await;
@@ -622,7 +659,11 @@ impl Runtime {
             }
             DownloadEvent::Finished { what, ok } => {
                 self.downloading = None;
-                self.batcher.push(Delta::Download(if ok {
+                self.download_stop = None;
+                let stopped = std::mem::take(&mut self.download_stopping);
+                self.batcher.push(Delta::Download(if stopped {
+                    DownloadStatus::Idle
+                } else if ok {
                     DownloadStatus::Done { what }
                 } else {
                     DownloadStatus::Failed {
@@ -668,13 +709,30 @@ impl Runtime {
             return;
         };
         let available = content::Library::new(data_dir).check(&key.0, &key.1, &key.2);
-        self.checked = Some(key);
+        self.checked = Some(key.clone());
         self.batcher.push(Delta::Content {
             engine: available.engine,
             game: available.game,
             map: available.map,
         });
         self.set_synced(available.complete()).await;
+
+        // Joining a room you have no map for is a request for the map: there is
+        // nothing else to do in it. Only what pr-downloader can fetch, only
+        // when nothing else is running, and only once per room — a name the
+        // CDN does not carry would otherwise be retried by every content check
+        // that a failed download itself provokes.
+        let fetchable = !available.game || !available.map;
+        if fetchable
+            && available.engine
+            && self.downloading.is_none()
+            && self.auto_fetched.as_ref() != Some(&key)
+        {
+            self.auto_fetched = Some(key);
+            if let Err(error) = self.start_download().await {
+                tracing::debug!(%error, "not fetching the room's content");
+            }
+        }
     }
 
     async fn set_synced(&mut self, synced: bool) {
@@ -834,6 +892,16 @@ impl Runtime {
             Command::DownloadMissing { reply } => {
                 let result = self.start_download().await;
                 let _ = reply.send(result);
+            }
+            Command::StopDownload { reply } => {
+                let stopped = self.download_stop.take().is_some();
+                self.download_stopping = stopped;
+                let answer = if stopped {
+                    Ok(())
+                } else {
+                    Err(ClientError::Refused("nothing is downloading".into()))
+                };
+                let _ = reply.send(answer);
             }
             Command::RefreshFriends { reply } => {
                 self.run_session(reply, |session| {

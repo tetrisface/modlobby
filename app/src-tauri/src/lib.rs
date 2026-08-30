@@ -62,6 +62,7 @@ pub fn run() {
             commands::say_private,
             commands::list_channels,
             commands::download_missing,
+            commands::stop_download,
             commands::skirmish_options,
             commands::start_skirmish,
             commands::list_replays,

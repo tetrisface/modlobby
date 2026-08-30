@@ -341,6 +341,10 @@ function Chips(props: { battle: BattleView }) {
 
 /**
  * What the room needs and this machine lacks, with the means to fetch it.
+ *
+ * The runtime starts this by itself on joining — a room whose map you do not
+ * have is a room you cannot do anything in — so the button is for a retry
+ * after a failure, and the stop is for when you would rather not.
  * pr-downloader ships inside an engine, so an engine we do not have is the one
  * thing this cannot fix — it says so rather than offering a button that fails.
  */
@@ -369,9 +373,12 @@ function Missing(props: { parts: string[] }) {
                 ? Math.round((running().current / running().total) * 100)
                 : 0
             return (
-              <span class='chip info' title={running().what}>
-                Downloading {percent()}%
-              </span>
+              <>
+                <span class='chip info' title={running().what}>
+                  Downloading {percent()}%
+                </span>
+                <button onClick={() => void api.stopDownload()}>Stop</button>
+              </>
             )
           })()}
         </Match>

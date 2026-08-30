@@ -351,6 +351,14 @@ pub async fn download_missing(app: State<'_, App>) -> Result<()> {
     Ok(())
 }
 
+/// Stops the running download. What it already wrote stays on disk, and
+/// pr-downloader picks up from there when it is asked again.
+#[tauri::command]
+pub async fn stop_download(app: State<'_, App>) -> Result<()> {
+    app.client.stop_download().await?;
+    Ok(())
+}
+
 /// Asks the server for the friend list and the pending requests.
 #[tauri::command]
 pub async fn refresh_friends(app: State<'_, App>) -> Result<()> {
