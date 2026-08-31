@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import type { BattleList } from '../ipc/bindings/BattleList'
 import type { BattleView } from '../ipc/bindings/BattleView'
-import { arrange, isVsAi, matches, type Row } from './battles'
+import { arrange, isVsAi, matches, stabilize, type Row } from './battles'
 
 let nextId = 1
 
@@ -265,5 +265,40 @@ describe('sorting by a column', () => {
         arrange(banded, filters({ sort: 'players', sortDescending: true }), ''),
       ),
     ).toEqual(['locked big', 'open small'])
+  })
+})
+
+describe('holding the order still under the pointer', () => {
+  const ids = (rows: Row[]) => rows.map((r) => r.battle.id)
+
+  test('a fresh sort does not move rows the reader is looking at', () => {
+    const resorted = [
+      row({ id: 3, playerCount: 9 }),
+      row({ id: 1, playerCount: 8 }),
+      row({ id: 2, playerCount: 7 }),
+    ]
+    // The reader froze the list when it read 1, 2, 3.
+    expect(ids(stabilize(resorted, [1, 2, 3]))).toEqual([1, 2, 3])
+  })
+
+  test('a room that closed drops out; the rest stay put', () => {
+    const resorted = [row({ id: 3 }), row({ id: 1 })]
+    expect(ids(stabilize(resorted, [1, 2, 3]))).toEqual([1, 3])
+  })
+
+  test('a room that opened appends at the bottom, in sorted order', () => {
+    const resorted = [
+      row({ id: 9, playerCount: 16 }),
+      row({ id: 1, playerCount: 8 }),
+      row({ id: 4, playerCount: 2 }),
+    ]
+    // 9 and 4 are new: they arrive below, keeping their order relative to
+    // each other, rather than teleporting into the middle of the reading.
+    expect(ids(stabilize(resorted, [1]))).toEqual([1, 9, 4])
+  })
+
+  test('holding nothing is the sorted list itself', () => {
+    const resorted = [row({ id: 2 }), row({ id: 1 })]
+    expect(ids(stabilize(resorted, []))).toEqual([2, 1])
   })
 })

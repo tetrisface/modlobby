@@ -155,3 +155,26 @@ export const MODES: ReadonlyArray<{ key: ModeFilter; label: string }> = [
   { key: 'pve', label: 'PvE' },
   { key: 'pvp', label: 'PvP' },
 ]
+
+/**
+ * The rows in a held order, for while the pointer is over the list.
+ *
+ * On a busy evening the list re-sorts every few seconds, which means the room
+ * you are reaching for jumps away as you reach. So while the pointer is inside
+ * the list the *order* holds still and only the rows' contents update; the
+ * fresh order applies the moment the pointer leaves. `held` is the order being
+ * preserved, as battle ids:
+ *
+ * - a held id whose room has closed simply drops out — a row cannot outlive
+ *   its room, and the collapse is the one movement that cannot be helped;
+ * - a room the held order does not know is appended at the bottom, in its own
+ *   sorted order, rather than teleporting into the middle.
+ */
+export function stabilize(sorted: Row[], held: readonly number[]): Row[] {
+  const byId = new Map(sorted.map((row) => [row.battle.id, row]))
+  const known = new Set(held)
+  return [
+    ...held.flatMap((id) => byId.get(id) ?? []),
+    ...sorted.filter((row) => !known.has(row.battle.id)),
+  ]
+}

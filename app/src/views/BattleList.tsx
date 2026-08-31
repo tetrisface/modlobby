@@ -24,7 +24,7 @@ import {
   noteRunning,
   running as runningGames,
 } from '../store/running'
-import { MODES, SORTS, arrange, type Row } from '../lib/battles'
+import { MODES, SORTS, arrange, stabilize, type Row } from '../lib/battles'
 import { mapImages, sized } from '../lib/maps'
 import { pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
@@ -79,7 +79,29 @@ export function BattleList() {
       hasFriend: battle.members.some((name) => known.has(name)),
     }))
   })
-  const rows = createMemo(() => arrange(all(), filters(), search()))
+  const sorted = createMemo(() => arrange(all(), filters(), search()))
+
+  /**
+   * The order held still while the pointer is inside the list, as battle ids.
+   *
+   * On a busy evening the sort keys change every few seconds, and the room
+   * you are reaching for jumps away as you reach. So entering the list pins
+   * the order and leaving it lets the fresh sort through; rows keep updating
+   * their contents in place the whole time. Changing what is asked for —
+   * sort, filters, search — releases the pin too, because then the reader
+   * asked for the movement.
+   */
+  const [held, setHeld] = createSignal<number[] | null>(null)
+  createEffect(() => {
+    filters()
+    search()
+    setHeld(null)
+  })
+
+  const rows = createMemo(() => {
+    const pinned = held()
+    return pinned === null ? sorted() : stabilize(sorted(), pinned)
+  })
 
   // How long each running game has been going. The store holds it, because a
   // host can also tell us outright — see `store/running`.
@@ -298,7 +320,12 @@ export function BattleList() {
         )}
       </Show>
 
-      <div class='list' ref={scrollRef}>
+      <div
+        class='list'
+        ref={scrollRef}
+        onPointerEnter={() => setHeld(rows().map((row) => row.battle.id))}
+        onPointerLeave={() => setHeld(null)}
+      >
         <Show
           when={rows().length > 0}
           fallback={
