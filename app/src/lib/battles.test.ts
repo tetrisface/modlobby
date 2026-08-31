@@ -173,6 +173,19 @@ describe("relevance, which is Chobby's order", () => {
     ])
   })
 
+  test('spectators break a player-count tie, busiest audience first', () => {
+    const rows = [
+      row({ title: 'unwatched', playerCount: 8, spectatorCount: 0, id: 3 }),
+      row({ title: 'popular', playerCount: 8, spectatorCount: 5, id: 1 }),
+      row({ title: 'watched', playerCount: 8, spectatorCount: 2, id: 2 }),
+    ]
+    expect(titles(arrange(rows, filters(), ''))).toEqual([
+      'popular',
+      'watched',
+      'unwatched',
+    ])
+  })
+
   test('an idle empty room sinks below a busy one, but not below a running one', () => {
     const rows = [
       row({ title: 'idle', playerCount: 0 }),

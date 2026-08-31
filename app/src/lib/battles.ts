@@ -96,7 +96,18 @@ function relevance(a: Row, b: Row): number {
   if (a.battle.playerCount !== b.battle.playerCount)
     return b.battle.playerCount - a.battle.playerCount
 
-  return b.battle.id - a.battle.id
+  return watchers(a, b) || b.battle.id - a.battle.id
+}
+
+/**
+ * Relevance's second key: more spectators first.
+ *
+ * Among rooms with the same number of players, the one people are watching is
+ * the more interesting one. The column sorts keep their plain id tie-break —
+ * this is the default order's opinion, not a rule about every column.
+ */
+function watchers(a: Row, b: Row): number {
+  return b.battle.spectatorCount - a.battle.spectatorCount
 }
 
 const BY: Record<
