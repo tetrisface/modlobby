@@ -10,6 +10,7 @@ mod ingame;
 mod logging;
 mod overlay;
 mod presets;
+mod screen;
 mod state;
 mod transport;
 mod win;
@@ -82,8 +83,18 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         // Where the window was and how big it was, kept between runs — a lobby
-        // is a window you arrange once and then live with.
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        // is a window you arrange once and then live with. Fullscreen is
+        // deliberately not part of it: the lobby's fullscreen is its own
+        // (`screen.rs`), and an OS-level fullscreen restored at startup is
+        // exactly the stuck state that made the toggle look dead.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::all()
+                        - tauri_plugin_window_state::StateFlags::FULLSCREEN,
+                )
+                .build(),
+        )
         .plugin(
             // The handler fires on press and release; only one of those is an
             // instruction.
@@ -114,6 +125,7 @@ pub fn run() {
                 )),
             ));
             tauri_app.manage(controller.clone());
+            tauri_app.manage(screen::Screen::default());
 
             // Escape inside a game. The listener is bound before anything is
             // written, so the widget always names a port that answers.
@@ -216,8 +228,8 @@ pub fn run() {
             commands::stop_game,
             commands::quit_all,
             commands::shutdown,
-            commands::is_fullscreen,
-            commands::toggle_fullscreen,
+            screen::is_fullscreen,
+            screen::toggle_fullscreen,
             boxes::start_boxes,
             boxes::decode_boxes,
             engine::download_engine,

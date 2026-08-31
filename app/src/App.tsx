@@ -176,7 +176,14 @@ function Layout(props: ParentProps) {
   return (
     <div class='shell'>
       <IconSprite />
-      <nav class='nav'>
+      {/* The nav doubles as the title bar, because the transparent window
+          has none: empty nav space drags the window, double-click maximizes.
+          Only in an ordinary window — a fullscreen or overlaid one is not a
+          thing to drag around. */}
+      <nav
+        class='nav'
+        data-tauri-drag-region={!fullscreen() && !over() ? true : undefined}
+      >
         <span class='brand'>modlobby</span>
         <A href='/skirmish'>Skirmish</A>
         <Show when={lobby.phase === 'ready'}>
@@ -202,7 +209,10 @@ function Layout(props: ParentProps) {
           <A href='/presets'>Presets</A>
         </Show>
         <A href='/settings'>Settings</A>
-        <span class='spacer' />
+        <span
+          class='spacer'
+          data-tauri-drag-region={!fullscreen() && !over() ? true : undefined}
+        />
         <Show
           when={lobby.me}
           fallback={<span class='muted'>not logged in</span>}

@@ -509,22 +509,6 @@ pub fn shutdown(handle: tauri::AppHandle) {
     handle.exit(0);
 }
 
-/// Whether the window is fullscreen right now, for drawing the toggle.
-#[tauri::command]
-pub fn is_fullscreen(window: tauri::Window) -> bool {
-    window.is_fullscreen().unwrap_or(false)
-}
-
-/// Toggles the window between fullscreen and windowed; answers the new state.
-#[tauri::command]
-pub fn toggle_fullscreen(window: tauri::Window) -> Result<bool> {
-    let now = window.is_fullscreen().unwrap_or(false);
-    window
-        .set_fullscreen(!now)
-        .map_err(|err| ApiError::new("window", err.to_string()))?;
-    Ok(!now)
-}
-
 /// The same thing the hotkey does, for people who would rather click.
 #[tauri::command]
 pub fn overlay_toggle(overlay: State<'_, std::sync::Arc<crate::overlay::Controller>>) {
