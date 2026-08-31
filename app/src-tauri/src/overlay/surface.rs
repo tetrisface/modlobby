@@ -47,6 +47,13 @@ impl TauriSurface {
         *self.restore.lock().expect("overlay geometry") = Some(remembered);
 
         let _ = self.window.set_decorations(false);
+        // The shadow has to go with the decorations. On Windows an undecorated
+        // window with a shadow keeps an invisible frame roughly 8px wide, so a
+        // window told to sit at the monitor's corner actually lands shifted
+        // right and down — which showed as a thin strip of raw, undimmed game
+        // along the left edge of the overlay. Positioning happens after this,
+        // so the coordinates land where they say.
+        let _ = self.window.set_shadow(false);
         let _ = self.window.set_always_on_top(true);
         let _ = self.window.set_skip_taskbar(true);
 
@@ -62,6 +69,9 @@ impl TauriSurface {
         let remembered = self.restore.lock().expect("overlay geometry").take();
         let _ = self.window.set_always_on_top(false);
         let _ = self.window.set_skip_taskbar(false);
+        // Back on, unconditionally: a decorated window ignores it, and every
+        // ordinary window wants its shadow.
+        let _ = self.window.set_shadow(true);
 
         let Some(remembered) = remembered else {
             // Nothing recorded: at least give the frame back rather than
