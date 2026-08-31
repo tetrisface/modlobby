@@ -71,6 +71,9 @@ export const api = {
   overlayToggle: () => invoke<void>('overlay_toggle'),
   stopGame: () => invoke<boolean>('stop_game'),
   quitAll: () => invoke<void>('quit_all'),
+  shutdown: () => invoke<void>('shutdown'),
+  isFullscreen: () => invoke<boolean>('is_fullscreen'),
+  toggleFullscreen: () => invoke<boolean>('toggle_fullscreen'),
   startBoxes: (teams: number) =>
     invoke<BoxesView | null>('start_boxes', { teams }),
   decodeBoxes: (raw: string, teams: number) =>

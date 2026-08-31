@@ -23,6 +23,10 @@ pub struct App {
 impl App {
     /// Opens the settings directory and spawns the runtime on Tauri's async runtime.
     pub fn open() -> Result<Self, settings::Error> {
+        // Before anything can open a TLS connection — the lobby transport or a
+        // reqwest fetch — so rustls never has to guess its crypto provider.
+        // Guessing is a connect-time panic when more than one is compiled in.
+        spring_protocol::transport::install_crypto();
         let settings = Store::open(settings::config_dir())?;
         let hardware = platform::detect();
         let client = tauri::async_runtime::block_on(async {

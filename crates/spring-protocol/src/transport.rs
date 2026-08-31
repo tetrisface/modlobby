@@ -172,8 +172,23 @@ impl Transport {
     }
 }
 
+/// Makes ring the process-wide crypto provider, once.
+///
+/// `ClientConfig::builder()` resolves the process default and *panics at
+/// connect time* when the build carries more than one provider with no default
+/// installed — which is exactly what a second dependency enabling rustls's
+/// aws-lc-rs feature causes, and it took the whole runtime actor down with it
+/// ("client stopped" on login). Installing explicitly here means no future
+/// dependency change can reintroduce that panic; it also serves every other
+/// rustls user in the process, reqwest included.
+pub fn install_crypto() {
+    // Err means someone installed one already, which is the state we want.
+    let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
+}
+
 /// Verifies the server against the Mozilla root store bundled by `webpki-roots`.
 fn tls_connector() -> TlsConnector {
+    install_crypto();
     let mut roots = RootCertStore::empty();
     roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     let config = ClientConfig::builder()

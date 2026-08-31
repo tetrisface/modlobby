@@ -64,11 +64,15 @@ tauri-plugin-global-shortcut = "=2.3.2"
 tauri-plugin-window-state = "=2.4.1"
 # Already in the tree via Tauri; only http:// is needed, so no TLS features.
 sevenz-rust2 = "=0.22.2"
-# `rustls-tls` because the engine index and its mirrors are HTTPS; the same
-# TLS backend the lobby connection already uses (`tokio-rustls`, ring).
+# `rustls-no-provider`, not `rustls`: the plain feature drags in aws-lc-rs as
+# a second crypto provider beside the ring one tokio-rustls uses, and rustls
+# PANICS at connect time when two providers are compiled in and no process
+# default is installed — which surfaced as "client stopped" on login. One
+# provider (ring, installed at startup) serves both the lobby connection and
+# every HTTPS fetch.
 reqwest = { version = "=0.13.4", default-features = false, features = [
   "json",
-  "rustls",
+  "rustls-no-provider",
 ] }
 windows-sys = "=0.61.2"
 tempfile = "=3.27.0"

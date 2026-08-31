@@ -39,6 +39,23 @@ function Layout(props: ParentProps) {
     Object.values(chat.unread).reduce((total, count) => total + count, 0)
   const named = () => Object.values(chat.named).some(Boolean)
 
+  /**
+   * The window controls in the nav's corner.
+   *
+   * They earn their place because the OS title bar is not a given here — a
+   * transparent window on Windows can lose its frame, and fullscreen has no
+   * chrome at all — and a window that cannot be un-fullscreened or closed from
+   * inside itself is a trap.
+   */
+  const [fullscreen, setFullscreen] = createSignal(false)
+  onMount(
+    () =>
+      void api
+        .isFullscreen()
+        .then(setFullscreen)
+        .catch(() => {}),
+  )
+
   /** What the server says about us, which is what everyone else can see. */
   const away = () => (lobby.me ? lobby.users[lobby.me]?.status.away : false)
 
@@ -207,6 +224,42 @@ function Layout(props: ParentProps) {
           </button>
           <button onClick={() => api.logout()}>Log out</button>
         </Show>
+        <div class='win-controls'>
+          <button
+            class='win-btn'
+            title={fullscreen() ? 'Windowed' : 'Full screen'}
+            aria-label={fullscreen() ? 'Windowed' : 'Full screen'}
+            onClick={() =>
+              void api
+                .toggleFullscreen()
+                .then(setFullscreen)
+                .catch((error) => pushNotice('warning', describeError(error)))
+            }
+          >
+            <svg viewBox='0 0 12 12' aria-hidden='true'>
+              <Show
+                when={fullscreen()}
+                fallback={
+                  // Corners pointing out: take the whole screen.
+                  <path d='M1 4V1h3M8 1h3v3M11 8v3H8M4 11H1V8' />
+                }
+              >
+                {/* Corners pointing in: back to a window. */}
+                <path d='M4 1v3H1M11 4H8V1M8 11V8h3M1 8h3v3' />
+              </Show>
+            </svg>
+          </button>
+          <button
+            class='win-btn close'
+            title='Close modlobby (a running game keeps going)'
+            aria-label='Close modlobby'
+            onClick={() => void api.shutdown()}
+          >
+            <svg viewBox='0 0 12 12' aria-hidden='true'>
+              <path d='M2 2l8 8M10 2l-8 8' />
+            </svg>
+          </button>
+        </div>
       </nav>
       <main class='main'>{props.children}</main>
       <Notices />
