@@ -49,7 +49,10 @@ impl CredentialStore for KeyringStore {
     }
 }
 
-/// In-memory store for tests and headless runs.
+/// In-memory store for tests.
+///
+/// Not a headless fallback: the CLI binds no store at all, reading
+/// `MODLOBBY_PASSWORD` from the environment instead.
 #[derive(Debug, Default)]
 pub struct MemoryStore(Mutex<HashMap<String, String>>);
 
