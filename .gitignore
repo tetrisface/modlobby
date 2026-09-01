@@ -4,3 +4,4 @@
 !.env.example
 app/src-tauri/gen/schemas
 .codegraph
+.memory
