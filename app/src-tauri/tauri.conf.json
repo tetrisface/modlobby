@@ -37,7 +37,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM1Q0VEN0EzQTIyNzM0NzYKUldSMk5DZWlvOWZPTlRDQnlLNVZjelhiak1BNlU5UnJNU0Iya3VHYnNnR1FxQTFyaGE4anJlZHEK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY5MERFMjVERTcyRjcxM0IKUldRN2NTL25YZUlOK2EvRU55dCtrRklrckN3SHMxa00xTUQ0azl0K040bm8weGFxQ0hpUFhZeFEK",
       "endpoints": [
         "https://github.com/tetrisface/modlobby/releases/latest/download/latest.json"
       ]

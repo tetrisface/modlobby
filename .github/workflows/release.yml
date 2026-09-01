@@ -52,8 +52,11 @@ jobs:
           [ "${id##*@}" = "$NEXT" ] || { echo "Cargo.toml did not take $NEXT: $id"; exit 1; }
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -am "release $NEXT"
-          git tag "v$NEXT"
+          # A build that failed after the bump left main and the tag in place;
+          # dispatching again with the same version resumes from there. The
+          # push refuses a tag that already names a different commit.
+          git diff --quiet || git commit -am "release $NEXT"
+          git tag -f "v$NEXT"
           git push origin main "v$NEXT"
           echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
