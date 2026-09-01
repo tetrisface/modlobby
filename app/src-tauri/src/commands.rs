@@ -881,13 +881,10 @@ pub(crate) fn data_dir_or_default(app: &App) -> Result<PathBuf> {
     if let Some(found) = launch::default_data_dir() {
         return Ok(found);
     }
-    // The launcher's own location, which is where BAR would have installed to.
-    let local = std::env::var_os("LOCALAPPDATA")
-        .ok_or_else(|| ApiError::new("input", "no BAR data directory; set paths.dataDir"))?;
-    Ok(PathBuf::from(local)
-        .join("Programs")
-        .join("Beyond-All-Reason")
-        .join("data"))
+    // Nothing installed yet, so fall back to the location the launcher would
+    // have used — the same path, minus the "does it exist" question.
+    launch::launcher_data_dir()
+        .ok_or_else(|| ApiError::new("input", "no BAR data directory; set paths.dataDir"))
 }
 
 fn data_dir(app: &App) -> Result<PathBuf> {

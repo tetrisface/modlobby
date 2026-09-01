@@ -57,22 +57,27 @@ fn candidates(data_dir: &Path, engine_version: &str) -> Vec<PathBuf> {
     paths
 }
 
+/// The `key = value` a config line carries, or `None` for a blank or a comment.
+///
+/// One definition of the engine's line grammar, because three things need it —
+/// reading a key, rewriting one, and copying a whole file — and a config we
+/// parse one way and rewrite another is a config we corrupt.
+fn setting(line: &str) -> Option<(&str, &str)> {
+    let line = line.trim();
+    if line.is_empty() || line.starts_with('#') || line.starts_with("//") {
+        return None;
+    }
+    let (name, value) = line.split_once('=')?;
+    Some((name.trim(), value.trim()))
+}
+
 /// Reads `key = value` the way the engine's config does: first definition
 /// wins, `#` and `//` are comments, whitespace is not significant.
 fn value_of(text: &str, key: &str) -> Option<String> {
-    for line in text.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') || line.starts_with("//") {
-            continue;
-        }
-        let Some((name, value)) = line.split_once('=') else {
-            continue;
-        };
-        if name.trim().eq_ignore_ascii_case(key) {
-            return Some(value.trim().to_owned());
-        }
-    }
-    None
+    text.lines()
+        .filter_map(setting)
+        .find(|(name, _)| name.eq_ignore_ascii_case(key))
+        .map(|(_, value)| value.to_owned())
 }
 
 fn truthy(value: &str) -> bool {
@@ -119,13 +124,7 @@ fn set_keys(text: &str, wanted: &[(&str, &str)]) -> String {
     let mut out: Vec<String> = Vec::new();
 
     for line in text.lines() {
-        let name = line
-            .split_once('=')
-            .map(|(name, _)| name.trim())
-            .filter(|_| {
-                let trimmed = line.trim_start();
-                !trimmed.starts_with('#') && !trimmed.starts_with("//")
-            });
+        let name = setting(line).map(|(name, _)| name);
 
         match wanted
             .iter()
@@ -167,19 +166,15 @@ fn flattened(data_dir: &Path, engine_version: &str) -> String {
             continue;
         };
         for line in text.lines() {
-            let trimmed = line.trim();
-            if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with("//") {
-                continue;
-            }
-            let Some((name, _)) = trimmed.split_once('=') else {
+            let Some((name, _)) = setting(line) else {
                 continue;
             };
-            let name = name.trim().to_ascii_lowercase();
+            let name = name.to_ascii_lowercase();
             if seen.contains(&name) {
                 continue;
             }
             seen.push(name);
-            out.push(trimmed.to_owned());
+            out.push(line.trim().to_owned());
         }
     }
 

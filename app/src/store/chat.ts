@@ -98,18 +98,13 @@ export function ensureRoom(room: string): void {
  */
 export function closePrivate(room: string): void {
   if (!isPrivate(room)) return
-  setChat('rooms', (rooms) => {
-    const { [room]: _gone, ...rest } = rooms
-    return rest
-  })
-  setChat('unread', (unread) => {
-    const { [room]: _gone, ...rest } = unread
-    return rest
-  })
-  setChat('named', (named) => {
-    const { [room]: _gone, ...rest } = named
-    return rest
-  })
+  setChat(
+    produce((state) => {
+      delete state.rooms[room]
+      delete state.unread[room]
+      delete state.named[room]
+    }),
+  )
 }
 
 /** A line from the app rather than from anyone on the server. */

@@ -84,13 +84,6 @@ async function load(): Promise<Index> {
 }
 
 /**
- * Every preview URL by spring name, for a list that wants many at once.
- *
- * One shared load: asking per row would start a hundred identical fetches on
- * the first scroll. Returns empty when the index cannot be reached, which the
- * caller renders as no picture rather than as an error.
- */
-/**
  * The same picture, asked for at the size it will be drawn.
  *
  * The published URL is an imagor transform with the size in its path — a
@@ -109,6 +102,13 @@ export function sized(url: string, pixels: number): string {
     .replace(/quality\(\d+\)/, 'quality(90)')
 }
 
+/**
+ * Every preview URL by spring name, for a list that wants many at once.
+ *
+ * One shared load: asking per row would start a hundred identical fetches on
+ * the first scroll. Returns empty when the index cannot be reached, which the
+ * caller renders as no picture rather than as an error.
+ */
 export async function mapImages(): Promise<Record<string, string>> {
   try {
     pending ??= load()

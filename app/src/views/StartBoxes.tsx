@@ -1,9 +1,7 @@
 import { For, Show, createMemo } from 'solid-js'
 import { BoxDiff } from '../components/BoxDiff'
+import { isBoxKey } from '../lib/boxes'
 import { lobby } from '../store/lobby'
-
-/** The two modoptions that decide where teams start. */
-const BOX_KEYS = ['mapmetadata_startbox_override', 'mapmetadata_startboxes_set']
 
 /**
  * Where the start boxes have been moved to this session.
@@ -19,7 +17,7 @@ const BOX_KEYS = ['mapmetadata_startbox_override', 'mapmetadata_startboxes_set']
 export function StartBoxes(props: { teams: number; mapName: string }) {
   const changes = createMemo(() =>
     (lobby.myBattle?.history ?? [])
-      .filter((change) => BOX_KEYS.some((key) => change.key.endsWith(key)))
+      .filter((change) => isBoxKey(change.key))
       .reverse(),
   )
 

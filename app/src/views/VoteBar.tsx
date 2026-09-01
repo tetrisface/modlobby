@@ -1,35 +1,26 @@
 import { Show, createMemo } from 'solid-js'
 import { BoxDiff } from '../components/BoxDiff'
+import { isBoxKey } from '../lib/boxes'
 import { api, describeError } from '../ipc/client'
 import { pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
 
-/** The two modoptions that decide where teams start. */
-const BOX_KEYS = ['mapmetadata_startbox_override', 'mapmetadata_startboxes_set']
-
 /**
  * The room's vote, scraped from what the host says. `!vote` is open to any
  * player or spectator (`commands.conf` `[vote]`), unlike calling one.
+ *
+ * `teams` is the room's ally-team count, which selects which arrangement out of
+ * a map's set the boxes would resolve to. It is passed in rather than derived
+ * again here: the minimap a few centimetres up the page draws the same boxes,
+ * and the two disagreeing about how many teams there are would show two
+ * different answers to the same question.
  */
-export function VoteBar() {
+export function VoteBar(props: { teams: number }) {
   const vote = () => lobby.myBattle?.vote ?? null
 
   const room = createMemo(() => {
     const id = lobby.myBattle?.id
     return id === undefined ? undefined : lobby.battles[id]
-  })
-
-  /** Ally teams in the room, which is what selects a set arrangement. */
-  const teams = createMemo(() => {
-    const battle = room()
-    if (!battle) return 2
-    const used = new Set<number>()
-    for (const name of battle.members) {
-      const status = lobby.users[name]?.battleStatus
-      if (status?.player) used.add(status.allyTeam)
-    }
-    for (const bot of battle.bots) used.add(bot.status.allyTeam)
-    return Math.max(used.size, 2)
   })
 
   /**
@@ -41,7 +32,7 @@ export function VoteBar() {
   const boxProposal = createMemo(() => {
     const proposal = vote()?.proposal
     if (proposal?.type !== 'setOption') return null
-    if (!BOX_KEYS.includes(proposal.key)) return null
+    if (!isBoxKey(proposal.key)) return null
     const current =
       lobby.myBattle?.scriptTags[`game/modoptions/${proposal.key}`] ?? ''
     return { current, proposed: proposal.value }
@@ -87,7 +78,7 @@ export function VoteBar() {
               <BoxDiff
                 current={change().current}
                 proposed={change().proposed}
-                teams={teams()}
+                teams={props.teams}
                 mapName={room()?.mapName ?? ''}
               />
             )}

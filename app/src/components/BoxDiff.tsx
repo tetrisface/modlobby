@@ -1,14 +1,7 @@
 import { For, Show, createResource } from 'solid-js'
 import { api } from '../ipc/client'
+import { centre, outline } from '../lib/boxes'
 import { mapImage, sized } from '../lib/maps'
-
-/** `M x y L x y … Z` for one polygon in the 0-200 space start boxes use. */
-function outline(poly: [number, number][]): string {
-  return (
-    poly.map(([x, y], at) => `${at === 0 ? 'M' : 'L'}${x} ${y}`).join(' ') +
-    ' Z'
-  )
-}
 
 function Panel(props: {
   label: string
@@ -40,10 +33,7 @@ function Panel(props: {
             {(poly, index) => (
               <g>
                 <path d={outline(poly)} />
-                <text
-                  x={poly.reduce((sum, p) => sum + p[0], 0) / poly.length}
-                  y={poly.reduce((sum, p) => sum + p[1], 0) / poly.length + 7}
-                >
+                <text x={centre(poly).x} y={centre(poly).y + 7}>
                   {index() + 1}
                 </text>
               </g>

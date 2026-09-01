@@ -20,6 +20,7 @@ import type { DownloadStatus } from '../ipc/bindings/DownloadStatus'
 import type { StartRectView } from '../ipc/bindings/StartRectView'
 import type { UserView } from '../ipc/bindings/UserView'
 import { api, describeError } from '../ipc/client'
+import { boxSignature, centre, outline } from '../lib/boxes'
 import { mapImage, sized } from '../lib/maps'
 import { readSkills, teamSkill, type Skill } from '../lib/skill'
 import { BATTLE_ROOM, chat, pushNotice } from '../store/chat'
@@ -181,7 +182,7 @@ export function Room() {
           </header>
 
           <PveScore />
-          <VoteBar />
+          <VoteBar teams={Math.max(occupants().teams.length, 2)} />
           <StartBoxes
             teams={Math.max(occupants().teams.length, 2)}
             mapName={b().mapName}
@@ -308,22 +309,30 @@ function Minimap(props: {
   )
   const [broken, setBroken] = createSignal(false)
 
+  // A room changes map, so a picture that failed must not condemn the next one.
+  createEffect(() => {
+    void props.mapName
+    setBroken(false)
+  })
+
   /**
    * The modoption boxes, which are a different system from `props.rects`.
    *
-   * Asked for whenever the room's team count changes, because that is what
-   * selects an arrangement out of the map's set. `null` means the modoptions
-   * say nothing and the start rects are the whole story.
+   * Asked for again whenever the team count changes — that is what selects an
+   * arrangement out of the map's set — or whenever the start-box modoptions
+   * themselves do, which is what a passed `!bSet` vote changes. Watching only
+   * the team count would leave the old boxes drawn over the new arrangement.
+   * `null` means the modoptions say nothing and the start rects are the whole
+   * story.
    */
   const [boxes] = createResource(
-    () => (props.teams > 0 ? props.teams : 1),
-    (teams: number) => api.startBoxes(teams).catch(() => null),
+    () =>
+      [
+        props.teams > 0 ? props.teams : 1,
+        boxSignature(lobby.myBattle?.scriptTags),
+      ] as const,
+    ([teams]) => api.startBoxes(teams).catch(() => null),
   )
-
-  /** `M x y L x y … Z` for one polygon in the 0-200 space. */
-  const outline = (poly: [number, number][]) =>
-    poly.map(([x, y], at) => `${at === 0 ? 'M' : 'L'}${x} ${y}`).join(' ') +
-    ' Z'
 
   return (
     <div class='minimap'>
@@ -353,11 +362,8 @@ function Minimap(props: {
         <For each={boxes()?.polys ?? []}>
           {(poly, index) => (
             <g class='mm-box meta'>
-              <path d={outline(poly as [number, number][])} />
-              <text
-                x={poly.reduce((sum, p) => sum + p[0], 0) / poly.length}
-                y={poly.reduce((sum, p) => sum + p[1], 0) / poly.length + 6}
-              >
+              <path d={outline(poly)} />
+              <text x={centre(poly).x} y={centre(poly).y + 6}>
                 {index() + 1}
               </text>
             </g>

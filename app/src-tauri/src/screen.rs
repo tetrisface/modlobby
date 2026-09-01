@@ -88,11 +88,11 @@ pub fn toggle_fullscreen(
     // exactly the trap being escaped. Invent a reasonable one instead.
     let covers = size.width >= monitor.size().width && size.height >= monitor.size().height;
     let restore = if covers {
-        let wanted = LogicalSize::new(1280.0, 800.0).to_physical::<u32>(monitor.scale_factor());
+        let wanted = windowed_shape(monitor.size(), monitor.scale_factor());
         Restore {
             position: PhysicalPosition::new(
-                monitor.position().x + ((monitor.size().width - wanted.width) / 2) as i32,
-                monitor.position().y + ((monitor.size().height - wanted.height) / 2) as i32,
+                monitor.position().x + centred(monitor.size().width, wanted.width),
+                monitor.position().y + centred(monitor.size().height, wanted.height),
             ),
             size: wanted,
             maximized,
@@ -113,4 +113,57 @@ pub fn toggle_fullscreen(
     let _ = window.set_position(Position::Physical(*monitor.position()));
     let _ = window.set_size(Size::Physical(*monitor.size()));
     Ok(true)
+}
+
+/// The default window size, matching `tauri.conf.json`'s `width`/`height`.
+const WINDOWED: (f64, f64) = (1280.0, 800.0);
+
+/// A windowed shape that fits, for a window that has no remembered one.
+///
+/// The default is the size the app opens at, but a monitor can be smaller than
+/// it — a 1024×768 projector, or any monitor once the scale factor is applied.
+/// Handing back a shape larger than the screen would leave the window covering
+/// the monitor again, which is the very state being escaped, so it is clamped.
+fn windowed_shape(monitor: &PhysicalSize<u32>, scale: f64) -> PhysicalSize<u32> {
+    let wanted = LogicalSize::new(WINDOWED.0, WINDOWED.1).to_physical::<u32>(scale);
+    PhysicalSize::new(
+        wanted.width.min(monitor.width),
+        wanted.height.min(monitor.height),
+    )
+}
+
+/// The offset that centres `inner` inside `outer`.
+///
+/// Unsigned, so the subtraction has to be saturating: a window wider than its
+/// monitor would otherwise wrap to about two billion and place the window
+/// somewhere off in the coordinate space, never to be seen again.
+fn centred(outer: u32, inner: u32) -> i32 {
+    (outer.saturating_sub(inner) / 2) as i32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_monitor_smaller_than_the_default_still_gets_a_window_that_fits() {
+        let small = PhysicalSize::new(1024, 768);
+        let shape = windowed_shape(&small, 1.0);
+        assert_eq!(shape, PhysicalSize::new(1024, 768));
+    }
+
+    #[test]
+    fn scaling_is_what_makes_a_roomy_monitor_too_small() {
+        // A 1920×1080 panel at 200% is 960×540 logical — less than the default.
+        let panel = PhysicalSize::new(1920, 1080);
+        assert_eq!(windowed_shape(&panel, 2.0), PhysicalSize::new(1920, 1080));
+        assert_eq!(windowed_shape(&panel, 1.0), PhysicalSize::new(1280, 800));
+    }
+
+    #[test]
+    fn centring_never_wraps_around() {
+        assert_eq!(centred(1920, 1280), 320);
+        // The case that used to send the window two billion pixels away.
+        assert_eq!(centred(1024, 1280), 0);
+    }
 }

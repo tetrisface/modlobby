@@ -100,8 +100,6 @@ async fn fetch(data_dir: &Path, version: &str, say: &impl Fn(EngineProgress)) ->
         .first()
         .expect("pick kept only mirrored entries");
 
-    let bytes = download(mirror, release.size, say).await?;
-
     // Into a temporary file, because the extractor wants a path and a
     // half-written archive under `engine/` would look like an install.
     let staging = data_dir
@@ -112,8 +110,12 @@ async fn fetch(data_dir: &Path, version: &str, say: &impl Fn(EngineProgress)) ->
         std::fs::create_dir_all(parent)
             .map_err(|err| ApiError::new("io", format!("making the engine directory: {err}")))?;
     }
-    std::fs::write(&staging, &bytes)
-        .map_err(|err| ApiError::new("io", format!("writing the archive: {err}")))?;
+
+    if let Err(err) = download(mirror, &staging, release.size, say).await {
+        // Nothing downstream should find a partial archive lying around.
+        let _ = std::fs::remove_file(&staging);
+        return Err(err);
+    }
 
     say(EngineProgress::Extracting);
     let unpacked = tokio::task::spawn_blocking({
@@ -143,8 +145,24 @@ async fn fetch(data_dir: &Path, version: &str, say: &impl Fn(EngineProgress)) ->
     })
 }
 
-/// Streams the archive, reporting as it goes.
-async fn download(url: &str, expected: u64, say: &impl Fn(EngineProgress)) -> Result<Vec<u8>> {
+/// How much has to arrive before the front end is told again.
+///
+/// Chunks arrive in tens of kilobytes, so one event each would be tens of
+/// thousands of IPC messages for one engine — a progress bar nobody can see
+/// moving that fast, at the cost of the UI thread that has to drain them.
+const REPORT_EVERY: u64 = 4 * 1024 * 1024;
+
+/// Streams the archive to `into`, reporting as it goes.
+///
+/// Written to disk chunk by chunk rather than collected first: an engine is a
+/// few hundred megabytes, and the machine most likely to be running this is the
+/// one that just discovered it has no engine at all.
+async fn download(
+    url: &str,
+    into: &Path,
+    expected: u64,
+    say: &impl Fn(EngineProgress),
+) -> Result<()> {
     let mut response = reqwest::get(url)
         .await
         .map_err(|err| ApiError::new("network", format!("fetching the engine: {err}")))?;
@@ -159,7 +177,11 @@ async fn download(url: &str, expected: u64, say: &impl Fn(EngineProgress)) -> Re
     // what is arriving.
     let total = response.content_length().unwrap_or(expected);
     let mut got = 0_u64;
-    let mut bytes = Vec::with_capacity(total as usize);
+    let mut reported = 0_u64;
+
+    let mut file = tokio::fs::File::create(into)
+        .await
+        .map_err(|err| ApiError::new("io", format!("opening the archive: {err}")))?;
 
     // `chunk` rather than a stream, so reqwest needs no extra feature and this
     // needs no futures crate for one loop.
@@ -168,10 +190,22 @@ async fn download(url: &str, expected: u64, say: &impl Fn(EngineProgress)) -> Re
         .await
         .map_err(|err| ApiError::new("network", format!("the download stopped: {err}")))?
     {
+        tokio::io::AsyncWriteExt::write_all(&mut file, &chunk)
+            .await
+            .map_err(|err| ApiError::new("io", format!("writing the archive: {err}")))?;
         got += chunk.len() as u64;
-        bytes.extend_from_slice(&chunk);
-        say(EngineProgress::Downloading { got, total });
+        if got - reported >= REPORT_EVERY {
+            reported = got;
+            say(EngineProgress::Downloading { got, total });
+        }
     }
 
-    Ok(bytes)
+    tokio::io::AsyncWriteExt::flush(&mut file)
+        .await
+        .map_err(|err| ApiError::new("io", format!("finishing the archive: {err}")))?;
+
+    // The bar should read full before extraction starts, whatever the last
+    // reporting threshold happened to land on.
+    say(EngineProgress::Downloading { got, total });
+    Ok(())
 }

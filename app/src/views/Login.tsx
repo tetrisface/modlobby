@@ -153,6 +153,20 @@ export function Login() {
     else void login()
   }
 
+  /**
+   * What the one button says, which is five different things.
+   *
+   * In precedence order: the server's throttle outranks everything because
+   * pressing the button would do nothing, then whatever is already in flight,
+   * then which of the three jobs the form is currently for.
+   */
+  function submitLabel(): string {
+    if (wait() > 0) return `throttled — ${wait()}s`
+    if (busy()) return phaseText[lobby.phase ?? ''] ?? 'working…'
+    if (awaitingCode()) return 'Confirm and log in'
+    return mode() === 'register' ? 'Create account' : 'Log in'
+  }
+
   return (
     <form class='login' onSubmit={submit}>
       <h1>{mode() === 'register' ? 'Create an account' : 'Log in'}</h1>
@@ -222,15 +236,7 @@ export function Login() {
         type='submit'
         disabled={busy() || wait() > 0 || !username().trim()}
       >
-        {wait() > 0
-          ? `throttled — ${wait()}s`
-          : busy()
-            ? (phaseText[lobby.phase ?? ''] ?? 'working…')
-            : awaitingCode()
-              ? 'Confirm and log in'
-              : mode() === 'register'
-                ? 'Create account'
-                : 'Log in'}
+        {submitLabel()}
       </button>
       <Show when={error()}>
         {(message) => <p class='error'>{message()}</p>}

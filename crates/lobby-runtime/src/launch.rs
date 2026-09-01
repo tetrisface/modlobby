@@ -4,14 +4,25 @@ use std::path::{Path, PathBuf};
 
 use tokio::process::Child;
 
-/// Where the BAR launcher keeps its data on Windows.
-pub fn default_data_dir() -> Option<PathBuf> {
+/// Where the BAR launcher keeps its data on Windows, install or no install.
+///
+/// The path exists as an answer even when the directory does not: fetching the
+/// first engine onto a bare machine has to put it *somewhere*, and this is the
+/// somewhere the launcher itself would have chosen. Anything that needs content
+/// that is already there wants [`default_data_dir`] instead.
+pub fn launcher_data_dir() -> Option<PathBuf> {
     let local = std::env::var_os("LOCALAPPDATA")?;
-    let dir = PathBuf::from(local)
-        .join("Programs")
-        .join("Beyond-All-Reason")
-        .join("data");
-    dir.is_dir().then_some(dir)
+    Some(
+        PathBuf::from(local)
+            .join("Programs")
+            .join("Beyond-All-Reason")
+            .join("data"),
+    )
+}
+
+/// Where the BAR launcher keeps its data on Windows, when it is really there.
+pub fn default_data_dir() -> Option<PathBuf> {
+    launcher_data_dir().filter(|dir| dir.is_dir())
 }
 
 /// Finds `engine_version` under `data_dir/engine` and starts it on `target`

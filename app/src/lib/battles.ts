@@ -11,6 +11,7 @@ import type { BattleView } from '../ipc/bindings/BattleView'
 import type { BattleList } from '../ipc/bindings/BattleList'
 import type { BattleSort } from '../ipc/bindings/BattleSort'
 import type { ModeFilter } from '../ipc/bindings/ModeFilter'
+import { ordered } from './reorder'
 
 export type Row = {
   battle: BattleView
@@ -172,9 +173,7 @@ export const MODES: ReadonlyArray<{ key: ModeFilter; label: string }> = [
  */
 export function stabilize(sorted: Row[], held: readonly number[]): Row[] {
   const byId = new Map(sorted.map((row) => [row.battle.id, row]))
-  const known = new Set(held)
-  return [
-    ...held.flatMap((id) => byId.get(id) ?? []),
-    ...sorted.filter((row) => !known.has(row.battle.id)),
-  ]
+  // The same "saved order, applied to what is actually there" rule the chat
+  // tabs follow, over battle ids instead of room names.
+  return ordered([...byId.keys()], held).flatMap((id) => byId.get(id) ?? [])
 }

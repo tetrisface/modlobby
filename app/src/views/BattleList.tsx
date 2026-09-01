@@ -636,6 +636,17 @@ const thumbnail = (url: string | undefined) =>
 /** A room's map, when the index knows it; an empty frame when it does not. */
 function MapThumb(props: { src: string | undefined; alt: string }) {
   const [broken, setBroken] = createSignal(false)
+
+  // The rows are virtualised, so this component stays mounted at its place on
+  // screen while different rooms scroll through it. Without this, one map whose
+  // picture failed to load would blank that row position for every room that
+  // came after it — and the longer you scrolled, the more of the list went
+  // empty. A new picture gets its own chance to fail.
+  createEffect(() => {
+    void props.src
+    setBroken(false)
+  })
+
   return (
     <span class='col-thumb'>
       <Show when={broken() ? undefined : props.src}>
