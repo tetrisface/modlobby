@@ -53,6 +53,7 @@ function loaded(): Settings {
     },
     tweaks: { styluaConfig: null, defaultSlot: 'tweakdefs1' },
     logging: { filter: 'info' },
+    updates: { automatic: true },
   }
 }
 

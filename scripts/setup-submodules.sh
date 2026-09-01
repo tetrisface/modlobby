@@ -14,7 +14,7 @@ for key in $(git config -f .gitmodules --name-only --get-regexp '^submodule\..*\
   path=$(git config -f .gitmodules "$key")
   url=$(git config -f .gitmodules "submodule.$name.url")
   branch=$(git config -f .gitmodules "submodule.$name.branch")
-  fork_url=$(printf '%s' "$url" | sed "s#:[^/]*/#:$fork_user/#")   # git@host:owner/repo -> git@host:fork_user/repo
+  fork_url=$(printf '%s' "$url" | sed "s#github.com/[^/]*/#github.com/$fork_user/#")   # https://github.com/owner/repo -> https://github.com/fork_user/repo
   sparse="scripts/sparse/$(basename "$path")"
 
   [ -e "$path/.git" ] || git clone --no-checkout "$url" "$path"   # no-checkout: apply sparse patterns before the first checkout

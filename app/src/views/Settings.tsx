@@ -46,6 +46,29 @@ export function SettingsView() {
   )
   const [state, setState] = createSignal<'clean' | 'saving' | 'saved'>('clean')
   const [tab, setTab] = createSignal<'general' | 'advanced'>('general')
+  const [checking, setChecking] = createSignal(false)
+
+  /**
+   * The update check on demand. A newer version found with nothing to lose
+   * installs and restarts before this returns; otherwise say what happened,
+   * since a button that does nothing visible looks broken.
+   */
+  async function checkNow() {
+    setChecking(true)
+    try {
+      const outcome = await api.checkUpdate()
+      pushNotice(
+        'info',
+        outcome.phase === 'ready'
+          ? `Version ${outcome.version} is downloaded; the corner of the nav restarts into it.`
+          : 'This is the newest version.',
+      )
+    } catch (error) {
+      pushNotice('error', describeError(error))
+    } finally {
+      setChecking(false)
+    }
+  }
 
   /** What is in the file, as far as we know. */
   let saved = fingerprint(unwrap(settings()) ?? blank())
@@ -508,6 +531,32 @@ export function SettingsView() {
             your own is yours to sit in either way.
           </p>
         </fieldset>
+
+        <fieldset>
+          <legend>Updates</legend>
+          <label class='row'>
+            <input
+              type='checkbox'
+              checked={draft.updates.automatic}
+              onChange={(e) =>
+                setDraft('updates', 'automatic', e.currentTarget.checked)
+              }
+            />
+            Update on startup
+          </label>
+          <p class='muted'>
+            Fetches the newest release when the app opens and restarts into it
+            before you have logged in. Found while you are in a room or a game,
+            it waits in the corner of the nav for a click instead.{' '}
+            <button
+              type='button'
+              disabled={checking()}
+              onClick={() => void checkNow()}
+            >
+              {checking() ? 'Looking…' : 'Check now'}
+            </button>
+          </p>
+        </fieldset>
       </Show>
     </form>
   )
@@ -554,5 +603,6 @@ function blank(): Settings {
     },
     tweaks: { styluaConfig: null, defaultSlot: 'tweakdefs1' },
     logging: { filter: 'info' },
+    updates: { automatic: true },
   }
 }

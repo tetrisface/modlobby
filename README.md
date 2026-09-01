@@ -112,3 +112,25 @@ linked or redistributed: the one `include_str!` of BAR's `modoptions.lua`
 and never in a shipped one. Each submodule stays under whatever license its upstream
 carries, and `scripts/setup-submodules.sh` fetches them from upstream rather than vendoring
 copies here.
+
+## Releases and updates
+
+The version is `Cargo.toml`'s, once. `tauri.conf.json` and `app/package.json` carry none;
+the corner of the nav shows it as `0.1.1+ad39005`, the commit hash stamped by
+`app/src-tauri/build.rs` at build time — a commit cannot contain its own hash, so it is
+never a field in a committed file.
+
+A release is one button: **Actions → release → Run workflow**. Blank input bumps the patch
+version; a typed one is used as given. The workflow commits the bump, tags `v<version>`,
+builds and signs the NSIS installer, and attaches it with its `.sig` and `latest.json` to a
+GitHub release. `git checkout v0.1.1 && cargo build` reproduces the shipped version string.
+
+The app fetches `releases/latest/download/latest.json` on startup (Settings → Advanced →
+Updates, on by default) and restarts into a newer version before anyone has logged in. Found
+while a room is joined or a game is running, the download waits in the nav for a click.
+
+The signing key lives outside the repo in `~/.tauri/modlobby.key` with its password beside
+it, and in the repository secrets `TAURI_SIGNING_PRIVATE_KEY` and
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. **Back it up.** Without it no installed copy can ever
+update again. With the public key in `tauri.conf.json`, a local `bun run build` needs
+`TAURI_SIGNING_PRIVATE_KEY_PATH` and the password in the environment; `bun run dev` does not.

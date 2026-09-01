@@ -98,6 +98,12 @@
         "defaultSlot": "tweakdefs1",
         "styluaConfig": null
       }
+    },
+    "updates": {
+      "$ref": "#/$defs/Updates",
+      "default": {
+        "automatic": true
+      }
     }
   },
   "$defs": {
@@ -414,6 +420,17 @@
             "null"
           ],
           "default": null
+        }
+      }
+    },
+    "Updates": {
+      "description": "Keeping the app current.",
+      "type": "object",
+      "properties": {
+        "automatic": {
+          "description": "Whether to fetch the newest release on startup and restart into it.\n\nOn, because an out-of-date lobby is one that quietly talks to a server\nthat has moved on, and startup is the one moment a restart costs\nnothing. An update found while a room is joined or a game is running\nwaits in the nav for a click, whatever this says.",
+          "type": "boolean",
+          "default": true
         }
       }
     }

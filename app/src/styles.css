@@ -2721,3 +2721,21 @@ button.link {
   background: var(--error);
   color: #fff;
 }
+
+/* The version, in the corner where the brand is. Small because it is a fact,
+   not a feature; a button only while a downloaded update is waiting. */
+.version {
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  color: var(--faint, var(--muted));
+  letter-spacing: 0.02em;
+}
+
+.version.waiting {
+  padding: 2px 8px;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  cursor: pointer;
+}

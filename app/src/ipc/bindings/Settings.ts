@@ -9,9 +9,10 @@ import type { Paths } from "./Paths";
 import type { Play } from "./Play";
 import type { Server } from "./Server";
 import type { Tweaks } from "./Tweaks";
+import type { Updates } from "./Updates";
 
 export type Settings = { 
 /**
  * Points editors at the schema next to the file.
  */
-$schema: string | null, server: Server, account: Account, paths: Paths, battleList: BattleList, chat: Chat, notifications: Notifications, overlay: Overlay, play: Play, tweaks: Tweaks, logging: Logging, };
+$schema: string | null, server: Server, account: Account, paths: Paths, battleList: BattleList, chat: Chat, notifications: Notifications, overlay: Overlay, play: Play, tweaks: Tweaks, logging: Logging, updates: Updates, };

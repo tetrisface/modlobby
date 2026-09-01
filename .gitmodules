@@ -1,56 +1,56 @@
 [submodule "external/Beyond-All-Reason"]
 	path = external/Beyond-All-Reason
-	url = git@github.com:beyond-all-reason/Beyond-All-Reason.git
+	url = https://github.com/beyond-all-reason/Beyond-All-Reason.git
 	branch = master
 [submodule "external/RecoilEngine"]
 	path = external/RecoilEngine
-	url = git@github.com:beyond-all-reason/RecoilEngine.git
+	url = https://github.com/beyond-all-reason/RecoilEngine.git
 	branch = master
 [submodule "external/teiserver"]
 	path = external/teiserver
-	url = git@github.com:beyond-all-reason/teiserver.git
+	url = https://github.com/beyond-all-reason/teiserver.git
 	branch = main
 [submodule "external/bar-lobby"]
 	path = external/bar-lobby
-	url = git@github.com:beyond-all-reason/bar-lobby.git
+	url = https://github.com/beyond-all-reason/bar-lobby.git
 	branch = master
 [submodule "external/BYAR-Chobby"]
 	path = external/BYAR-Chobby
-	url = git@github.com:beyond-all-reason/BYAR-Chobby.git
+	url = https://github.com/beyond-all-reason/BYAR-Chobby.git
 	branch = master
 [submodule "external/tachyon"]
 	path = external/tachyon
-	url = git@github.com:beyond-all-reason/tachyon.git
+	url = https://github.com/beyond-all-reason/tachyon.git
 	branch = master
 [submodule "external/SPADS"]
 	path = external/SPADS
-	url = git@github.com:Yaribz/SPADS.git
+	url = https://github.com/Yaribz/SPADS.git
 	branch = master
 [submodule "external/bar_debug_launcher"]
 	path = external/bar_debug_launcher
-	url = git@github.com:beyond-all-reason/bar_debug_launcher.git
+	url = https://github.com/beyond-all-reason/bar_debug_launcher.git
 	branch = main
 [submodule "external/spring-launcher"]
 	path = external/spring-launcher
-	url = git@github.com:beyond-all-reason/spring-launcher.git
+	url = https://github.com/beyond-all-reason/spring-launcher.git
 	branch = master
 [submodule "external/maps-metadata"]
 	path = external/maps-metadata
-	url = git@github.com:beyond-all-reason/maps-metadata.git
+	url = https://github.com/beyond-all-reason/maps-metadata.git
 	branch = main
 [submodule "external/skylobby"]
 	path = external/skylobby
-	url = git@github.com:skynet-gh/skylobby.git
+	url = https://github.com/skynet-gh/skylobby.git
 	branch = master
 [submodule "external/spads_config_bar"]
 	path = external/spads_config_bar
-	url = git@github.com:beyond-all-reason/spads_config_bar.git
+	url = https://github.com/beyond-all-reason/spads_config_bar.git
 	branch = main
 [submodule "external/recoil-autohost"]
 	path = external/recoil-autohost
-	url = git@github.com:beyond-all-reason/recoil-autohost.git
+	url = https://github.com/beyond-all-reason/recoil-autohost.git
 	branch = main
 [submodule "external/tachyon-client"]
 	path = external/tachyon-client
-	url = git@github.com:beyond-all-reason/tachyon-client.git
+	url = https://github.com/beyond-all-reason/tachyon-client.git
 	branch = master

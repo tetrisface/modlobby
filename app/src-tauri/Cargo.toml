@@ -23,6 +23,8 @@ sevenz-rust2 = { workspace = true }
 tokio = { workspace = true }
 lobby-ui = { workspace = true }
 serde = { workspace = true }
+# `generate_context!` embeds the `plugins` section as a `serde_json::Value`.
+serde_json = { workspace = true }
 settings = { workspace = true }
 spring-protocol = { workspace = true }
 startbox = { workspace = true }
@@ -34,6 +36,7 @@ tauri-plugin-global-shortcut = { workspace = true }
 tauri-plugin-notification = { workspace = true }
 tauri-plugin-opener = { workspace = true }
 tauri-plugin-window-state = { workspace = true }
+tauri-plugin-updater = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 # Only to flash the engine's taskbar entry, which is a window we do not own.

@@ -1,0 +1,84 @@
+# One button. Blank input bumps the patch version; a typed version is used as
+# given. The bump is committed and tagged before the build, so the tag names a
+# commit whose Cargo.toml already states its own version, and
+# `git checkout v<x> && cargo build` reproduces the shipped version string.
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (blank: patch + 1)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # A branch, not the detached HEAD workflow_dispatch checks out by
+      # default: the version bump is pushed to main.
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: main
+
+      - name: Next version
+        id: version
+        run: |
+          id=$(cargo pkgid -p modlobby-app)
+          current=${id##*@}
+          next='${{ inputs.version }}'
+          if [ -z "$next" ]; then
+            IFS=. read -r major minor patch <<<"$current"
+            next="$major.$minor.$((patch + 1))"
+          fi
+          echo "$current -> $next"
+          echo "next=$next" >> "$GITHUB_OUTPUT"
+
+      - name: Bump, commit, tag
+        id: bump
+        env:
+          NEXT: ${{ steps.version.outputs.next }}
+        run: |
+          sed -i "0,/^version = \".*\"$/s//version = \"$NEXT\"/" Cargo.toml
+          cargo update -w
+          id=$(cargo pkgid -p modlobby-app)
+          [ "${id##*@}" = "$NEXT" ] || { echo "Cargo.toml did not take $NEXT: $id"; exit 1; }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "release $NEXT"
+          git tag "v$NEXT"
+          git push origin main "v$NEXT"
+          echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 26.8.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: 1.3.2
+      - run: bun install --frozen-lockfile
+        working-directory: app
+
+      # Builds the NSIS installer, signs it, and attaches installer, .sig and
+      # latest.json to the release. No submodule is needed: the one file
+      # compiled in from external/ is only read under #[cfg(test)].
+      - uses: tauri-apps/tauri-action@v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          MODLOBBY_COMMIT: ${{ steps.bump.outputs.commit }}
+        with:
+          projectPath: app
+          tauriScript: bun run tauri
+          tagName: v${{ steps.version.outputs.next }}
+          releaseName: ${{ steps.version.outputs.next }}
+          releaseBody: ${{ steps.version.outputs.next }}+${{ steps.bump.outputs.commit }}

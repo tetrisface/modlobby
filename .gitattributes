@@ -2,3 +2,4 @@
 scripts/sparse/* text eol=lf
 *.rs text eol=lf
 *.toml text eol=lf
+* text=auto eol=lf

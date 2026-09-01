@@ -14,6 +14,8 @@ import type { Settings } from './bindings/Settings'
 import type { Slot } from './bindings/Slot'
 import type { TweakView } from './bindings/TweakView'
 import type { UiMessage } from './bindings/UiMessage'
+import type { UpdateProgress } from './bindings/UpdateProgress'
+import type { VersionView } from './bindings/VersionView'
 
 /** The shape every failed command rejects with (`ApiError` in commands.rs). */
 export type ApiError = { code: string; message: string }
@@ -57,6 +59,9 @@ export const api = {
   downloadEngine: (version: string) =>
     invoke<string>('download_engine', { version }),
   stopDownload: () => invoke<void>('stop_download'),
+  appVersion: () => invoke<VersionView>('app_version'),
+  checkUpdate: () => invoke<UpdateProgress>('check_update'),
+  installUpdate: () => invoke<UpdateProgress>('install_update'),
   ring: (user: string) => invoke<void>('ring', { user }),
   addBot: (
     name: string,

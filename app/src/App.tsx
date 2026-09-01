@@ -15,6 +15,8 @@ import { connectChannel } from './ipc/channel'
 import { clickLeavesOverlay, escapeLeavesOverlay } from './lib/overlay'
 import { api, describeError } from './ipc/client'
 import type { Settings } from './ipc/bindings/Settings'
+import type { UpdateProgress } from './ipc/bindings/UpdateProgress'
+import type { VersionView } from './ipc/bindings/VersionView'
 import { chat, pushNotice } from './store/chat'
 import { lobby } from './store/lobby'
 import { applySettings } from './store/settings'
@@ -55,6 +57,39 @@ function Layout(props: ParentProps) {
         .then(setFullscreen)
         .catch(() => {}),
   )
+
+  /**
+   * Which build this is, in the corner where the brand is. It becomes the
+   * offer to restart into a newer one when an update was downloaded while a
+   * room or a game made installing it at once the wrong thing to do.
+   */
+  const [version, setVersion] = createSignal<VersionView | null>(null)
+  const [update, setUpdate] = createSignal<UpdateProgress | null>(null)
+  onMount(() => {
+    void api
+      .appVersion()
+      .then(setVersion)
+      .catch(() => {})
+    const pending = listen<UpdateProgress>('app-update', (event) =>
+      setUpdate(event.payload),
+    )
+    onCleanup(() => void pending.then((unlisten) => unlisten()))
+  })
+  const waiting = () => {
+    const at = update()
+    return at?.phase === 'ready' ? at.version : null
+  }
+  const fetching = () => {
+    const at = update()
+    return at?.phase === 'checking' || at?.phase === 'downloading'
+  }
+  async function installUpdate() {
+    try {
+      await api.installUpdate()
+    } catch (error) {
+      pushNotice('error', describeError(error))
+    }
+  }
 
   /** What the server says about us, which is what everyone else can see. */
   const away = () => (lobby.me ? lobby.users[lobby.me]?.status.away : false)
@@ -185,6 +220,37 @@ function Layout(props: ParentProps) {
         data-tauri-drag-region={!fullscreen() && !over() ? true : undefined}
       >
         <span class='brand'>modlobby</span>
+        <Show when={version()}>
+          {(build) => (
+            <Show
+              when={waiting()}
+              fallback={
+                <span
+                  class='version'
+                  title={
+                    fetching()
+                      ? 'Looking for a newer version…'
+                      : 'Version, and the commit it was built from'
+                  }
+                >
+                  {build().version}+{build().commit}
+                  {fetching() ? ' ↓' : ''}
+                </span>
+              }
+            >
+              {(next) => (
+                <button
+                  type='button'
+                  class='version waiting'
+                  title={`Version ${next()} is downloaded. Restart into it.`}
+                  onClick={() => void installUpdate()}
+                >
+                  {build().version} → {next()} ⟳
+                </button>
+              )}
+            </Show>
+          )}
+        </Show>
         <A href='/skirmish'>Skirmish</A>
         <Show when={lobby.phase === 'ready'}>
           <A href='/battles'>Battles</A>

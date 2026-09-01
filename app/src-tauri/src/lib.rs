@@ -13,6 +13,7 @@ mod presets;
 mod screen;
 mod state;
 mod transport;
+mod update;
 mod win;
 
 use tauri::{Emitter, Manager};
@@ -44,7 +45,7 @@ fn overlay_config_dir(settings: &settings::Settings) -> Option<std::path::PathBu
 /// Dropping it takes the widget back out of the user's data directory, which
 /// is why it is held rather than leaked and why the exit handler reaches for
 /// it explicitly.
-type InGameHandle = std::sync::Arc<std::sync::Mutex<Option<ingame::InGame>>>;
+pub(crate) type InGameHandle = std::sync::Arc<std::sync::Mutex<Option<ingame::InGame>>>;
 
 /// What the in-game widget is allowed to do, and who decides.
 ///
@@ -82,6 +83,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         // Where the window was and how big it was, kept between runs — a lobby
         // is a window you arrange once and then live with. Fullscreen is
         // deliberately not part of it: the lobby's fullscreen is its own
@@ -192,7 +194,14 @@ pub fn run() {
                     let _ = handle.emit("settings", &event);
                 }
             });
+            let check_updates = app.settings.get().updates.automatic;
+            tauri_app.manage(update::Staged::default());
             tauri_app.manage(app);
+            // Before anyone has logged in, which is the one moment a restart
+            // costs nothing; a room joined first makes it wait for a click.
+            if check_updates {
+                tauri::async_runtime::spawn(update::at_startup(tauri_app.handle().clone()));
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -233,6 +242,9 @@ pub fn run() {
             boxes::start_boxes,
             boxes::decode_boxes,
             engine::download_engine,
+            update::app_version,
+            update::check_update,
+            update::install_update,
             commands::flash_engine,
             commands::remember_played,
             commands::game_modoptions,

@@ -1,0 +1,56 @@
+# Every push and pull request: format, tests, generated bindings, front end.
+# No artifacts and no release — release.yml is a deliberate act.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    # Windows only: the app is Windows-first (WebView2, spring.exe), and
+    # `cargo test` compiles an example that reads `LOCALAPPDATA` at build time.
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # Submodules stay off: the 14 under external/ include RecoilEngine and
+      # the whole game. Only one file of theirs is compiled in, below.
+      - uses: actions/checkout@v7.0.1
+
+      - name: BAR's modoptions.lua, at the pinned submodule revision
+        # `include_str!` in crates/modoptions reads it under `#[cfg(test)]`.
+        # The gitlink SHA is in the tree, so no submodule is initialised.
+        run: |
+          sha=$(git rev-parse HEAD:external/Beyond-All-Reason)
+          mkdir -p external/Beyond-All-Reason
+          curl -fsSL "https://raw.githubusercontent.com/beyond-all-reason/Beyond-All-Reason/$sha/modoptions.lua" \
+            -o external/Beyond-All-Reason/modoptions.lua
+
+      # rustup reads rust-toolchain.toml on the first cargo call; no action needed.
+      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 26.8.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: 1.3.2
+
+      - run: bun install --frozen-lockfile
+        working-directory: app
+      - name: Front end, so `tauri::generate_context!` finds frontendDist
+        run: bun run vite:build
+        working-directory: app
+
+      - run: cargo fmt --all --check
+      - run: cargo test --workspace
+
+      - name: Generated bindings are committed
+        # `cargo test` rewrites app/src/ipc/bindings from the Rust types; a
+        # diff means a type changed and its TypeScript was not committed.
+        run: git diff --exit-code app/src/ipc/bindings
+
+      - run: bun run check
+        working-directory: app

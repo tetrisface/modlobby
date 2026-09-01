@@ -26,6 +26,7 @@ pub struct Settings {
     pub play: Play,
     pub tweaks: Tweaks,
     pub logging: Logging,
+    pub updates: Updates,
 }
 
 impl Settings {
@@ -387,6 +388,26 @@ impl Default for Logging {
         Self {
             filter: "info".into(),
         }
+    }
+}
+
+/// Keeping the app current.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(default, rename_all = "camelCase")]
+#[ts(export)]
+pub struct Updates {
+    /// Whether to fetch the newest release on startup and restart into it.
+    ///
+    /// On, because an out-of-date lobby is one that quietly talks to a server
+    /// that has moved on, and startup is the one moment a restart costs
+    /// nothing. An update found while a room is joined or a game is running
+    /// waits in the nav for a click, whatever this says.
+    pub automatic: bool,
+}
+
+impl Default for Updates {
+    fn default() -> Self {
+        Self { automatic: true }
     }
 }
 
