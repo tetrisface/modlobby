@@ -27,6 +27,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "tetrisface",
+    "copyright": "Copyright (c) 2026 tetrisface",
+    "licenseFile": "../../LICENSE",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

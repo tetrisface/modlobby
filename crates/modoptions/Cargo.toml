@@ -1,7 +1,10 @@
 [package]
 name = "modoptions"
+description = "BAR's modoptions.lua parsed into the option schema the room UI draws from"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
 
 [dependencies]
 full_moon = { workspace = true }

@@ -1,10 +1,10 @@
 //! BAR's modoption schema, read out of the game's own `modoptions.lua`.
 //!
 //! Chobby reads this table from the game archive with the engine's Lua VM
-//! (`gui_modoptions_panel.lua:1215-1255`). We have no VM, so the table is
-//! parsed here and vendored as JSON. That buys two things a runtime read would
-//! not: the app needs no Lua at all, and a diff shows up in review whenever BAR
-//! adds an option or moves one between sections.
+//! (`gui_modoptions_panel.lua:1215-1255`). We have no VM, so this parses the
+//! Lua itself, over bytes `content::Library::game_file` reads out of the
+//! installed game. The table therefore matches the version the room is running,
+//! and none of BAR's own writing is redistributed.
 //!
 //! Only the literal `local options = { … }` table is read. The two `for i = 1,
 //! 9` loops at the end of the file generate the numbered tweak slots, which we
