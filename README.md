@@ -12,7 +12,7 @@ A Beyond All Reason lobby focused on modding and experiments.
 | `lobby-runtime`   | The tokio actor every front end drives: connection, reducer, engine child, UI transport                                                          |
 | `settings`        | User settings as JSONC with comments preserved, live reload, a JSON Schema, and credentials in the OS keyring                                     |
 | `tweaks`          | `tweakdefs`/`tweakunits`: base64url, StyLua formatting, minification, `!bSet` commands with the 16 385-character gauge, diffs                     |
-| `content`         | What this machine has installed: engines, games via the rapid index, maps — the honest source of the sync bit |
+| `content`         | What this machine has installed: engines, games via the rapid index, maps — the honest source of the sync bit; the one named HTTP client, and BAR's map index cached on disk behind its ETag |
 | `modoptions`      | BAR's modoption schema, parsed out of the game's own `modoptions.lua` and vendored as JSON for the app          |
 | `presets`         | Saved room setups with timestamps, the plan for applying one, and interop both ways with Chobby's `optionsPresets.json` |
 | `startbox`        | Startbox arrangements: the `base64url(zlib(json))` modoptions, and the resolution order the game enforces        |

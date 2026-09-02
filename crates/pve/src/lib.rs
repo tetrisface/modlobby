@@ -19,11 +19,17 @@
 //! no TLS. The same CloudFront distribution answers over TLS, and this is Rust
 //! with rustls in the room, so this asks over `https://` -- the settings of a
 //! room are nobody's secret, but there is no reason to send them in the clear.
+//!
+//! The HTTP client is handed in, not built here: modlobby has one client for
+//! everything it asks BAR, so that every request carries the same name and
+//! shares one connection pool.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use ts_rs::TS;
 
 /// The service the in-game widget talks to (`include/remote.lua:16-18`),
@@ -290,51 +296,130 @@ pub fn read(body: &serde_json::Value) -> Score {
     }
 }
 
-/// Asks the service what a setup scores, with [`Patience::DEFAULT`].
-pub async fn fetch(ask: &Ask) -> Result<Score, Error> {
-    fetch_with(ask, Patience::DEFAULT).await
+/// The service as one client sees it: the transport it was handed, where the
+/// service lives, and what it has already answered.
+///
+/// The client is injected rather than built here so the process has one
+/// connection pool and one `User-Agent` for everything it asks BAR; the
+/// endpoint is a parameter so a test can stand up a server of its own.
+pub struct Service {
+    client: reqwest::Client,
+    endpoint: String,
+    memo: Mutex<Memo>,
 }
 
-/// Asks the service what a setup scores, trying again as the patience allows.
-pub async fn fetch_with(ask: &Ask, patience: Patience) -> Result<Score, Error> {
-    let body = serde_json::to_vec(ask).map_err(|err| Error::Request(err.to_string()))?;
-    if body.len() > BODY_LIMIT {
-        return Err(Error::TooBig {
-            size: body.len() / 1024,
-            limit: BODY_LIMIT / 1024,
-        });
+impl Service {
+    pub fn new(client: reqwest::Client, endpoint: impl Into<String>) -> Self {
+        Self {
+            client,
+            endpoint: endpoint.into(),
+            memo: Mutex::new(Memo::default()),
+        }
     }
-    let client = reqwest::Client::builder()
-        .timeout(patience.attempt)
-        // The widget does not follow redirects either; there is one endpoint.
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|err| Error::Request(err.to_string()))?;
 
-    let mut attempt = 1;
-    loop {
-        let failed = match ask_once(&client, body.clone(), patience.attempt).await {
-            Ok(score) => return Ok(score),
-            Err(err) => err,
-        };
-        let Some(pause) = patience.pause_after(&failed, attempt + 1) else {
-            return Err(failed);
-        };
-        tracing::info!(error = %failed, attempt, ?pause, "pve stats: asking again after a pause");
-        tokio::time::sleep(pause).await;
-        attempt += 1;
+    /// What a setup scores, with [`Patience::DEFAULT`].
+    pub async fn score(&self, ask: &Ask) -> Result<Score, Error> {
+        self.score_with(ask, Patience::DEFAULT).await
+    }
+
+    /// What a setup scores, trying again as the patience allows.
+    ///
+    /// A setup this process has already been answered about is answered from
+    /// memory: the service scores a setup, not a moment, so the same question
+    /// gets the same number, and the panel re-mounting or a setting toggled
+    /// and toggled back is not worth a Lambda's cold start.
+    pub async fn score_with(&self, ask: &Ask, patience: Patience) -> Result<Score, Error> {
+        let body = serde_json::to_vec(ask).map_err(|err| Error::Request(err.to_string()))?;
+        if body.len() > BODY_LIMIT {
+            return Err(Error::TooBig {
+                size: body.len() / 1024,
+                limit: BODY_LIMIT / 1024,
+            });
+        }
+        let key = Memo::key(&body);
+        if let Some(held) = self.memo.lock().expect("pve memo").get(&key) {
+            tracing::debug!("pve stats: answered from memory");
+            return Ok(held);
+        }
+
+        let mut attempt = 1;
+        loop {
+            let asked =
+                ask_once(&self.client, &self.endpoint, body.clone(), patience.attempt).await;
+            let failed = match asked {
+                Ok(score) => {
+                    self.memo.lock().expect("pve memo").put(key, score.clone());
+                    return Ok(score);
+                }
+                Err(err) => err,
+            };
+            let Some(pause) = patience.pause_after(&failed, attempt + 1) else {
+                return Err(failed);
+            };
+            tracing::info!(error = %failed, attempt, ?pause, "pve stats: asking again after a pause");
+            tokio::time::sleep(pause).await;
+            attempt += 1;
+        }
+    }
+}
+
+/// How many distinct setups are remembered before the oldest is forgotten.
+///
+/// A room's evening is a handful of setups revisited; the number is small
+/// because an entry can carry a few hundred kilobytes of tweak Lua.
+pub const MEMO_CAP: usize = 32;
+
+/// Answers already received, keyed by the exact request body.
+#[derive(Debug, Default)]
+pub struct Memo {
+    held: VecDeque<([u8; 32], Score)>,
+}
+
+impl Memo {
+    /// The body's hash: the service scores the body and nothing else, so two
+    /// equal bodies are one question.
+    pub fn key(body: &[u8]) -> [u8; 32] {
+        Sha256::digest(body).into()
+    }
+
+    pub fn get(&self, key: &[u8; 32]) -> Option<Score> {
+        self.held
+            .iter()
+            .find(|(held, _)| held == key)
+            .map(|(_, score)| score.clone())
+    }
+
+    /// Remembers an answer; the oldest goes once the cap is reached.
+    pub fn put(&mut self, key: [u8; 32], score: Score) {
+        if self.get(&key).is_some() {
+            return;
+        }
+        self.held.push_back((key, score));
+        while self.held.len() > MEMO_CAP {
+            self.held.pop_front();
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.held.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.held.is_empty()
     }
 }
 
 /// One attempt, classified so the caller can tell a cold service from a
-/// refusal.
+/// refusal. The deadline covers the connection and the whole answer.
 async fn ask_once(
     client: &reqwest::Client,
+    endpoint: &str,
     body: Vec<u8>,
     deadline: Duration,
 ) -> Result<Score, Error> {
     let response = client
-        .post(ENDPOINT)
+        .post(endpoint)
+        .timeout(deadline)
         .header(reqwest::header::CONTENT_TYPE, "application/json")
         .body(body)
         .send()
@@ -597,5 +682,95 @@ mod tests {
             assert!(held >= Duration::from_secs(3), "{held:?}");
             assert!(held <= Duration::from_secs(5), "{held:?}");
         }
+    }
+
+    fn ask() -> Ask {
+        Ask {
+            ai_type: AiType::Raptors.as_str(),
+            map: "Comet Catcher Remake 1.8".into(),
+            game_settings: BTreeMap::from([("raptor_endless".to_owned(), "1".to_owned())]),
+            encounter_context: Encounter {
+                human_team_size: 2,
+                enemy_ai_count: None,
+                human_player_income_multipliers: vec![1.0, 1.0],
+                enemy_ai_income_multipliers: vec![],
+            },
+        }
+    }
+
+    #[test]
+    fn the_memo_answers_the_same_body_and_forgets_the_oldest() {
+        let mut memo = Memo::default();
+        let score = read(&serde_json::json!({"difficulty_histogram": {"current_difficulty": 1.0}}));
+        let key = Memo::key(b"a");
+        assert_eq!(memo.get(&key), None);
+        memo.put(key, score.clone());
+        memo.put(key, score.clone());
+        assert_eq!(memo.len(), 1, "the same key is one entry");
+        assert_eq!(memo.get(&key), Some(score.clone()));
+
+        for n in 0..MEMO_CAP {
+            memo.put(Memo::key(&n.to_le_bytes()), score.clone());
+        }
+        assert_eq!(memo.len(), MEMO_CAP);
+        assert_eq!(
+            memo.get(&key),
+            None,
+            "the first one in is the first one out"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_same_setup_is_asked_about_once() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v1/stats"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "difficulty_histogram": {"current_difficulty": 21.5, "current_percentile": 88},
+                "difficulty_estimate": {"player_win_probability": 0.31, "evidence_games": 4200}
+            })))
+            .expect(2)
+            .mount(&server)
+            .await;
+        let service = Service::new(
+            content::http::client("test"),
+            format!("{}/api/v1/stats", server.uri()),
+        );
+
+        let first = service.score(&ask()).await.unwrap();
+        let again = service.score(&ask()).await.unwrap();
+        assert_eq!(first, again);
+        assert_eq!(first.challenge, Some(21.5));
+
+        // A different setup is a different question.
+        let mut other = ask();
+        other.encounter_context.human_team_size = 3;
+        service.score(&other).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_refusal_is_not_remembered() {
+        use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(400))
+            .expect(2)
+            .mount(&server)
+            .await;
+        let service = Service::new(content::http::client("test"), server.uri());
+        assert!(matches!(
+            service.score(&ask()).await,
+            Err(Error::Status(400))
+        ));
+        assert!(matches!(
+            service.score(&ask()).await,
+            Err(Error::Status(400))
+        ));
+        assert!(service.memo.lock().unwrap().is_empty());
     }
 }

@@ -20,9 +20,35 @@ pub fn launcher_data_dir() -> Option<PathBuf> {
     )
 }
 
-/// Where the BAR launcher keeps its data on Windows, when it is really there.
+/// Where the new bar-lobby keeps its content on Windows.
+///
+/// Engines, packages, pool, the rapid index and every map its pr-downloader
+/// fetched live under the install's `assets` directory
+/// (`bar-lobby/src/main/config/app.ts`). Two things are accepted by reading it
+/// as the data directory: a map the user dropped into bar-lobby's state
+/// directory (`%APPDATA%\\BeyondAllReason\\data\\maps`) is not seen, and an
+/// engine launched with this as its write directory leaves its demos and
+/// infolog beside bar-lobby's assets rather than in its state.
+pub fn bar_lobby_assets_dir() -> Option<PathBuf> {
+    let local = std::env::var_os("LOCALAPPDATA")?;
+    Some(
+        PathBuf::from(local)
+            .join("Programs")
+            .join("BeyondAllReason")
+            .join("assets"),
+    )
+}
+
+/// Where BAR's content already is: the legacy launcher's data directory when
+/// it exists, else bar-lobby's, else nothing. Whichever is found, the game is
+/// not downloaded a second time onto a machine that already has it. The
+/// launcher comes first because Chobby and its package cleanup live there.
 pub fn default_data_dir() -> Option<PathBuf> {
-    launcher_data_dir().filter(|dir| dir.is_dir())
+    first_present([launcher_data_dir(), bar_lobby_assets_dir()])
+}
+
+fn first_present(candidates: [Option<PathBuf>; 2]) -> Option<PathBuf> {
+    candidates.into_iter().flatten().find(|dir| dir.is_dir())
 }
 
 /// Finds `engine_version` under `data_dir/engine` and starts it on `target`
@@ -93,4 +119,34 @@ pub fn spawn_download(
         .stderr(std::process::Stdio::null())
         .spawn()
         .map_err(|err| format!("spawning pr-downloader: {err}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_launcher_wins_when_both_are_installed() {
+        let launcher = tempfile::tempdir().unwrap();
+        let bar_lobby = tempfile::tempdir().unwrap();
+        let found = first_present([
+            Some(launcher.path().to_path_buf()),
+            Some(bar_lobby.path().to_path_buf()),
+        ]);
+        assert_eq!(found.as_deref(), Some(launcher.path()));
+    }
+
+    #[test]
+    fn a_machine_with_only_bar_lobby_uses_its_content() {
+        let bar_lobby = tempfile::tempdir().unwrap();
+        let missing = bar_lobby.path().join("no-launcher-here");
+        let found = first_present([Some(missing), Some(bar_lobby.path().to_path_buf())]);
+        assert_eq!(found.as_deref(), Some(bar_lobby.path()));
+    }
+
+    #[test]
+    fn nothing_installed_is_nothing_found() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(first_present([Some(dir.path().join("a")), None]), None);
+    }
 }

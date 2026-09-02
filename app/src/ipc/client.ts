@@ -3,6 +3,7 @@ import type { Check } from './bindings/Check'
 import type { DefTags } from './bindings/DefTags'
 import type { DiffView } from './bindings/DiffView'
 import type { Kind } from './bindings/Kind'
+import type { MapIndex } from './bindings/MapIndex'
 import type { Prepared } from './bindings/Prepared'
 import type { ReplayView } from './bindings/ReplayView'
 import type { SkirmishOptions } from './bindings/SkirmishOptions'
@@ -58,6 +59,7 @@ export const api = {
     invoke<void>('say_private', { user, text }),
   listChannels: () => invoke<void>('list_channels'),
   downloadMissing: () => invoke<void>('download_missing'),
+  mapIndex: () => invoke<MapIndex>('map_index'),
   downloadEngine: (version: string) =>
     invoke<string>('download_engine', { version }),
   stopDownload: () => invoke<void>('stop_download'),

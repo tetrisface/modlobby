@@ -9,9 +9,13 @@ license.workspace = true
 [dependencies]
 flate2 = { workspace = true }
 recoil = { workspace = true }
+reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+tokio = { workspace = true }
+# Only for the crypto provider reqwest's rustls needs installed before a client can be built.
+tokio-rustls = { workspace = true }
 tracing = { workspace = true }
 ts-rs = { workspace = true }
 
@@ -19,3 +23,4 @@ ts-rs = { workspace = true }
 # Only for the example that reads a real install.
 modoptions = { workspace = true }
 tempfile = { workspace = true }
+wiremock = { workspace = true }

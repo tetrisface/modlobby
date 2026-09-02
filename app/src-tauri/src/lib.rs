@@ -236,6 +236,7 @@ pub fn run() {
             commands::say_private,
             commands::list_channels,
             commands::download_missing,
+            commands::map_index,
             commands::stop_download,
             commands::ring,
             commands::add_bot,

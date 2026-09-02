@@ -18,15 +18,21 @@ pub struct App {
     pub rejoin: RejoinMemory,
     /// Saved room setups, next to the settings they sit beside.
     pub presets: presets::Store,
+    /// The one client every HTTP request leaves through: pooled, and named.
+    pub http: reqwest::Client,
+    /// BAR's PvE Stats service, with what it has already answered this run.
+    pub pve: pve::Service,
+    /// BAR's map index for this run, loaded the first time anything asks.
+    pub map_index: tokio::sync::Mutex<Option<content::map_index::MapIndex>>,
 }
 
 impl App {
     /// Opens the settings directory and spawns the runtime on Tauri's async runtime.
     pub fn open() -> Result<Self, settings::Error> {
-        // Before anything can open a TLS connection — the lobby transport or a
-        // reqwest fetch — so rustls never has to guess its crypto provider.
-        // Guessing is a connect-time panic when more than one is compiled in.
-        spring_protocol::transport::install_crypto();
+        // First, because building it installs the crypto provider that every
+        // TLS user in the process — the lobby transport included — relies on
+        // being there; without one, rustls panics rather than guesses.
+        let http = content::http::client(env!("CARGO_PKG_VERSION"));
         let settings = Store::open(settings::config_dir())?;
         let hardware = platform::detect();
         let client = tauri::async_runtime::block_on(async {
@@ -40,6 +46,9 @@ impl App {
             settings,
             credentials: Arc::new(KeyringStore),
             hardware,
+            pve: pve::Service::new(http.clone(), pve::ENDPOINT),
+            http,
+            map_index: tokio::sync::Mutex::new(None),
         })
     }
 }

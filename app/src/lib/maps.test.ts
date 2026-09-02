@@ -1,34 +1,56 @@
-import { describe, expect, it } from 'vitest'
-import { sized } from './maps'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// The shape the map index publishes: an imagor transform with the size in the
-// path and the filters after it.
+const { mapIndex } = vi.hoisted(() => ({ mapIndex: vi.fn() }))
+vi.mock('../ipc/client', () => ({ api: { mapIndex: () => mapIndex() } }))
+
+// The shape the index publishes: the official lobby's 1024px transform.
 const PUBLISHED =
-  'https://api.bar-rts.com/i/unsafe/fit-in/1024x1024/filters:quality(75):format(webp)/maps/some_map.jpg'
+  'https://maps-metadata.beyondallreason.dev/i/fit-in/1024x1024/filters:format(webp):quality(75)/rowy-1f075.appspot.com/maps/x/photo/AcidicQuarry_5.16.jpg'
 
-describe('asking for a picture at the size it will be drawn', () => {
-  it('puts the wanted size into the transform', () => {
-    expect(sized(PUBLISHED, 52)).toContain('/fit-in/52x52/')
-    expect(sized(PUBLISHED, 52)).not.toContain('1024x1024')
-  })
+const INDEX = {
+  images: { 'AcidicQuarry 5.17': PUBLISHED },
+  names: { 'acidicquarry_5.17': 'AcidicQuarry 5.17' },
+}
 
-  it('raises the quality, since the image is now small', () => {
-    expect(sized(PUBLISHED, 52)).toContain('quality(90)')
-    expect(sized(PUBLISHED, 52)).not.toContain('quality(75)')
-  })
+/** The module keeps one load per page; each test wants a page of its own. */
+async function fresh() {
+  vi.resetModules()
+  return import('./maps')
+}
 
-  it('leaves the rest of the URL alone', () => {
-    expect(sized(PUBLISHED, 256)).toBe(
-      'https://api.bar-rts.com/i/unsafe/fit-in/256x256/filters:quality(90):format(webp)/maps/some_map.jpg',
+beforeEach(() => {
+  mapIndex.mockReset()
+})
+
+describe('the map index, as the room sees it', () => {
+  it('hands the published picture URL through untouched', async () => {
+    mapIndex.mockResolvedValue(INDEX)
+    const maps = await fresh()
+    expect(await maps.mapImage('AcidicQuarry 5.17')).toBe(PUBLISHED)
+    expect(await maps.mapImage('Nowhere 1')).toBeNull()
+    expect(await maps.mapImage('')).toBeNull()
+    expect((await maps.mapNames())['acidicquarry_5.17']).toBe(
+      'AcidicQuarry 5.17',
     )
   })
 
-  it('can be applied to its own output', () => {
-    expect(sized(sized(PUBLISHED, 52), 384)).toBe(sized(PUBLISHED, 384))
+  it('asks Rust once however many callers arrive together', async () => {
+    mapIndex.mockResolvedValue(INDEX)
+    const maps = await fresh()
+    await Promise.all([
+      maps.mapImages(),
+      maps.mapImage('AcidicQuarry 5.17'),
+      maps.mapNames(),
+    ])
+    expect(mapIndex).toHaveBeenCalledTimes(1)
   })
 
-  it('returns a URL of another shape untouched', () => {
-    const plain = 'https://example.invalid/maps/some_map.png'
-    expect(sized(plain, 52)).toBe(plain)
+  it('answers nothing when Rust cannot be reached, and asks again next time', async () => {
+    mapIndex.mockRejectedValueOnce(new Error('no ipc'))
+    mapIndex.mockResolvedValue(INDEX)
+    const maps = await fresh()
+    expect(await maps.mapImages()).toEqual({})
+    expect(await maps.mapImage('AcidicQuarry 5.17')).toBe(PUBLISHED)
+    expect(mapIndex).toHaveBeenCalledTimes(2)
   })
 })

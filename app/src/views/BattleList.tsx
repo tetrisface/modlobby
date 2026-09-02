@@ -25,7 +25,7 @@ import {
   running as runningGames,
 } from '../store/running'
 import { MODES, SORTS, arrange, stabilize, type Row } from '../lib/battles'
-import { mapImages, sized } from '../lib/maps'
+import { mapImages } from '../lib/maps'
 import { pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
 import { applySettings, settings } from '../store/settings'
@@ -386,7 +386,7 @@ export function BattleList() {
                         }}
                       >
                         <MapThumb
-                          src={thumbnail(previews()?.[r().battle.mapName])}
+                          src={previews()?.[r().battle.mapName]}
                           alt={r().battle.mapName}
                         />
                         <span class='col-players'>
@@ -629,11 +629,14 @@ function PasswordDialog(props: {
   )
 }
 
-/** `.col-thumb` is 52px wide; three times that survives a high-density screen. */
-const thumbnail = (url: string | undefined) =>
-  url === undefined ? undefined : sized(url, 160)
-
-/** A room's map, when the index knows it; an empty frame when it does not. */
+/**
+ * A room's map, when the index knows it; an empty frame when it does not.
+ *
+ * The picture is the published one, drawn into a 52px column: the same URL
+ * the official lobby fetches, so it comes out of a shared CDN cache and stays
+ * in the webview's for good. Lazy, so a long list does not ask for every
+ * picture at once.
+ */
 function MapThumb(props: { src: string | undefined; alt: string }) {
   const [broken, setBroken] = createSignal(false)
 
@@ -651,7 +654,13 @@ function MapThumb(props: { src: string | undefined; alt: string }) {
     <span class='col-thumb'>
       <Show when={broken() ? undefined : props.src}>
         {(src) => (
-          <img src={src()} alt={props.alt} onError={() => setBroken(true)} />
+          <img
+            src={src()}
+            alt={props.alt}
+            loading='lazy'
+            decoding='async'
+            onError={() => setBroken(true)}
+          />
         )}
       </Show>
     </span>

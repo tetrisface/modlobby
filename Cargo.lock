@@ -140,6 +140,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "assert-json-diff"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47e4f2b81832e72834d7518d8487a0396a28cc408186a2e8854c0f98011faf12"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "async-broadcast"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -821,12 +831,16 @@ dependencies = [
  "flate2",
  "modoptions",
  "recoil",
+ "reqwest",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.20",
+ "tokio",
+ "tokio-rustls",
  "tracing",
  "ts-rs",
+ "wiremock",
 ]
 
 [[package]]
@@ -1058,6 +1072,24 @@ dependencies = [
  "libdbus-sys",
  "windows-sys 0.61.2",
 ]
+
+[[package]]
+name = "deadpool"
+version = "0.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0be2b1d1d6ec8d846f05e137292d0b89133caf95ef33695424c09568bdd39b1b"
+dependencies = [
+ "deadpool-runtime",
+ "lazy_static",
+ "num_cpus",
+ "tokio",
+]
+
+[[package]]
+name = "deadpool-runtime"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "092966b41edc516079bdf31ec78a2e0588d1d0c08f78b91d8307215928642b2b"
 
 [[package]]
 name = "defmt"
@@ -1568,12 +1600,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "futures"
+version = "0.3.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a31d2a3fbaaeb2af2368bbdd904aa8e812d3c04a1ee10d3171f52d556e5d0a3"
+dependencies = [
+ "futures-channel",
+ "futures-core",
+ "futures-executor",
+ "futures-io",
+ "futures-sink",
+ "futures-task",
+ "futures-util",
+]
+
+[[package]]
 name = "futures-channel"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b1f9e3d69d39e4862ffed03ed071a76f9a13ba1d9109d355b0f0aa6b15e393c4"
 dependencies = [
  "futures-core",
+ "futures-sink",
 ]
 
 [[package]]
@@ -1641,6 +1689,7 @@ version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d50a92467f8ba5dd6e3ee5d4bd04d73ab2e4e1c44474a0674821dfce14b79bc"
 dependencies = [
+ "futures-channel",
  "futures-core",
  "futures-io",
  "futures-macro",
@@ -1985,6 +2034,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "h2"
+version = "0.4.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef8e5e5a340588f4452631496976cf8636d4a7ecf600239fdc27615d2530bc16"
+dependencies = [
+ "atomic-waker",
+ "bytes",
+ "fnv",
+ "futures-core",
+ "futures-sink",
+ "http",
+ "indexmap 2.14.1",
+ "slab",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2097,6 +2165,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
 
 [[package]]
+name = "httpdate"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
+
+[[package]]
 name = "hybrid-array"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2115,9 +2189,11 @@ dependencies = [
  "bytes",
  "futures-channel",
  "futures-core",
+ "h2",
  "http",
  "http-body",
  "httparse",
+ "httpdate",
  "itoa",
  "pin-project-lite",
  "smallvec",
@@ -2781,6 +2857,7 @@ dependencies = [
  "recoil",
  "spring-protocol",
  "sysinfo",
+ "tempfile",
  "thiserror 2.0.20",
  "tokio",
  "tracing",
@@ -2929,6 +3006,7 @@ dependencies = [
  "dotenvy",
  "lobby-runtime",
  "lobby-ui",
+ "md-5",
  "modoptions",
  "presets",
  "pve",
@@ -2956,6 +3034,7 @@ dependencies = [
  "ts-rs",
  "tweaks",
  "windows-sys 0.61.2",
+ "wiremock",
 ]
 
 [[package]]
@@ -3823,13 +3902,16 @@ dependencies = [
 name = "pve"
 version = "0.1.2"
 dependencies = [
+ "content",
  "reqwest",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "thiserror 2.0.20",
  "tokio",
  "tracing",
  "ts-rs",
+ "wiremock",
 ]
 
 [[package]]
@@ -5520,6 +5602,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "libc",
  "pin-project-lite",
  "tokio",
 ]
@@ -6787,6 +6870,29 @@ checksum = "cb5a765337c50e9ec252c2069be9bf91c7df47afb103b642ba3a53bf8101be97"
 dependencies = [
  "cfg-if",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "wiremock"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08db1edfb05d9b3c1542e521aea074442088292f00b5f28e435c714a98f85031"
+dependencies = [
+ "assert-json-diff",
+ "base64 0.22.1",
+ "deadpool",
+ "futures",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "log",
+ "once_cell",
+ "regex",
+ "serde",
+ "serde_json",
+ "tokio",
+ "url",
 ]
 
 [[package]]

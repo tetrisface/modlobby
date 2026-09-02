@@ -1,7 +1,7 @@
 import { For, Show, createResource } from 'solid-js'
 import { api } from '../ipc/client'
 import { centre, outline } from '../lib/boxes'
-import { mapImage, sized } from '../lib/maps'
+import { mapImage } from '../lib/maps'
 
 function Panel(props: {
   label: string
@@ -10,13 +10,7 @@ function Panel(props: {
   mapName: string
   tone: 'before' | 'after'
 }) {
-  const [image] = createResource(
-    () => props.mapName,
-    async (name: string) => {
-      const url = await mapImage(name)
-      return url === null ? null : sized(url, 256)
-    },
-  )
+  const [image] = createResource(() => props.mapName, mapImage)
   const [polys] = createResource(
     () => [props.blob, props.teams] as const,
     ([blob, teams]) => api.decodeBoxes(blob, teams).catch(() => null),

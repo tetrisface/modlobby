@@ -15,9 +15,9 @@
 
 use serde::Deserialize;
 
-/// Where BAR's file index lives. The same host `recoil::HTTP_SEARCH_URL`
-/// hands pr-downloader, for the same reason.
-pub const FIND_URL: &str = "https://files-cdn.beyondallreason.dev/find";
+/// Where BAR's file index lives: the same endpoint pr-downloader is handed as
+/// `PRD_HTTP_SEARCH_URL`, for the same reason.
+pub const FIND_URL: &str = recoil::HTTP_SEARCH_URL;
 
 /// The engine build for this machine, as BAR's index categorises them.
 pub const fn category() -> &'static str {
@@ -39,6 +39,10 @@ pub struct Release {
     /// Bytes, for a progress bar that means something.
     #[serde(default)]
     pub size: u64,
+    /// Of the whole archive, lowercase hex. The index has carried one for
+    /// every engine so far; an entry without it is unpacked unverified.
+    #[serde(default)]
+    pub md5: Option<String>,
 }
 
 /// The query for one engine version on this platform.
@@ -122,7 +126,19 @@ mod tests {
 
     #[test]
     fn fields_the_index_grows_are_ignored_rather_than_fatal() {
-        let body = r#"[{"filename":"a.7z","mirrors":["u"],"size":9,"md5":"x","tags":["y"]}]"#;
-        assert_eq!(pick(body).map(|r| r.filename), Some("a.7z".into()));
+        let body = r#"[{"filename":"a.7z","mirrors":["u"],"size":9,"tags":["y"],"path":"engine"}]"#;
+        let release = pick(body).expect("a release");
+        assert_eq!(release.filename, "a.7z");
+        assert_eq!(release.md5, None);
+    }
+
+    #[test]
+    fn the_checksum_is_kept_for_the_download_to_verify() {
+        let body =
+            r#"[{"filename":"a.7z","mirrors":["u"],"md5":"87c91c5c81898622d6870708d05150b1"}]"#;
+        assert_eq!(
+            pick(body).and_then(|r| r.md5),
+            Some("87c91c5c81898622d6870708d05150b1".into())
+        );
     }
 }

@@ -265,7 +265,7 @@ pub async fn pve_score(app: State<'_, App>) -> Result<Option<pve::Score>> {
         seats = ask.encounter_context.human_team_size,
         "pve stats: asking"
     );
-    match pve::fetch(&ask).await {
+    match app.pve.score(&ask).await {
         Ok(score) => Ok(Some(score)),
         Err(err) => {
             // The panel says "unavailable" and no more; the reason lives here.

@@ -10,7 +10,13 @@ license.workspace = true
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 ts-rs = { workspace = true }
+
+[dev-dependencies]
+# For the client the tests hand the service.
+content = { workspace = true }
+wiremock = { workspace = true }

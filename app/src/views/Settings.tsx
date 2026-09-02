@@ -447,7 +447,7 @@ export function SettingsView() {
         <fieldset>
           <legend>Paths</legend>
           <label>
-            BAR data directory (blank = the launcher's)
+            BAR data directory (blank = the launcher's, else bar-lobby's)
             <input
               value={draft.paths.dataDir ?? ''}
               onInput={(e) =>

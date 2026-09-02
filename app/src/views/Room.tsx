@@ -21,7 +21,7 @@ import type { StartRectView } from '../ipc/bindings/StartRectView'
 import type { UserView } from '../ipc/bindings/UserView'
 import { api, describeError } from '../ipc/client'
 import { boxSignature, centre, outline } from '../lib/boxes'
-import { mapImage, sized } from '../lib/maps'
+import { mapImage } from '../lib/maps'
 import { readSkills, teamSkill, type Skill } from '../lib/skill'
 import { BATTLE_ROOM, chat, pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
@@ -297,15 +297,8 @@ function Minimap(props: {
   mapName: string
   teams: number
 }) {
-  const [image] = createResource(
-    () => props.mapName,
-    async (name) => {
-      const url = await mapImage(name)
-      // The minimap column is 132px square; ask for it at that scale rather
-      // than downscaling a 1024px picture into it.
-      return url === null ? null : sized(url, 384)
-    },
-  )
+  // The published picture, as is: the webview scales it into the column.
+  const [image] = createResource(() => props.mapName, mapImage)
   const [broken, setBroken] = createSignal(false)
 
   // A room changes map, so a picture that failed must not condemn the next one.

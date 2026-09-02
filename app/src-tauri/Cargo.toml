@@ -15,6 +15,7 @@ tauri-build = { workspace = true }
 
 [dependencies]
 content = { workspace = true }
+md-5 = { workspace = true }
 recoil = { workspace = true }
 lobby-runtime = { workspace = true }
 rand = { workspace = true }
@@ -53,3 +54,4 @@ ts-rs = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+wiremock = { workspace = true }
