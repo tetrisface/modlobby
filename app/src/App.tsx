@@ -248,7 +248,7 @@ function Layout(props: ParentProps) {
           class='spacer'
           data-tauri-drag-region={!fullscreen() && !over() ? true : undefined}
         />
-        {/* Small and out of the way, in the corner above the account: the
+        {/* Small and out of the way, level with the account: the
             build is worth a glance, not a place in the row. */}
         <span class='version-slot'>
           <Show when={version()}>
