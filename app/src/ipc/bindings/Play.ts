@@ -31,8 +31,8 @@ autoLaunch: boolean,
  *
  * On, because the number is the point of looking at a PvE room before
  * joining it. It sends the map, the settings and the team size to a
- * third-party service over plain HTTP — never a name or an account — so
- * it stays something that can be turned off.
+ * third-party service — never a name or an account — so it stays
+ * something that can be turned off.
  */
 pveStats: boolean, 
 /**

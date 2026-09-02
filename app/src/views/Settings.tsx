@@ -192,6 +192,32 @@ export function SettingsView() {
         </fieldset>
 
         <fieldset>
+          <legend>Updates</legend>
+          <label class='row'>
+            <input
+              type='checkbox'
+              checked={draft.updates.automatic}
+              onChange={(e) =>
+                setDraft('updates', 'automatic', e.currentTarget.checked)
+              }
+            />
+            Update on startup
+          </label>
+          <p class='muted'>
+            Fetches the newest release when the app opens and restarts into it
+            before you have logged in. Found while you are in a room or a game,
+            it waits in the corner of the nav for a click instead.{' '}
+            <button
+              type='button'
+              disabled={checking()}
+              onClick={() => void checkNow()}
+            >
+              {checking() ? 'Looking…' : 'Check now'}
+            </button>
+          </p>
+        </fieldset>
+
+        <fieldset>
           <legend>Overlay</legend>
           <label class='row'>
             <input
@@ -513,7 +539,7 @@ export function SettingsView() {
           <p class='muted'>
             Asks BAR's PvE Stats service — the one the in-game widget uses — for
             a challenge score and win chance. Sends the map, the settings and
-            the team size over plain HTTP; never a name or an account.
+            the team size; never a name or an account.
           </p>
 
           <label class='row'>
@@ -529,32 +555,6 @@ export function SettingsView() {
           <p class='muted'>
             On, because this is a lobby. Turn it off to watch only — a room of
             your own is yours to sit in either way.
-          </p>
-        </fieldset>
-
-        <fieldset>
-          <legend>Updates</legend>
-          <label class='row'>
-            <input
-              type='checkbox'
-              checked={draft.updates.automatic}
-              onChange={(e) =>
-                setDraft('updates', 'automatic', e.currentTarget.checked)
-              }
-            />
-            Update on startup
-          </label>
-          <p class='muted'>
-            Fetches the newest release when the app opens and restarts into it
-            before you have logged in. Found while you are in a room or a game,
-            it waits in the corner of the nav for a click instead.{' '}
-            <button
-              type='button'
-              disabled={checking()}
-              onClick={() => void checkNow()}
-            >
-              {checking() ? 'Looking…' : 'Check now'}
-            </button>
           </p>
         </fieldset>
       </Show>

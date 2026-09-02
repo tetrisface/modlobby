@@ -15,16 +15,19 @@
 //! ratings of the people present, so there is nothing to gain by naming them.
 //! And nothing at all is sent for a room that is not PvE.
 //!
-//! The endpoint is plain HTTP, which is the service's own note in its README,
-//! so the room's settings travel unencrypted. Nothing about a person does.
+//! The widget reaches the service over plain HTTP because the engine's Lua has
+//! no TLS. The same CloudFront distribution answers over TLS, and this is Rust
+//! with rustls in the room, so this asks over `https://` -- the settings of a
+//! room are nobody's secret, but there is no reason to send them in the clear.
 
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-/// The service the in-game widget talks to (`include/remote.lua:16-18`).
-pub const ENDPOINT: &str = "http://d29i3oohxql6zz.cloudfront.net/api/v1/stats";
+/// The service the in-game widget talks to (`include/remote.lua:16-18`),
+/// over TLS rather than the widget's plain HTTP.
+pub const ENDPOINT: &str = "https://d29i3oohxql6zz.cloudfront.net/api/v1/stats";
 
 /// The request body limit the widget documents for this service.
 ///
