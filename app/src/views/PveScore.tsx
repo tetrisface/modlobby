@@ -170,13 +170,15 @@ export function PveScore() {
    * The dots sit where the figure will land, so the row neither disappears
    * nor jumps when an answer arrives; a figure appearing from nowhere reads
    * as a glitch. Every slot waits the same way — none of them may claim
-   * something about the setup before the service has said it.
+   * something about the setup before the service has said it. Still dots:
+   * this panel is in view for as long as the room is, and a cycle there is
+   * noise; a dash afterwards is the answer "none".
    */
   const Slot = (props: { value: string }) => (
     <b>
       <Show
         when={!waiting()}
-        fallback={<Thinking title='asking how hard this setup is' />}
+        fallback={<Thinking still title='asking how hard this setup is' />}
       >
         {props.value}
       </Show>

@@ -2586,6 +2586,12 @@ button.link:hover {
   }
 }
 
+/* The same dots, holding still. */
+.thinking.still i {
+  animation: none;
+  opacity: 0.45;
+}
+
 /* ---- the window while it sits over a running game ----
 
    The window covers the game's monitor, but the page dresses as a modal: the

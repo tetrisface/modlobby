@@ -155,8 +155,9 @@ describe('PveScore', () => {
     expect(asked).toHaveBeenCalledWith('pve_score')
     const slots = container.querySelectorAll('.pve-figure b')
     expect(slots).toHaveLength(3)
+    // Still ones: the panel is looked at for minutes, and a cycle there is noise.
     for (const slot of slots)
-      expect(slot.querySelector('.thinking')).not.toBeNull()
+      expect(slot.querySelector('.thinking.still')).not.toBeNull()
     // The labels stay put around them, and nothing claims anything yet.
     expect(container.textContent).toContain('Challenge')
     expect(container.textContent).toContain('Win')
