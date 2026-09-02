@@ -2,7 +2,7 @@ import { Show } from 'solid-js'
 import type { BotView } from '../ipc/bindings/BotView'
 import type { UserView } from '../ipc/bindings/UserView'
 import { type Skill, skillText, skillTier, skillTitle } from '../lib/skill'
-import { Flag, RankIcon, SideIcon, StatusIcon } from './icons'
+import { Flag, Marks, RankIcon, SideIcon, StatusIcon } from './icons'
 import { showPlayerMenu } from './PlayerMenu'
 
 /**
@@ -16,6 +16,7 @@ export function PlayerRow(props: {
   skill: Skill | null
   me: boolean
   friend?: boolean
+  boss?: boolean
 }) {
   return (
     <Show when={props.user.battleStatus}>
@@ -34,6 +35,7 @@ export function PlayerRow(props: {
           >
             {props.user.name}
           </span>
+          <Marks status={props.user.status} boss={props.boss ?? false} />
         </div>
       )}
     </Show>
@@ -74,6 +76,7 @@ export function SpectatorRow(props: {
   user: UserView
   me: boolean
   friend?: boolean
+  boss?: boolean
 }) {
   return (
     <div class='spectator'>
@@ -91,6 +94,7 @@ export function SpectatorRow(props: {
       >
         {props.user.name}
       </span>
+      <Marks status={props.user.status} boss={props.boss ?? false} />
     </div>
   )
 }

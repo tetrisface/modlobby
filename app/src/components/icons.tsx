@@ -1,6 +1,24 @@
-import { Show } from 'solid-js'
+import { For, Show } from 'solid-js'
 import type { BattleStatusView } from '../ipc/bindings/BattleStatusView'
 import type { UserStatusView } from '../ipc/bindings/UserStatusView'
+
+/** One chevron per rank within its half; the stack grows upward. */
+const CHEVRONS = [
+  { d: 'M5 13 l5 -3.4 l5 3.4', width: 1.9 },
+  { d: 'M5 15 l5 -3.4 l5 3.4 M5 10.6 l5 -3.4 l5 3.4', width: 1.9 },
+  {
+    d: 'M5 16.4 l5 -3.2 l5 3.2 M5 12.4 l5 -3.2 l5 3.2 M5 8.4 l5 -3.2 l5 3.2',
+    width: 1.8,
+  },
+  {
+    d: 'M5 17.4 l5 -2.9 l5 2.9 M5 13.9 l5 -2.9 l5 2.9 M5 10.4 l5 -2.9 l5 2.9 M5 6.9 l5 -2.9 l5 2.9',
+    width: 1.6,
+  },
+]
+
+/** Top-right corner, clear of the lowest chevron. */
+const SHIELD =
+  'M15.4 2.6 L18.8 3.9 V6.6 C18.8 9.1 17.3 10.8 15.4 11.6 C13.5 10.8 12 9.1 12 6.6 V3.9 Z'
 
 /**
  * Chobby's battle-room icon vocabulary, redrawn as vector.
@@ -60,48 +78,55 @@ export function IconSprite() {
           />
         </symbol>
 
-        {/* Rank. Eight ranks, four shapes: the chevron count is the rank
-            within its metal, the metal (steel 1-4 / gold 5-8) is the half. */}
-        <symbol id='chev1' viewBox='0 0 20 20'>
+        {/* Rank. Eight ranks, four shapes, all gold as in Chobby: the chevron
+            count is the rank within its half, and the upper half (5-8) gains a
+            silver edge under the gold. The edge takes `--rank-edge`, set by
+            `.rank.silver`: a stylesheet cannot reach inside a `<use>`, but an
+            inherited custom property can. */}
+        <For each={CHEVRONS}>
+          {(chevron, index) => (
+            <symbol id={`chev${index() + 1}`} viewBox='0 0 20 20'>
+              <path
+                d={chevron.d}
+                fill='none'
+                style={{ stroke: 'var(--rank-edge, none)' }}
+                stroke-width={chevron.width + 3.6}
+                stroke-linecap='round'
+                stroke-linejoin='round'
+              />
+              <path
+                d={chevron.d}
+                fill='none'
+                stroke='currentColor'
+                stroke-width={chevron.width}
+                stroke-linecap='round'
+                stroke-linejoin='round'
+              />
+            </symbol>
+          )}
+        </For>
+        {/* Moderator: Chobby's shield in the corner. The mask cuts a margin out
+            of the chevrons behind, so the shield reads as its own mark. */}
+        <symbol id='rank-shield' viewBox='0 0 20 20'>
+          <path d={SHIELD} fill='currentColor' />
+        </symbol>
+        <mask
+          id='rank-shield-cut'
+          maskUnits='userSpaceOnUse'
+          x='0'
+          y='0'
+          width='20'
+          height='20'
+        >
+          <rect width='20' height='20' fill='white' />
           <path
-            d='M5 13 l5 -3.4 l5 3.4'
-            fill='none'
-            stroke='currentColor'
-            stroke-width='1.9'
-            stroke-linecap='round'
+            d={SHIELD}
+            fill='black'
+            stroke='black'
+            stroke-width='2.6'
             stroke-linejoin='round'
           />
-        </symbol>
-        <symbol id='chev2' viewBox='0 0 20 20'>
-          <path
-            d='M5 15 l5 -3.4 l5 3.4 M5 10.6 l5 -3.4 l5 3.4'
-            fill='none'
-            stroke='currentColor'
-            stroke-width='1.9'
-            stroke-linecap='round'
-            stroke-linejoin='round'
-          />
-        </symbol>
-        <symbol id='chev3' viewBox='0 0 20 20'>
-          <path
-            d='M5 16.4 l5 -3.2 l5 3.2 M5 12.4 l5 -3.2 l5 3.2 M5 8.4 l5 -3.2 l5 3.2'
-            fill='none'
-            stroke='currentColor'
-            stroke-width='1.8'
-            stroke-linecap='round'
-            stroke-linejoin='round'
-          />
-        </symbol>
-        <symbol id='chev4' viewBox='0 0 20 20'>
-          <path
-            d='M5 17.4 l5 -2.9 l5 2.9 M5 13.9 l5 -2.9 l5 2.9 M5 10.4 l5 -2.9 l5 2.9 M5 6.9 l5 -2.9 l5 2.9'
-            fill='none'
-            stroke='currentColor'
-            stroke-width='1.6'
-            stroke-linecap='round'
-            stroke-linejoin='round'
-          />
-        </symbol>
+        </mask>
         <symbol id='rank-bot' viewBox='0 0 20 20'>
           <rect
             x='4.5'
@@ -122,6 +147,28 @@ export function IconSprite() {
           <circle cx='10' cy='3.2' r='1.1' fill='currentColor' />
           <circle cx='7.7' cy='11' r='1' fill='currentColor' />
           <circle cx='12.3' cy='11' r='1' fill='currentColor' />
+        </symbol>
+
+        {/* Marks after the name, Chobby's slot for them: boss and away. Flat
+            strokes like everything else here, not Chobby's shaded bitmaps. */}
+        <symbol id='mark-boss' viewBox='0 0 20 20'>
+          <path
+            d='M3.6 15.2 L2.8 6.4 L7 9.8 L10 4.4 L13 9.8 L17.2 6.4 L16.4 15.2 Z'
+            fill='none'
+            stroke='currentColor'
+            stroke-width='1.6'
+            stroke-linejoin='round'
+          />
+        </symbol>
+        <symbol id='mark-away' viewBox='0 0 20 20'>
+          <path
+            d='M9.6 4.6 h6.6 l-6.6 7.2 h6.6 M3.4 11.6 h4.4 l-4.4 4.6 h4.4'
+            fill='none'
+            stroke='currentColor'
+            stroke-width='1.7'
+            stroke-linecap='round'
+            stroke-linejoin='round'
+          />
         </symbol>
 
         {/* Faction. The one coloured mark on a row, because `side` is chosen
@@ -251,22 +298,50 @@ export function StatusIcon(props: {
   )
 }
 
+/**
+ * What Chobby stacks after the name (`GetUserStatusImages`): the room's boss
+ * and anyone marked away. Both may show at once; neither is a column.
+ */
+export function Marks(props: { status: UserStatusView; boss: boolean }) {
+  return (
+    <span class='marks'>
+      <Show when={props.boss}>
+        <Icon id='mark-boss' class='mark boss' label='Boss' />
+      </Show>
+      <Show when={props.status.away}>
+        <Icon id='mark-away' class='mark away' label='Away' />
+      </Show>
+    </span>
+  )
+}
+
 /** `rank` is client-status bits 2-4 (0-7); Chobby numbers the same thing 1-8. */
 export function RankIcon(props: { status: UserStatusView }) {
   const level = () => props.status.rank + 1
-  const gold = () => level() > 4
-  const chevrons = () => (gold() ? level() - 4 : level())
+  const silver = () => level() > 4
+  const chevrons = () => (silver() ? level() - 4 : level())
+  const label = () =>
+    `Rank ${level()}${props.status.moderator ? ' · moderator' : ''}`
 
   return (
     <Show
       when={!props.status.bot}
       fallback={<Icon id='rank-bot' class='rank bot' label='Autohost' />}
     >
-      <Icon
-        id={`chev${chevrons()}`}
-        class={`rank ${gold() ? 'gold' : ''} ${props.status.moderator ? 'mod' : ''}`}
-        label={`Rank ${level()}${props.status.moderator ? ' · moderator' : ''}`}
-      />
+      <svg
+        class={`icon rank ${silver() ? 'silver' : ''}`}
+        viewBox='0 0 20 20'
+        role='img'
+      >
+        <title>{label()}</title>
+        <use
+          href={`#chev${chevrons()}`}
+          mask={props.status.moderator ? 'url(#rank-shield-cut)' : undefined}
+        />
+        <Show when={props.status.moderator}>
+          <use href='#rank-shield' class='shield' />
+        </Show>
+      </svg>
     </Show>
   )
 }

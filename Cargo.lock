@@ -2926,6 +2926,7 @@ name = "modlobby-app"
 version = "0.1.2"
 dependencies = [
  "content",
+ "dotenvy",
  "lobby-runtime",
  "lobby-ui",
  "modoptions",

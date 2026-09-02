@@ -76,9 +76,18 @@ impl ingame::Actions for InGameActions {
 }
 
 pub fn run() {
+    // Before anything reads the environment: the config dir and the update
+    // switch both come from it. A dev run finds the repo's `.env` by walking
+    // up from the working directory; an installed app has none and skips it.
+    let dotenv = dotenvy::dotenv();
     let app = state::App::open().unwrap_or_else(|err| panic!("starting modlobby: {err}"));
     // Held for the life of the process: dropping it stops the file writer.
     let _logging = logging::start(app.settings.dir(), &app.settings.get().logging.filter);
+    match dotenv {
+        Ok(path) => tracing::info!(path = %path.display(), "loaded .env"),
+        Err(err) if err.not_found() => {}
+        Err(err) => tracing::warn!(%err, "ignoring .env"),
+    }
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -194,7 +203,7 @@ pub fn run() {
                     let _ = handle.emit("settings", &event);
                 }
             });
-            let check_updates = app.settings.get().updates.automatic;
+            let check_updates = app.settings.get().updates.automatic && update::enabled();
             tauri_app.manage(update::Staged::default());
             tauri_app.manage(app);
             // Before anyone has logged in, which is the one moment a restart

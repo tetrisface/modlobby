@@ -37,6 +37,7 @@ tauri-plugin-notification = { workspace = true }
 tauri-plugin-opener = { workspace = true }
 tauri-plugin-window-state = { workspace = true }
 tauri-plugin-updater = { workspace = true }
+dotenvy = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 # Only to flash the engine's taskbar entry, which is a window we do not own.

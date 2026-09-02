@@ -215,6 +215,7 @@ export function Room() {
                               skill={skillOf(user.name)}
                               me={user.name === lobby.me}
                               friend={isFriend(user.name)}
+                              boss={lobby.myBattle?.boss === user.name}
                             />
                           )}
                         </For>
@@ -258,6 +259,7 @@ export function Room() {
                           user={user}
                           me={user.name === lobby.me}
                           friend={isFriend(user.name)}
+                          boss={lobby.myBattle?.boss === user.name}
                         />
                       )}
                     </For>

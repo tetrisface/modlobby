@@ -87,8 +87,8 @@ describe('a player row', () => {
     }
   })
 
-  test('rank 5 is one gold chevron, rank 8 is four', () => {
-    for (const [rank, id, gold] of [
+  test('rank 5 is one silver-edged chevron, rank 8 is four', () => {
+    for (const [rank, id, silver] of [
       [0, '#chev1', false],
       [3, '#chev4', false],
       [4, '#chev1', true],
@@ -102,11 +102,48 @@ describe('a player row', () => {
         />
       ))
       expect(icons(container)[1]).toBe(id)
-      expect(container.querySelector('.rank')?.classList.contains('gold')).toBe(
-        gold,
-      )
+      expect(
+        container.querySelector('.rank')?.classList.contains('silver'),
+      ).toBe(silver)
       unmount()
     }
+  })
+
+  test('a moderator keeps the rank and gains the shield', () => {
+    const { container } = render(() => (
+      <PlayerRow
+        user={user({ status: status({ rank: 6, moderator: true }) })}
+        skill={null}
+        me={false}
+      />
+    ))
+    expect(icons(container)).toEqual([
+      '#st-ready',
+      '#chev3',
+      '#rank-shield',
+      '#side-armada',
+    ])
+    expect(container.querySelector('.rank use')?.getAttribute('mask')).toBe(
+      'url(#rank-shield-cut)',
+    )
+  })
+
+  test('the boss wears a crown after the name, an away player a snooze', () => {
+    const { container } = render(() => (
+      <PlayerRow
+        user={user({ status: status({ away: true }) })}
+        skill={null}
+        me={false}
+        boss={true}
+      />
+    ))
+    expect(icons(container)).toEqual([
+      '#st-ready',
+      '#chev1',
+      '#side-armada',
+      '#mark-boss',
+      '#mark-away',
+    ])
   })
 
   test('an uncertain rating reads ?? and a confident one is bright', () => {
@@ -171,6 +208,17 @@ describe('a spectator row', () => {
     expect(container.querySelector('.pname')?.classList.contains('me')).toBe(
       true,
     )
+  })
+
+  test('a bossing spectator still wears the crown', () => {
+    const { container } = render(() => (
+      <SpectatorRow
+        user={user({ battleStatus: battle({ player: false }) })}
+        me={false}
+        boss={true}
+      />
+    ))
+    expect(icons(container)).toEqual(['#chev1', '#mark-boss'])
   })
 
   test('an autohost gets the bot mark instead of a rank', () => {

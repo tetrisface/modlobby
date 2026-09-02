@@ -130,21 +130,70 @@ const ABOUT_THE_GAME: ReadonlySet<AlertKind> = new Set<AlertKind>([
 ])
 
 /**
+ * How long to keep looking for the engine's window before deciding it is not
+ * there. A game that is starting has not opened one yet; one that has ended
+ * may still be closing it.
+ */
+export const ENGINE_WINDOW_WAIT_MS = 3000
+const ENGINE_WINDOW_POLL_MS = 250
+
+/**
+ * Which taskbar entry to flash for an alert, once the engine has or has not
+ * been found.
+ *
+ * A game starting is news about the engine's window and nothing else: the
+ * lobby is what you are leaving, and flashing it would point the wrong way,
+ * so when there is no engine window there is nothing to flash. A game ending
+ * is news about the engine too, but by then it may be gone -- and the lobby
+ * is where you are headed, so it stands in. Everything else is about the lobby.
+ */
+export function flashTarget(
+  kind: AlertKind,
+  engineFound: boolean,
+): 'engine' | 'lobby' | 'nothing' {
+  if (!ABOUT_THE_GAME.has(kind)) return 'lobby'
+  if (engineFound) return 'engine'
+  return kind === 'gameStarting' ? 'nothing' : 'lobby'
+}
+
+/**
+ * Keeps trying `attempt` until it answers true or the time is up.
+ * `now` and `sleep` are parameters so a test can run it on a fake clock.
+ */
+export async function keepTrying(
+  attempt: () => Promise<boolean>,
+  total: number,
+  every: number,
+  now: () => number = Date.now,
+  sleep: (ms: number) => Promise<void> = (ms) =>
+    new Promise((resolve) => setTimeout(resolve, ms)),
+): Promise<boolean> {
+  const deadline = now() + total
+  for (;;) {
+    if (await attempt()) return true
+    if (now() >= deadline) return false
+    await sleep(every)
+  }
+}
+
+/**
  * Flashes a taskbar entry until it is looked at.
  *
- * Which one depends on what happened. A game starting or finishing is news
- * about the engine's window, and that is where you are going to look — the
- * lobby is behind it and flashing it would point at the wrong thing. Anything
- * else is news about the lobby.
- *
- * The engine is a process we spawned rather than a window we own, so that half
- * goes through Rust and `FlashWindowEx`; it answers whether it found a window
- * at all, since a game that is still loading has none yet and one that has
- * exited has none any more. Either way something flashes.
+ * The engine is a process we spawned rather than a window we own, so that
+ * half goes through Rust and `FlashWindowEx`, which answers whether it found
+ * a window at all. It is given a few seconds to appear, since a starting game
+ * is still loading; see [`flashTarget`] for what happens when it does not.
  */
 async function flash(kind: AlertKind): Promise<void> {
   try {
-    if (ABOUT_THE_GAME.has(kind) && (await api.flashEngine())) return
+    const engineFound =
+      ABOUT_THE_GAME.has(kind) &&
+      (await keepTrying(
+        () => api.flashEngine(),
+        ENGINE_WINDOW_WAIT_MS,
+        ENGINE_WINDOW_POLL_MS,
+      ))
+    if (flashTarget(kind, engineFound) !== 'lobby') return
     await getCurrentWindow().requestUserAttention(UserAttentionType.Critical)
   } catch {
     // A platform with no taskbar to flash is not an error; the notification is

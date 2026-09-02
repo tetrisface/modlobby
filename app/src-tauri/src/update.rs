@@ -64,6 +64,24 @@ pub enum UpdateProgress {
 #[derive(Default)]
 pub struct Staged(Mutex<Option<(Update, Vec<u8>)>>);
 
+/// Whether this build may update itself. Unset means yes; `0`, `false`,
+/// `off` or `no` means no startup check, and the on-demand check says why
+/// it will not look. For a build that has to stay put — a local one behind
+/// the released version, or one under test.
+pub const AUTO_UPDATE_ENV: &str = "MODLOBBY_AUTO_UPDATE";
+
+pub fn enabled() -> bool {
+    allows(std::env::var_os(AUTO_UPDATE_ENV))
+}
+
+fn allows(value: Option<std::ffi::OsString>) -> bool {
+    let Some(value) = value else {
+        return true;
+    };
+    let value = value.to_string_lossy().trim().to_ascii_lowercase();
+    !matches!(value.as_str(), "0" | "false" | "off" | "no")
+}
+
 /// How much has to arrive before the front end is told again. An installer
 /// is tens of megabytes, so a megabyte is a visible step.
 const REPORT_EVERY: u64 = 1024 * 1024;
@@ -78,6 +96,13 @@ pub async fn check_update(
     staged: State<'_, Staged>,
     handle: AppHandle,
 ) -> Result<UpdateProgress> {
+    if !enabled() {
+        return Err(ApiError::new(
+            "update",
+            format!("updates are off: {AUTO_UPDATE_ENV} says so"),
+        ));
+    }
+
     let say = |progress: UpdateProgress| {
         let _ = handle.emit("app-update", progress);
     };
@@ -185,4 +210,24 @@ fn install(handle: &AppHandle, update: &Update, bytes: &[u8]) -> Result<UpdatePr
     Ok(UpdateProgress::Ready {
         version: update.version.clone(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::allows;
+
+    #[test]
+    fn unset_and_anything_else_mean_on() {
+        assert!(allows(None));
+        for value in ["1", "true", "on", "yes", "", "whatever"] {
+            assert!(allows(Some(value.into())), "{value:?}");
+        }
+    }
+
+    #[test]
+    fn the_four_off_words_mean_off_in_any_case() {
+        for value in ["0", "false", "off", "no", " OFF ", "False"] {
+            assert!(!allows(Some(value.into())), "{value:?}");
+        }
+    }
 }
