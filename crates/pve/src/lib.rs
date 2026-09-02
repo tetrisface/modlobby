@@ -21,6 +21,7 @@
 //! room are nobody's secret, but there is no reason to send them in the clear.
 
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -107,6 +108,15 @@ pub struct Encounter {
     /// score at all.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub human_player_income_multipliers: Vec<f64>,
+    /// One income multiplier per BARbarian, `1.0` being no handicap.
+    ///
+    /// The Barbarian counterpart of the list above, and just as necessary:
+    /// the service derives its `Barbarian Handicap` column from these, and
+    /// without them every BARbarian room comes back unplaced — a histogram,
+    /// a closest match, and no score. Meaningless for raptors and scavengers,
+    /// which have no per-slot handicap, so it stays empty for them.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub enemy_ai_income_multipliers: Vec<f64>,
 }
 
 /// The income multiplier a seated player's handicap amounts to.
@@ -145,10 +155,68 @@ pub enum Error {
     NotPve,
     #[error("this room's settings are {size} KiB, past the {limit} KiB the service takes")]
     TooBig { size: usize, limit: usize },
+    #[error("pve stats did not answer within {0:?}")]
+    Timeout(Duration),
     #[error("pve stats: {0}")]
     Request(String),
+    #[error("pve stats answered {0}")]
+    Status(u16),
     #[error("pve stats answered with something unexpected: {0}")]
     Answer(String),
+}
+
+impl Error {
+    /// Whether asking again could reasonably go differently.
+    ///
+    /// The service is a Lambda behind CloudFront, and a Lambda nobody has
+    /// asked for a while takes some twenty seconds to wake up. The first
+    /// question of the evening can therefore run out the clock — CloudFront's
+    /// as well as ours — while the answer is being prepared, and by the time
+    /// that failure comes back the function is warm and the same question
+    /// takes half a second. Timeouts, dropped connections and gateway errors
+    /// are all that story. A rejected request or an unreadable answer is not:
+    /// asking the same thing again would get the same thing again.
+    pub fn retryable(&self) -> bool {
+        match self {
+            Error::Timeout(_) | Error::Request(_) => true,
+            Error::Status(code) => (500..600).contains(code),
+            Error::NotPve | Error::TooBig { .. } | Error::Answer(_) => false,
+        }
+    }
+}
+
+/// How long to keep asking a service that may still be waking up.
+///
+/// The in-game widget's own policy is a 30-second deadline per attempt and a
+/// doubling pause between attempts starting at two seconds; this is that with
+/// fewer attempts, because a lobby panel showing dots for a minute and a half
+/// has stopped being useful.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Patience {
+    /// The deadline for one attempt, connection and answer included.
+    pub attempt: Duration,
+    /// How many attempts at most; only retryable failures use the extra ones.
+    pub attempts: u32,
+    /// The pause before the second attempt; each later one waits twice as long.
+    pub first_pause: Duration,
+}
+
+impl Patience {
+    /// Widget parity on the deadline, three attempts: a cold start that
+    /// outruns the first attempt is warm by the second.
+    pub const DEFAULT: Self = Self {
+        attempt: Duration::from_secs(30),
+        attempts: 3,
+        first_pause: Duration::from_secs(2),
+    };
+
+    /// The pause before the given attempt, `None` once there are no more.
+    pub fn pause_before(self, attempt: u32) -> Option<Duration> {
+        if attempt < 2 || attempt > self.attempts {
+            return None;
+        }
+        Some(self.first_pause * 2u32.pow(attempt - 2))
+    }
 }
 
 /// Reads the numbers out of whatever the service replied.
@@ -171,15 +239,13 @@ pub fn read(body: &serde_json::Value) -> Score {
     }
 }
 
-/// Asks the service what a setup scores.
+/// Asks the service what a setup scores, with [`Patience::DEFAULT`].
 pub async fn fetch(ask: &Ask) -> Result<Score, Error> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        // The widget does not follow redirects either; there is one endpoint.
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|err| Error::Request(err.to_string()))?;
+    fetch_with(ask, Patience::DEFAULT).await
+}
 
+/// Asks the service what a setup scores, trying again as the patience allows.
+pub async fn fetch_with(ask: &Ask, patience: Patience) -> Result<Score, Error> {
     let body = serde_json::to_vec(ask).map_err(|err| Error::Request(err.to_string()))?;
     if body.len() > BODY_LIMIT {
         return Err(Error::TooBig {
@@ -187,21 +253,62 @@ pub async fn fetch(ask: &Ask) -> Result<Score, Error> {
             limit: BODY_LIMIT / 1024,
         });
     }
+    let client = reqwest::Client::builder()
+        .timeout(patience.attempt)
+        // The widget does not follow redirects either; there is one endpoint.
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|err| Error::Request(err.to_string()))?;
 
+    let mut attempt = 1;
+    loop {
+        let failed = match ask_once(&client, body.clone(), patience.attempt).await {
+            Ok(score) => return Ok(score),
+            Err(err) => err,
+        };
+        let Some(pause) = patience
+            .pause_before(attempt + 1)
+            .filter(|_| failed.retryable())
+        else {
+            return Err(failed);
+        };
+        tracing::info!(error = %failed, attempt, ?pause, "pve stats: asking again after a pause");
+        tokio::time::sleep(pause).await;
+        attempt += 1;
+    }
+}
+
+/// One attempt, classified so the caller can tell a cold service from a
+/// refusal.
+async fn ask_once(
+    client: &reqwest::Client,
+    body: Vec<u8>,
+    deadline: Duration,
+) -> Result<Score, Error> {
     let response = client
         .post(ENDPOINT)
         .header(reqwest::header::CONTENT_TYPE, "application/json")
         .body(body)
         .send()
         .await
-        .map_err(|err| Error::Request(err.to_string()))?;
-    if !response.status().is_success() {
-        return Err(Error::Request(format!("{}", response.status())));
+        .map_err(|err| {
+            if err.is_timeout() {
+                Error::Timeout(deadline)
+            } else {
+                Error::Request(err.to_string())
+            }
+        })?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(Error::Status(status.as_u16()));
     }
-    let body: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|err| Error::Answer(err.to_string()))?;
+    let body: serde_json::Value = response.json().await.map_err(|err| {
+        if err.is_timeout() {
+            Error::Timeout(deadline)
+        } else {
+            Error::Answer(err.to_string())
+        }
+    })?;
     Ok(read(&body))
 }
 
@@ -283,6 +390,7 @@ mod tests {
                 human_team_size: 8,
                 enemy_ai_count: None,
                 human_player_income_multipliers: vec![1.0; 8],
+                enemy_ai_income_multipliers: vec![],
             },
         };
         assert!(serde_json::to_vec(&ask).unwrap().len() > BODY_LIMIT);
@@ -307,6 +415,7 @@ mod tests {
                 human_team_size: 3,
                 enemy_ai_count: None,
                 human_player_income_multipliers: vec![1.0, 1.0, 1.0],
+                enemy_ai_income_multipliers: vec![],
             },
         };
         let json = serde_json::to_string(&ask).unwrap();
@@ -324,6 +433,7 @@ mod tests {
                 human_team_size: 8,
                 enemy_ai_count: None,
                 human_player_income_multipliers: vec![1.0],
+                enemy_ai_income_multipliers: vec![],
             },
         };
         let json = serde_json::to_string(&ask).unwrap();
@@ -335,5 +445,53 @@ mod tests {
         assert!(!json.contains("account"));
         assert!(!json.contains("game_id"));
         assert!(json.contains("human_team_size"));
+    }
+
+    #[test]
+    fn a_barbarian_room_sends_a_multiplier_for_every_barbarian() {
+        // The Barbarian counterpart of the seat multipliers, and the difference
+        // between a score and "unplaced": the service derives its `Barbarian
+        // Handicap` column from these and declines to place a room without it.
+        let ask = Ask {
+            ai_type: AiType::Barbarian.as_str(),
+            map: "Comet Catcher Remake 1.8".into(),
+            game_settings: BTreeMap::new(),
+            encounter_context: Encounter {
+                human_team_size: 2,
+                enemy_ai_count: Some(2),
+                human_player_income_multipliers: vec![1.0, 1.0],
+                enemy_ai_income_multipliers: vec![income_multiplier(0), income_multiplier(50)],
+            },
+        };
+        let json = serde_json::to_string(&ask).unwrap();
+        assert!(json.contains("\"enemy_ai_count\":2"));
+        assert!(json.contains("\"enemy_ai_income_multipliers\":[1.0,1.5]"));
+    }
+
+    #[test]
+    fn waking_the_service_is_worth_another_try_but_a_refusal_is_not() {
+        assert!(Error::Timeout(Duration::from_secs(30)).retryable());
+        assert!(Error::Request("connection reset".into()).retryable());
+        assert!(Error::Status(502).retryable());
+        assert!(Error::Status(504).retryable());
+        assert!(!Error::Status(400).retryable());
+        assert!(!Error::Status(413).retryable());
+        assert!(!Error::Answer("not json".into()).retryable());
+        assert!(
+            !Error::TooBig {
+                size: 300,
+                limit: 256
+            }
+            .retryable()
+        );
+    }
+
+    #[test]
+    fn the_pauses_double_and_then_stop() {
+        let patience = Patience::DEFAULT;
+        assert_eq!(patience.pause_before(1), None, "nothing before the first");
+        assert_eq!(patience.pause_before(2), Some(Duration::from_secs(2)));
+        assert_eq!(patience.pause_before(3), Some(Duration::from_secs(4)));
+        assert_eq!(patience.pause_before(4), None, "three attempts is the lot");
     }
 }

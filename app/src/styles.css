@@ -2525,6 +2525,9 @@ button.link:hover {
 }
 
 .pve-figure b {
+  display: inline-block;
+  /* Wide enough for "31%" so the dots hold the figure's place, not less. */
+  min-width: 3ch;
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }

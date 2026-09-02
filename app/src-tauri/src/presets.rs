@@ -231,6 +231,18 @@ pub async fn pve_score(app: State<'_, App>) -> Result<Option<pve::Score>> {
             human_team_size: room.player_count,
             enemy_ai_count: matches!(kind, pve::AiType::Barbarian)
                 .then_some(room.bots.len() as u32),
+            // Each BARbarian is its own opponent with its own handicap, and
+            // the service will not place a Barbarian room without hearing
+            // them. Raptors and scavengers are one controller however many
+            // slots they take, so for them this stays empty.
+            enemy_ai_income_multipliers: matches!(kind, pve::AiType::Barbarian)
+                .then(|| {
+                    room.bots
+                        .iter()
+                        .map(|bot| pve::income_multiplier(bot.status.handicap))
+                        .collect()
+                })
+                .unwrap_or_default(),
             // One per seated human. The service derives its `Player Handicap`
             // column from the average of these, and a governed column it
             // cannot derive counts as missing rather than defaulted — which is
@@ -246,10 +258,21 @@ pub async fn pve_score(app: State<'_, App>) -> Result<Option<pve::Score>> {
         },
     };
 
-    pve::fetch(&ask)
-        .await
-        .map(Some)
-        .map_err(|err| ApiError::new("pve", err.to_string()))
+    tracing::debug!(
+        ai = ask.ai_type,
+        map = %ask.map,
+        settings = ask.game_settings.len(),
+        seats = ask.encounter_context.human_team_size,
+        "pve stats: asking"
+    );
+    match pve::fetch(&ask).await {
+        Ok(score) => Ok(Some(score)),
+        Err(err) => {
+            // The panel says "unavailable" and no more; the reason lives here.
+            tracing::warn!(error = %err, "pve stats: no answer");
+            Err(ApiError::new("pve", err.to_string()))
+        }
+    }
 }
 
 /// Brings in everything from Chobby's file.
