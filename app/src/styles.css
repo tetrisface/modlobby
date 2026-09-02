@@ -2550,40 +2550,39 @@ button.link:hover {
   vertical-align: middle;
 }
 
+/* One dot lit at a time, stepping right once a second: a clock, not a pulse.
+   It runs regardless of prefers-reduced-motion. Its whole job is to say "still
+   asking", a frozen one says nothing, and three dots taking turns is as little
+   motion as an indicator can have. The larger animations elsewhere keep
+   honouring the setting. */
 .thinking i {
-  width: 3px;
-  height: 3px;
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
   background: var(--faint);
-  opacity: 0.25;
-  animation: thinking 1.2s infinite ease-in-out;
+  opacity: 0.35;
+  animation: thinking 3s steps(1, end) infinite;
 }
 
 .thinking i:nth-child(2) {
-  animation-delay: 0.2s;
+  animation-delay: 1s;
 }
 
 .thinking i:nth-child(3) {
-  animation-delay: 0.4s;
+  animation-delay: 2s;
 }
 
 @keyframes thinking {
   0%,
-  70%,
-  100% {
-    opacity: 0.25;
-  }
-
-  35% {
+  33.3% {
+    background: var(--text);
     opacity: 1;
   }
-}
 
-/* A cycling dot is decoration; someone who asked for less motion gets none. */
-@media (prefers-reduced-motion: reduce) {
-  .thinking i {
-    animation: none;
-    opacity: 0.45;
+  33.4%,
+  100% {
+    background: var(--faint);
+    opacity: 0.35;
   }
 }
 

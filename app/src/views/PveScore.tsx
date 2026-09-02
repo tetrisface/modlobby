@@ -9,6 +9,8 @@ import {
 import { Thinking } from '../components/Thinking'
 import type { Score } from '../ipc/bindings/Score'
 import { api, describeError } from '../ipc/client'
+import { asker } from '../lib/asking'
+import { askDelay } from '../lib/stagger'
 import { lobby } from '../store/lobby'
 
 /**
@@ -24,6 +26,8 @@ import { lobby } from '../store/lobby'
  */
 /** How long the room has to stop changing before it is worth asking again. */
 export const QUIET_FOR = 3000
+/** The least time between two asks from this client, whatever the room does. */
+export const AT_MOST_EVERY = 2000
 
 /**
  * Everything the answer depends on, as one string.
@@ -76,6 +80,17 @@ function isPve(): boolean {
   return raptors || scavengers || names.includes('barb')
 }
 
+/** This client's place in the room's asking order, as a wait. */
+function myStagger(): number {
+  const my = lobby.myBattle
+  return askDelay({
+    me: lobby.me,
+    members: my ? (lobby.battles[my.id]?.members ?? []) : [],
+    boss: my?.boss ?? null,
+    users: lobby.users,
+  })
+}
+
 export function PveScore() {
   /** `undefined` before any answer; `null` when Rust declined to ask. */
   const [score, setScore] = createSignal<Score | null | undefined>(undefined)
@@ -83,43 +98,28 @@ export function PveScore() {
   const [failure, setFailure] = createSignal<string | null>(null)
 
   /**
-   * One question at a time.
-   *
-   * The service is a Lambda that takes some twenty seconds to wake up, and a
-   * Lambda answers concurrent requests with concurrent cold starts. Asking
-   * again while the first ask is still out does not get an answer sooner; it
-   * gets two cold starts. So a change during an ask is remembered and asked
-   * about once the answer is in — by which time the service is warm and the
-   * follow-up takes half a second. Rust reads the room afresh for each ask,
-   * so one follow-up covers any number of changes.
+   * Paced, because the service is a Lambda with a concurrency of one and a
+   * twenty-second cold start, and everyone in the room sees the same change
+   * at the same moment. One ask out at a time, a floor between asks, and a
+   * wait by seat rank so the room's clients arrive one after another rather
+   * than all at once. Rust reads the room afresh for each ask, so a single
+   * follow-up covers whatever changed while one was out.
    */
-  let inFlight = false
-  let again = false
-  let alive = true
-
-  async function ask() {
-    if (inFlight) {
-      again = true
-      return
-    }
-    inFlight = true
-    setAsking(true)
-    do {
-      again = false
+  const asks = asker(
+    async () => {
+      setAsking(true)
       try {
-        const answer = await api.pveScore()
-        if (!alive) return
-        setScore(answer)
+        setScore(await api.pveScore())
         setFailure(null)
       } catch (err) {
-        if (!alive) return
         setFailure(describeError(err))
         console.warn('pve stats:', err)
+      } finally {
+        setAsking(false)
       }
-    } while (again)
-    inFlight = false
-    setAsking(false)
-  }
+    },
+    { floor: AT_MOST_EVERY, stagger: myStagger },
+  )
 
   /**
    * Asked as soon as a room is in view, then again whenever it settles.
@@ -139,34 +139,43 @@ export function PveScore() {
       if (now === undefined || !isPve()) return
       const sameRoom = before?.split('\n')[0] === now.split('\n')[0]
       if (sameRoom) {
-        pending = setTimeout(() => void ask(), QUIET_FOR)
+        pending = setTimeout(asks.ask, QUIET_FOR)
         return
       }
       // A new room: whatever the last one scored is not this one's.
       setScore(undefined)
       setFailure(null)
-      void ask()
+      asks.ask()
     }),
   )
   onCleanup(() => {
-    alive = false
     clearTimeout(pending)
+    asks.stop()
   })
 
-  const percent = (value: number | null) =>
-    value === null ? '—' : `${Math.round(value * 100)}%`
+  /** No answer yet, or a fresh one on its way. */
+  const waiting = () => asking() || score() === undefined
+
+  const percent = (value: number | null | undefined) =>
+    value == null ? '—' : `${Math.round(value * 100)}%`
+
+  const challenge = () => {
+    const held = score()?.challenge
+    return held == null ? '—' : `${held.toFixed(1)}/34`
+  }
 
   /**
    * A number's place in the row, kept while the number is being asked for.
    *
    * The dots sit where the figure will land, so the row neither disappears
    * nor jumps when an answer arrives; a figure appearing from nowhere reads
-   * as a glitch.
+   * as a glitch. Every slot waits the same way — none of them may claim
+   * something about the setup before the service has said it.
    */
   const Slot = (props: { value: string }) => (
     <b>
       <Show
-        when={!asking()}
+        when={!waiting()}
         fallback={<Thinking title='asking how hard this setup is' />}
       >
         {props.value}
@@ -189,29 +198,16 @@ export function PveScore() {
         >
           <span
             class='pve-figure'
-            title='Absolute difficulty on a 0-34 scale. 17 is an estimated even game for a representative human team; higher is harder.'
+            title='Absolute difficulty on a 0-34 scale. 17 is an estimated even game for a representative human team; higher is harder. A dash means the service has not placed this setup among played games yet.'
           >
-            Challenge{' '}
-            <Show
-              when={asking() || score()?.challenge != null}
-              fallback={
-                <span
-                  class='muted'
-                  title='This setup has not been placed among played games yet.'
-                >
-                  unplaced
-                </span>
-              }
-            >
-              <Slot value={(score()?.challenge?.toFixed(1) ?? '—') + '/34'} />
-            </Show>
+            Challenge <Slot value={challenge()} />
           </span>
 
           <span
             class='pve-figure'
             title='Estimated chance a representative current BAR human team wins this map and setup. The people in this room are not part of that estimate.'
           >
-            Win <Slot value={percent(score()?.winChance ?? null)} />
+            Win <Slot value={percent(score()?.winChance)} />
           </span>
 
           <span
@@ -228,7 +224,7 @@ export function PveScore() {
             />
           </span>
 
-          <Show when={!asking() && score()?.bestEffort}>
+          <Show when={!waiting() && score()?.bestEffort}>
             <span
               class='chip warn'
               title='This room uses settings the service has not catalogued, so these are best-effort estimates rather than an exact match.'

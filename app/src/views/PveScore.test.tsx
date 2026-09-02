@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { BotView } from '../ipc/bindings/BotView'
 import type { Score } from '../ipc/bindings/Score'
+import type { UserView } from '../ipc/bindings/UserView'
+import { STAGGER_STEP } from '../lib/stagger'
 import { emptyLobby, setLobby } from '../store/lobby'
 import { PveScore, QUIET_FOR } from './PveScore'
 
@@ -68,10 +70,47 @@ function room(bots: BotView[]): BattleView {
   }
 }
 
-function enter(bots: BotView[]) {
+function user(
+  name: string,
+  held: { player?: boolean; rank?: number; bot?: boolean } = {},
+): UserView {
+  return {
+    name,
+    country: '??',
+    userId: null,
+    lobbyClient: 'modlobby',
+    status: {
+      inGame: false,
+      away: false,
+      rank: held.rank ?? 0,
+      moderator: false,
+      bot: held.bot ?? false,
+    },
+    battleStatus: {
+      ready: false,
+      team: 0,
+      allyTeam: 0,
+      player: held.player ?? false,
+      handicap: 0,
+      sync: 'synced',
+      side: 0,
+    },
+    battleId: 7,
+  }
+}
+
+/**
+ * A room where this client asks first: the host is a bot and holds no
+ * place, so nothing waits. `others` puts people ahead of us.
+ */
+function enter(bots: BotView[], others: UserView[] = []) {
   const next = emptyLobby()
   next.me = 'me'
   next.battles[7] = room(bots)
+  next.battles[7].members = ['host', 'me', ...others.map((held) => held.name)]
+  next.users.host = user('host', { bot: true })
+  next.users.me = user('me', { player: true })
+  for (const held of others) next.users[held.name] = held
   next.myBattle = {
     boss: null,
     id: 7,
@@ -95,7 +134,8 @@ const asked = vi.mocked(invoke)
 
 describe('PveScore', () => {
   beforeEach(() => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    // Date too: the pace between asks is measured on the clock.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
     asked.mockReset()
   })
   afterEach(() => {
@@ -110,37 +150,61 @@ describe('PveScore', () => {
     asked.mockReturnValue(deferred<Score>().promise)
     enter([bot('RaptorsAI')])
     const { container } = render(() => <PveScore />)
+    vi.advanceTimersByTime(0)
 
     expect(asked).toHaveBeenCalledWith('pve_score')
     const slots = container.querySelectorAll('.pve-figure b')
     expect(slots).toHaveLength(3)
     for (const slot of slots)
       expect(slot.querySelector('.thinking')).not.toBeNull()
-    // The labels stay put around them.
+    // The labels stay put around them, and nothing claims anything yet.
     expect(container.textContent).toContain('Challenge')
     expect(container.textContent).toContain('Win')
+    expect(container.textContent).not.toContain('unplaced')
+    expect(container.textContent).not.toContain('—')
+  })
+
+  test('the dots are there before the ask goes out, not a verdict', () => {
+    asked.mockReturnValue(deferred<Score>().promise)
+    // Someone outranks us, so our ask waits its turn.
+    enter([bot('BARb')], [user('boss', { player: true, rank: 8 })])
+    const { container } = render(() => <PveScore />)
+    expect(asked).not.toHaveBeenCalled()
+    expect(container.querySelectorAll('.pve-figure b .thinking')).toHaveLength(
+      3,
+    )
+    expect(container.textContent).not.toContain('unplaced')
+
+    vi.advanceTimersByTime(STAGGER_STEP)
+    expect(asked).toHaveBeenCalledTimes(1)
   })
 
   test('the numbers land in their slots', async () => {
     asked.mockResolvedValue(scored)
     enter([bot('RaptorsAI')])
     const { container } = render(() => <PveScore />)
+    vi.advanceTimersByTime(0)
     await settle()
 
     const slots = [...container.querySelectorAll('.pve-figure b')].map(
       (slot) => slot.textContent,
     )
-    expect(slots).toEqual(['21.5', '31%', '88%'])
+    expect(slots).toEqual(['21.5/34', '31%', '88%'])
     expect(container.querySelector('.thinking')).toBeNull()
   })
 
-  test('a setup the service cannot place says so', async () => {
-    asked.mockResolvedValue({ ...scored, challenge: null })
+  test('a setup the service cannot place gets the same blank as any other missing figure', async () => {
+    asked.mockResolvedValue({ ...scored, challenge: null, percentile: null })
     enter([bot('BARb')])
     const { container } = render(() => <PveScore />)
+    vi.advanceTimersByTime(0)
     await settle()
 
-    expect(container.textContent).toContain('unplaced')
+    const slots = [...container.querySelectorAll('.pve-figure b')].map(
+      (slot) => slot.textContent,
+    )
+    expect(slots).toEqual(['—', '31%', '—'])
+    expect(container.textContent).not.toContain('unplaced')
   })
 
   test('a change during a slow first ask is asked about once, afterwards', async () => {
@@ -149,6 +213,7 @@ describe('PveScore', () => {
     asked.mockReturnValueOnce(cold.promise).mockResolvedValue(scored)
     enter([bot('RaptorsAI')])
     render(() => <PveScore />)
+    vi.advanceTimersByTime(0)
     expect(asked).toHaveBeenCalledTimes(1)
 
     // Two settings change while it is out; each settles on its own.
@@ -166,6 +231,7 @@ describe('PveScore', () => {
 
     cold.resolve({ ...scored, challenge: 5 })
     await settle()
+    vi.advanceTimersByTime(0)
     // One follow-up covers both changes: Rust reads the room afresh.
     expect(asked).toHaveBeenCalledTimes(2)
   })
@@ -174,12 +240,16 @@ describe('PveScore', () => {
     asked.mockResolvedValue(scored)
     enter([bot('ScavengersAI')])
     render(() => <PveScore />)
+    vi.advanceTimersByTime(0)
     await settle()
     expect(asked).toHaveBeenCalledTimes(1)
 
     setLobby('myBattle', 'scriptTags', 'game/modoptions/scav_endless', '1')
     vi.advanceTimersByTime(QUIET_FOR - 1)
     expect(asked).toHaveBeenCalledTimes(1)
+    vi.advanceTimersByTime(1)
+    // The settle timer hands over to the pace's own zero-length timer, which
+    // fake timers push one millisecond out when it is set inside a timer.
     vi.advanceTimersByTime(1)
     expect(asked).toHaveBeenCalledTimes(2)
   })
@@ -189,6 +259,7 @@ describe('PveScore', () => {
     const quiet = vi.spyOn(console, 'warn').mockImplementation(() => {})
     enter([bot('RaptorsAI')])
     const { container } = render(() => <PveScore />)
+    vi.advanceTimersByTime(0)
     await settle()
 
     const said = container.querySelector('[title="pve stats answered 504"]')
@@ -207,6 +278,7 @@ describe('PveScore', () => {
     asked.mockResolvedValue(null)
     enter([bot('RaptorsAI')])
     const { container } = render(() => <PveScore />)
+    vi.advanceTimersByTime(0)
     await settle()
     expect(container.querySelector('.pve-score')).toBeNull()
   })

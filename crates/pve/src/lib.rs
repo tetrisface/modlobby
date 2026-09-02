@@ -161,6 +161,11 @@ pub enum Error {
     Request(String),
     #[error("pve stats answered {0}")]
     Status(u16),
+    /// Someone else is being answered. A Lambda at its concurrency limit says
+    /// 429, and a room full of clients asking at once is exactly how it gets
+    /// there; when the service names a wait, that wait is kept.
+    #[error("pve stats is busy")]
+    Throttled { retry_after: Option<Duration> },
     #[error("pve stats answered with something unexpected: {0}")]
     Answer(String),
 }
@@ -173,12 +178,12 @@ impl Error {
     /// question of the evening can therefore run out the clock — CloudFront's
     /// as well as ours — while the answer is being prepared, and by the time
     /// that failure comes back the function is warm and the same question
-    /// takes half a second. Timeouts, dropped connections and gateway errors
-    /// are all that story. A rejected request or an unreadable answer is not:
-    /// asking the same thing again would get the same thing again.
+    /// takes half a second. Timeouts, dropped connections, gateway errors and
+    /// a busy signal are all that story. A rejected request or an unreadable
+    /// answer is not: asking the same thing again would get the same thing.
     pub fn retryable(&self) -> bool {
         match self {
-            Error::Timeout(_) | Error::Request(_) => true,
+            Error::Timeout(_) | Error::Request(_) | Error::Throttled { .. } => true,
             Error::Status(code) => (500..600).contains(code),
             Error::NotPve | Error::TooBig { .. } | Error::Answer(_) => false,
         }
@@ -191,7 +196,7 @@ impl Error {
 /// doubling pause between attempts starting at two seconds; this is that with
 /// fewer attempts, because a lobby panel showing dots for a minute and a half
 /// has stopped being useful.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub struct Patience {
     /// The deadline for one attempt, connection and answer included.
     pub attempt: Duration,
@@ -199,6 +204,8 @@ pub struct Patience {
     pub attempts: u32,
     /// The pause before the second attempt; each later one waits twice as long.
     pub first_pause: Duration,
+    /// Spreads a pause so a room's clients do not retry in lockstep.
+    pub jitter: fn(Duration) -> Duration,
 }
 
 impl Patience {
@@ -208,15 +215,59 @@ impl Patience {
         attempt: Duration::from_secs(30),
         attempts: 3,
         first_pause: Duration::from_secs(2),
+        jitter: jittered,
     };
 
-    /// The pause before the given attempt, `None` once there are no more.
+    /// The scheduled pause before the given attempt, `None` once there are
+    /// no more.
     pub fn pause_before(self, attempt: u32) -> Option<Duration> {
         if attempt < 2 || attempt > self.attempts {
             return None;
         }
         Some(self.first_pause * 2u32.pow(attempt - 2))
     }
+
+    /// How long to wait before the given attempt after the given failure,
+    /// `None` when there is no point or no attempt left.
+    ///
+    /// A wait the service named is kept as it is; a pause of our own is
+    /// jittered.
+    pub fn pause_after(self, failed: &Error, attempt: u32) -> Option<Duration> {
+        let scheduled = self.pause_before(attempt).filter(|_| failed.retryable())?;
+        Some(match failed {
+            Error::Throttled {
+                retry_after: Some(said),
+            } => *said,
+            _ => (self.jitter)(scheduled),
+        })
+    }
+}
+
+/// The longest wait a `Retry-After` is taken at its word for.
+pub const RETRY_AFTER_CAP: Duration = Duration::from_secs(30);
+
+/// A pause somewhere between three quarters and five quarters of itself.
+///
+/// Enough to keep a room's clients from retrying in lockstep, sourced from
+/// the clock's nanoseconds because that is all the randomness this needs.
+pub fn jittered(pause: Duration) -> Duration {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.subsec_nanos())
+        .unwrap_or(0);
+    let spread = f64::from(nanos % 1000) / 1000.0;
+    pause.mul_f64(0.75 + spread * 0.5)
+}
+
+/// No jitter: a pause as scheduled, for tests that want to know.
+pub fn exact(pause: Duration) -> Duration {
+    pause
+}
+
+/// The wait a `Retry-After` header names, in the seconds form only, capped.
+pub fn retry_after(value: Option<&str>) -> Option<Duration> {
+    let seconds: u64 = value?.trim().parse().ok()?;
+    Some(Duration::from_secs(seconds).min(RETRY_AFTER_CAP))
 }
 
 /// Reads the numbers out of whatever the service replied.
@@ -266,10 +317,7 @@ pub async fn fetch_with(ask: &Ask, patience: Patience) -> Result<Score, Error> {
             Ok(score) => return Ok(score),
             Err(err) => err,
         };
-        let Some(pause) = patience
-            .pause_before(attempt + 1)
-            .filter(|_| failed.retryable())
-        else {
+        let Some(pause) = patience.pause_after(&failed, attempt + 1) else {
             return Err(failed);
         };
         tracing::info!(error = %failed, attempt, ?pause, "pve stats: asking again after a pause");
@@ -299,6 +347,17 @@ async fn ask_once(
             }
         })?;
     let status = response.status();
+    let busy = status == reqwest::StatusCode::TOO_MANY_REQUESTS
+        || status == reqwest::StatusCode::SERVICE_UNAVAILABLE;
+    if busy {
+        let said = response
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|value| value.to_str().ok());
+        return Err(Error::Throttled {
+            retry_after: retry_after(said),
+        });
+    }
     if !status.is_success() {
         return Err(Error::Status(status.as_u16()));
     }
@@ -493,5 +552,50 @@ mod tests {
         assert_eq!(patience.pause_before(2), Some(Duration::from_secs(2)));
         assert_eq!(patience.pause_before(3), Some(Duration::from_secs(4)));
         assert_eq!(patience.pause_before(4), None, "three attempts is the lot");
+    }
+
+    #[test]
+    fn a_busy_service_is_asked_again_after_the_wait_it_named() {
+        let exactly = Patience {
+            jitter: exact,
+            ..Patience::DEFAULT
+        };
+        let busy = Error::Throttled {
+            retry_after: Some(Duration::from_secs(1)),
+        };
+        assert!(busy.retryable());
+        assert_eq!(
+            exactly.pause_after(&busy, 2),
+            Some(Duration::from_secs(1)),
+            "the service's word beats the schedule"
+        );
+        let unsaid = Error::Throttled { retry_after: None };
+        assert_eq!(
+            exactly.pause_after(&unsaid, 2),
+            Some(Duration::from_secs(2)),
+            "no word, so the schedule"
+        );
+        assert_eq!(exactly.pause_after(&busy, 4), None, "no attempts left");
+        assert_eq!(exactly.pause_after(&Error::Status(400), 2), None);
+    }
+
+    #[test]
+    fn retry_after_is_read_in_seconds_and_capped() {
+        assert_eq!(retry_after(Some("1")), Some(Duration::from_secs(1)));
+        assert_eq!(retry_after(Some(" 5 ")), Some(Duration::from_secs(5)));
+        assert_eq!(retry_after(Some("900")), Some(RETRY_AFTER_CAP));
+        // The HTTP-date form is not worth parsing for a pause of seconds.
+        assert_eq!(retry_after(Some("Wed, 21 Oct 2015 07:28:00 GMT")), None);
+        assert_eq!(retry_after(None), None);
+    }
+
+    #[test]
+    fn jitter_stays_within_a_quarter_either_way() {
+        let base = Duration::from_secs(4);
+        for _ in 0..200 {
+            let held = jittered(base);
+            assert!(held >= Duration::from_secs(3), "{held:?}");
+            assert!(held <= Duration::from_secs(5), "{held:?}");
+        }
     }
 }
