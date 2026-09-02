@@ -7,17 +7,22 @@
 //! table constructor evaluated as `return <text>` and merged into existing
 //! units. They differ in decoding too — see [`base64url`].
 
+pub mod assist;
 pub mod base64url;
+pub mod check;
 pub mod command;
 pub mod diff;
 pub mod gauge;
 pub mod lua;
 pub mod name;
+pub mod outline;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+pub use assist::{DefTags, Tag};
 pub use base64url::Diagnostic;
+pub use check::{Check, Problem, Symbol, check};
 pub use command::Slot;
 pub use diff::{ChangeOp, DiffView, Hunk};
 pub use gauge::{CAP, Gauge};

@@ -15,10 +15,22 @@ use crate::{Error, Kind};
 /// StyLua's configuration, as a `stylua.toml` provides it.
 pub type Config = stylua_lib::Config;
 
-/// Reads the user's `stylua.toml`; StyLua's defaults when there is none.
+/// StyLua's defaults, except that an indent is two columns wide.
+///
+/// StyLua indents with tabs; `indent_width` only guides where it wraps a long
+/// line. The editor and the room draw a tab two columns wide, so this is what
+/// makes the wrapping it chooses match what is on the screen.
+pub fn default_config() -> Config {
+    Config {
+        indent_width: 2,
+        ..Config::default()
+    }
+}
+
+/// Reads the user's `stylua.toml`; [`default_config`] when there is none.
 pub fn load_config(path: Option<&Path>) -> Result<Config, Error> {
     let Some(path) = path else {
-        return Ok(Config::default());
+        return Ok(default_config());
     };
     let text = std::fs::read_to_string(path).map_err(|err| Error::Lua(err.to_string()))?;
     toml::from_str(&text).map_err(|err| Error::Lua(err.to_string()))
@@ -233,6 +245,22 @@ return a .. 'x'
         assert!(minified.contains("a- -i"), "{minified}");
         assert_eq!(significant(source), significant(&minified));
         assert!(minified.len() < source.len());
+    }
+
+    #[test]
+    fn default_config_indents_with_two_column_tabs() {
+        let config = default_config();
+        assert_eq!(config.indent_type, stylua_lib::IndentType::Tabs);
+        assert_eq!(config.indent_width, 2);
+        let formatted = format(
+            "local function f()
+return 1
+end",
+            Kind::Defs,
+            &config,
+        )
+        .unwrap();
+        assert!(formatted.contains("	return 1"), "{formatted}");
     }
 
     #[test]

@@ -730,22 +730,47 @@ pub fn open_url(url: String) -> Result<()> {
         .map_err(|err| ApiError::new("opener", err.to_string()))
 }
 
+/// The stack a thread doing Lua work gets.
+///
+/// StyLua and full_moon walk a tweak's tables recursively, and the first time
+/// twenty slots were decoded on joining a room, a fourteen kilobyte
+/// `tweakunits` table went past the main thread's megabyte in a debug build.
+/// A thread of our own, sized for the deepest table anyone publishes, costs
+/// one spawn per call -- and the calls are debounced.
+const LUA_STACK: usize = 64 << 20;
+
+/// Runs Lua work off the main thread, on a stack with room to recurse.
+async fn lua_work<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> Result<T> {
+    tauri::async_runtime::spawn_blocking(move || {
+        std::thread::Builder::new()
+            .stack_size(LUA_STACK)
+            .spawn(work)
+            .map_err(|err| ApiError::new("lua", err.to_string()))?
+            .join()
+            .map_err(|_| ApiError::new("lua", "the Lua worker panicked"))
+    })
+    .await
+    .map_err(|err| ApiError::new("lua", err.to_string()))?
+}
+
 /// Decodes a stored slot value for display: Lua, formatted Lua, name, summary.
 #[tauri::command]
-pub fn tweak_decode(app: State<'_, App>, blob: String, kind: Kind) -> Result<TweakView> {
-    Ok(tweaks::decode(&blob, kind, &stylua(&app))?)
+pub async fn tweak_decode(app: State<'_, App>, blob: String, kind: Kind) -> Result<TweakView> {
+    let config = stylua(&app);
+    Ok(lua_work(move || tweaks::decode(&blob, kind, &config)).await??)
 }
 
 /// Formats Lua with the user's `stylua.toml`, for the editor's Format action.
 #[tauri::command]
-pub fn tweak_format(app: State<'_, App>, lua: String, kind: Kind) -> Result<String> {
-    Ok(tweaks::lua::format(&lua, kind, &stylua(&app))?)
+pub async fn tweak_format(app: State<'_, App>, lua: String, kind: Kind) -> Result<String> {
+    let config = stylua(&app);
+    Ok(lua_work(move || tweaks::lua::format(&lua, kind, &config)).await??)
 }
 
 /// Minifies, encodes and measures — the gauge the editor shows. Sends nothing.
 #[tauri::command]
-pub fn tweak_prepare(lua: String, slot: Slot, direct: bool) -> Result<Prepared> {
-    Ok(tweaks::prepare(&lua, slot, direct)?)
+pub async fn tweak_prepare(lua: String, slot: Slot, direct: bool) -> Result<Prepared> {
+    Ok(lua_work(move || tweaks::prepare(&lua, slot, direct)).await??)
 }
 
 /// Prepares again here rather than trusting the webview, refuses anything the
@@ -780,20 +805,135 @@ pub async fn tweak_clear(app: State<'_, App>, slot: Slot) -> Result<()> {
 
 /// Both sides formatted, then diffed — what a vote would change.
 #[tauri::command]
-pub fn tweak_diff(
+pub async fn tweak_diff(
     app: State<'_, App>,
     kind: Kind,
     current: String,
     proposed: String,
 ) -> Result<DiffView> {
     let config = stylua(&app);
-    let side = |blob: &str| {
-        if blob.is_empty() {
-            return String::new();
-        }
-        tweaks::decode(blob, kind, &config).map_or_else(|_| blob.to_owned(), |view| view.formatted)
+    lua_work(move || {
+        let side = |blob: &str| {
+            if blob.is_empty() {
+                return String::new();
+            }
+            tweaks::decode(blob, kind, &config)
+                .map_or_else(|_| blob.to_owned(), |view| view.formatted)
+        };
+        tweaks::diff::diff(&side(&current), &side(&proposed))
+    })
+    .await
+}
+
+/// The units a game has, for completing and checking `tweakunits` keys.
+#[tauri::command]
+pub fn game_unit_names(app: State<'_, App>, game: String) -> Result<Vec<String>> {
+    let Some(dir) = data_dir_of(&app) else {
+        return Ok(Vec::new());
     };
-    Ok(tweaks::diff::diff(&side(&current), &side(&proposed)))
+    let files = content::Library::new(dir).game_files(&game, "units/");
+    Ok(tweaks::assist::unit_names(&files))
+}
+
+/// The engine's weapon tags, dumped by the installed engine once and kept.
+///
+/// `spring --list-def-tags` starts the engine far enough to register every
+/// tag and prints them as JSON. It takes a second or two, so the dump is
+/// cached beside the settings, one file per engine version.
+#[tauri::command]
+pub async fn engine_def_tags(app: State<'_, App>, version: String) -> Result<tweaks::DefTags> {
+    let cache = app
+        .settings
+        .dir()
+        .join("cache")
+        .join(format!("deftags-{}.json", safe_name(&version)));
+    let json = match std::fs::read_to_string(&cache) {
+        Ok(text) => text,
+        Err(_) => {
+            let data_dir = data_dir_of(&app).ok_or_else(|| {
+                ApiError::new("deftags", "no data directory to find an engine in")
+            })?;
+            let engine = recoil::find_engine(&data_dir, &version).ok_or_else(|| {
+                ApiError::new("deftags", format!("engine {version} is not installed"))
+            })?;
+            let text = tauri::async_runtime::spawn_blocking(move || dump_def_tags(&engine))
+                .await
+                .map_err(|err| ApiError::new("deftags", err.to_string()))??;
+            if let Some(parent) = cache.parent() {
+                // The cache is a convenience; failing to keep it costs a rerun.
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let _ = std::fs::write(&cache, &text);
+            text
+        }
+    };
+    tweaks::assist::parse_def_tags(&json).map_err(|err| ApiError::new("deftags", err.to_string()))
+}
+
+fn dump_def_tags(engine_dir: &std::path::Path) -> Result<String> {
+    let mut command = std::process::Command::new(engine_dir.join(recoil::ENGINE_BINARY));
+    command.current_dir(engine_dir).arg("--list-def-tags");
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    let output = command
+        .output()
+        .map_err(|err| ApiError::new("deftags", format!("running the engine: {err}")))?;
+    if !output.status.success() {
+        return Err(ApiError::new(
+            "deftags",
+            format!("the engine exited with {}", output.status),
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// A version string as one file name segment.
+fn safe_name(text: &str) -> String {
+    text.chars()
+        .map(|c| {
+            if c.is_alphanumeric() || "-_.".contains(c) {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+/// The BAR data directory, chosen or default.
+fn data_dir_of(app: &App) -> Option<PathBuf> {
+    app.settings
+        .get()
+        .paths
+        .data_dir
+        .or_else(lobby_runtime::launch::default_data_dir)
+}
+
+/// Where the Lua stops making sense, and what it names: markers and an outline.
+#[tauri::command]
+pub async fn tweak_check(lua: String, kind: Kind) -> Result<tweaks::Check> {
+    lua_work(move || tweaks::check(&lua, kind)).await
+}
+
+/// Two pieces of Lua, formatted alike and diffed -- what the editor compares.
+#[tauri::command]
+pub async fn tweak_diff_text(
+    app: State<'_, App>,
+    kind: Kind,
+    left: String,
+    right: String,
+) -> Result<DiffView> {
+    let config = stylua(&app);
+    lua_work(move || {
+        let side =
+            |lua: &str| tweaks::lua::format(lua, kind, &config).unwrap_or_else(|_| lua.to_owned());
+        tweaks::diff::diff(&side(&left), &side(&right))
+    })
+    .await
 }
 
 #[tauri::command]
@@ -844,7 +984,7 @@ pub fn delete_draft(app: State<'_, App>, name: String) -> Result<()> {
 
 fn stylua(app: &App) -> tweaks::Config {
     let path = app.settings.get().tweaks.stylua_config;
-    tweaks::lua::load_config(path.as_deref()).unwrap_or_default()
+    tweaks::lua::load_config(path.as_deref()).unwrap_or_else(|_| tweaks::lua::default_config())
 }
 
 fn drafts_dir(app: &App) -> PathBuf {

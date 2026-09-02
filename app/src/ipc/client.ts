@@ -1,4 +1,6 @@
 import { invoke, type Channel } from '@tauri-apps/api/core'
+import type { Check } from './bindings/Check'
+import type { DefTags } from './bindings/DefTags'
 import type { DiffView } from './bindings/DiffView'
 import type { Kind } from './bindings/Kind'
 import type { Prepared } from './bindings/Prepared'
@@ -158,6 +160,14 @@ export const api = {
   tweakClear: (slot: Slot) => invoke<void>('tweak_clear', { slot }),
   tweakDiff: (kind: Kind, current: string, proposed: string) =>
     invoke<DiffView>('tweak_diff', { kind, current, proposed }),
+  tweakCheck: (lua: string, kind: Kind) =>
+    invoke<Check>('tweak_check', { lua, kind }),
+  tweakDiffText: (kind: Kind, left: string, right: string) =>
+    invoke<DiffView>('tweak_diff_text', { kind, left, right }),
+  gameUnitNames: (game: string) =>
+    invoke<string[]>('game_unit_names', { game }),
+  engineDefTags: (version: string) =>
+    invoke<DefTags>('engine_def_tags', { version }),
   listDrafts: () => invoke<string[]>('list_drafts'),
   readDraft: (name: string) => invoke<string>('read_draft', { name }),
   saveDraft: (name: string, lua: string) =>

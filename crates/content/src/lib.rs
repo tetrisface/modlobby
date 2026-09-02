@@ -130,6 +130,21 @@ impl Library {
         archive::from_unpacked(&self.data_dir, file)
     }
 
+    /// Every file under `prefix` in the game with this display name --
+    /// `units/` for what the game can build. Empty when the game is not here.
+    pub fn game_files(&self, display_name: &str, prefix: &str) -> Vec<String> {
+        let wanted = prefix.to_ascii_lowercase();
+        if let Some(md5) = self.rapid_md5(display_name)
+            && let Ok(files) = archive::package_files(&self.data_dir, &md5)
+        {
+            return files
+                .into_iter()
+                .filter(|file| file.to_ascii_lowercase().starts_with(&wanted))
+                .collect();
+        }
+        archive::unpacked_files(&self.data_dir, prefix)
+    }
+
     /// Scans every rapid index for the version with this display name.
     fn rapid_md5(&self, display_name: &str) -> Option<String> {
         for index in self.rapid_indexes() {

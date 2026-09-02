@@ -37,9 +37,6 @@ type Team = { allyTeam: number; users: UserView[]; bots: BotView[] }
 
 export function Room() {
   const navigate = useNavigate()
-  // Setup asks for the whole body when you are editing a tweak; the rosters
-  // step aside rather than the editor being squeezed into a rail.
-  const [wide, setWide] = createSignal(false)
   let log: HTMLDivElement | undefined
 
   const battle = createMemo(() => {
@@ -190,7 +187,7 @@ export function Room() {
           <HostBar />
           <Seat />
 
-          <div class='room-body' classList={{ wide: wide() }}>
+          <div class='room-body'>
             <div class='room-main'>
               <div class='rosters'>
                 <div class='teams'>
@@ -268,7 +265,7 @@ export function Room() {
                 </section>
               </div>
 
-              <div class='chat'>
+              <div class='room-chat'>
                 <div class='chat-log' ref={log}>
                   <For each={lines()}>{(line) => <Line line={line} />}</For>
                 </div>
@@ -280,7 +277,7 @@ export function Room() {
               </div>
             </div>
 
-            <Setup wide={wide()} onWide={setWide} />
+            <Setup />
           </div>
         </section>
       )}

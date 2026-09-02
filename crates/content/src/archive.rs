@@ -79,6 +79,43 @@ fn pooled(data_dir: &Path, md5: &str) -> PathBuf {
     data_dir.join("pool").join(head).join(format!("{rest}.gz"))
 }
 
+/// Every file name the rapid package with this md5 lists.
+pub fn package_files(data_dir: &Path, package_md5: &str) -> Result<Vec<String>, Error> {
+    let sdp = data_dir.join("packages").join(format!("{package_md5}.sdp"));
+    Ok(index(&sdp)?.into_iter().map(|(name, _)| name).collect())
+}
+
+/// Every file under `prefix` in an unpacked game directory, as paths the
+/// archive would list them by (`units/armcom.lua`).
+pub fn unpacked_files(data_dir: &Path, prefix: &str) -> Vec<String> {
+    let Ok(games) = std::fs::read_dir(data_dir.join("games")) else {
+        return Vec::new();
+    };
+    let mut found = Vec::new();
+    for game in games.flatten() {
+        let root = game.path().join(prefix);
+        if root.is_dir() {
+            walk(&root, prefix.trim_end_matches('/'), &mut found);
+        }
+    }
+    found
+}
+
+fn walk(dir: &Path, relative: &str, out: &mut Vec<String>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let path = format!("{relative}/{name}");
+        if entry.path().is_dir() {
+            walk(&entry.path(), &path, out);
+        } else {
+            out.push(path);
+        }
+    }
+}
+
 /// One file's contents, out of the rapid package with this md5.
 pub fn from_package(data_dir: &Path, package_md5: &str, file: &str) -> Result<Vec<u8>, Error> {
     let sdp = data_dir.join("packages").join(format!("{package_md5}.sdp"));

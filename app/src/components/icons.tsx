@@ -156,6 +156,41 @@ export function IconSprite() {
           />
           <path d='M10 6.6 L13.4 10 L10 13.4 L6.6 10 Z' fill='currentColor' />
         </symbol>
+        {/* Actions on a tweak slot: copy its command, open it in the editor. */}
+        <symbol id='act-copy' viewBox='0 0 20 20'>
+          <rect
+            x='7'
+            y='7'
+            width='9.5'
+            height='9.5'
+            rx='1.5'
+            fill='none'
+            stroke='currentColor'
+            stroke-width='1.6'
+          />
+          <path
+            d='M13 6.2 V5 a1.5 1.5 0 0 0 -1.5 -1.5 H5 A1.5 1.5 0 0 0 3.5 5 v6.5 A1.5 1.5 0 0 0 5 13 h1.2'
+            fill='none'
+            stroke='currentColor'
+            stroke-width='1.6'
+            stroke-linecap='round'
+          />
+        </symbol>
+        <symbol id='act-pen' viewBox='0 0 20 20'>
+          <path
+            d='M4 16 l0.9 -3.6 L13.4 3.9 a1.6 1.6 0 0 1 2.3 0 l0.4 0.4 a1.6 1.6 0 0 1 0 2.3 L7.6 15.1 Z'
+            fill='none'
+            stroke='currentColor'
+            stroke-width='1.6'
+            stroke-linejoin='round'
+          />
+          <path
+            d='M11.8 5.5 l2.7 2.7'
+            stroke='currentColor'
+            stroke-width='1.6'
+            stroke-linecap='round'
+          />
+        </symbol>
         <symbol id='side-random' viewBox='0 0 20 20'>
           <path
             d='M10 2.6 L17.4 10 L10 17.4 L2.6 10 Z'
@@ -167,6 +202,15 @@ export function IconSprite() {
           />
         </symbol>
       </defs>
+    </svg>
+  )
+}
+
+/** A symbol inside a control that already says what it does; no title of its own. */
+export function Glyph(props: { id: string }) {
+  return (
+    <svg class='icon act' aria-hidden='true'>
+      <use href={`#${props.id}`} />
     </svg>
   )
 }

@@ -2,7 +2,10 @@ import { describe, expect, test } from 'vitest'
 import {
   MODDING_TAB,
   TWEAK_SLOTS,
+  changedByTab,
   changedCount,
+  isTweakSlot,
+  rowsByTab,
   defaultText,
   displayText,
   readModOptions,
@@ -137,6 +140,34 @@ describe('changes against BAR defaults', () => {
     expect(changedCount(byKey('options_cheats'), values)).toBe(2)
     expect(changedCount(byKey('raptor_defense_options'), values)).toBe(0)
   })
+
+  test('the All tab lists every changed setting under the tab it lives in', () => {
+    const changed = changedByTab(TABS, values)
+    expect(changed.map((entry) => entry.tab.name)).toEqual([
+      'Cheats',
+      'Modding',
+    ])
+    expect(
+      changed.map((entry) => entry.rows.map((row) => row.option.key).sort()),
+    ).toEqual([['multiplier_buildpower', 'startmetal'], ['tweakdefs1']])
+  })
+
+  test('a room on BAR defaults has nothing under All', () => {
+    expect(changedByTab(TABS, {})).toEqual([])
+  })
+
+  test('showing the unchanged too lists every tab with all of its rows', () => {
+    const all = rowsByTab(TABS, values, false)
+    expect(all.map((entry) => entry.tab.name)).toEqual(
+      TABS.map((tab) => tab.name),
+    )
+    const cheats = all.find((entry) => entry.tab.key === 'options_cheats')!
+    expect(cheats.rows.length).toBeGreaterThan(20)
+    expect(cheats.rows.filter((row) => row.changed)).toHaveLength(2)
+    const modding = all.find((entry) => entry.tab.key === MODDING_TAB)!
+    expect(modding.rows.filter(isTweakSlot)).toHaveLength(20)
+    expect(cheats.rows.some(isTweakSlot)).toBe(false)
+  })
 })
 
 describe('display', () => {
@@ -159,6 +190,16 @@ describe('display', () => {
     expect(displayText(row('nowasting', { nowasting: 'disabled' }))).toBe(
       'Disabled',
     )
+  })
+
+  test('a tweak slot shows its size, never its blob', () => {
+    const modding = byKey(MODDING_TAB)
+    const slot = (values: Record<string, string>) =>
+      modding.groups
+        .flatMap((group) => rowsOf(group, values))
+        .find((entry) => entry.option.key === 'tweakunits2')!
+    expect(displayText(slot({ tweakunits2: 'e30=' }))).toBe('4 B')
+    expect(displayText(slot({}))).toBe('empty')
   })
 
   test('an unset row falls back to the default it sits on', () => {

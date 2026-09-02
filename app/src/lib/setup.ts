@@ -74,6 +74,13 @@ export const TWEAK_SLOTS: readonly string[] = ['defs', 'units'].flatMap(
 export const MODDING_TAB = 'modding'
 
 /**
+ * Not one of BAR's tabs: the one that shows what is changed in all of them.
+ * A room's four changed settings are spread over three tabs, and finding
+ * them was a tour.
+ */
+export const ALL_TAB = 'all'
+
+/**
  * Groups come from BAR's own `-- Name` subheaders. Plain subheaders are prose
  * for the tab, separators are spacing, and both are layout rather than
  * settings, so neither becomes a row.
@@ -202,6 +209,40 @@ export function rowsOf(group: Group, values: Record<string, string>): Row[] {
   })
 }
 
+export type Changed = { tab: Tab; rows: Row[] }
+
+/**
+ * Every setting by the tab it lives in -- only what differs from BAR's
+ * default, or all of it. Tabs with nothing to show are left out.
+ */
+export function rowsByTab(
+  tabs: Tab[],
+  values: Record<string, string>,
+  onlyChanged: boolean,
+): Changed[] {
+  return tabs
+    .map((tab) => ({
+      tab,
+      rows: tab.groups
+        .flatMap((group) => rowsOf(group, values))
+        .filter((row) => row.changed || !onlyChanged),
+    }))
+    .filter((entry) => entry.rows.length > 0)
+}
+
+/** Every setting that differs from BAR's default, by the tab it lives in. */
+export function changedByTab(
+  tabs: Tab[],
+  values: Record<string, string>,
+): Changed[] {
+  return rowsByTab(tabs, values, true)
+}
+
+/** Whether a row is one of the twenty tweak slots, drawn as actions, not a value. */
+export function isTweakSlot(row: Row): boolean {
+  return TWEAK_SLOTS.includes(row.option.key)
+}
+
 /** How many of a tab's settings differ from BAR's default. */
 export function changedCount(tab: Tab, values: Record<string, string>): number {
   return tab.groups.reduce(
@@ -214,6 +255,9 @@ export function changedCount(tab: Tab, values: Record<string, string>): number {
 /** What a row shows on the right: the value, or the default it is sitting on. */
 export function displayText(row: Row): string {
   const text = row.current ?? defaultText(row.option)
+  // A tweak is a blob of base64; its size is the one thing a row can say.
+  if (TWEAK_SLOTS.includes(row.option.key))
+    return text === '' ? 'empty' : `${text.length} B`
   if (row.option.type === 'bool') return isOn(text) ? 'on' : 'off'
   if (row.option.type === 'string' && text === '') return 'empty'
   const item = row.option.items?.find((entry) => entry.key === text)

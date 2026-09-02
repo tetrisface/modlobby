@@ -9,43 +9,67 @@ import {
   createSignal,
   type Accessor,
 } from 'solid-js'
-import type { Kind as TweakKind } from '../ipc/bindings/Kind'
+import { Glyph } from '../components/icons'
+import { ResizeHandle } from '../components/ResizeHandle'
 import { api, describeError } from '../ipc/client'
+import { clamp, dragWidth, readWidth, writeWidth } from '../lib/resize'
 import {
+  ALL_TAB,
   MODDING_TAB,
   TWEAK_SLOTS,
+  changedByTab,
   changedCount,
   defaultText,
   displayText,
   isOn,
+  isTweakSlot,
   readModOptions,
+  rowsByTab,
   rowsOf,
   tabs,
+  type Changed,
   type Row,
   type Tab,
 } from '../lib/setup'
 import { pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
-import { Tweaks } from './Tweaks'
+import { Tweaks } from './tweaks/Tweaks'
 
 const TWEAK_GROUP = 'Tweak slots'
 
 /** Shown before the game is installed, when there is no table to read. */
 const NO_TABS: Tab = { key: '', name: '', desc: '', groups: [] }
 
+/** The tab across all tabs; `groups` is empty because it draws its own body. */
+const ALL: Tab = {
+  key: ALL_TAB,
+  name: 'All',
+  desc: "Every setting that differs from BAR's default, whichever tab it is in.",
+  groups: [],
+}
+
+const WIDTH_KEY = 'modlobby.setupWidth'
+const NARROWEST = 420
+/** What the rosters and the chat keep, however wide the pane is dragged. */
+const ROOM_KEEPS = 480
+/** `.setup-tabs`' side padding and the gap between tabs, as the stylesheet has them. */
+const STRIP_PADDING = 14
+const TAB_GAP = 2
+
 /**
  * The room's settings, in BAR's own tabs and groups.
  *
- * A tab opens on what differs from BAR's default and keeps the rest one click
- * away: 221 options ship across these tabs, and the four somebody changed are
- * the four that decide how the game plays. Everything is read-only until we
- * hold a seat — SPADS grants `bSet` as `battle,pv:player:stopped`, so a
- * spectator can neither set a value nor call a vote on one.
+ * Opens on All -- what differs from BAR's default, across every tab -- and
+ * keeps the rest one click away: 221 options ship across these tabs, and the
+ * four somebody changed are the four that decide how the game plays.
+ * Everything is read-only until we hold a seat — SPADS grants `bSet` as
+ * `battle,pv:player:stopped`, so a spectator can neither set a value nor call
+ * a vote on one.
+ *
+ * The pane carries its own width: dragged by the grip on its left edge and
+ * remembered, or, the first time, measured so that its tabs sit on one row.
  */
-export function Setup(props: {
-  wide: boolean
-  onWide: (wide: boolean) => void
-}) {
+export function Setup() {
   /**
    * The game's own option table, read from the copy installed on this machine
    * rather than shipped with the app — see `lib/setup`. Re-read when the room
@@ -62,11 +86,17 @@ export function Setup(props: {
    * is re-read when the room changes game, and a held object would then be a
    * tab from the previous catalogue.
    */
-  const [tabKey, setTabKey] = createSignal<string | null>(null)
-  const tab = (): Tab =>
-    TABS().find((entry) => entry.key === tabKey()) ?? TABS()[0] ?? NO_TABS
-  const setTab = (next: Tab | undefined) => setTabKey(next?.key ?? null)
+  const [tabKey, setTabKey] = createSignal<string>(ALL_TAB)
+  const tab = (): Tab => {
+    if (tabKey() === ALL_TAB) return ALL
+    return (
+      TABS().find((entry) => entry.key === tabKey()) ?? TABS()[0] ?? NO_TABS
+    )
+  }
   const [group, setGroup] = createSignal<string | null>(null)
+
+  /** The slot being edited, or nothing; the pane is the editor while one is. */
+  const [editing, setEditing] = createSignal<{ slot?: string } | null>(null)
 
   const values = createMemo(() => readModOptions(lobby.myBattle?.scriptTags))
 
@@ -86,30 +116,80 @@ export function Setup(props: {
       .filter((row) => row.changed),
   )
 
+  const everywhere = createMemo(() => changedByTab(TABS(), values()))
+  const total = createMemo(() =>
+    everywhere().reduce((sum, entry) => sum + entry.rows.length, 0),
+  )
+
   const shown = createMemo(() => {
     const name = group()
     const found = tab().groups.find((entry) => entry.name === name)
     return found ? rowsOf(found, values()) : []
   })
 
-  /** The slots group, expanded: the pane becomes the whole tweak workspace. */
-  const editing = () =>
-    props.wide && tab().key === MODDING_TAB && group() === TWEAK_GROUP
-
   function open(next: Tab) {
-    setTab(next)
+    setTabKey(next.key)
     setGroup(null)
-    if (next.key !== MODDING_TAB) props.onWide(false)
   }
 
-  function editTweaks() {
-    setTab(TABS().find((entry) => entry.key === MODDING_TAB))
-    setGroup(TWEAK_GROUP)
-    props.onWide(true)
+  const [width, setWidth] = createSignal(readWidth(storage(), WIDTH_KEY))
+  /** Once a width has been chosen by hand, the tabs stop deciding it. */
+  let chosen = width() !== null
+  let host: HTMLElement | undefined
+  let strip: HTMLDivElement | undefined
+  const bounds = () => ({
+    min: NARROWEST,
+    max: Math.max(NARROWEST, window.innerWidth - ROOM_KEEPS),
+  })
+
+  /**
+   * As wide as it takes for the tabs to sit on one row: their widths and the
+   * gaps between them, the strip's padding and the pane's border. Summed
+   * from the tabs themselves, so the answer is the same whether they are
+   * currently on one row or wrapped onto two.
+   */
+  function fit() {
+    if (chosen || !strip) return
+    const tabs = [...strip.children] as HTMLElement[]
+    if (tabs.length === 0) return
+    const wanted =
+      tabs.reduce((sum, tab) => sum + tab.offsetWidth, 0) +
+      TAB_GAP * (tabs.length - 1) +
+      STRIP_PADDING * 2 +
+      1
+    setWidth(clamp(Math.min(wanted, window.innerWidth / 2), bounds()))
   }
+
+  // Whenever the tabs or their badges change -- and once the display font
+  // is in, since a tab measured in the fallback face comes out narrower.
+  createEffect(() => {
+    TABS()
+    total()
+    if (chosen) return
+    fit()
+    void document.fonts?.ready.then(fit)
+  })
 
   return (
-    <aside class='setup'>
+    <aside
+      class='setup'
+      ref={host}
+      style={{
+        '--setup-width': width() === null ? undefined : `${width()}px`,
+      }}
+    >
+      <ResizeHandle
+        label='Resize the setup pane'
+        onStart={() => width() ?? host?.getBoundingClientRect().width ?? 0}
+        onMove={(start, x0, x) => setWidth(dragWidth(start, x0, x, bounds()))}
+        onEnd={() => {
+          const now = width()
+          if (now === null) return
+          chosen = true
+          writeWidth(storage(), WIDTH_KEY, now)
+        }}
+      />
+
       <div class='setup-head'>
         <span class='t'>Setup</span>
         <span class='note'>
@@ -117,20 +197,25 @@ export function Setup(props: {
             ? 'a change is proposed to the host'
             : 'read-only · spectator'}
         </span>
-        <Show when={tab().key === MODDING_TAB}>
-          <button
-            class='setup-wide'
-            onClick={() => props.onWide(!props.wide)}
-            title={
-              props.wide ? 'Show the rosters again' : 'Give Modding the room'
-            }
-          >
-            {props.wide ? 'Collapse' : 'Expand'}
+        <Show when={editing()}>
+          <button class='setup-back' onClick={() => setEditing(null)}>
+            Settings
           </button>
         </Show>
       </div>
 
-      <div class='setup-tabs'>
+      <div class='setup-tabs' ref={strip}>
+        <button
+          class='setup-tab'
+          classList={{ on: tab().key === ALL_TAB }}
+          title={ALL.desc}
+          onClick={() => open(ALL)}
+        >
+          {ALL.name}
+          <Show when={total() > 0}>
+            <span class='badge'>{total()}</span>
+          </Show>
+        </button>
         <For each={TABS()}>
           {(entry) => {
             const count = createMemo(() => changedCount(entry, values()))
@@ -154,48 +239,78 @@ export function Setup(props: {
         </For>
       </div>
 
-      <Show when={!editing()} fallback={<Tweaks />}>
+      <Show when={!editing()} fallback={<Tweaks initial={editing()?.slot} />}>
         <div class='setup-body'>
           <nav class='groups'>
-            <button
-              class='group'
-              classList={{ on: group() === null }}
-              onClick={() => setGroup(null)}
+            <Show
+              when={tab().key !== ALL_TAB}
+              fallback={
+                <For each={everywhere()}>
+                  {(entry) => (
+                    <button class='group' onClick={() => open(entry.tab)}>
+                      {entry.tab.name}
+                      <span class='c'>{entry.rows.length}</span>
+                    </button>
+                  )}
+                </For>
+              }
             >
-              Changed<span class='c'>{changed().length}</span>
-            </button>
-            <For each={tab().groups}>
-              {(entry) => (
-                <button
-                  class='group'
-                  classList={{ on: group() === entry.name }}
-                  onClick={() => setGroup(entry.name)}
-                >
-                  {entry.name || 'General'}
-                  <span class='c'>{entry.options.length}</span>
-                </button>
-              )}
-            </For>
+              <button
+                class='group'
+                classList={{ on: group() === null }}
+                onClick={() => setGroup(null)}
+              >
+                Changed<span class='c'>{changed().length}</span>
+              </button>
+              <For each={tab().groups}>
+                {(entry) => (
+                  <button
+                    class='group'
+                    classList={{ on: group() === entry.name }}
+                    onClick={() => setGroup(entry.name)}
+                  >
+                    {entry.name || 'General'}
+                    <span class='c'>{entry.options.length}</span>
+                  </button>
+                )}
+              </For>
+            </Show>
           </nav>
 
           <div class='setup-detail'>
-            <Show
-              when={group() !== null}
-              fallback={
-                <Changed
+            <Switch>
+              <Match when={tab().key === ALL_TAB}>
+                <Everywhere
+                  changed={everywhere}
+                  all={() => rowsByTab(TABS(), values(), false)}
+                  editable={editable()}
+                  onEdit={(slot) => setEditing({ slot })}
+                />
+              </Match>
+              <Match when={group() === null}>
+                <ChangedHere
                   rows={changed}
                   editable={editable()}
                   onShowAll={() => setGroup(firstGroup())}
+                  onEdit={(slot) => setEditing({ slot })}
                 />
-              }
-            >
-              <Show
+              </Match>
+              <Match
                 when={tab().key === MODDING_TAB && group() === TWEAK_GROUP}
-                fallback={<Rows rows={shown()} editable={editable()} />}
               >
-                <TweakSlots values={values()} onEdit={editTweaks} />
-              </Show>
-            </Show>
+                <TweakSlots
+                  values={values()}
+                  onEdit={(slot) => setEditing({ slot })}
+                />
+              </Match>
+              <Match when={true}>
+                <Rows
+                  rows={shown()}
+                  editable={editable()}
+                  onEdit={(slot) => setEditing({ slot })}
+                />
+              </Match>
+            </Switch>
           </div>
         </div>
       </Show>
@@ -207,10 +322,63 @@ export function Setup(props: {
   }
 }
 
-function Changed(props: {
+/** `localStorage`, when the webview lets us at it. */
+function storage(): Storage | null {
+  try {
+    return window.localStorage
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The All tab: what is changed anywhere, under the tab it belongs to -- and,
+ * on request, everything else beside it.
+ */
+function Everywhere(props: {
+  changed: Accessor<Changed[]>
+  all: Accessor<Changed[]>
+  editable: boolean
+  onEdit: (slot: string) => void
+}) {
+  const [unchanged, setUnchanged] = createSignal(false)
+  const shown = () => (unchanged() ? props.all() : props.changed())
+  return (
+    <>
+      <Show
+        when={shown().length > 0}
+        fallback={
+          <p class='muted setup-empty'>Every setting is on BAR's default.</p>
+        }
+      >
+        <For each={shown()}>
+          {(entry) => (
+            <>
+              <div class='setup-section'>
+                <span>{entry.tab.name}</span>
+                <span class='count'>{entry.rows.length}</span>
+              </div>
+              <Rows
+                rows={entry.rows}
+                editable={props.editable}
+                onEdit={props.onEdit}
+              />
+            </>
+          )}
+        </For>
+      </Show>
+      <button class='setup-reveal' onClick={() => setUnchanged(!unchanged())}>
+        {unchanged() ? 'Hide unchanged' : 'Show unchanged'}
+      </button>
+    </>
+  )
+}
+
+function ChangedHere(props: {
   rows: Accessor<Row[]>
   editable: boolean
   onShowAll: () => void
+  onEdit: (slot: string) => void
 }) {
   return (
     <>
@@ -226,16 +394,28 @@ function Changed(props: {
           </p>
         }
       >
-        <Rows rows={props.rows()} editable={props.editable} />
+        <Rows
+          rows={props.rows()}
+          editable={props.editable}
+          onEdit={props.onEdit}
+        />
       </Show>
       <button class='setup-reveal' onClick={props.onShowAll}>
-        Show every setting
+        Show unchanged
       </button>
     </>
   )
 }
 
-function Rows(props: { rows: Row[]; editable: boolean }) {
+/**
+ * Settings as rows. A tweak slot is not a value anyone reads: its row ends
+ * in the two things to do with it, copy and open, wherever the row appears.
+ */
+function Rows(props: {
+  rows: Row[]
+  editable: boolean
+  onEdit: (slot: string) => void
+}) {
   return (
     <div class='setup-rows'>
       <For
@@ -248,16 +428,75 @@ function Rows(props: { rows: Row[]; editable: boolean }) {
             <span class='k' title={row.option.desc ?? ''}>
               {row.option.name || row.option.key}
             </span>
-            <Show
-              when={props.editable}
-              fallback={<span class='v'>{displayText(row)}</span>}
-            >
-              <Control row={row} />
-            </Show>
+            <Switch fallback={<span class='v'>{displayText(row)}</span>}>
+              <Match when={isTweakSlot(row)}>
+                <SlotActions
+                  slot={row.option.key}
+                  blob={row.current ?? ''}
+                  onEdit={props.onEdit}
+                />
+              </Match>
+              <Match when={props.editable}>
+                <Control row={row} />
+              </Match>
+            </Switch>
           </div>
         )}
       </For>
     </div>
+  )
+}
+
+/**
+ * The two things to do with a tweak slot: copy the `!bSet` command that
+ * carries it -- what a spectator can hand to someone with a seat -- and, the
+ * wider target, open it in the editor, which is what the slot is for whether
+ * it is full or still empty. `label` puts the slot's name on the button, for
+ * a grid where the row has no other place for it.
+ */
+function SlotActions(props: {
+  slot: string
+  blob: string
+  label?: string
+  onEdit: (slot: string) => void
+}) {
+  const empty = () => props.blob === ''
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(`!bSet ${props.slot} ${props.blob}`)
+      pushNotice('info', `!bSet ${props.slot} copied`)
+    } catch (error) {
+      pushNotice('warning', `copy: ${describeError(error)}`)
+    }
+  }
+
+  return (
+    <span class='slot-cell' classList={{ filled: !empty() }}>
+      <button
+        class='slot-copy'
+        title={`Copy the !bSet command for ${props.slot}`}
+        disabled={empty()}
+        onClick={() => void copy()}
+      >
+        <Glyph id='act-copy' />
+      </button>
+      <button
+        class='slot-open'
+        title={
+          empty()
+            ? `Write a tweak into ${props.slot}`
+            : `Open ${props.slot} in the editor`
+        }
+        onClick={() => props.onEdit(props.slot)}
+      >
+        <Glyph id='act-pen' />
+        <Show when={props.label}>
+          {(label) => <span class='kk'>{label()}</span>}
+        </Show>
+        <span class='vv'>{empty() ? '—' : `${props.blob.length} B`}</span>
+      </button>
+    </span>
   )
 }
 
@@ -315,40 +554,14 @@ function Control(props: { row: Row }) {
   )
 }
 
-/**
- * The twenty slots, and the Lua in whichever one is open. Editing happens in
- * the full editor; this is the view a spectator can act on — read it, format
- * it, copy the command someone with a seat can run.
- */
+/** The twenty slots as a grid, every one of them, filled or not. */
 function TweakSlots(props: {
   values: Record<string, string>
-  onEdit: () => void
+  onEdit: (slot?: string) => void
 }) {
-  const [open, setOpen] = createSignal<string | null>(null)
-
   const filled = createMemo(() =>
     TWEAK_SLOTS.filter((key) => (props.values[key] ?? '') !== ''),
   )
-
-  let luaHost: HTMLPreElement | undefined
-
-  const [view] = createResource(
-    () => {
-      const key = open()
-      const blob = key === null ? '' : (props.values[key] ?? '')
-      if (blob === '') return null
-      const kind: TweakKind = key!.startsWith('tweakdefs') ? 'defs' : 'units'
-      return { blob, kind }
-    },
-    (request) => api.tweakDecode(request.blob, request.kind),
-  )
-
-  // `Show` keeps the same <pre> across slots, so a new tweak inherits the last
-  // one's scroll and opens somewhere in its middle.
-  createEffect(() => {
-    view()
-    if (luaHost) luaHost.scrollTop = 0
-  })
 
   return (
     <>
@@ -359,50 +572,22 @@ function TweakSlots(props: {
 
       <div class='slot-grid'>
         <For each={TWEAK_SLOTS}>
-          {(key) => {
-            const blob = () => props.values[key] ?? ''
-            return (
-              <button
-                class='slot-cell'
-                classList={{ filled: blob() !== '', on: open() === key }}
-                onClick={() => setOpen(open() === key ? null : key)}
-              >
-                <span class='kk'>{key}</span>
-                <span class='vv'>
-                  {blob() === '' ? '—' : `${blob().length} B`}
-                </span>
-              </button>
-            )
-          }}
+          {(key) => (
+            <SlotActions
+              slot={key}
+              blob={props.values[key] ?? ''}
+              label={key}
+              onEdit={props.onEdit}
+            />
+          )}
         </For>
       </div>
 
-      <Show when={view()}>
-        {(tweak) => (
-          <div class='slot-view'>
-            <div class='slot-view-head'>
-              <span class='nm'>{tweak().name ?? open()}</span>
-              <span class='hash'>{tweak().summary}</span>
-            </div>
-            <pre class='slot-lua' ref={luaHost}>
-              {tweak().formatted}
-            </pre>
-            <Show when={tweak().diagnostics.length > 0}>
-              <div class='slot-warn'>
-                <For each={tweak().diagnostics}>
-                  {(note) => <div>{String(note)}</div>}
-                </For>
-              </div>
-            </Show>
-          </div>
-        )}
-      </Show>
-
       <div class='setup-note'>
-        Spectators cannot set a modoption or call a vote on one. Open the editor
-        to format, diff and copy the command.
+        Spectators cannot set a modoption or call a vote on one. The editor
+        formats, diffs and copies the command for someone who can.
       </div>
-      <button onClick={props.onEdit}>Open editor</button>
+      <button onClick={() => props.onEdit()}>Open editor</button>
     </>
   )
 }
