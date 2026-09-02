@@ -4,10 +4,12 @@
 //! no I/O, so it is tested by replaying captured server output and asserting
 //! the commands it wants sent.
 
+pub mod hosting;
 pub mod session;
 pub mod spads;
 pub mod state;
 
+pub use hosting::{Rtts, SpareRoom};
 pub use session::{Effect, FriendAction, SeatError, Session, UnknownFriendAction};
 pub use spads::{Announcement, Proposal, VoteState};
 pub use state::{Battle, Bot, LobbyState, MyBattle, OptionChange, Phase, StartRect, User};

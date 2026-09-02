@@ -3,11 +3,13 @@
 //! thin callers of [`Client`].
 
 pub mod client;
+pub mod latency;
 pub mod launch;
 pub mod platform;
 pub mod reconnect;
 
 pub use client::{Client, ClientError, Connector};
+pub use latency::{IcmpEcho, Latency, Unmeasured};
 /// Re-exported so callers do not need `lobby-core` just to name an action.
 pub use lobby_core::{FriendAction, UnknownFriendAction};
 pub use platform::Hardware;

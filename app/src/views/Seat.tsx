@@ -5,8 +5,6 @@ import { pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
 import { applySettings, settings } from '../store/settings'
 
-const REGIONS = ['EU', 'US', 'AU', 'EA']
-
 /** side 2 is Random; Legion needs its modoption, so it is offered last. */
 const SIDES = [
   { id: 0, label: 'Armada' },
@@ -24,7 +22,6 @@ const SIDES = [
  * it at all.
  */
 export function Seat() {
-  const [region, setRegion] = createSignal(REGIONS[0] as string)
   const [busy, setBusy] = createSignal(false)
 
   const room = createMemo(() => {
@@ -243,22 +240,15 @@ export function Seat() {
       </Show>
 
       <span class='spacer' />
-      <select
-        value={region()}
-        onChange={(e) => setRegion(e.currentTarget.value)}
-      >
-        {REGIONS.map((r) => (
-          <option value={r}>{r}</option>
-        ))}
-      </select>
       {/* Both halves of Chobby's Host button: an empty autohost is a listed
-          room you boss, `!privatehost` is a passworded one made on request. */}
+          room you boss, `!privatehost` is a passworded one made on request.
+          Chobby asks for a region; the runtime measures instead, and says
+          which room it chose and how far away it is. */}
       <button
         disabled={busy()}
         onClick={() =>
           act('host a room', async () => {
-            await api.hostPublic(region())
-            pushNotice('info', 'joined an empty room; you are its boss')
+            await api.hostPublic()
           })
         }
       >
@@ -268,7 +258,7 @@ export function Seat() {
         disabled={busy()}
         onClick={() =>
           act('host a room', async () => {
-            const manager = await api.requestPrivateHost(region())
+            const manager = await api.requestPrivateHost()
             pushNotice(
               'info',
               `asked ${manager} for a private room; joining when it opens`,

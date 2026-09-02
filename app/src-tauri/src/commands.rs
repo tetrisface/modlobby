@@ -663,14 +663,15 @@ pub async fn release_seat(app: State<'_, App>) -> Result<()> {
 /// Asks a cluster manager for a room of our own; the runtime joins it when it
 /// appears. This is the sandbox where taking a seat is allowed.
 #[tauri::command]
-pub async fn request_private_host(app: State<'_, App>, region: String) -> Result<String> {
-    Ok(app.client.request_private_host(region).await?)
+pub async fn request_private_host(app: State<'_, App>) -> Result<String> {
+    Ok(app.client.request_private_host().await?)
 }
 
-/// Joins an empty public autohost in a region, which makes it your room.
+/// Joins an empty public autohost, which makes it your room. The runtime
+/// picks one by latency and by which cluster has rooms to spare.
 #[tauri::command]
-pub async fn host_public(app: State<'_, App>, region: String) -> Result<u32> {
-    Ok(app.client.host_public(region).await?)
+pub async fn host_public(app: State<'_, App>) -> Result<u32> {
+    Ok(app.client.host_public().await?)
 }
 
 #[tauri::command]

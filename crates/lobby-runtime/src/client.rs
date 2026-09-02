@@ -3,14 +3,16 @@
 //! inbound line is reduced, projected into deltas and batched: a burst that is
 //! already queued becomes one `Deltas` message.
 
+use std::collections::HashMap;
 use std::future::Future;
+use std::net::Ipv4Addr;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::process::ExitStatus;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use lobby_core::{Effect, Session};
+use lobby_core::{Effect, Session, hosting};
 use lobby_ui::{
     Batcher, Delta, DownloadStatus, EngineStatus, GameRunningView, Phase, Projector, Snapshot,
     UiMessage, UiTransport,
@@ -24,6 +26,7 @@ use tokio::io::AsyncReadExt;
 use tokio::process::Child;
 use tokio::sync::{mpsc, oneshot};
 
+use crate::latency::{self, Latency};
 use crate::launch;
 use crate::platform::Hardware;
 use crate::reconnect;
@@ -192,17 +195,36 @@ enum Command {
     /// would put the game in exclusive full screen. `None` while the
     /// overlay is switched off, which is also when nothing is written.
     SetOverlayConfigDir(Option<PathBuf>),
+    /// Asks a cluster manager for a room of our own; the runtime joins it
+    /// when it appears. Replies with the manager asked.
     RequestPrivateHost {
-        region: String,
         reply: Reply<String>,
     },
-    /// Joins an empty public autohost in a region, making it ours.
+    /// Joins an empty public autohost, making it ours. Replies with its id.
     HostPublic {
-        region: String,
         reply: Reply<u32>,
     },
     Shutdown,
 }
+
+/// Who asked for the latencies, and what they are for.
+enum Wanted {
+    Public(Reply<u32>),
+    Private(Reply<String>),
+}
+
+/// The latencies a request went out to measure, back from the probe task.
+struct Probe {
+    measured: HashMap<Ipv4Addr, Option<Duration>>,
+    wanted: Wanted,
+}
+
+/// How long a measured latency stays good for. The machines do not move;
+/// this is about noticing a route that changed, not tracking jitter.
+const RTT_TTL: Duration = Duration::from_secs(600);
+/// How long to wait for one echo. Hosts are within a few hundred ms of
+/// anywhere; longer only delays the answer for a machine that is down.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// Handle to the runtime; cheap to clone.
 #[derive(Clone)]
@@ -216,12 +238,17 @@ impl Client {
         let connector: Connector = Arc::new(|endpoint, policy| {
             Box::pin(async move { Transport::connect(&endpoint, policy).await })
         });
-        Self::spawn_with(policy, hardware, connector)
+        Self::spawn_with(policy, hardware, connector, Arc::new(latency::IcmpEcho))
     }
 
-    pub fn spawn_with(policy: ThrottlePolicy, hardware: Hardware, connector: Connector) -> Self {
+    pub fn spawn_with(
+        policy: ThrottlePolicy,
+        hardware: Hardware,
+        connector: Connector,
+        latency: Arc<dyn Latency>,
+    ) -> Self {
         let (tx, rx) = mpsc::channel(64);
-        tokio::spawn(Runtime::new(rx, policy, hardware, connector).run());
+        tokio::spawn(Runtime::new(rx, policy, hardware, connector, latency).run());
         Self { tx }
     }
 
@@ -497,17 +524,17 @@ impl Client {
         self.send(Command::SetOverlayConfigDir(dir)).await
     }
 
-    /// Asks a cluster manager in `region` for a room of our own; the runtime
-    /// joins it when it appears. Returns the manager it asked.
-    /// Joins an empty public autohost in a region; the first person in it
-    /// becomes its boss, which is how a public room of your own is made.
-    pub async fn host_public(&self, region: String) -> Result<u32, ClientError> {
-        self.ask(|reply| Command::HostPublic { region, reply })
-            .await
+    /// Joins an empty public autohost; the first person in it becomes its
+    /// boss, which is how a public room of your own is made. Which one is
+    /// decided by latency and by which cluster has rooms to spare.
+    pub async fn host_public(&self) -> Result<u32, ClientError> {
+        self.ask(|reply| Command::HostPublic { reply }).await
     }
 
-    pub async fn request_private_host(&self, region: String) -> Result<String, ClientError> {
-        self.ask(|reply| Command::RequestPrivateHost { region, reply })
+    /// Asks a cluster manager for a room of our own; the runtime joins it
+    /// when it appears. Returns the manager it asked.
+    pub async fn request_private_host(&self) -> Result<String, ClientError> {
+        self.ask(|reply| Command::RequestPrivateHost { reply })
             .await
     }
 
@@ -536,6 +563,7 @@ enum Next {
     Inbound(Inbound),
     EngineExited(std::io::Result<ExitStatus>),
     Download(DownloadEvent),
+    Probe(Probe),
     Reconnect,
 }
 
@@ -597,6 +625,15 @@ struct Runtime {
     auto_fetched: Option<(String, String, String)>,
     download_tx: mpsc::Sender<DownloadEvent>,
     download_rx: mpsc::Receiver<DownloadEvent>,
+    latency: Arc<dyn Latency>,
+    /// What the host machines answered, and when, so a second room in the
+    /// same session does not wait on the same probes again.
+    rtts: HashMap<Ipv4Addr, (Instant, Option<Duration>)>,
+    probe_tx: mpsc::Sender<Probe>,
+    probe_rx: mpsc::Receiver<Probe>,
+    /// Whether a room request is out measuring; a second one would only
+    /// race the first for the same spare.
+    probing: bool,
     projector: Projector,
     batcher: Batcher,
 }
@@ -614,10 +651,12 @@ impl Runtime {
         policy: ThrottlePolicy,
         hardware: Hardware,
         connector: Connector,
+        latency: Arc<dyn Latency>,
     ) -> Self {
         // A short queue: progress lines arrive far faster than the front end
         // needs them, and the batcher coalesces what gets through anyway.
         let (download_tx, download_rx) = mpsc::channel(16);
+        let (probe_tx, probe_rx) = mpsc::channel(1);
         Self {
             rx,
             policy,
@@ -646,6 +685,11 @@ impl Runtime {
             auto_fetched: None,
             download_tx,
             download_rx,
+            latency,
+            rtts: HashMap::new(),
+            probe_tx,
+            probe_rx,
+            probing: false,
             projector: Projector::new(),
             batcher: Batcher::default(),
         }
@@ -815,6 +859,105 @@ impl Runtime {
         Ok(())
     }
 
+    /// Sends a room request out to measure the machines it could land on.
+    /// Only addresses not measured lately are probed; the rest are already
+    /// known. The answer comes back through [`Runtime::on_probe`], so the
+    /// actor keeps reducing the server's lines meanwhile.
+    fn start_probe(&mut self, ips: Vec<Ipv4Addr>, wanted: Wanted) {
+        if self.probing {
+            let refused = ClientError::Refused("still looking for a room".into());
+            match wanted {
+                Wanted::Public(reply) => {
+                    let _ = reply.send(Err(refused));
+                }
+                Wanted::Private(reply) => {
+                    let _ = reply.send(Err(refused));
+                }
+            }
+            return;
+        }
+        let now = Instant::now();
+        let stale: Vec<Ipv4Addr> = ips
+            .into_iter()
+            .filter(|ip| {
+                self.rtts
+                    .get(ip)
+                    .is_none_or(|(at, _)| now.duration_since(*at) > RTT_TTL)
+            })
+            .collect();
+        self.probing = true;
+        let latency = Arc::clone(&self.latency);
+        let events = self.probe_tx.clone();
+        tokio::spawn(async move {
+            let measured = latency::measure(latency, stale, PROBE_TIMEOUT).await;
+            let _ = events.send(Probe { measured, wanted }).await;
+        });
+    }
+
+    /// The latencies still worth trusting.
+    fn known_rtts(&self) -> lobby_core::Rtts {
+        let now = Instant::now();
+        self.rtts
+            .iter()
+            .filter(|(_, (at, _))| now.duration_since(*at) <= RTT_TTL)
+            .filter_map(|(ip, (_, rtt))| Some((*ip, (*rtt)?)))
+            .collect()
+    }
+
+    /// Picks the room, or the manager, now that the distances are known.
+    /// The list is read again here: it may have moved while we measured.
+    async fn on_probe(&mut self, probe: Probe) {
+        self.probing = false;
+        let now = Instant::now();
+        for (ip, rtt) in probe.measured {
+            tracing::debug!(%ip, ?rtt, "host latency");
+            self.rtts.insert(ip, (now, rtt));
+        }
+        let rtts = self.known_rtts();
+        let roll = rand::random::<f64>();
+        match probe.wanted {
+            Wanted::Public(reply) => {
+                let Some(conn) = self.conn.as_mut() else {
+                    let _ = reply.send(Err(ClientError::NotConnected));
+                    return;
+                };
+                let spares = conn.session.spare_rooms();
+                let Some(id) = hosting::pick(&spares, &rtts, roll) else {
+                    let _ = reply.send(Err(ClientError::Refused(
+                        "no empty autohost right now".into(),
+                    )));
+                    return;
+                };
+                let script_password = format!("{}{}", rand::random::<u16>(), rand::random::<u16>());
+                let effects = conn.session.host_public(id, script_password);
+                let _ = reply.send(Ok(id));
+                self.apply_effects(effects).await;
+            }
+            Wanted::Private(reply) => {
+                let Some(conn) = self.conn.as_mut() else {
+                    let _ = reply.send(Err(ClientError::NotConnected));
+                    return;
+                };
+                let Some(manager) = conn.session.pick_cluster_manager(&rtts, roll) else {
+                    let _ = reply.send(Err(ClientError::Refused(
+                        "no cluster manager online".into(),
+                    )));
+                    return;
+                };
+                let manager = manager.to_owned();
+                match conn.session.request_private_host(&manager) {
+                    Ok(effects) => {
+                        let _ = reply.send(Ok(manager));
+                        self.apply_effects(effects).await;
+                    }
+                    Err(err) => {
+                        let _ = reply.send(Err(ClientError::Refused(err.to_string())));
+                    }
+                }
+            }
+        }
+    }
+
     /// Reports a download's progress, and re-checks content when it ends.
     async fn on_download(&mut self, event: DownloadEvent) {
         match event {
@@ -930,6 +1073,7 @@ impl Runtime {
                 inbound = recv_inbound(&mut self.conn) => Next::Inbound(inbound),
                 status = wait_engine(&mut self.engine) => Next::EngineExited(status),
                 Some(event) = self.download_rx.recv() => Next::Download(event),
+                Some(probe) = self.probe_rx.recv() => Next::Probe(probe),
                 () = sleep_until_due(&self.reconnect) => Next::Reconnect,
             };
             match next {
@@ -940,6 +1084,7 @@ impl Runtime {
                 }
                 Next::Command(command) => self.handle_command(command).await,
                 Next::Download(event) => self.on_download(event).await,
+                Next::Probe(probe) => self.on_probe(probe).await,
                 Next::Reconnect => self.try_reconnect().await,
                 Next::Inbound(inbound) => {
                     self.handle_inbound(inbound).await;
@@ -1192,48 +1337,26 @@ impl Runtime {
                 let effects = conn.session.release_seat();
                 self.apply_effects(effects).await;
             }
-            Command::HostPublic { region, reply } => {
-                let Some(conn) = self.conn.as_mut() else {
+            Command::HostPublic { reply } => {
+                let Some(conn) = self.conn.as_ref() else {
                     let _ = reply.send(Err(ClientError::NotConnected));
                     return;
                 };
-                let Some(id) = conn.session.empty_public_host(&region) else {
-                    let _ = reply.send(Err(ClientError::Refused(format!(
-                        "no empty autohost in {region} right now"
-                    ))));
-                    return;
-                };
-                let script_password = format!("{}{}", rand::random::<u16>(), rand::random::<u16>());
-                let effects = conn.session.join_battle(id, None, script_password);
-                let _ = reply.send(Ok(id));
-                self.apply_effects(effects).await;
-            }
-            Command::RequestPrivateHost { region, reply } => {
-                let Some(conn) = self.conn.as_mut() else {
-                    let _ = reply.send(Err(ClientError::NotConnected));
-                    return;
-                };
-                // Weighted by how loaded each cluster already is, so requests
-                // spread instead of piling onto whichever sorts first.
-                let Some(manager) = conn
+                let ips = conn
                     .session
-                    .pick_cluster_manager(&region, rand::random::<f64>())
-                else {
-                    let _ = reply.send(Err(ClientError::Refused(format!(
-                        "no cluster manager online for {region}"
-                    ))));
+                    .spare_rooms()
+                    .into_iter()
+                    .filter_map(|room| room.ip)
+                    .collect();
+                self.start_probe(ips, Wanted::Public(reply));
+            }
+            Command::RequestPrivateHost { reply } => {
+                let Some(conn) = self.conn.as_ref() else {
+                    let _ = reply.send(Err(ClientError::NotConnected));
                     return;
                 };
-                let manager = manager.to_owned();
-                match conn.session.request_private_host(&manager) {
-                    Ok(effects) => {
-                        let _ = reply.send(Ok(manager));
-                        self.apply_effects(effects).await;
-                    }
-                    Err(err) => {
-                        let _ = reply.send(Err(ClientError::Refused(err.to_string())));
-                    }
-                }
+                let ips = conn.session.cluster_ips().into_values().collect();
+                self.start_probe(ips, Wanted::Private(reply));
             }
             Command::Register {
                 endpoint,
@@ -1398,6 +1521,35 @@ impl Runtime {
                         level: lobby_ui::NoticeLevel::Info,
                         text: format!("{manager} is starting a room; password {password}"),
                     });
+                }
+                Effect::Hosting { founder, alone } => {
+                    let rtt = self
+                        .conn
+                        .as_ref()
+                        .and_then(|conn| {
+                            conn.session
+                                .state
+                                .battles
+                                .values()
+                                .find(|b| b.founder == founder)
+                        })
+                        .and_then(|battle| battle.ip.parse().ok())
+                        .and_then(|ip| self.known_rtts().get(&ip).copied())
+                        .map_or(String::new(), |rtt| format!(" ({} ms)", rtt.as_millis()));
+                    let (level, text) = if alone {
+                        (
+                            lobby_ui::NoticeLevel::Info,
+                            format!("joined {founder}{rtt}; you boss it"),
+                        )
+                    } else {
+                        (
+                            lobby_ui::NoticeLevel::Warning,
+                            format!(
+                                "{founder} was not empty by the time we got in; nobody was bossed"
+                            ),
+                        )
+                    };
+                    self.batcher.push(Delta::Notice { level, text });
                 }
                 Effect::Send(envelope) => {
                     if let Err(err) = self.send_line(envelope).await {
@@ -1827,7 +1979,12 @@ mod tests {
         let (server_read, mut server_write) = tokio::io::split(server);
         let mut server_lines = BufReader::new(server_read).lines();
 
-        let client = Client::spawn_with(ThrottlePolicy::default(), Hardware::stub(), connector);
+        let client = Client::spawn_with(
+            ThrottlePolicy::default(),
+            Hardware::stub(),
+            connector,
+            Arc::new(latency::Unmeasured),
+        );
         let ui = Collector::default();
         client.subscribe(ui.clone()).await.unwrap();
 
@@ -1886,6 +2043,87 @@ mod tests {
         );
 
         assert_eq!(client.snapshot().await.unwrap().users.len(), 3);
+        client.shutdown().await;
+    }
+
+    /// The next line the client sends that starts with `prefix`, skipping
+    /// whatever else it had queued.
+    async fn line_starting_with(
+        lines: &mut tokio::io::Lines<BufReader<tokio::io::ReadHalf<DuplexStream>>>,
+        prefix: &str,
+    ) -> String {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let line = lines.next_line().await.unwrap().expect("client hung up");
+                if line.starts_with(prefix) {
+                    return line;
+                }
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("no line starting with {prefix}"))
+    }
+
+    #[tokio::test]
+    async fn hosting_a_public_room_takes_the_spare_and_bosses_it() {
+        let (connector, server) = in_memory();
+        let (server_read, mut server_write) = tokio::io::split(server);
+        let mut server_lines = BufReader::new(server_read).lines();
+
+        let client = Client::spawn_with(
+            ThrottlePolicy::default(),
+            Hardware::stub(),
+            connector,
+            Arc::new(latency::Unmeasured),
+        );
+        let endpoint = Endpoint::parse("test:8200", false).unwrap();
+        let login = tokio::spawn({
+            let client = client.clone();
+            async move {
+                client
+                    .login(endpoint, LoginRequest::new("me", "pw", "test", "h h"))
+                    .await
+            }
+        });
+        server_write
+            .write_all(b"TASSERVER 0.38 * 8201 0\n")
+            .await
+            .unwrap();
+        line_starting_with(&mut server_lines, "LOGIN ").await;
+        // One busy room and one spare, on the same cluster.
+        server_write
+            .write_all(
+                b"ACCEPTED me\nADDUSER me SE 1 LuaLobby Chobby\n\
+                  ADDUSER Host[EU1][001] DE 2 SPADS\nADDUSER Host[EU1][002] DE 3 SPADS\n\
+                  ADDUSER alice DE 4 x\n\
+                  BATTLEOPENED 5 0 0 Host[EU1][001] 1.2.3.4 8452 16 0 0 h R\tv\tm\tt\tg\n\
+                  BATTLEOPENED 6 0 0 Host[EU1][002] 1.2.3.4 8452 16 0 0 h R\tv\tm\tt\tg\n\
+                  JOINEDBATTLE 5 alice\nLOGININFOEND\n",
+            )
+            .await
+            .unwrap();
+        login.await.unwrap().unwrap();
+
+        let hosting = tokio::spawn({
+            let client = client.clone();
+            async move { client.host_public().await }
+        });
+        let join = line_starting_with(&mut server_lines, "JOINBATTLE ").await;
+        assert!(join.starts_with("JOINBATTLE 6 empty "), "{join}");
+        assert_eq!(hosting.await.unwrap().unwrap(), 6);
+
+        server_write
+            .write_all(b"JOINBATTLE 6 h\nJOINEDBATTLE 6 me\n")
+            .await
+            .unwrap();
+        assert_eq!(
+            line_starting_with(&mut server_lines, "SAYBATTLE ").await,
+            "SAYBATTLE !boss me"
+        );
+        assert_eq!(
+            line_starting_with(&mut server_lines, "SAYBATTLE ").await,
+            "SAYBATTLE !preset custom"
+        );
         client.shutdown().await;
     }
 }

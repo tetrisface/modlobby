@@ -147,9 +147,8 @@ export const api = {
   releaseSeat: () => invoke<void>('release_seat'),
   setReady: (ready: boolean) => invoke<void>('set_ready', { ready }),
   setSide: (side: number) => invoke<void>('set_side', { side }),
-  requestPrivateHost: (region: string) =>
-    invoke<string>('request_private_host', { region }),
-  hostPublic: (region: string) => invoke<number>('host_public', { region }),
+  requestPrivateHost: () => invoke<string>('request_private_host'),
+  hostPublic: () => invoke<number>('host_public'),
 
   tweakDecode: (blob: string, kind: Kind) =>
     invoke<TweakView>('tweak_decode', { blob, kind }),

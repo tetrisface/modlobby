@@ -1,8 +1,13 @@
+use std::collections::BTreeMap;
+use std::net::Ipv4Addr;
+use std::time::Duration;
+
 use spring_protocol::{
     Area, Envelope, LoginRequest, MyBattleStatus, ServerEvent, Sync, battle, chat, friends, login,
     status, telemetry,
 };
 
+use crate::hosting::{self, Rtts, SpareRoom};
 use crate::spads::{self, Announcement, VoteState};
 use crate::state::{Bot, Channel, LobbyState, MyBattle, Phase, StartRect};
 
@@ -119,6 +124,12 @@ pub enum Effect {
         id: u32,
         password: String,
     },
+    /// We are in the spare autohost we set out to take. `alone` is whether
+    /// it was still empty on arrival, which is when it has been claimed.
+    Hosting {
+        founder: String,
+        alone: bool,
+    },
     /// The room's game is running; the engine connects with `spring://<me>:<script_password>@<ip>:<port>`.
     GameRunning {
         id: u32,
@@ -172,6 +183,8 @@ pub struct Session {
     allow_public_seat: bool,
     /// A `!privatehost` we asked for and the password it came back with.
     private_host: Option<String>,
+    /// The spare autohost we are joining to make it ours; claimed on arrival.
+    hosting: Option<u32>,
     /// Whether this machine has the room's engine, game and map. Claiming to be
     /// synced when we are not makes the host start a game we cannot join.
     synced: bool,
@@ -257,6 +270,7 @@ impl Session {
             seat: None,
             allow_public_seat: false,
             private_host: None,
+            hosting: None,
             synced: false,
             in_game: false,
             away: false,
@@ -312,6 +326,57 @@ impl Session {
         let line = battle::join_battle(id, password, &script_password);
         self.pending_join = Some(script_password);
         effects.push(Effect::Send(Envelope::queue(Area::Other, line)));
+        effects
+    }
+
+    /// Joins a spare autohost to make it ours. Once the host lets us in,
+    /// `!boss` and `!preset custom` follow (`battle_list_window.lua:1748`):
+    /// the sole occupant's commands run without a vote, and being boss is
+    /// what keeps the room ours when the next person walks in.
+    pub fn host_public(&mut self, id: u32, script_password: String) -> Vec<Effect> {
+        let effects = self.join_battle(id, None, script_password);
+        self.hosting = Some(id);
+        effects
+    }
+
+    /// What arriving in the room we set out to take calls for.
+    fn claim_room(&mut self, id: u32) -> Vec<Effect> {
+        if self.hosting.take() != Some(id) {
+            return vec![];
+        }
+        let Some(battle) = self.state.battles.get(&id) else {
+            return vec![];
+        };
+        let me = self.state.me.clone().unwrap_or_default();
+        let alone = battle
+            .members
+            .iter()
+            .all(|member| *member == battle.founder || *member == me);
+        let mut effects = vec![Effect::Hosting {
+            founder: battle.founder.clone(),
+            alone,
+        }];
+        if !alone {
+            return effects;
+        }
+        // Seated first: SPADS lets a player call `!boss` and refuses a
+        // spectator (`commands_custom.conf` `[boss]`), which is why Chobby
+        // joins as a player here (`battle_list_window.lua:1755`). The room is
+        // ours by intent, so the public-seat setting does not apply.
+        self.seat = Some(Seat {
+            team: 0,
+            ally_team: 0,
+            ready: false,
+            side: self.seat.map_or(0, |seat| seat.side),
+        });
+        effects.push(self.battle_status());
+        let lines = [format!("!boss {me}"), "!preset custom".to_owned()];
+        effects.extend(
+            lines
+                .iter()
+                .filter_map(|line| battle::say_battle(line).ok())
+                .map(Effect::Send),
+        );
         effects
     }
 
@@ -567,6 +632,7 @@ impl Session {
 
     pub fn leave_battle(&mut self) -> Vec<Effect> {
         self.pending_join = None;
+        self.hosting = None;
         self.seat = None;
         let Some(my) = self.state.my_battle.take() else {
             return vec![];
@@ -750,6 +816,7 @@ impl Session {
                 let script_password = self.pending_join.take().unwrap_or_default();
                 state.my_battle = Some(MyBattle::new(id, game_hash, script_password));
                 let mut effects = vec![Effect::Joined { id }];
+                effects.extend(self.claim_room(id));
                 // Already under way before we arrived: worth saying, not worth
                 // acting on.
                 effects.extend(self.game_running(false));
@@ -757,6 +824,7 @@ impl Session {
             }
             E::JoinBattleFailed { reason } => {
                 self.pending_join = None;
+                self.hosting = None;
                 vec![Effect::JoinFailed { reason }]
             }
             E::RequestBattleStatus => vec![self.battle_status()],
@@ -1136,23 +1204,12 @@ impl Session {
     }
 
     /// Cluster managers, the bots that spin up rooms: `Host[EU1]`, `Host[AU2]`.
-    /// A `region` of `"EU"` matches any of that region's managers.
-    pub fn cluster_managers(&self, region: &str) -> Vec<&str> {
-        let prefix = format!("Host[{}", region.to_ascii_uppercase());
-        // Chobby's `^Host%[%a+%d+%]$`: a manager, not one of its instances
-        // (`Host[EU1][03]`), which is why nothing may follow the bracket.
-        let is_manager = |name: &str| {
-            name.strip_prefix(&prefix)
-                .and_then(|rest| rest.strip_suffix(']'))
-                .is_some_and(|digits| {
-                    !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit())
-                })
-        };
+    pub fn cluster_managers(&self) -> Vec<&str> {
         let mut names: Vec<&str> = self
             .state
             .users
             .values()
-            .filter(|user| user.status.bot && is_manager(&user.name))
+            .filter(|user| user.status.bot && hosting::is_manager(&user.name))
             .map(|user| user.name.as_str())
             .collect();
         names.sort_unstable();
@@ -1164,31 +1221,47 @@ impl Session {
     /// A manager `Host[EU1]` runs instances named `Host[EU1][012]`, and each
     /// instance is one room, so counting the instances counts the load.
     fn cluster_load(&self, manager: &str) -> u32 {
-        let prefix = format!("{}[", manager.trim_end_matches(']'));
         self.state
             .users
             .values()
-            .filter(|user| {
-                user.status.bot
-                    && user.name.starts_with(&prefix)
-                    && user.name.ends_with(']')
-                    && user.name.len() > prefix.len() + 1
-            })
+            .filter(|user| user.status.bot && hosting::cluster_of(&user.name) == Some(manager))
             .count() as u32
     }
 
-    /// Picks a cluster manager in a region, favouring the emptiest.
+    /// The machines the clusters run on, by manager: a manager shares its
+    /// address with every room it runs, and the rooms are what carry one.
+    /// A manager with no room on the list has no address to give.
+    pub fn cluster_ips(&self) -> BTreeMap<&str, Ipv4Addr> {
+        self.state
+            .battles
+            .values()
+            .filter_map(|battle| {
+                let cluster = hosting::cluster_of(&battle.founder)?;
+                Some((cluster, battle.ip.parse().ok()?))
+            })
+            .collect()
+    }
+
+    /// Picks a cluster manager, favouring the near and then the emptiest.
     ///
     /// Chobby weights by `(1 - current/limit) * (limit - current)` and draws
     /// against the total (`battle_list_window.lua:1453`), which spreads rooms
     /// across clusters instead of piling every request onto whichever name
     /// happens to sort first. `roll` is a fresh number in `0.0..1.0`.
-    pub fn pick_cluster_manager(&self, region: &str, roll: f64) -> Option<&str> {
+    pub fn pick_cluster_manager(&self, rtts: &Rtts, roll: f64) -> Option<&str> {
         /// Chobby's default when a cluster reports no capacity of its own.
         const LIMIT: f64 = 80.0;
 
-        let weighted: Vec<(&str, f64)> = self
-            .cluster_managers(region)
+        let ips = self.cluster_ips();
+        let measured: Vec<(&str, Option<Duration>)> = self
+            .cluster_managers()
+            .into_iter()
+            .map(|manager| {
+                let rtt = ips.get(manager).and_then(|ip| rtts.get(ip)).copied();
+                (manager, rtt)
+            })
+            .collect();
+        let weighted: Vec<(&str, f64)> = hosting::near(measured)
             .into_iter()
             .map(|manager| {
                 let current = f64::from(self.cluster_load(manager)).min(LIMIT);
@@ -1214,23 +1287,60 @@ impl Session {
         weighted.last().map(|(manager, _)| *manager)
     }
 
-    /// An autohost room in this region that nobody is in.
+    /// Autohost rooms nobody is in, on the engine everyone is on.
     ///
     /// Joining one is how Chobby's Host button makes a *public* room: the
-    /// autohost is already listed, and the first person in it becomes its boss.
-    pub fn empty_public_host(&self, region: &str) -> Option<u32> {
-        let prefix = format!("Host[{}", region.to_ascii_uppercase());
-        self.state
+    /// autohost is already listed, and the first person in it becomes its
+    /// boss. Chobby's tests (`battle_list_window.lua:1719-1727`), with one
+    /// stand-in: it wants the engine it runs on, which has no meaning for a
+    /// lobby that fetches engines, so the engine most rooms are on is taken
+    /// to be the current one. That keeps the `ENGINE TESTING` hosts out.
+    pub fn spare_rooms(&self) -> Vec<SpareRoom> {
+        let Some(engine) = self.common_engine() else {
+            return vec![];
+        };
+        let host_in_game = |founder: &str| {
+            self.state
+                .users
+                .get(founder)
+                .is_some_and(|user| user.status.in_game)
+        };
+        let mut rooms: Vec<SpareRoom> = self
+            .state
             .battles
             .values()
             .filter(|battle| {
-                battle.founder.starts_with(&prefix)
-                    && !battle.passworded
+                !battle.passworded
                     && !battle.locked
-                    && battle.player_count() == 0
+                    && battle.spectator_count <= 1
+                    && battle.members.len() == 1
+                    && battle.engine_version == engine
+                    && !host_in_game(&battle.founder)
             })
-            .map(|battle| battle.id)
-            .min()
+            .filter_map(|battle| {
+                Some(SpareRoom {
+                    id: battle.id,
+                    founder: battle.founder.clone(),
+                    cluster: hosting::cluster_of(&battle.founder)?.to_owned(),
+                    ip: battle.ip.parse().ok(),
+                })
+            })
+            .collect();
+        rooms.sort_by_key(|room| room.id);
+        rooms
+    }
+
+    /// The engine most listed rooms run; the alphabetically last on a tie,
+    /// which during a rollout is the newer one.
+    fn common_engine(&self) -> Option<&str> {
+        let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+        for battle in self.state.battles.values() {
+            *counts.entry(&battle.engine_version).or_default() += 1;
+        }
+        counts
+            .into_iter()
+            .max_by_key(|(engine, count)| (*count, *engine))
+            .map(|(engine, _)| engine)
     }
 
     fn hosts_my_battle(&self, name: &str) -> bool {
@@ -1633,37 +1743,128 @@ mod tests {
 
         // Sorting by name alone would always answer EU1; weighting by how
         // loaded each one is puts most of the draw on EU2.
-        assert_eq!(s.pick_cluster_manager("EU", 0.99), Some("Host[EU2]"));
-        assert_eq!(s.pick_cluster_manager("EU", 0.0), Some("Host[EU1]"));
+        let unmeasured = Rtts::new();
+        assert_eq!(s.pick_cluster_manager(&unmeasured, 0.99), Some("Host[EU2]"));
+        assert_eq!(s.pick_cluster_manager(&unmeasured, 0.0), Some("Host[EU1]"));
     }
 
     #[test]
-    fn a_region_with_no_managers_offers_nothing() {
-        let s = joined_session();
-        assert_eq!(s.pick_cluster_manager("EU", 0.5), None);
-    }
-
-    #[test]
-    fn an_empty_public_autohost_is_one_you_can_take_over() {
+    fn a_far_cluster_is_not_asked_for_a_private_room() {
         let mut s = joined_session();
         feed(
             &mut s,
             &[
+                "ADDUSER Host[EU1] DE 9 SPADS",
+                "ADDUSER Host[US1] US 10 SPADS",
+                "CLIENTSTATUS Host[EU1] 64",
+                "CLIENTSTATUS Host[US1] 64",
+                // The rooms are what carry each cluster's address.
+                "BATTLEOPENED 1 0 0 Host[EU1][001] 10.0.0.1 8452 16 0 0 -1 R\tv\tm\tt\tg",
+                "BATTLEOPENED 2 0 0 Host[US1][001] 10.0.0.2 8452 16 0 0 -1 R\tv\tm\tt\tg",
+            ],
+        );
+        let rtts: Rtts = [
+            ("10.0.0.1".parse().unwrap(), Duration::from_millis(140)),
+            ("10.0.0.2".parse().unwrap(), Duration::from_millis(25)),
+        ]
+        .into();
+        // Emptiness alone would split the draw; distance settles it.
+        for roll in [0.0, 0.5, 0.99] {
+            assert_eq!(s.pick_cluster_manager(&rtts, roll), Some("Host[US1]"));
+        }
+    }
+
+    #[test]
+    fn with_no_managers_there_is_nothing_to_pick() {
+        let s = joined_session();
+        assert_eq!(s.pick_cluster_manager(&Rtts::new(), 0.5), None);
+    }
+
+    #[test]
+    fn a_spare_autohost_is_one_with_nobody_but_its_host_in_it() {
+        let mut s = joined_session();
+        feed(
+            &mut s,
+            &[
+                "ADDUSER Host[EU1][006] DE 9 SPADS",
+                "CLIENTSTATUS Host[EU1][006] 65",
                 // Busy: someone is already in it.
-                "BATTLEOPENED 1 0 0 Host[EU1][001] 1.2.3.4 8452 16 0 0 -1 R	v	m	t	g",
+                "BATTLEOPENED 1 0 0 Host[EU1][001] 1.2.3.4 8452 16 0 0 -1 R\tv\tm\tt\tg",
                 "JOINEDBATTLE 1 alice",
                 // Passworded: not a public room.
-                "BATTLEOPENED 2 0 0 Host[EU1][002] 1.2.3.4 8452 16 1 0 -1 R	v	m	t	g",
+                "BATTLEOPENED 2 0 0 Host[EU1][002] 1.2.3.4 8452 16 1 0 -1 R\tv\tm\tt\tg",
                 // Empty and open.
-                "BATTLEOPENED 3 0 0 Host[EU1][003] 1.2.3.4 8452 16 0 0 -1 R	v	m	t	g",
-                // Another region.
-                "BATTLEOPENED 4 0 0 Host[US1][001] 1.2.3.4 8452 16 0 0 -1 R	v	m	t	g",
+                "BATTLEOPENED 3 0 0 Host[EU1][003] 1.2.3.4 8452 16 0 0 -1 R\tv\tm\tt\tg",
+                // Somebody parked in it as a spectator: nobody plays, but it
+                // is not empty, and bossing it would need their vote.
+                "BATTLEOPENED 4 0 0 Host[EU1][004] 1.2.3.4 8452 16 0 0 -1 R\tv\tm\tt\tg",
+                "JOINEDBATTLE 4 bob",
+                "UPDATEBATTLEINFO 4 2 0 -1 m",
+                // Another engine than the rest: a testing host.
+                "BATTLEOPENED 5 0 0 Host[EU1][005] 1.2.3.4 8452 16 0 0 -1 R\tv2\tm\tt\tg",
+                // Its host is in a game, which after a server restart is what
+                // an empty room whose game is still running looks like.
+                "BATTLEOPENED 6 0 0 Host[EU1][006] 1.2.3.4 8452 16 0 0 -1 R\tv\tm\tt\tg",
+                // Not a cluster's room at all.
+                "BATTLEOPENED 7 0 0 [teh]host 1.2.3.4 8452 16 0 0 -1 R\tv\tm\tt\tg",
+                // Another region is as good as any.
+                "BATTLEOPENED 8 0 0 Host[US1][001] 5.6.7.8 8452 16 0 0 -1 R\tv\tm\tt\tg",
             ],
         );
 
-        assert_eq!(s.empty_public_host("EU"), Some(3));
-        assert_eq!(s.empty_public_host("US"), Some(4));
-        assert_eq!(s.empty_public_host("AU"), None);
+        let spares = s.spare_rooms();
+        assert_eq!(
+            spares.iter().map(|room| room.id).collect::<Vec<_>>(),
+            [3, 8]
+        );
+        assert_eq!(spares[0].cluster, "Host[EU1]");
+        assert_eq!(spares[1].ip, "5.6.7.8".parse().ok());
+    }
+
+    #[test]
+    fn a_spare_room_is_claimed_on_arrival() {
+        let mut s = joined_session();
+        feed(
+            &mut s,
+            &["BATTLEOPENED 3 0 0 Host[EU1][003] 1.2.3.4 8452 16 0 0 -1 R\tv\tm\tt\tg"],
+        );
+        let asked = s.host_public(3, "pw".into());
+        assert_eq!(sent_lines(&asked), ["JOINBATTLE 3 empty pw"]);
+
+        let arrived = feed(&mut s, &["JOINBATTLE 3 h", "JOINEDBATTLE 3 me"]);
+        assert!(arrived.contains(&Effect::Hosting {
+            founder: "Host[EU1][003]".into(),
+            alone: true
+        }));
+        // A seat before the commands: SPADS takes `!boss` from a player only.
+        let lines = sent_lines(&arrived);
+        assert!(lines[0].starts_with("MYBATTLESTATUS "), "{lines:?}");
+        assert_eq!(
+            &lines[1..],
+            ["SAYBATTLE !boss me", "SAYBATTLE !preset custom"]
+        );
+        assert!(s.seat().is_some());
+        // Claimed once; the next join is an ordinary one.
+        s.leave_battle();
+        s.join_battle(3, None, "pw".into());
+        assert!(sent_lines(&feed(&mut s, &["JOINBATTLE 3 h"])).is_empty());
+    }
+
+    #[test]
+    fn a_room_someone_reached_first_is_not_bossed() {
+        let mut s = joined_session();
+        feed(
+            &mut s,
+            &["BATTLEOPENED 3 0 0 Host[EU1][003] 1.2.3.4 8452 16 0 0 -1 R\tv\tm\tt\tg"],
+        );
+        s.host_public(3, "pw".into());
+        // They got in between our look at the list and the host's answer.
+        let arrived = feed(&mut s, &["JOINEDBATTLE 3 bob", "JOINBATTLE 3 h"]);
+        assert!(arrived.contains(&Effect::Hosting {
+            founder: "Host[EU1][003]".into(),
+            alone: false
+        }));
+        assert!(sent_lines(&arrived).is_empty(), "{arrived:?}");
     }
 
     fn sent_status(effects: &[Effect]) -> spring_protocol::BattleStatus {
@@ -2320,8 +2521,10 @@ mod tests {
                 "CLIENTSTATUS Host[AU1] 64",
             ],
         );
-        assert_eq!(s.cluster_managers("eu"), ["Host[EU1]", "Host[EU2]"]);
-        assert_eq!(s.cluster_managers("AU"), ["Host[AU1]"]);
+        assert_eq!(
+            s.cluster_managers(),
+            ["Host[AU1]", "Host[EU1]", "Host[EU2]"]
+        );
 
         let asked = s.request_private_host("Host[EU1]").unwrap();
         assert!(
