@@ -2966,14 +2966,24 @@ button.link {
 
 /* The version, in the corner where the brand is. Small because it is a fact,
    not a feature; a button only while a downloaded update is waiting. */
+.version-slot {
+  display: flex;
+  justify-content: flex-end;
+  align-self: flex-start;
+  min-width: 0;
+  margin-top: -5px;
+}
+
 .version {
   font-family: var(--mono, monospace);
-  font-size: 11px;
+  font-size: 7px;
   color: var(--faint, var(--muted));
   letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 .version.waiting {
+  font-size: 10px;
   padding: 2px 8px;
   color: var(--text);
   background: transparent;

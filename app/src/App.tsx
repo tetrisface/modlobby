@@ -220,37 +220,6 @@ function Layout(props: ParentProps) {
         data-tauri-drag-region={!fullscreen() && !over() ? true : undefined}
       >
         <span class='brand'>modlobby</span>
-        <Show when={version()}>
-          {(build) => (
-            <Show
-              when={waiting()}
-              fallback={
-                <span
-                  class='version'
-                  title={
-                    fetching()
-                      ? 'Looking for a newer version…'
-                      : 'Version, and the commit it was built from'
-                  }
-                >
-                  {build().version}+{build().commit}
-                  {fetching() ? ' ↓' : ''}
-                </span>
-              }
-            >
-              {(next) => (
-                <button
-                  type='button'
-                  class='version waiting'
-                  title={`Version ${next()} is downloaded. Restart into it.`}
-                  onClick={() => void installUpdate()}
-                >
-                  {build().version} → {next()} ⟳
-                </button>
-              )}
-            </Show>
-          )}
-        </Show>
         <A href='/skirmish'>Skirmish</A>
         <Show when={lobby.phase === 'ready'}>
           <A href='/battles'>Battles</A>
@@ -279,6 +248,41 @@ function Layout(props: ParentProps) {
           class='spacer'
           data-tauri-drag-region={!fullscreen() && !over() ? true : undefined}
         />
+        {/* Small and out of the way, in the corner above the account: the
+            build is worth a glance, not a place in the row. */}
+        <span class='version-slot'>
+          <Show when={version()}>
+            {(build) => (
+              <Show
+                when={waiting()}
+                fallback={
+                  <span
+                    class='version'
+                    title={
+                      fetching()
+                        ? 'Looking for a newer version…'
+                        : 'Version, and the commit it was built from'
+                    }
+                  >
+                    {build().version}+{build().commit}
+                    {fetching() ? ' ↓' : ''}
+                  </span>
+                }
+              >
+                {(next) => (
+                  <button
+                    type='button'
+                    class='version waiting'
+                    title={`Version ${next()} is downloaded. Restart into it.`}
+                    onClick={() => void installUpdate()}
+                  >
+                    {build().version} → {next()} ⟳
+                  </button>
+                )}
+              </Show>
+            )}
+          </Show>
+        </span>
         <Show
           when={lobby.me}
           fallback={<span class='muted'>not logged in</span>}
