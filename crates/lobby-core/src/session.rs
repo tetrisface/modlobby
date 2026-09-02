@@ -1330,6 +1330,19 @@ impl Session {
         rooms
     }
 
+    /// The machines with a spare room on them, each once. These are the only
+    /// ones worth measuring: a public room is one of these spares, and a
+    /// cluster with no spare is either starting one or at its limit, so it
+    /// is not where to ask for a private one either.
+    pub fn spare_machines(&self) -> Vec<Ipv4Addr> {
+        let machines: std::collections::BTreeSet<Ipv4Addr> = self
+            .spare_rooms()
+            .into_iter()
+            .filter_map(|room| room.ip)
+            .collect();
+        machines.into_iter().collect()
+    }
+
     /// The engine most listed rooms run; the alphabetically last on a tie,
     /// which during a rollout is the newer one.
     fn common_engine(&self) -> Option<&str> {
@@ -1809,16 +1822,23 @@ mod tests {
                 "BATTLEOPENED 7 0 0 [teh]host 1.2.3.4 8452 16 0 0 -1 R\tv\tm\tt\tg",
                 // Another region is as good as any.
                 "BATTLEOPENED 8 0 0 Host[US1][001] 5.6.7.8 8452 16 0 0 -1 R\tv\tm\tt\tg",
+                // A second spare on the first machine.
+                "BATTLEOPENED 9 0 0 Host[EU1][009] 1.2.3.4 8452 16 0 0 -1 R\tv\tm\tt\tg",
             ],
         );
 
         let spares = s.spare_rooms();
         assert_eq!(
             spares.iter().map(|room| room.id).collect::<Vec<_>>(),
-            [3, 8]
+            [3, 8, 9]
         );
         assert_eq!(spares[0].cluster, "Host[EU1]");
         assert_eq!(spares[1].ip, "5.6.7.8".parse().ok());
+        // Each machine once, however many spares it runs.
+        assert_eq!(
+            s.spare_machines(),
+            [Ipv4Addr::new(1, 2, 3, 4), Ipv4Addr::new(5, 6, 7, 8)]
+        );
     }
 
     #[test]

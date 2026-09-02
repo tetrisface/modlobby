@@ -36,7 +36,11 @@ impl App {
         let settings = Store::open(settings::config_dir())?;
         let hardware = platform::detect();
         let client = tauri::async_runtime::block_on(async {
-            Client::spawn(ThrottlePolicy::default(), hardware.clone())
+            Client::spawn(
+                ThrottlePolicy::default(),
+                hardware.clone(),
+                Some(settings.dir().join("latency.json")),
+            )
         });
         Ok(Self {
             login_guard: LoginGuard::new(settings.dir()),

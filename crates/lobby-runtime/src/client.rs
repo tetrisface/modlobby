@@ -219,9 +219,6 @@ struct Probe {
     wanted: Wanted,
 }
 
-/// How long a measured latency stays good for. The machines do not move;
-/// this is about noticing a route that changed, not tracking jitter.
-const RTT_TTL: Duration = Duration::from_secs(600);
 /// How long to wait for one echo. Hosts are within a few hundred ms of
 /// anywhere; longer only delays the answer for a machine that is down.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(1);
@@ -234,11 +231,23 @@ pub struct Client {
 
 impl Client {
     /// Spawns the runtime on the current tokio runtime, connecting over TCP/TLS.
-    pub fn spawn(policy: ThrottlePolicy, hardware: Hardware) -> Self {
+    /// `latency_cache` is where host latencies are kept between runs; `None`
+    /// measures afresh each run.
+    pub fn spawn(
+        policy: ThrottlePolicy,
+        hardware: Hardware,
+        latency_cache: Option<PathBuf>,
+    ) -> Self {
         let connector: Connector = Arc::new(|endpoint, policy| {
             Box::pin(async move { Transport::connect(&endpoint, policy).await })
         });
-        Self::spawn_with(policy, hardware, connector, Arc::new(latency::IcmpEcho))
+        Self::spawn_with(
+            policy,
+            hardware,
+            connector,
+            Arc::new(latency::IcmpEcho),
+            latency_cache,
+        )
     }
 
     pub fn spawn_with(
@@ -246,9 +255,11 @@ impl Client {
         hardware: Hardware,
         connector: Connector,
         latency: Arc<dyn Latency>,
+        latency_cache: Option<PathBuf>,
     ) -> Self {
         let (tx, rx) = mpsc::channel(64);
-        tokio::spawn(Runtime::new(rx, policy, hardware, connector, latency).run());
+        let runtime = Runtime::new(rx, policy, hardware, connector, latency, latency_cache);
+        tokio::spawn(runtime.run());
         Self { tx }
     }
 
@@ -626,9 +637,11 @@ struct Runtime {
     download_tx: mpsc::Sender<DownloadEvent>,
     download_rx: mpsc::Receiver<DownloadEvent>,
     latency: Arc<dyn Latency>,
-    /// What the host machines answered, and when, so a second room in the
-    /// same session does not wait on the same probes again.
-    rtts: HashMap<Ipv4Addr, (Instant, Option<Duration>)>,
+    /// What the host machines answered, kept between runs in `cache_path`
+    /// when there is one, so most requests probe one address rather than
+    /// every cluster.
+    cache: latency::Cache,
+    cache_path: Option<PathBuf>,
     probe_tx: mpsc::Sender<Probe>,
     probe_rx: mpsc::Receiver<Probe>,
     /// Whether a room request is out measuring; a second one would only
@@ -652,11 +665,15 @@ impl Runtime {
         hardware: Hardware,
         connector: Connector,
         latency: Arc<dyn Latency>,
+        cache_path: Option<PathBuf>,
     ) -> Self {
         // A short queue: progress lines arrive far faster than the front end
         // needs them, and the batcher coalesces what gets through anyway.
         let (download_tx, download_rx) = mpsc::channel(16);
         let (probe_tx, probe_rx) = mpsc::channel(1);
+        let cache = cache_path
+            .as_deref()
+            .map_or_else(latency::Cache::default, latency::Cache::load);
         Self {
             rx,
             policy,
@@ -686,7 +703,8 @@ impl Runtime {
             download_tx,
             download_rx,
             latency,
-            rtts: HashMap::new(),
+            cache,
+            cache_path,
             probe_tx,
             probe_rx,
             probing: false,
@@ -860,9 +878,10 @@ impl Runtime {
     }
 
     /// Sends a room request out to measure the machines it could land on.
-    /// Only addresses not measured lately are probed; the rest are already
-    /// known. The answer comes back through [`Runtime::on_probe`], so the
-    /// actor keeps reducing the server's lines meanwhile.
+    /// Only what the cache does not remember is probed, plus one address it
+    /// does, so what is remembered is also checked now and then. The answer
+    /// comes back through [`Runtime::on_probe`], so the actor keeps reducing
+    /// the server's lines meanwhile.
     fn start_probe(&mut self, ips: Vec<Ipv4Addr>, wanted: Wanted) {
         if self.probing {
             let refused = ClientError::Refused("still looking for a room".into());
@@ -876,42 +895,37 @@ impl Runtime {
             }
             return;
         }
-        let now = Instant::now();
-        let stale: Vec<Ipv4Addr> = ips
-            .into_iter()
-            .filter(|ip| {
-                self.rtts
-                    .get(ip)
-                    .is_none_or(|(at, _)| now.duration_since(*at) > RTT_TTL)
-            })
-            .collect();
+        let now = latency::unix_now();
+        let due = self.cache.due(&ips, now, rand::random::<f64>());
+        tracing::info!(
+            probing = due.len(),
+            remembered = self.cache.remembered(&ips, now),
+            "host latency"
+        );
         self.probing = true;
         let latency = Arc::clone(&self.latency);
         let events = self.probe_tx.clone();
         tokio::spawn(async move {
-            let measured = latency::measure(latency, stale, PROBE_TIMEOUT).await;
+            let measured = latency::measure(latency, due, PROBE_TIMEOUT).await;
             let _ = events.send(Probe { measured, wanted }).await;
         });
     }
 
     /// The latencies still worth trusting.
     fn known_rtts(&self) -> lobby_core::Rtts {
-        let now = Instant::now();
-        self.rtts
-            .iter()
-            .filter(|(_, (at, _))| now.duration_since(*at) <= RTT_TTL)
-            .filter_map(|(ip, (_, rtt))| Some((*ip, (*rtt)?)))
-            .collect()
+        self.cache.known(latency::unix_now())
     }
 
     /// Picks the room, or the manager, now that the distances are known.
     /// The list is read again here: it may have moved while we measured.
     async fn on_probe(&mut self, probe: Probe) {
         self.probing = false;
-        let now = Instant::now();
-        for (ip, rtt) in probe.measured {
+        for (ip, rtt) in &probe.measured {
             tracing::debug!(%ip, ?rtt, "host latency");
-            self.rtts.insert(ip, (now, rtt));
+        }
+        self.cache.record(probe.measured, latency::unix_now());
+        if let Some(path) = self.cache_path.as_deref() {
+            self.cache.save(path);
         }
         let rtts = self.known_rtts();
         let roll = rand::random::<f64>();
@@ -1342,12 +1356,7 @@ impl Runtime {
                     let _ = reply.send(Err(ClientError::NotConnected));
                     return;
                 };
-                let ips = conn
-                    .session
-                    .spare_rooms()
-                    .into_iter()
-                    .filter_map(|room| room.ip)
-                    .collect();
+                let ips = conn.session.spare_machines();
                 self.start_probe(ips, Wanted::Public(reply));
             }
             Command::RequestPrivateHost { reply } => {
@@ -1355,7 +1364,7 @@ impl Runtime {
                     let _ = reply.send(Err(ClientError::NotConnected));
                     return;
                 };
-                let ips = conn.session.cluster_ips().into_values().collect();
+                let ips = conn.session.spare_machines();
                 self.start_probe(ips, Wanted::Private(reply));
             }
             Command::Register {
@@ -1984,6 +1993,7 @@ mod tests {
             Hardware::stub(),
             connector,
             Arc::new(latency::Unmeasured),
+            None,
         );
         let ui = Collector::default();
         client.subscribe(ui.clone()).await.unwrap();
@@ -2075,6 +2085,7 @@ mod tests {
             Hardware::stub(),
             connector,
             Arc::new(latency::Unmeasured),
+            None,
         );
         let endpoint = Endpoint::parse("test:8200", false).unwrap();
         let login = tokio::spawn({

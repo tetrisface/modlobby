@@ -11,6 +11,8 @@ content = { workspace = true }
 lobby-core = { workspace = true }
 lobby-ui = { workspace = true }
 rand = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 recoil = { workspace = true }
 spring-protocol = { workspace = true }
 sysinfo = { workspace = true }
