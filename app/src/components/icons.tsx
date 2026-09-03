@@ -2,19 +2,37 @@ import { For, Show } from 'solid-js'
 import type { BattleStatusView } from '../ipc/bindings/BattleStatusView'
 import type { UserStatusView } from '../ipc/bindings/UserStatusView'
 
-/** One chevron per rank within its half; the stack grows upward. */
+/**
+ * One chevron per rank within its half; the stack grows upward. `bases` are
+ * the arm-end y of each chevron, `rise` how far the apex sits above them.
+ * `width` strokes the outline of ranks 1-4; `band` is the thickness of the
+ * solid version for ranks 5-8: the stack pitch less a 0.9 hairline, so the
+ * bands stay countable at 18px.
+ */
 const CHEVRONS = [
-  { d: 'M5 13 l5 -3.4 l5 3.4', width: 1.9 },
-  { d: 'M5 15 l5 -3.4 l5 3.4 M5 10.6 l5 -3.4 l5 3.4', width: 1.9 },
-  {
-    d: 'M5 16.4 l5 -3.2 l5 3.2 M5 12.4 l5 -3.2 l5 3.2 M5 8.4 l5 -3.2 l5 3.2',
-    width: 1.8,
-  },
-  {
-    d: 'M5 17.4 l5 -2.9 l5 2.9 M5 13.9 l5 -2.9 l5 2.9 M5 10.4 l5 -2.9 l5 2.9 M5 6.9 l5 -2.9 l5 2.9',
-    width: 1.6,
-  },
+  { bases: [13], rise: 3.4, width: 1.9, band: 3.5 },
+  { bases: [15, 10.6], rise: 3.4, width: 1.9, band: 3.5 },
+  { bases: [16.4, 12.4, 8.4], rise: 3.2, width: 1.8, band: 3.1 },
+  { bases: [17.4, 13.9, 10.4, 6.9], rise: 2.9, width: 1.6, band: 2.6 },
 ]
+
+const fixed = (n: number) => n.toFixed(2)
+
+const outline = (bases: number[], rise: number) =>
+  bases.map((base) => `M5 ${base} l5 -${rise} l5 ${rise}`).join(' ')
+
+/** Each band is the outline's centre line thickened to `band`, closed. */
+const solid = (bases: number[], rise: number, band: number) =>
+  bases
+    .map((base) => {
+      const top = base - band / 2
+      const bottom = base + band / 2
+      return (
+        `M5 ${fixed(top)} L10 ${fixed(top - rise)} L15 ${fixed(top)} ` +
+        `V${fixed(bottom)} L10 ${fixed(bottom - rise)} L5 ${fixed(bottom)} Z`
+      )
+    })
+    .join(' ')
 
 /** Top-right corner, clear of the lowest chevron. */
 const SHIELD =
@@ -78,31 +96,30 @@ export function IconSprite() {
           />
         </symbol>
 
-        {/* Rank. Eight ranks, four shapes, all gold as in Chobby: the chevron
-            count is the rank within its half, and the upper half (5-8) gains a
-            silver edge under the gold. The edge takes `--rank-edge`, set by
-            `.rank.silver`: a stylesheet cannot reach inside a `<use>`, but an
-            inherited custom property can. */}
+        {/* Rank. Eight ranks, four counts, two weights, all gold as in Chobby:
+            the chevron count is the rank within its half, outlined for 1-4 and
+            solid for 5-8. Shape rather than a second colour, because at 18px a
+            colour edge under a stroke only blurs it. */}
         <For each={CHEVRONS}>
           {(chevron, index) => (
-            <symbol id={`chev${index() + 1}`} viewBox='0 0 20 20'>
-              <path
-                d={chevron.d}
-                fill='none'
-                style={{ stroke: 'var(--rank-edge, none)' }}
-                stroke-width={chevron.width + 3.6}
-                stroke-linecap='round'
-                stroke-linejoin='round'
-              />
-              <path
-                d={chevron.d}
-                fill='none'
-                stroke='currentColor'
-                stroke-width={chevron.width}
-                stroke-linecap='round'
-                stroke-linejoin='round'
-              />
-            </symbol>
+            <>
+              <symbol id={`chev${index() + 1}`} viewBox='0 0 20 20'>
+                <path
+                  d={outline(chevron.bases, chevron.rise)}
+                  fill='none'
+                  stroke='currentColor'
+                  stroke-width={chevron.width}
+                  stroke-linecap='round'
+                  stroke-linejoin='round'
+                />
+              </symbol>
+              <symbol id={`chev${index() + 1}-solid`} viewBox='0 0 20 20'>
+                <path
+                  d={solid(chevron.bases, chevron.rise, chevron.band)}
+                  fill='currentColor'
+                />
+              </symbol>
+            </>
           )}
         </For>
         {/* Moderator: Chobby's shield in the corner. The mask cuts a margin out
@@ -318,8 +335,8 @@ export function Marks(props: { status: UserStatusView; boss: boolean }) {
 /** `rank` is client-status bits 2-4 (0-7); Chobby numbers the same thing 1-8. */
 export function RankIcon(props: { status: UserStatusView }) {
   const level = () => props.status.rank + 1
-  const silver = () => level() > 4
-  const chevrons = () => (silver() ? level() - 4 : level())
+  const upper = () => level() > 4
+  const chevrons = () => (upper() ? level() - 4 : level())
   const label = () =>
     `Rank ${level()}${props.status.moderator ? ' · moderator' : ''}`
 
@@ -328,14 +345,10 @@ export function RankIcon(props: { status: UserStatusView }) {
       when={!props.status.bot}
       fallback={<Icon id='rank-bot' class='rank bot' label='Autohost' />}
     >
-      <svg
-        class={`icon rank ${silver() ? 'silver' : ''}`}
-        viewBox='0 0 20 20'
-        role='img'
-      >
+      <svg class='icon rank' viewBox='0 0 20 20' role='img'>
         <title>{label()}</title>
         <use
-          href={`#chev${chevrons()}`}
+          href={`#chev${chevrons()}${upper() ? '-solid' : ''}`}
           mask={props.status.moderator ? 'url(#rank-shield-cut)' : undefined}
         />
         <Show when={props.status.moderator}>

@@ -87,12 +87,12 @@ describe('a player row', () => {
     }
   })
 
-  test('rank 5 is one silver-edged chevron, rank 8 is four', () => {
-    for (const [rank, id, silver] of [
-      [0, '#chev1', false],
-      [3, '#chev4', false],
-      [4, '#chev1', true],
-      [7, '#chev4', true],
+  test('rank 5 is one solid chevron, rank 8 is four', () => {
+    for (const [rank, id] of [
+      [0, '#chev1'],
+      [3, '#chev4'],
+      [4, '#chev1-solid'],
+      [7, '#chev4-solid'],
     ] as const) {
       const { container, unmount } = render(() => (
         <PlayerRow
@@ -102,9 +102,6 @@ describe('a player row', () => {
         />
       ))
       expect(icons(container)[1]).toBe(id)
-      expect(
-        container.querySelector('.rank')?.classList.contains('silver'),
-      ).toBe(silver)
       unmount()
     }
   })
@@ -119,7 +116,7 @@ describe('a player row', () => {
     ))
     expect(icons(container)).toEqual([
       '#st-ready',
-      '#chev3',
+      '#chev3-solid',
       '#rank-shield',
       '#side-armada',
     ])

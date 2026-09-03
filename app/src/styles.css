@@ -38,8 +38,6 @@
   --legion: #5fd08a;
   --steel: #9aa6b4;
   --gold: #e8bd52;
-  /* Under the gold of ranks 5-8: lighter than steel so it reads as a plate, not a glow. */
-  --silver: #c3ccd6;
   font-family: var(--body);
   font-size: 14px;
 }
@@ -594,13 +592,9 @@ input {
   color: var(--warn);
 }
 
-/* Gold throughout, like Chobby; ranks 5-8 add a silver edge under the gold. */
+/* Gold throughout, like Chobby; ranks 5-8 are the solid chevrons. */
 .rank {
   color: var(--gold);
-}
-
-.rank.silver {
-  --rank-edge: var(--silver);
 }
 
 .rank .shield {
