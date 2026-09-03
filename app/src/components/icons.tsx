@@ -96,10 +96,10 @@ export function IconSprite() {
           />
         </symbol>
 
-        {/* Rank. Eight ranks, four counts, two weights, all gold as in Chobby:
-            the chevron count is the rank within its half, outlined for 1-4 and
-            solid for 5-8. Shape rather than a second colour, because at 18px a
-            colour edge under a stroke only blurs it. */}
+        {/* Rank. Eight ranks, four counts, two weights: the chevron count is
+            the rank within its half, outlined for 1-4 and solid for 5-8. The
+            halves are also silver and gold (see `.rank.lower`), so the weight
+            does not carry the whole distinction on its own. */}
         <For each={CHEVRONS}>
           {(chevron, index) => (
             <>
@@ -355,7 +355,12 @@ export function RankIcon(props: { status: UserStatusView }) {
       when={!props.status.bot}
       fallback={<Icon id='rank-bot' class='rank bot' label='Autohost' />}
     >
-      <svg class='icon rank' viewBox='0 0 20 20' role='img'>
+      <svg
+        class='icon rank'
+        classList={{ lower: !upper() }}
+        viewBox='0 0 20 20'
+        role='img'
+      >
         <title>{label()}</title>
         <use
           href={`#chev${chevrons()}${upper() ? '-solid' : ''}`}

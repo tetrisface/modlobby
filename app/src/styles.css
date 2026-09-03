@@ -37,6 +37,9 @@
   --cortex: #ff5b5b;
   --legion: #5fd08a;
   --steel: #9aa6b4;
+  /* Brighter than steel and muted, so a low rank still reads as a rank and
+     not as a greyed-out one. */
+  --silver: #c9d1db;
   --gold: #e8bd52;
   font-family: var(--body);
   font-size: 14px;
@@ -610,9 +613,14 @@ input {
   color: var(--warn);
 }
 
-/* Gold throughout, like Chobby; ranks 5-8 are the solid chevrons. */
+/* Ranks 5-8 are gold and solid; 1-4 silver and outlined, so gold plainly
+   reads as the higher half. Chobby uses gold for all eight. */
 .rank {
   color: var(--gold);
+}
+
+.rank.lower {
+  color: var(--silver);
 }
 
 .rank .shield {
