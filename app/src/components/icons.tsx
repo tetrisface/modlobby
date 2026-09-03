@@ -1,6 +1,8 @@
-import { For, Show } from 'solid-js'
+import { For, Match, Show, Switch } from 'solid-js'
 import type { BattleStatusView } from '../ipc/bindings/BattleStatusView'
+import type { DownloadStatus } from '../ipc/bindings/DownloadStatus'
 import type { UserStatusView } from '../ipc/bindings/UserStatusView'
+import { downloadFraction } from '../lib/download'
 
 /**
  * One chevron per rank within its half; the stack grows upward. `bases` are
@@ -45,7 +47,9 @@ const SHIELD =
  * country, rank, skill, faction, name — because that grammar is what players
  * already read without looking. Only the artwork is ours.
  *
- * Mounted once near the root; every icon is a `<use>` of this sprite.
+ * Mounted once near the root; every icon is a `<use>` of this sprite, except
+ * the sync arrow, whose flow and fill are state and so is drawn inline
+ * (`SyncIcon`).
  */
 export function IconSprite() {
   return (
@@ -64,16 +68,6 @@ export function IconSprite() {
             fill='none'
             stroke='currentColor'
             stroke-width='1.5'
-            stroke-linejoin='round'
-          />
-        </symbol>
-        <symbol id='st-sync' viewBox='0 0 20 20'>
-          <path
-            d='M10 3.4 V11.6 M6.3 8.4 L10 12.1 L13.7 8.4 M4.4 15.4 h11.2'
-            fill='none'
-            stroke='currentColor'
-            stroke-width='1.8'
-            stroke-linecap='round'
             stroke-linejoin='round'
           />
         </symbol>
@@ -299,29 +293,95 @@ function Icon(props: { id: string; class: string; label: string }) {
 }
 
 /**
+ * The download arrow: a shaft whose dashes run downward (CSS), over a glass
+ * that fills from the bottom as far as `fraction` says. Same artwork the
+ * sprite's status icons use, drawn inline because a `<use>` instance cannot
+ * be reached by document selectors, and the fill is per-instance state.
+ *
+ * `running` colours it as work in progress; `fraction` null draws no glass,
+ * for an arrow whose progress is not ours to know.
+ */
+export function SyncIcon(props: {
+  fraction: number | null
+  running: boolean
+  label: string
+}) {
+  const height = () => 20 * (props.fraction ?? 0)
+  return (
+    <svg
+      class='icon status sync'
+      classList={{ running: props.running }}
+      viewBox='0 0 20 20'
+      role='img'
+    >
+      <title>{props.label}</title>
+      <Show when={props.fraction !== null}>
+        <rect
+          class='glass'
+          x='0'
+          y={20 - height()}
+          width='20'
+          height={height()}
+          rx='2'
+        />
+      </Show>
+      <g
+        fill='none'
+        stroke='currentColor'
+        stroke-width='1.8'
+        stroke-linecap='round'
+        stroke-linejoin='round'
+      >
+        <path class='shaft' d='M10 3.4 V11.6' />
+        <path d='M6.3 8.4 L10 12.1 L13.7 8.4' />
+        <path d='M4.4 15.4 h11.2' />
+      </g>
+    </svg>
+  )
+}
+
+/**
  * Players only — Chobby hides it outright for spectators, and so do we.
  * In game beats unsynced beats not-ready, in that order.
+ *
+ * `download` is our own pr-downloader run, passed for our row alone: it is
+ * what lets the arrow fill and say a percentage. Other players' arrows only
+ * say that they are unsynced, which is all the protocol tells us.
  */
 export function StatusIcon(props: {
   status: UserStatusView
   battle: BattleStatusView
+  download?: DownloadStatus
 }) {
-  const shown = () => {
-    if (props.status.inGame)
-      return { id: 'st-swords', class: 'ingame', label: 'In game' }
-    if (props.battle.sync === 'unsynced')
-      return { id: 'st-sync', class: 'sync', label: 'Downloading content' }
-    if (props.battle.ready)
-      return { id: 'st-ready', class: 'ready', label: 'Ready' }
-    return { id: 'st-unready', class: 'unready', label: 'Not ready' }
+  const fraction = () =>
+    props.download ? downloadFraction(props.download) : null
+
+  const syncLabel = () => {
+    const at = fraction()
+    return at === null
+      ? 'Downloading content'
+      : `Downloading ${Math.round(at * 100)}%`
   }
 
   return (
-    <Icon
-      id={shown().id}
-      class={`status ${shown().class}`}
-      label={shown().label}
-    />
+    <Switch>
+      <Match when={props.status.inGame}>
+        <Icon id='st-swords' class='status ingame' label='In game' />
+      </Match>
+      <Match when={props.battle.sync === 'unsynced'}>
+        <SyncIcon
+          fraction={fraction()}
+          running={props.download?.state === 'running'}
+          label={syncLabel()}
+        />
+      </Match>
+      <Match when={props.battle.ready}>
+        <Icon id='st-ready' class='status ready' label='Ready' />
+      </Match>
+      <Match when={true}>
+        <Icon id='st-unready' class='status unready' label='Not ready' />
+      </Match>
+    </Switch>
   )
 }
 

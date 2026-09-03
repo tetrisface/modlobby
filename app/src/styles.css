@@ -485,6 +485,25 @@ input {
   border-color: rgba(88, 196, 255, 0.32);
 }
 
+/* A download in progress: the chip is a glass filling from the bottom to
+   `--fill`, with the arrow flowing inside it. */
+.chip.sync-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-variant-numeric: tabular-nums;
+  background-image: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--accent) 24%, transparent) var(--fill, 0%),
+    transparent var(--fill, 0%)
+  );
+}
+
+.chip.sync-chip .icon {
+  width: 13px;
+  height: 13px;
+}
+
 /* ---- rosters, then chat filling whatever is left ---- */
 
 /* The pane's track is `auto`: the pane carries its own width (dragged, or
@@ -611,6 +630,32 @@ input {
 
 .status.sync {
   color: var(--warn);
+}
+
+.status.sync.running {
+  color: var(--accent);
+}
+
+/* The arrow's shaft is a dashed line whose dashes travel down the path: one
+   period (dash + gap) per loop, so it never jumps. */
+.status.sync .shaft {
+  stroke-dasharray: 2.6 2;
+  animation: sync-flow 0.9s linear infinite;
+}
+
+@keyframes sync-flow {
+  to {
+    stroke-dashoffset: -4.6;
+  }
+}
+
+/* The glass: the icon's own square, filling from the bottom. */
+.status.sync .glass {
+  fill: currentColor;
+  opacity: 0.28;
+  transition:
+    y 120ms linear,
+    height 120ms linear;
 }
 
 /* Ranks 5-8 are gold and solid; 1-4 silver and outlined, so gold plainly
@@ -2961,6 +3006,12 @@ button.link {
     animation: none;
     width: 100%;
     opacity: 0.4;
+  }
+
+  /* The fill stays: it is state, not motion. */
+  .status.sync .shaft {
+    animation: none;
+    stroke-dasharray: none;
   }
 }
 

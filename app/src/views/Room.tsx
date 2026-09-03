@@ -14,6 +14,7 @@ import { GetEngine } from '../components/GetEngine'
 import { Linkify } from '../components/Linkify'
 import { showPlayerMenu } from '../components/PlayerMenu'
 import { BotRow, PlayerRow, SpectatorRow } from '../components/PlayerRow'
+import { SyncIcon } from '../components/icons'
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { BotView } from '../ipc/bindings/BotView'
 import type { ChatLine } from '../ipc/bindings/ChatLine'
@@ -22,6 +23,7 @@ import type { StartRectView } from '../ipc/bindings/StartRectView'
 import type { UserView } from '../ipc/bindings/UserView'
 import { api, describeError } from '../ipc/client'
 import { boxSignature, centre, outline } from '../lib/boxes'
+import { downloadFraction } from '../lib/download'
 import { mapImage } from '../lib/maps'
 import { readSkills, teamSkill, type Skill } from '../lib/skill'
 import { BATTLE_ROOM, chat, pushNotice } from '../store/chat'
@@ -217,6 +219,11 @@ export function Room() {
                               me={user.name === lobby.me}
                               friend={isFriend(user.name)}
                               boss={lobby.myBattle?.boss === user.name}
+                              download={
+                                user.name === lobby.me
+                                  ? lobby.download
+                                  : undefined
+                              }
                             />
                           )}
                         </For>
@@ -487,13 +494,17 @@ function Missing(props: { parts: string[]; engineVersion: string }) {
             const running = () =>
               download() as Extract<DownloadStatus, { state: 'running' }>
             const percent = () =>
-              running().total > 0
-                ? Math.round((running().current / running().total) * 100)
-                : 0
+              Math.round((downloadFraction(running()) ?? 0) * 100)
+            // The chip is the glass here; the arrow inside carries none.
             return (
               <>
-                <span class='chip info' title={running().what}>
-                  Downloading {percent()}%
+                <span
+                  class='chip running sync-chip'
+                  title={running().what}
+                  style={{ '--fill': `${percent()}%` }}
+                >
+                  <SyncIcon fraction={null} running label='Downloading' />
+                  {percent()}%
                 </span>
                 <button onClick={() => void api.stopDownload()}>Stop</button>
               </>

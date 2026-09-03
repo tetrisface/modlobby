@@ -1,5 +1,6 @@
 import { Show } from 'solid-js'
 import type { BotView } from '../ipc/bindings/BotView'
+import type { DownloadStatus } from '../ipc/bindings/DownloadStatus'
 import type { UserView } from '../ipc/bindings/UserView'
 import { type Skill, skillText, skillTier, skillTitle } from '../lib/skill'
 import { Flag, Marks, RankIcon, SideIcon, StatusIcon } from './icons'
@@ -10,6 +11,8 @@ import { showPlayerMenu } from './PlayerMenu'
  * name. Nothing here is coloured by team — the engine assigns player colours at
  * game start, so a pre-game team hue would be a guess. The faction is the one
  * coloured mark, because that one is chosen and known.
+ *
+ * `download` is our own run, for our own row: the one arrow that can fill.
  */
 export function PlayerRow(props: {
   user: UserView
@@ -17,12 +20,17 @@ export function PlayerRow(props: {
   me: boolean
   friend?: boolean
   boss?: boolean
+  download?: DownloadStatus
 }) {
   return (
     <Show when={props.user.battleStatus}>
       {(battle) => (
         <div class='player'>
-          <StatusIcon status={props.user.status} battle={battle()} />
+          <StatusIcon
+            status={props.user.status}
+            battle={battle()}
+            download={props.download}
+          />
           <Flag country={props.user.country} />
           <RankIcon status={props.user.status} />
           <SkillCell skill={props.skill} />

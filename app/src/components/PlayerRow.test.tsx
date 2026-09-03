@@ -71,20 +71,61 @@ describe('a player row', () => {
           status: status({ inGame: true }),
           battleStatus: battle({ ready: false, sync: 'unsynced' }),
         }),
-        '#st-swords',
+        'ingame',
       ],
-      [user({ battleStatus: battle({ sync: 'unsynced' }) }), '#st-sync'],
-      [user({ battleStatus: battle({ ready: false }) }), '#st-unready'],
-      [user(), '#st-ready'],
+      [user({ battleStatus: battle({ sync: 'unsynced' }) }), 'sync'],
+      [user({ battleStatus: battle({ ready: false }) }), 'unready'],
+      [user(), 'ready'],
     ]
 
     for (const [who, expected] of ladder) {
       const { container, unmount } = render(() => (
         <PlayerRow user={who} skill={null} me={false} />
       ))
-      expect(icons(container)[0]).toBe(expected)
+      expect(container.querySelector('.status')?.classList).toContain(expected)
       unmount()
     }
+  })
+
+  test('only our own arrow fills, and says how far', () => {
+    const unsynced = user({ battleStatus: battle({ sync: 'unsynced' }) })
+
+    const theirs = render(() => (
+      <PlayerRow user={unsynced} skill={null} me={false} />
+    ))
+    expect(theirs.container.querySelector('.status.running')).toBeNull()
+    expect(theirs.container.querySelector('.glass')).toBeNull()
+    expect(theirs.container.querySelector('.status title')?.textContent).toBe(
+      'Downloading content',
+    )
+    theirs.unmount()
+
+    const sizing = render(() => (
+      <PlayerRow
+        user={unsynced}
+        skill={null}
+        me={true}
+        download={{ state: 'running', what: 'map', current: 0, total: 0 }}
+      />
+    ))
+    expect(sizing.container.querySelector('.status.running')).not.toBeNull()
+    expect(sizing.container.querySelector('.glass')).toBeNull()
+    sizing.unmount()
+
+    const { container } = render(() => (
+      <PlayerRow
+        user={unsynced}
+        skill={null}
+        me={true}
+        download={{ state: 'running', what: 'map', current: 4, total: 10 }}
+      />
+    ))
+    const glass = container.querySelector('.glass')
+    expect(glass?.getAttribute('height')).toBe('8')
+    expect(glass?.getAttribute('y')).toBe('12')
+    expect(container.querySelector('.status title')?.textContent).toBe(
+      'Downloading 40%',
+    )
   })
 
   test('ranks 1-4 are outlined silver, 5-8 solid gold', () => {
