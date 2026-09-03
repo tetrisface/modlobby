@@ -33,6 +33,14 @@ fn overlay_settings(settings: &settings::Settings) -> overlay::OverlaySettings {
 /// Switched off with the overlay, because that is the only thing the copy is
 /// for: someone who is not using the overlay should get the game they
 /// configured, and nothing of ours should appear on disk.
+/// The setting's `0` is the runtime's "never".
+fn idle_timeout(settings: &settings::Settings) -> Option<std::time::Duration> {
+    match settings.connection.idle_disconnect_minutes {
+        0 => None,
+        minutes => Some(std::time::Duration::from_secs(u64::from(minutes) * 60)),
+    }
+}
+
 fn overlay_config_dir(settings: &settings::Settings) -> Option<std::path::PathBuf> {
     settings
         .overlay
@@ -181,6 +189,7 @@ pub fn run() {
             let in_public = app.settings.get().play.in_public_rooms;
             let auto_launch = app.settings.get().play.auto_launch;
             let engine_config = overlay_config_dir(&app.settings.get());
+            let idle = idle_timeout(&app.settings.get());
             tauri::async_runtime::spawn(async move {
                 // The content check needs to know where BAR keeps its files,
                 // both now and whenever the setting changes.
@@ -188,6 +197,7 @@ pub fn run() {
                 let _ = client.allow_public_seat(in_public).await;
                 let _ = client.set_auto_launch(auto_launch).await;
                 let _ = client.set_overlay_config_dir(engine_config).await;
+                let _ = client.set_idle_timeout(idle).await;
                 while let Some(event) = watch.recv().await {
                     if let settings::SettingsEvent::Changed(settings) = &event {
                         let _ = client.set_data_dir(settings.paths.data_dir.clone()).await;
@@ -198,6 +208,7 @@ pub fn run() {
                         let _ = client
                             .set_overlay_config_dir(overlay_config_dir(settings))
                             .await;
+                        let _ = client.set_idle_timeout(idle_timeout(settings)).await;
                         controller.settings_changed(overlay_settings(settings));
                     }
                     let _ = handle.emit("settings", &event);
@@ -242,6 +253,7 @@ pub fn run() {
             commands::add_bot,
             commands::remove_bot,
             commands::set_away,
+            commands::activity,
             commands::overlay_active,
             commands::overlay_toggle,
             commands::stop_game,

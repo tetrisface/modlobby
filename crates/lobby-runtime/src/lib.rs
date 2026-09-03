@@ -3,6 +3,7 @@
 //! thin callers of [`Client`].
 
 pub mod client;
+pub mod idle;
 pub mod latency;
 pub mod launch;
 pub mod platform;

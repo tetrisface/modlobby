@@ -18,6 +18,7 @@ pub struct Settings {
     pub schema: Option<String>,
     pub server: Server,
     pub account: Account,
+    pub connection: Connection,
     pub paths: Paths,
     pub battle_list: BattleList,
     pub chat: Chat,
@@ -70,6 +71,33 @@ pub struct Account {
     /// Log in on startup with the remembered password. Without one there is
     /// nothing to log in with, so this does nothing on its own.
     pub auto_login: bool,
+}
+
+/// Holding on to the server, and letting it go.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(default, rename_all = "camelCase")]
+#[ts(export)]
+pub struct Connection {
+    /// Minutes without a key pressed or a click in the window before the
+    /// connection is dropped and not retried; `0` keeps it however long.
+    ///
+    /// A dropped connection otherwise comes back on its own, which is right
+    /// for a window in use and wrong for one that was forgotten: it holds a
+    /// seat in a room for nobody, and keeps the account logged in from a
+    /// machine its owner may have left. A running game never counts as idle,
+    /// whatever the lobby window sees. The window stays open, one click from
+    /// logging in again.
+    pub idle_disconnect_minutes: u32,
+}
+
+impl Default for Connection {
+    fn default() -> Self {
+        Self {
+            // Long enough to read a thread of chat without touching anything;
+            // short enough that a lobby left overnight is gone by morning.
+            idle_disconnect_minutes: 60,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS, Default)]
@@ -427,6 +455,7 @@ mod tests {
         assert_eq!(s.chat.max_lines, 7);
         assert_eq!(s.server, Server::default());
         assert_eq!(s.tweaks.default_slot, "tweakdefs1");
+        assert_eq!(s.connection.idle_disconnect_minutes, 60);
     }
 
     #[test]

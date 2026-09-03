@@ -17,6 +17,7 @@ function loaded(): Settings {
     $schema: null,
     server: { host: 'server4', port: 8201, tls: true },
     account: { username: 'me', rememberPassword: false, autoLogin: false },
+    connection: { idleDisconnectMinutes: 60 },
     paths: { dataDir: null },
     play: {
       inPublicRooms: true,

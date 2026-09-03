@@ -12,6 +12,7 @@ import {
 import { IconSprite } from './components/icons'
 import { PlayerMenu } from './components/PlayerMenu'
 import { connectChannel } from './ipc/channel'
+import { ACTIVITY_EVENTS, activityReporter } from './lib/activity'
 import { clickLeavesOverlay, escapeLeavesOverlay } from './lib/overlay'
 import { api, describeError } from './ipc/client'
 import type { Settings } from './ipc/bindings/Settings'
@@ -142,9 +143,16 @@ function Layout(props: ParentProps) {
     }
     window.addEventListener('keydown', keys)
     window.addEventListener('mousedown', clicks)
+    // The idle disconnect counts from the last of these. Passive: none of
+    // them is prevented, and a scroll must not wait on IPC.
+    const touch = activityReporter(() => void api.activity().catch(() => {}))
+    for (const event of ACTIVITY_EVENTS)
+      window.addEventListener(event, touch, { passive: true })
     onCleanup(() => {
       window.removeEventListener('keydown', keys)
       window.removeEventListener('mousedown', clicks)
+      for (const event of ACTIVITY_EVENTS)
+        window.removeEventListener(event, touch)
     })
   })
   createEffect(() =>

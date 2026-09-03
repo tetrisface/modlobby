@@ -40,6 +40,14 @@ function counted(text: string): number | null {
     : value
 }
 
+/** Like `counted`, for a field where zero is a choice rather than a blank. */
+function wholeNumber(text: string): number | null {
+  const value = Number(text)
+  return text.trim() === '' || !Number.isInteger(value) || value < 0
+    ? null
+    : value
+}
+
 export function SettingsView() {
   const [draft, setDraft] = createStore<Settings>(
     structuredClone(unwrap(settings())) ?? blank(),
@@ -189,6 +197,30 @@ export function SettingsView() {
               Forget the stored password
             </button>
           </Show>
+        </fieldset>
+
+        <fieldset>
+          <legend>Connection</legend>
+          <label>
+            Disconnect after this many minutes without a key or click (0 never)
+            <input
+              type='number'
+              min='0'
+              value={draft.connection.idleDisconnectMinutes}
+              onInput={(e) => {
+                const minutes = wholeNumber(e.currentTarget.value)
+                if (minutes !== null)
+                  setDraft('connection', 'idleDisconnectMinutes', minutes)
+              }}
+            />
+          </label>
+          <p class='muted'>
+            A lost connection comes back on its own, which is right while you
+            are here and wrong for a window you forgot: it keeps a seat in a
+            room for nobody. Past this the connection is dropped and stays
+            dropped; the window stays, one click from logging in again. A
+            running game never counts as idle.
+          </p>
         </fieldset>
 
         <fieldset>
@@ -567,6 +599,7 @@ function blank(): Settings {
     $schema: null,
     server: { host: '', port: 8201, tls: true },
     account: { username: '', rememberPassword: false, autoLogin: false },
+    connection: { idleDisconnectMinutes: 60 },
     paths: { dataDir: null },
     play: {
       inPublicRooms: true,

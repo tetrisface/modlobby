@@ -41,6 +41,12 @@
         "maxLines": 3000
       }
     },
+    "connection": {
+      "$ref": "#/$defs/Connection",
+      "default": {
+        "idleDisconnectMinutes": 60
+      }
+    },
     "logging": {
       "$ref": "#/$defs/Logging",
       "default": {
@@ -229,6 +235,19 @@
           "type": "integer",
           "format": "uint32",
           "default": 3000,
+          "minimum": 0
+        }
+      }
+    },
+    "Connection": {
+      "description": "Holding on to the server, and letting it go.",
+      "type": "object",
+      "properties": {
+        "idleDisconnectMinutes": {
+          "description": "Minutes without a key pressed or a click in the window before the\nconnection is dropped and not retried; `0` keeps it however long.\n\nA dropped connection otherwise comes back on its own, which is right\nfor a window in use and wrong for one that was forgotten: it holds a\nseat in a room for nobody, and keeps the account logged in from a\nmachine its owner may have left. A running game never counts as idle,\nwhatever the lobby window sees. The window stays open, one click from\nlogging in again.",
+          "type": "integer",
+          "format": "uint32",
+          "default": 60,
           "minimum": 0
         }
       }

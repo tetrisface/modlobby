@@ -26,6 +26,7 @@ use tokio::io::AsyncReadExt;
 use tokio::process::Child;
 use tokio::sync::{mpsc, oneshot};
 
+use crate::idle;
 use crate::latency::{self, Latency};
 use crate::launch;
 use crate::platform::Hardware;
@@ -149,6 +150,12 @@ enum Command {
         always: bool,
         reply: Reply<()>,
     },
+    SetIdleTimeout {
+        timeout: Option<Duration>,
+        reply: Reply<()>,
+    },
+    /// Someone touched the window.
+    Activity,
     EnginePid {
         reply: Reply<Option<u32>>,
     },
@@ -428,6 +435,19 @@ impl Client {
             .await
     }
 
+    /// How long the window may go untouched before the connection is dropped
+    /// and not retried; `None` keeps it however long. Measured from the last
+    /// [`Self::activity`], never while a game is running.
+    pub async fn set_idle_timeout(&self, timeout: Option<Duration>) -> Result<(), ClientError> {
+        self.ask(|reply| Command::SetIdleTimeout { timeout, reply })
+            .await
+    }
+
+    /// Someone touched the window. Cheap, and safe to send often.
+    pub async fn activity(&self) -> Result<(), ClientError> {
+        self.send(Command::Activity).await
+    }
+
     /// Marks us away, so nobody waits on someone who has stepped out.
     pub async fn set_away(&self, away: bool) -> Result<(), ClientError> {
         self.ask(|reply| Command::SetAway { away, reply }).await
@@ -576,12 +596,22 @@ enum Next {
     Download(DownloadEvent),
     Probe(Probe),
     Reconnect,
+    Idle,
 }
 
 /// Completes when a reconnection attempt falls due, and never when none is
 /// wanted — so the arm simply does not fire while we are connected.
 async fn sleep_until_due(policy: &reconnect::Reconnect) {
     match policy.until_due(Instant::now()) {
+        Some(wait) => tokio::time::sleep(wait).await,
+        None => std::future::pending().await,
+    }
+}
+
+/// Completes when the window has been idle for long enough to let the server
+/// go, and never without a connection to let go of or a limit to reach.
+async fn sleep_until_idle(policy: &idle::Idle, connected: bool) {
+    match policy.until_due(Instant::now()).filter(|_| connected) {
         Some(wait) => tokio::time::sleep(wait).await,
         None => std::future::pending().await,
     }
@@ -621,6 +651,9 @@ struct Runtime {
     /// can be recovered from without the user typing anything.
     credentials: Option<(spring_protocol::Endpoint, LoginRequest)>,
     reconnect: reconnect::Reconnect,
+    /// When to let the server go because nobody has touched the window.
+    /// Off until the app pushes a limit; the CLI has no window to watch.
+    idle: idle::Idle,
     /// Carried across reconnects, since the session is rebuilt each time.
     allow_public_seat: bool,
     /// What a running pr-downloader was asked for, or `None` when none is.
@@ -695,6 +728,7 @@ impl Runtime {
             checked: None,
             credentials: None,
             reconnect: reconnect::Reconnect::default(),
+            idle: idle::Idle::default(),
             allow_public_seat: false,
             downloading: None,
             download_stop: None,
@@ -1079,6 +1113,7 @@ impl Runtime {
 
     async fn run(mut self) {
         loop {
+            let connected = self.conn.is_some();
             let next = tokio::select! {
                 command = self.rx.recv() => match command {
                     Some(command) => Next::Command(command),
@@ -1089,6 +1124,7 @@ impl Runtime {
                 Some(event) = self.download_rx.recv() => Next::Download(event),
                 Some(probe) = self.probe_rx.recv() => Next::Probe(probe),
                 () = sleep_until_due(&self.reconnect) => Next::Reconnect,
+                () = sleep_until_idle(&self.idle, connected) => Next::Idle,
             };
             match next {
                 Next::Command(Command::Shutdown) => {
@@ -1100,6 +1136,7 @@ impl Runtime {
                 Next::Download(event) => self.on_download(event).await,
                 Next::Probe(probe) => self.on_probe(probe).await,
                 Next::Reconnect => self.try_reconnect().await,
+                Next::Idle => self.on_idle().await,
                 Next::Inbound(inbound) => {
                     self.handle_inbound(inbound).await;
                     while let Some(more) = self.try_recv_inbound() {
@@ -1127,7 +1164,11 @@ impl Runtime {
                 endpoint,
                 request,
                 reply,
-            } => self.connect(endpoint, request, reply).await,
+            } => {
+                // Logging in is the one activity that needs no window.
+                self.idle.active(Instant::now());
+                self.connect(endpoint, request, reply).await;
+            }
             Command::Logout => {
                 // Asked for: stop trying to come back.
                 self.credentials = None;
@@ -1255,6 +1296,11 @@ impl Runtime {
                 self.auto_launch_always = always;
                 let _ = reply.send(Ok(()));
             }
+            Command::SetIdleTimeout { timeout, reply } => {
+                self.idle.set_timeout(timeout);
+                let _ = reply.send(Ok(()));
+            }
+            Command::Activity => self.idle.active(Instant::now()),
             Command::SetAway { away, reply } => {
                 self.run_session(reply, |session| {
                     Ok::<_, std::convert::Infallible>(session.set_away(away))
@@ -1776,12 +1822,43 @@ impl Runtime {
         self.batcher.push(Delta::Phase(None));
     }
 
+    /// The window has gone untouched for the limit. A running game is not
+    /// idleness, whatever the window says — its player is looking at the
+    /// game — so that only pushes the limit out by another period.
+    async fn on_idle(&mut self) {
+        let now = Instant::now();
+        if self.game.is_some() || self.engine.is_some() {
+            self.idle.active(now);
+            return;
+        }
+        self.idle_disconnect().await;
+    }
+
+    /// Lets the server go and stops coming back. The credentials go with it:
+    /// a window nobody is at should not log in again on its own, and the
+    /// login screen has the remembered password anyway.
+    async fn idle_disconnect(&mut self) {
+        tracing::info!("idle past the limit; letting the server go");
+        self.credentials = None;
+        self.reconnect.stop();
+        self.disconnect().await;
+        self.batcher.push(Delta::Notice {
+            level: lobby_ui::NoticeLevel::Info,
+            text: "disconnected: nobody has touched the lobby for a while".into(),
+        });
+    }
+
     /// Tries the last known credentials again.
     async fn try_reconnect(&mut self) {
         let Some((endpoint, request)) = self.credentials.clone() else {
             self.reconnect.stop();
             return;
         };
+        // A drop is not worth recovering from for nobody.
+        if self.idle.due(Instant::now()) {
+            self.idle_disconnect().await;
+            return;
+        }
         self.reconnect.attempted(Instant::now());
         tracing::info!("reconnecting");
         let (tx, _rx) = oneshot::channel();
@@ -2053,6 +2130,87 @@ mod tests {
         );
 
         assert_eq!(client.snapshot().await.unwrap().users.len(), 3);
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn an_untouched_window_lets_the_server_go_and_stays_gone() {
+        let (connector, server) = in_memory();
+        let (server_read, mut server_write) = tokio::io::split(server);
+        let mut server_lines = BufReader::new(server_read).lines();
+
+        let client = Client::spawn_with(
+            ThrottlePolicy::default(),
+            Hardware::stub(),
+            connector,
+            Arc::new(latency::Unmeasured),
+            None,
+        );
+        let ui = Collector::default();
+        client.subscribe(ui.clone()).await.unwrap();
+        client
+            .set_idle_timeout(Some(Duration::from_millis(300)))
+            .await
+            .unwrap();
+
+        let endpoint = Endpoint::parse("test:8200", false).unwrap();
+        let login = tokio::spawn({
+            let client = client.clone();
+            async move {
+                client
+                    .login(endpoint, LoginRequest::new("me", "pw", "test", "h h"))
+                    .await
+            }
+        });
+        server_write
+            .write_all(b"TASSERVER 0.38 * 8201 0\n")
+            .await
+            .unwrap();
+        server_lines.next_line().await.unwrap().unwrap();
+        server_write
+            .write_all(b"ACCEPTED me\nADDUSER me SE 1 modlobby\nLOGININFOEND\n")
+            .await
+            .unwrap();
+        login.await.unwrap().unwrap();
+
+        // Touching the window inside the limit keeps the connection.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        client.activity().await.unwrap();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_eq!(
+            client.snapshot().await.unwrap().phase,
+            Some(Phase::Ready),
+            "activity resets the limit"
+        );
+
+        // Left alone past it, the connection goes, with a word about why.
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        assert_eq!(client.snapshot().await.unwrap().phase, None);
+        let deltas: Vec<Delta> = ui
+            .take()
+            .into_iter()
+            .filter_map(|m| match m {
+                UiMessage::Deltas(d) => Some(d),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        assert!(deltas.iter().any(|d| matches!(
+            d,
+            Delta::Notice { level: lobby_ui::NoticeLevel::Info, text } if text.contains("disconnected")
+        )));
+
+        // And it does not come back: nothing the fake server reads after the
+        // drop is a second LOGIN, and the phase stays down. The read is
+        // bounded because the fake server holds its own half of the pipe
+        // open, so the client's reader never sees an end to wait for.
+        let drained = tokio::time::timeout(Duration::from_millis(300), async {
+            while let Some(line) = server_lines.next_line().await.unwrap() {
+                assert!(!line.starts_with("LOGIN "), "reconnected: {line}");
+            }
+        });
+        let _ = drained.await;
+        assert_eq!(client.snapshot().await.unwrap().phase, None);
         client.shutdown().await;
     }
 

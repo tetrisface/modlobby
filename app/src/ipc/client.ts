@@ -76,6 +76,7 @@ export const api = {
   ) => invoke<void>('add_bot', { name, ai, team, allyTeam, colour }),
   removeBot: (name: string) => invoke<void>('remove_bot', { name }),
   setAway: (away: boolean) => invoke<void>('set_away', { away }),
+  activity: () => invoke<void>('activity'),
   overlayActive: () => invoke<boolean>('overlay_active'),
   overlayToggle: () => invoke<void>('overlay_toggle'),
   stopGame: () => invoke<boolean>('stop_game'),

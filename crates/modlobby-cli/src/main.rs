@@ -66,10 +66,10 @@ struct Connection {
     /// Announced client. teiserver stores the leading `[a-zA-Z ]+` of
     /// `<name>:<version>` and gives unlisted names the filtered `:full` feed,
     /// where other rooms' rosters read empty.
-    #[arg(long, default_value = spring_protocol::login::CHOBBY_CLIENT)]
+    #[arg(long, default_value = spring_protocol::login::MODLOBBY_CLIENT)]
     client_name: String,
     /// Shown after `<client>:`; truncated server-side.
-    #[arg(long, default_value = concat!("modlobby ", env!("CARGO_PKG_VERSION")))]
+    #[arg(long, default_value = env!("CARGO_PKG_VERSION"))]
     lobby_version: String,
     /// TOML override of the throttle policy (see `ThrottlePolicy`).
     #[arg(long)]

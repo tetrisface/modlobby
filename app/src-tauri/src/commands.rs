@@ -16,7 +16,7 @@ use tweaks::{DiffView, Kind, Prepared, Slot, TweakView};
 use crate::state::App;
 use crate::transport::ChannelTransport;
 
-const LOBBY_VERSION: &str = concat!("modlobby ", env!("CARGO_PKG_VERSION"));
+const LOBBY_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -543,6 +543,13 @@ pub fn overlay_toggle(overlay: State<'_, std::sync::Arc<crate::overlay::Controll
 #[tauri::command]
 pub async fn set_away(app: State<'_, App>, away: bool) -> Result<()> {
     app.client.set_away(away).await?;
+    Ok(())
+}
+
+/// Someone touched the window; the idle disconnect counts from here.
+#[tauri::command]
+pub async fn activity(app: State<'_, App>) -> Result<()> {
+    app.client.activity().await?;
     Ok(())
 }
 

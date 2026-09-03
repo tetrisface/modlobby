@@ -16,17 +16,16 @@
 //!
 //! An unlisted name falls through to `:full`, which despite the name is the
 //! *most* filtered tier: `JOINEDBATTLE` / `LEFTBATTLE` arrive only for the room
-//! you are in, so every other room's roster stays empty. That is why the default
-//! is still [`CHOBBY_CLIENT`]; it retires once `modlobby` has its own `:partial`
-//! entry upstream.
+//! you are in, so every other room's roster stays empty. `modlobby` has been a
+//! `:partial` entry since teiserver PR #1514 (merged 2026-09-02, live on
+//! server4 the day after); before that the default borrowed Chobby's name.
 
 use std::fmt;
 
 use crate::hash;
 
-/// Chobby's name, which teiserver maps to `:partial`. modlobby's default until
-/// it is listed in `@optimisation_level` itself.
-pub const CHOBBY_CLIENT: &str = "LuaLobby Chobby";
+/// Our own `@optimisation_level` key, mapped to `:partial` like Chobby's.
+pub const MODLOBBY_CLIENT: &str = "modlobby";
 /// Chobby's compatibility flags; teiserver ignores the field.
 pub const DEFAULT_FLAGS: &str = "b sp";
 
@@ -53,7 +52,7 @@ impl LoginRequest {
         Self {
             username: username.into(),
             password_hash: hash::md5_base64(password),
-            client_name: CHOBBY_CLIENT.into(),
+            client_name: MODLOBBY_CLIENT.into(),
             lobby_version: lobby_version.into(),
             lobby_hash: lobby_hash.into(),
             flags: DEFAULT_FLAGS.into(),
@@ -110,36 +109,37 @@ mod tests {
 
     #[test]
     fn login_line_matches_teiserver_regex_shape() {
-        let req = LoginRequest::new("alice", "password", "modlobby 0.1", "abc def");
+        let req = LoginRequest::new("alice", "password", "0.1", "abc def");
         assert_eq!(
             req.line(),
-            "LOGIN alice X03MO1qnZdYdgyfeuILPmQ== 0 * LuaLobby Chobby:modlobby 0.1\tabc def\tb sp"
+            "LOGIN alice X03MO1qnZdYdgyfeuILPmQ== 0 * modlobby:0.1\tabc def\tb sp"
         );
     }
 
     #[test]
-    fn client_name_replaces_the_chobby_default() {
-        let req =
-            LoginRequest::new("alice", "password", "0.1.0", "abc def").client_name("modlobby");
+    fn client_name_replaces_the_default() {
+        let req = LoginRequest::new("alice", "password", "0.1.0", "abc def")
+            .client_name("LuaLobby Chobby");
         assert_eq!(
             req.line(),
-            "LOGIN alice X03MO1qnZdYdgyfeuILPmQ== 0 * modlobby:0.1.0\tabc def\tb sp"
+            "LOGIN alice X03MO1qnZdYdgyfeuILPmQ== 0 * LuaLobby Chobby:0.1.0\tabc def\tb sp"
         );
+        assert_eq!(stored_client_name(&req.line()), "LuaLobby Chobby");
     }
 
     /// The separator, not the name, decides what teiserver ends up storing.
     #[test]
     fn the_colon_terminates_the_stored_client_name() {
-        let named = LoginRequest::new("alice", "password", "0.1.0", "h").client_name("modlobby");
-        assert_eq!(stored_client_name(&named.line()), "modlobby");
+        let default = LoginRequest::new("alice", "password", "0.1.0", "h");
+        assert_eq!(stored_client_name(&default.line()), MODLOBBY_CLIENT);
 
-        // The default survives a version that itself contains a space.
-        let default = LoginRequest::new("alice", "password", "modlobby 0.1.0", "h");
-        assert_eq!(stored_client_name(&default.line()), CHOBBY_CLIENT);
+        // The name survives a version that itself contains a space.
+        let spaced_version = LoginRequest::new("alice", "password", "modlobby 0.1.0", "h");
+        assert_eq!(stored_client_name(&spaced_version.line()), MODLOBBY_CLIENT);
 
         // What a space separator would cost: a name that matches no map key.
         let spaced = LoginRequest::new("alice", "password", "0.1.0", "h").client_name("modlobby ");
-        assert_ne!(stored_client_name(&spaced.line()), "modlobby");
+        assert_ne!(stored_client_name(&spaced.line()), MODLOBBY_CLIENT);
     }
 
     #[test]
