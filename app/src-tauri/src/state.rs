@@ -24,6 +24,8 @@ pub struct App {
     pub pve: pve::Service,
     /// BAR's map index for this run, loaded the first time anything asks.
     pub map_index: tokio::sync::Mutex<Option<content::map_index::MapIndex>>,
+    /// Held for the length of an engine download, so two never overlap.
+    pub engine_downloads: tokio::sync::Mutex<()>,
 }
 
 impl App {
@@ -53,6 +55,7 @@ impl App {
             pve: pve::Service::new(http.clone(), pve::ENDPOINT),
             http,
             map_index: tokio::sync::Mutex::new(None),
+            engine_downloads: tokio::sync::Mutex::new(()),
         })
     }
 }

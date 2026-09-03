@@ -83,6 +83,7 @@
     "play": {
       "$ref": "#/$defs/Play",
       "default": {
+        "autoDownload": true,
         "autoLaunch": true,
         "inPublicRooms": true,
         "joinAs": "remember",
@@ -361,7 +362,7 @@
       "type": "object",
       "properties": {
         "dataDir": {
-          "description": "The BAR data directory (`engine/`, `games/`, `maps/`); the launcher's when unset.",
+          "description": "The BAR data directory modlobby writes (`engine/`, `games/`, `maps/`);\nits own when unset. The launcher's and bar-lobby's installs are read\neither way, so their content is never fetched twice.",
           "type": [
             "string",
             "null"
@@ -374,6 +375,11 @@
       "description": "Playing rather than watching.",
       "type": "object",
       "properties": {
+        "autoDownload": {
+          "description": "Whether joining a room fetches what it needs: engine, game and map.\n\nOn, as bar-lobby and the launcher do it: a room you cannot play is\nnothing until its content is here. Off leaves a button in the room for\neach fetch, for a metered connection or a disk being kept small.",
+          "type": "boolean",
+          "default": true
+        },
         "autoLaunch": {
           "description": "Whether the engine starts on its own when your room's game does.\n\nOn, as it is in Chobby (`gui_settings_window.lua:888`), because a game\nyou are in starting is the moment you want to be in it — spectating\nincluded, which is the case that otherwise means watching the room and\npressing a button. Only ever fires when the content is already on disk.",
           "type": "boolean",

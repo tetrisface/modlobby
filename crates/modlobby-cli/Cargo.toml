@@ -9,6 +9,7 @@ license.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true }
+content = { workspace = true }
 dotenvy = { workspace = true }
 lobby-runtime = { workspace = true }
 lobby-ui = { workspace = true }

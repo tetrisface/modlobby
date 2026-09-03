@@ -268,8 +268,7 @@ pub fn forget_battle(app: State<'_, App>) {
 /// Connects the engine to the room's game as a spectator, now or when it starts.
 #[tauri::command]
 pub async fn launch(app: State<'_, App>) -> Result<()> {
-    let data_dir = data_dir(&app)?;
-    app.client.launch(data_dir).await?;
+    app.client.launch(data_dirs(&app)?).await?;
     Ok(())
 }
 
@@ -313,13 +312,12 @@ pub async fn list_channels(app: State<'_, App>) -> Result<()> {
 /// What this machine can start a game with.
 #[tauri::command]
 pub fn skirmish_options(app: State<'_, App>) -> Result<SkirmishOptions> {
-    let data_dir = data_dir(&app)?;
-    let library = content::Library::new(&data_dir);
+    let library = content::Library::new(data_dirs(&app)?);
     Ok(SkirmishOptions {
         games: library.installed_games(),
         maps: library.installed_map_files(),
-        engines: recoil::installed_engines(&data_dir),
-        ais: recoil::installed_ais(&data_dir),
+        engines: library.installed_engines(),
+        ais: library.installed_ais(),
     })
 }
 
@@ -332,7 +330,7 @@ pub async fn start_skirmish(
     engine: String,
     opponents: Vec<String>,
 ) -> Result<()> {
-    let data_dir = data_dir(&app)?;
+    let dirs = data_dirs(&app)?;
     if game.is_empty() || map.is_empty() || engine.is_empty() {
         return Err(ApiError::new("input", "pick a game, a map and an engine"));
     }
@@ -360,9 +358,7 @@ pub async fn start_skirmish(
             .collect(),
         modoptions: Vec::new(),
     };
-    app.client
-        .start_skirmish(data_dir, engine, skirmish)
-        .await?;
+    app.client.start_skirmish(dirs, engine, skirmish).await?;
     Ok(())
 }
 
@@ -380,11 +376,11 @@ pub async fn set_side(app: State<'_, App>, side: u8) -> Result<()> {
     Ok(())
 }
 
-/// Every replay in the BAR data directory, newest first.
+/// Every replay in any BAR data directory, newest first.
 #[tauri::command]
 pub fn list_replays(app: State<'_, App>) -> Result<Vec<ReplayView>> {
-    let data_dir = data_dir(&app)?;
-    Ok(content::replays::list(&data_dir)
+    Ok(content::Library::new(data_dirs(&app)?)
+        .replays()
         .into_iter()
         .map(ReplayView::from)
         .collect())
@@ -394,17 +390,20 @@ pub fn list_replays(app: State<'_, App>) -> Result<Vec<ReplayView>> {
 /// `spring://` URL, so this is the launch path with a different target.
 #[tauri::command]
 pub async fn play_replay(app: State<'_, App>, path: String) -> Result<()> {
-    let data_dir = data_dir(&app)?;
+    let dirs = data_dirs(&app)?;
     let replay = std::path::PathBuf::from(&path);
-    // Only from the directory we listed: a path from the front end is not a
+    // Only from a directory we listed: a path from the front end is not a
     // reason to hand the engine anything on the disk.
-    if replay.parent() != Some(&data_dir.join("demos")) || !replay.is_file() {
+    let listed = dirs
+        .all()
+        .any(|dir| replay.parent() == Some(dir.join("demos").as_path()));
+    if !listed || !replay.is_file() {
         return Err(ApiError::new(
             "input",
             "not a replay in the demos directory",
         ));
     }
-    app.client.play_replay(data_dir, path).await?;
+    app.client.play_replay(dirs, path).await?;
     Ok(())
 }
 
@@ -460,16 +459,10 @@ pub async fn request_game_status(app: State<'_, App>, founder: String) -> Result
 /// showing the settings it can see without their descriptions.
 #[tauri::command]
 pub fn game_modoptions(app: State<'_, App>, game: String) -> Result<Vec<modoptions::ModOption>> {
-    let Some(dir) = app
-        .settings
-        .get()
-        .paths
-        .data_dir
-        .or_else(lobby_runtime::launch::default_data_dir)
-    else {
+    let Some(dirs) = data_dirs_of(&app) else {
         return Ok(Vec::new());
     };
-    let Some(bytes) = content::Library::new(dir).game_file(&game, "modoptions.lua") else {
+    let Some(bytes) = content::Library::new(dirs).game_file(&game, "modoptions.lua") else {
         return Ok(Vec::new());
     };
     modoptions::parse(&String::from_utf8_lossy(&bytes))
@@ -741,7 +734,11 @@ pub fn open_settings_file(app: State<'_, App>) -> Result<()> {
 
 #[tauri::command]
 pub fn open_data_dir(app: State<'_, App>) -> Result<()> {
-    open(data_dir(&app)?)
+    let dirs = data_dirs(&app)?;
+    // Opening a directory that is not there yet opens nothing; make it.
+    std::fs::create_dir_all(&dirs.write)
+        .map_err(|err| ApiError::new("io", format!("making the data directory: {err}")))?;
+    open(dirs.write)
 }
 
 /// Opens a link from chat in the system browser.
@@ -860,10 +857,10 @@ pub async fn tweak_diff(
 /// The units a game has, for completing and checking `tweakunits` keys.
 #[tauri::command]
 pub fn game_unit_names(app: State<'_, App>, game: String) -> Result<Vec<String>> {
-    let Some(dir) = data_dir_of(&app) else {
+    let Some(dirs) = data_dirs_of(&app) else {
         return Ok(Vec::new());
     };
-    let files = content::Library::new(dir).game_files(&game, "units/");
+    let files = content::Library::new(dirs).game_files(&game, "units/");
     Ok(tweaks::assist::unit_names(&files))
 }
 
@@ -882,12 +879,14 @@ pub async fn engine_def_tags(app: State<'_, App>, version: String) -> Result<twe
     let json = match std::fs::read_to_string(&cache) {
         Ok(text) => text,
         Err(_) => {
-            let data_dir = data_dir_of(&app).ok_or_else(|| {
+            let dirs = data_dirs_of(&app).ok_or_else(|| {
                 ApiError::new("deftags", "no data directory to find an engine in")
             })?;
-            let engine = recoil::find_engine(&data_dir, &version).ok_or_else(|| {
-                ApiError::new("deftags", format!("engine {version} is not installed"))
-            })?;
+            let engine = content::Library::new(dirs)
+                .find_engine(&version)
+                .ok_or_else(|| {
+                    ApiError::new("deftags", format!("engine {version} is not installed"))
+                })?;
             let text = tauri::async_runtime::spawn_blocking(move || dump_def_tags(&engine))
                 .await
                 .map_err(|err| ApiError::new("deftags", err.to_string()))??;
@@ -936,13 +935,10 @@ fn safe_name(text: &str) -> String {
         .collect()
 }
 
-/// The BAR data directory, chosen or default.
-fn data_dir_of(app: &App) -> Option<PathBuf> {
-    app.settings
-        .get()
-        .paths
-        .data_dir
-        .or_else(lobby_runtime::launch::default_data_dir)
+/// The data directories, for the commands where having none is an empty
+/// answer rather than an error.
+fn data_dirs_of(app: &App) -> Option<content::DataDirs> {
+    launch::data_dirs(app.settings.get().paths.data_dir)
 }
 
 /// Where the Lua stops making sense, and what it names: markers and an outline.
@@ -1042,30 +1038,16 @@ fn draft_path(app: &App, name: &str) -> Result<PathBuf> {
     Ok(drafts_dir(app).join(format!("{safe}.lua")))
 }
 
-/// Where BAR's content should live, whether or not it does yet.
-///
-/// [`data_dir`] refuses when there is no install, which is right for anything
-/// that needs content — but wrong for the one job of putting content there.
-pub(crate) fn data_dir_or_default(app: &App) -> Result<PathBuf> {
-    if let Some(set) = app.settings.get().paths.data_dir {
-        return Ok(set);
-    }
-    if let Some(found) = launch::default_data_dir() {
-        return Ok(found);
-    }
-    // Nothing installed yet, so fall back to the location the launcher would
-    // have used — the same path, minus the "does it exist" question.
-    launch::launcher_data_dir()
-        .ok_or_else(|| ApiError::new("input", "no BAR data directory; set paths.dataDir"))
-}
-
-fn data_dir(app: &App) -> Result<PathBuf> {
-    app.settings
-        .get()
-        .paths
-        .data_dir
-        .or_else(launch::default_data_dir)
-        .ok_or_else(|| ApiError::new("input", "no BAR data directory; set paths.dataDir"))
+/// Where BAR content is: the directory we write, chosen or our own, and every
+/// other lobby's install to read. Fails only on a machine with no home
+/// directory, which is the one case a setting can fix.
+pub(crate) fn data_dirs(app: &App) -> Result<content::DataDirs> {
+    launch::data_dirs(app.settings.get().paths.data_dir).ok_or_else(|| {
+        ApiError::new(
+            "input",
+            "no home directory to keep BAR content under; set paths.dataDir",
+        )
+    })
 }
 
 fn open(path: PathBuf) -> Result<()> {

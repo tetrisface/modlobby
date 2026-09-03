@@ -58,16 +58,22 @@ pub async fn download_engine(
     window: tauri::Window,
     version: String,
 ) -> Result<String> {
-    let data_dir = crate::commands::data_dir_or_default(&app)?;
+    let dirs = crate::commands::data_dirs(&app)?;
     let say = |progress: EngineProgress| {
         let _ = window.emit("engine-download", progress);
     };
 
-    match fetch(&app.http, &data_dir, &version, &say).await {
+    // One engine download at a time: a room asking twice, or two views asking
+    // for the same version, would otherwise write the same staging file. The
+    // second caller finds the engine installed and returns at once.
+    let _one_at_a_time = app.engine_downloads.lock().await;
+    match fetch(&app.http, &dirs, &version, &say).await {
         Ok(path) => {
             say(EngineProgress::Done {
                 version: version.clone(),
             });
+            // A room waiting on this engine can now fetch its game and map.
+            let _ = app.client.recheck_content().await;
             Ok(path.to_string_lossy().into_owned())
         }
         Err(err) => {
@@ -86,14 +92,17 @@ const STALE_PART_AFTER: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
 async fn fetch(
     http: &reqwest::Client,
-    data_dir: &Path,
+    dirs: &content::DataDirs,
     version: &str,
     say: &impl Fn(EngineProgress),
 ) -> Result<PathBuf> {
-    // Already there: not an error, and not a reason to download it again.
-    if let Some(found) = recoil::find_engine(data_dir, version) {
+    // Already there, ours or another lobby's: not an error, and not a reason
+    // to download it again.
+    let library = content::Library::new(dirs.clone());
+    if let Some(found) = library.find_engine(version) {
         return Ok(found);
     }
+    let data_dir = library.write_dir();
     let engine_dir = data_dir.join("engine");
     std::fs::create_dir_all(&engine_dir)
         .map_err(|err| ApiError::new("io", format!("making the engine directory: {err}")))?;

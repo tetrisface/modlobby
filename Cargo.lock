@@ -3046,6 +3046,7 @@ version = "0.1.4"
 dependencies = [
  "anyhow",
  "clap 4.6.6",
+ "content",
  "dotenvy",
  "lobby-runtime",
  "lobby-ui",

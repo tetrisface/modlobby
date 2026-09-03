@@ -12,6 +12,7 @@ use std::process::ExitStatus;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use content::DataDirs;
 use lobby_core::{Effect, Session, hosting};
 use lobby_ui::{
     Batcher, Delta, DownloadStatus, EngineStatus, GameRunningView, Phase, Projector, Snapshot,
@@ -87,7 +88,7 @@ enum Command {
     },
     LeaveBattle,
     Launch {
-        data_dir: PathBuf,
+        dirs: DataDirs,
         reply: Reply<()>,
     },
     Say {
@@ -150,6 +151,10 @@ enum Command {
         always: bool,
         reply: Reply<()>,
     },
+    SetAutoDownload {
+        on: bool,
+        reply: Reply<()>,
+    },
     SetIdleTimeout {
         timeout: Option<Duration>,
         reply: Reply<()>,
@@ -167,12 +172,12 @@ enum Command {
         reply: Reply<()>,
     },
     PlayReplay {
-        data_dir: PathBuf,
+        dirs: DataDirs,
         path: String,
         reply: Reply<()>,
     },
     StartSkirmish {
-        data_dir: PathBuf,
+        dirs: DataDirs,
         engine_version: String,
         skirmish: Box<recoil::script::Skirmish>,
         reply: Reply<()>,
@@ -198,6 +203,9 @@ enum Command {
     AllowPublicSeat(bool),
     ReleaseSeat,
     SetDataDir(Option<PathBuf>),
+    /// The disk changed under us — an engine was installed — so the room's
+    /// content is worth asking about again.
+    RecheckContent,
     /// Where to keep a config to launch with when the user's own settings
     /// would put the game in exclusive full screen. `None` while the
     /// overlay is switched off, which is also when nothing is written.
@@ -354,8 +362,8 @@ impl Client {
     }
 
     /// Connects the engine to the room's game now, or as soon as it is running.
-    pub async fn launch(&self, data_dir: PathBuf) -> Result<(), ClientError> {
-        self.ask(|reply| Command::Launch { data_dir, reply }).await
+    pub async fn launch(&self, dirs: DataDirs) -> Result<(), ClientError> {
+        self.ask(|reply| Command::Launch { dirs, reply }).await
     }
 
     pub async fn say(&self, text: String) -> Result<(), ClientError> {
@@ -435,6 +443,12 @@ impl Client {
             .await
     }
 
+    /// Whether joining a room fetches the game and map it needs by itself.
+    pub async fn set_auto_download(&self, on: bool) -> Result<(), ClientError> {
+        self.ask(|reply| Command::SetAutoDownload { on, reply })
+            .await
+    }
+
     /// How long the window may go untouched before the connection is dropped
     /// and not retried; `None` keeps it however long. Measured from the last
     /// [`Self::activity`], never while a game is running.
@@ -478,12 +492,12 @@ impl Client {
     /// Starts a game against AI with no server involved.
     pub async fn start_skirmish(
         &self,
-        data_dir: PathBuf,
+        dirs: DataDirs,
         engine_version: String,
         skirmish: recoil::script::Skirmish,
     ) -> Result<(), ClientError> {
         self.ask(|reply| Command::StartSkirmish {
-            data_dir,
+            dirs,
             engine_version,
             skirmish: Box::new(skirmish),
             reply,
@@ -492,13 +506,9 @@ impl Client {
     }
 
     /// Starts the engine on a replay file.
-    pub async fn play_replay(&self, data_dir: PathBuf, path: String) -> Result<(), ClientError> {
-        self.ask(|reply| Command::PlayReplay {
-            data_dir,
-            path,
-            reply,
-        })
-        .await
+    pub async fn play_replay(&self, dirs: DataDirs, path: String) -> Result<(), ClientError> {
+        self.ask(|reply| Command::PlayReplay { dirs, path, reply })
+            .await
     }
 
     pub async fn friend_action(
@@ -547,6 +557,12 @@ impl Client {
     /// Points the content check at a data directory; `None` uses the launcher's.
     pub async fn set_data_dir(&self, data_dir: Option<PathBuf>) -> Result<(), ClientError> {
         self.send(Command::SetDataDir(data_dir)).await
+    }
+
+    /// Checks the room's content again after something was installed outside
+    /// the runtime's own downloads, and fetches what is still missing.
+    pub async fn recheck_content(&self) -> Result<(), ClientError> {
+        self.send(Command::RecheckContent).await
     }
 
     /// Where a borderless config may be kept, or `None` to launch with the
@@ -627,10 +643,12 @@ struct Runtime {
     engine: Option<Child>,
     engine_status: EngineStatus,
     game: Option<Game>,
-    auto_launch: Option<PathBuf>,
+    auto_launch: Option<DataDirs>,
     /// Whether to start the engine ourselves when the room's game starts.
     /// Pushed from settings, like the data directory.
     auto_launch_always: bool,
+    /// Whether joining a room fetches its missing game and map unasked.
+    auto_download: bool,
     /// Whether this machine has everything the room needs. Launching without
     /// it produces an engine that quits with a sync error.
     content_ready: bool,
@@ -749,6 +767,7 @@ impl Runtime {
             game: None,
             auto_launch: None,
             auto_launch_always: true,
+            auto_download: true,
             content_ready: false,
             login_reply: None,
             register_reply: None,
@@ -784,19 +803,20 @@ impl Runtime {
     /// overwritten each time rather than accumulating.
     fn start_skirmish(
         &mut self,
-        data_dir: PathBuf,
+        dirs: DataDirs,
         engine_version: &str,
         skirmish: &recoil::script::Skirmish,
     ) -> Result<(), ClientError> {
         if self.engine.is_some() {
             return Err(ClientError::Engine("the engine is already running".into()));
         }
-        let path = data_dir.join("modlobby-skirmish.txt");
-        std::fs::write(&path, skirmish.script())
+        let path = dirs.write.join("modlobby-skirmish.txt");
+        std::fs::create_dir_all(&dirs.write)
+            .and_then(|()| std::fs::write(&path, skirmish.script()))
             .map_err(|err| ClientError::Engine(format!("writing the start script: {err}")))?;
 
         let child = launch::spawn(
-            &data_dir,
+            &dirs,
             engine_version,
             path.to_string_lossy().into_owned(),
             self.overlay_config_dir.as_deref(),
@@ -813,7 +833,7 @@ impl Runtime {
     /// The engine reads the demo's own header for the engine version it needs,
     /// so the replay's name is the only hint we have about which one to use;
     /// falling back to any installed engine beats refusing to play it.
-    fn play_replay(&mut self, data_dir: PathBuf, path: String) -> Result<(), ClientError> {
+    fn play_replay(&mut self, dirs: DataDirs, path: String) -> Result<(), ClientError> {
         if self.engine.is_some() {
             return Err(ClientError::Engine("the engine is already running".into()));
         }
@@ -823,13 +843,8 @@ impl Runtime {
             .and_then(|stem| stem.rsplit_once('_').map(|(_, engine)| engine.to_owned()))
             .unwrap_or_default();
 
-        let child = launch::spawn(
-            &data_dir,
-            &version,
-            path,
-            self.overlay_config_dir.as_deref(),
-        )
-        .map_err(ClientError::Engine)?;
+        let child = launch::spawn(&dirs, &version, path, self.overlay_config_dir.as_deref())
+            .map_err(ClientError::Engine)?;
         let pid = child.id();
         self.engine = Some(child);
         self.set_engine(EngineStatus::Running { pid });
@@ -861,10 +876,10 @@ impl Runtime {
             room.map_name.clone(),
         );
 
-        let Some(data_dir) = self.data_dir() else {
+        let Some(dirs) = self.data_dirs() else {
             return Err(ClientError::Refused("no BAR data directory".into()));
         };
-        let library = content::Library::new(&data_dir);
+        let library = content::Library::new(dirs.clone());
         let mut wants = Vec::new();
         if !library.has_game(&game) {
             wants.push((recoil::Want::Game, game.clone()));
@@ -881,7 +896,7 @@ impl Runtime {
             .map(|(_, name)| name.as_str())
             .collect::<Vec<_>>()
             .join(", ");
-        let mut child = crate::launch::spawn_download(&data_dir, &engine_version, wants)
+        let mut child = crate::launch::spawn_download(&dirs, &engine_version, wants)
             .map_err(ClientError::Refused)?;
         let stdout = child.stdout.take();
 
@@ -1106,10 +1121,10 @@ impl Runtime {
         if self.checked.as_ref() == Some(&key) {
             return;
         }
-        let Some(data_dir) = self.data_dir() else {
+        let Some(dirs) = self.data_dirs() else {
             return;
         };
-        let available = content::Library::new(data_dir).check(&key.0, &key.1, &key.2);
+        let available = content::Library::new(dirs).check(&key.0, &key.1, &key.2);
         self.checked = Some(key.clone());
         self.batcher.push(Delta::Content {
             engine: available.engine,
@@ -1126,6 +1141,7 @@ impl Runtime {
         // that a failed download itself provokes.
         let fetchable = !available.game || !available.map;
         if fetchable
+            && self.auto_download
             && available.engine
             && self.downloading.is_none()
             && self.auto_fetched.as_ref() != Some(&key)
@@ -1151,9 +1167,10 @@ impl Runtime {
         self.apply_effects(effects).await;
     }
 
-    /// Where BAR keeps its content: the setting when given, else the launcher's.
-    fn data_dir(&self) -> Option<PathBuf> {
-        self.data_dir.clone().or_else(launch::default_data_dir)
+    /// Where BAR content is: the setting or our own directory to write, every
+    /// other install on the machine to read.
+    fn data_dirs(&self) -> Option<DataDirs> {
+        launch::data_dirs(self.data_dir.clone())
     }
 
     async fn run(mut self) {
@@ -1247,15 +1264,15 @@ impl Runtime {
                 self.project_effects(&effects);
                 self.apply_effects(effects).await;
             }
-            Command::Launch { data_dir, reply } => {
+            Command::Launch { dirs, reply } => {
                 let result = if self.conn.is_none() {
                     Err(ClientError::NotConnected)
                 } else if self.engine.is_some() {
                     Err(ClientError::Engine("already running".into()))
                 } else if self.game.is_some() {
-                    self.launch_engine(data_dir).await
+                    self.launch_engine(dirs).await
                 } else {
-                    self.auto_launch = Some(data_dir);
+                    self.auto_launch = Some(dirs);
                     Ok(())
                 };
                 let _ = reply.send(result);
@@ -1290,20 +1307,16 @@ impl Runtime {
                 .await;
             }
             Command::StartSkirmish {
-                data_dir,
+                dirs,
                 engine_version,
                 skirmish,
                 reply,
             } => {
-                let result = self.start_skirmish(data_dir, &engine_version, &skirmish);
+                let result = self.start_skirmish(dirs, &engine_version, &skirmish);
                 let _ = reply.send(result);
             }
-            Command::PlayReplay {
-                data_dir,
-                path,
-                reply,
-            } => {
-                let result = self.play_replay(data_dir, path);
+            Command::PlayReplay { dirs, path, reply } => {
+                let result = self.play_replay(dirs, path);
                 let _ = reply.send(result);
             }
             Command::DownloadMissing { reply } => {
@@ -1340,6 +1353,17 @@ impl Runtime {
             Command::SetAutoLaunch { always, reply } => {
                 self.auto_launch_always = always;
                 let _ = reply.send(Ok(()));
+            }
+            Command::SetAutoDownload { on, reply } => {
+                let turned_on = on && !self.auto_download;
+                self.auto_download = on;
+                let _ = reply.send(Ok(()));
+                // Switched on with a room already joined: fetch now, not on
+                // the next room.
+                if turned_on {
+                    self.checked = None;
+                    self.refresh_content().await;
+                }
             }
             Command::SetIdleTimeout { timeout, reply } => {
                 self.idle.set_timeout(timeout);
@@ -1432,6 +1456,10 @@ impl Runtime {
             Command::SetDataDir(data_dir) => {
                 self.data_dir = data_dir;
                 // Re-check against the new directory.
+                self.checked = None;
+                self.refresh_content().await;
+            }
+            Command::RecheckContent => {
                 self.checked = None;
                 self.refresh_content().await;
             }
@@ -1766,11 +1794,11 @@ impl Runtime {
                             && self.auto_launch_always
                             && self.content_ready
                             && self.engine.is_none())
-                        .then(|| self.data_dir())
+                        .then(|| self.data_dirs())
                         .flatten()
                     });
-                    if let Some(data_dir) = wanted
-                        && let Err(err) = self.launch_engine(data_dir).await
+                    if let Some(dirs) = wanted
+                        && let Err(err) = self.launch_engine(dirs).await
                     {
                         self.batcher.push(Delta::Notice {
                             level: lobby_ui::NoticeLevel::Error,
@@ -1935,7 +1963,7 @@ impl Runtime {
         self.batcher.push(Delta::Phase(None));
     }
 
-    async fn launch_engine(&mut self, data_dir: PathBuf) -> Result<(), ClientError> {
+    async fn launch_engine(&mut self, dirs: DataDirs) -> Result<(), ClientError> {
         let (engine_version, url, in_game) = {
             let Some(conn) = self.conn.as_mut() else {
                 return Err(ClientError::NotConnected);
@@ -1951,7 +1979,7 @@ impl Runtime {
                 .ok_or_else(|| ClientError::Engine("the room is gone".into()))?;
             // Better a message naming what is missing than an engine that
             // starts and cannot join.
-            let available = content::Library::new(&data_dir).check(
+            let available = content::Library::new(dirs.clone()).check(
                 &room.engine_version,
                 &room.game_name,
                 &room.map_name,
@@ -1974,7 +2002,7 @@ impl Runtime {
             }
         }
         let child = launch::spawn(
-            &data_dir,
+            &dirs,
             &engine_version,
             url,
             self.overlay_config_dir.as_deref(),

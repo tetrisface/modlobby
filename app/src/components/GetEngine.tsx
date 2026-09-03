@@ -16,10 +16,16 @@ function mb(bytes: number): string {
  * pr-downloader, which is the right tool — but pr-downloader ships inside an
  * engine, so it cannot be what fetches one.
  *
- * Shown only where an engine is required and missing, and it says the size
- * before it starts: a few hundred megabytes is a decision, not a detail.
+ * Shown only where an engine is required and missing. With `auto` it starts
+ * by itself, which is what a room does: joining one whose engine you lack is
+ * a request for that engine, as bar-lobby and the launcher both treat it.
+ * Without `auto` it says the size and waits for the click.
  */
-export function GetEngine(props: { version: string; onDone?: () => void }) {
+export function GetEngine(props: {
+  version: string
+  auto?: boolean
+  onDone?: () => void
+}) {
   const [progress, setProgress] = createSignal<EngineProgress | null>(null)
   const [busy, setBusy] = createSignal(false)
 
@@ -28,6 +34,7 @@ export function GetEngine(props: { version: string; onDone?: () => void }) {
       setProgress(event.payload),
     )
     onCleanup(() => void pending.then((unlisten) => unlisten()))
+    if (props.auto) void get()
   })
 
   async function get() {
@@ -92,9 +99,11 @@ export function GetEngine(props: { version: string; onDone?: () => void }) {
           </div>
         )}
       </Show>
-      <button class='primary' disabled={busy()} onClick={() => void get()}>
-        {busy() ? 'Getting it…' : 'Download the engine'}
-      </button>
+      <Show when={!busy()}>
+        <button class='primary' onClick={() => void get()}>
+          {progress()?.phase === 'failed' ? 'Try again' : 'Download the engine'}
+        </button>
+      </Show>
     </div>
   )
 }

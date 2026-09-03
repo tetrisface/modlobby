@@ -2,6 +2,8 @@
 
 export type Paths = { 
 /**
- * The BAR data directory (`engine/`, `games/`, `maps/`); the launcher's when unset.
+ * The BAR data directory modlobby writes (`engine/`, `games/`, `maps/`);
+ * its own when unset. The launcher's and bar-lobby's installs are read
+ * either way, so their content is never fetched twice.
  */
 dataDir: string | null, };

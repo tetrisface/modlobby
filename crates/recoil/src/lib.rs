@@ -47,6 +47,11 @@ pub struct Launch {
     pub engine_dir: PathBuf,
     /// The BAR data directory (`--write-dir`); `--isolation` keeps the engine from reading anything else.
     pub data_dir: PathBuf,
+    /// Directories the engine may read and never writes: other lobbies'
+    /// installs. `SPRING_DATADIR` is honoured even under `--isolation`
+    /// (`DataDirLocater::LocateDataDirs`, level 3), and only the first
+    /// directory located, the write dir, is ever written to.
+    pub read_dirs: Vec<PathBuf>,
     /// A `spring://` URL or a start-script path.
     pub target: String,
     /// `--config`, when the user's own settings would defeat the overlay.
@@ -65,6 +70,13 @@ impl Launch {
             .arg("--write-dir")
             .arg(&self.data_dir)
             .arg("--isolation");
+        // `join_paths` uses the same separator the engine splits on: `;` on
+        // Windows, `:` elsewhere.
+        if let Ok(read_dirs) = std::env::join_paths(&self.read_dirs)
+            && !read_dirs.is_empty()
+        {
+            cmd.env("SPRING_DATADIR", read_dirs);
+        }
         if let Some(config) = &self.config {
             cmd.arg("--config").arg(config);
         }
@@ -105,6 +117,7 @@ mod tests {
         let launch = Launch {
             engine_dir: "C:/e".into(),
             data_dir: "C:/d".into(),
+            read_dirs: Vec::new(),
             target: "spring://me:1@h:2".into(),
             config: None,
         };
@@ -118,6 +131,38 @@ mod tests {
             ["--write-dir", "C:/d", "--isolation", "spring://me:1@h:2"]
         );
         assert!(cmd.get_program().to_string_lossy().ends_with(ENGINE_BINARY));
+        assert!(
+            cmd.get_envs().all(|(key, _)| key != "SPRING_DATADIR"),
+            "nothing to read from, nothing to tell the engine"
+        );
+    }
+
+    #[test]
+    fn other_installs_are_handed_to_the_engine_as_read_only_data_dirs() {
+        let launch = Launch {
+            engine_dir: "C:/e".into(),
+            data_dir: "C:/d".into(),
+            read_dirs: vec!["/launcher".into(), "/bar-lobby".into()],
+            target: "spring://me:1@h:2".into(),
+            config: None,
+        };
+        let cmd = launch.command();
+        let datadir = cmd
+            .get_envs()
+            .find(|(key, _)| *key == "SPRING_DATADIR")
+            .and_then(|(_, value)| value)
+            .expect("SPRING_DATADIR");
+        let separator = if cfg!(windows) { ";" } else { ":" };
+        assert_eq!(
+            datadir.to_string_lossy(),
+            format!("/launcher{separator}/bar-lobby")
+        );
+        // The write dir is still the only `--write-dir`.
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(&args[..2], ["--write-dir", "C:/d"]);
     }
 
     #[test]
@@ -125,6 +170,7 @@ mod tests {
         let launch = Launch {
             engine_dir: "C:/e".into(),
             data_dir: "C:/d".into(),
+            read_dirs: Vec::new(),
             target: "spring://me:1@h:2".into(),
             config: Some("C:/mine/springsettings.cfg".into()),
         };

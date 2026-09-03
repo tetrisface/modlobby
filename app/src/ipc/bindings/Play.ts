@@ -27,6 +27,14 @@ joinAs: JoinAs,
  */
 autoLaunch: boolean, 
 /**
+ * Whether joining a room fetches what it needs: engine, game and map.
+ *
+ * On, as bar-lobby and the launcher do it: a room you cannot play is
+ * nothing until its content is here. Off leaves a button in the room for
+ * each fetch, for a metered connection or a disk being kept small.
+ */
+autoDownload: boolean, 
+/**
  * Whether to ask BAR's PvE Stats service what a PvE room scores.
  *
  * On, because the number is the point of looking at a PvE room before

@@ -60,21 +60,70 @@ impl Availability {
     }
 }
 
-/// The BAR data directory, read only.
-#[derive(Debug, Clone)]
-pub struct Library {
-    data_dir: PathBuf,
+/// Where BAR content is: the one directory modlobby writes, and any it only
+/// reads. The read directories are other lobbies' installs. Their files are
+/// used and never touched, so a half-written download of ours cannot appear
+/// in their view, and theirs can at worst be missing from ours.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DataDirs {
+    pub write: PathBuf,
+    pub read: Vec<PathBuf>,
 }
 
-impl Library {
-    pub fn new(data_dir: impl Into<PathBuf>) -> Self {
+impl DataDirs {
+    pub fn only(write: impl Into<PathBuf>) -> Self {
         Self {
-            data_dir: data_dir.into(),
+            write: write.into(),
+            read: Vec::new(),
         }
     }
 
-    pub fn data_dir(&self) -> &Path {
-        &self.data_dir
+    /// Every directory, the writable one first.
+    pub fn all(&self) -> impl Iterator<Item = &Path> {
+        std::iter::once(self.write.as_path()).chain(self.read.iter().map(PathBuf::as_path))
+    }
+}
+
+impl From<PathBuf> for DataDirs {
+    fn from(write: PathBuf) -> Self {
+        Self::only(write)
+    }
+}
+
+impl From<&PathBuf> for DataDirs {
+    fn from(write: &PathBuf) -> Self {
+        Self::only(write)
+    }
+}
+
+impl From<&Path> for DataDirs {
+    fn from(write: &Path) -> Self {
+        Self::only(write)
+    }
+}
+
+/// What is installed across the data directories, read only.
+#[derive(Debug, Clone)]
+pub struct Library {
+    dirs: DataDirs,
+}
+
+impl Library {
+    pub fn new(dirs: impl Into<DataDirs>) -> Self {
+        Self { dirs: dirs.into() }
+    }
+
+    pub fn dirs(&self) -> &DataDirs {
+        &self.dirs
+    }
+
+    /// Where downloads go.
+    pub fn write_dir(&self) -> &Path {
+        &self.dirs.write
+    }
+
+    fn any_has(&self, relative: impl AsRef<Path>) -> bool {
+        self.dirs.all().any(|dir| dir.join(&relative).exists())
     }
 
     pub fn check(&self, engine_version: &str, game: &str, map: &str) -> Availability {
@@ -86,7 +135,49 @@ impl Library {
     }
 
     pub fn has_engine(&self, version: &str) -> bool {
-        recoil::find_engine(&self.data_dir, version).is_some()
+        self.find_engine(version).is_some()
+    }
+
+    /// The installed engine directory for `version`, ours before anyone else's.
+    pub fn find_engine(&self, version: &str) -> Option<PathBuf> {
+        self.dirs
+            .all()
+            .find_map(|dir| recoil::find_engine(dir, version))
+    }
+
+    /// A pr-downloader to run, from any installed engine.
+    pub fn find_downloader(&self, version: &str) -> Option<PathBuf> {
+        self.dirs
+            .all()
+            .find_map(|dir| recoil::find_downloader(dir, version))
+    }
+
+    /// Every engine version installed anywhere, newest name first.
+    pub fn installed_engines(&self) -> Vec<String> {
+        let mut versions: Vec<String> = self
+            .dirs
+            .all()
+            .flat_map(recoil::installed_engines)
+            .collect();
+        versions.sort();
+        versions.dedup();
+        versions.reverse();
+        versions
+    }
+
+    /// The skirmish AIs any installed engine ships.
+    pub fn installed_ais(&self) -> Vec<String> {
+        let mut ais: Vec<String> = self.dirs.all().flat_map(recoil::installed_ais).collect();
+        ais.sort();
+        ais.dedup();
+        ais
+    }
+
+    /// Every replay anywhere, newest first.
+    pub fn replays(&self) -> Vec<replays::Replay> {
+        let mut found: Vec<replays::Replay> = self.dirs.all().flat_map(replays::list).collect();
+        found.sort_by(|a, b| b.played_at.cmp(&a.played_at));
+        found
     }
 
     /// The map archive named after its display name.
@@ -95,12 +186,9 @@ impl Library {
         if stem.is_empty() {
             return false;
         }
-        ARCHIVES.iter().any(|ext| {
-            self.data_dir
-                .join("maps")
-                .join(format!("{stem}.{ext}"))
-                .exists()
-        })
+        ARCHIVES
+            .iter()
+            .any(|ext| self.any_has(Path::new("maps").join(format!("{stem}.{ext}"))))
     }
 
     /// A rapid package whose display name matches, downloaded into `packages/`.
@@ -110,12 +198,8 @@ impl Library {
     /// the version a room asks for, so any match would be a guess. Reading the
     /// name out of each `modinfo.lua` is what that would take.
     pub fn has_game(&self, display_name: &str) -> bool {
-        self.rapid_md5(display_name).is_some_and(|md5| {
-            self.data_dir
-                .join("packages")
-                .join(format!("{md5}.sdp"))
-                .exists()
-        })
+        self.rapid_md5(display_name)
+            .is_some_and(|md5| self.any_has(Path::new("packages").join(format!("{md5}.sdp"))))
     }
 
     /// One file out of the installed game, by the version a room reports.
@@ -125,11 +209,16 @@ impl Library {
     /// which is a normal state and not an error.
     pub fn game_file(&self, display_name: &str, file: &str) -> Option<Vec<u8>> {
         if let Some(md5) = self.rapid_md5(display_name)
-            && let Ok(bytes) = archive::from_package(&self.data_dir, &md5, file)
+            && let Some(bytes) = self
+                .dirs
+                .all()
+                .find_map(|dir| archive::from_package(dir, &md5, file).ok())
         {
             return Some(bytes);
         }
-        archive::from_unpacked(&self.data_dir, file)
+        self.dirs
+            .all()
+            .find_map(|dir| archive::from_unpacked(dir, file))
     }
 
     /// Every file under `prefix` in the game with this display name --
@@ -137,14 +226,21 @@ impl Library {
     pub fn game_files(&self, display_name: &str, prefix: &str) -> Vec<String> {
         let wanted = prefix.to_ascii_lowercase();
         if let Some(md5) = self.rapid_md5(display_name)
-            && let Ok(files) = archive::package_files(&self.data_dir, &md5)
+            && let Some(files) = self
+                .dirs
+                .all()
+                .find_map(|dir| archive::package_files(dir, &md5).ok())
         {
             return files
                 .into_iter()
                 .filter(|file| file.to_ascii_lowercase().starts_with(&wanted))
                 .collect();
         }
-        archive::unpacked_files(&self.data_dir, prefix)
+        self.dirs
+            .all()
+            .map(|dir| archive::unpacked_files(dir, prefix))
+            .find(|files| !files.is_empty())
+            .unwrap_or_default()
     }
 
     /// Scans every rapid index for the version with this display name.
@@ -175,17 +271,20 @@ impl Library {
     /// `<data>/rapid/<repo host>/<repo>/versions.gz`.
     fn rapid_indexes(&self) -> Vec<PathBuf> {
         let mut found = Vec::new();
-        let Ok(hosts) = std::fs::read_dir(self.data_dir.join("rapid")) else {
-            return found;
-        };
-        for host in hosts.filter_map(Result::ok) {
-            let Ok(repos) = std::fs::read_dir(host.path()) else {
-                continue;
-            };
-            for repo in repos.filter_map(Result::ok) {
-                let index = repo.path().join("versions.gz");
-                if index.is_file() {
-                    found.push(index);
+        for hosts in self
+            .dirs
+            .all()
+            .filter_map(|dir| std::fs::read_dir(dir.join("rapid")).ok())
+        {
+            for host in hosts.filter_map(Result::ok) {
+                let Ok(repos) = std::fs::read_dir(host.path()) else {
+                    continue;
+                };
+                for repo in repos.filter_map(Result::ok) {
+                    let index = repo.path().join("versions.gz");
+                    if index.is_file() {
+                        found.push(index);
+                    }
                 }
             }
         }
@@ -292,7 +391,13 @@ mod tests {
     #[test]
     fn an_unpacked_sdd_is_not_matched_by_name() {
         let (_dir, library) = library();
-        assert!(library.data_dir().join("games").join("My Mod.sdd").is_dir());
+        assert!(
+            library
+                .write_dir()
+                .join("games")
+                .join("My Mod.sdd")
+                .is_dir()
+        );
         assert!(!library.has_game("My Mod"));
     }
 
@@ -328,12 +433,7 @@ impl Library {
                 if name.is_empty() {
                     continue;
                 }
-                if self
-                    .data_dir
-                    .join("packages")
-                    .join(format!("{md5}.sdp"))
-                    .exists()
-                {
+                if self.any_has(Path::new("packages").join(format!("{md5}.sdp"))) {
                     names.push(name.to_owned());
                 }
             }
@@ -350,10 +450,11 @@ impl Library {
     /// the spring name the engine wants in a start script. Recovering the
     /// capitalisation is the caller's problem, because nothing on disk records it.
     pub fn installed_map_files(&self) -> Vec<String> {
-        let Ok(entries) = std::fs::read_dir(self.data_dir.join("maps")) else {
-            return Vec::new();
-        };
-        let mut names: Vec<String> = entries
+        let mut names: Vec<String> = self
+            .dirs
+            .all()
+            .filter_map(|dir| std::fs::read_dir(dir.join("maps")).ok())
+            .flatten()
             .filter_map(Result::ok)
             .filter_map(|entry| {
                 let path = entry.path();
@@ -365,7 +466,66 @@ impl Library {
             })
             .collect();
         names.sort();
+        names.dedup();
         names
+    }
+}
+
+#[cfg(test)]
+mod union_tests {
+    use super::*;
+
+    /// Ours is empty; theirs has an engine, a map and a replay.
+    fn split() -> (tempfile::TempDir, tempfile::TempDir, Library) {
+        let ours = tempfile::tempdir().unwrap();
+        let theirs = tempfile::tempdir().unwrap();
+        let engine = theirs.path().join("engine").join("recoil_2026.07.04");
+        std::fs::create_dir_all(&engine).unwrap();
+        std::fs::write(engine.join(recoil::ENGINE_BINARY), b"").unwrap();
+        std::fs::create_dir_all(theirs.path().join("maps")).unwrap();
+        std::fs::write(
+            theirs.path().join("maps").join("supreme_isthmus_v2.1.sd7"),
+            b"",
+        )
+        .unwrap();
+        std::fs::create_dir_all(theirs.path().join("demos")).unwrap();
+        std::fs::write(
+            theirs
+                .path()
+                .join("demos")
+                .join("2026-08-29_13-17-21-351_Supreme Isthmus v2.1_2026.07.04.sdfz"),
+            b"",
+        )
+        .unwrap();
+        let library = Library::new(DataDirs {
+            write: ours.path().to_path_buf(),
+            read: vec![theirs.path().to_path_buf()],
+        });
+        (ours, theirs, library)
+    }
+
+    #[test]
+    fn another_installs_content_counts_as_ours_to_read() {
+        let (_ours, theirs, library) = split();
+        assert!(library.has_engine("2026.07.04"));
+        assert!(library.has_map("Supreme Isthmus v2.1"));
+        assert_eq!(
+            library.find_engine("2026.07.04").unwrap(),
+            theirs.path().join("engine").join("recoil_2026.07.04")
+        );
+        assert_eq!(library.installed_engines(), ["2026.07.04"]);
+        assert_eq!(library.installed_map_files(), ["supreme_isthmus_v2.1"]);
+        assert_eq!(library.replays().len(), 1);
+    }
+
+    #[test]
+    fn our_own_copy_wins_over_theirs() {
+        let (ours, _theirs, library) = split();
+        let engine = ours.path().join("engine").join("2026.07.04");
+        std::fs::create_dir_all(&engine).unwrap();
+        std::fs::write(engine.join(recoil::ENGINE_BINARY), b"").unwrap();
+        assert_eq!(library.find_engine("2026.07.04").unwrap(), engine);
+        assert_eq!(library.installed_engines(), ["2026.07.04"], "listed once");
     }
 }
 

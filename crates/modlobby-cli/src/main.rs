@@ -44,7 +44,8 @@ enum Command {
         /// Connect the engine as soon as the room's game is running (or already is).
         #[arg(long)]
         launch: bool,
-        /// BAR data directory (`engine/`, `games/`, `maps/`); defaults to the launcher's.
+        /// BAR data directory to write (`engine/`, `games/`, `maps/`); defaults to
+        /// modlobby's own. Other lobbies' installs are read either way.
         #[arg(long)]
         data_dir: Option<PathBuf>,
     },
@@ -112,10 +113,10 @@ async fn main() -> anyhow::Result<()> {
             launch,
             data_dir,
         } => {
-            let data_dir = match (launch, data_dir.or_else(launch::default_data_dir)) {
+            let data_dir = match (launch, launch::data_dirs(data_dir)) {
                 (false, _) => None,
-                (true, Some(dir)) => Some(dir),
-                (true, None) => bail!("no BAR data directory found; pass --data-dir"),
+                (true, Some(dirs)) => Some(dirs),
+                (true, None) => bail!("no home directory for BAR content; pass --data-dir"),
             };
             let client = connect(&connection).await?;
             let outcome = spectate(&client, &connection, battle, password, data_dir).await;
@@ -249,15 +250,15 @@ async fn spectate(
     conn: &Connection,
     battle: u32,
     password: Option<String>,
-    data_dir: Option<PathBuf>,
+    data_dir: Option<content::DataDirs>,
 ) -> anyhow::Result<()> {
     print_battle(&client.snapshot().await?, battle)?;
     client
         .join_battle(battle, password)
         .await
         .context("joining")?;
-    if let Some(data_dir) = data_dir {
-        client.launch(data_dir).await.context("launching")?;
+    if let Some(dirs) = data_dir {
+        client.launch(dirs).await.context("launching")?;
     }
     let deadline = deadline(conn);
     let mut tick = tokio::time::interval(Duration::from_secs(1));

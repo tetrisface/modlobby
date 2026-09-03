@@ -24,6 +24,7 @@ function loaded(): Settings {
       joinAs: 'remember',
       lastWasPlayer: true,
       autoLaunch: true,
+      autoDownload: true,
       pveStats: true,
     },
     notifications: {

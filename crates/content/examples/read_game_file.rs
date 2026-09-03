@@ -11,7 +11,7 @@ fn main() {
         .nth(3)
         .unwrap_or_else(|| "modoptions.lua".to_owned());
 
-    let library = content::Library::new(&dir);
+    let library = content::Library::new(std::path::PathBuf::from(&dir));
     match library.game_file(&game, &file) {
         Some(bytes) => {
             let text = String::from_utf8_lossy(&bytes);

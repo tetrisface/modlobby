@@ -342,6 +342,21 @@ export function SettingsView() {
             spectating too, which is otherwise the case that means watching the
             room and pressing a button. Never without the content on disk.
           </p>
+          <label class='row'>
+            <input
+              type='checkbox'
+              checked={draft.play.autoDownload}
+              onChange={(e) =>
+                setDraft('play', 'autoDownload', e.currentTarget.checked)
+              }
+            />
+            Download what a room needs automatically
+          </label>
+          <p class='muted'>
+            Engine, game and map, as soon as you join a room that lacks them.
+            Off leaves a button in the room for each, for a metered connection
+            or a disk being kept small.
+          </p>
         </fieldset>
 
         <fieldset>
@@ -479,7 +494,8 @@ export function SettingsView() {
         <fieldset>
           <legend>Paths</legend>
           <label>
-            BAR data directory (blank = the launcher's, else bar-lobby's)
+            BAR data directory to write (blank = modlobby's own; the launcher's
+            and bar-lobby's are always read)
             <input
               value={draft.paths.dataDir ?? ''}
               onInput={(e) =>
@@ -606,6 +622,7 @@ function blank(): Settings {
       joinAs: 'remember',
       lastWasPlayer: true,
       autoLaunch: true,
+      autoDownload: true,
       pveStats: true,
     },
     notifications: {

@@ -37,18 +37,19 @@ fn now() -> Stamp {
         .unwrap_or_default()
 }
 
-/// Where Chobby keeps its presets, under the data directory in use.
+/// Where Chobby keeps its presets: the file wherever one already exists, so
+/// importing and exporting land where the other client will see them without
+/// anyone typing a path. With no Chobby install to speak of, ours.
 ///
-/// The same file the game itself reads, so importing and exporting land where
-/// the other client will see them without anyone typing a path.
+/// This is the one place modlobby writes into another lobby's directory, and
+/// only on an explicit export: the file is the hand-over.
 fn chobby_file(app: &App) -> Option<PathBuf> {
-    let dir = app
-        .settings
-        .get()
-        .paths
-        .data_dir
-        .or_else(lobby_runtime::launch::default_data_dir)?;
-    Some(dir.join("optionsPresets.json"))
+    let dirs = lobby_runtime::launch::data_dirs(app.settings.get().paths.data_dir)?;
+    let existing = dirs
+        .all()
+        .map(|dir| dir.join("optionsPresets.json"))
+        .find(|path| path.is_file());
+    Some(existing.unwrap_or_else(|| dirs.write.join("optionsPresets.json")))
 }
 
 #[tauri::command]

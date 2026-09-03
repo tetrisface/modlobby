@@ -95,6 +95,12 @@ writes; edits made while it runs are picked up live. Passwords go to the OS keyr
 to that file. TypeScript types in `app/src/ipc/bindings/` are generated from Rust on
 `cargo test`; do not edit them by hand.
 
+Engines, games and maps it downloads go to a data directory of its own:
+`%LOCALAPPDATA%\modlobby\data` on Windows, `~/.local/share/modlobby/data` on Linux. The
+launcher's and bar-lobby's installs are read alongside it and never written, so content they
+already have is not fetched twice and nothing half-downloaded of ours ends up in their tree.
+`paths.dataDir` moves the write directory, for instance onto an existing install.
+
 You join a room as a spectator and sit down when you want to play. `play.inPublicRooms`,
 under Settings → Advanced, turns the seats off for a session that is only watching — a
 client driving the protocol with nobody at the keyboard; a room of your own never consults

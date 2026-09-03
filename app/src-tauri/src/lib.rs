@@ -152,12 +152,10 @@ pub fn run() {
                 overlay: controller.clone(),
                 client: app.client.clone(),
             });
-            let widget_dir = app
-                .settings
-                .get()
-                .paths
-                .data_dir
-                .or_else(lobby_runtime::launch::default_data_dir);
+            // The widget goes in the directory we write; the engine reads
+            // `LuaUI/Widgets` from every data directory it is given.
+            let widget_dir = lobby_runtime::launch::data_dirs(app.settings.get().paths.data_dir)
+                .map(|dirs| dirs.write);
             let want_widget = app.settings.get().overlay.in_game_escape;
             // Held by the app so it lives as long as the process, and so the
             // exit handler can drop it — dropping is what removes the widget.
@@ -188,6 +186,7 @@ pub fn run() {
             let data_dir = app.settings.get().paths.data_dir;
             let in_public = app.settings.get().play.in_public_rooms;
             let auto_launch = app.settings.get().play.auto_launch;
+            let auto_download = app.settings.get().play.auto_download;
             let engine_config = overlay_config_dir(&app.settings.get());
             let idle = idle_timeout(&app.settings.get());
             tauri::async_runtime::spawn(async move {
@@ -196,6 +195,7 @@ pub fn run() {
                 let _ = client.set_data_dir(data_dir).await;
                 let _ = client.allow_public_seat(in_public).await;
                 let _ = client.set_auto_launch(auto_launch).await;
+                let _ = client.set_auto_download(auto_download).await;
                 let _ = client.set_overlay_config_dir(engine_config).await;
                 let _ = client.set_idle_timeout(idle).await;
                 while let Some(event) = watch.recv().await {
@@ -205,6 +205,7 @@ pub fn run() {
                             .allow_public_seat(settings.play.in_public_rooms)
                             .await;
                         let _ = client.set_auto_launch(settings.play.auto_launch).await;
+                        let _ = client.set_auto_download(settings.play.auto_download).await;
                         let _ = client
                             .set_overlay_config_dir(overlay_config_dir(settings))
                             .await;

@@ -104,7 +104,9 @@ impl Default for Connection {
 #[serde(default, rename_all = "camelCase")]
 #[ts(export)]
 pub struct Paths {
-    /// The BAR data directory (`engine/`, `games/`, `maps/`); the launcher's when unset.
+    /// The BAR data directory modlobby writes (`engine/`, `games/`, `maps/`);
+    /// its own when unset. The launcher's and bar-lobby's installs are read
+    /// either way, so their content is never fetched twice.
     pub data_dir: Option<PathBuf>,
 }
 
@@ -222,6 +224,12 @@ pub struct Play {
     /// included, which is the case that otherwise means watching the room and
     /// pressing a button. Only ever fires when the content is already on disk.
     pub auto_launch: bool,
+    /// Whether joining a room fetches what it needs: engine, game and map.
+    ///
+    /// On, as bar-lobby and the launcher do it: a room you cannot play is
+    /// nothing until its content is here. Off leaves a button in the room for
+    /// each fetch, for a metered connection or a disk being kept small.
+    pub auto_download: bool,
     /// Whether to ask BAR's PvE Stats service what a PvE room scores.
     ///
     /// On, because the number is the point of looking at a PvE room before
@@ -240,6 +248,7 @@ impl Default for Play {
             in_public_rooms: true,
             join_as: JoinAs::Remember,
             auto_launch: true,
+            auto_download: true,
             pve_stats: true,
             // Nothing remembered yet, and this is a lobby.
             last_was_player: true,

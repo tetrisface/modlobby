@@ -10,6 +10,7 @@ import {
   createSignal,
 } from 'solid-js'
 import { Composer } from '../components/Composer'
+import { GetEngine } from '../components/GetEngine'
 import { Linkify } from '../components/Linkify'
 import { showPlayerMenu } from '../components/PlayerMenu'
 import { BotRow, PlayerRow, SpectatorRow } from '../components/PlayerRow'
@@ -426,7 +427,10 @@ function Chips(props: { battle: BattleView }) {
             when={parts().length > 0}
             fallback={<span class='chip ok'>Content ready</span>}
           >
-            <Missing parts={parts()} />
+            <Missing
+              parts={parts()}
+              engineVersion={props.battle.engineVersion}
+            />
           </Show>
         )}
       </Show>
@@ -458,11 +462,13 @@ function Chips(props: { battle: BattleView }) {
  * have is a room you cannot do anything in — so the button is for a retry
  * after a failure, and the stop is for when you would rather not.
  * pr-downloader ships inside an engine, so an engine we do not have is the one
- * thing this cannot fix — it says so rather than offering a button that fails.
+ * thing it cannot fetch; that download is modlobby's own, offered here for the
+ * room's version. Once it lands the runtime checks again and fetches the rest.
  */
-function Missing(props: { parts: string[] }) {
+function Missing(props: { parts: string[]; engineVersion: string }) {
   const download = () => lobby.download
-  const fetchable = () => props.parts.some((part) => part !== 'engine')
+  const fetchable = () => !props.parts.includes('engine')
+  const auto = () => settings()?.play.autoDownload ?? true
 
   async function start() {
     try {
@@ -500,13 +506,13 @@ function Missing(props: { parts: string[] }) {
             Retry
           </button>
         </Match>
-        <Match when={fetchable()}>
+        <Match when={!fetchable()}>
+          <GetEngine version={props.engineVersion} auto={auto()} />
+        </Match>
+        <Match when={!auto()}>
           <button class='chip-choice' onClick={start}>
             Download
           </button>
-        </Match>
-        <Match when={!fetchable()}>
-          <span class='chip'>Install an engine to fetch content</span>
         </Match>
       </Switch>
     </>
