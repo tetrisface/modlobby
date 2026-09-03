@@ -688,7 +688,37 @@ struct Runtime {
 #[derive(Debug)]
 enum DownloadEvent {
     Progress(recoil::Progress),
-    Finished { what: String, ok: bool },
+    /// `tail` is the last of what pr-downloader printed: on failure, the
+    /// only account of why there is.
+    Finished {
+        what: String,
+        ok: bool,
+        tail: Vec<String>,
+    },
+}
+
+/// How many of pr-downloader's last lines are kept for a failure's reason.
+const TAIL_LINES: usize = 3;
+
+/// Keeps `line` as one of the last few worth repeating: progress redraws and
+/// blank lines say nothing about a failure.
+fn remember_tail(tail: &mut Vec<String>, line: &str) {
+    let line = line.trim();
+    if line.is_empty() || line.starts_with("[Progress]") {
+        return;
+    }
+    if tail.len() == TAIL_LINES {
+        tail.remove(0);
+    }
+    tail.push(line.to_owned());
+}
+
+/// The failure as a user can report it.
+fn failure_reason(tail: &[String]) -> String {
+    if tail.is_empty() {
+        return "pr-downloader did not finish".into();
+    }
+    format!("pr-downloader did not finish: {}", tail.join(" | "))
 }
 
 impl Runtime {
@@ -869,6 +899,7 @@ impl Runtime {
         tokio::spawn(async move {
             let progress = events.clone();
             let pump = async move {
+                let mut tail = Vec::new();
                 if let Some(mut stdout) = stdout {
                     // Read raw rather than by line: pr-downloader redraws progress
                     // with carriage returns, so a line reader would see one
@@ -881,29 +912,33 @@ impl Runtime {
                         }
                         buffer.push_str(&String::from_utf8_lossy(&chunk[..read]));
                         for line in recoil::split_output(&mut buffer) {
+                            remember_tail(&mut tail, &line);
                             if let Some(step) = recoil::Progress::parse(&line) {
                                 let _ = progress.send(DownloadEvent::Progress(step)).await;
                             }
                         }
                     }
                 }
+                tail
             };
             // The stop side owns a sender the runtime drops; either the pump
             // finishing or that drop ends the wait, and only then is the child
             // asked to stop — pr-downloader leaves a partial file behind, which
             // its own resume handles on the next attempt.
             tokio::pin!(pump);
-            tokio::select! {
-                () = &mut pump => {}
+            let tail = tokio::select! {
+                tail = &mut pump => tail,
                 _ = stop_rx => {
                     let _ = child.start_kill();
+                    Vec::new()
                 }
-            }
+            };
             let status = child.wait().await;
             let _ = events
                 .send(DownloadEvent::Finished {
                     what,
                     ok: matches!(status, Ok(status) if status.success()),
+                    tail,
                 })
                 .await;
         });
@@ -1019,20 +1054,24 @@ impl Runtime {
                     total: progress.total,
                 }));
             }
-            DownloadEvent::Finished { what, ok } => {
+            DownloadEvent::Finished { what, ok, tail } => {
                 self.downloading = None;
                 self.download_stop = None;
                 let stopped = std::mem::take(&mut self.download_stopping);
-                self.batcher.push(Delta::Download(if stopped {
+                let status = if stopped {
                     DownloadStatus::Idle
                 } else if ok {
                     DownloadStatus::Done { what }
                 } else {
-                    DownloadStatus::Failed {
-                        what,
-                        reason: "pr-downloader did not finish".into(),
-                    }
-                }));
+                    let reason = failure_reason(&tail);
+                    tracing::warn!(%what, %reason, "download failed");
+                    self.batcher.push(Delta::Notice {
+                        level: lobby_ui::NoticeLevel::Warning,
+                        text: format!("downloading {what}: {reason}"),
+                    });
+                    DownloadStatus::Failed { what, reason }
+                };
+                self.batcher.push(Delta::Download(status));
                 // Whatever arrived changes the answer, so ask the disk again.
                 self.checked = None;
                 self.refresh_content().await;
@@ -1092,8 +1131,14 @@ impl Runtime {
             && self.auto_fetched.as_ref() != Some(&key)
         {
             self.auto_fetched = Some(key);
+            // A room that cannot fetch its own content is stuck until the
+            // user does something, so they hear why.
             if let Err(error) = self.start_download().await {
-                tracing::debug!(%error, "not fetching the room's content");
+                tracing::warn!(%error, "not fetching the room's content");
+                self.batcher.push(Delta::Notice {
+                    level: lobby_ui::NoticeLevel::Warning,
+                    text: format!("not fetching the room's content: {error}"),
+                });
             }
         }
     }
@@ -2047,6 +2092,31 @@ mod tests {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream};
 
     use super::*;
+
+    #[test]
+    fn a_failure_repeats_the_last_lines_pr_downloader_printed() {
+        let mut tail = Vec::new();
+        for line in [
+            "[Progress] 10% [##   ] 1/10MB",
+            "",
+            "one",
+            "two",
+            "three",
+            "[Error] no such map",
+        ] {
+            remember_tail(&mut tail, line);
+        }
+        assert_eq!(tail, ["two", "three", "[Error] no such map"]);
+        assert_eq!(
+            failure_reason(&tail),
+            "pr-downloader did not finish: two | three | [Error] no such map"
+        );
+    }
+
+    #[test]
+    fn a_silent_failure_still_has_a_reason() {
+        assert_eq!(failure_reason(&[]), "pr-downloader did not finish");
+    }
 
     /// A connector whose single connection ends at the returned stream: the fake server.
     fn in_memory() -> (Connector, DuplexStream) {

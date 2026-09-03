@@ -12,13 +12,11 @@
 //! ```
 
 fn main() {
-    let path = std::env::args().nth(1).unwrap_or_else(|| {
-        concat!(
-            env!("LOCALAPPDATA"),
-            "/Programs/Beyond-All-Reason/data/optionsPresets.json"
-        )
-        .to_owned()
-    });
+    let path = std::env::args()
+        .nth(1)
+        .map(std::path::PathBuf::from)
+        .or_else(launcher_presets)
+        .expect("pass the path to optionsPresets.json");
     let raw = std::fs::read_to_string(&path).expect("presets");
     let presets: serde_json::Value = serde_json::from_str(&raw).expect("json");
     let (mut checked, mut kept, mut lost, mut failed) = (0, 0, 0, 0);
@@ -79,4 +77,12 @@ fn main() {
     println!(
         "checked {checked} tweaks with headers: {kept} kept whole, {lost} lost lines, {failed} unparsed"
     );
+}
+
+/// The launcher's presets on Windows; anywhere else the path is an argument.
+fn launcher_presets() -> Option<std::path::PathBuf> {
+    let local = std::env::var_os("LOCALAPPDATA")?;
+    Some(
+        std::path::PathBuf::from(local).join("Programs/Beyond-All-Reason/data/optionsPresets.json"),
+    )
 }

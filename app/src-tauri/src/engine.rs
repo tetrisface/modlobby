@@ -146,6 +146,8 @@ async fn fetch(
         let _ = std::fs::remove_dir_all(&target);
         ApiError::new("archive", format!("unpacking the engine: {err}"))
     })?;
+    recoil::mark_executable(&target)
+        .map_err(|err| ApiError::new("io", format!("marking the engine executable: {err}")))?;
 
     recoil::find_engine(data_dir, version).ok_or_else(|| {
         ApiError::new(

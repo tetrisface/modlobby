@@ -9,9 +9,13 @@ on:
 
 jobs:
   check:
-    # Windows only: the app is Windows-first (WebView2, spring.exe), and
-    # `cargo test` compiles an example that reads `LOCALAPPDATA` at build time.
-    runs-on: windows-2022
+    # Both platforms compile the Tauri crate; Linux needs WebKitGTK for it.
+    # The checks that produce the same answer everywhere run on Windows only.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
         shell: bash
@@ -19,6 +23,13 @@ jobs:
       # Submodules stay off: the 14 under external/ include RecoilEngine and
       # the whole game. Only one file of theirs is compiled in, below.
       - uses: actions/checkout@v7.0.1
+
+      - name: WebKitGTK and bundler libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 
       - name: BAR's modoptions.lua, at the pinned submodule revision
         # `include_str!` in crates/modoptions reads it under `#[cfg(test)]`.
@@ -45,12 +56,15 @@ jobs:
         working-directory: app
 
       - run: cargo fmt --all --check
+        if: runner.os == 'Windows'
       - run: cargo test --workspace
 
       - name: Generated bindings are committed
         # `cargo test` rewrites app/src/ipc/bindings from the Rust types; a
         # diff means a type changed and its TypeScript was not committed.
+        if: runner.os == 'Windows'
         run: git diff --exit-code app/src/ipc/bindings
 
       - run: bun run check
+        if: runner.os == 'Windows'
         working-directory: app

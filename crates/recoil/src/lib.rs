@@ -173,6 +173,59 @@ pub fn find_downloader(data_dir: &Path, version: &str) -> Option<PathBuf> {
         .find(|path| path.is_file())
 }
 
+/// Gives the two binaries modlobby spawns their executable bit back.
+///
+/// An engine archive is 7z, which carries Windows attributes only, so an
+/// unpacked `spring` and `pr-downloader` arrive as plain files on Unix. The
+/// shared objects beside them are `dlopen`ed and need only reading. A binary
+/// the archive did not ship is not an error here; launching reports that.
+#[cfg(unix)]
+pub fn mark_executable(engine_dir: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    for binary in [ENGINE_BINARY, DOWNLOADER_BINARY] {
+        let path = engine_dir.join(binary);
+        let Ok(metadata) = std::fs::metadata(&path) else {
+            continue;
+        };
+        let mut permissions = metadata.permissions();
+        permissions.set_mode(permissions.mode() | 0o755);
+        std::fs::set_permissions(&path, permissions)?;
+    }
+    Ok(())
+}
+
+/// Windows has no executable bit; the archive's files run as unpacked.
+#[cfg(not(unix))]
+pub fn mark_executable(_engine_dir: &Path) -> std::io::Result<()> {
+    Ok(())
+}
+
+#[cfg(all(test, unix))]
+mod executable_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn mode(path: &Path) -> u32 {
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    #[test]
+    fn the_unpacked_binaries_become_executable() {
+        let engine = tempfile::tempdir().unwrap();
+        for name in [ENGINE_BINARY, "libunitsync.so"] {
+            let path = engine.path().join(name);
+            std::fs::write(&path, b"").unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        }
+
+        mark_executable(engine.path()).unwrap();
+
+        assert_eq!(mode(&engine.path().join(ENGINE_BINARY)), 0o755);
+        assert_eq!(mode(&engine.path().join("libunitsync.so")), 0o644);
+        assert!(!engine.path().join(DOWNLOADER_BINARY).exists());
+    }
+}
+
 /// What to fetch. pr-downloader takes a game by rapid tag or name, and a map by
 /// its spring name — the same strings a room reports.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -39,6 +39,11 @@ tauri-plugin-opener = { workspace = true }
 tauri-plugin-window-state = { workspace = true }
 tauri-plugin-updater = { workspace = true }
 dotenvy = { workspace = true }
+tweaks = { workspace = true }
+tracing = { workspace = true }
+tracing-appender = { workspace = true }
+tracing-subscriber = { workspace = true }
+ts-rs = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 # Only to flash the engine's taskbar entry, which is a window we do not own.
@@ -46,11 +51,6 @@ windows-sys = { workspace = true, features = [
   "Win32_Foundation",
   "Win32_UI_WindowsAndMessaging",
 ] }
-tweaks = { workspace = true }
-tracing = { workspace = true }
-tracing-appender = { workspace = true }
-tracing-subscriber = { workspace = true }
-ts-rs = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

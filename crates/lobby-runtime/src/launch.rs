@@ -1,54 +1,76 @@
 //! Spawning the engine for a running game.
 
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use tokio::process::Child;
 
-/// Where the BAR launcher keeps its data on Windows, install or no install.
+/// One environment variable. A function rather than `std::env`, so the
+/// candidates can be computed for a machine a test describes.
+type Var<'a> = &'a dyn Fn(&str) -> Option<OsString>;
+
+/// Where BAR's content may already be, most trusted first.
 ///
-/// The path exists as an answer even when the directory does not: fetching the
-/// first engine onto a bare machine has to put it *somewhere*, and this is the
-/// somewhere the launcher itself would have chosen. Anything that needs content
-/// that is already there wants [`default_data_dir`] instead.
+/// The legacy launcher's data directory leads because Chobby and its package
+/// cleanup live there; the new bar-lobby's `assets` follows. Reading
+/// bar-lobby's assets as the data directory accepts two things: a map the user
+/// dropped into its *state* directory is not seen, and an engine launched with
+/// this as its write directory leaves demos and infolog beside the assets.
+fn candidates() -> Vec<PathBuf> {
+    let var = |name: &str| std::env::var_os(name);
+    if cfg!(windows) {
+        windows_candidates(&var)
+    } else {
+        unix_candidates(&var)
+    }
+}
+
+/// Both under `%LOCALAPPDATA%\Programs` (`bar-lobby/src/main/config/app.ts`).
+fn windows_candidates(var: Var) -> Vec<PathBuf> {
+    let Some(local) = var("LOCALAPPDATA") else {
+        return Vec::new();
+    };
+    let programs = PathBuf::from(local).join("Programs");
+    vec![
+        programs.join("Beyond-All-Reason").join("data"),
+        programs.join("BeyondAllReason").join("assets"),
+    ]
+}
+
+/// The launcher writes to `$XDG_STATE_HOME/Beyond-All-Reason`
+/// (`spring-launcher/src/write_path.js`); bar-lobby's assets are
+/// `$BAR_ASSETS_PATH`, else `$XDG_DATA_HOME/BeyondAllReason/assets`
+/// (`bar-lobby/src/main/config/app.ts`). The XDG defaults are under `$HOME`.
+fn unix_candidates(var: Var) -> Vec<PathBuf> {
+    let home = var("HOME").map(PathBuf::from);
+    let xdg = |name: &str, default: &str| {
+        var(name)
+            .map(PathBuf::from)
+            .or_else(|| home.as_ref().map(|home| home.join(default)))
+    };
+    let launcher =
+        xdg("XDG_STATE_HOME", ".local/state").map(|state| state.join("Beyond-All-Reason"));
+    let bar_lobby = var("BAR_ASSETS_PATH").map(PathBuf::from).or_else(|| {
+        xdg("XDG_DATA_HOME", ".local/share").map(|data| data.join("BeyondAllReason").join("assets"))
+    });
+    [launcher, bar_lobby].into_iter().flatten().collect()
+}
+
+/// Where the first engine goes on a bare machine: the most trusted candidate,
+/// whether or not the directory exists yet. Anything that needs content that
+/// is already there wants [`default_data_dir`] instead.
 pub fn launcher_data_dir() -> Option<PathBuf> {
-    let local = std::env::var_os("LOCALAPPDATA")?;
-    Some(
-        PathBuf::from(local)
-            .join("Programs")
-            .join("Beyond-All-Reason")
-            .join("data"),
-    )
+    candidates().into_iter().next()
 }
 
-/// Where the new bar-lobby keeps its content on Windows.
-///
-/// Engines, packages, pool, the rapid index and every map its pr-downloader
-/// fetched live under the install's `assets` directory
-/// (`bar-lobby/src/main/config/app.ts`). Two things are accepted by reading it
-/// as the data directory: a map the user dropped into bar-lobby's state
-/// directory (`%APPDATA%\\BeyondAllReason\\data\\maps`) is not seen, and an
-/// engine launched with this as its write directory leaves its demos and
-/// infolog beside bar-lobby's assets rather than in its state.
-pub fn bar_lobby_assets_dir() -> Option<PathBuf> {
-    let local = std::env::var_os("LOCALAPPDATA")?;
-    Some(
-        PathBuf::from(local)
-            .join("Programs")
-            .join("BeyondAllReason")
-            .join("assets"),
-    )
-}
-
-/// Where BAR's content already is: the legacy launcher's data directory when
-/// it exists, else bar-lobby's, else nothing. Whichever is found, the game is
-/// not downloaded a second time onto a machine that already has it. The
-/// launcher comes first because Chobby and its package cleanup live there.
+/// Where BAR's content already is, so the game is not downloaded a second
+/// time onto a machine that already has it.
 pub fn default_data_dir() -> Option<PathBuf> {
-    first_present([launcher_data_dir(), bar_lobby_assets_dir()])
+    first_present(candidates())
 }
 
-fn first_present(candidates: [Option<PathBuf>; 2]) -> Option<PathBuf> {
-    candidates.into_iter().flatten().find(|dir| dir.is_dir())
+fn first_present(candidates: impl IntoIterator<Item = PathBuf>) -> Option<PathBuf> {
+    candidates.into_iter().find(|dir| dir.is_dir())
 }
 
 /// Finds `engine_version` under `data_dir/engine` and starts it on `target`
@@ -125,13 +147,85 @@ pub fn spawn_download(
 mod tests {
     use super::*;
 
+    /// An environment made of the given variables and nothing else.
+    fn env<'a>(vars: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<OsString> + 'a {
+        move |name| {
+            vars.iter()
+                .find(|(key, _)| *key == name)
+                .map(|(_, value)| OsString::from(value))
+        }
+    }
+
+    fn paths(found: Vec<PathBuf>) -> Vec<String> {
+        found
+            .iter()
+            .map(|path| path.to_string_lossy().replace('\\', "/"))
+            .collect()
+    }
+
+    #[test]
+    fn windows_looks_beside_the_launcher_then_bar_lobby() {
+        let found = windows_candidates(&env(&[("LOCALAPPDATA", "C:/u/AppData/Local")]));
+        assert_eq!(
+            paths(found),
+            [
+                "C:/u/AppData/Local/Programs/Beyond-All-Reason/data",
+                "C:/u/AppData/Local/Programs/BeyondAllReason/assets",
+            ]
+        );
+    }
+
+    #[test]
+    fn windows_without_localappdata_has_nowhere_to_look() {
+        assert!(windows_candidates(&env(&[])).is_empty());
+    }
+
+    #[test]
+    fn unix_defaults_to_the_xdg_directories_under_home() {
+        let found = unix_candidates(&env(&[("HOME", "/home/dev")]));
+        assert_eq!(
+            paths(found),
+            [
+                "/home/dev/.local/state/Beyond-All-Reason",
+                "/home/dev/.local/share/BeyondAllReason/assets",
+            ]
+        );
+    }
+
+    #[test]
+    fn unix_honours_the_xdg_variables_over_home() {
+        let found = unix_candidates(&env(&[
+            ("HOME", "/home/dev"),
+            ("XDG_STATE_HOME", "/state"),
+            ("XDG_DATA_HOME", "/data"),
+        ]));
+        assert_eq!(
+            paths(found),
+            ["/state/Beyond-All-Reason", "/data/BeyondAllReason/assets"]
+        );
+    }
+
+    #[test]
+    fn unix_takes_bar_lobbys_own_assets_setting_first() {
+        let found = unix_candidates(&env(&[
+            ("HOME", "/home/dev"),
+            ("BAR_ASSETS_PATH", "/games/bar"),
+        ]));
+        assert_eq!(paths(found)[1], "/games/bar");
+    }
+
+    #[test]
+    fn unix_without_home_has_nowhere_to_look() {
+        assert!(unix_candidates(&env(&[])).is_empty());
+    }
+
     #[test]
     fn the_launcher_wins_when_both_are_installed() {
         let launcher = tempfile::tempdir().unwrap();
         let bar_lobby = tempfile::tempdir().unwrap();
         let found = first_present([
-            Some(launcher.path().to_path_buf()),
-            Some(bar_lobby.path().to_path_buf()),
+            launcher.path().to_path_buf(),
+            bar_lobby.path().to_path_buf(),
         ]);
         assert_eq!(found.as_deref(), Some(launcher.path()));
     }
@@ -140,13 +234,13 @@ mod tests {
     fn a_machine_with_only_bar_lobby_uses_its_content() {
         let bar_lobby = tempfile::tempdir().unwrap();
         let missing = bar_lobby.path().join("no-launcher-here");
-        let found = first_present([Some(missing), Some(bar_lobby.path().to_path_buf())]);
+        let found = first_present([missing, bar_lobby.path().to_path_buf()]);
         assert_eq!(found.as_deref(), Some(bar_lobby.path()));
     }
 
     #[test]
     fn nothing_installed_is_nothing_found() {
         let dir = tempfile::tempdir().unwrap();
-        assert_eq!(first_present([Some(dir.path().join("a")), None]), None);
+        assert_eq!(first_present([dir.path().join("a")]), None);
     }
 }

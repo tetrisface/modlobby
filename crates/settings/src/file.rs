@@ -27,7 +27,8 @@ pub enum Error {
     Invalid { path: PathBuf, message: String },
 }
 
-/// `MODLOBBY_CONFIG_DIR`, else the platform's per-user config dir (`%APPDATA%\modlobby\config` on Windows).
+/// `MODLOBBY_CONFIG_DIR`, else the platform's per-user config dir
+/// (`%APPDATA%\modlobby\config` on Windows, `~/.config/modlobby` on Linux).
 pub fn config_dir() -> PathBuf {
     if let Some(dir) = std::env::var_os("MODLOBBY_CONFIG_DIR") {
         return PathBuf::from(dir);

@@ -88,7 +88,8 @@ JS tooling needs. mise honours `rust-toolchain.toml` only when `rust` is listed 
 `idiomatic_version_file_enable_tools`; without it a global `[tools] rust` silently wins over
 the project pin.
 
-The app keeps its settings in `%APPDATA%\modlobby\config\settings.jsonc` — JSONC with a
+The app keeps its settings in `%APPDATA%\modlobby\config\settings.jsonc` on Windows and
+`~/.config/modlobby/settings.jsonc` on Linux — JSONC with a
 schema next to it, so an editor completes the keys and your comments survive the app's own
 writes; edits made while it runs are picked up live. Passwords go to the OS keyring, never
 to that file. TypeScript types in `app/src/ipc/bindings/` are generated from Rust on

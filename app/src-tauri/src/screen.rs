@@ -55,14 +55,7 @@ pub fn toggle_fullscreen(
     let mut held = screen.restore.lock().expect("screen restore");
 
     if let Some(restore) = held.take() {
-        // Back on before the geometry, so the shadow's invisible frame is
-        // there when the coordinates land.
-        let _ = window.set_shadow(true);
-        let _ = window.set_position(Position::Physical(restore.position));
-        let _ = window.set_size(Size::Physical(restore.size));
-        if restore.maximized {
-            let _ = window.maximize();
-        }
+        unfill(&window, restore);
         return Ok(false);
     }
 
@@ -105,14 +98,51 @@ pub fn toggle_fullscreen(
         }
     };
     *held = Some(restore);
+    fill(&window, &monitor);
+    Ok(true)
+}
 
+/// Covers the monitor by hand, as the module doc explains.
+#[cfg(windows)]
+fn fill(window: &tauri::Window, monitor: &tauri::Monitor) {
     // Clear any fullscreen the OS believes in from a previous run, so the two
     // notions of fullscreen cannot stack.
     let _ = window.set_fullscreen(false);
     let _ = window.set_shadow(false);
     let _ = window.set_position(Position::Physical(*monitor.position()));
     let _ = window.set_size(Size::Physical(*monitor.size()));
-    Ok(true)
+}
+
+#[cfg(windows)]
+fn unfill(window: &tauri::Window, restore: Restore) {
+    // Back on before the geometry, so the shadow's invisible frame is
+    // there when the coordinates land.
+    let _ = window.set_shadow(true);
+    let _ = window.set_position(Position::Physical(restore.position));
+    let _ = window.set_size(Size::Physical(restore.size));
+    if restore.maximized {
+        let _ = window.maximize();
+    }
+}
+
+/// Elsewhere the OS fullscreen is the trustworthy one: X11 hides its panels
+/// only for a window that asks properly, and a Wayland compositor ignores
+/// `set_position` altogether.
+#[cfg(not(windows))]
+fn fill(window: &tauri::Window, _monitor: &tauri::Monitor) {
+    let _ = window.set_fullscreen(true);
+}
+
+/// The geometry is put back explicitly: a window that covered the monitor
+/// before fullscreen was given an invented windowed shape the OS never saw.
+#[cfg(not(windows))]
+fn unfill(window: &tauri::Window, restore: Restore) {
+    let _ = window.set_fullscreen(false);
+    let _ = window.set_position(Position::Physical(restore.position));
+    let _ = window.set_size(Size::Physical(restore.size));
+    if restore.maximized {
+        let _ = window.maximize();
+    }
 }
 
 /// The default window size, matching `tauri.conf.json`'s `width`/`height`.

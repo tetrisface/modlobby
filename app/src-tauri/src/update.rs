@@ -7,7 +7,8 @@
 //!
 //! The installer does the restart: on Windows `install` hands over to NSIS
 //! and exits this process, and NSIS relaunches the app with the arguments it
-//! had. Nothing here runs after a successful install.
+//! had. On Linux the AppImage is rewritten in place and `install` returns, so
+//! the restart is asked for here. Nothing runs after a successful install.
 
 use std::sync::Mutex;
 
@@ -197,7 +198,7 @@ async fn busy(app: &App) -> bool {
 }
 
 /// Hands the installer its bytes. Does not return on success: the process
-/// exits and the installer relaunches it.
+/// exits and the new build comes up in its place.
 fn install(handle: &AppHandle, update: &Update, bytes: &[u8]) -> Result<UpdateProgress> {
     // The exit that follows is not Tauri's, so the exit handler that takes the
     // in-game widget back out of the user's data directory will not run.
@@ -207,6 +208,11 @@ fn install(handle: &AppHandle, update: &Update, bytes: &[u8]) -> Result<UpdatePr
     update
         .install(bytes)
         .map_err(|err| ApiError::new("update", format!("installing {}: {err}", update.version)))?;
+    // NSIS has exited this process by now. The AppImage was rewritten under
+    // our feet and nothing relaunches anything, so that is done here.
+    #[cfg(not(windows))]
+    handle.restart();
+    #[cfg(windows)]
     Ok(UpdateProgress::Ready {
         version: update.version.clone(),
     })
