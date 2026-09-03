@@ -2,6 +2,14 @@
 # given. The bump is committed and tagged before the build, so the tag names a
 # commit whose Cargo.toml already states its own version, and
 # `git checkout v<x> && cargo build` reproduces the shipped version string.
+#
+# Two jobs: `tag` bumps, tags and opens the GitHub release; `build` fans out
+# per platform and each job attaches its own installer, .sig and latest.json
+# to that release as soon as it finishes. tauri-action merges the `platforms`
+# map of an existing latest.json rather than replacing it, so the manifest
+# fills in one platform at a time. A client whose platform is not in the
+# manifest yet sees a transient "no update for this target" — the same class
+# of window as the 404 before the first upload.
 name: release
 
 on:
@@ -15,12 +23,17 @@ on:
 permissions:
   contents: write
 
+# Two releases racing on main would both bump and both tag.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
-  release:
-    runs-on: windows-2022
-    defaults:
-      run:
-        shell: bash
+  tag:
+    runs-on: ubuntu-24.04
+    outputs:
+      next: ${{ steps.version.outputs.next }}
+      commit: ${{ steps.bump.outputs.commit }}
     steps:
       # A branch, not the detached HEAD workflow_dispatch checks out by
       # default: the version bump is pushed to main.
@@ -60,6 +73,53 @@ jobs:
           git push origin main "v$NEXT"
           echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
+      # The release exists before any builder starts, so the parallel
+      # tauri-action runs all find it by tag instead of racing to create it.
+      # Re-dispatching the same version finds the release already there.
+      - name: Open the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEXT: ${{ steps.version.outputs.next }}
+          COMMIT: ${{ steps.bump.outputs.commit }}
+        run: |
+          gh release view "v$NEXT" >/dev/null 2>&1 ||
+            gh release create "v$NEXT" --title "$NEXT" --notes "$NEXT+$COMMIT"
+
+  build:
+    needs: tag
+    strategy:
+      # One platform failing must not cancel the others' uploads.
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            bundles: nsis
+          - os: ubuntu-22.04 # oldest glibc the runners offer: widest AppImage reach
+            bundles: appimage
+          - os: macos-15
+            bundles: app,dmg
+            target: universal-apple-darwin
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: v${{ needs.tag.outputs.next }}
+
+      - name: WebKitGTK and bundler libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Both Apple targets, for one universal binary
+        if: runner.os == 'macOS'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      # rustup reads rust-toolchain.toml on the first cargo call; no action needed.
       - uses: Swatinem/rust-cache@v2.9.2
       - uses: actions/setup-node@v7.0.0
         with:
@@ -70,18 +130,19 @@ jobs:
       - run: bun install --frozen-lockfile
         working-directory: app
 
-      # Builds the NSIS installer, signs it, and attaches installer, .sig and
-      # latest.json to the release. No submodule is needed: the one file
-      # compiled in from external/ is only read under #[cfg(test)].
+      # Builds the platform's bundle, signs the updater artifact, and attaches
+      # bundle, .sig and latest.json to the release. `--bundles` overrides the
+      # nsis-only `bundle.targets` in tauri.conf.json. No submodule is needed:
+      # the one file compiled in from external/ is only read under #[cfg(test)].
       - uses: tauri-apps/tauri-action@v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          MODLOBBY_COMMIT: ${{ steps.bump.outputs.commit }}
+          MODLOBBY_COMMIT: ${{ needs.tag.outputs.commit }}
         with:
           projectPath: app
           tauriScript: bun run tauri
-          tagName: v${{ steps.version.outputs.next }}
-          releaseName: ${{ steps.version.outputs.next }}
-          releaseBody: ${{ steps.version.outputs.next }}+${{ steps.bump.outputs.commit }}
+          tagName: v${{ needs.tag.outputs.next }}
+          releaseName: ${{ needs.tag.outputs.next }}
+          args: --bundles ${{ matrix.bundles }} ${{ matrix.target && format('--target {0}', matrix.target) || '' }}

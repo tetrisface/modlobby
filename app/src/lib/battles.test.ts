@@ -241,16 +241,11 @@ describe('sorting by a column', () => {
     ).toEqual(['gamma', 'beta', 'alpha'])
   })
 
-  test('map and host sort on their own field', () => {
+  test('map sorts on its own field', () => {
     // Xray, Yankee, Zulu.
     expect(titles(arrange(rows, filters({ sort: 'map' }), ''))).toEqual([
       'gamma',
       'alpha',
-      'beta',
-    ])
-    expect(titles(arrange(rows, filters({ sort: 'host' }), ''))).toEqual([
-      'alpha',
-      'gamma',
       'beta',
     ])
   })

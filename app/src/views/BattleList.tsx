@@ -173,6 +173,36 @@ export function BattleList() {
     return update({ sort: key, sortDescending: key === 'players' })
   }
 
+  /**
+   * A room of your own without joining one first: the same empty autohost
+   * the Seat bar takes over from inside a room. The runtime answers with the
+   * room it picked as soon as it has asked to join, so the walk to the room
+   * waits for the host to let us in — going there earlier would only be
+   * bounced straight back here.
+   */
+  const [hosting, setHosting] = createSignal<number | null>(null)
+  const [hostBusy, setHostBusy] = createSignal(false)
+  createEffect(() => {
+    const wanted = hosting()
+    const mine = lobby.myBattle?.id
+    if (wanted === null || mine === undefined) return
+    // Whatever room we ended up in settles the wait; a refused host is a
+    // notice from the runtime, and the next room clicked is its own choice.
+    setHosting(null)
+    if (mine === wanted) navigate('/room')
+  })
+
+  async function host() {
+    setHostBusy(true)
+    try {
+      setHosting(await api.hostPublic())
+    } catch (error) {
+      pushNotice('warning', `host a room: ${describeError(error)}`)
+    } finally {
+      setHostBusy(false)
+    }
+  }
+
   const hidden = createMemo(() => all().length - rows().length)
 
   /**
@@ -295,6 +325,14 @@ export function BattleList() {
           <Show when={hidden() > 0}> · {hidden()} hidden</Show> ·{' '}
           {Object.keys(lobby.users).length} users
         </span>
+        <button
+          class='primary'
+          disabled={hostBusy()}
+          title='Take over an empty autohost near you and become its boss'
+          onClick={() => void host()}
+        >
+          Host battle
+        </button>
       </header>
 
       <Show when={rejoinable()}>

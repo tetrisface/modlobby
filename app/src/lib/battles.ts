@@ -118,7 +118,6 @@ const BY: Record<
   players: (row) => row.battle.playerCount,
   title: (row) => row.battle.title.toLowerCase(),
   map: (row) => row.battle.mapName.toLowerCase(),
-  host: (row) => row.battle.founder.toLowerCase(),
 }
 
 export function compare(a: Row, b: Row, sort: BattleSort, descending: boolean) {
@@ -148,7 +147,6 @@ export const SORTS: ReadonlyArray<{ key: BattleSort; label: string }> = [
   { key: 'players', label: 'Players' },
   { key: 'title', label: 'Title' },
   { key: 'map', label: 'Map' },
-  { key: 'host', label: 'Host' },
 ]
 
 export const MODES: ReadonlyArray<{ key: ModeFilter; label: string }> = [

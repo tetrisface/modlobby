@@ -162,7 +162,7 @@ pub enum ModeFilter {
     Pvp,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema, TS, Default)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub enum BattleSort {
@@ -173,7 +173,19 @@ pub enum BattleSort {
     Players,
     Title,
     Map,
-    Host,
+}
+
+/// A sort this build no longer offers — `host` was one until 2026-09-03 —
+/// falls back to the default rather than making the whole file unreadable.
+impl<'de> Deserialize<'de> for BattleSort {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(match String::deserialize(deserializer)?.as_str() {
+            "players" => BattleSort::Players,
+            "title" => BattleSort::Title,
+            "map" => BattleSort::Map,
+            _ => BattleSort::Relevance,
+        })
+    }
 }
 
 /// What sitting down in a room you just joined should mean.
@@ -483,6 +495,17 @@ mod tests {
         assert_eq!(s.notifications.mention, Alert::Lobby);
         assert_eq!(s.notifications.ring, Alert::Off);
         assert_eq!(s.notifications.vote, Alert::Desktop);
+    }
+
+    #[test]
+    fn a_sort_that_was_withdrawn_reads_as_the_default() {
+        let s: Settings =
+            serde_json::from_str(r#"{"battleList":{"sort":"host","sortDescending":true}}"#)
+                .unwrap();
+        assert_eq!(s.battle_list.sort, BattleSort::Relevance);
+        assert!(s.battle_list.sort_descending);
+        let s: Settings = serde_json::from_str(r#"{"battleList":{"sort":"map"}}"#).unwrap();
+        assert_eq!(s.battle_list.sort, BattleSort::Map);
     }
 
     /// `schema/settings.schema.json` is what editors read; keep it in sync.

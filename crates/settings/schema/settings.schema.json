@@ -201,8 +201,7 @@
           "enum": [
             "players",
             "title",
-            "map",
-            "host"
+            "map"
           ]
         },
         {
