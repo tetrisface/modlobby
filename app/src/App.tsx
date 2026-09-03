@@ -24,7 +24,6 @@ import { applySettings } from './store/settings'
 import { BattleList } from './views/BattleList'
 import { Chat } from './views/Chat'
 import { Login } from './views/Login'
-import { Presets } from './views/Presets'
 import { Replays } from './views/Replays'
 import { Room } from './views/Room'
 import { SettingsView } from './views/Settings'
@@ -229,10 +228,7 @@ function Layout(props: ParentProps) {
       >
         <span class='brand'>
           modlobby
-          <span
-            class='stage'
-            title='Alpha — Expect rough edges.'
-          >
+          <span class='stage' title='Alpha — Expect rough edges.'>
             alpha
           </span>
         </span>
@@ -257,7 +253,6 @@ function Layout(props: ParentProps) {
             </Show>
           </A>
           <A href='/replays'>Replays</A>
-          <A href='/presets'>Presets</A>
         </Show>
         <A href='/settings'>Settings</A>
         <span
@@ -437,7 +432,6 @@ export function App() {
       <Route path='/battles' component={BattleList} />
       <Route path='/chat' component={Chat} />
       <Route path='/replays' component={Replays} />
-      <Route path='/presets' component={Presets} />
       <Route path='/skirmish' component={Skirmish} />
       <Route path='/room' component={Room} />
       {/* The tweak editor lives inside the room's setup pane, which is where

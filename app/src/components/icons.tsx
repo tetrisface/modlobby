@@ -220,7 +220,7 @@ export function IconSprite() {
           />
           <path d='M10 6.6 L13.4 10 L10 13.4 L6.6 10 Z' fill='currentColor' />
         </symbol>
-        {/* Actions on a tweak slot: copy its command, open it in the editor. */}
+        {/* Actions on a tweak slot or a preset row: copy, edit, delete. */}
         <symbol id='act-copy' viewBox='0 0 20 20'>
           <rect
             x='7'
@@ -253,6 +253,16 @@ export function IconSprite() {
             stroke='currentColor'
             stroke-width='1.6'
             stroke-linecap='round'
+          />
+        </symbol>
+        <symbol id='act-trash' viewBox='0 0 20 20'>
+          <path
+            d='M4 6 h12 M8 6 V4.2 h4 V6 M5.5 6 l0.8 10 h7.4 l0.8 -10 M8.4 9 v4.6 M11.6 9 v4.6'
+            fill='none'
+            stroke='currentColor'
+            stroke-width='1.6'
+            stroke-linecap='round'
+            stroke-linejoin='round'
           />
         </symbol>
         <symbol id='side-random' viewBox='0 0 20 20'>

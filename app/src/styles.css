@@ -159,9 +159,9 @@ input {
 }
 
 .brand {
-	display: inline-flex;
-		align-items: baseline;
-		gap: 6px;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
   font-family: var(--display);
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -171,17 +171,17 @@ input {
 /* The stage of the build, next to the name so it is read with it. In the
    warning colour because that is what it is: a caution, not a feature. */
 .brand .stage {
-	position: relative;
-	top: -2px;
-	font-size: 7px;
-	font-weight: 500;
-	letter-spacing: 0.1em;
-	text-transform: uppercase;
-	padding: 1px 3.5px;
-	border-radius: 2px;
-	border: 1px solid rgba(242, 184, 75, 0.4);
-	color: var(--warn);
-	cursor: help;
+  position: relative;
+  top: -2px;
+  font-size: 7px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 1px 3.5px;
+  border-radius: 2px;
+  border: 1px solid rgba(242, 184, 75, 0.4);
+  color: var(--warn);
+  cursor: help;
 }
 .spacer {
   flex: 1;
@@ -1351,13 +1351,28 @@ body.resizing {
   padding: 9px 14px 0;
 }
 
-.setup-head .t {
+/* The pane's two faces, Setup and Presets, as the head's title. */
+.pane-tab {
+  padding: 0 0 4px;
   font-family: var(--display);
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--faint);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+}
+
+.pane-tab:hover {
+  color: var(--text);
+}
+
+.pane-tab.on {
+  color: var(--text);
+  border-bottom-color: var(--accent);
 }
 
 .setup-head .note {
@@ -2422,13 +2437,33 @@ button.link:hover {
   cursor: help;
 }
 
-/* ---- saved room setups ---- */
+/* ---- saved room setups: the pane's second face ---- */
 
 .presets {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1;
   min-height: 0;
+}
+
+.presets .toolbar {
+  padding: 8px 14px;
+}
+
+.presets .search {
+  flex: 1;
+  min-width: 120px;
+  width: auto;
+}
+
+/* Which parts a Load sends, sitting right over the table they act on. */
+.preset-sections {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
 }
 
 .preset-table {
@@ -2438,18 +2473,37 @@ button.link:hover {
   min-height: 0;
 }
 
+/* One grid over the whole list, the rows subgrids of it, so a column sized
+   by its content comes out the same width on every row. The map column takes
+   only what its longest name needs, up to a share of the pane; the name gets
+   everything else, since that is the column people write the most into. */
 .preset-rows {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) fit-content(30%) 72px 72px 22px;
+  column-gap: 8px;
+  align-content: start;
   overflow-y: auto;
   flex: 1;
   min-height: 0;
 }
 
+/* A capital letter's worth of air after the map name, so the column it sizes
+   does not end flush against the date beside it. */
+.preset-map {
+  padding-right: 0.7em;
+}
+
+.preset-rows > .setup-empty {
+  grid-column: 1 / -1;
+  padding: 12px 14px;
+}
+
 .preset-row {
   display: grid;
-  grid-template-columns: 1fr 220px 90px 110px 110px 110px;
-  gap: 12px;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: center;
-  padding: 0 16px;
+  padding: 0 14px;
   height: 34px;
   border-bottom: 1px solid var(--line-soft);
   cursor: pointer;
@@ -2465,8 +2519,11 @@ button.link:hover {
 }
 
 .preset-row.head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   height: 30px;
-  padding: 0 16px;
+  padding: 0 14px;
   border-bottom: 1px solid var(--line);
   cursor: default;
   background: var(--panel);
@@ -2492,10 +2549,12 @@ button.link:hover {
 .preset-name {
   display: flex;
   align-items: center;
-  gap: 8px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.preset-name .label {
+  flex: 1;
 }
 
 .preset-row span {
@@ -2504,19 +2563,41 @@ button.link:hover {
   white-space: nowrap;
 }
 
+/* Rename and delete live on the row and show themselves when it is looked
+   at: hovered, selected, or reached by keyboard. */
+.row-act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  flex-shrink: 0;
+  color: var(--faint);
+  background: transparent;
+  border: none;
+  border-radius: 2px;
+  opacity: 0;
+}
+
+.preset-row:hover .row-act,
+.preset-row.on .row-act,
+.row-act:focus-visible {
+  opacity: 1;
+}
+
+.row-act:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--raised);
+}
+
+.row-act.danger:hover:not(:disabled) {
+  color: var(--error);
+}
+
 .tabular {
   font-variant-numeric: tabular-nums;
   font-size: 12px;
-}
-
-.preset-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 16px;
-  border-top: 1px solid var(--line);
-  background: var(--sunken);
-  flex-shrink: 0;
 }
 
 /* ---- what a PvE room scores ---- */

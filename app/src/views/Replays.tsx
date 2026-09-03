@@ -161,7 +161,10 @@ export function Replays() {
               void api
                 .presetFromReplay(path, name)
                 .then(() =>
-                  pushNotice('info', `saved ${name}; it is in Presets`),
+                  pushNotice(
+                    'info',
+                    `saved ${name}; it is under Presets in the room`,
+                  ),
                 )
                 .catch((error) => pushNotice('warning', describeError(error)))
             }}

@@ -33,6 +33,7 @@ import {
 } from '../lib/setup'
 import { pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
+import { Presets } from './Presets'
 import { Tweaks } from './tweaks/Tweaks'
 
 const TWEAK_GROUP = 'Tweak slots'
@@ -68,8 +69,13 @@ const TAB_GAP = 2
  *
  * The pane carries its own width: dragged by the grip on its left edge and
  * remembered, or, the first time, measured so that its tabs sit on one row.
+ *
+ * Presets share the pane as a second face of it: they are read from and
+ * written to this room, so beside the settings is where they belong.
  */
 export function Setup() {
+  const [pane, setPane] = createSignal<'setup' | 'presets'>('setup')
+
   /**
    * The game's own option table, read from the copy installed on this machine
    * rather than shipped with the app — see `lib/setup`. Re-read when the room
@@ -191,128 +197,145 @@ export function Setup() {
       />
 
       <div class='setup-head'>
-        <span class='t'>Setup</span>
-        <span class='note'>
-          {editable()
-            ? 'a change is proposed to the host'
-            : 'read-only · spectator'}
-        </span>
-        <Show when={editing()}>
-          <button class='setup-back' onClick={() => setEditing(null)}>
-            Settings
-          </button>
+        <button
+          class='pane-tab'
+          classList={{ on: pane() === 'setup' }}
+          onClick={() => setPane('setup')}
+        >
+          Setup
+        </button>
+        <button
+          class='pane-tab'
+          classList={{ on: pane() === 'presets' }}
+          onClick={() => setPane('presets')}
+        >
+          Presets
+        </button>
+        <Show when={pane() === 'setup'}>
+          <span class='note'>
+            {editable()
+              ? 'a change is proposed to the host'
+              : 'read-only · spectator'}
+          </span>
+          <Show when={editing()}>
+            <button class='setup-back' onClick={() => setEditing(null)}>
+              Settings
+            </button>
+          </Show>
         </Show>
       </div>
 
-      <div class='setup-tabs' ref={strip}>
-        <button
-          class='setup-tab'
-          classList={{ on: tab().key === ALL_TAB }}
-          title={ALL.desc}
-          onClick={() => open(ALL)}
-        >
-          {ALL.name}
-          <Show when={total() > 0}>
-            <span class='badge'>{total()}</span>
-          </Show>
-        </button>
-        <For each={TABS()}>
-          {(entry) => {
-            const count = createMemo(() => changedCount(entry, values()))
-            return (
-              <button
-                class='setup-tab'
-                classList={{
-                  on: tab().key === entry.key,
-                  ours: entry.key === MODDING_TAB,
-                }}
-                title={entry.desc}
-                onClick={() => open(entry)}
-              >
-                {entry.name}
-                <Show when={count() > 0}>
-                  <span class='badge'>{count()}</span>
-                </Show>
-              </button>
-            )
-          }}
-        </For>
-      </div>
+      <Show when={pane() === 'setup'} fallback={<Presets />}>
+        <div class='setup-tabs' ref={strip}>
+          <button
+            class='setup-tab'
+            classList={{ on: tab().key === ALL_TAB }}
+            title={ALL.desc}
+            onClick={() => open(ALL)}
+          >
+            {ALL.name}
+            <Show when={total() > 0}>
+              <span class='badge'>{total()}</span>
+            </Show>
+          </button>
+          <For each={TABS()}>
+            {(entry) => {
+              const count = createMemo(() => changedCount(entry, values()))
+              return (
+                <button
+                  class='setup-tab'
+                  classList={{
+                    on: tab().key === entry.key,
+                    ours: entry.key === MODDING_TAB,
+                  }}
+                  title={entry.desc}
+                  onClick={() => open(entry)}
+                >
+                  {entry.name}
+                  <Show when={count() > 0}>
+                    <span class='badge'>{count()}</span>
+                  </Show>
+                </button>
+              )
+            }}
+          </For>
+        </div>
 
-      <Show when={!editing()} fallback={<Tweaks initial={editing()?.slot} />}>
-        <div class='setup-body'>
-          <nav class='groups'>
-            <Show
-              when={tab().key !== ALL_TAB}
-              fallback={
-                <For each={everywhere()}>
+        <Show when={!editing()} fallback={<Tweaks initial={editing()?.slot} />}>
+          <div class='setup-body'>
+            <nav class='groups'>
+              <Show
+                when={tab().key !== ALL_TAB}
+                fallback={
+                  <For each={everywhere()}>
+                    {(entry) => (
+                      <button class='group' onClick={() => open(entry.tab)}>
+                        {entry.tab.name}
+                        <span class='c'>{entry.rows.length}</span>
+                      </button>
+                    )}
+                  </For>
+                }
+              >
+                <button
+                  class='group'
+                  classList={{ on: group() === null }}
+                  onClick={() => setGroup(null)}
+                >
+                  Changed<span class='c'>{changed().length}</span>
+                </button>
+                <For each={tab().groups}>
                   {(entry) => (
-                    <button class='group' onClick={() => open(entry.tab)}>
-                      {entry.tab.name}
-                      <span class='c'>{entry.rows.length}</span>
+                    <button
+                      class='group'
+                      classList={{ on: group() === entry.name }}
+                      onClick={() => setGroup(entry.name)}
+                    >
+                      {entry.name || 'General'}
+                      <span class='c'>{entry.options.length}</span>
                     </button>
                   )}
                 </For>
-              }
-            >
-              <button
-                class='group'
-                classList={{ on: group() === null }}
-                onClick={() => setGroup(null)}
-              >
-                Changed<span class='c'>{changed().length}</span>
-              </button>
-              <For each={tab().groups}>
-                {(entry) => (
-                  <button
-                    class='group'
-                    classList={{ on: group() === entry.name }}
-                    onClick={() => setGroup(entry.name)}
-                  >
-                    {entry.name || 'General'}
-                    <span class='c'>{entry.options.length}</span>
-                  </button>
-                )}
-              </For>
-            </Show>
-          </nav>
+              </Show>
+            </nav>
 
-          <div class='setup-detail'>
-            <Switch>
-              <Match when={tab().key === ALL_TAB}>
-                <Everywhere
-                  changed={everywhere}
-                  all={() => rowsByTab(TABS(), values(), false)}
-                  editable={editable()}
-                  onEdit={(slot) => setEditing({ slot })}
-                />
-              </Match>
-              <Match when={group() === null}>
-                <ChangedHere
-                  rows={changed}
-                  editable={editable()}
-                  onShowAll={() => setGroup(firstGroup())}
-                  onEdit={(slot) => setEditing({ slot })}
-                />
-              </Match>
-              <Match
-                when={tab().key === MODDING_TAB && group() === TWEAK_GROUP}
-              >
-                <TweakSlots
-                  values={values()}
-                  onEdit={(slot) => setEditing({ slot })}
-                />
-              </Match>
-              <Match when={true}>
-                <Rows
-                  rows={shown()}
-                  editable={editable()}
-                  onEdit={(slot) => setEditing({ slot })}
-                />
-              </Match>
-            </Switch>
+            <div class='setup-detail'>
+              <Switch>
+                <Match when={tab().key === ALL_TAB}>
+                  <Everywhere
+                    changed={everywhere}
+                    all={() => rowsByTab(TABS(), values(), false)}
+                    editable={editable()}
+                    onEdit={(slot) => setEditing({ slot })}
+                  />
+                </Match>
+                <Match when={group() === null}>
+                  <ChangedHere
+                    rows={changed}
+                    editable={editable()}
+                    onShowAll={() => setGroup(firstGroup())}
+                    onEdit={(slot) => setEditing({ slot })}
+                  />
+                </Match>
+                <Match
+                  when={tab().key === MODDING_TAB && group() === TWEAK_GROUP}
+                >
+                  <TweakSlots
+                    values={values()}
+                    onEdit={(slot) => setEditing({ slot })}
+                  />
+                </Match>
+                <Match when={true}>
+                  <Rows
+                    rows={shown()}
+                    editable={editable()}
+                    onEdit={(slot) => setEditing({ slot })}
+                  />
+                </Match>
+              </Switch>
+            </div>
           </div>
-        </div>
+        </Show>
       </Show>
     </aside>
   )

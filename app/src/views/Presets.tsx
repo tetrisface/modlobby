@@ -7,6 +7,7 @@ import {
   onCleanup,
 } from 'solid-js'
 import { Ask } from '../components/Ask'
+import { Glyph } from '../components/icons'
 import type { Preset } from '../ipc/bindings/Preset'
 import type { Sections } from '../ipc/bindings/Sections'
 import { api, describeError } from '../ipc/client'
@@ -16,44 +17,69 @@ import {
   naturalDescending,
   search,
   sort,
-  tweakCount,
   when,
 } from '../lib/presets'
 import { pushNotice } from '../store/chat'
-import { lobby } from '../store/lobby'
 
+/**
+ * The columns the pane has room for. Settings and Created are still sortable
+ * in `lib/presets`, but at pane width they would cost the name its space;
+ * the creation date rides in the row's tooltip instead.
+ */
 const COLUMNS: Array<[Column, string, string]> = [
   ['name', 'Name', 'What you called it'],
   ['map', 'Map', 'The map it was saved on'],
-  ['options', 'Settings', 'How many settings it carries'],
-  ['used', 'Last used', 'When it was last applied to a room'],
+  ['used', 'Used', 'When it was last applied to a room'],
   ['updated', 'Updated', 'When it last changed'],
-  ['created', 'Created', 'When it was first saved'],
 ]
 
-const EVERYTHING: Sections = {
+const SECTIONS = [
+  ['map', 'Map'],
+  ['modoptions', 'Settings'],
+  ['battle', 'Room'],
+  ['startBoxes', 'Start boxes'],
+] as const
+
+/**
+ * Everything but the bots, layered over what the room already has. Resetting
+ * first is the exception: it wipes the room down to the SPADS preset, which
+ * is rarely what somebody stacking a tweak on top of a room wants.
+ */
+const DEFAULT_SECTIONS: Sections = {
   map: true,
   modoptions: true,
   battle: true,
   startBoxes: true,
   bots: false,
-  reset: true,
+  reset: false,
+}
+
+/** What the sheet is for: a fresh name, or a new name for `from`. */
+type Asking = { kind: 'save' } | { kind: 'rename'; from: string }
+
+/** A rename starts from the old name; a save starts blank. */
+function initialText(asked: Asking): string {
+  return asked.kind === 'rename' ? asked.from : ''
 }
 
 /**
- * Saved room setups.
+ * Saved room setups, in the room's pane beside Setup.
  *
  * A table rather than a dropdown because these accumulate — sixty-five of them
  * in the file this was built against — and the questions people ask of them
  * are "which did I use last", "which was for this map" and "which is the big
  * one", none of which a list of names answers.
+ *
+ * Selecting is a click anywhere on the row; renaming and deleting are the two
+ * icons on it. Keeping the name itself inert is what makes a row selectable
+ * on a small display without opening something by accident.
  */
 export function Presets() {
   const [column, setColumn] = createSignal<Column>(DEFAULT_SORT)
   const [descending, setDescending] = createSignal(true)
   const [needle, setNeedle] = createSignal('')
   const [chosen, setChosen] = createSignal<string | null>(null)
-  const [sections, setSections] = createSignal<Sections>(EVERYTHING)
+  const [sections, setSections] = createSignal<Sections>(DEFAULT_SECTIONS)
   const [busy, setBusy] = createSignal(false)
 
   const [book, { mutate, refetch }] = createResource(async () => {
@@ -75,7 +101,6 @@ export function Presets() {
     sort(search(book()?.presets ?? [], needle()), column(), descending()),
   )
   const selected = () => rows().find((preset) => preset.name === chosen())
-  const inRoom = () => lobby.myBattle !== null
 
   function head(next: Column) {
     if (next === column()) return setDescending(!descending())
@@ -95,9 +120,7 @@ export function Presets() {
   }
 
   /** Which text the sheet is asking for, when it is open. */
-  const [asking, setAsking] = createSignal<
-    { kind: 'save' } | { kind: 'rename'; from: string } | null
-  >(null)
+  const [asking, setAsking] = createSignal<Asking | null>(null)
 
   const save = (name: string) =>
     act('save', async () => {
@@ -105,8 +128,8 @@ export function Presets() {
       setChosen(name)
     })
 
-  const apply = (preset: Preset) =>
-    act('apply', async () => {
+  const load = (preset: Preset) =>
+    act('load', async () => {
       const plan = await api.applyPreset(preset.name, sections())
       void refetch()
       const already = plan.alreadySet ? `, ${plan.alreadySet} already set` : ''
@@ -124,6 +147,30 @@ export function Presets() {
         )
     })
 
+  const remove = (preset: Preset) =>
+    act('delete', async () => {
+      mutate(await api.deletePreset(preset.name))
+      if (chosen() === preset.name) setChosen(null)
+    })
+
+  const importFromChobby = () =>
+    act('import', async () => {
+      const { book: next, skipped } = await api.importPresets(null)
+      mutate(next)
+      pushNotice(
+        'info',
+        skipped
+          ? `imported; ${skipped} left alone because you already had those names`
+          : 'imported from Chobby',
+      )
+    })
+
+  const exportToChobby = (preset: Preset) =>
+    act('export', async () => {
+      await api.exportPresets(null, [preset.name])
+      pushNotice('info', `${preset.name} written to Chobby's presets`)
+    })
+
   return (
     <section class='presets'>
       <header class='toolbar'>
@@ -134,26 +181,27 @@ export function Presets() {
           onInput={(event) => setNeedle(event.currentTarget.value)}
         />
         <button
-          disabled={!inRoom() || busy()}
+          disabled={busy()}
+          title='Save this room as a preset'
           onClick={() => setAsking({ kind: 'save' })}
         >
-          Save this room
+          Save
+        </button>
+        <button
+          class='primary'
+          disabled={busy() || !selected()}
+          title='Apply the selected preset to this room'
+          onClick={() => {
+            const preset = selected()
+            if (preset) void load(preset)
+          }}
+        >
+          Load
         </button>
         <button
           disabled={busy()}
           title={chobbyPath() ?? 'no BAR data directory found'}
-          onClick={() =>
-            void act('import', async () => {
-              const { book: next, skipped } = await api.importPresets(null)
-              mutate(next)
-              pushNotice(
-                'info',
-                skipped
-                  ? `imported; ${skipped} left alone because you already had those names`
-                  : 'imported from Chobby',
-              )
-            })
-          }
+          onClick={() => void importFromChobby()}
         >
           Import from Chobby
         </button>
@@ -162,45 +210,75 @@ export function Presets() {
           title={chobbyPath() ?? ''}
           onClick={() => {
             const preset = selected()
-            if (!preset) return
-            void act('export', async () => {
-              await api.exportPresets(null, [preset.name])
-              pushNotice('info', `${preset.name} written to Chobby's presets`)
-            })
+            if (preset) void exportToChobby(preset)
           }}
         >
-          Export selected
+          Export to Chobby
         </button>
         <span class='spacer' />
         <span class='muted'>{rows().length} presets</span>
       </header>
 
-      <div class='preset-table'>
-        <div class='preset-row head'>
-          <For each={COLUMNS}>
-            {([key, label, hint]) => (
-              <button
-                class='preset-head'
-                classList={{ on: column() === key }}
-                title={hint}
-                onClick={() => head(key)}
-              >
-                {label}
-                <Show when={column() === key}>
-                  <span class='arrow'>{descending() ? ' ↓' : ' ↑'}</span>
-                </Show>
-              </button>
-            )}
-          </For>
-        </div>
+      {/* Which parts a Load sends. */}
+      <div class='preset-sections'>
+        <For each={SECTIONS}>
+          {([key, label]) => (
+            <button
+              class='chip-choice'
+              classList={{ on: sections()[key] }}
+              onClick={() =>
+                setSections({ ...sections(), [key]: !sections()[key] })
+              }
+            >
+              {label}
+            </button>
+          )}
+        </For>
+        {/* The one that decides whether two presets stack. */}
+        <button
+          class='chip-choice'
+          classList={{ on: sections().reset }}
+          title={
+            sections().reset
+              ? 'Sends !preset first, so the room is reset to this preset alone'
+              : 'Leaves what the room already has, so presets stack'
+          }
+          onClick={() =>
+            setSections({ ...sections(), reset: !sections().reset })
+          }
+        >
+          Reset lobby
+        </button>
+      </div>
 
+      {/* The header scrolls with the rows, stuck to the top: inside the same
+          box as the rows, its columns stay over theirs whether or not a
+          scrollbar is taking width from that box. */}
+      <div class='preset-table'>
         <div class='preset-rows'>
+          <div class='preset-row head'>
+            <For each={COLUMNS}>
+              {([key, label, hint]) => (
+                <button
+                  class='preset-head'
+                  classList={{ on: column() === key }}
+                  title={hint}
+                  onClick={() => head(key)}
+                >
+                  {label}
+                  <Show when={column() === key}>
+                    <span class='arrow'>{descending() ? ' ↓' : ' ↑'}</span>
+                  </Show>
+                </button>
+              )}
+            </For>
+            <span />
+          </div>
           <For
             each={rows()}
             fallback={
               <p class='muted setup-empty'>
-                Nothing saved yet. Join a room and press <b>Save this room</b>,
-                or import what Chobby has.
+                Nothing saved yet. Press <b>Save</b>, or import what Chobby has.
               </p>
             }
           >
@@ -208,104 +286,49 @@ export function Presets() {
               <div
                 class='preset-row'
                 classList={{ on: chosen() === preset.name }}
+                title={`${preset.name}\ncreated ${when(preset.created, now())}`}
                 onClick={() => setChosen(preset.name)}
-                onDblClick={() => inRoom() && void apply(preset)}
+                onDblClick={() => void load(preset)}
               >
-                <span class='preset-name' title={preset.name}>
-                  {preset.name}
-                  <Show when={tweakCount(preset) > 0}>
-                    <span class='chip'>{tweakCount(preset)} tweaks</span>
-                  </Show>
+                <span class='preset-name'>
+                  <span class='label'>{preset.name}</span>
+                  <button
+                    class='row-act'
+                    title='Rename'
+                    aria-label={`Rename ${preset.name}`}
+                    disabled={busy()}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      setAsking({ kind: 'rename', from: preset.name })
+                    }}
+                  >
+                    <Glyph id='act-pen' />
+                  </button>
                 </span>
-                <span class='muted' title={preset.map ?? ''}>
+                <span class='preset-map muted' title={preset.map ?? ''}>
                   {preset.map ?? '—'}
-                </span>
-                <span class='tabular'>
-                  {Object.keys(preset.modoptions).length}
                 </span>
                 <span class='tabular muted'>
                   {when(preset.lastUsed, now())}
                 </span>
                 <span class='tabular muted'>{when(preset.updated, now())}</span>
-                <span class='tabular muted'>{when(preset.created, now())}</span>
+                <button
+                  class='row-act danger'
+                  title='Delete'
+                  aria-label={`Delete ${preset.name}`}
+                  disabled={busy()}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    void remove(preset)
+                  }}
+                >
+                  <Glyph id='act-trash' />
+                </button>
               </div>
             )}
           </For>
         </div>
       </div>
-
-      <Show when={selected()}>
-        {(preset) => (
-          <footer class='preset-bar'>
-            <span class='preset-name'>{preset().name}</span>
-            <For
-              each={
-                [
-                  ['map', 'Map'],
-                  ['modoptions', 'Settings'],
-                  ['battle', 'Room'],
-                  ['startBoxes', 'Start boxes'],
-                ] as const
-              }
-            >
-              {([key, label]) => (
-                <button
-                  class='chip-choice'
-                  classList={{ on: sections()[key] }}
-                  onClick={() =>
-                    setSections({ ...sections(), [key]: !sections()[key] })
-                  }
-                >
-                  {label}
-                </button>
-              )}
-            </For>
-
-            {/* The one that decides whether two presets stack. */}
-            <button
-              class='chip-choice'
-              classList={{ on: !sections().reset }}
-              title={
-                sections().reset
-                  ? 'Resets the room first, so this preset is all that is left'
-                  : 'Leaves what is already set, so presets combine'
-              }
-              onClick={() =>
-                setSections({ ...sections(), reset: !sections().reset })
-              }
-            >
-              Combine
-            </button>
-
-            <span class='spacer' />
-            <button
-              disabled={busy()}
-              onClick={() => setAsking({ kind: 'rename', from: preset().name })}
-            >
-              Rename
-            </button>
-            <button
-              disabled={busy()}
-              onClick={() =>
-                void act('delete', async () => {
-                  mutate(await api.deletePreset(preset().name))
-                  setChosen(null)
-                })
-              }
-            >
-              Delete
-            </button>
-            <button
-              class='primary'
-              disabled={!inRoom() || busy()}
-              title={inRoom() ? '' : 'join a room to apply a preset'}
-              onClick={() => void apply(preset())}
-            >
-              Apply
-            </button>
-          </footer>
-        )}
-      </Show>
 
       <Show when={asking()}>
         {(what) => (
@@ -318,7 +341,7 @@ export function Presets() {
                 ? 'Saving over a name keeps the day it was first made.'
                 : undefined
             }
-            initial={what().kind === 'rename' ? (chosen() ?? '') : ''}
+            initial={initialText(what())}
             confirm={what().kind === 'save' ? 'Save' : 'Rename'}
             onCancel={() => setAsking(null)}
             onAnswer={(answer) => {
@@ -328,7 +351,7 @@ export function Presets() {
               if (answer === asked.from) return
               void act('rename', async () => {
                 mutate(await api.renamePreset(asked.from, answer))
-                setChosen(answer)
+                if (chosen() === asked.from) setChosen(answer)
               })
             }}
           />
