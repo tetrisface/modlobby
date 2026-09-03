@@ -8,6 +8,8 @@ license.workspace = true
 
 [dependencies]
 flate2 = { workspace = true }
+image = { workspace = true }
+md-5 = { workspace = true }
 recoil = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }

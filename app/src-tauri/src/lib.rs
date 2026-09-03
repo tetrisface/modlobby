@@ -12,6 +12,7 @@ mod overlay;
 mod presets;
 mod screen;
 mod state;
+mod thumbs;
 mod transport;
 mod update;
 mod win;
@@ -225,6 +226,7 @@ pub fn run() {
             }
             Ok(())
         })
+        .register_asynchronous_uri_scheme_protocol(thumbs::SCHEME, thumbs::serve)
         .invoke_handler(tauri::generate_handler![
             commands::subscribe,
             commands::login,

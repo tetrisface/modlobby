@@ -416,27 +416,9 @@ pub async fn download_missing(app: State<'_, App>) -> Result<()> {
 }
 
 /// BAR's map index: each map's picture and its spring name.
-///
-/// Loaded once per run, from the disk cache when that is fresh. An empty
-/// answer — offline on a first run — is not kept, so the next ask tries again
-/// rather than leaving the whole session without pictures.
 #[tauri::command]
 pub async fn map_index(app: State<'_, App>) -> Result<content::map_index::MapIndex> {
-    let mut held = app.map_index.lock().await;
-    if let Some(index) = held.as_ref() {
-        return Ok(index.clone());
-    }
-    let index = content::map_index::load(
-        &app.http,
-        content::map_index::INDEX_URL,
-        &app.settings.dir().join("cache"),
-        SystemTime::now(),
-    )
-    .await;
-    if !index.is_empty() {
-        *held = Some(index.clone());
-    }
-    Ok(index)
+    Ok(app.map_index().await)
 }
 
 /// Asks a room's host how long its game has been going. The answer comes back

@@ -16,6 +16,7 @@ tauri-build = { workspace = true }
 [dependencies]
 content = { workspace = true }
 md-5 = { workspace = true }
+percent-encoding = { workspace = true }
 recoil = { workspace = true }
 lobby-runtime = { workspace = true }
 rand = { workspace = true }

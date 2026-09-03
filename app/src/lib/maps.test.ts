@@ -2,6 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { mapIndex } = vi.hoisted(() => ({ mapIndex: vi.fn() }))
 vi.mock('../ipc/client', () => ({ api: { mapIndex: () => mapIndex() } }))
+// What Tauri's own helper does on Windows; the other platforms spell the
+// scheme `thumb://localhost/`, and the Rust side reads the same path either way.
+vi.mock('@tauri-apps/api/core', () => ({
+  convertFileSrc: (path: string, protocol: string) =>
+    `http://${protocol}.localhost/${encodeURIComponent(path)}`,
+}))
 
 // The shape the index publishes: the official lobby's 1024px transform.
 const PUBLISHED =
@@ -38,8 +44,8 @@ describe('the map index, as the room sees it', () => {
     mapIndex.mockResolvedValue(INDEX)
     const maps = await fresh()
     await Promise.all([
-      maps.mapImages(),
       maps.mapImage('AcidicQuarry 5.17'),
+      maps.mapImage('Nowhere 1'),
       maps.mapNames(),
     ])
     expect(mapIndex).toHaveBeenCalledTimes(1)
@@ -49,8 +55,21 @@ describe('the map index, as the room sees it', () => {
     mapIndex.mockRejectedValueOnce(new Error('no ipc'))
     mapIndex.mockResolvedValue(INDEX)
     const maps = await fresh()
-    expect(await maps.mapImages()).toEqual({})
+    expect(await maps.mapNames()).toEqual({})
     expect(await maps.mapImage('AcidicQuarry 5.17')).toBe(PUBLISHED)
     expect(mapIndex).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('a tile-sized picture', () => {
+  it('is asked of Rust in device pixels, by spring name', async () => {
+    vi.stubGlobal('devicePixelRatio', 1.5)
+    const maps = await fresh()
+    expect(maps.mapThumb('AcidicQuarry 5.17', 50, 32)).toBe(
+      'http://thumb.localhost/75x48%2FAcidicQuarry%205.17',
+    )
+    expect(maps.mapThumb('', 50, 32)).toBeNull()
+    expect(mapIndex).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
   })
 })

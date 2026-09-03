@@ -17,6 +17,7 @@ pub mod archive;
 pub mod demo;
 pub mod http;
 pub mod map_index;
+pub mod map_thumb;
 pub mod release;
 pub mod replays;
 

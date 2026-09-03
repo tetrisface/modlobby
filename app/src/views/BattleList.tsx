@@ -5,7 +5,6 @@ import {
   Show,
   createEffect,
   createMemo,
-  createResource,
   createSignal,
   onCleanup,
   onMount,
@@ -25,7 +24,7 @@ import {
   running as runningGames,
 } from '../store/running'
 import { MODES, SORTS, arrange, stabilize, type Row } from '../lib/battles'
-import { mapImages } from '../lib/maps'
+import { mapThumb } from '../lib/maps'
 import { pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
 import { applySettings, settings } from '../store/settings'
@@ -65,9 +64,6 @@ export function BattleList() {
       pushNotice('warning', describeError(error))
     }
   }
-
-  // One shared load for the whole list; a row without a picture just shows none.
-  const [previews] = createResource(mapImages)
 
   const friends = createMemo(() => new Set(lobby.friends.friends))
 
@@ -424,7 +420,11 @@ export function BattleList() {
                         }}
                       >
                         <MapThumb
-                          src={previews()?.[r().battle.mapName]}
+                          src={mapThumb(
+                            r().battle.mapName,
+                            THUMB.width,
+                            THUMB.height,
+                          )}
                           alt={r().battle.mapName}
                         />
                         <span class='col-players'>
@@ -675,7 +675,13 @@ function PasswordDialog(props: {
  * in the webview's for good. Lazy, so a long list does not ask for every
  * picture at once.
  */
-function MapThumb(props: { src: string | undefined; alt: string }) {
+/**
+ * The inside of `.col-thumb` (`styles.css`), which the picture is made to fill
+ * exactly. Change both together.
+ */
+const THUMB = { width: 50, height: 32 }
+
+function MapThumb(props: { src: string | null; alt: string }) {
   const [broken, setBroken] = createSignal(false)
 
   // The rows are virtualised, so this component stays mounted at its place on

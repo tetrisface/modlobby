@@ -10,13 +10,15 @@
  * The URL is used exactly as published. It is the same 1024px transform the
  * official lobby asks for, so it comes out of a shared CDN cache, and the CDN
  * marks it immutable, so the webview keeps it for good. A size of our own
- * would be a transform only modlobby asks BAR's image server to compute.
+ * would be a transform only modlobby asks BAR's image server to compute. Where
+ * a picture is shown far smaller than that, Rust resizes it (`mapThumb`).
  *
  * A lobby has to work with no network at all: every failure here returns
  * nothing and the room falls back to the start-box schematic, which needs
  * nothing.
  */
 
+import { convertFileSrc } from '@tauri-apps/api/core'
 import type { MapIndex } from '../ipc/bindings/MapIndex'
 import { api } from '../ipc/client'
 
@@ -47,14 +49,6 @@ async function index(): Promise<MapIndex | null> {
 }
 
 /**
- * Every preview URL by spring name, for a list that wants many at once.
- * Empty when the index cannot be had, which the caller renders as no picture.
- */
-export async function mapImages(): Promise<MapIndex['images']> {
-  return (await index())?.images ?? {}
-}
-
-/**
  * Archive file name (without extension) to the map's spring name.
  *
  * A start script needs the spring name, and nothing on disk records the
@@ -68,4 +62,25 @@ export async function mapNames(): Promise<MapIndex['names']> {
 export async function mapImage(springName: string): Promise<string | null> {
   if (!springName) return null
   return (await index())?.images[springName] ?? null
+}
+
+/**
+ * The picture for a spring map name at the size a tile shows it, as a URL the
+ * webview loads like any other image. Rust fetches the published picture once,
+ * resizes it with a real filter and keeps the result (`content::map_thumb`),
+ * because a webview scaling a 1024px picture into a 50px tile aliases. A name
+ * with no picture answers 404, which reaches the tile as an `error` event.
+ *
+ * `width` and `height` are CSS pixels. The picture is asked for in device
+ * pixels, so that it is drawn one to one and nothing is scaled again.
+ */
+export function mapThumb(
+  springName: string,
+  width: number,
+  height: number,
+): string | null {
+  if (!springName) return null
+  const scale = window.devicePixelRatio || 1
+  const tile = `${Math.round(width * scale)}x${Math.round(height * scale)}`
+  return convertFileSrc(`${tile}/${springName}`, 'thumb')
 }
