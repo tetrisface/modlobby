@@ -227,7 +227,15 @@ function Layout(props: ParentProps) {
         class='nav'
         data-tauri-drag-region={!fullscreen() && !over() ? true : undefined}
       >
-        <span class='brand'>modlobby</span>
+        <span class='brand'>
+          modlobby
+          <span
+            class='stage'
+            title='Alpha — Expect rough edges.'
+          >
+            alpha
+          </span>
+        </span>
         <A href='/skirmish'>Skirmish</A>
         <Show when={lobby.phase === 'ready'}>
           <A href='/battles'>Battles</A>
