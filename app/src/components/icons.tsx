@@ -259,6 +259,17 @@ export function IconSprite() {
             stroke-linejoin='round'
           />
         </symbol>
+        {/* Two arrows chasing each other round a circle: try the connection again. */}
+        <symbol id='act-reconnect' viewBox='0 0 20 20'>
+          <path
+            d='M17 4.9 v3.8 h-3.8 M3 15.1 v-3.8 h3.8 M4.6 8.1 a5.7 5.7 0 0 1 9.45 -2.14 L17 8.7 M3 11.3 l2.95 2.77 A5.7 5.7 0 0 0 15.4 11.9'
+            fill='none'
+            stroke='currentColor'
+            stroke-width='1.7'
+            stroke-linecap='round'
+            stroke-linejoin='round'
+          />
+        </symbol>
         <symbol id='side-random' viewBox='0 0 20 20'>
           <path
             d='M10 2.6 L17.4 10 L10 17.4 L2.6 10 Z'

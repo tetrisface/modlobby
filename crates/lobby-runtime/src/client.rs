@@ -50,6 +50,9 @@ pub enum ClientError {
     Engine(String),
     #[error("client stopped")]
     Stopped,
+    /// A reconnect was asked for before any login this run, or after a logout.
+    #[error("nothing to reconnect with; log in first")]
+    NoCredentials,
 }
 
 type Reply<T> = oneshot::Sender<Result<T, ClientError>>;
@@ -67,6 +70,10 @@ enum Command {
         reply: Reply<()>,
     },
     Logout,
+    /// Tries the last login again now, ahead of the retry timer.
+    Reconnect {
+        reply: Reply<()>,
+    },
     /// Creates an account on a connection of its own, then hangs up.
     Register {
         endpoint: Endpoint,
@@ -312,6 +319,12 @@ impl Client {
 
     pub async fn logout(&self) -> Result<(), ClientError> {
         self.send(Command::Logout).await
+    }
+
+    /// Logs in again with the last credentials, now rather than when the
+    /// runtime's own retry falls due. Resolves like [`Self::login`].
+    pub async fn reconnect(&self) -> Result<(), ClientError> {
+        self.ask(|reply| Command::Reconnect { reply }).await
     }
 
     /// Creates an account. Resolves when the server has accepted or refused it.
@@ -1237,6 +1250,18 @@ impl Runtime {
                 self.reconnect.stop();
                 self.disconnect().await;
             }
+            // Asked for, so it goes out now: the timer's wait is for a server
+            // that dropped everyone at once, not for a person watching.
+            Command::Reconnect { reply } => match self.credentials.clone() {
+                Some((endpoint, request)) => {
+                    self.reconnect.attempted(Instant::now());
+                    tracing::info!("reconnecting on request");
+                    self.connect(endpoint, request, reply).await;
+                }
+                None => {
+                    let _ = reply.send(Err(ClientError::NoCredentials));
+                }
+            },
             Command::Snapshot(tx) => {
                 let _ = tx.send(self.snapshot());
             }
@@ -2148,13 +2173,100 @@ mod tests {
 
     /// A connector whose single connection ends at the returned stream: the fake server.
     fn in_memory() -> (Connector, DuplexStream) {
-        let (client_side, server_side) = tokio::io::duplex(64 * 1024);
-        let client_side = std::sync::Mutex::new(Some(client_side));
+        let (connector, mut servers) = in_memory_many(1);
+        (connector, servers.remove(0))
+    }
+
+    /// A connector good for `count` connections, each ending at its own fake server, in order.
+    fn in_memory_many(count: usize) -> (Connector, Vec<DuplexStream>) {
+        let (client_sides, server_sides): (Vec<_>, Vec<_>) =
+            (0..count).map(|_| tokio::io::duplex(64 * 1024)).unzip();
+        let client_sides = std::sync::Mutex::new(client_sides.into_iter());
         let connector: Connector = Arc::new(move |_endpoint, policy| {
-            let stream = client_side.lock().unwrap().take().expect("one connection");
+            let stream = client_sides
+                .lock()
+                .unwrap()
+                .next()
+                .expect("a connection left");
             Box::pin(async move { Ok(Transport::from_stream(stream, policy)) })
         });
-        (connector, server_side)
+        (connector, server_sides)
+    }
+
+    type FakeServer = (
+        tokio::io::Lines<BufReader<tokio::io::ReadHalf<DuplexStream>>>,
+        tokio::io::WriteHalf<DuplexStream>,
+    );
+
+    /// Plays the server through one login of `me`: greeting, acceptance, end of the flood.
+    async fn accept_login(server: DuplexStream) -> FakeServer {
+        let (read, mut write) = tokio::io::split(server);
+        let mut lines = BufReader::new(read).lines();
+        write.write_all(b"TASSERVER 0.38 * 8201 0\n").await.unwrap();
+        let sent = lines.next_line().await.unwrap().unwrap();
+        assert!(sent.starts_with("LOGIN me "), "{sent}");
+        write
+            .write_all(b"ACCEPTED me\nADDUSER me SE 1 LuaLobby Chobby\nLOGININFOEND\n")
+            .await
+            .unwrap();
+        (lines, write)
+    }
+
+    fn spawn(connector: Connector) -> Client {
+        Client::spawn_with(
+            ThrottlePolicy::default(),
+            Hardware::stub(),
+            connector,
+            Arc::new(latency::Unmeasured),
+            None,
+        )
+    }
+
+    #[tokio::test]
+    async fn reconnect_on_request_logs_in_again_with_the_same_credentials() {
+        let (connector, mut servers) = in_memory_many(2);
+        let second = servers.pop().unwrap();
+        let first = servers.pop().unwrap();
+        let client = spawn(connector);
+        let ui = Collector::default();
+        client.subscribe(ui.clone()).await.unwrap();
+
+        let endpoint = Endpoint::parse("test:8200", false).unwrap();
+        let login = tokio::spawn({
+            let client = client.clone();
+            async move {
+                client
+                    .login(endpoint, LoginRequest::new("me", "pw", "test", "h h"))
+                    .await
+            }
+        });
+        let server = accept_login(first).await;
+        login.await.unwrap().unwrap();
+
+        // The server goes away. The runtime's own retry is armed but waits.
+        drop(server);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(client.snapshot().await.unwrap().phase, None);
+
+        let reconnect = tokio::spawn({
+            let client = client.clone();
+            async move { client.reconnect().await }
+        });
+        let _server = accept_login(second).await;
+        reconnect.await.unwrap().unwrap();
+        assert_eq!(client.snapshot().await.unwrap().phase, Some(Phase::Ready));
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn reconnect_before_any_login_has_nothing_to_use() {
+        let (connector, _server) = in_memory();
+        let client = spawn(connector);
+        assert!(matches!(
+            client.reconnect().await,
+            Err(ClientError::NoCredentials)
+        ));
+        client.shutdown().await;
     }
 
     #[tokio::test]

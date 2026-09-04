@@ -231,6 +231,7 @@ pub fn run() {
             commands::subscribe,
             commands::login,
             commands::logout,
+            commands::reconnect,
             commands::register,
             commands::confirm_agreement,
             commands::login_wait,

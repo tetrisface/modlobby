@@ -1,4 +1,4 @@
-import { A, HashRouter, Navigate, Route } from '@solidjs/router'
+import { A, HashRouter, Navigate, Route, useNavigate } from '@solidjs/router'
 import { listen } from '@tauri-apps/api/event'
 import {
   For,
@@ -9,12 +9,12 @@ import {
   onMount,
   type ParentProps,
 } from 'solid-js'
-import { IconSprite } from './components/icons'
+import { Glyph, IconSprite } from './components/icons'
 import { PlayerMenu } from './components/PlayerMenu'
 import { connectChannel } from './ipc/channel'
 import { ACTIVITY_EVENTS, activityReporter } from './lib/activity'
 import { clickLeavesOverlay, escapeLeavesOverlay } from './lib/overlay'
-import { api, describeError } from './ipc/client'
+import { api, describeError, errorCode } from './ipc/client'
 import type { Settings } from './ipc/bindings/Settings'
 import type { UpdateProgress } from './ipc/bindings/UpdateProgress'
 import type { VersionView } from './ipc/bindings/VersionView'
@@ -30,6 +30,43 @@ import { SettingsView } from './views/Settings'
 import { Skirmish } from './views/Skirmish'
 
 type SettingsEvent = { changed: Settings } | { invalid: string }
+
+/**
+ * The corner while nobody is logged in. A button, because the one thing to do
+ * from here is try again: the runtime retries a dropped connection by itself,
+ * but on a timer sized for a server that dropped everyone at once, and a
+ * person watching the corner need not wait for it.
+ */
+function Reconnect() {
+  const navigate = useNavigate()
+  const connecting = () => lobby.phase !== null
+
+  async function reconnect() {
+    try {
+      await api.reconnect()
+    } catch (error) {
+      // Nothing to try again with: this run never logged in, or logged out.
+      if (errorCode(error) === 'noCredentials') {
+        navigate('/login')
+        return
+      }
+      pushNotice('warning', describeError(error))
+    }
+  }
+
+  return (
+    <button
+      type='button'
+      class='reconnect'
+      disabled={connecting()}
+      title={connecting() ? 'Connecting' : 'Reconnect'}
+      onClick={() => void reconnect()}
+    >
+      <Glyph id='act-reconnect' />
+      {connecting() ? 'connecting' : 'not logged in'}
+    </button>
+  )
+}
 
 function Layout(props: ParentProps) {
   /**
@@ -294,10 +331,7 @@ function Layout(props: ParentProps) {
             )}
           </Show>
         </span>
-        <Show
-          when={lobby.me}
-          fallback={<span class='muted'>not logged in</span>}
-        >
+        <Show when={lobby.me} fallback={<Reconnect />}>
           <span>{lobby.me}</span>
           {/* The server keeps this bit, so what it says is what everyone else
               sees — no local guess to drift out of step with it. */}

@@ -1,6 +1,7 @@
 //! The commands the webview may invoke. Each one is a thin translation to the
 //! runtime client or the settings store; errors cross as `{ code, message }`.
 
+use std::future::Future;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
@@ -44,6 +45,7 @@ impl From<ClientError> for ApiError {
             ClientError::TooLong(_) => "tooLong",
             ClientError::Engine(_) => "engine",
             ClientError::Stopped => "stopped",
+            ClientError::NoCredentials => "noCredentials",
         };
         Self::new(code, err.to_string())
     }
@@ -124,21 +126,7 @@ pub async fn login(
         app.hardware.lobby_hash.clone(),
     );
 
-    // The server counts logins whether or not they succeed; sending one it
-    // would refuse only wastes the allowance.
-    if let Some(wait) = app.login_guard.wait(SystemTime::now()) {
-        return Err(throttled(wait));
-    }
-    app.login_guard.record_attempt(SystemTime::now());
-    match app.client.login(endpoint, request).await {
-        Ok(()) => app.login_guard.record_success(SystemTime::now()),
-        Err(err) => {
-            if settings::is_flood_refusal(&err.to_string()) {
-                app.login_guard.record_refusal(SystemTime::now());
-            }
-            return Err(err.into());
-        }
-    }
+    guarded_login(&app, app.client.login(endpoint, request)).await?;
 
     if remember {
         app.credentials.set(&username, &password)?;
@@ -152,6 +140,38 @@ pub async fn login(
         s.account.auto_login = auto_login && remember;
     })?;
     Ok(())
+}
+
+/// Tries the last login again, now rather than when the runtime's own retry
+/// falls due. Fails with `noCredentials` when this run has nothing to try.
+#[tauri::command]
+pub async fn reconnect(app: State<'_, App>) -> Result<()> {
+    guarded_login(&app, app.client.reconnect()).await
+}
+
+/// One login attempt under the flood guard, whichever command makes it. The
+/// server counts logins whether or not they succeed; sending one it would
+/// refuse only wastes the allowance.
+async fn guarded_login(
+    app: &App,
+    attempt: impl Future<Output = std::result::Result<(), ClientError>>,
+) -> Result<()> {
+    if let Some(wait) = app.login_guard.wait(SystemTime::now()) {
+        return Err(throttled(wait));
+    }
+    app.login_guard.record_attempt(SystemTime::now());
+    match attempt.await {
+        Ok(()) => {
+            app.login_guard.record_success(SystemTime::now());
+            Ok(())
+        }
+        Err(err) => {
+            if settings::is_flood_refusal(&err.to_string()) {
+                app.login_guard.record_refusal(SystemTime::now());
+            }
+            Err(err.into())
+        }
+    }
 }
 
 /// Seconds a login must wait for teiserver's limit to lapse; 0 when clear.

@@ -2679,6 +2679,27 @@ button.link:hover {
   color: var(--text);
 }
 
+/* The corner while nobody is logged in. Quiet like the text it replaces, a
+   button only on approach; the icon says what pressing it does. */
+.reconnect {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  font-family: var(--body);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+}
+
+.reconnect:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--line);
+}
+
 /* A nav slot with nowhere to go yet: it keeps its place so the links beside
    it never move, and reads as unavailable rather than as a link. */
 .nav-absent {

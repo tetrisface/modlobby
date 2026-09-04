@@ -36,6 +36,7 @@ export const api = {
     autoLogin: boolean,
   ) => invoke<void>('login', { username, password, remember, autoLogin }),
   logout: () => invoke<void>('logout'),
+  reconnect: () => invoke<void>('reconnect'),
   register: (username: string, password: string, email: string) =>
     invoke<void>('register', { username, password, email }),
   confirmAgreement: (code: string) =>
@@ -199,4 +200,12 @@ export function describeError(error: unknown): string {
     return String((error as ApiError).message)
   }
   return String(error)
+}
+
+/** The `code` a failed command rejected with; null when it was not one of ours. */
+export function errorCode(error: unknown): string | null {
+  if (typeof error === 'object' && error !== null && 'code' in error) {
+    return String((error as ApiError).code)
+  }
+  return null
 }
