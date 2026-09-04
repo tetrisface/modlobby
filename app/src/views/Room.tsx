@@ -24,7 +24,7 @@ import type { UserView } from '../ipc/bindings/UserView'
 import { api, describeError } from '../ipc/client'
 import { boxSignature, centre, outline } from '../lib/boxes'
 import { downloadFraction } from '../lib/download'
-import { mapImage } from '../lib/maps'
+import { TILES, mapThumb } from '../lib/maps'
 import { readSkills, teamSkill, type Skill } from '../lib/skill'
 import { BATTLE_ROOM, chat, pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
@@ -305,13 +305,15 @@ function Minimap(props: {
   mapName: string
   teams: number
 }) {
-  // The published picture, as is: the webview scales it into the column.
-  const [image] = createResource(() => props.mapName, mapImage)
+  // The picture at the size this square is drawn, from Rust — a fixed size,
+  // so the list can have had it made before the room is opened.
+  const image = () =>
+    mapThumb(props.mapName, TILES.minimap.width, TILES.minimap.height)
   const [broken, setBroken] = createSignal(false)
 
   // A room changes map, so a picture that failed must not condemn the next one.
   createEffect(() => {
-    void props.mapName
+    void image()
     setBroken(false)
   })
 

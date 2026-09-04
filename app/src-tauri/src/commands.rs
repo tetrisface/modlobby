@@ -421,6 +421,31 @@ pub async fn map_index(app: State<'_, App>) -> Result<content::map_index::MapInd
     Ok(app.map_index().await)
 }
 
+/// Makes the pictures of `maps` at `tiles` ahead of time, in the order given,
+/// so a room joined from the list shows its map at once rather than after a
+/// download and a decode. One worker, so it never takes more than a core; a
+/// map the index has no picture for is left out. See `content::map_thumb`.
+#[tauri::command]
+pub async fn warm_map_pictures(
+    app: State<'_, App>,
+    maps: Vec<String>,
+    tiles: Vec<content::map_thumb::Tile>,
+) -> Result<()> {
+    let index = app.map_index().await;
+    let mut seen = std::collections::HashSet::new();
+    let jobs = maps
+        .iter()
+        .filter_map(|name| index.images.get(name))
+        .filter(|url| seen.insert(url.as_str()))
+        .map(|url| content::map_thumb::Job {
+            url: url.clone(),
+            tiles: tiles.clone(),
+        })
+        .collect();
+    app.thumbs.warm(jobs);
+    Ok(())
+}
+
 /// Asks a room's host how long its game has been going. The answer comes back
 /// as a `GameStartedAgo` delta, because SPADS replies by private message.
 #[tauri::command]

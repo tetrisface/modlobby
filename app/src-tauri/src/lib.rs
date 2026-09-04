@@ -251,6 +251,7 @@ pub fn run() {
             commands::list_channels,
             commands::download_missing,
             commands::map_index,
+            commands::warm_map_pictures,
             commands::stop_download,
             commands::ring,
             commands::add_bot,

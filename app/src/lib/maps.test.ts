@@ -1,7 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mapIndex } = vi.hoisted(() => ({ mapIndex: vi.fn() }))
-vi.mock('../ipc/client', () => ({ api: { mapIndex: () => mapIndex() } }))
+const { mapIndex, warm } = vi.hoisted(() => ({
+  mapIndex: vi.fn(),
+  warm: vi.fn(),
+}))
+vi.mock('../ipc/client', () => ({
+  api: {
+    mapIndex: () => mapIndex(),
+    warmMapPictures: (maps: string[], tiles: unknown[]) => warm(maps, tiles),
+  },
+}))
 // What Tauri's own helper does on Windows; the other platforms spell the
 // scheme `thumb://localhost/`, and the Rust side reads the same path either way.
 vi.mock('@tauri-apps/api/core', () => ({
@@ -26,15 +34,13 @@ async function fresh() {
 
 beforeEach(() => {
   mapIndex.mockReset()
+  warm.mockReset()
 })
 
-describe('the map index, as the room sees it', () => {
-  it('hands the published picture URL through untouched', async () => {
+describe('the map index, as the lobby sees it', () => {
+  it('maps an archive name to its spring name', async () => {
     mapIndex.mockResolvedValue(INDEX)
     const maps = await fresh()
-    expect(await maps.mapImage('AcidicQuarry 5.17')).toBe(PUBLISHED)
-    expect(await maps.mapImage('Nowhere 1')).toBeNull()
-    expect(await maps.mapImage('')).toBeNull()
     expect((await maps.mapNames())['acidicquarry_5.17']).toBe(
       'AcidicQuarry 5.17',
     )
@@ -43,11 +49,7 @@ describe('the map index, as the room sees it', () => {
   it('asks Rust once however many callers arrive together', async () => {
     mapIndex.mockResolvedValue(INDEX)
     const maps = await fresh()
-    await Promise.all([
-      maps.mapImage('AcidicQuarry 5.17'),
-      maps.mapImage('Nowhere 1'),
-      maps.mapNames(),
-    ])
+    await Promise.all([maps.mapNames(), maps.mapNames(), maps.mapNames()])
     expect(mapIndex).toHaveBeenCalledTimes(1)
   })
 
@@ -56,12 +58,14 @@ describe('the map index, as the room sees it', () => {
     mapIndex.mockResolvedValue(INDEX)
     const maps = await fresh()
     expect(await maps.mapNames()).toEqual({})
-    expect(await maps.mapImage('AcidicQuarry 5.17')).toBe(PUBLISHED)
+    expect((await maps.mapNames())['acidicquarry_5.17']).toBe(
+      'AcidicQuarry 5.17',
+    )
     expect(mapIndex).toHaveBeenCalledTimes(2)
   })
 })
 
-describe('a tile-sized picture', () => {
+describe('a picture at the size drawn', () => {
   it('is asked of Rust in device pixels, by spring name', async () => {
     vi.stubGlobal('devicePixelRatio', 1.5)
     const maps = await fresh()
@@ -71,5 +75,32 @@ describe('a tile-sized picture', () => {
     expect(maps.mapThumb('', 50, 32)).toBeNull()
     expect(mapIndex).not.toHaveBeenCalled()
     vi.unstubAllGlobals()
+  })
+})
+
+describe('warming the list ahead', () => {
+  it('asks for every fixed size, in device pixels, in the order shown', async () => {
+    vi.stubGlobal('devicePixelRatio', 2)
+    warm.mockResolvedValue(undefined)
+    const maps = await fresh()
+    await maps.warmMapPictures(['AcidicQuarry 5.17', 'Nowhere 1'])
+    expect(warm).toHaveBeenCalledWith(
+      ['AcidicQuarry 5.17', 'Nowhere 1'],
+      [
+        { width: 100, height: 64 },
+        { width: 260, height: 260 },
+      ],
+    )
+    vi.unstubAllGlobals()
+  })
+
+  it('asks nothing for an empty list, and shrugs off Rust being away', async () => {
+    warm.mockRejectedValue(new Error('no ipc'))
+    const maps = await fresh()
+    await maps.warmMapPictures([])
+    expect(warm).not.toHaveBeenCalled()
+    await expect(
+      maps.warmMapPictures(['AcidicQuarry 5.17']),
+    ).resolves.toBeUndefined()
   })
 })

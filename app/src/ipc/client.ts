@@ -14,6 +14,7 @@ import type { Plan } from './bindings/Plan'
 import type { Score } from './bindings/Score'
 import type { Sections } from './bindings/Sections'
 import type { Settings } from './bindings/Settings'
+import type { Tile } from './bindings/Tile'
 import type { Slot } from './bindings/Slot'
 import type { TweakView } from './bindings/TweakView'
 import type { UiMessage } from './bindings/UiMessage'
@@ -60,6 +61,8 @@ export const api = {
   listChannels: () => invoke<void>('list_channels'),
   downloadMissing: () => invoke<void>('download_missing'),
   mapIndex: () => invoke<MapIndex>('map_index'),
+  warmMapPictures: (maps: string[], tiles: Tile[]) =>
+    invoke<void>('warm_map_pictures', { maps, tiles }),
   downloadEngine: (version: string) =>
     invoke<string>('download_engine', { version }),
   stopDownload: () => invoke<void>('stop_download'),

@@ -24,7 +24,7 @@ import {
   running as runningGames,
 } from '../store/running'
 import { MODES, SORTS, arrange, stabilize, type Row } from '../lib/battles'
-import { mapThumb } from '../lib/maps'
+import { TILES, mapThumb, warmMapPictures } from '../lib/maps'
 import { pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
 import { applySettings, settings } from '../store/settings'
@@ -98,6 +98,16 @@ export function BattleList() {
     const pinned = held()
     return pinned === null ? sorted() : stabilize(sorted(), pinned)
   })
+
+  // The maps on show, top first, so the rooms most likely to be joined have
+  // their pictures ready. Keyed on the names, not the rows: player counts
+  // change every few seconds and must not re-ask.
+  const mapsShown = createMemo(
+    () => [...new Set(rows().map((row) => row.battle.mapName))],
+    [],
+    { equals: (a, b) => a.join('\n') === b.join('\n') },
+  )
+  createEffect(() => void warmMapPictures(mapsShown()))
 
   // How long each running game has been going. The store holds it, because a
   // host can also tell us outright — see `store/running`.
@@ -422,8 +432,8 @@ export function BattleList() {
                         <MapThumb
                           src={mapThumb(
                             r().battle.mapName,
-                            THUMB.width,
-                            THUMB.height,
+                            TILES.list.width,
+                            TILES.list.height,
                           )}
                           alt={r().battle.mapName}
                         />
@@ -675,12 +685,6 @@ function PasswordDialog(props: {
  * in the webview's for good. Lazy, so a long list does not ask for every
  * picture at once.
  */
-/**
- * The inside of `.col-thumb` (`styles.css`), which the picture is made to fill
- * exactly. Change both together.
- */
-const THUMB = { width: 50, height: 32 }
-
 function MapThumb(props: { src: string | null; alt: string }) {
   const [broken, setBroken] = createSignal(false)
 
