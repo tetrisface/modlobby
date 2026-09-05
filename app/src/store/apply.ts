@@ -1,3 +1,4 @@
+import { batch } from 'solid-js'
 import { produce, reconcile } from 'solid-js/store'
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { Delta } from '../ipc/bindings/Delta'
@@ -5,9 +6,11 @@ import type { Snapshot } from '../ipc/bindings/Snapshot'
 import type { UiMessage } from '../ipc/bindings/UiMessage'
 import { noteToldStart } from './running'
 import {
+  BATTLE_ROOM,
   applyChannel,
   applyDirectory,
   clearChat,
+  clearRoom,
   pushLine,
   pushNotice,
 } from './chat'
@@ -16,7 +19,9 @@ import { emptyLobby, lobby, setLobby, type LobbyState } from './lobby'
 
 export function applyMessage(message: UiMessage): void {
   if (message.type === 'snapshot') applySnapshot(message.data)
-  else for (const delta of message.data) applyDelta(delta)
+  // One render pass per message: a room's join burst is thirty status lines,
+  // and applied one by one each of them rebuilt every row on screen.
+  else batch(() => message.data.forEach(applyDelta))
 }
 
 /** Whether the first snapshot has landed: the last startup milestone. */
@@ -212,6 +217,10 @@ export function applyDelta(delta: Delta): void {
       if (lobby.myBattle) setLobby('myBattle', 'vote', delta.data)
       return
     case 'myBattle':
+      // Another room is another conversation. Only on a change of room: a
+      // reconnect replays the same room through the snapshot and keeps the
+      // backlog, as the snapshot's own comment says.
+      if (lobby.myBattle?.id !== delta.data?.id) clearRoom(BATTLE_ROOM)
       setLobby('myBattle', delta.data)
       return
     case 'gameRunning':

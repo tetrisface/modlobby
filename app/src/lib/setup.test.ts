@@ -230,6 +230,36 @@ describe('search', () => {
     expect(found[0]?.tab.key).toBe(MODDING_TAB)
     expect(found[0]?.rows[0]?.changed).toBe(true)
   })
+
+  test('matches the value the room holds', () => {
+    expect(keys(searchRows([named], { startmetal: '2500' }, '2500'))).toEqual([
+      'startmetal',
+    ])
+    expect(keys(searchRows([named], {}, '2500'))).toEqual([])
+  })
+
+  test('matches the value as the row shows it, and as it arrived', () => {
+    const on = searchRows([named], { other: 'true' }, 'other on')
+    expect(keys(on)).toEqual(['other'])
+    expect(keys(searchRows([named], { other: 'true' }, 'other true'))).toEqual([
+      'other',
+    ])
+    expect(keys(searchRows([named], {}, 'other on'))).toEqual([])
+  })
+
+  test('matches a list item by its name or its key', () => {
+    const values = { nowasting: 'disabled' }
+    expect(keys(searchRows(TABS, values, 'nowasting Disabled'))).toEqual([
+      'nowasting',
+    ])
+    expect(keys(searchRows(TABS, values, 'nowasting disabled'))).toEqual([
+      'nowasting',
+    ])
+  })
+
+  test('a tweak blob is never searched', () => {
+    expect(keys(searchRows(TABS, { tweakunits2: 'e30=' }, 'e30'))).toEqual([])
+  })
 })
 
 describe('display', () => {

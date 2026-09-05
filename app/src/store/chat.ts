@@ -175,3 +175,14 @@ export function clearChat(): void {
   watching = BATTLE_ROOM
   setChat(empty())
 }
+
+/** Empties one room's backlog: what another room's host said is not this room's. */
+export function clearRoom(room: string): void {
+  setChat(
+    produce((state) => {
+      state.rooms[room] = []
+      state.unread[room] = 0
+      state.named[room] = false
+    }),
+  )
+}

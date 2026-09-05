@@ -79,15 +79,65 @@ export function BotRow(props: { bot: BotView; onRemove?: () => void }) {
   )
 }
 
-/** No status and no faction: Chobby hides both for spectators, and so do we. */
+/**
+ * A seat the room's shape says exists, whose player the server has not
+ * placed yet. Same height as a row, so the name lands without moving anything.
+ */
+export function EmptySeat() {
+  return (
+    <div class='player empty' aria-hidden='true'>
+      <span />
+      <span />
+      <span />
+      <span />
+      <span />
+      <span class='pname' />
+    </div>
+  )
+}
+
+/**
+ * A member seated where we expect them, before the server has said so: the
+ * name, flag and rank the lobby already knows, none of the seat's own marks.
+ */
+export function GuessedRow(props: {
+  user: UserView
+  me: boolean
+  friend?: boolean
+}) {
+  return (
+    <div class='player pending'>
+      <span />
+      <Flag country={props.user.country} />
+      <RankIcon status={props.user.status} />
+      <span class='skill none'>·</span>
+      <span />
+      <span
+        class='pname'
+        classList={{ me: props.me, friend: props.friend }}
+        onClick={(event) => showPlayerMenu(props.user.name, event)}
+        onContextMenu={(event) => showPlayerMenu(props.user.name, event)}
+      >
+        {props.user.name}
+      </span>
+    </div>
+  )
+}
+
+/**
+ * No status and no faction: Chobby hides both for spectators, and so do we.
+ * `pending` is a member the server has not placed yet, listed here until it
+ * does — most of them are about to move to a seat.
+ */
 export function SpectatorRow(props: {
   user: UserView
   me: boolean
   friend?: boolean
   boss?: boolean
+  pending?: boolean
 }) {
   return (
-    <div class='spectator'>
+    <div class='spectator' classList={{ pending: props.pending }}>
       <Flag country={props.user.country} />
       <RankIcon status={props.user.status} />
       <span

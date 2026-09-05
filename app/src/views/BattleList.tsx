@@ -27,6 +27,7 @@ import {
 import { MODES, SORTS, arrange, stabilize, type Row } from '../lib/battles'
 import { TILES, warmMapPictures } from '../lib/maps'
 import { pushNotice } from '../store/chat'
+import { joinMilestone, markJoinAsked } from '../store/join'
 import { lobby } from '../store/lobby'
 import { applySettings, settings } from '../store/settings'
 
@@ -166,7 +167,9 @@ export function BattleList() {
 
   async function enter(battle: BattleView, password: string | null) {
     try {
+      markJoinAsked()
       await api.joinBattle(battle.id, password)
+      joinMilestone('accepted')
       navigate('/room')
     } catch (error) {
       pushNotice('warning', describeError(error))

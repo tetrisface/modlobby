@@ -115,4 +115,40 @@ describe('apply', () => {
     expect(lobby.phase).toBeNull()
     expect(Object.keys(lobby.battles)).toHaveLength(0)
   })
+
+  test('a change of room empties the battle chat, a repeat does not', () => {
+    const room = (id: number) => ({
+      type: 'myBattle' as const,
+      data: {
+        boss: null,
+        id,
+        gameHash: 'h',
+        scriptTags: {},
+        vote: null,
+        history: [],
+      },
+    })
+    const said = (seq: number, text: string): Delta => ({
+      type: 'chat',
+      data: {
+        seq,
+        room: '#battle',
+        from: 'host',
+        text,
+        kind: 'announcement',
+        mention: false,
+        at: 0,
+      },
+    })
+    applySnapshot(snapshot)
+    applyDelta(room(5))
+    applyDelta(said(1, 'welcome to 5'))
+    applyDelta(room(5))
+    expect(chat.rooms['#battle']!.map((l) => l.text)).toEqual(['welcome to 5'])
+    applyDelta(room(6))
+    applyDelta(said(2, 'welcome to 6'))
+    expect(chat.rooms['#battle']!.map((l) => l.text)).toEqual(['welcome to 6'])
+    applyDelta({ type: 'myBattle', data: null })
+    expect(chat.rooms['#battle']).toEqual([])
+  })
 })

@@ -681,6 +681,9 @@ struct Runtime {
     /// Waiting on `REGISTRATIONACCEPTED`/`REGISTRATIONDENIED`.
     register_reply: Option<Reply<()>>,
     join_reply: Option<Reply<()>>,
+    /// When the room was asked for, until its state has all arrived: the
+    /// `join:` milestones in the log are measured from here.
+    join_asked: Option<Instant>,
     /// Where BAR's content lives; `None` falls back to the launcher's directory.
     data_dir: Option<PathBuf>,
     /// Where to put a config that gets the game borderless, when the user's
@@ -875,6 +878,7 @@ impl Runtime {
             login_reply: None,
             register_reply: None,
             join_reply: None,
+            join_asked: None,
             data_dir: None,
             overlay_config_dir: None,
             checked: None,
@@ -1372,6 +1376,8 @@ impl Runtime {
                     .session
                     .join_battle(id, password.as_deref(), script_password);
                 self.join_reply = Some(reply);
+                self.join_asked = Some(Instant::now());
+                tracing::info!(id, "join: asked");
                 self.apply_effects(effects).await;
             }
             Command::LeaveBattle => {
@@ -1737,6 +1743,9 @@ impl Runtime {
                     .project(&event, &effects, &conn.session.state);
                 for delta in deltas {
                     self.batcher.push(delta);
+                }
+                if matches!(event, spring_protocol::ServerEvent::RequestBattleStatus) {
+                    self.note_room_state_complete();
                 }
                 self.apply_effects(effects).await;
             }
@@ -2196,9 +2205,33 @@ impl Runtime {
         }
     }
 
+    /// The room's deltas go out before the answer: the front end walks into
+    /// the room on the answer, and a room view without `myBattle` walks
+    /// straight back out.
     fn reply_join(&mut self, result: Result<(), ClientError>) {
+        if let Some(asked) = self.join_asked {
+            tracing::info!(
+                ms = asked.elapsed().as_millis() as u64,
+                ok = result.is_ok(),
+                "join: answered"
+            );
+        }
+        if result.is_err() {
+            self.join_asked = None;
+        }
         if let Some(reply) = self.join_reply.take() {
+            self.flush();
             let _ = reply.send(result);
+        }
+    }
+
+    /// `REQUESTBATTLESTATUS` closes the server's room-state burst.
+    fn note_room_state_complete(&mut self) {
+        if let Some(asked) = self.join_asked.take() {
+            tracing::info!(
+                ms = asked.elapsed().as_millis() as u64,
+                "join: room state complete"
+            );
         }
     }
 

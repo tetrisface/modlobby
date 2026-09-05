@@ -236,9 +236,10 @@ export function rowsByTab(
 }
 
 /**
- * Every setting whose name, key or description carries every word of the
- * needle, by the tab it lives in. Nothing for an empty needle: that is the
- * tabs' job. Tweak slots have only a key, which is what people type for them.
+ * Every setting whose name, key, description or value carries every word of
+ * the needle, by the tab it lives in. Nothing for an empty needle: that is
+ * the tabs' job. Tweak slots have only a key, which is what people type for
+ * them; their blob is base64 and stays out of it.
  */
 export function searchRows(
   tabs: Tab[],
@@ -251,12 +252,24 @@ export function searchRows(
     .map((entry) => ({
       tab: entry.tab,
       rows: entry.rows.filter((row) => {
-        const haystack =
-          `${label(row.option)} ${row.option.key} ${row.option.desc ?? ''}`.toLowerCase()
+        const haystack = searchText(row).toLowerCase()
         return words.every((word) => haystack.includes(word))
       }),
     }))
     .filter((entry) => entry.rows.length > 0)
+}
+
+/**
+ * What a row can be found by: the value as the row shows it -- `on`, an
+ * item's name, the number -- and as the room holds it, so a list item's key
+ * and `true` count too.
+ */
+function searchText(row: Row): string {
+  const { option } = row
+  const value = isTweakSlot(row)
+    ? ''
+    : `${displayText(row)} ${row.current ?? ''}`
+  return `${label(option)} ${option.key} ${option.desc ?? ''} ${value}`
 }
 
 /** Every setting that differs from BAR's default, by the tab it lives in. */

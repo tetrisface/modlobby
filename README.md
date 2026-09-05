@@ -2,6 +2,25 @@
 
 A Beyond All Reason lobby focused on modding, experiments and performance.
 
+# Install
+
+## Binaries (.exe, .AppImage)
+[Releases](./releases) are tested on Windows 11 and has been said to work on linux.
+
+## From source
+
+Needs Rust via [rustup](https://rustup.rs) (the toolchain is pinned by `rust-toolchain.toml`),
+[bun](https://bun.sh), and Tauri 2's [system prerequisites](https://v2.tauri.app/start/prerequisites/)
+for your platform. [mise](https://mise.jdx.dev/) installs the pinned node and bun from `mise.toml`.
+
+```sh
+git clone https://github.com/tetrisface/modlobby
+cd modlobby/app
+bun install
+bun run dev      # development window
+bun run build    # installer under app/src-tauri/target/release/bundle/
+```
+
 ## Rust workspace
 
 | Crate             | Role                                                                                                                                            |

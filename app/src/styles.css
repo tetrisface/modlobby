@@ -683,6 +683,23 @@ textarea {
   border-radius: 2px;
 }
 
+/* A seat waiting for its player: the row's height, a hint of a name. */
+.player.empty {
+  min-height: 22px;
+}
+
+.player.empty .pname {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--line-soft);
+}
+
+/* A member the server has not placed yet. */
+.spectator.pending,
+.player.pending {
+  opacity: 0.55;
+}
+
 .icon {
   display: block;
   width: 18px;
@@ -1438,10 +1455,6 @@ textarea {
   padding: 4px 7px;
   font-family: var(--display);
   font-size: 12px;
-}
-
-.synced {
-  color: var(--ok);
 }
 
 /* ---- setup pane: BAR's tabs, opening on what differs ---- */

@@ -130,15 +130,44 @@ export function Seat() {
     }
   }
 
-  async function act(what: string, run: () => Promise<void>) {
+  /** Runs one action, telling the user why it did not happen; true if it did. */
+  async function act(what: string, run: () => Promise<void>): Promise<boolean> {
     setBusy(true)
     try {
       await run()
+      return true
     } catch (error) {
       pushNotice('warning', `${what}: ${describeError(error)}`)
+      return false
     } finally {
       setBusy(false)
     }
+  }
+
+  const SPECTATOR = 'spectator'
+  /** What the seat picker shows: the side we hold, or the spectator row. */
+  const current = () =>
+    seated() ? String(seat()?.allyTeam ?? 0) : SPECTATOR
+
+  /**
+   * Sits, moves, or stands up as picked. Taking a seat resets ready, in the
+   * runtime and by SPADS alike, so moving sides is one action and not two.
+   * A refused pick snaps the picker back, since the row it landed on never
+   * came true.
+   */
+  async function pickSeat(picker: HTMLSelectElement) {
+    const choice = picker.value
+    const done =
+      choice === SPECTATOR
+        ? await act('spectate', async () => {
+            await api.releaseSeat()
+            await remember(false)
+          })
+        : await act('take a seat', async () => {
+            await api.takeSeat(freeTeam(), Number(choice))
+            await remember(true)
+          })
+    if (!done) picker.value = current()
   }
 
   return (
@@ -149,39 +178,31 @@ export function Seat() {
           <span class='muted'>Spectating; seats are off in Settings.</span>
         }
       >
-        <Show
-          when={seated()}
-          fallback={
-            <>
-              <span class='muted'>Spectating.</span>
-              <For each={allyTeams()}>
-                {(ally, index) => (
-                  <button
-                    disabled={busy()}
-                    onClick={() =>
-                      act('take a seat', async () => {
-                        await api.takeSeat(freeTeam(), ally)
-                        await remember(true)
-                      })
-                    }
-                  >
-                    {index() === allyTeams().length - 1
-                      ? `New team ${ally + 1}`
-                      : `Join team ${ally + 1}`}
-                  </button>
-                )}
-              </For>
-            </>
-          }
+        <select
+          value={current()}
+          disabled={busy()}
+          onChange={(e) => void pickSeat(e.currentTarget)}
         >
-          <span>
-            Team {(seat()?.allyTeam ?? 0) + 1}
-            {/* Sitting down mid-game puts you in the lineup for the next one,
-                which is worth saying so nobody waits for this one to let them in. */}
-            <Show when={running()}>
-              <span class='muted'> · next game</span>
-            </Show>
-          </span>
+          <For each={allyTeams()}>
+            {(ally, index) => (
+              <option value={String(ally)}>
+                {index() === allyTeams().length - 1
+                  ? 'New team'
+                  : current() === String(ally)
+                    ? `Team ${ally + 1}`
+                    : `Join team ${ally + 1}`}
+              </option>
+            )}
+          </For>
+          <option value={SPECTATOR}>Spectator</option>
+        </select>
+
+        <Show when={seated()}>
+          {/* Sitting down mid-game puts you in the lineup for the next one,
+              which is worth saying so nobody waits for this one to let them in. */}
+          <Show when={running()}>
+            <span class='muted'>next game</span>
+          </Show>
 
           <button
             class={seat()?.ready ? 'primary' : ''}
@@ -205,18 +226,6 @@ export function Seat() {
             </For>
           </select>
           <SideIcon side={seat()?.side ?? 0} />
-
-          <button
-            disabled={busy()}
-            onClick={() =>
-              act('spectate', async () => {
-                await api.releaseSeat()
-                await remember(false)
-              })
-            }
-          >
-            Spectate
-          </button>
         </Show>
       </Show>
 
@@ -229,10 +238,7 @@ export function Seat() {
               (what) => !content()[what],
             )
           return (
-            <Show
-              when={missing().length}
-              fallback={<span class='synced'>content ready</span>}
-            >
+            <Show when={missing().length}>
               <span class='error'>missing {missing().join(', ')}</span>
             </Show>
           )
@@ -285,7 +291,7 @@ const BOT_COLOURS = [0x4b73f2, 0x3fd07f, 0x2fb8f0, 0x9e5ce8, 0x50a0ff, 0x8fd04b]
  */
 function AddAi(props: {
   busy: boolean
-  act: (what: string, run: () => Promise<void>) => Promise<void>
+  act: (what: string, run: () => Promise<void>) => Promise<boolean>
   freeTeam: () => number
   freeAlly: () => number
 }) {

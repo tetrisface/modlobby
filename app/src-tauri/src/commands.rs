@@ -487,15 +487,30 @@ pub async fn request_game_status(app: State<'_, App>, founder: String) -> Result
 /// An empty answer means the game is not installed yet; the room falls back to
 /// showing the settings it can see without their descriptions.
 #[tauri::command]
-pub fn game_modoptions(app: State<'_, App>, game: String) -> Result<Vec<modoptions::ModOption>> {
+pub async fn game_modoptions(
+    app: State<'_, App>,
+    game: String,
+) -> Result<Vec<modoptions::ModOption>> {
     let Some(dirs) = data_dirs_of(&app) else {
         return Ok(Vec::new());
     };
-    let Some(bytes) = content::Library::new(dirs).game_file(&game, "modoptions.lua") else {
-        return Ok(Vec::new());
-    };
-    modoptions::parse(&String::from_utf8_lossy(&bytes))
-        .map_err(|err| ApiError::new("modoptions", err.to_string()))
+    disk_work(move || {
+        let Some(bytes) = content::Library::new(dirs).game_file(&game, "modoptions.lua") else {
+            return Ok(Vec::new());
+        };
+        modoptions::parse(&String::from_utf8_lossy(&bytes))
+            .map_err(|err| ApiError::new("modoptions", err.to_string()))
+    })
+    .await?
+}
+
+/// Runs a read of the installed game off the main thread. Opening a rapid
+/// package costs tens of milliseconds, and a sync command pays them on the
+/// thread that paints the window.
+async fn disk_work<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> Result<T> {
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|err| ApiError::new("disk", err.to_string()))
 }
 
 /// Records whether the last room was joined as a player, which is what the
@@ -893,12 +908,15 @@ pub async fn tweak_diff(
 
 /// The units a game has, for completing and checking `tweakunits` keys.
 #[tauri::command]
-pub fn game_unit_names(app: State<'_, App>, game: String) -> Result<Vec<String>> {
+pub async fn game_unit_names(app: State<'_, App>, game: String) -> Result<Vec<String>> {
     let Some(dirs) = data_dirs_of(&app) else {
         return Ok(Vec::new());
     };
-    let files = content::Library::new(dirs).game_files(&game, "units/");
-    Ok(tweaks::assist::unit_names(&files))
+    disk_work(move || {
+        let files = content::Library::new(dirs).game_files(&game, "units/");
+        tweaks::assist::unit_names(&files)
+    })
+    .await
 }
 
 /// The engine's weapon tags, dumped by the installed engine once and kept.

@@ -1,6 +1,7 @@
 import { useNavigate } from '@solidjs/router'
 import {
   For,
+  Index,
   Match,
   Show,
   Switch,
@@ -13,7 +14,13 @@ import { GetEngine } from '../components/GetEngine'
 import { Linkify } from '../components/Linkify'
 import { MapPicture } from '../components/MapPicture'
 import { showPlayerMenu } from '../components/PlayerMenu'
-import { BotRow, PlayerRow, SpectatorRow } from '../components/PlayerRow'
+import {
+  BotRow,
+  EmptySeat,
+  GuessedRow,
+  PlayerRow,
+  SpectatorRow,
+} from '../components/PlayerRow'
 import { SyncIcon } from '../components/icons'
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { BotView } from '../ipc/bindings/BotView'
@@ -25,8 +32,10 @@ import { api, describeError } from '../ipc/client'
 import { boxSignature, centre, outline } from '../lib/boxes'
 import { downloadFraction } from '../lib/download'
 import { TILES } from '../lib/maps'
+import { type Roster, arrange, emptySeats } from '../lib/roster'
 import { readSkills, teamSkill, type Skill } from '../lib/skill'
 import { BATTLE_ROOM, chat, pushNotice } from '../store/chat'
+import { joinMilestone } from '../store/join'
 import { lobby, myRoom } from '../store/lobby'
 import { settings } from '../store/settings'
 import { HostBar } from './HostBar'
@@ -36,8 +45,6 @@ import { Seat } from './Seat'
 import { StartBoxes } from './StartBoxes'
 import { Setup } from './Setup'
 import { VoteBar } from './VoteBar'
-
-type Team = { allyTeam: number; users: UserView[]; bots: BotView[] }
 
 export function Room() {
   const navigate = useNavigate()
@@ -53,33 +60,10 @@ export function Room() {
   const skillOf = (name: string): Skill | null =>
     skills()[name.toLowerCase()] ?? null
 
-  const occupants = createMemo(() => {
+  const occupants = createMemo((): Roster => {
     const b = battle()
-    if (!b) return { teams: [] as Team[], spectators: [] as UserView[] }
-
-    const teams = new Map<number, Team>()
-    const team = (allyTeam: number) => {
-      const found = teams.get(allyTeam) ?? { allyTeam, users: [], bots: [] }
-      teams.set(allyTeam, found)
-      return found
-    }
-
-    const spectators: UserView[] = []
-    // `members` arrives sorted by name; keeping that order means a skill tag
-    // landing late never reshuffles the list under the reader's eyes.
-    for (const name of b.members) {
-      const user = lobby.users[name]
-      if (!user) continue
-      if (user.battleStatus?.player)
-        team(user.battleStatus.allyTeam).users.push(user)
-      else spectators.push(user)
-    }
-    for (const bot of b.bots) team(bot.status.allyTeam).bots.push(bot)
-
-    return {
-      teams: [...teams.values()].sort((a, b) => a.allyTeam - b.allyTeam),
-      spectators,
-    }
+    if (!b) return { teams: [], spectators: [], pending: [], spectatorCount: 0 }
+    return arrange(b, lobby.users, lobby.me)
   })
 
   /**
@@ -97,6 +81,11 @@ export function Room() {
   createEffect(() => {
     if (lobby.phase === 'ready' && !lobby.myBattle)
       navigate('/battles', { replace: true })
+  })
+  createEffect(() => {
+    const roster = occupants()
+    if (roster.teams.length > 0 && roster.pending.length === 0)
+      joinMilestone('roster settled')
   })
   const lines = () => chat.rooms[BATTLE_ROOM] ?? []
   createEffect(() => {
@@ -208,24 +197,26 @@ export function Room() {
             <div class='room-main'>
               <div class='rosters'>
                 <div class='teams'>
-                  <For each={occupants().teams}>
+                  {/* By position, not by object: the memo builds new team
+                      objects on every status line, and a `For` keyed on
+                      them rebuilt every row each time. The users inside are
+                      the store's own objects, so their rows do survive. */}
+                  <Index each={occupants().teams}>
                     {(team) => (
                       <section class='team'>
                         <header class='team-head'>
-                          <span class='name'>Team {team.allyTeam + 1}</span>
-                          <span class='count'>
-                            {team.users.length + team.bots.length}
-                          </span>
-                          <Show when={team.users.length > 0}>
+                          <span class='name'>Team {team().allyTeam + 1}</span>
+                          <span class='count'>{team().expected}</span>
+                          <Show when={team().users.length > 0}>
                             <span class='os'>
                               Σ{' '}
                               {teamSkill(
-                                team.users.map((u) => skillOf(u.name)),
+                                team().users.map((u) => skillOf(u.name)),
                               ).toFixed(1)}
                             </span>
                           </Show>
                         </header>
-                        <For each={team.users}>
+                        <For each={team().users}>
                           {(user) => (
                             <PlayerRow
                               user={user}
@@ -241,7 +232,16 @@ export function Room() {
                             />
                           )}
                         </For>
-                        <For each={team.bots}>
+                        <For each={team().guessed}>
+                          {(user) => (
+                            <GuessedRow
+                              user={user}
+                              me={user.name === lobby.me}
+                              friend={isFriend(user.name)}
+                            />
+                          )}
+                        </For>
+                        <For each={team().bots}>
                           {(bot) => (
                             <BotRow
                               bot={bot}
@@ -264,15 +264,20 @@ export function Room() {
                             />
                           )}
                         </For>
+                        <Index
+                          each={Array.from({ length: emptySeats(team()) })}
+                        >
+                          {() => <EmptySeat />}
+                        </Index>
                       </section>
                     )}
-                  </For>
+                  </Index>
                 </div>
 
                 <section class='spectators'>
                   <header class='team-head'>
                     <span class='name'>Spectators</span>
-                    <span class='count'>{occupants().spectators.length}</span>
+                    <span class='count'>{occupants().spectatorCount}</span>
                   </header>
                   <div class='spectator-list'>
                     <For each={occupants().spectators}>
@@ -282,6 +287,19 @@ export function Room() {
                           me={user.name === lobby.me}
                           friend={isFriend(user.name)}
                           boss={lobby.myBattle?.boss === user.name}
+                        />
+                      )}
+                    </For>
+                    {/* Not placed by the server yet: listed so the room has
+                        its names at once, dimmed because most are about to
+                        take a seat above. */}
+                    <For each={occupants().pending}>
+                      {(user) => (
+                        <SpectatorRow
+                          user={user}
+                          me={user.name === lobby.me}
+                          friend={isFriend(user.name)}
+                          pending
                         />
                       )}
                     </For>
