@@ -9,6 +9,6 @@ export type AiChoice = {
  */
 name: string, 
 /**
- * The game's one-line description; engine AIs have none.
+ * The game's one-line description; empty for engine AIs.
  */
 desc: string, };
