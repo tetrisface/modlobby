@@ -1,12 +1,76 @@
 //! Outbound throttle policy.
 //!
-//! Two independent enforcers punish a chatty client: teiserver's per-connection
-//! bucket (`DISCONNECT Flood protection`, then ~10 s of blocked logins) and
-//! SPADS's per-battle windows (`KICKFROMBATTLE`, a 5-minute ban on repeat, or a
-//! 2-minute command ignore). Every outbound line therefore passes through a
-//! [`Scheduler`] whose limits are plain data ([`ThrottlePolicy`]) keyed by the
-//! server-side enforcement point ([`Area`]), so any area can be retuned without
-//! touching code.
+//! Every outbound line passes through a [`Scheduler`] whose limits are plain
+//! data ([`ThrottlePolicy`]) keyed by the server-side enforcement point
+//! ([`Area`]). The numbers ship from [`Default`]; retune them there. The
+//! CLI's `--policy` takes the same shape as TOML for experiments.
+//!
+//! # What the servers actually enforce
+//!
+//! Decoded from the sources under `external/` and the teiserver checkout,
+//! 2026-09. Line numbers are from those checkouts.
+//!
+//! ## teiserver: one permit per TCP read, not per line
+//!
+//! `spring_tcp_server.ex` `handle_info({:tcp, _, data})` runs `flood_protect?`
+//! once per chunk the socket delivers, and only then `SpringIn.data_in` splits
+//! the chunk on newlines and handles every line. The limiter is
+//! `BurstyRateLimiter.per_minute(200)` (site config "teiserver.Spring rate
+//! limit per minute"): 200 permits, one back every 300 ms. Going over answers
+//! `DISCONNECT Flood protection`, drops the socket, and refuses login for
+//! about 10 s (the login-attempt counter is set past its limit with a 10 s
+//! TTL; the refusal text says 20). Admins, moderators and bot accounts are
+//! exempt. The limiter grants on any positive fraction of a permit and lets
+//! the store go negative, so the wait after an overshoot grows with it.
+//!
+//! So the unit of cost is the write, and a large write costs about as many
+//! permits as it has TCP segments. The scheduler therefore charges the
+//! connection bucket per write by segments ([`Paste::segment_bytes`]), which
+//! is also why the burst lane joins many lines into one write. A partial line
+//! is buffered up to 64 KiB ("teiserver.Spring max message buffer size"),
+//! hence [`ThrottlePolicy::max_line_bytes`]; a chunk without a trailing
+//! newline is buffered whole, complete lines and all, until one arrives.
+//!
+//! ## SPADS: two per-user counters, both skipped above access level 100
+//!
+//! `cbSaidBattle` (`spads.pl`, near line 14610) runs `checkUserMsgFlood` for
+//! every `SAIDBATTLE` from a user, commands included; `handleRequest` (near
+//! line 3205) then runs `checkCmdFlood` for any line matching `^!\w`, valid
+//! command or not. The public cluster hosts run
+//! `spads_config_bar/etc/spads_cluster.conf` (`docker/scripts/run-spads.sh`);
+//! `barmanager_spads.conf` is the older standalone setup:
+//!
+//! | counter  | cluster                     | standalone | on the Nth line        |
+//! |----------|-----------------------------|------------|------------------------|
+//! | messages | `msgFloodAutoKick:15;7`     | same       | `KICKFROMBATTLE`       |
+//! | commands | `cmdFloodAutoIgnore:20;5;1` | `8;8;4`    | ignored 1 (4) minutes  |
+//! | status   | `statusFloodAutoKick:24;8`  | same       | `KICKFROMBATTLE`       |
+//!
+//! Both counters bucket by whole seconds (`time`), count the current line
+//! before comparing, and drop a bucket only once `time - ts > window`, so a
+//! window of W seconds spans W+1 buckets: between 6 and 8 real seconds for
+//! the message counter. Read as "never more than": 14 messages in 8 s, and
+//! 19 commands in 6 s on the cluster or 7 in 9 s standalone. Commands count
+//! as messages too, so on the cluster the message counter is the one that
+//! binds. The paced lane below is tuned to the standalone numbers, which fit
+//! the cluster's as well.
+//!
+//! Both counters are skipped for a sender at `floodImmuneLevel` (100) or
+//! above: moderators in `users.conf`, and any current boss, whom BarManager
+//! lifts to exactly 100 (`barmanager.py`, `changeUserAccessLevel`), which is
+//! also why a boss's `!bSet` runs without a vote. That immunity is what the
+//! burst lane relies on. The owner reports being kicked while boss in a full
+//! room, which this reading does not explain; the mechanism is still open,
+//! hence [`PasteBurst`] being the first thing to tune.
+//!
+//! ## Chobby, for comparison
+//!
+//! A paste under 20000 characters goes out line by line in one frame
+//! (`interface.lua`, `SayBattle`); over that, `SayBattleThrottled` sends
+//! 20000-character batches of whole lines 4 s apart. It never looks at
+//! SPADS's counters: as boss it is immune, otherwise the 15th line gets it
+//! kicked. The 4 s is not arbitrary: a 20000-byte batch is about 14 segments,
+//! and teiserver refills 14 permits in 4.2 s.
 //!
 //! Time is passed in explicitly as [`Instant`] so the scheduler is deterministic
 //! under test.
@@ -28,6 +92,10 @@ pub enum Area {
     BattleStatus,
     /// `SAYBATTLE`/`SAYBATTLEEX` (SPADS `msgFloodAutoKick`).
     BattleChat,
+    /// A multi-line battle-room paste on the burst lane: whole lines are
+    /// joined into one write per batch (see [`Paste`]). Only for a sender
+    /// SPADS does not count, so its limit is teiserver's alone.
+    BattlePaste,
     /// `!` commands (SPADS `cmdFloodAutoIgnore`).
     BattleCommand,
     /// `SAY`/`SAYEX`.
@@ -37,13 +105,14 @@ pub enum Area {
 }
 
 /// Fixed drain order, so scheduling is deterministic.
-const AREAS: [Area; 9] = [
+const AREAS: [Area; 10] = [
     Area::Heartbeat,
     Area::Login,
     Area::Status,
     Area::BattleStatus,
     Area::BattleCommand,
     Area::BattleChat,
+    Area::BattlePaste,
     Area::ChannelChat,
     Area::Ring,
     Area::Other,
@@ -79,6 +148,51 @@ pub struct ThrottlePolicy {
     pub heartbeat_idle_secs: f64,
     /// Lines longer than this are dropped client-side (server buffer limit is 64 KiB).
     pub max_line_bytes: usize,
+    /// How a multi-line battle-room paste is sent.
+    #[serde(default)]
+    pub paste: Paste,
+}
+
+/// How a multi-line battle-room paste is sent. Single lines never take the
+/// burst lane: one `!vote` should not wait on a batch interval.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Paste {
+    pub burst: PasteBurst,
+    /// Most bytes joined into one write on the burst lane. Chobby's 20000
+    /// (`interface.lua`, `THROTTLED_SAY_MAX_CHARS_PER_BATCH`): about 14
+    /// segments, which the connection bucket gets back in one batch interval.
+    pub batch_bytes: usize,
+    /// Bytes per TCP segment assumed when charging a write against the
+    /// connection bucket: the usual Ethernet MSS. teiserver counts reads, and
+    /// a read is one segment when the client writes faster than it reads.
+    pub segment_bytes: usize,
+}
+
+impl Default for Paste {
+    fn default() -> Self {
+        Self {
+            burst: PasteBurst::Boss,
+            batch_bytes: 20_000,
+            segment_bytes: 1460,
+        }
+    }
+}
+
+/// When a paste takes the burst lane rather than being paced line by line
+/// under SPADS's counters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PasteBurst {
+    /// Burst while SPADS reports us as boss, the one state known to lift a
+    /// sender past `floodImmuneLevel`; pace otherwise. The owner has been
+    /// kicked as boss in a full room, so this is the setting to change first
+    /// when tuning.
+    Boss,
+    /// Always burst: what Chobby does. Kicks a sender SPADS is counting.
+    Always,
+    /// Never burst, even as boss.
+    Never,
 }
 
 impl Default for ThrottlePolicy {
@@ -113,17 +227,31 @@ impl Default for ThrottlePolicy {
                     window_secs: 8.0,
                 },
             ),
+            // The paced lane, shaped by SPADS's counters (module docs): at most
+            // 7 commands in any 9 s and 14 messages in any 8 s, commands
+            // included. The windows are a second wider than the counters so a
+            // burst landing just across a whole-second boundary still fits,
+            // and chat plus commands together stay under 14 in 8 s.
             (
                 Area::BattleChat,
                 Window {
                     max: 4,
-                    window_secs: 7.0,
+                    window_secs: 9.0,
                 },
             ),
             (
                 Area::BattleCommand,
                 Window {
-                    max: 3,
+                    max: 7,
+                    window_secs: 10.0,
+                },
+            ),
+            // The burst lane: one batch per interval, Chobby's 4 s. Nothing
+            // else limits it but the connection bucket.
+            (
+                Area::BattlePaste,
+                Window {
+                    max: 1,
                     window_secs: 4.0,
                 },
             ),
@@ -161,6 +289,7 @@ impl Default for ThrottlePolicy {
             },
             heartbeat_idle_secs: 30.0,
             max_line_bytes: 60 * 1024,
+            paste: Paste::default(),
         }
     }
 }
@@ -168,6 +297,47 @@ impl Default for ThrottlePolicy {
 impl ThrottlePolicy {
     pub fn heartbeat_idle(&self) -> Duration {
         Duration::from_secs_f64(self.heartbeat_idle_secs)
+    }
+
+    /// Permits one write of `bytes` costs on the connection: one per segment
+    /// it will arrive in, since teiserver counts reads.
+    pub fn permits(&self, bytes: usize) -> usize {
+        1 + bytes / self.paste.segment_bytes.max(1)
+    }
+
+    /// Roughly how long these envelopes take to leave, area by area, so a
+    /// long paste can say so up front. The connection bucket is ignored: on
+    /// the paced lanes it never binds, and on the burst lane the batch
+    /// interval is the slower of the two by design.
+    pub fn estimate<'a>(&self, envelopes: impl IntoIterator<Item = &'a Envelope>) -> Duration {
+        let mut count: HashMap<Area, usize> = HashMap::new();
+        let mut paste_bytes = 0;
+        for envelope in envelopes {
+            if envelope.area == Area::BattlePaste {
+                paste_bytes += envelope.line.len() + 1;
+            } else {
+                *count.entry(envelope.area).or_default() += 1;
+            }
+        }
+        if paste_bytes > 0 {
+            count.insert(
+                Area::BattlePaste,
+                paste_bytes.div_ceil(self.paste.batch_bytes.max(1)),
+            );
+        }
+        count
+            .into_iter()
+            .map(|(area, n)| match self.areas.get(&area) {
+                Some(&Limit::Window { max, window_secs }) if n > max as usize => {
+                    Duration::from_secs_f64(((n - 1) / max as usize) as f64 * window_secs)
+                }
+                Some(&Limit::Bucket { burst, per_minute }) if n > burst as usize => {
+                    Duration::from_secs_f64((n - burst as usize) as f64 * 60.0 / per_minute)
+                }
+                _ => Duration::ZERO,
+            })
+            .max()
+            .unwrap_or(Duration::ZERO)
     }
 }
 
@@ -261,18 +431,21 @@ impl TokenBucket {
         self.last = now;
     }
 
-    fn wait(&mut self, now: Instant) -> Duration {
+    /// A write needing more than the bucket holds waits for a full bucket;
+    /// it can never wait for more.
+    fn wait_for(&mut self, permits: usize, now: Instant) -> Duration {
         self.refill(now);
-        if self.tokens >= 1.0 {
+        let needed = (permits as f64).min(self.capacity);
+        if self.tokens >= needed {
             Duration::ZERO
         } else {
-            Duration::from_secs_f64((1.0 - self.tokens) / self.per_sec)
+            Duration::from_secs_f64((needed - self.tokens) / self.per_sec)
         }
     }
 
-    fn take(&mut self, now: Instant) {
+    fn take_n(&mut self, permits: usize, now: Instant) {
         self.refill(now);
-        self.tokens -= 1.0;
+        self.tokens -= permits as f64;
     }
 }
 
@@ -302,19 +475,23 @@ impl SlidingWindow {
         }
     }
 
-    fn wait(&mut self, now: Instant) -> Duration {
+    fn wait_for(&mut self, permits: usize, now: Instant) -> Duration {
         self.prune(now);
-        match self.sent.front() {
-            Some(&oldest) if self.sent.len() >= self.max => {
-                (oldest + self.window).saturating_duration_since(now)
-            }
-            _ => Duration::ZERO,
+        let permits = permits.clamp(1, self.max.max(1));
+        let over = self.sent.len() + permits;
+        if over <= self.max {
+            return Duration::ZERO;
         }
+        // The write fits once this many of the oldest have left the window.
+        let oldest = self.sent[over - self.max - 1];
+        (oldest + self.window).saturating_duration_since(now)
     }
 
-    fn take(&mut self, now: Instant) {
+    fn take_n(&mut self, permits: usize, now: Instant) {
         self.prune(now);
-        self.sent.push_back(now);
+        for _ in 0..permits {
+            self.sent.push_back(now);
+        }
     }
 }
 
@@ -336,17 +513,17 @@ impl Limiter {
         }
     }
 
-    fn wait(&mut self, now: Instant) -> Duration {
+    fn wait_for(&mut self, permits: usize, now: Instant) -> Duration {
         match self {
-            Self::Bucket(b) => b.wait(now),
-            Self::Window(w) => w.wait(now),
+            Self::Bucket(b) => b.wait_for(permits, now),
+            Self::Window(w) => w.wait_for(permits, now),
         }
     }
 
-    fn take(&mut self, now: Instant) {
+    fn take_n(&mut self, permits: usize, now: Instant) {
         match self {
-            Self::Bucket(b) => b.take(now),
-            Self::Window(w) => w.take(now),
+            Self::Bucket(b) => b.take_n(permits, now),
+            Self::Window(w) => w.take_n(permits, now),
         }
     }
 }
@@ -431,61 +608,82 @@ impl Scheduler {
         self.events.push(PolicyEvent::Tripped { area, until });
     }
 
-    /// Lines that may be written now, in send order.
+    /// Writes that may go out now, in send order. Each is one write on the
+    /// socket: a single protocol line, or on [`Area::BattlePaste`] several
+    /// joined with newlines, which teiserver splits again on arrival.
     pub fn drain(&mut self, now: Instant) -> Vec<String> {
         let mut out = Vec::new();
         while let Some(front) = self.immediate.front() {
-            if !self.connection.wait(now).is_zero() {
+            let permits = self.policy.permits(front.line.len() + 1);
+            let wait = self.connection.wait_for(permits, now);
+            if !wait.is_zero() {
                 self.events.push(PolicyEvent::Delayed {
                     area: front.area,
                     pending: self.immediate.len(),
-                    wait: self.connection.wait(now),
+                    wait,
                 });
                 return out;
             }
-            self.connection.take(now);
+            self.connection.take_n(permits, now);
             out.push(self.immediate.pop_front().expect("front exists").line);
         }
         for area in AREAS {
-            loop {
-                let pending = match self.queues.get(&area) {
-                    Some(queue) if !queue.is_empty() => queue.len(),
-                    _ => break,
-                };
-                let wait = self.area_wait(area, now);
+            while let Some(write) = self.next_write(area) {
+                let wait = self.area_wait(area, write.permits, now);
                 if !wait.is_zero() {
                     self.events.push(PolicyEvent::Delayed {
                         area,
-                        pending,
+                        pending: self.queues[&area].len(),
                         wait,
                     });
                     break;
                 }
-                self.connection.take(now);
+                self.connection.take_n(write.permits, now);
                 self.limiters
                     .get_mut(&area)
                     .expect("limiter exists")
-                    .take(now);
-                let envelope = self
-                    .queues
-                    .get_mut(&area)
-                    .and_then(VecDeque::pop_front)
-                    .expect("queue non-empty");
-                out.push(envelope.line);
+                    .take_n(1, now);
+                let queue = self.queues.get_mut(&area).expect("queue exists");
+                let lines: Vec<String> = queue.drain(..write.envelopes).map(|e| e.line).collect();
+                out.push(lines.join("\n"));
             }
         }
         out
     }
 
+    /// The next write an area would make: one line, or on the burst lane as
+    /// many whole lines as fit in [`Paste::batch_bytes`] (always at least one).
+    fn next_write(&self, area: Area) -> Option<NextWrite> {
+        let queue = self.queues.get(&area)?;
+        let first = queue.front()?;
+        let mut envelopes = 1;
+        let mut bytes = first.line.len() + 1;
+        if area == Area::BattlePaste {
+            for envelope in queue.iter().skip(1) {
+                let more = envelope.line.len() + 1;
+                if bytes + more > self.policy.paste.batch_bytes {
+                    break;
+                }
+                envelopes += 1;
+                bytes += more;
+            }
+        }
+        Some(NextWrite {
+            envelopes,
+            permits: self.policy.permits(bytes),
+        })
+    }
+
     /// How long until [`Scheduler::drain`] could produce another line, if anything is pending.
     pub fn next_wakeup(&mut self, now: Instant) -> Option<Duration> {
         let mut waits = Vec::new();
-        if !self.immediate.is_empty() {
-            waits.push(self.connection.wait(now));
+        if let Some(front) = self.immediate.front() {
+            let permits = self.policy.permits(front.line.len() + 1);
+            waits.push(self.connection.wait_for(permits, now));
         }
         for area in AREAS {
-            if self.queues.get(&area).is_some_and(|q| !q.is_empty()) {
-                waits.push(self.area_wait(area, now));
+            if let Some(write) = self.next_write(area) {
+                waits.push(self.area_wait(area, write.permits, now));
             }
         }
         waits.into_iter().min()
@@ -499,7 +697,7 @@ impl Scheduler {
         std::mem::take(&mut self.events)
     }
 
-    fn area_wait(&mut self, area: Area, now: Instant) -> Duration {
+    fn area_wait(&mut self, area: Area, permits: usize, now: Instant) -> Duration {
         let tripped = self.tripped.get(&area).map_or(Duration::ZERO, |&until| {
             until.saturating_duration_since(now)
         });
@@ -507,13 +705,24 @@ impl Scheduler {
             .limiters
             .get_mut(&area)
             .expect("limiter exists")
-            .wait(now);
-        tripped.max(limiter).max(self.connection.wait(now))
+            .wait_for(1, now);
+        tripped
+            .max(limiter)
+            .max(self.connection.wait_for(permits, now))
     }
 }
 
+/// What [`Scheduler::next_write`] found at the front of a queue.
+struct NextWrite {
+    envelopes: usize,
+    permits: usize,
+}
+
 /// teiserver's `SAYBATTLE` cap for a message (`spring_in.ex`): `String.slice(0..n)` is an
-/// inclusive range, so each class allows `n + 1` characters.
+/// inclusive range, so each class allows `n + 1` characters. The slice counts
+/// graphemes where this crate counts scalars, so this side is the stricter one.
+/// `!bset mapmetadata` is not in the 2026-07 teiserver checkout; if the live
+/// server does not know it, such a line past 257 is cut there without a word.
 pub fn saybattle_max_len(message: &str) -> usize {
     const LONG_PREFIXES: [&str; 4] = [
         "$welcome-message",
@@ -637,6 +846,82 @@ mod tests {
         assert_eq!(saybattle_max_len("hello"), 257);
         assert_eq!(saybattle_max_len("!mode ffa"), 1025);
         assert_eq!(saybattle_max_len("!bSet tweakDefs abc"), 16_385);
+    }
+
+    #[test]
+    fn a_write_costs_one_permit_per_segment() {
+        let policy = ThrottlePolicy::default();
+        assert_eq!(policy.permits(10), 1);
+        assert_eq!(policy.permits(1460), 2);
+        assert_eq!(policy.permits(20_000), 14);
+        // A tweak blob alone: what teiserver sees as a dozen reads.
+        assert_eq!(policy.permits(16_000), 11);
+    }
+
+    #[test]
+    fn the_burst_lane_joins_whole_lines_into_one_write_per_interval() {
+        let mut policy = ThrottlePolicy::default();
+        policy.paste.batch_bytes = 30;
+        let t0 = Instant::now();
+        let mut s = Scheduler::new(policy, t0);
+        for line in ["!bSet a 1", "!bSet b 22", "!bSet c 333", "hello"] {
+            s.submit(Envelope::queue(Area::BattlePaste, line));
+        }
+        // 10 + 11 = 21 fits, 21 + 12 = 33 does not.
+        assert_eq!(s.drain(t0), vec!["!bSet a 1\n!bSet b 22"]);
+        assert!(s.drain(t0 + secs(3.9)).is_empty(), "one batch per interval");
+        assert_eq!(s.drain(t0 + secs(4.0)), vec!["!bSet c 333\nhello"]);
+        assert_eq!(s.pending(), 0);
+    }
+
+    #[test]
+    fn a_big_write_waits_for_the_permits_it_needs() {
+        let policy = ThrottlePolicy {
+            connection: Limit::Bucket {
+                burst: 20,
+                per_minute: 60.0,
+            },
+            ..ThrottlePolicy::default()
+        };
+        let t0 = Instant::now();
+        let mut s = Scheduler::new(policy, t0);
+        let blob = "x".repeat(20_000);
+        s.submit(Envelope::queue(Area::BattlePaste, blob.clone()));
+        s.submit(Envelope::queue(Area::BattlePaste, blob));
+        // 14 permits of 20: the first goes at once; the second needs 8 more
+        // at one a second, so the batch interval is not what it waits on.
+        assert_eq!(s.drain(t0).len(), 1);
+        assert!(s.drain(t0 + secs(4.0)).is_empty());
+        assert!(s.drain(t0 + secs(7.9)).is_empty());
+        assert_eq!(s.drain(t0 + secs(8.0)).len(), 1);
+    }
+
+    #[test]
+    fn a_paste_estimate_follows_the_slowest_area() {
+        let policy = ThrottlePolicy::default();
+        let commands: Vec<Envelope> = (0..15)
+            .map(|i| Envelope::queue(Area::BattleCommand, format!("SAYBATTLE !bSet k{i} 1")))
+            .collect();
+        // 7 per 10 s: 7 now, 7 at 10 s, 1 at 20 s.
+        assert_eq!(policy.estimate(&commands), secs(20.0));
+        let burst: Vec<Envelope> = (0..3)
+            .map(|_| Envelope::queue(Area::BattlePaste, "x".repeat(15_000)))
+            .collect();
+        // Three 15 KB lines: three batches, 4 s apart.
+        assert_eq!(policy.estimate(&burst), secs(8.0));
+        assert_eq!(policy.estimate(&commands[..3]), Duration::ZERO);
+    }
+
+    #[test]
+    fn an_older_policy_file_without_paste_still_loads() {
+        let text = toml::to_string(&ThrottlePolicy::default()).expect("serialise");
+        let without: String = text
+            .lines()
+            .take_while(|line| !line.starts_with("[paste]"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let policy: ThrottlePolicy = toml::from_str(&without).expect("parse");
+        assert_eq!(policy.paste, Paste::default());
     }
 
     #[test]

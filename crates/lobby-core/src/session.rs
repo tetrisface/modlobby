@@ -10,6 +10,7 @@ use spring_protocol::{
 use crate::hosting::{self, Rtts, SpareRoom};
 use crate::spads::{self, Announcement, VoteState};
 use crate::state::{Bot, Channel, LobbyState, MyBattle, Phase, StartRect};
+use spring_protocol::policy::PasteBurst;
 
 /// What the application must do in response to an event.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -418,13 +419,7 @@ impl Session {
             .ok_or(SeatError::NotInARoom)?;
         // Ours if it was given to us (passworded), or if SPADS says we are
         // bossing it — which is what joining an empty autohost makes you.
-        let ours = room.passworded
-            || self
-                .state
-                .my_battle
-                .as_ref()
-                .and_then(|my| my.boss.as_deref())
-                .is_some_and(|boss| Some(boss) == self.state.me.as_deref());
+        let ours = room.passworded || self.is_boss();
         if !ours && !self.allow_public_seat {
             return Err(SeatError::PublicRoom);
         }
@@ -510,17 +505,37 @@ impl Session {
 
     /// Says something in the room, a paste as one message per line.
     ///
-    /// A `!bSet` whose value the room already has is dropped before the
-    /// throttle sees it. A pasted preset is mostly settings already in place,
-    /// and SPADS would only echo each one back, a vote or a line at a time.
-    pub fn say_battle(&mut self, text: &str) -> Result<Vec<Effect>, battle::TooLong> {
+    /// Two things happen to a paste first. A setting the room already has,
+    /// as `!bSet key value` or SPADS's shortcut `!key value`, is dropped: a
+    /// pasted preset is mostly settings already in place, and SPADS would
+    /// only echo each one back, a vote or a line at a time. Then, if more
+    /// than one line is left and `burst` allows it, the lines take the burst
+    /// lane ([`Area::BattlePaste`]) and go out in a few large writes rather
+    /// than paced one by one; see the policy module for why that is only
+    /// safe for a sender SPADS does not count.
+    pub fn say_battle(
+        &mut self,
+        text: &str,
+        burst: PasteBurst,
+    ) -> Result<Vec<Effect>, battle::TooLong> {
         let envelopes = battle::say_battle_lines(text)?;
         let Some(my) = self.state.my_battle.as_ref() else {
             return Ok(sends(envelopes));
         };
-        let (in_place, wanted): (Vec<_>, Vec<_>) = envelopes
+        let (in_place, mut wanted): (Vec<_>, Vec<_>) = envelopes
             .into_iter()
             .partition(|envelope| already_set(my, &envelope.line));
+        let burst_now = wanted.len() > 1
+            && match burst {
+                PasteBurst::Always => true,
+                PasteBurst::Never => false,
+                PasteBurst::Boss => self.is_boss(),
+            };
+        if burst_now {
+            for envelope in &mut wanted {
+                envelope.area = Area::BattlePaste;
+            }
+        }
         let mut effects = sends(wanted);
         if !in_place.is_empty() {
             effects.push(Effect::Notice(format!(
@@ -530,6 +545,15 @@ impl Session {
             )));
         }
         Ok(effects)
+    }
+
+    /// Whether SPADS has told us we boss the room we are in.
+    pub fn is_boss(&self) -> bool {
+        self.state
+            .my_battle
+            .as_ref()
+            .and_then(|my| my.boss.as_deref())
+            .is_some_and(|boss| Some(boss) == self.state.me.as_deref())
     }
 
     /// Sends a direct message. Nothing appears until the server echoes it back.
@@ -1401,15 +1425,28 @@ impl Session {
 
 /// `… Starting a new private instance in …, password=XXXX` — the reply Chobby
 /// scrapes at `battle_list_window.lua:1634-1637`.
-/// Whether `line` is a `SAYBATTLE !bSet` naming the value the room has now.
-/// Only an exact match counts: SPADS may normalise what it stores, and a
-/// guess about that would skip a change someone meant.
+/// Whether `line` sets a modoption to the value the room has now.
+///
+/// Two spellings set one: `!bSet key value`, and `!key value`, which SPADS
+/// rewrites to the former when `key` is a modoption rather than a command
+/// (`spads.pl`, `allowSettingsShortcut`, near line 3044). The second only
+/// matches when the room has that key at that value, so `!preset custom`
+/// stays a command here too. Only an exact match counts: SPADS may
+/// normalise what it stores, and a guess about that would skip a change
+/// someone meant.
 fn already_set(my: &MyBattle, line: &str) -> bool {
     let Some(command) = line.strip_prefix("SAYBATTLE !") else {
         return false;
     };
-    let spads::Proposal::SetOption { key, value } = spads::Proposal::parse(command) else {
-        return false;
+    let (key, value) = match spads::Proposal::parse(command) {
+        spads::Proposal::SetOption { key, value } => (key, value),
+        spads::Proposal::Other => {
+            let mut words = command.split_whitespace();
+            let (Some(word), Some(value)) = (words.next(), words.next()) else {
+                return false;
+            };
+            (word.to_ascii_lowercase(), value.to_owned())
+        }
     };
     !value.is_empty() && my.modoption(&key) == value
 }
@@ -2063,25 +2100,73 @@ mod tests {
         );
         let effects = s
             .say_battle(
-                "!bSet startmetal 1000
-!bset StartMetal 2000
-!bSet tweakdefs1 QUJD
-hi",
+                "!bSet startmetal 1000\n!bset StartMetal 2000\n!bSet tweakdefs1 QUJD\n!startmetal 1000\n!preset custom\nhi",
+                PasteBurst::Never,
             )
             .unwrap();
         assert_eq!(
             sent_lines(&effects),
-            ["SAYBATTLE !bset StartMetal 2000", "SAYBATTLE hi"]
+            [
+                "SAYBATTLE !bset StartMetal 2000",
+                "SAYBATTLE !preset custom",
+                "SAYBATTLE hi"
+            ]
         );
         assert!(matches!(
             effects.last(),
-            Some(Effect::Notice(text)) if text == "skipped 2 settings: the room already has them"
+            Some(Effect::Notice(text)) if text == "skipped 3 settings: the room already has them"
         ));
         // Nothing to compare against outside a room, and nothing to skip.
         let mut out = joined_session();
         assert_eq!(
-            sent_lines(&out.say_battle("!bSet startmetal 1000").unwrap()),
+            sent_lines(
+                &out.say_battle("!bSet startmetal 1000", PasteBurst::Boss)
+                    .unwrap()
+            ),
             ["SAYBATTLE !bSet startmetal 1000"]
+        );
+    }
+
+    #[test]
+    fn a_paste_takes_the_burst_lane_only_as_boss_and_only_when_it_is_a_paste() {
+        let areas = |effects: &[Effect]| -> Vec<Area> {
+            effects
+                .iter()
+                .filter_map(|e| match e {
+                    Effect::Send(env) => Some(env.area),
+                    _ => None,
+                })
+                .collect()
+        };
+        let mut s = in_a_public_room();
+        let paste = "!preset custom\n!bSet a 1\nthanks";
+        assert_eq!(
+            areas(&s.say_battle(paste, PasteBurst::Boss).unwrap()),
+            [Area::BattleCommand, Area::BattleCommand, Area::BattleChat],
+            "not boss: paced"
+        );
+        feed(
+            &mut s,
+            &[r#"SAIDBATTLEEX host * BarManager|{"BattleStateChanged": {"boss": "me"}}"#],
+        );
+        assert!(s.is_boss());
+        assert_eq!(
+            areas(&s.say_battle(paste, PasteBurst::Boss).unwrap()),
+            [Area::BattlePaste; 3]
+        );
+        assert_eq!(
+            areas(&s.say_battle(paste, PasteBurst::Never).unwrap()),
+            [Area::BattleCommand, Area::BattleCommand, Area::BattleChat]
+        );
+        // One line is not a paste, whoever sends it.
+        assert_eq!(
+            areas(&s.say_battle("!vote y", PasteBurst::Always).unwrap()),
+            [Area::BattleCommand]
+        );
+        let mut nobody = in_a_public_room();
+        assert_eq!(
+            areas(&nobody.say_battle(paste, PasteBurst::Always).unwrap()),
+            [Area::BattlePaste; 3]
         );
     }
 

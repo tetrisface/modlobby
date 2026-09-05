@@ -276,6 +276,10 @@ async fn writer<W>(
         if now.duration_since(last_write) >= heartbeat_idle && scheduler.pending() == 0 {
             scheduler.submit(Envelope::immediate(Area::Heartbeat, "PING"));
         }
+        // One drained string is one write, and a write is what teiserver's
+        // flood limiter counts (policy module docs). On the burst lane a
+        // string holds several lines joined by newlines; the newline appended
+        // here ends the last of them.
         for line in scheduler.drain(now) {
             tracing::trace!(target: "spring::tx", "{}", redacted(&line));
             if let Err(err) = write_half

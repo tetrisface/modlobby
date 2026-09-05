@@ -732,6 +732,28 @@ enum DownloadEvent {
 const TAIL_LINES: usize = 3;
 
 /// Keeps `line` as one of the last few worth repeating: progress redraws and
+/// What to tell the reader about a paste that will take a while: how many
+/// lines, and roughly how long, so a quiet minute reads as pacing rather than
+/// a fault. Nothing for a paste that is out within a few seconds.
+fn paste_notice(policy: &ThrottlePolicy, effects: &[Effect]) -> Option<String> {
+    let envelopes: Vec<&Envelope> = effects
+        .iter()
+        .filter_map(|effect| match effect {
+            Effect::Send(envelope) => Some(envelope),
+            _ => None,
+        })
+        .collect();
+    let eta = policy.estimate(envelopes.iter().copied());
+    if eta < Duration::from_secs(5) {
+        return None;
+    }
+    Some(format!(
+        "sending {} lines, about {} s",
+        envelopes.len(),
+        eta.as_secs()
+    ))
+}
+
 /// blank lines say nothing about a failure.
 fn remember_tail(tail: &mut Vec<String>, line: &str) {
     let line = line.trim();
@@ -1305,16 +1327,20 @@ impl Runtime {
             Command::Say { text, reply } => {
                 // Not `run_session`: a line past the cap is `TooLong`, its own
                 // error, rather than a refusal.
+                let burst = self.policy.paste.burst;
                 let said = match self.conn.as_mut() {
-                    Some(conn) => conn.session.say_battle(&text),
+                    Some(conn) => conn.session.say_battle(&text, burst),
                     None => {
                         let _ = reply.send(Err(ClientError::NotConnected));
                         return;
                     }
                 };
                 match said {
-                    Ok(effects) => {
+                    Ok(mut effects) => {
                         let _ = reply.send(Ok(()));
+                        if let Some(notice) = paste_notice(&self.policy, &effects) {
+                            effects.push(Effect::Notice(notice));
+                        }
                         self.apply_effects(effects).await;
                     }
                     Err(err) => {

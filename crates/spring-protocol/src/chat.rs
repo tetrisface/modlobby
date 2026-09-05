@@ -8,8 +8,9 @@ use crate::paste;
 use crate::policy::{Area, Envelope};
 
 /// teiserver truncates a channel message with `String.slice(0..256)`
-/// (`spring_in.ex:767`). That range is inclusive, so 257 characters survive and
-/// the 258th is the first one lost.
+/// (`spring_in.ex`, `SAY`). That range is inclusive, so 257 characters survive
+/// and the 258th is the first one lost. The slice counts graphemes; counting
+/// scalars here can only wrap earlier, never later.
 pub const SAY_MAX_LEN: usize = 257;
 
 /// A channel name as teiserver will read it: its `JOIN` and `SAY` handlers both
