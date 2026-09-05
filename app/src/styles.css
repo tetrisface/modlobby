@@ -653,6 +653,23 @@ textarea {
   margin-left: auto;
 }
 
+/* Take a seat here, shown when the header is hovered — or reached by keyboard. */
+.team-head .team-join {
+  margin-left: auto;
+  padding: 1px 8px;
+  font-size: 11px;
+  opacity: 0;
+}
+
+.team-head .os + .team-join {
+  margin-left: 0;
+}
+
+.team-head:hover .team-join,
+.team-head .team-join:focus-visible {
+  opacity: 1;
+}
+
 /* Chobby's column order: status, country, rank, skill, faction, name. */
 .player {
   display: grid;
@@ -2960,19 +2977,30 @@ html.overlay .shell {
   border-radius: 50%;
 }
 
+/* Our own AI's name opens a menu, like a player's; anyone else's does not. */
+.pname.bot:not(.mine) {
+  cursor: default;
+}
+
 .bot-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 20px;
   height: 20px;
   padding: 0;
-  font-size: 13px;
-  line-height: 1;
   border-radius: 50%;
+  color: var(--faint);
   opacity: 0;
 }
 
 .player:hover .bot-remove,
 .bot-remove:focus-visible {
   opacity: 1;
+}
+
+.bot-remove:hover {
+  color: var(--error);
 }
 
 .add-ai {

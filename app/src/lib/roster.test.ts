@@ -2,7 +2,8 @@ import { describe, expect, test } from 'vitest'
 import type { BattleStatusView } from '../ipc/bindings/BattleStatusView'
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { UserView } from '../ipc/bindings/UserView'
-import { arrange, emptySeats } from './roster'
+import type { BotView } from '../ipc/bindings/BotView'
+import { arrange, emptySeats, freeTeam } from './roster'
 
 const seat = (allyTeam: number, player = true): BattleStatusView => ({
   ready: false,
@@ -143,5 +144,36 @@ describe('arrange', () => {
     expect(emptySeats(roster.teams[0]!)).toBe(0)
     // Both seats the list counted are taken; carol is not dealt anywhere.
     expect(names(roster.pending)).toEqual(['carol'])
+  })
+})
+
+describe('freeTeam', () => {
+  const bot = (team: number): BotView => ({
+    name: `BARb${team}`,
+    owner: 'me',
+    status: { ...seat(1), team },
+    teamColour: 0,
+    ai: 'BARb',
+  })
+
+  test('is the lowest number no player or AI holds', () => {
+    const users = byName(
+      user('alice', { ...seat(0), team: 0 }),
+      user('bob', { ...seat(1), team: 2 }),
+    )
+    expect(freeTeam(room({ bots: [bot(1)] }), users, 'me')).toBe(3)
+  })
+
+  test('does not count our own seat, so moving is not a collision', () => {
+    const users = byName(
+      user('me', { ...seat(0), team: 0 }),
+      user('alice', { ...seat(1), team: 1 }),
+    )
+    expect(freeTeam(room(), users, 'me')).toBe(0)
+  })
+
+  test('spectators hold no team', () => {
+    const users = byName(user('alice', seat(0, false)))
+    expect(freeTeam(room(), users, 'me')).toBe(0)
   })
 })

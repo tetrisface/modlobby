@@ -10,6 +10,11 @@
 //! 9` loops at the end of the file generate the numbered tweak slots, which we
 //! already model exactly in the `tweaks` crate — reading them twice would let
 //! the two drift apart.
+//!
+//! The game's other lobby-facing Lua table, the AI list in `luaai.lua`, is read
+//! the same way by [`luaai`].
+
+pub mod luaai;
 
 use full_moon::ast::{BinOp, Expression, Field, Stmt, TableConstructor, UnOp};
 use full_moon::tokenizer::{StringLiteralQuoteType, Symbol, TokenType};
@@ -119,15 +124,7 @@ fn is_false(hidden: &bool) -> bool {
 }
 
 pub fn parse(lua: &str) -> Result<Vec<ModOption>, Error> {
-    let ast = full_moon::parse(lua).map_err(|errors| {
-        Error::Lua(
-            errors
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join("; "),
-        )
-    })?;
+    let ast = full_moon::parse(lua).map_err(|errors| Error::Lua(lua_errors(&errors)))?;
 
     let table = ast
         .nodes()
@@ -229,14 +226,23 @@ fn read_items(items: &TableConstructor) -> Vec<Item> {
         .collect()
 }
 
-fn identifier(token: &TokenType) -> Option<&str> {
+/// full_moon's parse errors as one line, for an error message.
+pub(crate) fn lua_errors(errors: &[full_moon::Error]) -> String {
+    errors
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+pub(crate) fn identifier(token: &TokenType) -> Option<&str> {
     match token {
         TokenType::Identifier { identifier } => Some(identifier.as_str()),
         _ => None,
     }
 }
 
-fn table(expression: &Expression) -> Option<&TableConstructor> {
+pub(crate) fn table(expression: &Expression) -> Option<&TableConstructor> {
     match expression {
         Expression::TableConstructor(table) => Some(table),
         _ => None,
@@ -246,7 +252,7 @@ fn table(expression: &Expression) -> Option<&TableConstructor> {
 /// A string expression: one literal, or literals joined with `..`. BAR writes
 /// most descriptions and a few names that way, some of them to slip a colour
 /// code in between.
-fn string(expression: &Expression) -> Option<String> {
+pub(crate) fn string(expression: &Expression) -> Option<String> {
     match expression {
         Expression::String(token) => match token.token().token_type() {
             TokenType::StringLiteral {

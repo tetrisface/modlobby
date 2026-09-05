@@ -1,6 +1,6 @@
 [package]
 name = "modoptions"
-description = "BAR's modoptions.lua parsed into the option schema the room UI draws from"
+description = "BAR's lobby-facing Lua tables parsed: modoptions.lua into the option schema the room UI draws from, luaai.lua into the AIs the game implements"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

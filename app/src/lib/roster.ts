@@ -128,6 +128,26 @@ function sorted(teams: Map<number, Team>): Team[] {
   return [...teams.values()].sort((a, b) => a.allyTeam - b.allyTeam)
 }
 
+/**
+ * The lowest team number nobody else holds, so two players never collide.
+ * Our own current team is not counted: moving seats is not a collision.
+ */
+export function freeTeam(
+  room: BattleView,
+  users: Record<string, UserView>,
+  me: string | null,
+): number {
+  const taken = new Set<number>()
+  for (const name of room.members) {
+    const status = users[name]?.battleStatus
+    if (status?.player && name !== me) taken.add(status.team)
+  }
+  for (const bot of room.bots) taken.add(bot.status.team)
+  let team = 0
+  while (taken.has(team)) team += 1
+  return team
+}
+
 /** Seats a team shows empty, while its players are still on their way. */
 export function emptySeats(team: Team): number {
   return Math.max(

@@ -1,4 +1,5 @@
 import { invoke, type Channel } from '@tauri-apps/api/core'
+import type { AiChoice } from './bindings/AiChoice'
 import type { Check } from './bindings/Check'
 import type { DefTags } from './bindings/DefTags'
 import type { DiffView } from './bindings/DiffView'
@@ -102,6 +103,7 @@ export const api = {
   // ---- saved room setups ----
   gameModOptions: (game: string) =>
     invoke<ModOption[]>('game_modoptions', { game }),
+  gameAis: (game: string) => invoke<AiChoice[]>('game_ais', { game }),
   listPresets: () => invoke<Book>('list_presets'),
   chobbyPresetsPath: () => invoke<string | null>('chobby_presets_path'),
   savePreset: (name: string) => invoke<Book>('save_preset', { name }),

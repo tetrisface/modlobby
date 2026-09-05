@@ -306,6 +306,7 @@ pub fn run() {
             commands::request_game_status,
             commands::remember_channels,
             commands::skirmish_options,
+            commands::game_ais,
             commands::start_skirmish,
             commands::list_replays,
             commands::play_replay,

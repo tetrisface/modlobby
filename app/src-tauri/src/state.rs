@@ -28,6 +28,10 @@ pub struct App {
     map_index: tokio::sync::Mutex<Option<content::map_index::MapIndex>>,
     /// The map pictures at tile size, made here and kept under `cache/`.
     pub thumbs: content::map_thumb::Service,
+    /// Files read out of installed games — `modoptions.lua`, `luaai.lua` —
+    /// kept for the run, since a rapid version never changes. Shared, so a
+    /// command can read through it off the main thread.
+    pub game_files: Arc<content::game_cache::GameFileCache>,
     /// Held for the length of an engine download, so two never overlap.
     pub engine_downloads: tokio::sync::Mutex<()>,
 }
@@ -62,6 +66,7 @@ impl App {
             thumbs: content::map_thumb::Service::new(http.clone(), &cache_dir),
             http,
             map_index: tokio::sync::Mutex::new(None),
+            game_files: Arc::new(content::game_cache::GameFileCache::new()),
             engine_downloads: tokio::sync::Mutex::new(()),
         })
     }

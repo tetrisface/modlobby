@@ -494,14 +494,76 @@ pub async fn game_modoptions(
     let Some(dirs) = data_dirs_of(&app) else {
         return Ok(Vec::new());
     };
+    let cache = app.game_files.clone();
     disk_work(move || {
-        let Some(bytes) = content::Library::new(dirs).game_file(&game, "modoptions.lua") else {
+        let library = content::Library::new(dirs);
+        let Some(bytes) = cache.game_file(&library, &game, "modoptions.lua") else {
             return Ok(Vec::new());
         };
         modoptions::parse(&String::from_utf8_lossy(&bytes))
             .map_err(|err| ApiError::new("modoptions", err.to_string()))
     })
     .await?
+}
+
+/// An AI a room can be given.
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AiChoice {
+    /// What `ADDBOT` names it: an engine AI's directory, or a Lua AI's `name`.
+    pub name: String,
+    /// The game's one-line description; empty for engine AIs.
+    pub desc: String,
+}
+
+/// The AIs a room running `game` can be given: what the installed engines
+/// ship, then what the game implements in Lua.
+///
+/// The engine's `AI/Skirmish/` only holds the AIs compiled against it (BARb,
+/// NullAI…). BAR's Scavengers and Raptors are Lua AIs, declared by the game in
+/// its `luaai.lua`; that is read out of the installed game the way
+/// `game_modoptions` reads its option table. Until the game is installed only
+/// the engine's list is offered, and a `luaai.lua` this cannot read is logged
+/// rather than allowed to hide the engine's AIs.
+#[tauri::command]
+pub async fn game_ais(app: State<'_, App>, game: String) -> Result<Vec<AiChoice>> {
+    let Some(dirs) = data_dirs_of(&app) else {
+        return Ok(Vec::new());
+    };
+    let cache = app.game_files.clone();
+    disk_work(move || {
+        let library = content::Library::new(dirs);
+        let mut choices: Vec<AiChoice> = library
+            .installed_ais()
+            .into_iter()
+            .map(|name| AiChoice {
+                name,
+                desc: String::new(),
+            })
+            .collect();
+
+        let Some(bytes) = cache.game_file(&library, &game, "luaai.lua") else {
+            return choices;
+        };
+        let lua_ais = match modoptions::luaai::parse(&String::from_utf8_lossy(&bytes)) {
+            Ok(ais) => ais,
+            Err(err) => {
+                tracing::warn!(%game, %err, "the game's luaai.lua could not be read");
+                return choices;
+            }
+        };
+        for ai in lua_ais {
+            if choices.iter().all(|choice| choice.name != ai.name) {
+                choices.push(AiChoice {
+                    name: ai.name,
+                    desc: ai.desc,
+                });
+            }
+        }
+        choices
+    })
+    .await
 }
 
 /// Runs a read of the installed game off the main thread. Opening a rapid

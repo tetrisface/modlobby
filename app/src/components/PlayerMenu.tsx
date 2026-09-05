@@ -1,4 +1,5 @@
 import { For, Show, createSignal, onCleanup } from 'solid-js'
+import type { BotView } from '../ipc/bindings/BotView'
 import { api, describeError } from '../ipc/client'
 import { ensureRoom, privateRoom, pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
@@ -12,17 +13,39 @@ import { Flag, RankIcon } from './icons'
  * name you want is `[Crd]XxStormKittyxX`.
  */
 
-const [openFor, setOpenFor] = createSignal<{
-  name: string
-  x: number
-  y: number
-} | null>(null)
+type Target =
+  | { kind: 'user'; name: string; x: number; y: number }
+  /** One of our own AIs; `remove` is the one thing there is to do about it. */
+  | {
+      kind: 'bot'
+      bot: BotView
+      remove: () => Promise<void>
+      x: number
+      y: number
+    }
+
+const [openFor, setOpenFor] = createSignal<Target | null>(null)
 
 /** Opens the menu for a name at the pointer. */
 export function showPlayerMenu(name: string, event: MouseEvent): void {
   event.preventDefault()
   event.stopPropagation()
-  setOpenFor({ name, x: event.clientX, y: event.clientY })
+  setOpenFor({ kind: 'user', name, x: event.clientX, y: event.clientY })
+}
+
+/**
+ * Opens the menu for an AI of ours at the pointer. Only ours: the server
+ * refuses `REMOVEBOT` from anyone but the owner, the host and moderators, so
+ * for another player's AI there would be nothing in the menu.
+ */
+export function showBotMenu(
+  bot: BotView,
+  remove: () => Promise<void>,
+  event: MouseEvent,
+): void {
+  event.preventDefault()
+  event.stopPropagation()
+  setOpenFor({ kind: 'bot', bot, remove, x: event.clientX, y: event.clientY })
 }
 
 export function PlayerMenu() {
@@ -56,12 +79,19 @@ export function PlayerMenu() {
   return (
     <Show when={openFor()}>
       {(target) => {
-        const name = () => target().name
+        const bot = () => {
+          const t = target()
+          return t.kind === 'bot' ? t : undefined
+        }
+        const name = () => {
+          const t = target()
+          return t.kind === 'bot' ? t.bot.name : t.name
+        }
         const isFriend = () => lobby.friends.friends.includes(name())
         const isIgnored = () => lobby.friends.ignored.includes(name())
         const isMe = () => name() === lobby.me
 
-        const user = () => lobby.users[name()]
+        const user = () => (bot() ? undefined : lobby.users[name()])
         /**
          * The room they are in, when it is one we can see and not the one we
          * are already standing in — where they are is only news if it is
@@ -79,6 +109,11 @@ export function PlayerMenu() {
           lobby.myBattle?.boss !== null && lobby.myBattle?.boss === lobby.me
 
         const items = () => {
+          const ai = bot()
+          if (ai) {
+            const remove: [string, () => Promise<void>] = ['Remove', ai.remove]
+            return [remove]
+          }
           const entries: Array<[string, () => Promise<void> | void]> = [
             [
               'Message',
@@ -140,6 +175,13 @@ export function PlayerMenu() {
             onMouseDown={(event) => event.stopPropagation()}
           >
             <div class='player-menu-name'>{name()}</div>
+            <Show when={bot()}>
+              {(ai) => (
+                <div class='player-menu-about muted'>
+                  {ai().bot.ai} · {ai().bot.owner}
+                </div>
+              )}
+            </Show>
             <Show when={user()}>
               {(who) => (
                 <div class='player-menu-about'>

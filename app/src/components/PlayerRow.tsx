@@ -3,8 +3,8 @@ import type { BotView } from '../ipc/bindings/BotView'
 import type { DownloadStatus } from '../ipc/bindings/DownloadStatus'
 import type { UserView } from '../ipc/bindings/UserView'
 import { type Skill, skillText, skillTier, skillTitle } from '../lib/skill'
-import { Flag, Marks, RankIcon, SideIcon, StatusIcon } from './icons'
-import { showPlayerMenu } from './PlayerMenu'
+import { Flag, Glyph, Marks, RankIcon, SideIcon, StatusIcon } from './icons'
+import { showBotMenu, showPlayerMenu } from './PlayerMenu'
 
 /**
  * One player, in Chobby's column order: status, country, rank, skill, faction,
@@ -50,8 +50,21 @@ export function PlayerRow(props: {
   )
 }
 
-/** An AI seat. It holds a team but has no lobby account behind it. */
-export function BotRow(props: { bot: BotView; onRemove?: () => void }) {
+/**
+ * An AI seat. It holds a team but has no lobby account behind it.
+ *
+ * `onRemove` comes for our own AIs only, and puts removing where a player's
+ * actions are — behind the name, on either click — and behind a bin that shows
+ * on hover. Another player's AI gets neither, since the server would refuse.
+ */
+export function BotRow(props: {
+  bot: BotView
+  onRemove?: () => Promise<void>
+}) {
+  const menu = (event: MouseEvent) => {
+    const remove = props.onRemove
+    if (remove) showBotMenu(props.bot, remove, event)
+  }
   return (
     <div class='player'>
       <span />
@@ -62,7 +75,13 @@ export function BotRow(props: { bot: BotView; onRemove?: () => void }) {
       </svg>
       <span />
       <SideIcon side={props.bot.status.side} />
-      <span class='pname bot' title={`${props.bot.ai} · ${props.bot.owner}`}>
+      <span
+        class='pname bot'
+        classList={{ mine: props.onRemove !== undefined }}
+        title={`${props.bot.ai} · ${props.bot.owner}`}
+        onClick={menu}
+        onContextMenu={menu}
+      >
         {props.bot.name}
       </span>
       <Show when={props.onRemove}>
@@ -70,9 +89,9 @@ export function BotRow(props: { bot: BotView; onRemove?: () => void }) {
           class='bot-remove'
           title={`Remove ${props.bot.name}`}
           aria-label={`Remove ${props.bot.name}`}
-          onClick={() => props.onRemove?.()}
+          onClick={() => void props.onRemove?.()}
         >
-          ×
+          <Glyph id='act-trash' />
         </button>
       </Show>
     </div>

@@ -41,7 +41,7 @@ import { settings } from '../store/settings'
 import { HostBar } from './HostBar'
 import { PveScore } from './PveScore'
 import { RoomTitle } from './RoomTitle'
-import { Seat } from './Seat'
+import { Seat, seatsAllowed, sitOn } from './Seat'
 import { StartBoxes } from './StartBoxes'
 import { Setup } from './Setup'
 import { VoteBar } from './VoteBar'
@@ -77,6 +77,25 @@ export function Room() {
     if (lobby.myBattle?.boss === me) return true
     return lobby.users[me]?.battleStatus?.player ?? false
   })
+
+  /** A team's header offers a seat on it unless we already hold one there. */
+  const canJoin = (allyTeam: number): boolean => {
+    if (!seatsAllowed()) return false
+    const mine = lobby.me === null ? undefined : lobby.users[lobby.me]
+    const status = mine?.battleStatus
+    return !(status?.player && status.allyTeam === allyTeam)
+  }
+
+  async function join(allyTeam: number) {
+    try {
+      await sitOn(allyTeam)
+    } catch (error) {
+      pushNotice(
+        'warning',
+        `join team ${allyTeam + 1}: ${describeError(error)}`,
+      )
+    }
+  }
 
   createEffect(() => {
     if (lobby.phase === 'ready' && !lobby.myBattle)
@@ -215,6 +234,15 @@ export function Room() {
                               ).toFixed(1)}
                             </span>
                           </Show>
+                          <Show when={canJoin(team().allyTeam)}>
+                            <button
+                              class='team-join'
+                              title={`Take a seat on team ${team().allyTeam + 1}`}
+                              onClick={() => void join(team().allyTeam)}
+                            >
+                              Join
+                            </button>
+                          </Show>
                         </header>
                         <For each={team().users}>
                           {(user) => (
@@ -246,12 +274,13 @@ export function Room() {
                             <BotRow
                               bot={bot}
                               onRemove={
-                                // The server would refuse anyone else; not
-                                // drawing the button beats a silent refusal.
-                                bot.owner === lobby.me ||
-                                lobby.myBattle?.boss === lobby.me
+                                // The server takes REMOVEBOT from the owner,
+                                // the host and moderators; a boss is none of
+                                // those. Not drawing the action beats a
+                                // silent refusal.
+                                bot.owner === lobby.me
                                   ? () =>
-                                      void api
+                                      api
                                         .removeBot(bot.name)
                                         .catch((error) =>
                                           pushNotice(

@@ -1,8 +1,10 @@
 import { For, Show, createEffect, createMemo, createSignal } from 'solid-js'
 import { SideIcon } from '../components/icons'
+import type { AiChoice } from '../ipc/bindings/AiChoice'
 import { api, describeError } from '../ipc/client'
+import { freeTeam } from '../lib/roster'
 import { pushNotice } from '../store/chat'
-import { lobby } from '../store/lobby'
+import { lobby, myRoom } from '../store/lobby'
 import { applySettings, settings } from '../store/settings'
 
 /** side 2 is Random; Legion needs its modoption, so it is offered last. */
@@ -12,6 +14,44 @@ const SIDES = [
   { id: 2, label: 'Random' },
   { id: 3, label: 'Legion' },
 ]
+
+/** Ours if it was given to us, or if SPADS says we are bossing it. */
+function ours(): boolean {
+  return (
+    (myRoom()?.passworded ?? false) ||
+    (lobby.myBattle?.boss !== null && lobby.myBattle?.boss === lobby.me)
+  )
+}
+
+/** Whether a seat may be taken here: our own room, or the setting says so. */
+export function seatsAllowed(): boolean {
+  return ours() || (settings()?.play.inPublicRooms ?? false)
+}
+
+/** The lowest team number nobody else in the room holds. */
+function nextTeam(): number {
+  const room = myRoom()
+  return room ? freeTeam(room, lobby.users, lobby.me) : 0
+}
+
+/** What `remember` remembers, kept current by what you actually do. */
+async function remember(played: boolean) {
+  try {
+    applySettings(await api.rememberPlayed(played))
+  } catch {
+    // A preference we could not write is not worth interrupting a game for.
+  }
+}
+
+/**
+ * Sits on ally team `ally` — joining it, or moving there from another — and
+ * makes playing what `remember` remembers. Taking a seat resets ready, in the
+ * runtime and by SPADS alike, so moving sides is one action and not two.
+ */
+export async function sitOn(ally: number): Promise<void> {
+  await api.takeSeat(nextTeam(), ally)
+  await remember(true)
+}
 
 /**
  * Playing rather than watching.
@@ -24,21 +64,14 @@ const SIDES = [
 export function Seat() {
   const [busy, setBusy] = createSignal(false)
 
-  const room = createMemo(() => {
-    const id = lobby.myBattle?.id
-    return id === undefined ? undefined : lobby.battles[id]
-  })
+  const room = createMemo(myRoom)
   const me = createMemo(() =>
     lobby.me === null ? undefined : lobby.users[lobby.me],
   )
   const seat = () => me()?.battleStatus
   const seated = () => seat()?.player ?? false
-  /** Ours if it was given to us, or if SPADS says we are bossing it. */
-  const ours = () =>
-    (room()?.passworded ?? false) ||
-    (lobby.myBattle?.boss !== null && lobby.myBattle?.boss === lobby.me)
   const running = () => lobby.gameRunning !== null
-  const allowed = () => ours() || (settings()?.play.inPublicRooms ?? false)
+  const allowed = seatsAllowed
 
   /**
    * Ally teams already in use, plus the next free one — you can join a side or
@@ -79,22 +112,6 @@ export function Seat() {
     )
   }
 
-  /** The lowest team number nobody holds, so two players never collide. */
-  function freeTeam(): number {
-    const battle = room()
-    const taken = new Set<number>()
-    if (battle) {
-      for (const name of battle.members) {
-        const status = lobby.users[name]?.battleStatus
-        if (status?.player && name !== lobby.me) taken.add(status.team)
-      }
-      for (const bot of battle.bots) taken.add(bot.status.team)
-    }
-    let team = 0
-    while (taken.has(team)) team += 1
-    return team
-  }
-
   /**
    * Sits down on arrival when that is the posture, once per room.
    *
@@ -118,17 +135,8 @@ export function Seat() {
       play.joinAs === 'remember' ? play.lastWasPlayer : play.joinAs === 'player'
     if (!wanted) return
     seatedIn = battle.id
-    void act('take a seat', () => api.takeSeat(freeTeam(), freeAlly()))
+    void act('take a seat', () => api.takeSeat(nextTeam(), freeAlly()))
   })
-
-  /** What `remember` remembers, kept current by what you actually do. */
-  async function remember(played: boolean) {
-    try {
-      applySettings(await api.rememberPlayed(played))
-    } catch {
-      // A preference we could not write is not worth interrupting a game for.
-    }
-  }
 
   /** Runs one action, telling the user why it did not happen; true if it did. */
   async function act(what: string, run: () => Promise<void>): Promise<boolean> {
@@ -146,14 +154,11 @@ export function Seat() {
 
   const SPECTATOR = 'spectator'
   /** What the seat picker shows: the side we hold, or the spectator row. */
-  const current = () =>
-    seated() ? String(seat()?.allyTeam ?? 0) : SPECTATOR
+  const current = () => (seated() ? String(seat()?.allyTeam ?? 0) : SPECTATOR)
 
   /**
-   * Sits, moves, or stands up as picked. Taking a seat resets ready, in the
-   * runtime and by SPADS alike, so moving sides is one action and not two.
-   * A refused pick snaps the picker back, since the row it landed on never
-   * came true.
+   * Sits, moves, or stands up as picked. A refused pick snaps the picker
+   * back, since the row it landed on never came true.
    */
   async function pickSeat(picker: HTMLSelectElement) {
     const choice = picker.value
@@ -163,10 +168,7 @@ export function Seat() {
             await api.releaseSeat()
             await remember(false)
           })
-        : await act('take a seat', async () => {
-            await api.takeSeat(freeTeam(), Number(choice))
-            await remember(true)
-          })
+        : await act('take a seat', () => sitOn(Number(choice)))
     if (!done) picker.value = current()
   }
 
@@ -229,7 +231,7 @@ export function Seat() {
         </Show>
       </Show>
 
-      <AddAi busy={busy()} act={act} freeTeam={freeTeam} freeAlly={freeAlly} />
+      <AddAi busy={busy()} act={act} freeTeam={nextTeam} freeAlly={freeAlly} />
 
       <Show when={lobby.content}>
         {(content) => {
@@ -285,9 +287,10 @@ const BOT_COLOURS = [0x4b73f2, 0x3fd07f, 0x2fb8f0, 0x9e5ce8, 0x50a0ff, 0x8fd04b]
  * An AI for the room.
  *
  * The AI runs on this machine when the game starts, which is why the choices
- * are what is installed here and why there is nothing to offer until the
- * engine list has been read. Whether the room takes it is the host's call —
- * SPADS answers a refusal in chat, where it can be seen.
+ * are what is installed here: the AIs the engine ships, then the ones the
+ * room's game implements in Lua — Scavengers and Raptors, for BAR. There is
+ * nothing to offer until that list has been read. Whether the room takes it
+ * is the host's call — SPADS answers a refusal in chat, where it can be seen.
  */
 function AddAi(props: {
   busy: boolean
@@ -295,16 +298,19 @@ function AddAi(props: {
   freeTeam: () => number
   freeAlly: () => number
 }) {
-  const [ais, setAis] = createSignal<string[]>([])
+  const [ais, setAis] = createSignal<AiChoice[]>([])
   const [ai, setAi] = createSignal('')
 
   createEffect(() => {
-    if (!lobby.myBattle) return
+    // The room's game, whose Lua AIs are part of the offer.
+    const name = myRoom()?.gameName
+    if (name === undefined) return
     api
-      .skirmishOptions()
-      .then((options) => {
-        setAis(options.ais)
-        if (!ai() && options.ais.length > 0) setAi(options.ais[0] as string)
+      .gameAis(name)
+      .then((choices) => {
+        setAis(choices)
+        const first = choices[0]
+        if (!ai() && first) setAi(first.name)
       })
       // No data directory means no AIs to run; the control just stays away.
       .catch(() => setAis([]))
@@ -329,7 +335,11 @@ function AddAi(props: {
           onChange={(e) => setAi(e.currentTarget.value)}
         >
           <For each={ais()}>
-            {(name) => <option value={name}>{name}</option>}
+            {(choice) => (
+              <option value={choice.name} title={choice.desc}>
+                {choice.name}
+              </option>
+            )}
           </For>
         </select>
         <button
