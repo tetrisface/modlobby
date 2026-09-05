@@ -145,6 +145,11 @@ textarea {
   padding: 8px 16px;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
+  /* An over-full row shortens the room card rather than folding a button
+     onto two lines or, as a grid item's default minimum would have it,
+     growing past the window with the close button. */
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .nav a {
@@ -188,6 +193,72 @@ textarea {
   color: var(--warn);
   cursor: help;
 }
+
+/* The room you are in, as a card in the row: a way there and a glance at
+   it. Two lines in a row that is one line tall — the buttons beside it are
+   28px, so the lines are 16 + 12 and the outline is a shadow, which costs no
+   height. The selectors carry `.nav a` because that rule would otherwise
+   hand the card the links' padding-bottom and underline. */
+.nav a.nav-room {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 128px;
+  max-width: 200px;
+  padding: 0 8px 0 0;
+  border-radius: 3px;
+  /* Clips the picture to the corners; the ring is outside and unclipped. */
+  overflow: hidden;
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+.nav a.nav-room:hover {
+  box-shadow: 0 0 0 1px var(--muted);
+}
+
+/* On the room page the ring is what the other links' underline is. */
+.nav a.nav-room.active {
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.nav-room-title {
+  font-family: var(--display);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 0.01em;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nav-room-pic {
+  flex: none;
+  width: 40px;
+  height: 28px;
+  background-color: var(--sunken);
+}
+
+.nav-room-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* Pinned: `.nav a:hover` brightens a link's text, and the count should stay
+   under the title when it does. */
+.nav-room-count {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.nav-room-spectators {
+  color: var(--faint);
+}
+
 .spacer {
   flex: 1;
 }
@@ -409,28 +480,24 @@ textarea {
   border-color: var(--muted);
 }
 
+/* A quarter grid under everything, so a square with no picture yet reads as
+   a schematic waiting for a map rather than as a panel that failed. */
 .minimap {
   position: relative;
   border: 1px solid var(--line);
   border-radius: 3px;
   overflow: hidden;
   aspect-ratio: 1;
+  background:
+    linear-gradient(to right, #223038 1px, transparent 1px) 0 0 / 25% 100%,
+    linear-gradient(to bottom, #223038 1px, transparent 1px) 0 0 / 100% 25%,
+    #0d1218;
 }
 
 .minimap svg {
   display: block;
   width: 100%;
   height: 100%;
-}
-
-.mm-ground {
-  fill: #0d1218;
-}
-
-.mm-grid {
-  fill: none;
-  stroke: #223038;
-  stroke-width: 1;
 }
 
 .mm-box rect {
@@ -1792,12 +1859,28 @@ input[type='checkbox'].v-edit {
   accent-color: var(--accent);
 }
 
-.mm-photo {
-  position: absolute;
-  inset: 0;
+/* A map's picture in a box the stylesheet sizes. The picture as published
+   sits underneath, scaled by the webview, until the tile Rust cuts to size
+   covers it; neither draws for a map the index does not know. */
+.map-pic {
+  display: block;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.map-pic img {
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+/* The picture under a box's SVG, which comes later in the DOM and so paints
+   on top. */
+.map-under {
+  position: absolute;
+  inset: 0;
 }
 
 .minimap svg {
@@ -2181,20 +2264,12 @@ input[type='checkbox'].v-edit {
 }
 
 .col-thumb {
-  display: block;
   width: 52px;
   height: 34px;
   border: 1px solid var(--line-soft);
   border-radius: 2px;
   overflow: hidden;
-  background: #0d1218;
-}
-
-.col-thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
+  background-color: #0d1218;
 }
 
 .host-bar {
@@ -2679,15 +2754,6 @@ button.link:hover {
   border-color: var(--line);
 }
 
-/* A nav slot with nowhere to go yet: it keeps its place so the links beside
-   it never move, and reads as unavailable rather than as a link. */
-.nav-absent {
-  color: var(--faint);
-  font-size: 13px;
-  padding-bottom: 2px;
-  cursor: default;
-}
-
 /* ---- something is being asked for ---- */
 
 .thinking {
@@ -2887,16 +2953,11 @@ html.overlay .shell {
   background: #0d1218;
 }
 
-.box-map img,
 .box-map svg {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-}
-
-.box-map img {
-  object-fit: cover;
 }
 
 .box-panel path {
@@ -3153,7 +3214,9 @@ button.link {
   display: flex;
   justify-content: flex-end;
   align-self: center;
-  min-width: 0;
+  /* The build must not fold into the account name before the room card
+     gives way. */
+  flex-shrink: 0;
   margin-right: 6px;
 }
 

@@ -7,11 +7,11 @@ import {
   createEffect,
   createMemo,
   createResource,
-  createSignal,
 } from 'solid-js'
 import { Composer } from '../components/Composer'
 import { GetEngine } from '../components/GetEngine'
 import { Linkify } from '../components/Linkify'
+import { MapPicture } from '../components/MapPicture'
 import { showPlayerMenu } from '../components/PlayerMenu'
 import { BotRow, PlayerRow, SpectatorRow } from '../components/PlayerRow'
 import { SyncIcon } from '../components/icons'
@@ -24,10 +24,10 @@ import type { UserView } from '../ipc/bindings/UserView'
 import { api, describeError } from '../ipc/client'
 import { boxSignature, centre, outline } from '../lib/boxes'
 import { downloadFraction } from '../lib/download'
-import { TILES, mapThumb } from '../lib/maps'
+import { TILES } from '../lib/maps'
 import { readSkills, teamSkill, type Skill } from '../lib/skill'
 import { BATTLE_ROOM, chat, pushNotice } from '../store/chat'
-import { lobby } from '../store/lobby'
+import { lobby, myRoom } from '../store/lobby'
 import { settings } from '../store/settings'
 import { HostBar } from './HostBar'
 import { PveScore } from './PveScore'
@@ -43,10 +43,7 @@ export function Room() {
   const navigate = useNavigate()
   let log: HTMLDivElement | undefined
 
-  const battle = createMemo(() => {
-    const id = lobby.myBattle?.id
-    return id === undefined ? undefined : lobby.battles[id]
-  })
+  const battle = createMemo(myRoom)
 
   const friends = createMemo(() => new Set(lobby.friends.friends))
   const isFriend = (name: string) => friends().has(name)
@@ -322,18 +319,6 @@ function Minimap(props: {
   mapName: string
   teams: number
 }) {
-  // The picture at the size this square is drawn, from Rust — a fixed size,
-  // so the list can have had it made before the room is opened.
-  const image = () =>
-    mapThumb(props.mapName, TILES.minimap.width, TILES.minimap.height)
-  const [broken, setBroken] = createSignal(false)
-
-  // A room changes map, so a picture that failed must not condemn the next one.
-  createEffect(() => {
-    void image()
-    setBroken(false)
-  })
-
   /**
    * The modoption boxes, which are a different system from `props.rects`.
    *
@@ -355,27 +340,14 @@ function Minimap(props: {
 
   return (
     <div class='minimap'>
-      <Show when={broken() ? undefined : image()}>
-        {(url) => (
-          <img
-            class='mm-photo'
-            src={url()}
-            alt=''
-            onError={() => setBroken(true)}
-          />
-        )}
-      </Show>
+      <MapPicture
+        class='map-under'
+        mapName={props.mapName}
+        width={TILES.minimap.width}
+        height={TILES.minimap.height}
+      />
       <svg viewBox='0 0 200 200' role='img'>
         <title>Start boxes</title>
-        <Show when={broken() || !image()}>
-          <rect width='200' height='200' class='mm-ground' />
-          {/* A quarter grid, so an empty square reads as a schematic waiting
-              for a map rather than as a panel that failed to load. */}
-          <path
-            class='mm-grid'
-            d='M50 0V200M100 0V200M150 0V200M0 50H200M0 100H200M0 150H200'
-          />
-        </Show>
         {/* The modoption arrangement, when one applies. Drawn under the
             protocol rects so that a room using both shows which is which. */}
         <For each={boxes()?.polys ?? []}>

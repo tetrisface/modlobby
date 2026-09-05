@@ -2,7 +2,7 @@ import { For, Show, createResource } from 'solid-js'
 import { api } from '../ipc/client'
 import { centre, outline } from '../lib/boxes'
 import { createDrawnSize } from '../lib/drawn'
-import { mapThumb } from '../lib/maps'
+import { MapPicture } from './MapPicture'
 
 function Panel(props: {
   label: string
@@ -13,10 +13,6 @@ function Panel(props: {
 }) {
   let box: HTMLDivElement | undefined
   const drawn = createDrawnSize(() => box)
-  const image = () => {
-    const size = drawn()
-    return size ? mapThumb(props.mapName, size.width, size.height) : null
-  }
   const [polys] = createResource(
     () => [props.blob, props.teams] as const,
     ([blob, teams]) => api.decodeBoxes(blob, teams).catch(() => null),
@@ -26,7 +22,16 @@ function Panel(props: {
     <figure class='box-panel' classList={{ [props.tone]: true }}>
       <figcaption>{props.label}</figcaption>
       <div class='box-map' ref={box}>
-        <Show when={image()}>{(url) => <img src={url()} alt='' />}</Show>
+        <Show when={drawn()}>
+          {(size) => (
+            <MapPicture
+              class='map-under'
+              mapName={props.mapName}
+              width={size().width}
+              height={size().height}
+            />
+          )}
+        </Show>
         <svg viewBox='0 0 200 200' role='img'>
           <title>{props.label}</title>
           <For each={polys() ?? []}>

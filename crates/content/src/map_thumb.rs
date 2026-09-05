@@ -175,7 +175,7 @@ impl Service {
     }
 
     /// The picture as published, from disk after the first time.
-    async fn published(&self, url: &str) -> Result<Vec<u8>, Error> {
+    pub async fn published(&self, url: &str) -> Result<Vec<u8>, Error> {
         let path = self.0.dir.join(format!("{}.src", hash(url)));
         if let Ok(picture) = tokio::fs::read(&path).await {
             return Ok(picture);
@@ -211,6 +211,13 @@ impl Service {
         image::guess_format(&picture)?;
         Ok(picture.to_vec())
     }
+}
+
+/// What to call a picture kept as it came: its format, by the magic bytes.
+pub fn mime(picture: &[u8]) -> &'static str {
+    image::guess_format(picture)
+        .map(|format| format.to_mime_type())
+        .unwrap_or("application/octet-stream")
 }
 
 /// What a picture's files are named after: the URL, which changes when the

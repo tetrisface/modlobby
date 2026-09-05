@@ -89,6 +89,7 @@ describe('warming the list ahead', () => {
       [
         { width: 100, height: 64 },
         { width: 260, height: 260 },
+        { width: 80, height: 56 },
       ],
     )
     vi.unstubAllGlobals()

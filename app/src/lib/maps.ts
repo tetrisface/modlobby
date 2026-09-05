@@ -11,6 +11,8 @@
  * at the size it will draw (`mapThumb`), and Rust fetches the published
  * picture — the same 1024px transform the official lobby asks for, so it comes
  * out of a shared CDN cache — once, keeps it, and resizes from that copy.
+ * The copy as it came is on offer too (`mapPicture`), for a box to show
+ * while its size is being cut.
  *
  * A lobby has to work with no network at all: every failure here returns
  * nothing and the room falls back to the start-box schematic, which needs
@@ -32,6 +34,8 @@ export const TILES = {
   list: { width: 50, height: 32 },
   /** `.minimap` in the room card's 132px column, less a 1px border. */
   minimap: { width: 130, height: 130 },
+  /** `.nav-room-pic`, at the left of the room card in the nav. */
+  nav: { width: 40, height: 28 },
 } as const satisfies Record<string, Tile>
 
 /** Where an earlier version kept its own copy; shed once, then never seen. */
@@ -88,6 +92,16 @@ export function mapThumb(
   if (!springName) return null
   const tile = devicePixels({ width, height })
   return convertFileSrc(`${tile.width}x${tile.height}/${springName}`, 'thumb')
+}
+
+/**
+ * The picture as published, for a box to show — scaled by the webview, so
+ * soft — while Rust cuts its size. A name with no picture answers 404 here
+ * too.
+ */
+export function mapPicture(springName: string): string | null {
+  if (!springName) return null
+  return convertFileSrc(`full/${springName}`, 'thumb')
 }
 
 /** A CSS-pixel box in the device pixels it is drawn with. */

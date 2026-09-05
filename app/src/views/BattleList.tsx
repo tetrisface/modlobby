@@ -14,6 +14,7 @@ import type { BattleSort } from '../ipc/bindings/BattleSort'
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { ModeFilter } from '../ipc/bindings/ModeFilter'
 import { RankIcon } from '../components/icons'
+import { MapPicture } from '../components/MapPicture'
 import { Thinking } from '../components/Thinking'
 import { api, describeError } from '../ipc/client'
 import { elapsed } from '../lib/running'
@@ -24,7 +25,7 @@ import {
   running as runningGames,
 } from '../store/running'
 import { MODES, SORTS, arrange, stabilize, type Row } from '../lib/battles'
-import { TILES, mapThumb, warmMapPictures } from '../lib/maps'
+import { TILES, warmMapPictures } from '../lib/maps'
 import { pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
 import { applySettings, settings } from '../store/settings'
@@ -429,13 +430,12 @@ export function BattleList() {
                             askAboutGame(r().battle.id, r().battle.founder)
                         }}
                       >
-                        <MapThumb
-                          src={mapThumb(
-                            r().battle.mapName,
-                            TILES.list.width,
-                            TILES.list.height,
-                          )}
-                          alt={r().battle.mapName}
+                        <MapPicture
+                          class='col-thumb'
+                          mapName={r().battle.mapName}
+                          width={TILES.list.width}
+                          height={TILES.list.height}
+                          lazy
                         />
                         <span class='col-players'>
                           {r().battle.playerCount}/{r().battle.maxPlayers}
@@ -674,44 +674,6 @@ function PasswordDialog(props: {
         </div>
       </form>
     </div>
-  )
-}
-
-/**
- * A room's map, when the index knows it; an empty frame when it does not.
- *
- * The picture is the published one, drawn into a 52px column: the same URL
- * the official lobby fetches, so it comes out of a shared CDN cache and stays
- * in the webview's for good. Lazy, so a long list does not ask for every
- * picture at once.
- */
-function MapThumb(props: { src: string | null; alt: string }) {
-  const [broken, setBroken] = createSignal(false)
-
-  // The rows are virtualised, so this component stays mounted at its place on
-  // screen while different rooms scroll through it. Without this, one map whose
-  // picture failed to load would blank that row position for every room that
-  // came after it — and the longer you scrolled, the more of the list went
-  // empty. A new picture gets its own chance to fail.
-  createEffect(() => {
-    void props.src
-    setBroken(false)
-  })
-
-  return (
-    <span class='col-thumb'>
-      <Show when={broken() ? undefined : props.src}>
-        {(src) => (
-          <img
-            src={src()}
-            alt={props.alt}
-            loading='lazy'
-            decoding='async'
-            onError={() => setBroken(true)}
-          />
-        )}
-      </Show>
-    </span>
   )
 }
 

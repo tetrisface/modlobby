@@ -39,3 +39,15 @@ export function emptyLobby(): LobbyState {
 }
 
 export const [lobby, setLobby] = createStore<LobbyState>(emptyLobby())
+
+/**
+ * The room you are in, if it is still on the list.
+ *
+ * `myBattle` can point at a row that is gone — closed under us, or not yet
+ * replayed after a reconnect — so callers get nothing rather than a room
+ * with empty lines.
+ */
+export function myRoom(): BattleView | undefined {
+  const id = lobby.myBattle?.id
+  return id === undefined ? undefined : lobby.battles[id]
+}

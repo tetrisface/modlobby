@@ -10,6 +10,7 @@ import {
   type ParentProps,
 } from 'solid-js'
 import { Glyph, IconSprite } from './components/icons'
+import { NavRoom } from './components/NavRoom'
 import { PlayerMenu } from './components/PlayerMenu'
 import { connectChannel } from './ipc/channel'
 import { ACTIVITY_EVENTS, activityReporter } from './lib/activity'
@@ -19,7 +20,7 @@ import type { Settings } from './ipc/bindings/Settings'
 import type { UpdateProgress } from './ipc/bindings/UpdateProgress'
 import type { VersionView } from './ipc/bindings/VersionView'
 import { chat, pushNotice } from './store/chat'
-import { lobby } from './store/lobby'
+import { lobby, myRoom } from './store/lobby'
 import { applySettings } from './store/settings'
 import { BattleList } from './views/BattleList'
 import { Chat } from './views/Chat'
@@ -269,18 +270,11 @@ function Layout(props: ParentProps) {
             alpha
           </span>
         </span>
-        <A href='/skirmish'>Skirmish</A>
         <Show when={lobby.phase === 'ready'}>
           <A href='/battles'>Battles</A>
-          {/* Always in this slot, whether or not there is a room to go to.
-              Rendering it only when in one made every link to its right jump
-              sideways the moment you joined. */}
-          <Show
-            when={lobby.myBattle}
-            fallback={<span class='nav-absent'>Room</span>}
-          >
-            <A href='/room'>Room</A>
-          </Show>
+        </Show>
+        <A href='/skirmish'>Skirmish</A>
+        <Show when={lobby.phase === 'ready'}>
           <A href='/chat'>
             Chat
             <Show when={unread() > 0}>
@@ -292,6 +286,12 @@ function Layout(props: ParentProps) {
           <A href='/replays'>Replays</A>
         </Show>
         <A href='/settings'>Settings</A>
+        {/* The room you are in, at the end of the tabs. The spacer takes up
+            its coming and going, so nothing else in the row moves. Gated on
+            the phase like the lobby links: a reconnect keeps myBattle. */}
+        <Show when={lobby.phase === 'ready' && myRoom()}>
+          {(b) => <NavRoom battle={b()} />}
+        </Show>
         <span
           class='spacer'
           data-tauri-drag-region={!fullscreen() && !over() ? true : undefined}
