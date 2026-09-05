@@ -11,6 +11,11 @@ import { complete, completions, recall, remember, wordAt } from '../lib/compose'
  *
  * The history is per-box and per-session: a lobby is not a shell, and nobody
  * expects yesterday's `!bSet` back.
+ *
+ * It is a textarea rather than an input so a pasted block keeps its line
+ * breaks: the runtime sends one message per line, and an input would have
+ * glued a whole preset into one line the server refuses. Enter sends;
+ * Shift+Enter is a line break.
  */
 export function Composer(props: {
   placeholder: string
@@ -21,7 +26,7 @@ export function Composer(props: {
   const [text, setText] = createSignal('')
   const [history, setHistory] = createSignal<string[]>([])
   const [at, setAt] = createSignal(-1)
-  let input: HTMLInputElement | undefined
+  let input: HTMLTextAreaElement | undefined
   /** What was half-typed when the walk back started. */
   let draft = ''
   /**
@@ -83,6 +88,11 @@ export function Composer(props: {
     put(found.text, found.text.length)
   }
 
+  function onEnter(event: KeyboardEvent) {
+    if (event.shiftKey) return
+    submit(event)
+  }
+
   function submit(event: Event) {
     event.preventDefault()
     const line = text()
@@ -97,8 +107,9 @@ export function Composer(props: {
 
   return (
     <form class='chat-input' onSubmit={submit}>
-      <input
+      <textarea
         ref={input}
+        rows={1}
         value={text()}
         placeholder={props.placeholder}
         onInput={(event) => {
@@ -108,6 +119,7 @@ export function Composer(props: {
           cycle = null
         }}
         onKeyDown={(event) => {
+          if (event.key === 'Enter') return onEnter(event)
           if (event.key === 'Tab' && !event.shiftKey) return onTab(event)
           if (event.key === 'ArrowUp') return walk(1, event)
           if (event.key === 'ArrowDown') return walk(-1, event)

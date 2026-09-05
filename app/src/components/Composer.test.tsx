@@ -16,7 +16,7 @@ function composer(names: string[] = []) {
       onSend={(l) => sent.push(l)}
     />
   ))
-  const input = container.querySelector('input')!
+  const input = container.querySelector('textarea')!
   const type = (value: string) => {
     fireEvent.input(input, { target: { value } })
   }
@@ -32,6 +32,16 @@ describe('the box you type a line into', () => {
     type('!balance')
     fireEvent.submit(input.form!)
     expect(sent).toEqual(['!balance'])
+    expect(input.value).toBe('')
+  })
+
+  test('enter sends, shift+enter does not, and a pasted block keeps its lines', () => {
+    const { input, sent, type } = composer()
+    type('!preset custom\n!bSet a 1')
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true })
+    expect(sent).toEqual([])
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(sent).toEqual(['!preset custom\n!bSet a 1'])
     expect(input.value).toBe('')
   })
 

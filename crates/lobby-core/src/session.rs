@@ -502,19 +502,39 @@ impl Session {
         Ok(vec![Effect::Send(chat::leave(room)?)])
     }
 
-    /// Says something in a channel. A leading `/me ` becomes an emote, which is
-    /// how every lobby client has spelled it since the protocol was written.
+    /// Says something in a channel: one line per message, a leading `/me `
+    /// an emote, a line past the cap wrapped rather than cut.
     pub fn say_channel(&mut self, room: &str, text: &str) -> Result<Vec<Effect>, chat::SayError> {
-        let envelope = match text.strip_prefix("/me ") {
-            Some(action) => chat::say_ex(room, action)?,
-            None => chat::say(room, text)?,
+        Ok(sends(chat::say_lines(room, text)?))
+    }
+
+    /// Says something in the room, a paste as one message per line.
+    ///
+    /// A `!bSet` whose value the room already has is dropped before the
+    /// throttle sees it. A pasted preset is mostly settings already in place,
+    /// and SPADS would only echo each one back, a vote or a line at a time.
+    pub fn say_battle(&mut self, text: &str) -> Result<Vec<Effect>, battle::TooLong> {
+        let envelopes = battle::say_battle_lines(text)?;
+        let Some(my) = self.state.my_battle.as_ref() else {
+            return Ok(sends(envelopes));
         };
-        Ok(vec![Effect::Send(envelope)])
+        let (in_place, wanted): (Vec<_>, Vec<_>) = envelopes
+            .into_iter()
+            .partition(|envelope| already_set(my, &envelope.line));
+        let mut effects = sends(wanted);
+        if !in_place.is_empty() {
+            effects.push(Effect::Notice(format!(
+                "skipped {}: the room already has {}",
+                plural(in_place.len(), "setting"),
+                if in_place.len() == 1 { "it" } else { "them" }
+            )));
+        }
+        Ok(effects)
     }
 
     /// Sends a direct message. Nothing appears until the server echoes it back.
     pub fn say_private(&mut self, user: &str, text: &str) -> Result<Vec<Effect>, battle::TooLong> {
-        Ok(vec![Effect::Send(battle::say_private(user, text)?)])
+        Ok(sends(battle::say_private_lines(user, text)?))
     }
 
     /// Asks a host how long its game has been going.
@@ -1381,6 +1401,31 @@ impl Session {
 
 /// `… Starting a new private instance in …, password=XXXX` — the reply Chobby
 /// scrapes at `battle_list_window.lua:1634-1637`.
+/// Whether `line` is a `SAYBATTLE !bSet` naming the value the room has now.
+/// Only an exact match counts: SPADS may normalise what it stores, and a
+/// guess about that would skip a change someone meant.
+fn already_set(my: &MyBattle, line: &str) -> bool {
+    let Some(command) = line.strip_prefix("SAYBATTLE !") else {
+        return false;
+    };
+    let spads::Proposal::SetOption { key, value } = spads::Proposal::parse(command) else {
+        return false;
+    };
+    !value.is_empty() && my.modoption(&key) == value
+}
+
+fn plural(count: usize, noun: &str) -> String {
+    match count {
+        1 => format!("1 {noun}"),
+        n => format!("{n} {noun}s"),
+    }
+}
+
+/// One `Send` per line the protocol layer produced.
+fn sends(envelopes: Vec<spring_protocol::Envelope>) -> Vec<Effect> {
+    envelopes.into_iter().map(Effect::Send).collect()
+}
+
 fn private_host_password(text: &str) -> Option<String> {
     let (_, rest) = text.split_once("password=")?;
     let password: String = rest
@@ -1604,7 +1649,21 @@ mod tests {
             sent_lines(&s.say_channel("main", "/me waves").unwrap()),
             vec!["SAYEX main waves"]
         );
-        assert!(s.say_channel("main", &"x".repeat(258)).is_err());
+        // Past the cap it is wrapped, not refused: the server would cut it.
+        assert_eq!(
+            sent_lines(
+                &s.say_channel("main", &format!("{} y", "x".repeat(257)))
+                    .unwrap()
+            ),
+            vec![
+                format!("SAY main {}", "x".repeat(257)),
+                "SAY main y".to_string()
+            ]
+        );
+        assert_eq!(
+            sent_lines(&s.say_channel("main", "one\ntwo").unwrap()),
+            vec!["SAY main one", "SAY main two"]
+        );
         assert!(s.join_channel("#main", None).is_err());
     }
 
@@ -1993,6 +2052,37 @@ mod tests {
         assert_eq!(side.side, 2);
         // Setting ready did not lose the faction, nor the other way round.
         assert!(side.ready);
+    }
+
+    #[test]
+    fn a_setting_the_room_already_has_is_not_sent_again() {
+        let mut s = in_a_public_room();
+        feed(
+            &mut s,
+            &["SETSCRIPTTAGS game/modoptions/startmetal=1000	game/modoptions/tweakdefs1=QUJD"],
+        );
+        let effects = s
+            .say_battle(
+                "!bSet startmetal 1000
+!bset StartMetal 2000
+!bSet tweakdefs1 QUJD
+hi",
+            )
+            .unwrap();
+        assert_eq!(
+            sent_lines(&effects),
+            ["SAYBATTLE !bset StartMetal 2000", "SAYBATTLE hi"]
+        );
+        assert!(matches!(
+            effects.last(),
+            Some(Effect::Notice(text)) if text == "skipped 2 settings: the room already has them"
+        ));
+        // Nothing to compare against outside a room, and nothing to skip.
+        let mut out = joined_session();
+        assert_eq!(
+            sent_lines(&out.say_battle("!bSet startmetal 1000").unwrap()),
+            ["SAYBATTLE !bSet startmetal 1000"]
+        );
     }
 
     #[test]

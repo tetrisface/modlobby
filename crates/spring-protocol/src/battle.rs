@@ -5,6 +5,7 @@
 //! 11–17 handicap · 18–21 team bits 5–8 · 22–23 sync (1 synced, 2 unsynced, 0 bot) ·
 //! 24–27 side · 28–31 ally-team bits 5–8.
 
+use crate::paste;
 use crate::policy::{Area, Envelope, saybattle_max_len};
 
 /// Whether a client has the engine, game and map the room needs.
@@ -153,8 +154,10 @@ pub struct TooLong {
     pub max: usize,
 }
 
-/// `SAYPRIVATE <user> <text>`: how a cluster manager is asked for a private
-/// room (`!privatehost`). teiserver caps these at 257 characters like ordinary chat.
+/// `SAYPRIVATE <user> <text>`: a direct message, and how a cluster manager is
+/// asked for a private room (`!privatehost`). teiserver's handler does not
+/// slice these (`spring_in.ex`, `SAYPRIVATE`); the chat cap is kept here so a
+/// long message reads the same wherever it is sent.
 pub fn say_private(user: &str, text: &str) -> Result<Envelope, TooLong> {
     let len = text.chars().count();
     let max = saybattle_max_len(text);
@@ -209,6 +212,36 @@ pub fn say_battle(text: &str) -> Result<Envelope, TooLong> {
     Ok(Envelope::queue(area, format!("SAYBATTLE {text}")))
 }
 
+/// Everything pasted into the battle room, one `SAYBATTLE` per line, in the
+/// order it was written.
+///
+/// A command line (`!`/`$`) goes whole or not at all: the server would cut it
+/// silently and SPADS would run the stump. A chat line wraps at the cap
+/// instead. Nothing is returned unless every line fits, so a pasted preset
+/// never half-applies.
+pub fn say_battle_lines(text: &str) -> Result<Vec<Envelope>, TooLong> {
+    let mut envelopes = Vec::new();
+    for line in paste::lines(text) {
+        if line.starts_with(['!', '$']) {
+            envelopes.push(say_battle(line)?);
+            continue;
+        }
+        for piece in paste::wrap(line, saybattle_max_len(line)) {
+            envelopes.push(say_battle(&piece)?);
+        }
+    }
+    Ok(envelopes)
+}
+
+/// A pasted direct message, one `SAYPRIVATE` per line, long lines wrapped.
+pub fn say_private_lines(user: &str, text: &str) -> Result<Vec<Envelope>, TooLong> {
+    paste::lines(text)
+        .into_iter()
+        .flat_map(|line| paste::wrap(line, crate::chat::SAY_MAX_LEN))
+        .map(|piece| say_private(user, &piece))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -245,6 +278,46 @@ mod tests {
         let blob = "A".repeat(16_385 - prefix.len());
         assert!(say_battle(&format!("{prefix}{blob}")).is_ok());
         assert!(say_battle(&format!("{prefix}{blob}A")).is_err());
+    }
+
+    #[test]
+    fn a_paste_is_one_message_per_line_with_commands_kept_whole() {
+        let lines = |text: &str| -> Vec<String> {
+            say_battle_lines(text)
+                .unwrap()
+                .into_iter()
+                .map(|e| e.line)
+                .collect()
+        };
+        assert_eq!(
+            lines("!preset custom\r\n\n  !bSet a 1  \nthanks all"),
+            [
+                "SAYBATTLE !preset custom",
+                "SAYBATTLE !bSet a 1",
+                "SAYBATTLE thanks all",
+            ]
+        );
+        assert!(lines("\n \n").is_empty());
+
+        // Chat wraps at the cap; the pieces are all sent as chat.
+        let wall = format!("{} {}", "a".repeat(200), "b".repeat(200));
+        let sent = say_battle_lines(&wall).unwrap();
+        assert_eq!(sent.len(), 2);
+        assert!(sent.iter().all(|e| e.area == Area::BattleChat));
+        assert_eq!(sent[0].line, format!("SAYBATTLE {}", "a".repeat(200)));
+
+        // A command over its cap refuses the whole paste: nothing half-applies.
+        let over = format!("!preset custom\n!bSet welcome {}", "x".repeat(300));
+        assert_eq!(say_battle_lines(&over), Err(TooLong { len: 314, max: 257 }));
+    }
+
+    #[test]
+    fn a_private_paste_wraps_like_chat() {
+        let sent = say_private_lines("bob", &format!("hi\n{}", "y".repeat(258))).unwrap();
+        assert_eq!(sent.len(), 3);
+        assert_eq!(sent[0].line, "SAYPRIVATE bob hi");
+        assert_eq!(sent[1].line, format!("SAYPRIVATE bob {}", "y".repeat(257)));
+        assert_eq!(sent[2].line, "SAYPRIVATE bob y");
     }
 
     #[test]

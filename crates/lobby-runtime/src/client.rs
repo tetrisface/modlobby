@@ -18,7 +18,7 @@ use lobby_ui::{
     Batcher, Delta, DownloadStatus, EngineStatus, GameRunningView, Phase, Projector, Snapshot,
     UiMessage, UiTransport,
 };
-use spring_protocol::battle::{self, TooLong};
+use spring_protocol::battle::TooLong;
 use spring_protocol::policy::PolicyEvent;
 use spring_protocol::{
     Area, Endpoint, Envelope, Inbound, LoginRequest, ThrottlePolicy, Transport, TransportError,
@@ -1303,11 +1303,24 @@ impl Runtime {
                 let _ = reply.send(result);
             }
             Command::Say { text, reply } => {
-                let result = match battle::say_battle(&text) {
-                    Ok(envelope) => self.send_line(envelope).await,
-                    Err(err) => Err(err.into()),
+                // Not `run_session`: a line past the cap is `TooLong`, its own
+                // error, rather than a refusal.
+                let said = match self.conn.as_mut() {
+                    Some(conn) => conn.session.say_battle(&text),
+                    None => {
+                        let _ = reply.send(Err(ClientError::NotConnected));
+                        return;
+                    }
                 };
-                let _ = reply.send(result);
+                match said {
+                    Ok(effects) => {
+                        let _ = reply.send(Ok(()));
+                        self.apply_effects(effects).await;
+                    }
+                    Err(err) => {
+                        let _ = reply.send(Err(err.into()));
+                    }
+                }
             }
             Command::JoinChannel { room, key, reply } => {
                 self.run_session(reply, |session| session.join_channel(&room, key.as_deref()))

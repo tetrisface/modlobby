@@ -13,6 +13,7 @@ pub mod event;
 pub mod friends;
 pub mod hash;
 pub mod login;
+pub mod paste;
 pub mod policy;
 pub mod status;
 pub mod telemetry;

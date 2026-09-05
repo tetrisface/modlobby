@@ -1,6 +1,6 @@
 # modlobby
 
-A Beyond All Reason lobby focused on modding and experiments.
+A Beyond All Reason lobby focused on modding, experiments and performance.
 
 ## Rust workspace
 

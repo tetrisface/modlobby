@@ -531,15 +531,6 @@ pub fn saybattle_max_len(message: &str) -> usize {
     }
 }
 
-/// One message per non-empty line, as Chobby's `ParseMultiCommandMessage` does for pasted commands.
-pub fn split_paste(text: &str) -> Vec<String> {
-    text.lines()
-        .map(str::trim_end)
-        .filter(|l| !l.is_empty())
-        .map(str::to_owned)
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -646,14 +637,6 @@ mod tests {
         assert_eq!(saybattle_max_len("hello"), 257);
         assert_eq!(saybattle_max_len("!mode ffa"), 1025);
         assert_eq!(saybattle_max_len("!bSet tweakDefs abc"), 16_385);
-    }
-
-    #[test]
-    fn split_paste_drops_blank_lines() {
-        assert_eq!(
-            split_paste("!bset a 1\r\n\n!bset b 2  \n"),
-            vec!["!bset a 1", "!bset b 2"]
-        );
     }
 
     #[test]

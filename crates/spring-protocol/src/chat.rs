@@ -4,6 +4,7 @@
 //! is just another place to say something.
 
 use crate::battle::TooLong;
+use crate::paste;
 use crate::policy::{Area, Envelope};
 
 /// teiserver truncates a channel message with `String.slice(0..256)`
@@ -86,6 +87,26 @@ pub fn say_ex(room: &str, text: &str) -> Result<Envelope, SayError> {
     ))
 }
 
+/// A pasted channel message, one `SAY` per line, long lines wrapped. A line
+/// starting `/me ` is an emote, which is how every lobby client has spelled
+/// it since the protocol was written.
+pub fn say_lines(room: &str, text: &str) -> Result<Vec<Envelope>, SayError> {
+    if !valid_channel(room) {
+        return Err(SayError::Channel);
+    }
+    let mut envelopes = Vec::new();
+    for line in paste::lines(text) {
+        let action = line.strip_prefix("/me ");
+        for piece in paste::wrap(action.unwrap_or(line), SAY_MAX_LEN) {
+            envelopes.push(match action {
+                Some(_) => say_ex(room, &piece)?,
+                None => say(room, &piece)?,
+            });
+        }
+    }
+    Ok(envelopes)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SayError {
     Channel,
@@ -143,6 +164,26 @@ mod tests {
             say("main", &over),
             Err(SayError::TooLong(TooLong { len: 258, max: 257 }))
         );
+    }
+
+    #[test]
+    fn a_paste_is_one_say_per_line_and_a_long_line_is_wrapped() {
+        let text = format!("hello\n/me waves\n{} tail", "w".repeat(257));
+        let sent: Vec<String> = say_lines("main", &text)
+            .unwrap()
+            .into_iter()
+            .map(line)
+            .collect();
+        assert_eq!(
+            sent,
+            [
+                "SAY main hello".to_string(),
+                "SAYEX main waves".to_string(),
+                format!("SAY main {}", "w".repeat(257)),
+                "SAY main tail".to_string(),
+            ]
+        );
+        assert_eq!(say_lines("#main", "hi"), Err(SayError::Channel));
     }
 
     #[test]

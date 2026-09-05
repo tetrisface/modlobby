@@ -103,6 +103,7 @@ button:hover:not(:disabled) {
 
 button:focus-visible,
 input:focus-visible,
+textarea:focus-visible,
 select:focus-visible,
 a:focus-visible {
   outline: 2px solid var(--accent);
@@ -120,7 +121,8 @@ button:disabled {
   cursor: default;
 }
 
-input {
+input,
+textarea {
   background: var(--sunken);
   color: var(--text);
   border: 1px solid var(--line);
@@ -352,6 +354,14 @@ input {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* The name and its pen. The name is the one that gives way: it already
+   hides its overflow, so as a flex item it shrinks before the pen does. */
+.room-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .card-main {
@@ -837,8 +847,14 @@ input {
   border-top: 1px solid var(--line);
 }
 
-.chat-input input {
+/* Grows with a pasted block up to a few lines, then scrolls; `field-sizing`
+   is what makes a one-row textarea follow its content. */
+.chat-input textarea {
   flex: 1;
+  resize: none;
+  field-sizing: content;
+  max-height: 8lh;
+  line-height: 1.4;
 }
 
 /* The one view that is a document rather than a pane: every other one fills
@@ -1664,9 +1680,11 @@ body.resizing {
   gap: 3px;
 }
 
-/* Two controls a cell: copy the command, and -- the wider target, because it
-   is what you came for -- open the slot in the editor. */
-.slot-cell {
+/* A cell of small actions (`ActionCell`): the tweak slots' look, shared by
+   every pen and bin that sits beside a name. A slot cell holds two: copy the
+   command, and -- the wider target, because it is what you came for -- open
+   the slot in the editor. */
+.act-cell {
   display: inline-flex;
   align-items: stretch;
   justify-self: end;
@@ -1678,11 +1696,11 @@ body.resizing {
   border-radius: 2px;
 }
 
-.slot-cell.filled {
+.act-cell.filled {
   border-color: var(--line);
 }
 
-.slot-cell button {
+.act-cell button {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1695,31 +1713,35 @@ body.resizing {
   border-radius: 0;
 }
 
-.slot-cell button:hover:not(:disabled) {
+.act-cell button + button {
+  border-left: 1px solid var(--line-soft);
+}
+
+.act-cell button:hover:not(:disabled) {
   color: var(--text);
   background: var(--raised);
 }
 
-.slot-cell .slot-copy {
-  border-right: 1px solid var(--line-soft);
+.act-cell button.danger:hover:not(:disabled) {
+  color: var(--error);
 }
 
-.slot-cell .slot-copy:disabled {
+.act-cell button:disabled {
   opacity: 0.35;
 }
 
-.slot-cell .slot-open {
+.act-cell .slot-open {
   flex: 1;
   min-width: 0;
   text-align: left;
 }
 
 /* In a settings row the cell is small and sits at the value's edge. */
-.opt .slot-cell {
+.opt .act-cell {
   font-size: 10.5px;
 }
 
-.opt .slot-cell button {
+.opt .act-cell button {
   padding: 2px 6px;
 }
 
@@ -1730,11 +1752,11 @@ body.resizing {
   text-overflow: ellipsis;
 }
 
-.slot-cell.filled .kk {
+.act-cell.filled .kk {
   color: var(--accent);
 }
 
-.slot-cell.filled .vv {
+.act-cell.filled .vv {
   color: var(--muted);
 }
 
@@ -2532,7 +2554,7 @@ button.link:hover {
    everything else, since that is the column people write the most into. */
 .preset-rows {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) fit-content(30%) 72px 72px 22px;
+  grid-template-columns: minmax(0, 1fr) fit-content(30%) 72px 72px auto;
   column-gap: 8px;
   align-content: start;
   overflow-y: auto;
@@ -2599,53 +2621,10 @@ button.link:hover {
   color: var(--text);
 }
 
-.preset-name {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-}
-
-.preset-name .label {
-  flex: 1;
-}
-
 .preset-row span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* Rename and delete live on the row and show themselves when it is looked
-   at: hovered, selected, or reached by keyboard. */
-.row-act {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  flex-shrink: 0;
-  color: var(--faint);
-  background: transparent;
-  border: none;
-  border-radius: 2px;
-  opacity: 0;
-}
-
-.preset-row:hover .row-act,
-.preset-row.on .row-act,
-.row-act:focus-visible {
-  opacity: 1;
-}
-
-.row-act:hover:not(:disabled) {
-  color: var(--text);
-  background: var(--raised);
-}
-
-.row-act.danger:hover:not(:disabled) {
-  color: var(--error);
 }
 
 .tabular {

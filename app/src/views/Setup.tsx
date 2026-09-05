@@ -9,7 +9,7 @@ import {
   createSignal,
   type Accessor,
 } from 'solid-js'
-import { Glyph } from '../components/icons'
+import { ActionCell, CellButton } from '../components/ActionCell'
 import { ResizeHandle } from '../components/ResizeHandle'
 import { api, describeError } from '../ipc/client'
 import { clamp, dragWidth, readWidth, writeWidth } from '../lib/resize'
@@ -495,17 +495,16 @@ function SlotActions(props: {
   }
 
   return (
-    <span class='slot-cell' classList={{ filled: !empty() }}>
-      <button
-        class='slot-copy'
+    <ActionCell filled={!empty()}>
+      <CellButton
+        icon='act-copy'
         title={`Copy the !bSet command for ${props.slot}`}
         disabled={empty()}
         onClick={() => void copy()}
-      >
-        <Glyph id='act-copy' />
-      </button>
-      <button
+      />
+      <CellButton
         class='slot-open'
+        icon='act-pen'
         title={
           empty()
             ? `Write a tweak into ${props.slot}`
@@ -513,13 +512,12 @@ function SlotActions(props: {
         }
         onClick={() => props.onEdit(props.slot)}
       >
-        <Glyph id='act-pen' />
         <Show when={props.label}>
           {(label) => <span class='kk'>{label()}</span>}
         </Show>
         <span class='vv'>{empty() ? '—' : `${props.blob.length} B`}</span>
-      </button>
-    </span>
+      </CellButton>
+    </ActionCell>
   )
 }
 

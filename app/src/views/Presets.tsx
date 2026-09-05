@@ -6,8 +6,8 @@ import {
   createSignal,
   onCleanup,
 } from 'solid-js'
+import { ActionCell, CellButton } from '../components/ActionCell'
 import { Ask } from '../components/Ask'
-import { Glyph } from '../components/icons'
 import type { Preset } from '../ipc/bindings/Preset'
 import type { Sections } from '../ipc/bindings/Sections'
 import { api, describeError } from '../ipc/client'
@@ -290,21 +290,7 @@ export function Presets() {
                 onClick={() => setChosen(preset.name)}
                 onDblClick={() => void load(preset)}
               >
-                <span class='preset-name'>
-                  <span class='label'>{preset.name}</span>
-                  <button
-                    class='row-act'
-                    title='Rename'
-                    aria-label={`Rename ${preset.name}`}
-                    disabled={busy()}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      setAsking({ kind: 'rename', from: preset.name })
-                    }}
-                  >
-                    <Glyph id='act-pen' />
-                  </button>
-                </span>
+                <span class='preset-name'>{preset.name}</span>
                 <span class='preset-map muted' title={preset.map ?? ''}>
                   {preset.map ?? '—'}
                 </span>
@@ -312,18 +298,29 @@ export function Presets() {
                   {when(preset.lastUsed, now())}
                 </span>
                 <span class='tabular muted'>{when(preset.updated, now())}</span>
-                <button
-                  class='row-act danger'
-                  title='Delete'
-                  aria-label={`Delete ${preset.name}`}
-                  disabled={busy()}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    void remove(preset)
-                  }}
-                >
-                  <Glyph id='act-trash' />
-                </button>
+                <ActionCell>
+                  <CellButton
+                    icon='act-pen'
+                    title='Rename'
+                    label={`Rename ${preset.name}`}
+                    disabled={busy()}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      setAsking({ kind: 'rename', from: preset.name })
+                    }}
+                  />
+                  <CellButton
+                    class='danger'
+                    icon='act-trash'
+                    title='Delete'
+                    label={`Delete ${preset.name}`}
+                    disabled={busy()}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      void remove(preset)
+                    }}
+                  />
+                </ActionCell>
               </div>
             )}
           </For>

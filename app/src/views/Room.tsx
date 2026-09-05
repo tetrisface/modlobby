@@ -31,6 +31,7 @@ import { lobby } from '../store/lobby'
 import { settings } from '../store/settings'
 import { HostBar } from './HostBar'
 import { PveScore } from './PveScore'
+import { RoomTitle } from './RoomTitle'
 import { Seat } from './Seat'
 import { StartBoxes } from './StartBoxes'
 import { Setup } from './Setup'
@@ -84,6 +85,18 @@ export function Room() {
     }
   })
 
+  /**
+   * SPADS takes `!rename` from a player — outright from the boss, as a vote
+   * from anyone else — and refuses it from a spectator (`[rename]` in BAR's
+   * `BarManagerCmd.conf`). Not drawing the pen beats a silent refusal.
+   */
+  const canRename = createMemo(() => {
+    const me = lobby.me
+    if (me === null) return false
+    if (lobby.myBattle?.boss === me) return true
+    return lobby.users[me]?.battleStatus?.player ?? false
+  })
+
   createEffect(() => {
     if (lobby.phase === 'ready' && !lobby.myBattle)
       navigate('/battles', { replace: true })
@@ -121,7 +134,11 @@ export function Room() {
               teams={occupants().teams.length}
             />
             <div class='card-main'>
-              <h1 title={b().title}>{b().title}</h1>
+              <RoomTitle
+                title={b().title}
+                canRename={canRename()}
+                onRename={(name) => void send(`!rename ${name}`)}
+              />
               <div class='card-meta'>
                 <span>
                   Map{' '}
