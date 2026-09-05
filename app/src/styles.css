@@ -915,9 +915,15 @@ textarea {
 }
 
 /* Grows with a pasted block up to a few lines, then scrolls; `field-sizing`
-   is what makes a one-row textarea follow its content. */
+   is what makes a one-row textarea follow its content. `overflow-wrap:
+   anywhere` rather than the textarea default of `break-word`: only
+   `anywhere` counts the breaks it makes towards min-content width, and a
+   content-sized textarea's min-content is what the form's grid row is sized
+   from. One pasted unbreakable string was making that row, and so the whole
+   room, as wide as the string; nothing else was left on screen. */
 .chat-input textarea {
   flex: 1;
+  overflow-wrap: anywhere;
   resize: none;
   field-sizing: content;
   max-height: 8lh;
