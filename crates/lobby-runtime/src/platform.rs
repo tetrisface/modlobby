@@ -60,6 +60,47 @@ pub fn detect() -> Hardware {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The hash is what the server tells one machine from another by, and
+    /// it is Chobby's inputs — OS, CPU brand and count, RAM — so a cheaper
+    /// refresh must read the same values a full one does. An empty brand or
+    /// a zero RAM would quietly make every install look like a new machine.
+    #[test]
+    fn the_cheap_refresh_reads_what_the_full_one_reads() {
+        let started = std::time::Instant::now();
+        let full = System::new_all();
+        let full_took = started.elapsed();
+        let cpu = full
+            .cpus()
+            .first()
+            .map(|c| format!("{} x{}", c.brand().trim(), full.cpus().len()))
+            .unwrap_or_default();
+        let ram = format!("{} MB", full.total_memory() / (1024 * 1024));
+
+        let started = std::time::Instant::now();
+        let detected = detect();
+        // With `--nocapture`: how much the cheaper refresh saves on this box.
+        println!("full refresh {full_took:?}, detect {:?}", started.elapsed());
+        let property = |name: &str| -> &str {
+            detected
+                .properties
+                .iter()
+                .find(|(key, _)| key == name)
+                .map(|(_, value)| value.as_str())
+                .unwrap_or_default()
+        };
+        assert_eq!(property("hardware:cpuinfo"), cpu);
+        assert_eq!(property("hardware:raminfo"), ram);
+        assert!(!cpu.starts_with(" x"), "a CPU brand was read: {cpu:?}");
+        assert!(!cpu.ends_with("x0"), "cores were counted: {cpu:?}");
+        assert_ne!(ram, "0 MB", "RAM was read");
+        assert!(!property("hardware:osinfo").trim().is_empty());
+    }
+}
+
 /// First interface with a non-zero MAC, in name order so the choice is stable across runs.
 fn primary_mac() -> Option<String> {
     let networks = Networks::new_with_refreshed_list();
