@@ -304,41 +304,6 @@ impl ThrottlePolicy {
     pub fn permits(&self, bytes: usize) -> usize {
         1 + bytes / self.paste.segment_bytes.max(1)
     }
-
-    /// Roughly how long these envelopes take to leave, area by area, so a
-    /// long paste can say so up front. The connection bucket is ignored: on
-    /// the paced lanes it never binds, and on the burst lane the batch
-    /// interval is the slower of the two by design.
-    pub fn estimate<'a>(&self, envelopes: impl IntoIterator<Item = &'a Envelope>) -> Duration {
-        let mut count: HashMap<Area, usize> = HashMap::new();
-        let mut paste_bytes = 0;
-        for envelope in envelopes {
-            if envelope.area == Area::BattlePaste {
-                paste_bytes += envelope.line.len() + 1;
-            } else {
-                *count.entry(envelope.area).or_default() += 1;
-            }
-        }
-        if paste_bytes > 0 {
-            count.insert(
-                Area::BattlePaste,
-                paste_bytes.div_ceil(self.paste.batch_bytes.max(1)),
-            );
-        }
-        count
-            .into_iter()
-            .map(|(area, n)| match self.areas.get(&area) {
-                Some(&Limit::Window { max, window_secs }) if n > max as usize => {
-                    Duration::from_secs_f64(((n - 1) / max as usize) as f64 * window_secs)
-                }
-                Some(&Limit::Bucket { burst, per_minute }) if n > burst as usize => {
-                    Duration::from_secs_f64((n - burst as usize) as f64 * 60.0 / per_minute)
-                }
-                _ => Duration::ZERO,
-            })
-            .max()
-            .unwrap_or(Duration::ZERO)
-    }
 }
 
 /// How a line should be scheduled within its area.
@@ -404,6 +369,13 @@ pub enum PolicyEvent {
     Dropped {
         area: Area,
         bytes: usize,
+    },
+    /// One write left, carrying `lines` protocol lines; `pending` is what
+    /// the area still holds. How a paste's progress is counted.
+    Sent {
+        area: Area,
+        lines: usize,
+        pending: usize,
     },
 }
 
@@ -602,6 +574,16 @@ impl Scheduler {
         }
     }
 
+    /// Drops everything still queued in `area`, returning how many lines that
+    /// was. What has already left cannot be recalled.
+    pub fn cancel(&mut self, area: Area) -> usize {
+        self.queues.get_mut(&area).map_or(0, |queue| {
+            let dropped = queue.len();
+            queue.clear();
+            dropped
+        })
+    }
+
     /// Pauses an area until `until`, e.g. after a flood signal from the server.
     pub fn trip(&mut self, area: Area, until: Instant) {
         self.tripped.insert(area, until);
@@ -625,7 +607,13 @@ impl Scheduler {
                 return out;
             }
             self.connection.take_n(permits, now);
-            out.push(self.immediate.pop_front().expect("front exists").line);
+            let envelope = self.immediate.pop_front().expect("front exists");
+            out.push(envelope.line);
+            self.events.push(PolicyEvent::Sent {
+                area: envelope.area,
+                lines: 1,
+                pending: self.immediate.len(),
+            });
         }
         for area in AREAS {
             while let Some(write) = self.next_write(area) {
@@ -645,7 +633,13 @@ impl Scheduler {
                     .take_n(1, now);
                 let queue = self.queues.get_mut(&area).expect("queue exists");
                 let lines: Vec<String> = queue.drain(..write.envelopes).map(|e| e.line).collect();
+                let pending = queue.len();
                 out.push(lines.join("\n"));
+                self.events.push(PolicyEvent::Sent {
+                    area,
+                    lines: write.envelopes,
+                    pending,
+                });
             }
         }
         out
@@ -897,19 +891,16 @@ mod tests {
     }
 
     #[test]
-    fn a_paste_estimate_follows_the_slowest_area() {
-        let policy = ThrottlePolicy::default();
-        let commands: Vec<Envelope> = (0..15)
-            .map(|i| Envelope::queue(Area::BattleCommand, format!("SAYBATTLE !bSet k{i} 1")))
-            .collect();
-        // 7 per 10 s: 7 now, 7 at 10 s, 1 at 20 s.
-        assert_eq!(policy.estimate(&commands), secs(20.0));
-        let burst: Vec<Envelope> = (0..3)
-            .map(|_| Envelope::queue(Area::BattlePaste, "x".repeat(15_000)))
-            .collect();
-        // Three 15 KB lines: three batches, 4 s apart.
-        assert_eq!(policy.estimate(&burst), secs(8.0));
-        assert_eq!(policy.estimate(&commands[..3]), Duration::ZERO);
+    fn cancelling_an_area_drops_what_has_not_left() {
+        let t0 = Instant::now();
+        let mut s = Scheduler::new(ThrottlePolicy::default(), t0);
+        for line in ["!bSet a 1", "!bSet b 2", "!bSet c 3"] {
+            s.submit(Envelope::queue(Area::BattleCommand, line));
+        }
+        s.submit(Envelope::queue(Area::BattleChat, "hi"));
+        assert_eq!(s.cancel(Area::BattleCommand), 3);
+        assert_eq!(s.cancel(Area::BattleCommand), 0);
+        assert_eq!(s.drain(t0), vec!["hi"]);
     }
 
     #[test]

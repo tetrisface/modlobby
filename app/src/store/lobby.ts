@@ -5,6 +5,7 @@ import type { GameRunningView } from '../ipc/bindings/GameRunningView'
 import type { MyBattleView } from '../ipc/bindings/MyBattleView'
 import type { Phase } from '../ipc/bindings/Phase'
 import type { DownloadStatus } from '../ipc/bindings/DownloadStatus'
+import type { PasteStatus } from '../ipc/bindings/PasteStatus'
 import type { FriendsView } from '../ipc/bindings/FriendsView'
 import type { UserView } from '../ipc/bindings/UserView'
 
@@ -21,6 +22,8 @@ export type LobbyState = {
   content: { engine: boolean; game: boolean; map: boolean } | null
   friends: FriendsView
   download: DownloadStatus
+  /** A multi-line paste on its way to the room. */
+  paste: PasteStatus
 }
 
 export function emptyLobby(): LobbyState {
@@ -35,6 +38,7 @@ export function emptyLobby(): LobbyState {
     content: null,
     friends: { friends: [], requests: [], ignored: [] },
     download: { state: 'idle' },
+    paste: { state: 'idle' },
   }
 }
 

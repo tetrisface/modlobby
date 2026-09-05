@@ -50,6 +50,7 @@ const snapshot: Snapshot = {
   channels: [],
   friends: { friends: [], requests: [], ignored: [] },
   download: { state: 'idle' },
+  paste: { state: 'idle' },
 }
 
 describe('apply', () => {

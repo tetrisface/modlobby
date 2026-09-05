@@ -29,6 +29,7 @@ export function applySnapshot(snapshot: Snapshot): void {
     engine: snapshot.engine,
     friends: snapshot.friends,
     download: snapshot.download,
+    paste: snapshot.paste,
   }
   for (const user of snapshot.users) next.users[user.name] = user
   for (const battle of snapshot.battles) next.battles[battle.id] = battle
@@ -230,6 +231,9 @@ export function applyDelta(delta: Delta): void {
       return
     case 'download':
       setLobby('download', delta.data)
+      return
+    case 'paste':
+      setLobby('paste', delta.data)
       return
     case 'alert':
       void raise(delta.data.kind, delta.data.text)

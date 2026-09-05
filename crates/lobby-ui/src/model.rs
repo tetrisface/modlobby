@@ -438,6 +438,49 @@ pub enum DownloadStatus {
     },
 }
 
+/// A multi-line battle-room paste, and how far it has got. Worth a banner
+/// rather than a toast: paced under SPADS's counters a paste can take a
+/// minute, and a pane that sits still for a minute reads as nothing
+/// happening.
+///
+/// Progress is what the host has answered, not what left the socket: as boss
+/// the whole paste is gone in seconds while SPADS is still chewing through
+/// the tweak blobs. It is measured in bytes rather than lines, since a
+/// 16 KB tweak costs the host far more than a `!bSet a 1`, and a bar that
+/// stepped the same for both stalled on the blobs. No time estimate: the
+/// host's pace is not ours to know, and a wrong number is worse than none.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "state", rename_all = "camelCase")]
+#[ts(export)]
+pub enum PasteStatus {
+    #[default]
+    Idle,
+    Running {
+        /// Lines handed to the scheduler, after skipping.
+        total: u32,
+        /// Lines that have left the socket.
+        sent: u32,
+        /// Lines the host will answer: the `!` and `$` commands among `total`.
+        commands: u32,
+        /// Commands the host has answered so far.
+        applied: u32,
+        /// Settings dropped because the room already had them.
+        skipped: u32,
+        /// Bytes across all the commands.
+        work: u32,
+        /// Bytes across the commands answered so far.
+        done: u32,
+    },
+    Done {
+        total: u32,
+        commands: u32,
+        applied: u32,
+        skipped: u32,
+        /// Stopped by the reader; what had not left was dropped.
+        cancelled: bool,
+    },
+}
+
 /// `Default` is "nothing has happened yet", which is what a test that cares
 /// about one field wants and what a fresh session is.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -457,6 +500,7 @@ pub struct Snapshot {
     pub channels: Vec<ChannelView>,
     pub friends: FriendsView,
     pub download: DownloadStatus,
+    pub paste: PasteStatus,
 }
 
 /// Who we are friends with, and who is waiting on an answer.
@@ -483,6 +527,7 @@ impl Snapshot {
             channels: Vec::new(),
             friends: FriendsView::default(),
             download: DownloadStatus::Idle,
+            paste: PasteStatus::Idle,
         }
     }
 
@@ -521,6 +566,7 @@ impl Snapshot {
             // A download belongs to the runtime, not to lobby state; a fresh
             // snapshot says nothing about one that may be in flight.
             download: DownloadStatus::Idle,
+            paste: PasteStatus::Idle,
         }
     }
 }
@@ -706,6 +752,8 @@ pub enum Delta {
     Friends(FriendsView),
     /// How a content download is going.
     Download(DownloadStatus),
+    /// How a multi-line paste is going.
+    Paste(PasteStatus),
     /// Something worth interrupting the reader for. The front end decides
     /// whether to raise it, since only it knows whether anyone is looking.
     Alert {

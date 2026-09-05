@@ -254,6 +254,7 @@ pub fn run() {
             commands::map_index,
             commands::warm_map_pictures,
             commands::stop_download,
+            commands::cancel_paste,
             commands::ring,
             commands::add_bot,
             commands::remove_bot,

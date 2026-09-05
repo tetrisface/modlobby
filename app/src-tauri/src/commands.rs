@@ -611,6 +611,14 @@ pub async fn stop_download(app: State<'_, App>) -> Result<()> {
     Ok(())
 }
 
+/// Stops a paste. What has not left the queue is dropped; what has is the
+/// host's already.
+#[tauri::command]
+pub async fn cancel_paste(app: State<'_, App>) -> Result<()> {
+    app.client.cancel_paste().await?;
+    Ok(())
+}
+
 /// Asks the server for the friend list and the pending requests.
 #[tauri::command]
 pub async fn refresh_friends(app: State<'_, App>) -> Result<()> {

@@ -24,6 +24,7 @@ import {
   isOn,
   isTweakSlot,
   readModOptions,
+  label,
   rowsByTab,
   rowsOf,
   tabs,
@@ -33,6 +34,7 @@ import {
 } from '../lib/setup'
 import { pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
+import { PasteBanner } from './PasteBanner'
 import { Presets } from './Presets'
 import { Tweaks } from './tweaks/Tweaks'
 
@@ -226,6 +228,7 @@ export function Setup() {
       </div>
 
       <Show when={pane() === 'setup'} fallback={<Presets />}>
+        <PasteBanner />
         <div class='setup-tabs' ref={strip}>
           <button
             class='setup-tab'
@@ -449,7 +452,7 @@ function Rows(props: {
           <div class='opt' classList={{ changed: row.changed }}>
             <span class='mark' />
             <span class='k' title={row.option.desc ?? ''}>
-              {row.option.name || row.option.key}
+              {label(row.option)}
             </span>
             <Switch fallback={<span class='v'>{displayText(row)}</span>}>
               <Match when={isTweakSlot(row)}>

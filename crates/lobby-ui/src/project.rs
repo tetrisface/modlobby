@@ -325,7 +325,9 @@ impl Projector {
             // The runtime acts on these; the notices are the runtime's own.
             Effect::PrivateHostOffered { .. }
             | Effect::PrivateHostReady { .. }
-            | Effect::Hosting { .. } => {}
+            | Effect::Hosting { .. }
+            // The runtime reports the paste as it goes; nothing to say here.
+            | Effect::PasteQueued { .. } => {}
             Effect::Notice(text) => out.push(notice(NoticeLevel::Info, text.clone())),
             Effect::JoinFailed { reason } => out.push(notice(
                 NoticeLevel::Warning,
@@ -369,13 +371,16 @@ impl Projector {
         // Our own words are not somebody calling us, and a private message is
         // already addressed to us by being one. Nor is a machine line, which
         // can carry your name without addressing you — SPADS lists the room's
-        // bosses inside its `BattleStateChanged` JSON.
+        // bosses inside its `BattleStateChanged` JSON — nor the host reporting
+        // something we did ("Battle setting changed by <us>"), which names us
+        // as the actor, not the audience.
         let talking_to_us = Some(from) != state.me.as_deref()
             && !matches!(kind, ChatKind::Private | ChatKind::Machine)
-            && state
-                .me
-                .as_deref()
-                .is_some_and(|me| mention::mentions(text, me));
+            && state.me.as_deref().is_some_and(|me| {
+                mention::mentions(text, me)
+                    && !(matches!(kind, ChatKind::Announcement)
+                        && lobby_core::spads::acted_by(text, me))
+            });
         ChatLine {
             seq: self.seq,
             room: room.to_owned(),
@@ -487,6 +492,39 @@ mod tests {
                 ..
             }
         )));
+    }
+
+    #[test]
+    fn the_host_reporting_your_own_change_is_not_a_mention() {
+        let (mut s, mut p) = live();
+        let deltas = step(
+            &mut s,
+            &mut p,
+            "SAIDBATTLEEX host * Battle setting changed by me (startmetal=1000)",
+        );
+        let [Delta::Chat(line)] = &deltas[..] else {
+            panic!("expected one chat line, got {deltas:?}")
+        };
+        assert_eq!(line.kind, ChatKind::Announcement);
+        assert!(!line.mention, "our own doing, reported back");
+        // Being addressed by the host still is one, alert and all.
+        let deltas = step(
+            &mut s,
+            &mut p,
+            "SAIDBATTLEEX host * me, you must specify a user",
+        );
+        assert!(deltas.iter().any(|delta| matches!(
+            delta,
+            Delta::Alert {
+                kind: AlertKind::Mention,
+                ..
+            }
+        )));
+        assert!(
+            deltas
+                .iter()
+                .any(|delta| matches!(delta, Delta::Chat(line) if line.mention))
+        );
     }
 
     #[test]

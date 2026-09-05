@@ -96,6 +96,68 @@ pub fn boss(json: &str) -> Option<String> {
     (!boss.is_empty()).then(|| boss.to_owned())
 }
 
+/// Whether an announcement names `who` as the one who acted. SPADS writes
+/// "… by <name>" for a setting, preset or map change and "<name> called a
+/// vote" for a vote (`spads.pl`, `broadcastMsg` callers). Word-bounded, so
+/// `Sky` is not `Skywalker`; case-insensitive, as names are typed.
+pub fn acted_by(text: &str, who: &str) -> bool {
+    if who.is_empty() {
+        return false;
+    }
+    let body = text.strip_prefix("* ").unwrap_or(text).to_lowercase();
+    let name = who.to_lowercase();
+    let ends_name = |rest: &str| {
+        rest.starts_with(&name)
+            && !rest[name.len()..]
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_alphanumeric() || c == '_')
+    };
+    body.match_indices("by ")
+        .any(|(at, hit)| ends_name(&body[at + hit.len()..]))
+        || (ends_name(&body) && body[name.len()..].starts_with(" called a vote"))
+}
+
+/// Whether an announcement is the host answering a command, as opposed to
+/// chatter of its own: a setting, preset or map outcome, an invalid command,
+/// a refusal, or SPADS addressing `me` by name ("<me>, you must …"). Votes,
+/// game and machine lines are not answers. A heuristic, used only to count a
+/// paste's commands as the host gets through them; the count is capped by
+/// the caller, so an extra match costs nothing worse than a bar a step ahead.
+pub fn answers_command(text: &str, me: &str) -> bool {
+    let Some(body) = text.strip_prefix("* ") else {
+        return false;
+    };
+    if is_machine(text)
+        || matches!(
+            parse(text),
+            Some(
+                Announcement::VoteProgress { .. }
+                    | Announcement::VoteEnded { .. }
+                    | Announcement::VoteCancelled
+                    | Announcement::GameInProgress { .. }
+            )
+        )
+    {
+        return false;
+    }
+    const OUTCOMES: [&str; 8] = [
+        "Battle setting",
+        "Global setting",
+        "Hosting setting",
+        "Invalid command",
+        "Map is already",
+        "Map changed",
+        "Preset ",
+        "Unable to",
+    ];
+    let addressed = !me.is_empty()
+        && body
+            .to_lowercase()
+            .starts_with(&format!("{}, ", me.to_lowercase()));
+    acted_by(text, me) || addressed || OUTCOMES.iter().any(|prefix| body.starts_with(prefix))
+}
+
 /// Parses one `SAIDBATTLEEX` line from the founder. Everything SPADS says is
 /// prefixed `* ` (`spads.pl:2932`); anything unrecognised stays chat.
 /// Whether a line is machine-readable rather than something a person is meant
@@ -304,6 +366,52 @@ impl VoteState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_actor_of_an_announcement_is_read_off_by_or_called() {
+        assert!(acted_by(
+            "* Battle setting changed by Sky (startmetal=1000)",
+            "Sky"
+        ));
+        assert!(acted_by(
+            "* Preset \"custom\" (Custom Battle) applied by sky",
+            "Sky"
+        ));
+        assert!(acted_by(
+            "* Sky called a vote for command \"bSet a 1\"",
+            "Sky"
+        ));
+        assert!(!acted_by(
+            "* Battle setting changed by Skywalker (a=1)",
+            "Sky"
+        ));
+        assert!(!acted_by("* Sky, you are not allowed to do that", "Sky"));
+        assert!(!acted_by("* Battle setting changed by Sky (a=1)", ""));
+    }
+
+    #[test]
+    fn a_hosts_answer_to_a_command_is_told_from_its_chatter() {
+        for answer in [
+            "* Battle setting changed by Sky (startmetal=1000)",
+            "* Battle setting \"debugcommands\" is already set to value \"\"",
+            "* Global setting changed by Sky (nbTeams=1)",
+            "* Invalid command \"pip\"",
+            "* Map is already set to \"Full Metal Plate 1.7\"",
+            "* Preset \"custom\" (Custom Battle) applied by Sky",
+            "* Sky, you must specify a user to boss.",
+        ] {
+            assert!(answers_command(answer, "Sky"), "{answer}");
+        }
+        for chatter in [
+            "* Vote in progress: \"bSet a 1\" [y:1/2, n:0/1(2)] (25s remaining)",
+            "* A game is in progress since 5 min.",
+            r#"* BarManager|{"BattleStateChanged": {"boss": "Sky"}}"#,
+            "Sky: hello",
+            "* Boss mode enabled for Sky",
+        ] {
+            assert!(!answers_command(chatter, "Sky"), "{chatter}");
+        }
+    }
 
     #[test]
     fn a_host_answers_how_long_its_game_has_been_going() {

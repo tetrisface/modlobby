@@ -44,6 +44,13 @@ pub enum Effect {
         flood: bool,
     },
     Notice(String),
+    /// A multi-line paste (or one with settings skipped) was handed on:
+    /// `lines` queued to send, `skipped` dropped as already in place. The
+    /// runtime turns this into progress the front end can show.
+    PasteQueued {
+        lines: usize,
+        skipped: usize,
+    },
     /// The host accepted us into the room, as a spectator.
     Joined {
         id: u32,
@@ -522,9 +529,14 @@ impl Session {
         let Some(my) = self.state.my_battle.as_ref() else {
             return Ok(sends(envelopes));
         };
-        let (in_place, mut wanted): (Vec<_>, Vec<_>) = envelopes
-            .into_iter()
-            .partition(|envelope| already_set(my, &envelope.line));
+        // In order: once a line wipes the room's settings, what the room has
+        // now says nothing about what the lines after it will find.
+        let mut wiped = false;
+        let (in_place, mut wanted): (Vec<_>, Vec<_>) =
+            envelopes.into_iter().partition(|envelope| {
+                wiped = wiped || resets_settings(&envelope.line);
+                !wiped && already_set(my, &envelope.line)
+            });
         let burst_now = wanted.len() > 1
             && match burst {
                 PasteBurst::Always => true,
@@ -536,13 +548,13 @@ impl Session {
                 envelope.area = Area::BattlePaste;
             }
         }
+        let lines = wanted.len();
         let mut effects = sends(wanted);
-        if !in_place.is_empty() {
-            effects.push(Effect::Notice(format!(
-                "skipped {}: the room already has {}",
-                plural(in_place.len(), "setting"),
-                if in_place.len() == 1 { "it" } else { "them" }
-            )));
+        if lines > 1 || !in_place.is_empty() {
+            effects.push(Effect::PasteQueued {
+                lines,
+                skipped: in_place.len(),
+            });
         }
         Ok(effects)
     }
@@ -1451,11 +1463,27 @@ fn already_set(my: &MyBattle, line: &str) -> bool {
     !value.is_empty() && my.modoption(&key) == value
 }
 
-fn plural(count: usize, noun: &str) -> String {
-    match count {
-        1 => format!("1 {noun}"),
-        n => format!("{n} {noun}s"),
-    }
+/// Whether a line wipes the room's settings, so nothing after it in the same
+/// paste can be compared with what the room has now. A preset applies its
+/// battle preset, which on BAR always carries `resetoptions:1`
+/// (`battlePresets.conf`), and that deletes every modoption before setting
+/// its own (`SpadsConf.pm`, `applyBPreset`, near line 2619). `reloadConf`
+/// re-applies the presets; `rck` keeps settings but is not worth a special
+/// case. `gametype` is BAR's alias for `preset` (`CustomAliases.conf`). A map
+/// change is not one of these: BAR has no per-map presets.
+fn resets_settings(line: &str) -> bool {
+    let Some(command) = line.strip_prefix("SAYBATTLE !") else {
+        return false;
+    };
+    let word = command
+        .split_whitespace()
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    matches!(
+        word.as_str(),
+        "preset" | "gametype" | "bpreset" | "reloadconf" | "rc" | "rck"
+    )
 }
 
 /// One `Send` per line the protocol layer produced.
@@ -2112,10 +2140,13 @@ mod tests {
                 "SAYBATTLE hi"
             ]
         );
-        assert!(matches!(
+        assert_eq!(
             effects.last(),
-            Some(Effect::Notice(text)) if text == "skipped 3 settings: the room already has them"
-        ));
+            Some(&Effect::PasteQueued {
+                lines: 3,
+                skipped: 3
+            })
+        );
         // Nothing to compare against outside a room, and nothing to skip.
         let mut out = joined_session();
         assert_eq!(
@@ -2124,6 +2155,36 @@ mod tests {
                     .unwrap()
             ),
             ["SAYBATTLE !bSet startmetal 1000"]
+        );
+    }
+
+    #[test]
+    fn a_preset_line_wipes_the_room_so_what_follows_is_not_skipped() {
+        let mut s = in_a_public_room();
+        feed(&mut s, &["SETSCRIPTTAGS game/modoptions/startmetal=1000"]);
+        let effects = s
+            .say_battle(
+                "!bSet startmetal 1000
+!preset custom
+!bSet startmetal 1000
+!startmetal 1000",
+                PasteBurst::Never,
+            )
+            .unwrap();
+        assert_eq!(
+            sent_lines(&effects),
+            [
+                "SAYBATTLE !preset custom",
+                "SAYBATTLE !bSet startmetal 1000",
+                "SAYBATTLE !startmetal 1000",
+            ]
+        );
+        assert_eq!(
+            effects.last(),
+            Some(&Effect::PasteQueued {
+                lines: 3,
+                skipped: 1
+            })
         );
     }
 

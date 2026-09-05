@@ -11,8 +11,8 @@
 //! already model exactly in the `tweaks` crate — reading them twice would let
 //! the two drift apart.
 
-use full_moon::ast::{Expression, Field, Stmt, TableConstructor, UnOp};
-use full_moon::tokenizer::{Symbol, TokenType};
+use full_moon::ast::{BinOp, Expression, Field, Stmt, TableConstructor, UnOp};
+use full_moon::tokenizer::{StringLiteralQuoteType, Symbol, TokenType};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -243,14 +243,83 @@ fn table(expression: &Expression) -> Option<&TableConstructor> {
     }
 }
 
+/// A string expression: one literal, or literals joined with `..`. BAR writes
+/// most descriptions and a few names that way, some of them to slip a colour
+/// code in between.
 fn string(expression: &Expression) -> Option<String> {
     match expression {
         Expression::String(token) => match token.token().token_type() {
-            TokenType::StringLiteral { literal, .. } => Some(literal.as_str().to_owned()),
+            TokenType::StringLiteral {
+                literal,
+                quote_type: StringLiteralQuoteType::Brackets,
+                ..
+            } => Some(literal.as_str().to_owned()),
+            TokenType::StringLiteral { literal, .. } => Some(unescape(literal.as_str())),
             _ => None,
         },
+        Expression::BinaryOperator {
+            lhs,
+            binop: BinOp::TwoDots(_),
+            rhs,
+        } => Some(string(lhs)? + &string(rhs)?),
+        Expression::Parentheses { expression, .. } => string(expression),
         _ => None,
     }
+}
+
+/// The byte Spring reads as "a colour follows": `\255` and three colour bytes
+/// tint the rest of a Chobby text box. Never valid UTF-8, so unambiguous.
+const COLOUR: u8 = 255;
+
+/// A quoted literal with Lua's escapes decoded and Spring's inline colour
+/// codes dropped, since they mean nothing outside a Chobby text box.
+///
+/// Lua 5.1's escapes are the C ones and `\ddd`; the `\x` and `\u{}` forms of
+/// later Luas do not appear in the file.
+fn unescape(literal: &str) -> String {
+    let mut bytes = Vec::with_capacity(literal.len());
+    let mut chars = literal.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            bytes.extend(c.encode_utf8(&mut [0; 4]).as_bytes());
+            continue;
+        }
+        match chars.next() {
+            Some('n' | '\n') => bytes.push(b'\n'),
+            Some('t') => bytes.push(b'\t'),
+            Some('r') => bytes.push(b'\r'),
+            Some('a') => bytes.push(0x07),
+            Some('b') => bytes.push(0x08),
+            Some('f') => bytes.push(0x0c),
+            Some('v') => bytes.push(0x0b),
+            Some(digit) if digit.is_ascii_digit() => {
+                let mut text = String::from(digit);
+                while text.len() < 3 && chars.peek().is_some_and(|next| next.is_ascii_digit()) {
+                    text.extend(chars.next());
+                }
+                bytes.extend(text.parse::<u8>().ok());
+            }
+            Some(other) => bytes.extend(other.encode_utf8(&mut [0; 4]).as_bytes()),
+            None => {}
+        }
+    }
+
+    String::from_utf8_lossy(&without_colour(&bytes)).into_owned()
+}
+
+fn without_colour(bytes: &[u8]) -> Vec<u8> {
+    let mut kept = Vec::with_capacity(bytes.len());
+    let mut rest = bytes;
+    while let Some((&first, tail)) = rest.split_first() {
+        if first == COLOUR {
+            rest = tail.get(3..).unwrap_or_default();
+            continue;
+        }
+        kept.push(first);
+        rest = tail;
+    }
+    kept
 }
 
 fn number(expression: &Expression) -> Option<f64> {
@@ -390,6 +459,31 @@ mod tests {
         let options = schema();
         // `tweakdefs1..9` come from a `for` loop we deliberately do not read.
         assert!(options.iter().all(|option| option.key != "tweakdefs1"));
+    }
+
+    #[test]
+    fn a_name_joined_with_two_dots_is_read_whole_without_its_colour_code() {
+        let options = schema();
+        // `"No Rush Time" .. "\255\128\128\128" .. " [minutes]"` in the file.
+        assert_eq!(find(&options, "norushtimer").name, "No Rush Time [minutes]");
+    }
+
+    #[test]
+    fn a_description_is_decoded_the_way_lua_would_read_it() {
+        let options = schema();
+        let desc = &find(&options, "norushtimer").desc;
+        assert!(desc.contains(".\nPLEASE NOTE"), "{desc:?}");
+        assert!(!desc.contains('\\'), "{desc:?}");
+        assert!(desc.contains("Raptors.\nWARNING"), "{desc:?}");
+    }
+
+    #[test]
+    fn escapes_and_colour_codes() {
+        assert_eq!(unescape(r"a\nb\tc\\d\65"), "a\nb\tc\\dA");
+        assert_eq!(unescape(r"red\255\255\0\0 text"), "red text");
+        assert_eq!(unescape(r#"it\'s \"q\""#), "it's \"q\"");
+        // A colour code cut short at the end of a literal takes nothing else.
+        assert_eq!(unescape(r"end\255\1"), "end");
     }
 
     #[test]

@@ -82,6 +82,10 @@ enum Outbound {
         area: Area,
         until: Instant,
     },
+    /// Drop what `area` still holds.
+    Cancel {
+        area: Area,
+    },
     Shutdown,
 }
 
@@ -163,6 +167,14 @@ impl Transport {
     pub async fn trip(&self, area: Area, until: Instant) -> Result<(), TransportError> {
         self.out
             .send(Outbound::Trip { area, until })
+            .await
+            .map_err(|_| TransportError::Closed)
+    }
+
+    /// Drops whatever is still queued for `area`; what has left is gone.
+    pub async fn cancel(&self, area: Area) -> Result<(), TransportError> {
+        self.out
+            .send(Outbound::Cancel { area })
             .await
             .map_err(|_| TransportError::Closed)
     }
@@ -267,6 +279,9 @@ async fn writer<W>(
                     scheduler.submit(envelope);
                 }
                 Some(Outbound::Trip { area, until }) => scheduler.trip(area, until),
+                Some(Outbound::Cancel { area }) => {
+                    scheduler.cancel(area);
+                }
                 Some(Outbound::Shutdown) | None => return,
             },
             _ = tokio::time::sleep(wakeup) => {}

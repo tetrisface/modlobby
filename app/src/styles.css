@@ -212,13 +212,14 @@ textarea {
   box-shadow: 0 0 0 1px var(--line);
 }
 
-.nav a.nav-room:hover {
-  box-shadow: 0 0 0 1px var(--muted);
+/* The links' active underline would land inside the card, and no other mark
+   is needed: the card is the room, and you are in it. */
+.nav a.nav-room.active {
+  box-shadow: 0 0 0 1px var(--line);
 }
 
-/* On the room page the ring is what the other links' underline is. */
-.nav a.nav-room.active {
-  box-shadow: 0 0 0 1px var(--accent);
+.nav a.nav-room:hover {
+  box-shadow: 0 0 0 1px var(--muted);
 }
 
 .nav-room-title {
@@ -1525,6 +1526,49 @@ body.resizing {
 
 /* One row by default: the pane is measured so they fit. Dragged narrower,
    they wrap onto a second row rather than scroll. */
+/* A paste on its way out, above the tabs so it pushes them down. */
+.paste-banner {
+  display: grid;
+  gap: 5px;
+  margin: 8px 14px 0;
+  padding: 7px 10px;
+  border: 1px solid rgba(88, 196, 255, 0.32);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.paste-banner.done {
+  border-color: rgba(95, 208, 138, 0.34);
+  background: color-mix(in srgb, var(--ok) 10%, transparent);
+}
+
+.paste-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--sunken);
+  overflow: hidden;
+}
+
+.paste-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.paste-cancel {
+  padding: 2px 9px;
+  font-size: 11px;
+}
+
+/* Steps, not glides: the bar moves when the host answers and not before. */
+.paste-bar > div {
+  height: 100%;
+  background: var(--accent);
+}
+
 .setup-tabs {
   display: flex;
   flex-wrap: wrap;

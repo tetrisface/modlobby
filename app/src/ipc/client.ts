@@ -67,6 +67,7 @@ export const api = {
   downloadEngine: (version: string) =>
     invoke<string>('download_engine', { version }),
   stopDownload: () => invoke<void>('stop_download'),
+  cancelPaste: () => invoke<void>('cancel_paste'),
   appVersion: () => invoke<VersionView>('app_version'),
   checkUpdate: () => invoke<UpdateProgress>('check_update'),
   installUpdate: () => invoke<UpdateProgress>('install_update'),

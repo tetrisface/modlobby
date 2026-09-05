@@ -198,6 +198,11 @@ function isChanged(option: ModOption, current: string): boolean {
   return current !== def
 }
 
+/** What a row is called: BAR's name, or the key when it has none. */
+export function label(option: ModOption): string {
+  return option.name || option.key
+}
+
 export function rowsOf(group: Group, values: Record<string, string>): Row[] {
   return group.options.map((option) => {
     const current = values[option.key] ?? null

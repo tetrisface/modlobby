@@ -4,6 +4,7 @@
 //! already queued becomes one `Deltas` message.
 
 use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::future::Future;
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
@@ -15,8 +16,8 @@ use std::time::{Duration, Instant};
 use content::DataDirs;
 use lobby_core::{Effect, Session, hosting};
 use lobby_ui::{
-    Batcher, Delta, DownloadStatus, EngineStatus, GameRunningView, Phase, Projector, Snapshot,
-    UiMessage, UiTransport,
+    Batcher, Delta, DownloadStatus, EngineStatus, GameRunningView, PasteStatus, Phase, Projector,
+    Snapshot, UiMessage, UiTransport,
 };
 use spring_protocol::battle::TooLong;
 use spring_protocol::policy::PolicyEvent;
@@ -132,6 +133,10 @@ enum Command {
         reply: Reply<()>,
     },
     StopDownload {
+        reply: Reply<()>,
+    },
+    /// Drops what is left of a paste in the queue.
+    CancelPaste {
         reply: Reply<()>,
     },
     Ring {
@@ -421,6 +426,11 @@ impl Client {
         self.ask(|reply| Command::StopDownload { reply }).await
     }
 
+    /// Stops a paste: what has not left the queue is dropped.
+    pub async fn cancel_paste(&self) -> Result<(), ClientError> {
+        self.ask(|reply| Command::CancelPaste { reply }).await
+    }
+
     /// Rings someone, which is how you tell a player the room is waiting.
     pub async fn ring(&self, user: String) -> Result<(), ClientError> {
         self.ask(|reply| Command::Ring { user, reply }).await
@@ -626,6 +636,8 @@ enum Next {
     Probe(Probe),
     Reconnect,
     Idle,
+    /// A paste's answers have dried up.
+    PasteQuiet,
 }
 
 /// Completes when a reconnection attempt falls due, and never when none is
@@ -687,6 +699,8 @@ struct Runtime {
     idle: idle::Idle,
     /// Carried across reconnects, since the session is rebuilt each time.
     allow_public_seat: bool,
+    /// A multi-line paste on its way out, counted down as its writes leave.
+    paste: Option<PasteProgress>,
     /// What a running pr-downloader was asked for, or `None` when none is.
     downloading: Option<String>,
     /// Stops the running child. Dropping it is what the child watches for.
@@ -732,26 +746,80 @@ enum DownloadEvent {
 const TAIL_LINES: usize = 3;
 
 /// Keeps `line` as one of the last few worth repeating: progress redraws and
-/// What to tell the reader about a paste that will take a while: how many
-/// lines, and roughly how long, so a quiet minute reads as pacing rather than
-/// a fault. Nothing for a paste that is out within a few seconds.
-fn paste_notice(policy: &ThrottlePolicy, effects: &[Effect]) -> Option<String> {
-    let envelopes: Vec<&Envelope> = effects
-        .iter()
-        .filter_map(|effect| match effect {
-            Effect::Send(envelope) => Some(envelope),
-            _ => None,
-        })
-        .collect();
-    let eta = policy.estimate(envelopes.iter().copied());
-    if eta < Duration::from_secs(5) {
-        return None;
+/// The lines a batch of effects would send.
+fn sends_in(effects: &[Effect]) -> impl Iterator<Item = &Envelope> {
+    effects.iter().filter_map(|effect| match effect {
+        Effect::Send(envelope) => Some(envelope),
+        _ => None,
+    })
+}
+
+/// A paste being sent, counted two ways: lines leaving the socket, and the
+/// host's answers coming back. The second is the one the reader waits on.
+#[derive(Debug, Clone)]
+struct PasteProgress {
+    total: u32,
+    sent: u32,
+    commands: u32,
+    applied: u32,
+    skipped: u32,
+    /// Bytes across the commands, and across those answered: the bar's unit,
+    /// since a tweak blob costs the host far more than a short `!bSet`.
+    work: u32,
+    done: u32,
+    /// The commands still awaiting an answer, by weight, in the order they
+    /// went out. SPADS answers in order, so each answer is the front one.
+    awaiting: VecDeque<u32>,
+    /// The last send or answer; a paste the host has gone quiet on ends
+    /// [`PASTE_QUIET`] after it.
+    last_activity: Instant,
+}
+
+/// How long after the last line left, with no answer from the host, a paste
+/// is called done anyway. Chat lines and commands SPADS answers with nothing
+/// would otherwise leave the bar hanging.
+const PASTE_QUIET: Duration = Duration::from_secs(8);
+
+impl PasteProgress {
+    fn status(&self) -> PasteStatus {
+        PasteStatus::Running {
+            total: self.total,
+            sent: self.sent,
+            commands: self.commands,
+            applied: self.applied,
+            skipped: self.skipped,
+            work: self.work,
+            done: self.done,
+        }
     }
-    Some(format!(
-        "sending {} lines, about {} s",
-        envelopes.len(),
-        eta.as_secs()
-    ))
+
+    fn done(&self, cancelled: bool) -> PasteStatus {
+        PasteStatus::Done {
+            total: self.total,
+            commands: self.commands,
+            applied: self.applied,
+            skipped: self.skipped,
+            cancelled,
+        }
+    }
+
+    fn answered(&self) -> bool {
+        self.sent >= self.total && self.awaiting.is_empty()
+    }
+
+    /// When to give up waiting for answers, if everything has left.
+    fn quiet_deadline(&self) -> Option<Instant> {
+        (self.sent >= self.total).then(|| self.last_activity + PASTE_QUIET)
+    }
+}
+
+/// Completes when a paste the host has stopped answering should be called
+/// done, and never while there is no paste or lines are still leaving.
+async fn sleep_until_paste_quiet(paste: &Option<PasteProgress>) {
+    match paste.as_ref().and_then(PasteProgress::quiet_deadline) {
+        Some(deadline) => tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)).await,
+        None => std::future::pending().await,
+    }
 }
 
 /// blank lines say nothing about a failure.
@@ -814,6 +882,7 @@ impl Runtime {
             reconnect: reconnect::Reconnect::default(),
             idle: idle::Idle::default(),
             allow_public_seat: false,
+            paste: None,
             downloading: None,
             download_stop: None,
             download_stopping: false,
@@ -1222,6 +1291,7 @@ impl Runtime {
                 Some(probe) = self.probe_rx.recv() => Next::Probe(probe),
                 () = sleep_until_due(&self.reconnect) => Next::Reconnect,
                 () = sleep_until_idle(&self.idle, connected) => Next::Idle,
+                () = sleep_until_paste_quiet(&self.paste) => Next::PasteQuiet,
             };
             match next {
                 Next::Command(Command::Shutdown) => {
@@ -1234,6 +1304,7 @@ impl Runtime {
                 Next::Probe(probe) => self.on_probe(probe).await,
                 Next::Reconnect => self.try_reconnect().await,
                 Next::Idle => self.on_idle().await,
+                Next::PasteQuiet => self.paste_quiet(),
                 Next::Inbound(inbound) => {
                     self.handle_inbound(inbound).await;
                     while let Some(more) = self.try_recv_inbound() {
@@ -1336,10 +1407,20 @@ impl Runtime {
                     }
                 };
                 match said {
-                    Ok(mut effects) => {
+                    Ok(effects) => {
                         let _ = reply.send(Ok(()));
-                        if let Some(notice) = paste_notice(&self.policy, &effects) {
-                            effects.push(Effect::Notice(notice));
+                        if let Some(Effect::PasteQueued { lines, skipped }) = effects
+                            .iter()
+                            .find(|effect| matches!(effect, Effect::PasteQueued { .. }))
+                        {
+                            let weights = sends_in(&effects)
+                                .filter(|envelope| {
+                                    envelope.line.starts_with("SAYBATTLE !")
+                                        || envelope.line.starts_with("SAYBATTLE $")
+                                })
+                                .map(|envelope| envelope.line.len() as u32)
+                                .collect();
+                            self.paste_started(*lines, weights, *skipped);
                         }
                         self.apply_effects(effects).await;
                     }
@@ -1386,6 +1467,10 @@ impl Runtime {
             Command::DownloadMissing { reply } => {
                 let result = self.start_download().await;
                 let _ = reply.send(result);
+            }
+            Command::CancelPaste { reply } => {
+                let answer = self.cancel_paste().await;
+                let _ = reply.send(answer);
             }
             Command::StopDownload { reply } => {
                 let stopped = self.download_stop.take().is_some();
@@ -1661,6 +1746,7 @@ impl Runtime {
                     pending,
                     wait,
                 } => tracing::debug!(?area, pending, ?wait, "throttled"),
+                PolicyEvent::Sent { area, lines, .. } => self.paste_sent(area, lines),
                 other => tracing::info!(?other, "policy"),
             },
             Inbound::Closed { reason } => self.connection_lost(reason),
@@ -1870,11 +1956,17 @@ impl Runtime {
                         });
                     }
                 }
+                Effect::BattleChat {
+                    ref from,
+                    ref text,
+                    announcement: true,
+                } if self.paste.is_some() => self.paste_answered(from, text),
                 // Projected into deltas; the runtime itself has nothing to do.
                 // Everything the projector turns into a delta on its own.
                 Effect::LoggedIn { .. }
                 | Effect::GameInProgress { .. }
                 | Effect::Notice(_)
+                | Effect::PasteQueued { .. }
                 | Effect::BattleChat { .. }
                 | Effect::PrivateChat { .. }
                 | Effect::ChannelChat { .. }
@@ -1947,6 +2039,10 @@ impl Runtime {
         self.conn = None;
         self.game = None;
         self.auto_launch = None;
+        // The scheduler went with the connection; what it held is not coming.
+        if self.paste.take().is_some() {
+            self.batcher.push(Delta::Paste(PasteStatus::Idle));
+        }
         let text = if self.reconnect.is_armed() {
             format!("connection lost: {reason} — trying again shortly")
         } else {
@@ -2107,7 +2203,7 @@ impl Runtime {
     }
 
     fn snapshot(&self) -> Snapshot {
-        match &self.conn {
+        let mut snapshot = match &self.conn {
             Some(conn) => Snapshot::from_state(
                 &conn.session.state,
                 self.game.as_ref().map(|g| g.view.clone()),
@@ -2117,7 +2213,126 @@ impl Runtime {
                 engine: self.engine_status,
                 ..Snapshot::disconnected()
             },
+        };
+        snapshot.paste = self
+            .paste
+            .as_ref()
+            .map_or(PasteStatus::Idle, PasteProgress::status);
+        snapshot
+    }
+
+    /// A paste has been handed to the scheduler; `weights` are the bytes of
+    /// its commands, in order. With nothing left to send it is done at once,
+    /// which is still worth showing: the reader pasted something and should
+    /// learn the room already had all of it.
+    fn paste_started(&mut self, lines: usize, weights: Vec<u32>, skipped: usize) {
+        let progress = PasteProgress {
+            total: lines as u32,
+            sent: 0,
+            commands: weights.len() as u32,
+            applied: 0,
+            skipped: skipped as u32,
+            work: weights.iter().sum(),
+            done: 0,
+            awaiting: weights.into(),
+            last_activity: Instant::now(),
+        };
+        if lines == 0 {
+            self.paste = None;
+            self.batcher.push(Delta::Paste(progress.done(false)));
+            return;
         }
+        self.batcher.push(Delta::Paste(progress.status()));
+        self.paste = Some(progress);
+    }
+
+    /// A battle-room write left. Any such write counts, so a `!vote` typed
+    /// mid-paste nudges the count a line early; it is clamped.
+    fn paste_sent(&mut self, area: Area, lines: usize) {
+        if !matches!(
+            area,
+            Area::BattleChat | Area::BattleCommand | Area::BattlePaste
+        ) {
+            return;
+        }
+        let Some(progress) = self.paste.as_mut() else {
+            return;
+        };
+        progress.sent = (progress.sent + lines as u32).min(progress.total);
+        progress.last_activity = Instant::now();
+        self.paste_report();
+    }
+
+    /// The host said something about a command: the oldest one still waiting
+    /// is answered.
+    fn paste_answered(&mut self, from: &str, text: &str) {
+        if self.paste.is_none() || !self.is_founder(from) {
+            return;
+        }
+        let me = self
+            .conn
+            .as_ref()
+            .and_then(|conn| conn.session.state.me.clone())
+            .unwrap_or_default();
+        if !lobby_core::spads::answers_command(text, &me) {
+            return;
+        }
+        let Some(progress) = self.paste.as_mut() else {
+            return;
+        };
+        if let Some(weight) = progress.awaiting.pop_front() {
+            progress.done += weight;
+            progress.applied += 1;
+        }
+        progress.last_activity = Instant::now();
+        self.paste_report();
+    }
+
+    /// Everything left and the host has said nothing for a while: done, with
+    /// whatever count it reached.
+    fn paste_quiet(&mut self) {
+        if let Some(progress) = self.paste.take() {
+            self.batcher.push(Delta::Paste(progress.done(false)));
+        }
+    }
+
+    /// Drops what the scheduler still holds of the paste. Lines already on
+    /// the wire are the host's now; their answers just stop being counted.
+    async fn cancel_paste(&mut self) -> Result<(), ClientError> {
+        let Some(progress) = self.paste.take() else {
+            return Err(ClientError::Refused("nothing is being pasted".into()));
+        };
+        if let Some(conn) = self.conn.as_ref() {
+            for area in [Area::BattlePaste, Area::BattleCommand, Area::BattleChat] {
+                conn.transport.cancel(area).await?;
+            }
+        }
+        self.batcher.push(Delta::Paste(progress.done(true)));
+        Ok(())
+    }
+
+    fn paste_report(&mut self) {
+        let finished = self.paste.as_ref().is_some_and(PasteProgress::answered);
+        let status = if finished {
+            self.paste.take().map(|progress| progress.done(false))
+        } else {
+            self.paste.as_ref().map(PasteProgress::status)
+        };
+        if let Some(status) = status {
+            self.batcher.push(Delta::Paste(status));
+        }
+    }
+
+    /// Whether `name` hosts the room we are in.
+    fn is_founder(&self, name: &str) -> bool {
+        self.conn.as_ref().is_some_and(|conn| {
+            let state = &conn.session.state;
+            state
+                .my_battle
+                .as_ref()
+                .and_then(|my| state.battles.get(&my.id))
+                .is_some_and(|battle| battle.founder == name)
+        })
     }
 
     /// A snapshot supersedes whatever deltas were waiting.
