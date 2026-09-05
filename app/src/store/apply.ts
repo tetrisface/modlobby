@@ -19,7 +19,16 @@ export function applyMessage(message: UiMessage): void {
   else for (const delta of message.data) applyDelta(delta)
 }
 
+/** Whether the first snapshot has landed: the last startup milestone. */
+let snapshotSeen = false
+
 export function applySnapshot(snapshot: Snapshot): void {
+  if (!snapshotSeen) {
+    snapshotSeen = true
+    console.debug(
+      `startup: first snapshot at ${Math.round(performance.now())} ms`,
+    )
+  }
   const next: LobbyState = {
     ...emptyLobby(),
     phase: snapshot.phase,

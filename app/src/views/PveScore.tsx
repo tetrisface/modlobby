@@ -12,6 +12,7 @@ import { api, describeError } from '../ipc/client'
 import { asker } from '../lib/asking'
 import { askDelay } from '../lib/stagger'
 import { lobby } from '../store/lobby'
+import { settings } from '../store/settings'
 
 /**
  * What BAR's PvE Stats service says this room scores.
@@ -80,6 +81,16 @@ function isPve(): boolean {
   return raptors || scavengers || names.includes('barb')
 }
 
+/**
+ * Whether the setting allows asking at all. Rust answers `null` when it is
+ * off, but that is a round trip and a row of dots for nothing; decided here
+ * too so an off switch shows nothing and sends nothing. On until the settings
+ * have arrived, which is the file's default.
+ */
+function enabled(): boolean {
+  return settings()?.play.pveStats ?? true
+}
+
 /** This client's place in the room's asking order, as a wait. */
 function myStagger(): number {
   const my = lobby.myBattle
@@ -133,8 +144,11 @@ export function PveScore() {
   // A memo, so a change that leaves the string as it was — someone toggling
   // ready, say — does not count as the room changing.
   const room = createMemo(fingerprint)
+  // The setting is part of the key: turning it on in a room asks once, and
+  // turning it off drops whatever was waiting to go out.
+  const watched = createMemo(() => (enabled() ? room() : undefined))
   createEffect(
-    on(room, (now, before) => {
+    on(watched, (now, before) => {
       clearTimeout(pending)
       if (now === undefined || !isPve()) return
       const sameRoom = before?.split('\n')[0] === now.split('\n')[0]
@@ -186,7 +200,7 @@ export function PveScore() {
   )
 
   return (
-    <Show when={isPve() && score() !== null}>
+    <Show when={enabled() && isPve() && score() !== null}>
       <div class='pve-score'>
         <span class='filter-label'>PvE</span>
 

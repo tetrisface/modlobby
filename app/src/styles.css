@@ -1524,6 +1524,18 @@ body.resizing {
   color: var(--faint);
 }
 
+/* Across every tab at once; the tabs stay where they were underneath it. */
+.setup-head .search {
+  width: 150px;
+  min-width: 0;
+  padding: 3px 8px;
+  font-size: 11.5px;
+}
+
+.setup-found {
+  flex: 1;
+}
+
 /* One row by default: the pane is measured so they fit. Dragged narrower,
    they wrap onto a second row rather than scroll. */
 /* A paste on its way out, above the tabs so it pushes them down. */
@@ -2646,6 +2658,18 @@ button.link:hover {
   min-height: 0;
 }
 
+/* The same table as a page: the pane's width was its constraint, so on a
+   page it is given one. */
+.presets-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 8px 16px;
+}
+
 .presets .toolbar {
   padding: 8px 14px;
 }
@@ -3271,11 +3295,32 @@ button.link {
 }
 
 .version {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
   font-family: var(--mono, monospace);
   font-size: 10px;
   color: var(--faint, var(--muted));
+  background: transparent;
+  border: none;
   letter-spacing: 0.02em;
   white-space: nowrap;
+  cursor: pointer;
+}
+
+.version:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.version:disabled {
+  cursor: default;
+}
+
+/* A newer version is out and a click fetches it: the one state the corner
+   is allowed to catch the eye in, and only by colour. */
+.version.available {
+  color: var(--accent);
 }
 
 .version.waiting {

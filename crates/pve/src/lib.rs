@@ -89,10 +89,41 @@ pub fn ai_type(ai_names: &[String]) -> Option<AiType> {
 /// What the room is, as the service wants to hear it.
 #[derive(Debug, Clone, Serialize)]
 pub struct Ask {
+    /// Which game this is, so the service can list it as one being played.
+    ///
+    /// The service records a live game only when a stats request names one
+    /// (`handlers/stats.rs`, `get_stats_observed`): 32 hex characters, or the
+    /// request is scored and nothing more. The in-game widget sends the
+    /// engine's `GameID`; a lobby has none before launch, so it sends
+    /// [`lobby_game_id`] instead.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub game_id: Option<String>,
     pub ai_type: &'static str,
     pub map: String,
     pub game_settings: BTreeMap<String, String>,
     pub encounter_context: Encounter,
+    /// Always `true` from a lobby. The service's own words: "Lobby clients set
+    /// this so transient empty player lists do not expand to every historical
+    /// player for the setting." Without it, every ask has the service compute
+    /// player stats for everyone who ever played the setup.
+    pub player_filter_requested: bool,
+}
+
+/// A game id for a room that has not started: stable for the room's life, so
+/// every ask from every client in it lands on the same live row.
+///
+/// Derived, not random, from what identifies the room on its server: host,
+/// battle id and founder. The same shape the service accepts for the engine's
+/// own id (32 lowercase hex), and different from it, so the widget's row for
+/// the game that follows is a second row and this one ages out on its own.
+pub fn lobby_game_id(host: &str, battle_id: u32, founder: &str) -> String {
+    let digest = Sha256::digest(format!("modlobby:{host}:{battle_id}:{founder}").as_bytes());
+    // 16 bytes as 32 hex digits; sha2 gives the bytes and no hex formatter.
+    digest
+        .iter()
+        .take(16)
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -527,6 +558,8 @@ mod tests {
             settings.insert(format!("tweakdefs{slot}"), "A".repeat(16_000));
         }
         let ask = Ask {
+            game_id: None,
+            player_filter_requested: true,
             ai_type: AiType::Raptors.as_str(),
             map: "Full Metal Plate 1.7".into(),
             game_settings: settings,
@@ -552,6 +585,8 @@ mod tests {
         // The distinction that decides whether a score comes back at all: a
         // room where nobody is handicapped is a list of 1.0, not an empty list.
         let ask = Ask {
+            game_id: None,
+            player_filter_requested: true,
             ai_type: AiType::Raptors.as_str(),
             map: "Comet Catcher Remake 1.8".into(),
             game_settings: BTreeMap::new(),
@@ -570,6 +605,8 @@ mod tests {
     #[test]
     fn nothing_about_a_person_is_in_what_we_send() {
         let ask = Ask {
+            game_id: None,
+            player_filter_requested: true,
             ai_type: AiType::Raptors.as_str(),
             map: "Comet Catcher Remake 1.8".into(),
             game_settings: BTreeMap::from([("raptor_endless".to_owned(), "1".to_owned())]),
@@ -597,6 +634,8 @@ mod tests {
         // between a score and "unplaced": the service derives its `Barbarian
         // Handicap` column from these and declines to place a room without it.
         let ask = Ask {
+            game_id: None,
+            player_filter_requested: true,
             ai_type: AiType::Barbarian.as_str(),
             map: "Comet Catcher Remake 1.8".into(),
             game_settings: BTreeMap::new(),
@@ -686,6 +725,8 @@ mod tests {
 
     fn ask() -> Ask {
         Ask {
+            game_id: Some(lobby_game_id("server4.beyondallreason.info", 7, "host")),
+            player_filter_requested: true,
             ai_type: AiType::Raptors.as_str(),
             map: "Comet Catcher Remake 1.8".into(),
             game_settings: BTreeMap::from([("raptor_endless".to_owned(), "1".to_owned())]),
@@ -720,14 +761,45 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_lobby_game_id_is_what_the_service_takes_for_one_and_stable() {
+        let id = lobby_game_id("server4.beyondallreason.info", 7, "host");
+        assert_eq!(id.len(), 32);
+        assert!(
+            id.bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+        );
+        assert_eq!(id, lobby_game_id("server4.beyondallreason.info", 7, "host"));
+        assert_ne!(id, lobby_game_id("server4.beyondallreason.info", 8, "host"));
+    }
+
+    #[test]
+    fn the_body_names_the_game_and_asks_for_no_player_expansion() {
+        let body = serde_json::to_value(ask()).unwrap();
+        assert_eq!(body["game_id"], ask().game_id.unwrap());
+        assert_eq!(body["player_filter_requested"], true);
+        let mut without = ask();
+        without.game_id = None;
+        assert!(
+            serde_json::to_value(without)
+                .unwrap()
+                .get("game_id")
+                .is_none()
+        );
+    }
+
     #[tokio::test]
     async fn the_same_setup_is_asked_about_once() {
-        use wiremock::matchers::{method, path};
+        use wiremock::matchers::{body_partial_json, method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/api/v1/stats"))
+            .and(body_partial_json(serde_json::json!({
+                "game_id": ask().game_id,
+                "player_filter_requested": true,
+            })))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "difficulty_histogram": {"current_difficulty": 21.5, "current_percentile": 88},
                 "difficulty_estimate": {"player_win_probability": 0.31, "evidence_games": 4200}

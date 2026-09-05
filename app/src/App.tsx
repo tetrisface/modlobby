@@ -2,7 +2,9 @@ import { A, HashRouter, Navigate, Route, useNavigate } from '@solidjs/router'
 import { listen } from '@tauri-apps/api/event'
 import {
   For,
+  Match,
   Show,
+  Switch,
   createEffect,
   createSignal,
   onCleanup,
@@ -10,6 +12,7 @@ import {
   type ParentProps,
 } from 'solid-js'
 import { Glyph, IconSprite } from './components/icons'
+import { Thinking } from './components/Thinking'
 import { NavRoom } from './components/NavRoom'
 import { PlayerMenu } from './components/PlayerMenu'
 import { connectChannel } from './ipc/channel'
@@ -17,14 +20,24 @@ import { ACTIVITY_EVENTS, activityReporter } from './lib/activity'
 import { clickLeavesOverlay, escapeLeavesOverlay } from './lib/overlay'
 import { api, describeError, errorCode } from './ipc/client'
 import type { Settings } from './ipc/bindings/Settings'
-import type { UpdateProgress } from './ipc/bindings/UpdateProgress'
 import type { VersionView } from './ipc/bindings/VersionView'
 import { chat, pushNotice } from './store/chat'
 import { lobby, myRoom } from './store/lobby'
 import { applySettings } from './store/settings'
+import {
+  available,
+  busy as updating,
+  checkUpdate,
+  downloading,
+  failure,
+  installUpdate,
+  waiting,
+  watchUpdates,
+} from './store/update'
 import { BattleList } from './views/BattleList'
 import { Chat } from './views/Chat'
 import { Login } from './views/Login'
+import { PresetsPage } from './views/PresetsPage'
 import { Replays } from './views/Replays'
 import { Room } from './views/Room'
 import { SettingsView } from './views/Settings'
@@ -41,6 +54,8 @@ type SettingsEvent = { changed: Settings } | { invalid: string }
 function Reconnect() {
   const navigate = useNavigate()
   const connecting = () => lobby.phase !== null
+  /** Learned from the runtime: there is nothing to reconnect with. */
+  const [needsLogin, setNeedsLogin] = createSignal(false)
 
   async function reconnect() {
     try {
@@ -48,11 +63,17 @@ function Reconnect() {
     } catch (error) {
       // Nothing to try again with: this run never logged in, or logged out.
       if (errorCode(error) === 'noCredentials') {
+        setNeedsLogin(true)
         navigate('/login')
         return
       }
       pushNotice('warning', describeError(error))
     }
+  }
+
+  const label = () => {
+    if (connecting()) return 'connecting'
+    return needsLogin() ? 'log in' : 'not logged in'
   }
 
   return (
@@ -64,7 +85,7 @@ function Reconnect() {
       onClick={() => void reconnect()}
     >
       <Glyph id='act-reconnect' />
-      {connecting() ? 'connecting' : 'not logged in'}
+      {label()}
     </button>
   )
 }
@@ -97,36 +118,32 @@ function Layout(props: ParentProps) {
   )
 
   /**
-   * Which build this is, in the corner where the brand is. It becomes the
-   * offer to restart into a newer one when an update was downloaded while a
-   * room or a game made installing it at once the wrong thing to do.
+   * Which build this is, in the corner where the brand is. Clicking it looks
+   * for a newer one; found, it becomes the offer to fetch and install it, and
+   * once downloaded with a room or a game in the way, the offer to restart.
    */
   const [version, setVersion] = createSignal<VersionView | null>(null)
-  const [update, setUpdate] = createSignal<UpdateProgress | null>(null)
   onMount(() => {
     void api
       .appVersion()
       .then(setVersion)
       .catch(() => {})
-    const pending = listen<UpdateProgress>('app-update', (event) =>
-      setUpdate(event.payload),
-    )
-    onCleanup(() => void pending.then((unlisten) => unlisten()))
+    onCleanup(watchUpdates())
   })
-  const waiting = () => {
-    const at = update()
-    return at?.phase === 'ready' ? at.version : null
-  }
-  const fetching = () => {
-    const at = update()
-    return at?.phase === 'checking' || at?.phase === 'downloading'
-  }
-  async function installUpdate() {
-    try {
-      await api.installUpdate()
-    } catch (error) {
-      pushNotice('error', describeError(error))
-    }
+  /** Why the last look failed, said in the tooltip for a while, not forever. */
+  const [failedFor, setFailedFor] = createSignal<string | null>(null)
+  createEffect(() => {
+    const reason = failure()
+    setFailedFor(reason)
+    if (reason === null) return
+    const timer = setTimeout(() => setFailedFor(null), 60_000)
+    onCleanup(() => clearTimeout(timer))
+  })
+  const versionTitle = () => {
+    if (updating()) return 'Looking for a newer version…'
+    const reason = failedFor()
+    if (reason) return `Could not look for an update: ${reason}`
+    return 'Version, and the commit it was built from. Click to look for a newer one.'
   }
 
   /** What the server says about us, which is what everyone else can see. */
@@ -283,8 +300,11 @@ function Layout(props: ParentProps) {
               </span>
             </Show>
           </A>
-          <A href='/replays'>Replays</A>
         </Show>
+        {/* Replays and presets are files on this machine, so they are here
+            whether or not anyone is logged in. */}
+        <A href='/replays'>Replays</A>
+        <A href='/presets'>Presets</A>
         <A href='/settings'>Settings</A>
         {/* The room you are in, at the end of the tabs. The spacer takes up
             its coming and going, so nothing else in the row moves. Gated on
@@ -301,33 +321,52 @@ function Layout(props: ParentProps) {
         <span class='version-slot'>
           <Show when={version()}>
             {(build) => (
-              <Show
-                when={waiting()}
+              <Switch
                 fallback={
-                  <span
-                    class='version'
-                    title={
-                      fetching()
-                        ? 'Looking for a newer version…'
-                        : 'Version, and the commit it was built from'
-                    }
-                  >
-                    {build().version}+{build().commit}
-                    {fetching() ? ' ↓' : ''}
-                  </span>
-                }
-              >
-                {(next) => (
                   <button
                     type='button'
-                    class='version waiting'
-                    title={`Version ${next()} is downloaded. Restart into it.`}
-                    onClick={() => void installUpdate()}
+                    class='version'
+                    title={versionTitle()}
+                    disabled={updating()}
+                    onClick={() => void checkUpdate()}
                   >
-                    {build().version} → {next()} ⟳
+                    {build().version}+{build().commit}
+                    <Show when={updating()}>
+                      <Thinking title='Looking for a newer version' />
+                    </Show>
                   </button>
-                )}
-              </Show>
+                }
+              >
+                <Match when={waiting()}>
+                  {(next) => (
+                    <button
+                      type='button'
+                      class='version waiting'
+                      title={`Version ${next()} is downloaded. Restart into it.`}
+                      onClick={() => void installUpdate()}
+                    >
+                      {build().version} → {next()} ⟳
+                    </button>
+                  )}
+                </Match>
+                <Match when={downloading() !== null}>
+                  <span class='version' title='Downloading the update'>
+                    {build().version} ↓ {downloading()}%
+                  </span>
+                </Match>
+                <Match when={available()}>
+                  {(next) => (
+                    <button
+                      type='button'
+                      class='version available'
+                      title={`Version ${next()} is out. Download and install it.`}
+                      onClick={() => void installUpdate()}
+                    >
+                      {build().version} ↑ {next()}
+                    </button>
+                  )}
+                </Match>
+              </Switch>
             )}
           </Show>
         </span>
@@ -466,6 +505,7 @@ export function App() {
       <Route path='/battles' component={BattleList} />
       <Route path='/chat' component={Chat} />
       <Route path='/replays' component={Replays} />
+      <Route path='/presets' component={PresetsPage} />
       <Route path='/skirmish' component={Skirmish} />
       <Route path='/room' component={Room} />
       {/* The tweak editor lives inside the room's setup pane, which is where

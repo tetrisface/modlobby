@@ -452,7 +452,7 @@
       "type": "object",
       "properties": {
         "automatic": {
-          "description": "Whether to fetch the newest release on startup and restart into it.\n\nOn, because an out-of-date lobby is one that quietly talks to a server\nthat has moved on, and startup is the one moment a restart costs\nnothing. An update found while a room is joined or a game is running\nwaits in the nav for a click, whatever this says.",
+          "description": "Whether to look for a newer release once a day, when the app opens.\n\nOn, because an out-of-date lobby is one that quietly talks to a server\nthat has moved on. Looking is one small request for the release\nmanifest and nothing is downloaded or installed by itself: a newer\nversion shows in the corner of the nav, and a click on it fetches and\ninstalls. Off, the corner still looks when clicked.",
           "type": "boolean",
           "default": true
         }

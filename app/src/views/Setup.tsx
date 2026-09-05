@@ -27,6 +27,7 @@ import {
   label,
   rowsByTab,
   rowsOf,
+  searchRows,
   tabs,
   type Changed,
   type Row,
@@ -135,6 +136,15 @@ export function Setup() {
     return found ? rowsOf(found, values()) : []
   })
 
+  /**
+   * A search across every tab. While it holds something the body is the
+   * matches, under the tab each lives in; the tab and group that were open
+   * are untouched, so clearing it lands where you were.
+   */
+  const [needle, setNeedle] = createSignal('')
+  const searching = () => needle().trim() !== ''
+  const found = createMemo(() => searchRows(TABS(), values(), needle()))
+
   function open(next: Tab) {
     setTabKey(next.key)
     setGroup(null)
@@ -214,6 +224,18 @@ export function Setup() {
           Presets
         </button>
         <Show when={pane() === 'setup'}>
+          <Show when={!editing()}>
+            <input
+              class='search'
+              placeholder='Search settings'
+              aria-label='Search settings'
+              value={needle()}
+              onInput={(event) => setNeedle(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') setNeedle('')
+              }}
+            />
+          </Show>
           <span class='note'>
             {editable()
               ? 'a change is proposed to the host'
@@ -232,9 +254,12 @@ export function Setup() {
         <div class='setup-tabs' ref={strip}>
           <button
             class='setup-tab'
-            classList={{ on: tab().key === ALL_TAB }}
+            classList={{ on: !searching() && tab().key === ALL_TAB }}
             title={ALL.desc}
-            onClick={() => open(ALL)}
+            onClick={() => {
+              setNeedle('')
+              open(ALL)
+            }}
           >
             {ALL.name}
             <Show when={total() > 0}>
@@ -248,11 +273,14 @@ export function Setup() {
                 <button
                   class='setup-tab'
                   classList={{
-                    on: tab().key === entry.key,
+                    on: !searching() && tab().key === entry.key,
                     ours: entry.key === MODDING_TAB,
                   }}
                   title={entry.desc}
-                  onClick={() => open(entry)}
+                  onClick={() => {
+                    setNeedle('')
+                    open(entry)
+                  }}
                 >
                   {entry.name}
                   <Show when={count() > 0}>
@@ -265,79 +293,93 @@ export function Setup() {
         </div>
 
         <Show when={!editing()} fallback={<Tweaks initial={editing()?.slot} />}>
-          <div class='setup-body'>
-            <nav class='groups'>
-              <Show
-                when={tab().key !== ALL_TAB}
-                fallback={
-                  <For each={everywhere()}>
+          <Show
+            when={!searching()}
+            fallback={
+              <div class='setup-detail setup-found'>
+                <Found
+                  found={found}
+                  needle={needle()}
+                  editable={editable()}
+                  onEdit={(slot) => setEditing({ slot })}
+                />
+              </div>
+            }
+          >
+            <div class='setup-body'>
+              <nav class='groups'>
+                <Show
+                  when={tab().key !== ALL_TAB}
+                  fallback={
+                    <For each={everywhere()}>
+                      {(entry) => (
+                        <button class='group' onClick={() => open(entry.tab)}>
+                          {entry.tab.name}
+                          <span class='c'>{entry.rows.length}</span>
+                        </button>
+                      )}
+                    </For>
+                  }
+                >
+                  <button
+                    class='group'
+                    classList={{ on: group() === null }}
+                    onClick={() => setGroup(null)}
+                  >
+                    Changed<span class='c'>{changed().length}</span>
+                  </button>
+                  <For each={tab().groups}>
                     {(entry) => (
-                      <button class='group' onClick={() => open(entry.tab)}>
-                        {entry.tab.name}
-                        <span class='c'>{entry.rows.length}</span>
+                      <button
+                        class='group'
+                        classList={{ on: group() === entry.name }}
+                        onClick={() => setGroup(entry.name)}
+                      >
+                        {entry.name || 'General'}
+                        <span class='c'>{entry.options.length}</span>
                       </button>
                     )}
                   </For>
-                }
-              >
-                <button
-                  class='group'
-                  classList={{ on: group() === null }}
-                  onClick={() => setGroup(null)}
-                >
-                  Changed<span class='c'>{changed().length}</span>
-                </button>
-                <For each={tab().groups}>
-                  {(entry) => (
-                    <button
-                      class='group'
-                      classList={{ on: group() === entry.name }}
-                      onClick={() => setGroup(entry.name)}
-                    >
-                      {entry.name || 'General'}
-                      <span class='c'>{entry.options.length}</span>
-                    </button>
-                  )}
-                </For>
-              </Show>
-            </nav>
+                </Show>
+              </nav>
 
-            <div class='setup-detail'>
-              <Switch>
-                <Match when={tab().key === ALL_TAB}>
-                  <Everywhere
-                    changed={everywhere}
-                    all={() => rowsByTab(TABS(), values(), false)}
-                    editable={editable()}
-                    onEdit={(slot) => setEditing({ slot })}
-                  />
-                </Match>
-                <Match when={group() === null}>
-                  <ChangedHere
-                    rows={changed}
-                    editable={editable()}
-                    onShowAll={() => setGroup(firstGroup())}
-                    onEdit={(slot) => setEditing({ slot })}
-                  />
-                </Match>
-                <Match
-                  when={tab().key === MODDING_TAB && group() === TWEAK_GROUP}
-                >
-                  <TweakSlots
-                    values={values()}
-                    onEdit={(slot) => setEditing({ slot })}
-                  />
-                </Match>
-                <Match when={true}>
-                  <Rows
-                    rows={shown()}
-                    editable={editable()}
-                    onEdit={(slot) => setEditing({ slot })}
-                  />
-                </Match>
-              </Switch>
+              <div class='setup-detail'>
+                <Switch>
+                  <Match when={tab().key === ALL_TAB}>
+                    <Everywhere
+                      changed={everywhere}
+                      all={() => rowsByTab(TABS(), values(), false)}
+                      editable={editable()}
+                      onEdit={(slot) => setEditing({ slot })}
+                    />
+                  </Match>
+                  <Match when={group() === null}>
+                    <ChangedHere
+                      rows={changed}
+                      editable={editable()}
+                      onShowAll={() => setGroup(firstGroup())}
+                      onEdit={(slot) => setEditing({ slot })}
+                    />
+                  </Match>
+                  <Match
+                    when={tab().key === MODDING_TAB && group() === TWEAK_GROUP}
+                  >
+                    <TweakSlots
+                      values={values()}
+                      onEdit={(slot) => setEditing({ slot })}
+                    />
+                  </Match>
+                  <Match when={true}>
+                    <Rows
+                      rows={shown()}
+                      editable={editable()}
+                      onEdit={(slot) => setEditing({ slot })}
+                    />
+                  </Match>
+                </Switch>
+              </div>
             </div>
-          </div>
+          </Show>
         </Show>
       </Show>
     </aside>
@@ -397,6 +439,41 @@ function Everywhere(props: {
         {unchanged() ? 'Hide unchanged' : 'Show unchanged'}
       </button>
     </>
+  )
+}
+
+/** What the search turned up, under the tab each row lives in. */
+function Found(props: {
+  found: Accessor<Changed[]>
+  needle: string
+  editable: boolean
+  onEdit: (slot: string) => void
+}) {
+  return (
+    <Show
+      when={props.found().length > 0}
+      fallback={
+        <p class='muted setup-empty'>
+          Nothing matches "{props.needle.trim()}".
+        </p>
+      }
+    >
+      <For each={props.found()}>
+        {(entry) => (
+          <>
+            <div class='setup-section'>
+              <span>{entry.tab.name}</span>
+              <span class='count'>{entry.rows.length}</span>
+            </div>
+            <Rows
+              rows={entry.rows}
+              editable={props.editable}
+              onEdit={props.onEdit}
+            />
+          </>
+        )}
+      </For>
+    </Show>
   )
 }
 

@@ -1,8 +1,10 @@
 import { cleanup, fireEvent, render } from '@solidjs/testing-library'
 import { invoke } from '@tauri-apps/api/core'
+import { reconcile } from 'solid-js/store'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { Book } from '../ipc/bindings/Book'
 import type { Preset } from '../ipc/bindings/Preset'
+import { emptyLobby, setLobby } from '../store/lobby'
 import { Presets } from './Presets'
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
@@ -62,13 +64,71 @@ function calls(command: string) {
     .map(([, args]) => args)
 }
 
+/** Puts us in room 7, which is what Save and Load need. */
+function enterRoom() {
+  const next = emptyLobby()
+  next.me = 'me'
+  next.battles[7] = {
+    id: 7,
+    founder: 'host',
+    ip: '',
+    port: 0,
+    maxPlayers: 16,
+    passworded: false,
+    locked: false,
+    mapHash: '',
+    mapName: 'Comet Catcher Remake 1.8',
+    engineName: 'spring',
+    engineVersion: '',
+    title: 'raptors',
+    gameName: 'BAR',
+    members: ['host', 'me'],
+    spectatorCount: 0,
+    playerCount: 1,
+    layout: null,
+    bots: [],
+    startRects: [],
+  }
+  next.myBattle = {
+    boss: null,
+    id: 7,
+    gameHash: '',
+    scriptTags: {},
+    vote: null,
+    history: [],
+  }
+  setLobby(reconcile(next))
+}
+
 beforeEach(() => {
   vi.mocked(invoke).mockReset()
   serve(BOOK)
+  enterRoom()
 })
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  setLobby(reconcile(emptyLobby()))
+})
 
 describe('Presets', () => {
+  test('without a room, Save and Load wait and the file actions do not', async () => {
+    setLobby(reconcile(emptyLobby()))
+    const { getByText } = render(() => <Presets />)
+    await settle()
+    const save = getByText('Save') as HTMLButtonElement
+    const load = getByText('Load') as HTMLButtonElement
+    expect(save.disabled).toBe(true)
+    expect(save.title).toBe('Join a room first')
+    fireEvent.click(getByText('raptors'))
+    expect(load.disabled).toBe(true)
+    expect((getByText('Export to Chobby') as HTMLButtonElement).disabled).toBe(
+      false,
+    )
+    expect(
+      (getByText('Import from Chobby') as HTMLButtonElement).disabled,
+    ).toBe(false)
+  })
+
   test('the toolbar reads Save, Load, Import from Chobby, Export to Chobby', async () => {
     const { container } = render(() => <Presets />)
     await settle()

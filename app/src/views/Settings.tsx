@@ -4,6 +4,7 @@ import type { Settings } from '../ipc/bindings/Settings'
 import { api, describeError } from '../ipc/client'
 import { pushNotice } from '../store/chat'
 import { applySettings, settings } from '../store/settings'
+import { busy as updating, checkUpdate } from '../store/update'
 
 /** Long enough that typing a hostname is one write rather than twelve. */
 const SAVE_AFTER = 600
@@ -54,28 +55,14 @@ export function SettingsView() {
   )
   const [state, setState] = createSignal<'clean' | 'saving' | 'saved'>('clean')
   const [tab, setTab] = createSignal<'general' | 'advanced'>('general')
-  const [checking, setChecking] = createSignal(false)
 
   /**
-   * The update check on demand. A newer version found with nothing to lose
-   * installs and restarts before this returns; otherwise say what happened,
+   * The look on demand, shared with the corner of the nav. Said here as well,
    * since a button that does nothing visible looks broken.
    */
   async function checkNow() {
-    setChecking(true)
-    try {
-      const outcome = await api.checkUpdate()
-      pushNotice(
-        'info',
-        outcome.phase === 'ready'
-          ? `Version ${outcome.version} is downloaded; the corner of the nav restarts into it.`
-          : 'This is the newest version.',
-      )
-    } catch (error) {
-      pushNotice('error', describeError(error))
-    } finally {
-      setChecking(false)
-    }
+    await checkUpdate()
+    pushNotice('info', 'Looked. The version in the corner says what was found.')
   }
 
   /** What is in the file, as far as we know. */
@@ -233,18 +220,19 @@ export function SettingsView() {
                 setDraft('updates', 'automatic', e.currentTarget.checked)
               }
             />
-            Update on startup
+            Look for a newer version once a day
           </label>
           <p class='muted'>
-            Fetches the newest release when the app opens and restarts into it
-            before you have logged in. Found while you are in a room or a game,
-            it waits in the corner of the nav for a click instead.{' '}
+            One small request when the app opens, at most once a day; nothing is
+            downloaded by itself. A newer version shows on the version in the
+            corner of the nav, and a click there fetches and installs it. In a
+            room or a game the install waits for a second click.{' '}
             <button
               type='button'
-              disabled={checking()}
+              disabled={updating()}
               onClick={() => void checkNow()}
             >
-              {checking() ? 'Looking…' : 'Check now'}
+              {updating() ? 'Looking…' : 'Check now'}
             </button>
           </p>
         </fieldset>
@@ -582,12 +570,13 @@ export function SettingsView() {
                 setDraft('play', 'pveStats', e.currentTarget.checked)
               }
             />
-            Show what a PvE room scores
+            Show what a PvE room scores (pve.bar)
           </label>
           <p class='muted'>
             Asks BAR's PvE Stats service — the one the in-game widget uses — for
-            a challenge score and win chance. Sends the map, the settings and
-            the team size; never a name or an account.
+            a challenge score and win chance, and lists the room among the games
+            being played. Sends the map, the settings and the team size; never a
+            name or an account. Off hides the panel and sends nothing.
           </p>
 
           <label class='row'>

@@ -6,8 +6,10 @@ import type { BattleView } from '../ipc/bindings/BattleView'
 import type { BotView } from '../ipc/bindings/BotView'
 import type { Score } from '../ipc/bindings/Score'
 import type { UserView } from '../ipc/bindings/UserView'
+import type { Settings } from '../ipc/bindings/Settings'
 import { STAGGER_STEP } from '../lib/stagger'
 import { emptyLobby, setLobby } from '../store/lobby'
+import { setSettingsSignal } from '../store/settings'
 import { PveScore, QUIET_FOR } from './PveScore'
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
@@ -144,7 +146,13 @@ describe('PveScore', () => {
     cleanup()
     vi.useRealTimers()
     setLobby(reconcile(emptyLobby()))
+    setSettingsSignal(null)
   })
+
+  /** The settings file with the one field this panel reads set. */
+  function pveStats(on: boolean) {
+    setSettingsSignal({ play: { pveStats: on } } as unknown as Settings)
+  }
 
   test('every figure shows dots in its own slot while the service is asked', () => {
     asked.mockReturnValue(deferred<Score>().promise)
@@ -282,5 +290,30 @@ describe('PveScore', () => {
     vi.advanceTimersByTime(0)
     await settle()
     expect(container.querySelector('.pve-score')).toBeNull()
+  })
+
+  test('with the setting off nothing is asked and nothing is drawn', () => {
+    pveStats(false)
+    asked.mockResolvedValue(scored)
+    enter([bot('RaptorsAI')])
+    const { container } = render(() => <PveScore />)
+    vi.advanceTimersByTime(STAGGER_STEP)
+    expect(asked).not.toHaveBeenCalled()
+    expect(container.querySelector('.pve-score')).toBeNull()
+  })
+
+  test('turning the setting on in a room asks once', async () => {
+    pveStats(false)
+    asked.mockResolvedValue(scored)
+    enter([bot('RaptorsAI')])
+    const { container } = render(() => <PveScore />)
+    vi.advanceTimersByTime(0)
+    expect(asked).not.toHaveBeenCalled()
+
+    pveStats(true)
+    vi.advanceTimersByTime(0)
+    await settle()
+    expect(asked).toHaveBeenCalledTimes(1)
+    expect(container.querySelector('.pve-score')).not.toBeNull()
   })
 })

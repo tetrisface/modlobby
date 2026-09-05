@@ -5,11 +5,12 @@
  */
 export type Updates = { 
 /**
- * Whether to fetch the newest release on startup and restart into it.
+ * Whether to look for a newer release once a day, when the app opens.
  *
  * On, because an out-of-date lobby is one that quietly talks to a server
- * that has moved on, and startup is the one moment a restart costs
- * nothing. An update found while a room is joined or a game is running
- * waits in the nav for a click, whatever this says.
+ * that has moved on. Looking is one small request for the release
+ * manifest and nothing is downloaded or installed by itself: a newer
+ * version shows in the corner of the nav, and a click on it fetches and
+ * installs. Off, the corner still looks when clicked.
  */
 automatic: boolean, };

@@ -10,6 +10,7 @@ import {
   displayText,
   readModOptions,
   rowsOf,
+  searchRows,
   tabs,
   type Tab,
 } from './setup'
@@ -167,6 +168,67 @@ describe('changes against BAR defaults', () => {
     const modding = all.find((entry) => entry.tab.key === MODDING_TAB)!
     expect(modding.rows.filter(isTweakSlot)).toHaveLength(20)
     expect(cheats.rows.some(isTweakSlot)).toBe(false)
+  })
+})
+
+describe('search', () => {
+  const keys = (found: ReturnType<typeof searchRows>) =>
+    found.flatMap((entry) => entry.rows.map((row) => row.option.key))
+
+  test('an empty needle finds nothing, whitespace included', () => {
+    expect(searchRows(TABS, {}, '')).toEqual([])
+    expect(searchRows(TABS, {}, '   ')).toEqual([])
+  })
+
+  // The fixture names every option after its key and describes none, so the
+  // name and description rules get a tab of their own.
+  const named: Tab = {
+    key: 'named',
+    name: 'Named',
+    desc: '',
+    groups: [
+      {
+        name: '',
+        options: [
+          {
+            key: 'startmetal',
+            name: 'Starting Metal',
+            desc: 'Metal each player starts with.',
+            type: 'number',
+            def: '1000',
+          },
+          { key: 'other', name: 'Other', desc: '', type: 'bool', def: '0' },
+        ],
+      },
+    ],
+  }
+
+  test('matches a word of the name, in any case', () => {
+    const found = searchRows([named], {}, 'STARTING METAL')
+    expect(keys(found)).toEqual(['startmetal'])
+    expect(found.map((entry) => entry.tab.name)).toEqual(['Named'])
+  })
+
+  test('matches the key when the name says something else', () => {
+    expect(keys(searchRows(TABS, {}, 'multiplier_buildpower'))).toEqual([
+      'multiplier_buildpower',
+    ])
+  })
+
+  test('matches the description', () => {
+    expect(keys(searchRows([named], {}, 'each player'))).toEqual(['startmetal'])
+  })
+
+  test('every word has to match', () => {
+    expect(keys(searchRows(TABS, {}, 'start metal'))).toContain('startmetal')
+    expect(keys(searchRows(TABS, {}, 'start metal zzzz'))).toEqual([])
+  })
+
+  test('a tweak slot is found by its key', () => {
+    const found = searchRows(TABS, { tweakunits2: 'e30=' }, 'tweakunits2')
+    expect(keys(found)).toEqual(['tweakunits2'])
+    expect(found[0]?.tab.key).toBe(MODDING_TAB)
+    expect(found[0]?.rows[0]?.changed).toBe(true)
   })
 })
 

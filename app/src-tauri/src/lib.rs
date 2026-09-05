@@ -84,14 +84,29 @@ impl ingame::Actions for InGameActions {
     }
 }
 
+/// When `run` began, for the `startup:` milestones in the log.
+static STARTED: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+
+/// Milliseconds since the process began starting up.
+pub(crate) fn since_start() -> u128 {
+    STARTED
+        .get()
+        .map(|started| started.elapsed().as_millis())
+        .unwrap_or(0)
+}
+
 pub fn run() {
+    let started = *STARTED.get_or_init(std::time::Instant::now);
     // Before anything reads the environment: the config dir and the update
     // switch both come from it. A dev run finds the repo's `.env` by walking
     // up from the working directory; an installed app has none and skips it.
     let dotenv = dotenvy::dotenv();
     let app = state::App::open().unwrap_or_else(|err| panic!("starting modlobby: {err}"));
+    let opened = started.elapsed().as_millis();
     // Held for the life of the process: dropping it stops the file writer.
     let _logging = logging::start(app.settings.dir(), &app.settings.get().logging.filter);
+    tracing::debug!(ms = opened, "startup: app opened");
+    tracing::debug!(ms = since_start(), "startup: logging up");
     match dotenv {
         Ok(path) => tracing::info!(path = %path.display(), "loaded .env"),
         Err(err) if err.not_found() => {}
@@ -219,11 +234,12 @@ pub fn run() {
             let check_updates = app.settings.get().updates.automatic && update::enabled();
             tauri_app.manage(update::Staged::default());
             tauri_app.manage(app);
-            // Before anyone has logged in, which is the one moment a restart
-            // costs nothing; a room joined first makes it wait for a click.
+            // A look, not a download: one small request when it is due, and
+            // the corner of the nav says what it found.
             if check_updates {
-                tauri::async_runtime::spawn(update::at_startup(tauri_app.handle().clone()));
+                tauri::async_runtime::spawn(update::daily(tauri_app.handle().clone()));
             }
+            tracing::debug!(ms = since_start(), "startup: setup done");
             Ok(())
         })
         .register_asynchronous_uri_scheme_protocol(thumbs::SCHEME, thumbs::serve)

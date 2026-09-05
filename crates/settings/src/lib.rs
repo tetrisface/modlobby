@@ -8,6 +8,7 @@ pub mod file;
 pub mod login_guard;
 pub mod model;
 pub mod rejoin;
+pub mod update_memory;
 pub mod watch;
 
 pub use credentials::{CredentialError, CredentialStore, KeyringStore, MemoryStore};
@@ -15,4 +16,5 @@ pub use file::{Error, Store, config_dir};
 pub use login_guard::{LoginGuard, LoginState, is_flood_refusal};
 pub use model::Settings;
 pub use rejoin::RejoinMemory;
+pub use update_memory::UpdateMemory;
 pub use watch::SettingsEvent;

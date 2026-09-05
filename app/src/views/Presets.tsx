@@ -20,6 +20,7 @@ import {
   when,
 } from '../lib/presets'
 import { pushNotice } from '../store/chat'
+import { myRoom } from '../store/lobby'
 
 /**
  * The columns the pane has room for. Settings and Created are still sortable
@@ -102,6 +103,13 @@ export function Presets() {
   )
   const selected = () => rows().find((preset) => preset.name === chosen())
 
+  /**
+   * Saving reads a room and loading writes to one, so both need one. The
+   * rest -- import, export, rename, delete -- is the file, and the table is
+   * reachable from the nav with nobody logged in.
+   */
+  const inRoom = () => myRoom() !== undefined
+
   function head(next: Column) {
     if (next === column()) return setDescending(!descending())
     setColumn(next)
@@ -181,16 +189,20 @@ export function Presets() {
           onInput={(event) => setNeedle(event.currentTarget.value)}
         />
         <button
-          disabled={busy()}
-          title='Save this room as a preset'
+          disabled={busy() || !inRoom()}
+          title={inRoom() ? 'Save this room as a preset' : 'Join a room first'}
           onClick={() => setAsking({ kind: 'save' })}
         >
           Save
         </button>
         <button
           class='primary'
-          disabled={busy() || !selected()}
-          title='Apply the selected preset to this room'
+          disabled={busy() || !selected() || !inRoom()}
+          title={
+            inRoom()
+              ? 'Apply the selected preset to this room'
+              : 'Join a room first'
+          }
           onClick={() => {
             const preset = selected()
             if (preset) void load(preset)

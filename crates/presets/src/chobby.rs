@@ -207,6 +207,12 @@ fn entry(preset: &Preset) -> Value {
 /// window has never seen, and a preset is somebody's evening of tuning. A name
 /// we also have wins, because that is what exporting means; every other entry
 /// is left exactly as it was found, byte-identical for anything untouched.
+///
+/// One line, always. Chobby reads the file with `modfile:read()` and no
+/// format (`gui_optionpresets_panel.lua:77`), which in Lua is the line
+/// format: it gets the first line and nothing else. A pretty-printed file
+/// hands it `{`, the decode fails, and Chobby moves the whole file aside as
+/// `optionsPresetsError:<time>.json`.
 pub fn merge_into(existing: &str, presets: &[Preset]) -> Result<String, serde_json::Error> {
     let mut file: Value = if existing.trim().is_empty() {
         Value::Object(Map::new())
@@ -224,7 +230,7 @@ pub fn merge_into(existing: &str, presets: &[Preset]) -> Result<String, serde_js
     for preset in presets {
         table.insert(preset.name.clone(), entry(preset));
     }
-    serde_json::to_string_pretty(&file)
+    serde_json::to_string(&file)
 }
 
 #[cfg(test)]
@@ -324,6 +330,14 @@ mod tests {
         assert_eq!(boxes.len(), 2);
         assert_eq!(boxes[0]["right"], Value::String("200".into()));
         assert_eq!(boxes[1]["left"], Value::String("80".into()));
+    }
+
+    #[test]
+    fn exported_file_is_one_line_because_chobby_reads_one_line() {
+        let presets = read(SAMPLE, 100).unwrap();
+        let merged = merge_into("{}", &presets).unwrap();
+        assert!(!merged.contains('\n'), "{merged}");
+        assert!(!merged.contains('\r'), "{merged}");
     }
 
     #[test]

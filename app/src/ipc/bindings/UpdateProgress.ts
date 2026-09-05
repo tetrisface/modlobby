@@ -3,4 +3,4 @@
 /**
  * How far along an update is. Emitted on the `app-update` event.
  */
-export type UpdateProgress = { "phase": "checking" } | { "phase": "upToDate" } | { "phase": "downloading", got: number, total: number, } | { "phase": "ready", version: string, } | { "phase": "failed", reason: string, };
+export type UpdateProgress = { "phase": "checking" } | { "phase": "upToDate" } | { "phase": "available", version: string, } | { "phase": "downloading", got: number, total: number, } | { "phase": "ready", version: string, } | { "phase": "failed", reason: string, };

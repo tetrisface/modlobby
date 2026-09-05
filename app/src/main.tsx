@@ -19,3 +19,5 @@ captureConsole()
 const root = document.getElementById('root')
 if (!root) throw new Error('missing #root')
 render(() => <App />, root)
+// A startup milestone, to read beside Rust's `startup:` lines.
+console.debug(`startup: first render at ${Math.round(performance.now())} ms`)

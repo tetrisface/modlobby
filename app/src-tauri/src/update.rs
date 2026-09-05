@@ -1,9 +1,13 @@
-//! Keeping the app current.
+//! Keeping the app current, without getting in the way of opening it.
 //!
-//! At startup, when the setting says so, the newest release is fetched and
-//! handed to the installer before anyone has logged in — the one moment a
-//! restart costs nothing. Found later, with a room joined or a game running,
-//! the download waits as [`Staged`] and the nav offers it instead.
+//! Looking and installing are two steps with a click between them. The look
+//! is one small request for the release manifest, made once a day when the
+//! app opens (if the setting allows) or whenever the version in the corner of
+//! the nav is clicked; it downloads nothing. A newer version found becomes
+//! that corner's offer. Taking the offer downloads the installer and installs
+//! it at once, unless a room is joined or a game is running, in which case
+//! the download waits as [`Pending::Downloaded`] and the corner offers the
+//! restart instead.
 //!
 //! The installer does the restart: on Windows `install` hands over to NSIS
 //! and exits this process, and NSIS relaunches the app with the arguments it
@@ -11,6 +15,7 @@
 //! the restart is asked for here. Nothing runs after a successful install.
 
 use std::sync::Mutex;
+use std::time::{Duration, SystemTime};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -45,6 +50,11 @@ pub fn app_version() -> VersionView {
 pub enum UpdateProgress {
     Checking,
     UpToDate,
+    /// A newer release exists and nothing has been fetched: the corner's offer
+    /// to download and install it.
+    Available {
+        version: String,
+    },
     Downloading {
         #[ts(type = "number")]
         got: u64,
@@ -52,7 +62,7 @@ pub enum UpdateProgress {
         total: u64,
     },
     /// Downloaded and waiting: a room is joined or a game is running, so
-    /// installing now would pull the floor out. The nav offers it instead.
+    /// installing now would pull the floor out. The corner offers the restart.
     Ready {
         version: String,
     },
@@ -61,14 +71,23 @@ pub enum UpdateProgress {
     },
 }
 
-/// A downloaded update, waiting for a moment when restarting costs nothing.
+/// An update the look found, and what has been done about it so far.
+enum Pending {
+    Found(Update),
+    Downloaded(Update, Vec<u8>),
+}
+
+/// The update between the look and the install.
 #[derive(Default)]
-pub struct Staged(Mutex<Option<(Update, Vec<u8>)>>);
+pub struct Staged(Mutex<Option<Pending>>);
+
+/// How often the app looks on its own.
+pub const EVERY: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// Whether this build may update itself. Unset means yes; `0`, `false`,
-/// `off` or `no` means no startup check, and the on-demand check says why
-/// it will not look. For a build that has to stay put — a local one behind
-/// the released version, or one under test.
+/// `off` or `no` means no look at all, and the on-demand look says why it
+/// will not. For a build that has to stay put — a local one behind the
+/// released version, or one under test.
 pub const AUTO_UPDATE_ENV: &str = "MODLOBBY_AUTO_UPDATE";
 
 pub fn enabled() -> bool {
@@ -87,10 +106,10 @@ fn allows(value: Option<std::ffi::OsString>) -> bool {
 /// is tens of megabytes, so a megabyte is a visible step.
 const REPORT_EVERY: u64 = 1024 * 1024;
 
-/// Looks for a newer release and downloads it. Installs it at once unless a
-/// room or a game would be lost, in which case it is staged and the answer
-/// says so. Returns only when there is nothing to install: a successful
-/// install ends the process.
+/// Looks for a newer release. Downloads nothing: the answer is `Available`
+/// with the version, `UpToDate`, or `Ready` when that version has already
+/// been downloaded and is waiting for a restart. A completed look is
+/// remembered so the daily one knows when it is due.
 #[tauri::command]
 pub async fn check_update(
     app: State<'_, App>,
@@ -107,20 +126,29 @@ pub async fn check_update(
     let say = |progress: UpdateProgress| {
         let _ = handle.emit("app-update", progress);
     };
+    say(UpdateProgress::Checking);
 
-    let outcome = async {
-        say(UpdateProgress::Checking);
-        let Some((update, bytes)) = fetch(&handle, &say).await? else {
-            return Ok(UpdateProgress::UpToDate);
-        };
-        if busy(&app).await {
-            let version = update.version.clone();
-            *staged.0.lock().expect("staged update") = Some((update, bytes));
-            return Ok(UpdateProgress::Ready { version });
+    let outcome = look(&handle).await.map(|found| {
+        app.update_memory.record(SystemTime::now());
+        let mut held = staged.0.lock().expect("staged update");
+        match (found, held.take()) {
+            (None, _) => UpdateProgress::UpToDate,
+            // The same version already downloaded and waiting: nothing to
+            // fetch again, and the restart is still the offer.
+            (Some(update), Some(Pending::Downloaded(done, bytes)))
+                if done.version == update.version =>
+            {
+                let version = done.version.clone();
+                *held = Some(Pending::Downloaded(done, bytes));
+                UpdateProgress::Ready { version }
+            }
+            (Some(update), _) => {
+                let version = update.version.clone();
+                *held = Some(Pending::Found(update));
+                UpdateProgress::Available { version }
+            }
         }
-        install(&handle, &update, &bytes)
-    }
-    .await;
+    });
 
     match &outcome {
         Ok(progress) => say(progress.clone()),
@@ -131,20 +159,68 @@ pub async fn check_update(
     outcome
 }
 
-/// Installs what [`check_update`] staged. The nav's offer, taken.
+/// Takes the corner's offer: downloads what the look found and installs it,
+/// or stages it as `Ready` when a room or a game would be lost. Installs at
+/// once what an earlier click already downloaded. Returns only when there is
+/// nothing to install: a successful install ends the process.
 #[tauri::command]
-pub fn install_update(staged: State<'_, Staged>, handle: AppHandle) -> Result<UpdateProgress> {
+pub async fn install_update(
+    app: State<'_, App>,
+    staged: State<'_, Staged>,
+    handle: AppHandle,
+) -> Result<UpdateProgress> {
     let taken = staged.0.lock().expect("staged update").take();
-    let Some((update, bytes)) = taken else {
-        return Err(ApiError::new("update", "no update has been downloaded"));
+    let Some(pending) = taken else {
+        return Err(ApiError::new(
+            "update",
+            "no update has been found; look for one first",
+        ));
     };
-    install(&handle, &update, &bytes)
+
+    let say = |progress: UpdateProgress| {
+        let _ = handle.emit("app-update", progress);
+    };
+
+    let (update, bytes) = match pending {
+        Pending::Downloaded(update, bytes) => (update, bytes),
+        Pending::Found(update) => match download(&update, &say).await {
+            Ok(bytes) => (update, bytes),
+            Err(err) => {
+                // Still found, still on offer; the next click tries again.
+                *staged.0.lock().expect("staged update") = Some(Pending::Found(update));
+                say(UpdateProgress::Failed {
+                    reason: err.message.clone(),
+                });
+                return Err(err);
+            }
+        },
+    };
+
+    if busy(&app).await {
+        let version = update.version.clone();
+        *staged.0.lock().expect("staged update") = Some(Pending::Downloaded(update, bytes));
+        let progress = UpdateProgress::Ready { version };
+        say(progress.clone());
+        return Ok(progress);
+    }
+
+    let outcome = install(&handle, &update, &bytes);
+    if let Err(err) = &outcome {
+        say(UpdateProgress::Failed {
+            reason: err.message.clone(),
+        });
+    }
+    outcome
 }
 
-/// The startup check, when the setting asks for one. Quiet about being
-/// offline: an update is not something to be told about failing to look for.
-pub async fn at_startup(handle: AppHandle) {
+/// The daily look, when it is due. Quiet about being offline: an update is
+/// not something to be told about failing to look for.
+pub async fn daily(handle: AppHandle) {
     let app = handle.state::<App>();
+    if !app.update_memory.due(SystemTime::now(), EVERY) {
+        tracing::debug!("update check: looked within the day, not again");
+        return;
+    }
     let staged = handle.state::<Staged>();
     match check_update(app, staged, handle.clone()).await {
         Ok(progress) => tracing::info!(?progress, "update check"),
@@ -152,24 +228,22 @@ pub async fn at_startup(handle: AppHandle) {
     }
 }
 
-async fn fetch(
-    handle: &AppHandle,
-    say: &impl Fn(UpdateProgress),
-) -> Result<Option<(Update, Vec<u8>)>> {
+/// The release manifest, compared with this build. One small request.
+async fn look(handle: &AppHandle) -> Result<Option<Update>> {
     let updater = handle
         .updater()
         .map_err(|err| ApiError::new("update", err.to_string()))?;
-    let Some(update) = updater
+    updater
         .check()
         .await
-        .map_err(|err| ApiError::new("update", format!("looking for a release: {err}")))?
-    else {
-        return Ok(None);
-    };
+        .map_err(|err| ApiError::new("update", format!("looking for a release: {err}")))
+}
 
+async fn download(update: &Update, say: &impl Fn(UpdateProgress)) -> Result<Vec<u8>> {
     let mut got = 0_u64;
     let mut reported = 0_u64;
-    let bytes = update
+    say(UpdateProgress::Downloading { got: 0, total: 0 });
+    update
         .download(
             |chunk, total| {
                 got += chunk as u64;
@@ -182,8 +256,7 @@ async fn fetch(
             || {},
         )
         .await
-        .map_err(|err| ApiError::new("update", format!("fetching {}: {err}", update.version)))?;
-    Ok(Some((update, bytes)))
+        .map_err(|err| ApiError::new("update", format!("fetching {}: {err}", update.version)))
 }
 
 /// Whether restarting now would take something away: a room we are in, a

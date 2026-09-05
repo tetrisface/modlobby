@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use lobby_runtime::{Client, Hardware, platform};
-use settings::{CredentialStore, KeyringStore, LoginGuard, RejoinMemory, Store};
+use settings::{CredentialStore, KeyringStore, LoginGuard, RejoinMemory, Store, UpdateMemory};
 use spring_protocol::ThrottlePolicy;
 
 pub struct App {
@@ -16,6 +16,8 @@ pub struct App {
     pub login_guard: LoginGuard,
     /// The room to offer back after a restart.
     pub rejoin: RejoinMemory,
+    /// When a newer release was last looked for.
+    pub update_memory: UpdateMemory,
     /// Saved room setups, next to the settings they sit beside.
     pub presets: presets::Store,
     /// The one client every HTTP request leaves through: pooled, and named.
@@ -50,6 +52,7 @@ impl App {
         Ok(Self {
             login_guard: LoginGuard::new(settings.dir()),
             rejoin: RejoinMemory::new(settings.dir()),
+            update_memory: UpdateMemory::new(settings.dir()),
             presets: presets::Store::new(settings.dir()),
             client,
             settings,

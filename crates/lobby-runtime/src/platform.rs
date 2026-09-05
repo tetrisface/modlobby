@@ -3,7 +3,7 @@
 //! and the telemetry `machine_hash`.
 
 use spring_protocol::hash;
-use sysinfo::{Networks, System};
+use sysinfo::{CpuRefreshKind, MemoryRefreshKind, Networks, RefreshKind, System};
 
 #[derive(Debug, Clone)]
 pub struct Hardware {
@@ -24,7 +24,14 @@ impl Hardware {
 }
 
 pub fn detect() -> Hardware {
-    let system = System::new_all();
+    // Only the CPU list and the RAM total are read. `new_all` would also walk
+    // every process, disk and interface, which is what made this the slowest
+    // step of opening the app.
+    let system = System::new_with_specifics(
+        RefreshKind::nothing()
+            .with_cpu(CpuRefreshKind::nothing())
+            .with_memory(MemoryRefreshKind::nothing().with_ram()),
+    );
     let os = format!(
         "{} {}",
         System::name().unwrap_or_default(),

@@ -235,6 +235,30 @@ export function rowsByTab(
     .filter((entry) => entry.rows.length > 0)
 }
 
+/**
+ * Every setting whose name, key or description carries every word of the
+ * needle, by the tab it lives in. Nothing for an empty needle: that is the
+ * tabs' job. Tweak slots have only a key, which is what people type for them.
+ */
+export function searchRows(
+  tabs: Tab[],
+  values: Record<string, string>,
+  needle: string,
+): Changed[] {
+  const words = needle.toLowerCase().split(/\s+/).filter(Boolean)
+  if (words.length === 0) return []
+  return rowsByTab(tabs, values, false)
+    .map((entry) => ({
+      tab: entry.tab,
+      rows: entry.rows.filter((row) => {
+        const haystack =
+          `${label(row.option)} ${row.option.key} ${row.option.desc ?? ''}`.toLowerCase()
+        return words.every((word) => haystack.includes(word))
+      }),
+    }))
+    .filter((entry) => entry.rows.length > 0)
+}
+
 /** Every setting that differs from BAR's default, by the tab it lives in. */
 export function changedByTab(
   tabs: Tab[],

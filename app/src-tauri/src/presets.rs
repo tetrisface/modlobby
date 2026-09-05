@@ -216,6 +216,15 @@ pub async fn pve_score(app: State<'_, App>) -> Result<Option<pve::Score>> {
     };
 
     let ask = pve::Ask {
+        // What lists the room as a game being played. Answers the service
+        // already gave are memoised by body, so a room that stops changing
+        // stops refreshing its row; the row expires on the service's own
+        // clock, which is what a lobby that went quiet should do.
+        game_id: Some(pve::lobby_game_id(
+            &app.settings.get().server.host,
+            room.id,
+            &room.founder,
+        )),
         ai_type: kind.as_str(),
         map: room.map_name.clone(),
         game_settings: my
@@ -257,6 +266,7 @@ pub async fn pve_score(app: State<'_, App>) -> Result<Option<pve::Score>> {
                 .map(|status| pve::income_multiplier(status.handicap))
                 .collect(),
         },
+        player_filter_requested: true,
     };
 
     tracing::debug!(

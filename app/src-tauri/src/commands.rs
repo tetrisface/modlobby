@@ -84,6 +84,8 @@ pub async fn subscribe(
     overlay: State<'_, std::sync::Arc<crate::overlay::Controller>>,
     channel: Channel<UiMessage>,
 ) -> Result<()> {
+    // The front end is up and asking: the last of the startup milestones.
+    tracing::debug!(ms = crate::since_start(), "startup: front end subscribed");
     app.client
         .subscribe(ChannelTransport {
             channel,
