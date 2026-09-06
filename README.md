@@ -102,6 +102,13 @@ launcher's and bar-lobby's installs are read alongside it and never written, so 
 already have is not fetched twice and nothing half-downloaded of ours ends up in their tree.
 `paths.dataDir` moves the write directory, for instance onto an existing install.
 
+The files in it that hold what you set up — `springsettings.cfg`, `uikeys.txt` and
+`LuaUI/Config/` (widget order, enabled state and each widget's own data) — are copied from
+another install the first time the directory is used, snapshotted under `modlobby-backups/`
+before every launch (the last ten kept), and checked when the engine exits: it rewrites the
+settings file on its way out and has emptied it before. Settings → Paths copies them from an
+install or puts a snapshot back.
+
 You join a room as a spectator and sit down when you want to play. `play.inPublicRooms`,
 under Settings → Advanced, turns the seats off for a session that is only watching — a
 client driving the protocol with nobody at the keyboard; a room of your own never consults

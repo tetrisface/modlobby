@@ -5,7 +5,7 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
-use lobby_runtime::{ClientError, launch};
+use lobby_runtime::{ClientError, launch, player_files};
 use lobby_ui::UiMessage;
 use serde::Serialize;
 use settings::{CredentialError, Settings};
@@ -853,6 +853,72 @@ pub fn open_data_dir(app: State<'_, App>) -> Result<()> {
     std::fs::create_dir_all(&dirs.write)
         .map_err(|err| ApiError::new("io", format!("making the data directory: {err}")))?;
     open(dirs.write)
+}
+
+/// The player's files — engine settings, hotkeys, widget state — as the
+/// Settings page shows them: where they can be copied from, and the copies
+/// taken before each launch.
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PlayerFilesView {
+    /// The data directory the engine writes, where the files live.
+    pub write: String,
+    /// Other installs on this machine whose settings are worth copying.
+    pub sources: Vec<String>,
+    /// Snapshot directories, newest first; each is named for when it was
+    /// taken, in UTC.
+    pub snapshots: Vec<String>,
+}
+
+fn shown(paths: Vec<PathBuf>) -> Vec<String> {
+    paths
+        .into_iter()
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect()
+}
+
+#[tauri::command]
+pub async fn player_files(app: State<'_, App>) -> Result<PlayerFilesView> {
+    let dirs = data_dirs(&app)?;
+    disk_work(move || PlayerFilesView {
+        write: dirs.write.to_string_lossy().into_owned(),
+        sources: shown(player_files::sources(&dirs)),
+        snapshots: shown(player_files::snapshots(&dirs.write)),
+    })
+    .await
+}
+
+/// Copies another install's player files over ours, or puts a snapshot back,
+/// after snapshotting what is there now. `from` must be one of the places
+/// [`player_files`] offers. Refused while a game runs, since the engine
+/// rewrites these files as it exits. How many files were copied.
+#[tauri::command]
+pub async fn import_player_files(app: State<'_, App>, from: String) -> Result<u32> {
+    let dirs = data_dirs(&app)?;
+    if app.client.engine_pid().await?.is_some() {
+        return Err(ApiError::new(
+            "engine",
+            "wait for the game to end; it writes these files as it exits",
+        ));
+    }
+    let from = PathBuf::from(from);
+    disk_work(move || {
+        let offered = player_files::sources(&dirs)
+            .into_iter()
+            .chain(player_files::snapshots(&dirs.write))
+            .any(|dir| dir == from);
+        if !offered {
+            return Err(ApiError::new(
+                "input",
+                "not an install or a snapshot the settings can be copied from",
+            ));
+        }
+        player_files::import(&dirs.write, &from, SystemTime::now())
+            .map(|count| count as u32)
+            .map_err(|err| ApiError::new("io", format!("copying the player's files: {err}")))
+    })
+    .await?
 }
 
 /// Opens a link from chat in the system browser.

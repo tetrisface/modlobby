@@ -1,5 +1,6 @@
 import { For, Show, createEffect, createSignal, onCleanup } from 'solid-js'
 import { createStore, unwrap } from 'solid-js/store'
+import { PlayerFiles } from '../components/PlayerFiles'
 import type { Settings } from '../ipc/bindings/Settings'
 import { api, describeError } from '../ipc/client'
 import { pushNotice } from '../store/chat'
@@ -494,6 +495,7 @@ export function SettingsView() {
           <button type='button' onClick={() => api.openDataDir()}>
             Open data directory
           </button>
+          <PlayerFiles />
         </fieldset>
 
         <fieldset>

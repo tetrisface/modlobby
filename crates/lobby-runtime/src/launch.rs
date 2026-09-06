@@ -8,9 +8,12 @@
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use content::DataDirs;
 use tokio::process::Child;
+
+use crate::player_files;
 
 /// One environment variable. A function rather than `std::env`, so the
 /// directories can be computed for a machine a test describes.
@@ -95,32 +98,24 @@ fn assemble(write: PathBuf, installed: Vec<PathBuf>) -> DataDirs {
     DataDirs { write, read }
 }
 
-/// The engine reads its settings from the write directory, so a fresh one
-/// starts from another install's `springsettings.cfg` when there is one: the
-/// user's resolution and keys, without a second setup. Only ever the first
-/// time; after that the copy is theirs to change.
-fn seed_settings(dirs: &DataDirs) {
-    let ours = dirs.write.join("springsettings.cfg");
-    if ours.exists() {
-        return;
-    }
-    let Some(theirs) = dirs
-        .read
-        .iter()
-        .map(|dir| dir.join("springsettings.cfg"))
-        .find(|path| path.is_file())
-    else {
-        return;
-    };
-    let _ = std::fs::create_dir_all(&dirs.write);
-    match std::fs::copy(&theirs, &ours) {
-        Ok(_) => tracing::info!(from = %theirs.display(), "seeded engine settings"),
-        Err(err) => tracing::warn!(%err, from = %theirs.display(), "engine settings not seeded"),
-    }
+/// An engine that has been started, and what it was started with.
+pub struct Launched {
+    pub child: Child,
+    /// The player's files as they were just before, when there were any to
+    /// keep: what to compare against when the game is over.
+    pub snapshot: Option<PathBuf>,
+    /// The private settings copy handed over with `--config`, when the user's
+    /// own would have put the game in exclusive fullscreen. Worth telling them,
+    /// since what they change in-game lands there rather than in their file.
+    pub config: Option<PathBuf>,
 }
 
 /// Finds `engine_version` in any data directory and starts it on `target`
 /// (a `spring://` URL or a start script), writing to `dirs.write`.
+///
+/// A fresh write directory is seeded with the player's files from another
+/// install first, and the files are snapshotted before every launch, since
+/// the engine rewrites its settings on the way out and has lost them before.
 ///
 /// `overlay_config_dir` is where a borderless copy of the user's settings may
 /// be kept, when they have the overlay on and their own settings would put the
@@ -131,7 +126,7 @@ pub fn spawn(
     engine_version: &str,
     target: String,
     overlay_config_dir: Option<&Path>,
-) -> Result<Child, String> {
+) -> Result<Launched, String> {
     let engine_dir = content::Library::new(dirs.clone())
         .find_engine(engine_version)
         .ok_or_else(|| {
@@ -141,27 +136,43 @@ pub fn spawn(
                 dirs.write.join("engine").display()
             )
         })?;
-    seed_settings(dirs);
-    // A failure here is not worth refusing to play over: the game still
-    // runs, the overlay just cannot cover it.
+    player_files::seed(dirs);
+    // Neither failure below is worth refusing to play over: without the
+    // snapshot a loss goes unnoticed, without the config the overlay cannot
+    // cover the game.
+    let snapshot = player_files::snapshot(&dirs.write, SystemTime::now())
+        .inspect_err(|err| tracing::warn!(%err, "player's files not snapshotted"))
+        .ok()
+        .flatten();
     let config = overlay_config_dir.and_then(|dir| {
         recoil::window_mode::borderless_config(&dirs.write, engine_version, dir)
             .inspect_err(|err| tracing::warn!(%err, "no borderless config; overlay may not show"))
             .ok()
             .flatten()
     });
+    if let Some(config) = &config {
+        tracing::info!(
+            config = %config.display(),
+            "their settings ask for exclusive fullscreen; launching on a private copy"
+        );
+    }
 
     let launch = recoil::Launch {
         engine_dir,
         data_dir: dirs.write.clone(),
         read_dirs: dirs.read.clone(),
         target,
-        config,
+        config: config.clone(),
     };
     tracing::info!(engine = %launch.engine_dir.display(), "launching");
-    tokio::process::Command::from(launch.command())
+    let child = tokio::process::Command::from(launch.command())
         .spawn()
-        .map_err(|err| format!("spawning the engine: {err}"))
+        .map_err(|err| format!("spawning the engine: {err}"))?;
+    Ok(Launched {
+        child,
+        snapshot,
+        config,
+    })
 }
 
 /// Starts pr-downloader on everything in `wants`, with its output on a pipe.
@@ -309,34 +320,5 @@ mod tests {
             vec![PathBuf::from("/launcher"), PathBuf::from("/bar-lobby")],
         );
         assert_eq!(dirs.read, [PathBuf::from("/bar-lobby")]);
-    }
-
-    #[test]
-    fn a_fresh_write_dir_starts_from_their_engine_settings() {
-        let ours = tempfile::tempdir().unwrap();
-        let theirs = tempfile::tempdir().unwrap();
-        std::fs::write(
-            theirs.path().join("springsettings.cfg"),
-            "XResolution = 1920\n",
-        )
-        .unwrap();
-        let dirs = DataDirs {
-            write: ours.path().join("data"),
-            read: vec![theirs.path().to_path_buf()],
-        };
-
-        seed_settings(&dirs);
-        let seeded = std::fs::read_to_string(dirs.write.join("springsettings.cfg")).unwrap();
-        assert_eq!(seeded, "XResolution = 1920\n");
-
-        // Theirs changes later; ours is ours now.
-        std::fs::write(
-            theirs.path().join("springsettings.cfg"),
-            "XResolution = 800\n",
-        )
-        .unwrap();
-        seed_settings(&dirs);
-        let kept = std::fs::read_to_string(dirs.write.join("springsettings.cfg")).unwrap();
-        assert_eq!(kept, "XResolution = 1920\n");
     }
 }

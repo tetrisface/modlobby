@@ -12,6 +12,7 @@ import type { BoxesView } from './bindings/BoxesView'
 import type { Book } from './bindings/Book'
 import type { ModOption } from './bindings/ModOption'
 import type { Plan } from './bindings/Plan'
+import type { PlayerFilesView } from './bindings/PlayerFilesView'
 import type { Score } from './bindings/Score'
 import type { Sections } from './bindings/Sections'
 import type { Settings } from './bindings/Settings'
@@ -147,6 +148,9 @@ export const api = {
     invoke<void>('clear_password', { username }),
   openSettingsFile: () => invoke<void>('open_settings_file'),
   openDataDir: () => invoke<void>('open_data_dir'),
+  playerFiles: () => invoke<PlayerFilesView>('player_files'),
+  importPlayerFiles: (from: string) =>
+    invoke<number>('import_player_files', { from }),
   openUrl: (url: string) => invoke<void>('open_url', { url }),
   openLogDir: () => invoke<void>('open_log_dir'),
 

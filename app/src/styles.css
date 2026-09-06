@@ -995,6 +995,15 @@ textarea {
   gap: 8px;
 }
 
+/* Buttons per install to copy from, then the snapshot picker; the same
+   rhythm as the fieldset around it. */
+.player-files {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
 /* ---- the tweak workspace ---- */
 
 .tweaks {

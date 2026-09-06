@@ -7,6 +7,7 @@ pub mod idle;
 pub mod latency;
 pub mod launch;
 pub mod platform;
+pub mod player_files;
 pub mod reconnect;
 
 pub use client::{Client, ClientError, Connector};

@@ -32,6 +32,7 @@ use crate::idle;
 use crate::latency::{self, Latency};
 use crate::launch;
 use crate::platform::Hardware;
+use crate::player_files;
 use crate::reconnect;
 
 #[derive(Debug, thiserror::Error)]
@@ -622,6 +623,13 @@ struct Connection {
     session: Session,
 }
 
+/// What an engine was started with: the directory it writes and the copy of
+/// the player's files taken just before, to compare against when it exits.
+struct EngineRun {
+    write: PathBuf,
+    snapshot: Option<PathBuf>,
+}
+
 /// The room's game as last announced, with the secret the engine presents.
 struct Game {
     view: GameRunningView,
@@ -666,6 +674,8 @@ struct Runtime {
     ui: Option<Box<dyn UiTransport>>,
     conn: Option<Connection>,
     engine: Option<Child>,
+    /// What the running engine was started with, to look at when it exits.
+    engine_run: Option<EngineRun>,
     engine_status: EngineStatus,
     game: Option<Game>,
     auto_launch: Option<DataDirs>,
@@ -880,6 +890,7 @@ impl Runtime {
             join_reply: None,
             join_asked: None,
             data_dir: None,
+            engine_run: None,
             overlay_config_dir: None,
             checked: None,
             credentials: None,
@@ -923,16 +934,14 @@ impl Runtime {
             .and_then(|()| std::fs::write(&path, skirmish.script()))
             .map_err(|err| ClientError::Engine(format!("writing the start script: {err}")))?;
 
-        let child = launch::spawn(
+        let launched = launch::spawn(
             &dirs,
             engine_version,
             path.to_string_lossy().into_owned(),
             self.overlay_config_dir.as_deref(),
         )
         .map_err(ClientError::Engine)?;
-        let pid = child.id();
-        self.engine = Some(child);
-        self.set_engine(EngineStatus::Running { pid });
+        self.started(launched, dirs.write);
         Ok(())
     }
 
@@ -951,12 +960,32 @@ impl Runtime {
             .and_then(|stem| stem.rsplit_once('_').map(|(_, engine)| engine.to_owned()))
             .unwrap_or_default();
 
-        let child = launch::spawn(&dirs, &version, path, self.overlay_config_dir.as_deref())
+        let launched = launch::spawn(&dirs, &version, path, self.overlay_config_dir.as_deref())
             .map_err(ClientError::Engine)?;
-        let pid = child.id();
-        self.engine = Some(child);
-        self.set_engine(EngineStatus::Running { pid });
+        self.started(launched, dirs.write);
         Ok(())
+    }
+
+    /// Bookkeeping for an engine just started, and a word to the user when it
+    /// runs on a settings copy of ours rather than their own file.
+    fn started(&mut self, launched: launch::Launched, write: PathBuf) {
+        let pid = launched.child.id();
+        self.engine = Some(launched.child);
+        self.engine_run = Some(EngineRun {
+            write,
+            snapshot: launched.snapshot,
+        });
+        if let Some(config) = launched.config {
+            self.batcher.push(Delta::Notice {
+                level: lobby_ui::NoticeLevel::Info,
+                text: format!(
+                    "Your engine settings ask for exclusive fullscreen, which the overlay \
+                     cannot cover, so this game runs on a private copy of them: {}",
+                    config.display()
+                ),
+            });
+        }
+        self.set_engine(EngineStatus::Running { pid });
     }
 
     /// Starts pr-downloader on whatever the room needs and this machine lacks.
@@ -2170,16 +2199,14 @@ impl Runtime {
                 self.send_line(envelope).await?;
             }
         }
-        let child = launch::spawn(
+        let launched = launch::spawn(
             &dirs,
             &engine_version,
             url,
             self.overlay_config_dir.as_deref(),
         )
         .map_err(ClientError::Engine)?;
-        let pid = child.id();
-        self.engine = Some(child);
-        self.set_engine(EngineStatus::Running { pid });
+        self.started(launched, dirs.write);
         Ok(())
     }
 
@@ -2188,10 +2215,42 @@ impl Runtime {
         let code = status.ok().and_then(|s| s.code());
         tracing::info!(?code, "engine exited");
         self.set_engine(EngineStatus::Exited { code });
+        self.check_player_files();
         if let Some(conn) = self.conn.as_mut() {
             let effects = conn.session.set_in_game(false);
             self.apply_effects(effects).await;
         }
+    }
+
+    /// The engine rewrites `springsettings.cfg` as it exits and has emptied it
+    /// before. A file that lost most of its keys is said so, with where the
+    /// copy from before the game is; putting it back is the user's call.
+    fn check_player_files(&mut self) {
+        let Some(run) = self.engine_run.take() else {
+            return;
+        };
+        let Some(snapshot) = run.snapshot else {
+            return;
+        };
+        let Some(lost) = player_files::collapsed(&run.write, &snapshot) else {
+            return;
+        };
+        tracing::warn!(
+            before = lost.before,
+            after = lost.after,
+            "engine settings collapsed"
+        );
+        self.batcher.push(Delta::Notice {
+            level: lobby_ui::NoticeLevel::Warning,
+            text: format!(
+                "The game left {} with {} settings where it had {}. The copy taken before \
+                 the game is under {}; Settings → Paths can put it back.",
+                player_files::SETTINGS,
+                lost.after,
+                lost.before,
+                snapshot.display()
+            ),
+        });
     }
 
     fn set_engine(&mut self, status: EngineStatus) {
