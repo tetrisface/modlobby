@@ -1,5 +1,8 @@
 import { createContext, useContext, type Accessor } from 'solid-js'
 import type { BattleView } from '../../ipc/bindings/BattleView'
+import type { Book } from '../../ipc/bindings/Book'
+import type { Plan } from '../../ipc/bindings/Plan'
+import type { Sections } from '../../ipc/bindings/Sections'
 import type { GameRunningView } from '../../ipc/bindings/GameRunningView'
 import type { MyBattleView } from '../../ipc/bindings/MyBattleView'
 import type { UserView } from '../../ipc/bindings/UserView'
@@ -39,6 +42,10 @@ export type RoomIo = Pick<
   renameRoom(title: string): Promise<void>
   /** By its spring name, which is what a room and a start script both use. */
   setMap(name: string): Promise<void>
+  /** 0 the map's own, 1 random, 2 chosen in the start boxes. */
+  setStartPos(startPos: number): Promise<void>
+  /** One of an AI's own options. An empty value restores its default. */
+  setBotOption(name: string, key: string, value: string): Promise<void>
 }
 
 /**
@@ -49,10 +56,10 @@ export type RoomIo = Pick<
  * that need one say so. `null` is that answer, and it is a better one than a
  * method that would fail.
  */
-export type PresetIo = Pick<
-  typeof api,
-  'savePreset' | 'planPreset' | 'applyPreset'
->
+export type PresetIo = {
+  savePreset(name: string): Promise<Book>
+  applyPreset(name: string, sections: Sections): Promise<Plan>
+}
 
 /**
  * What may be done in this room.

@@ -205,6 +205,9 @@ pub fn run() {
             let auto_download = app.settings.get().play.auto_download;
             let engine_config = overlay_config_dir(&app.settings.get());
             let idle = idle_timeout(&app.settings.get());
+            // Beside the settings and the preset book, because it is the same
+            // kind of thing: what this person has set up, kept for next time.
+            let skirmish_path = commands::skirmish_path(&app);
             tauri::async_runtime::spawn(async move {
                 // The content check needs to know where BAR keeps its files,
                 // both now and whenever the setting changes.
@@ -214,6 +217,7 @@ pub fn run() {
                 let _ = client.set_auto_download(auto_download).await;
                 let _ = client.set_overlay_config_dir(engine_config).await;
                 let _ = client.set_idle_timeout(idle).await;
+                let _ = client.set_skirmish_path(Some(skirmish_path)).await;
                 while let Some(event) = watch.recv().await {
                     if let settings::SettingsEvent::Changed(settings) = &event {
                         let _ = client.set_data_dir(settings.paths.data_dir.clone()).await;
@@ -317,12 +321,15 @@ pub fn run() {
             commands::skirmish_close,
             commands::skirmish_act,
             commands::skirmish_launch,
+            commands::ai_options,
             commands::skirmish_download_missing,
             commands::skirmish_tweak_send,
             commands::skirmish_tweak_clear,
             boxes::skirmish_start_boxes,
             boxes::skirmish_current_arrangement,
             presets::skirmish_pve_score,
+            presets::skirmish_save_preset,
+            presets::skirmish_apply_preset,
             commands::list_replays,
             commands::play_replay,
             commands::refresh_friends,

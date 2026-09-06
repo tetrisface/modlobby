@@ -147,6 +147,12 @@ impl Library {
             .find_map(|dir| recoil::find_engine(dir, version))
     }
 
+    /// Where an engine AI declares its own options, in any installed engine.
+    pub fn find_ai_options(&self, version: &str, ai: &str) -> Option<PathBuf> {
+        let engine = self.find_engine(version)?;
+        recoil::ai_options_file(&engine, ai)
+    }
+
     /// A pr-downloader to run, from any installed engine.
     pub fn find_downloader(&self, version: &str) -> Option<PathBuf> {
         self.dirs

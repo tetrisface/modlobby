@@ -149,6 +149,10 @@ pub struct BotView {
     pub status: BattleStatusView,
     pub team_colour: u32,
     pub ai: String,
+    /// What the AI has been told about itself, where a room can tell it
+    /// anything. A room on the server keeps this nowhere, so it is empty
+    /// there rather than absent.
+    pub options: BTreeMap<String, String>,
 }
 
 impl From<&Bot> for BotView {
@@ -159,6 +163,9 @@ impl From<&Bot> for BotView {
             status: bot.status.into(),
             team_colour: bot.team_colour,
             ai: bot.ai.clone(),
+            // `ADDBOT` carries no options, so a room on the server has none
+            // to report.
+            options: BTreeMap::new(),
         }
     }
 }

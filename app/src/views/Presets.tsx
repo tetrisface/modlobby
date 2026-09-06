@@ -8,6 +8,7 @@ import {
 } from 'solid-js'
 import { ActionCell, CellButton } from '../components/ActionCell'
 import { Ask } from '../components/Ask'
+import type { Plan } from '../ipc/bindings/Plan'
 import type { Preset } from '../ipc/bindings/Preset'
 import type { Sections } from '../ipc/bindings/Sections'
 import { api, describeError } from '../ipc/client'
@@ -111,6 +112,20 @@ export function Presets() {
    */
   const inRoom = () => room.presets() !== null
 
+  /**
+   * What loading one did. A room with a host is asked rather than told, so the
+   * lines are still going out as this is read; a room of your own is simply
+   * that way now, and has no lines at all.
+   */
+  function outcome(plan: Plan, already: string): string {
+    if (!room.caps.spads) return `loaded${already}`
+    if (plan.lines.length === 0) return 'the room already matches'
+    return (
+      `sending ${plan.lines.length} commands${already}. ` +
+      `About ${Math.ceil(plan.lines.length * 1.1)}s — the host only accepts so many at once.`
+    )
+  }
+
   function head(next: Column) {
     if (next === column()) return setDescending(!descending())
     setColumn(next)
@@ -146,17 +161,13 @@ export function Presets() {
       const plan = await presets.applyPreset(preset.name, sections())
       void refetch()
       const already = plan.alreadySet ? `, ${plan.alreadySet} already set` : ''
-      pushNotice(
-        'info',
-        plan.lines.length === 0
-          ? `${preset.name}: the room already matches`
-          : `${preset.name}: sending ${plan.lines.length} commands${already}. ` +
-              `About ${Math.ceil(plan.lines.length * 1.1)}s — the host only accepts so many at once.`,
-      )
+      pushNotice('info', `${preset.name}: ${outcome(plan, already)}`)
       if (plan.startBoxesUnsent)
         pushNotice(
           'warning',
-          'the room already has start boxes; left as they are',
+          room.caps.spads
+            ? 'the room already has start boxes; left as they are'
+            : "the preset's start boxes do not cover every side; left as they are",
         )
     })
 

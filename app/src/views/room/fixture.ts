@@ -56,6 +56,7 @@ export function bot(name: string, over: Partial<BotView> = {}): BotView {
     status: status({ allyTeam: 1, team: 1, sync: 'bot' }),
     teamColour: 0x4b73f2,
     ai: name,
+    options: {},
     ...over,
   }
 }
@@ -139,6 +140,9 @@ export function recordingIo(calls: Calls): RoomIo {
     sayBattle: async (text) => note('sayBattle', text),
     renameRoom: async (title) => note('renameRoom', title),
     setMap: async (name) => note('setMap', name),
+    setStartPos: async (startPos) => note('setStartPos', startPos),
+    setBotOption: async (name, key, value) =>
+      note('setBotOption', name, key, value),
     startBoxes: async (teams) => {
       note('startBoxes', teams)
       return null

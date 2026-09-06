@@ -2293,6 +2293,38 @@ input[type='checkbox'].v-edit {
   min-height: 0;
 }
 
+/* What an AI can be told about itself, drawn as the settings rows are. */
+.sheet-card.bot-options {
+  width: min(720px, calc(100vw - 40px));
+  max-height: calc(100vh - 80px);
+  gap: 10px;
+  overflow: hidden;
+}
+
+.bot-options .setup-detail {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* A choice made in the room's meta line: the map, the game, the engine, and
+   where players start. Reads as part of the line rather than as a form. */
+.card-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.card-choice select {
+  background: none;
+  color: var(--text);
+  border: none;
+  border-bottom: 1px dotted var(--line);
+  padding: 0 2px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .map-list {
   overflow-y: auto;
   display: flex;

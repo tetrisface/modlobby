@@ -382,6 +382,50 @@ pub fn skirmish_options(app: State<'_, App>) -> Result<SkirmishOptions> {
     })
 }
 
+/// What an engine AI declares it can be told.
+///
+/// `AIOptions.lua` is the same `local options = { … }` table a game's
+/// `modoptions.lua` is, so the same parser reads it and the same rows draw it.
+/// An empty answer means the AI ships no options, or is not installed for the
+/// engine asked about — neither is a failure.
+#[tauri::command]
+pub async fn ai_options(
+    app: State<'_, App>,
+    engine: String,
+    ai: String,
+) -> Result<Vec<modoptions::ModOption>> {
+    let Some(dirs) = data_dirs_of(&app) else {
+        return Ok(Vec::new());
+    };
+    disk_work(move || {
+        let Some(path) = content::Library::new(dirs).find_ai_options(&engine, &ai) else {
+            return Ok(Vec::new());
+        };
+        let Ok(text) = std::fs::read_to_string(path) else {
+            return Ok(Vec::new());
+        };
+        modoptions::parse(&text).map_err(|err| ApiError::new("aiOptions", err.to_string()))
+    })
+    .await?
+}
+
+/// Where the skirmish room is kept between runs.
+pub fn skirmish_path(app: &App) -> std::path::PathBuf {
+    app.settings.dir().join("skirmish.json")
+}
+
+/// The room as it was left last time.
+///
+/// A file that will not parse is ignored rather than complained about: it is a
+/// convenience, the room it describes is one nobody has asked for yet, and the
+/// next change overwrites it.
+fn remembered_skirmish(app: &State<'_, App>) -> Option<skirmish::Room> {
+    let text = std::fs::read_to_string(skirmish_path(app)).ok()?;
+    serde_json::from_str(&text)
+        .inspect_err(|err| tracing::debug!(%err, "the kept skirmish room could not be read"))
+        .ok()
+}
+
 /// A map's spring name, which is what a start script names it by.
 ///
 /// What is on disk is the archive's file name -- lowercased and underscored --
@@ -421,6 +465,18 @@ pub async fn skirmish_open(
     map: Option<String>,
     engine: Option<String>,
 ) -> Result<()> {
+    // The one left from last time, if nothing has been asked for and nothing
+    // is open. Read here rather than in the runtime so that restoring and
+    // building a fresh one are the same decision, made once.
+    if game.is_none() && map.is_none() && engine.is_none() {
+        if app.client.skirmish_room().await?.is_some() {
+            return Ok(());
+        }
+        if let Some(room) = remembered_skirmish(&app) {
+            app.client.open_skirmish(room).await?;
+            return Ok(());
+        }
+    }
     let library = content::Library::new(data_dirs(&app)?);
     let first = |held: Option<String>, mut from: Vec<String>| {
         held.filter(|held| !held.is_empty())

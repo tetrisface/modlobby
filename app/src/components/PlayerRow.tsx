@@ -60,6 +60,8 @@ export function PlayerRow(props: {
 export function BotRow(props: {
   bot: BotView
   onRemove?: () => Promise<void>
+  /** Offered where the room can tell an AI anything about itself. */
+  onOptions?: () => void
 }) {
   const menu = (event: MouseEvent) => {
     const remove = props.onRemove
@@ -84,6 +86,16 @@ export function BotRow(props: {
       >
         {props.bot.name}
       </span>
+      <Show when={props.onOptions}>
+        <button
+          class='bot-remove'
+          title={`What ${props.bot.name} is told about itself`}
+          aria-label={`Options for ${props.bot.name}`}
+          onClick={() => props.onOptions?.()}
+        >
+          <Glyph id='act-pen' />
+        </button>
+      </Show>
       <Show when={props.onRemove}>
         <button
           class='bot-remove'

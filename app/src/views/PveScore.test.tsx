@@ -56,6 +56,7 @@ function bot(ai: string, handicap = 0): BotView {
     },
     teamColour: 0,
     ai,
+    options: {},
   }
 }
 

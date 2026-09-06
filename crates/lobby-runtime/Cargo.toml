@@ -13,6 +13,7 @@ lobby-ui = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+presets = { workspace = true }
 recoil = { workspace = true }
 skirmish = { workspace = true }
 spring-protocol = { workspace = true }

@@ -8,7 +8,9 @@ license.workspace = true
 
 [dependencies]
 lobby-ui = { workspace = true }
+presets = { workspace = true }
 recoil = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 startbox = { workspace = true }
 ts-rs = { workspace = true }

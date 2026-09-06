@@ -184,9 +184,14 @@ export function MapEditor(props: {
     const held = encoded()
     return held && 'value' in held ? held : null
   }
+  /**
+   * Too long to send. The limit is the room's chat cap, so it applies only
+   * where the boxes travel as a chat line: a room of your own reads them out
+   * of a start script, which has no such thing.
+   */
   const over = () => {
     const held = wire()
-    return held !== null && held.value.length > held.limit
+    return room.caps.spads && held !== null && held.value.length > held.limit
   }
   const unreadable = () => {
     const held = encoded()
@@ -708,9 +713,14 @@ export function MapEditor(props: {
                 {(held) => (
                   <>
                     <span class='mono'>
-                      {held().value.length} / {held().limit}
+                      {held().value.length}
+                      <Show when={room.caps.spads}> / {held().limit}</Show>
                     </span>
-                    <span class='muted'> characters on the wire</span>
+                    <span class='muted'>
+                      {room.caps.spads
+                        ? ' characters on the wire'
+                        : ' characters'}
+                    </span>
                     <Show when={over()}>
                       <button
                         type='button'

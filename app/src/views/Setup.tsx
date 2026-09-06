@@ -546,11 +546,17 @@ function ChangedHere(props: {
 /**
  * Settings as rows. A tweak slot is not a value anyone reads: its row ends
  * in the two things to do with it, copy and open, wherever the row appears.
+ *
+ * Exported because an AI's own options are the same kind of table -- BAR's
+ * `modoptions.lua` and an engine AI's `AIOptions.lua` are one format -- and
+ * drawing them the same way is the whole reason they can be. `set` is where
+ * a changed value goes; the room's own settings are the default.
  */
-function Rows(props: {
+export function Rows(props: {
   rows: Row[]
   editable: boolean
   onEdit: (slot: string) => void
+  set?: (key: string, value: string) => Promise<void>
 }) {
   return (
     <div class='setup-rows'>
@@ -576,7 +582,7 @@ function Rows(props: {
                 />
               </Match>
               <Match when={props.editable}>
-                <Control row={row} />
+                <Control row={row} set={props.set} />
               </Match>
             </Switch>
           </div>
@@ -659,14 +665,18 @@ function SlotActions(props: {
  * One editable setting. The value is sent when it is committed, never on
  * every keystroke: each send is a chat command the whole room sees.
  */
-function Control(props: { row: Row }) {
+function Control(props: {
+  row: Row
+  set?: (key: string, value: string) => Promise<void>
+}) {
   const room = useRoom()
   const value = () => props.row.current ?? defaultText(props.row.option)
 
   async function set(next: string) {
     if (next === value()) return
     try {
-      await room.io.setOption(props.row.option.key, next)
+      const put = props.set ?? room.io.setOption
+      await put(props.row.option.key, next)
     } catch (error) {
       pushNotice('warning', `${props.row.option.key}: ${describeError(error)}`)
     }

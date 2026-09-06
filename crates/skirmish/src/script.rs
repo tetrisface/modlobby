@@ -25,7 +25,12 @@ const SIDES: [&str; 4] = ["Armada", "Cortex", "Random", "Legion"];
 
 impl Room {
     /// The script this room would play.
-    pub fn to_script(&self, start_pos: StartPos) -> Skirmish {
+    pub fn to_script(&self) -> Skirmish {
+        let start_pos = match self.start_pos() {
+            0 => StartPos::Fixed,
+            1 => StartPos::Random,
+            _ => StartPos::InGame,
+        };
         // Somebody may have put an AI on side 4 with nothing on 2 or 3. The
         // engine counts ally teams from zero without gaps, so they are
         // renumbered — and the boxes are resolved for the count that leaves.
@@ -43,7 +48,9 @@ impl Room {
                 ally_team: side_of(seat.ally_team),
                 leader: 0,
                 side: faction(seat.side, legion, false),
-                colour: None,
+                // Chobby writes one for every team; without it the engine
+                // picks, and two teams can end up hard to tell apart.
+                colour: Some(self.player_colour()),
                 handicap: seat.handicap,
             });
             teams.len() as u8 - 1
@@ -67,7 +74,11 @@ impl Room {
                 version: None,
                 team: teams.len() as u8 - 1,
                 host: 0,
-                options: Vec::new(),
+                options: ai
+                    .options
+                    .iter()
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect(),
             });
         }
 
@@ -174,7 +185,7 @@ mod tests {
     fn the_room_becomes_a_script_that_names_everyone_in_it() {
         let mut room = room();
         room.add_ai("BARb", "BARb", 1, 1, COLOURS[1]);
-        let script = room.to_script(StartPos::InGame).script();
+        let script = room.to_script().script();
 
         assert!(script.contains("myplayername = me;"));
         assert!(script.contains("gametype = BAR test-1;"));
@@ -192,7 +203,7 @@ mod tests {
         // Two AIs put on sides 4 and 7, with nothing between.
         room.add_ai("a", "BARb", 1, 4, 0);
         room.add_ai("b", "BARb", 2, 7, 0);
-        let skirmish = room.to_script(StartPos::InGame);
+        let skirmish = room.to_script();
         assert_eq!(skirmish.ally_teams.len(), 3);
         assert_eq!(
             skirmish
@@ -212,7 +223,7 @@ mod tests {
         let mut room = room();
         room.add_ai("a", "BARb", 1, 1, 0);
         room.add_ai("b", "BARb", 2, 1, 0);
-        let skirmish = room.to_script(StartPos::InGame);
+        let skirmish = room.to_script();
         assert_eq!(skirmish.ally_teams.len(), 2);
         assert_eq!(skirmish.teams.len(), 3);
         assert_eq!(skirmish.teams[1].ally_team, 1);
@@ -227,7 +238,7 @@ mod tests {
         room.add_ai("a", "BARb", 1, 1, 0);
         room.add_ai("b", "BARb", 2, 2, 0);
         room.release_seat();
-        let skirmish = room.to_script(StartPos::InGame);
+        let skirmish = room.to_script();
         assert_eq!(skirmish.players[0].team, None);
         assert_eq!(skirmish.teams.len(), 2);
         assert!(skirmish.script().contains("spectator = 1;"));
@@ -241,11 +252,11 @@ mod tests {
         // The AI is on Legion too.
         let mut with_legion = room.clone();
 
-        let script = room.to_script(StartPos::InGame);
+        let script = room.to_script();
         assert_eq!(script.teams[0].side.as_deref(), Some("Armada"));
 
         with_legion.set_option(LEGION, "1");
-        let script = with_legion.to_script(StartPos::InGame);
+        let script = with_legion.to_script();
         assert_eq!(script.teams[0].side.as_deref(), Some("Legion"));
     }
 
@@ -262,7 +273,7 @@ mod tests {
         .unwrap();
         room.set_option(OVERRIDE, &over);
 
-        let skirmish = room.to_script(StartPos::InGame);
+        let skirmish = room.to_script();
         let first = skirmish.ally_teams[0].start_rect.unwrap();
         assert_eq!((first.left, first.right), (0.0, 0.25));
         let second = skirmish.ally_teams[1].start_rect.unwrap();
@@ -290,7 +301,7 @@ mod tests {
         room.set_option(OVERRIDE, &over);
 
         // Three sides, two boxes: the game would use the map's set.
-        let skirmish = room.to_script(StartPos::InGame);
+        let skirmish = room.to_script();
         assert_eq!(skirmish.ally_teams.len(), 3);
         assert!(skirmish.ally_teams.iter().all(|a| a.start_rect.is_none()));
     }
@@ -310,7 +321,7 @@ mod tests {
         )]);
         room.set_option(SET, &encode_set(&set).unwrap());
 
-        let skirmish = room.to_script(StartPos::InGame);
+        let skirmish = room.to_script();
         let first = skirmish.ally_teams[0].start_rect.unwrap();
         assert_eq!((first.left, first.right), (0.0, 0.2));
     }
@@ -335,9 +346,7 @@ mod tests {
         .unwrap();
         room.set_option(OVERRIDE, &over);
 
-        let rect = room.to_script(StartPos::InGame).ally_teams[0]
-            .start_rect
-            .unwrap();
+        let rect = room.to_script().ally_teams[0].start_rect.unwrap();
         assert_eq!(rect.left, 10.0 / 200.0);
         assert_eq!(rect.top, 5.0 / 200.0);
         assert_eq!(rect.right, 60.0 / 200.0);
@@ -345,10 +354,91 @@ mod tests {
     }
 
     #[test]
+    fn an_ais_own_options_ride_into_its_block() {
+        let mut room = room();
+        room.add_ai("BARb", "BARb", 1, 1, 0);
+        room.set_ai_option("BARb", "cheating", "1");
+        let script = room.to_script().script();
+        assert!(
+            script.contains(
+                "		[options] {
+			cheating = 1;"
+            ),
+            "{script}"
+        );
+    }
+
+    #[test]
+    fn the_rooms_start_positions_are_what_the_script_says() {
+        let mut room = room();
+        assert!(room.to_script().script().contains("startpostype = 2;"));
+        room.set_start_pos(0);
+        assert!(room.to_script().script().contains("startpostype = 0;"));
+        room.set_start_pos(1);
+        assert!(room.to_script().script().contains("startpostype = 1;"));
+    }
+
+    /// What the room writes, read back by the parser the app uses on scripts the
+    /// engine itself wrote (`recoil::script_read`, behind `preset_from_replay`).
+    /// A writer and a reader that disagree is exactly the bug nobody notices
+    /// until a game will not start.
+    #[test]
+    fn a_written_script_reads_back_as_what_the_room_was() {
+        let mut room = room();
+        room.set_option("ranked_game", "0");
+        room.set_option("tweakdefs1", "LS1OdXR0eUIgdjEuNTI");
+        room.add_ai("BARb", "BARb", 1, 1, COLOURS[1]);
+        let over = startbox::encode_override(&startbox::Arrangement {
+            startboxes: vec![
+                square(0.0, 0.0, 50.0, 200.0),
+                square(150.0, 0.0, 200.0, 200.0),
+            ],
+        })
+        .unwrap();
+        room.set_option(OVERRIDE, &over);
+
+        let text = room.to_script().script();
+        let back = recoil::script_read::parse(&text);
+
+        assert_eq!(
+            back.game.get("gametype").map(String::as_str),
+            Some("BAR test-1")
+        );
+        assert_eq!(
+            back.game.get("mapname").map(String::as_str),
+            Some("Comet Catcher")
+        );
+        assert_eq!(
+            back.game.get("myplayername").map(String::as_str),
+            Some("me")
+        );
+        assert_eq!(back.game.get("startpostype").map(String::as_str), Some("2"));
+        assert_eq!(back.game.get("numusers").map(String::as_str), Some("2"));
+        assert_eq!(
+            back.modoptions.get("ranked_game").map(String::as_str),
+            Some("0")
+        );
+        assert_eq!(
+            back.modoptions.get("tweakdefs1").map(String::as_str),
+            Some("LS1OdXR0eUIgdjEuNTI")
+        );
+
+        // The rectangles come back in the 0-200 the lobby draws in, which is
+        // the units they were drawn in before the script halved them to
+        // fractions and this doubled them again.
+        let boxes = back.boxes_out_of_200();
+        assert_eq!(boxes.len(), 2);
+        let (left, _, right, _) = boxes[&0];
+        assert_eq!((left, right), (0, 50));
+        let (left, _, right, _) = boxes[&1];
+        assert_eq!((left, right), (150, 200));
+    }
+
+    #[test]
     fn a_cleared_modoption_is_not_written_as_an_empty_one() {
         let mut room = room();
         room.set_option("ranked_game", "0");
-        let skirmish = room.to_script(StartPos::InGame);
+        let skirmish = room.to_script();
         assert_eq!(
             skirmish.modoptions,
             [("ranked_game".to_owned(), "0".to_owned())]

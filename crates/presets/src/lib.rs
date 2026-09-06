@@ -8,10 +8,12 @@
 //! both directions.
 
 pub mod apply;
+pub mod bots;
 pub mod chobby;
 pub mod model;
 pub mod store;
 
 pub use apply::{Plan, PlannedBox, Room, Sections, plan};
+pub use bots::Bot;
 pub use model::{Book, Preset, Stamp, StartBox, VERSION};
 pub use store::{Error, Store};

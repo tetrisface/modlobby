@@ -172,12 +172,52 @@ describe('the room with no server behind it', () => {
     ])
   })
 
+  test("an AI's own options are read and set as the room's are", async () => {
+    vi.mocked(invoke).mockImplementation(async (command: string) => {
+      if (command === 'ai_options')
+        return [
+          {
+            key: 'cheating',
+            name: 'LOS vision',
+            desc: '',
+            type: 'bool',
+            def: false,
+          },
+        ]
+      if (command === 'game_modoptions') return OPTIONS
+      return null
+    })
+    const { container } = await open()
+
+    // The pen on the AI's row, which only a room that can tell it anything
+    // draws at all.
+    const pen = container.querySelector('.team .bot-remove') as HTMLElement
+    fireEvent.click(pen)
+    await settle()
+
+    expect(sent('ai_options')).toEqual([{ engine: '2026.07.04', ai: 'BARb' }])
+    const box = container.querySelector(
+      '.bot-options input[type=checkbox]',
+    ) as HTMLInputElement
+    expect(box).toBeTruthy()
+    fireEvent.change(box, { target: { checked: true } })
+    await settle()
+    expect(
+      sent('skirmish_act').map((args) => (args as { act: unknown }).act),
+    ).toContainEqual({
+      type: 'setBotOption',
+      name: 'BARb',
+      key: 'cheating',
+      value: '1',
+    })
+  })
+
   test('what needs somebody else is not drawn', async () => {
     const { queryByText } = await open()
     expect(queryByText('Balance')).toBeNull()
     expect(queryByText('Host a public room')).toBeNull()
     expect(queryByText('Leave')).toBeNull()
-    // Nor is a preset offered while the room cannot carry one.
-    expect(localRoom().presets()).toBeNull()
+    // A preset, though, this room can carry.
+    expect(localRoom().presets()).not.toBeNull()
   })
 })

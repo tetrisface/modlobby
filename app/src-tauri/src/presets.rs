@@ -192,6 +192,52 @@ pub async fn apply_preset(
     Ok(plan)
 }
 
+/// The room with no server behind it, as a preset.
+///
+/// Its AIs are written too, which the online one does not do: a room on the
+/// server rarely has any, and a skirmish is mostly its AIs.
+#[tauri::command]
+pub async fn skirmish_save_preset(app: State<'_, App>, name: String) -> Result<Book> {
+    let Some(room) = app.client.skirmish_room().await? else {
+        return Err(ApiError::new("no room", "open a skirmish to save it"));
+    };
+    let preset = skirmish::preset::to_preset(&room, name, now());
+    Ok(app.presets.put(preset, now())?)
+}
+
+/// Puts one back into it.
+///
+/// Nothing is sent and nothing is paced: online a preset is a couple of
+/// minutes of `!bSet` lines trickled past SPADS' flood limit, and here it is
+/// one assignment. The answer keeps the same shape so the pane can say what
+/// happened either way; the list of lines is simply empty.
+#[tauri::command]
+pub async fn skirmish_apply_preset(
+    app: State<'_, App>,
+    name: String,
+    sections: Sections,
+) -> Result<presets::Plan> {
+    let preset = one(&app, &name)?;
+    let done = app.client.skirmish_preset(preset.clone(), sections).await?;
+    app.presets.touch(&name, now())?;
+    Ok(presets::Plan {
+        lines: Vec::new(),
+        start_boxes: preset
+            .start_boxes
+            .iter()
+            .map(|(ally, held)| presets::PlannedBox {
+                ally_team: *ally,
+                left: held.left,
+                top: held.top,
+                right: held.right,
+                bottom: held.bottom,
+            })
+            .collect(),
+        start_boxes_unsent: sections.start_boxes && !done.boxes && !preset.start_boxes.is_empty(),
+        already_set: done.already_set,
+    })
+}
+
 /// What BAR's PvE Stats service says the current room scores.
 ///
 /// Answers `None` rather than an error for a room that is not PvE, or when the

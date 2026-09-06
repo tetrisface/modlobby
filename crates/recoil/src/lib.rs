@@ -528,6 +528,23 @@ pub fn installed_engines(data_dir: &Path) -> Vec<String> {
     versions
 }
 
+/// Where an engine AI declares its own options.
+///
+/// `<engine>/AI/Skirmish/<name>/<version>/AIOptions.lua`, of which the version
+/// is a directory the AI names itself (`stable`, `0.1`). The first found is
+/// taken: an engine ships one build of each AI, and a second would be an
+/// install somebody assembled by hand.
+///
+/// The file is the same `local options = { … }` table a game's `modoptions.lua`
+/// is, so whatever reads one reads the other.
+pub fn ai_options_file(engine_dir: &Path, ai: &str) -> Option<PathBuf> {
+    let versions = std::fs::read_dir(engine_dir.join("AI").join("Skirmish").join(ai)).ok()?;
+    versions
+        .filter_map(Result::ok)
+        .map(|version| version.path().join("AIOptions.lua"))
+        .find(|path| path.is_file())
+}
+
 /// The skirmish AIs any installed engine ships.
 pub fn installed_ais(data_dir: &Path) -> Vec<String> {
     let Ok(engines) = std::fs::read_dir(data_dir.join("engine")) else {

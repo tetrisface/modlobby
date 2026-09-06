@@ -154,6 +154,7 @@ describe('freeTeam', () => {
     status: { ...seat(1), team },
     teamColour: 0,
     ai: 'BARb',
+    options: {},
   })
 
   test('is the lowest number no player or AI holds', () => {

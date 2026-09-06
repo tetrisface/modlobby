@@ -139,6 +139,9 @@ export const api = {
   gameModOptions: (game: string) =>
     invoke<ModOption[]>('game_modoptions', { game }),
   gameAis: (game: string) => invoke<AiChoice[]>('game_ais', { game }),
+  /** What an engine AI declares it can be told; empty when it declares none. */
+  aiOptions: (engine: string, ai: string) =>
+    invoke<ModOption[]>('ai_options', { engine, ai }),
   listPresets: () => invoke<Book>('list_presets'),
   chobbyPresetsPath: () => invoke<string | null>('chobby_presets_path'),
   savePreset: (name: string) => invoke<Book>('save_preset', { name }),
@@ -178,6 +181,10 @@ export const api = {
   skirmishCurrentArrangement: (teams: number) =>
     invoke<ArrangementView | null>('skirmish_current_arrangement', { teams }),
   skirmishPveScore: () => invoke<Score | null>('skirmish_pve_score'),
+  skirmishSavePreset: (name: string) =>
+    invoke<Book>('skirmish_save_preset', { name }),
+  skirmishApplyPreset: (name: string, sections: Sections) =>
+    invoke<Plan>('skirmish_apply_preset', { name, sections }),
   skirmishTweakSend: (lua: string, slot: Slot, direct: boolean) =>
     invoke<Prepared>('skirmish_tweak_send', { lua, slot, direct }),
   skirmishTweakClear: (slot: Slot) =>

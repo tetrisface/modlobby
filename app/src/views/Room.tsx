@@ -14,7 +14,8 @@ import { Composer } from '../components/Composer'
 import { GetEngine } from '../components/GetEngine'
 import { Linkify } from '../components/Linkify'
 import { MapEditor } from '../components/MapEditor'
-import { MapPicker, pickMap } from '../components/MapPicker'
+import { MapPicker, VersionPicker, picked } from '../components/MapPicker'
+import { BotOptions } from '../components/BotOptions'
 import { MapPicture } from '../components/MapPicture'
 import { showPlayerMenu } from '../components/PlayerMenu'
 import {
@@ -49,6 +50,13 @@ import { Seat, seatsAllowed, sitOn } from './Seat'
 import { StartBoxes } from './StartBoxes'
 import { Setup } from './Setup'
 import { VoteBar } from './VoteBar'
+
+/** `startpostype`, by the names Chobby gives the three. */
+const START_POS = [
+  { id: 2, label: 'In the boxes' },
+  { id: 0, label: "The map's own" },
+  { id: 1, label: 'Random' },
+]
 
 export function Room() {
   const navigate = useNavigate()
@@ -116,14 +124,43 @@ export function Room() {
   })
   /** Whether the large map with the start-box editor is open over the room. */
   const [editing, setEditing] = createSignal(false)
-  /** Whether the list of installed maps is open over it. */
-  const [picking, setPicking] = createSignal(false)
+  /** The AI whose own options are open over the room, if any. */
+  const [botOptions, setBotOptions] = createSignal<string | null>(null)
+  /** Which of the room's three choices is being made, if any. */
+  const [picking, setPicking] = createSignal<'map' | 'game' | 'engine' | null>(
+    null,
+  )
 
   const lines = () => chat.rooms[room.log] ?? []
   createEffect(() => {
     lines().length
     log?.scrollTo({ top: log.scrollHeight })
   })
+
+  /** The AI a name points at, while it is still in the room. */
+  const botOf = (name: string | null) =>
+    name === null
+      ? undefined
+      : room.battle()?.bots.find((bot) => bot.name === name)
+
+  /** Where players start, out of the room's script tags. */
+  const startPos = () => Number(room.my()?.scriptTags['game/startpostype'] ?? 2)
+
+  /**
+   * A version, as a thing to change where it is ours to change and as a plain
+   * statement of fact where it is not.
+   */
+  const Choice = (props: { what: 'game' | 'engine'; shown: string }) => (
+    <Show when={room.caps.picksContent} fallback={<b>{props.shown}</b>}>
+      <b
+        class='chat-link'
+        title={`Play a different ${props.what}`}
+        onClick={() => setPicking(props.what)}
+      >
+        {props.shown}
+      </b>
+    </Show>
+  )
 
   async function send(line: string) {
     try {
@@ -159,14 +196,38 @@ export function Room() {
                 onClose={() => setEditing(false)}
               />
             </Show>
-            <Show when={picking()}>
+            <Show when={botOf(botOptions())}>
+              {(bot) => (
+                <BotOptions bot={bot()} onClose={() => setBotOptions(null)} />
+              )}
+            </Show>
+            <Show when={picking() === 'map'}>
               <MapPicker
                 current={b().mapName}
                 onPick={(name) => {
-                  setPicking(false)
-                  void pickMap(room.io.setMap, name)
+                  setPicking(null)
+                  void picked(room.io.setMap, 'map', name)
                 }}
-                onClose={() => setPicking(false)}
+                onClose={() => setPicking(null)}
+              />
+            </Show>
+            <Show when={picking() === 'game' || picking() === 'engine'}>
+              <VersionPicker
+                what={picking() === 'game' ? 'Game' : 'Engine'}
+                current={
+                  picking() === 'game' ? b().gameName : b().engineVersion
+                }
+                onPick={(version) => {
+                  const what = picking()
+                  setPicking(null)
+                  if (what === null) return
+                  void picked(
+                    (name) => room.io.sayBattle(`!${what} ${name}`),
+                    what,
+                    version,
+                  )
+                }}
+                onClose={() => setPicking(null)}
               />
             </Show>
             <div class='card-main'>
@@ -205,7 +266,7 @@ export function Room() {
                     <b
                       class='chat-link'
                       title='Play a different map'
-                      onClick={() => setPicking(true)}
+                      onClick={() => setPicking('map')}
                     >
                       {b().mapName}
                     </b>
@@ -215,11 +276,35 @@ export function Room() {
                   Host <b>{b().founder}</b>
                 </span>
                 <span>
-                  Engine <b>{b().engineVersion}</b>
+                  Engine <Choice what='engine' shown={b().engineVersion} />
                 </span>
                 <span>
-                  Game <b>{b().gameName}</b>
+                  Game <Choice what='game' shown={b().gameName} />
                 </span>
+                {/* A `[game]` key rather than a modoption, so it has no row in
+                    the settings table and belongs here with the rest of what
+                    the game is played on. */}
+                <Show when={room.caps.picksContent}>
+                  <label class='card-choice'>
+                    Start
+                    <select
+                      value={startPos()}
+                      onChange={(event) =>
+                        void room.io
+                          .setStartPos(Number(event.currentTarget.value))
+                          .catch((error) =>
+                            pushNotice('warning', describeError(error)),
+                          )
+                      }
+                    >
+                      <For each={START_POS}>
+                        {(kind) => (
+                          <option value={String(kind.id)}>{kind.label}</option>
+                        )}
+                      </For>
+                    </select>
+                  </label>
+                </Show>
               </div>
               <Chips battle={b()} />
             </div>
@@ -335,6 +420,11 @@ export function Room() {
                           {(bot) => (
                             <BotRow
                               bot={bot}
+                              onOptions={
+                                room.caps.picksContent
+                                  ? () => setBotOptions(bot.name)
+                                  : undefined
+                              }
                               onRemove={
                                 // The server takes REMOVEBOT from the owner,
                                 // the host and moderators; a boss is none of

@@ -39,6 +39,7 @@ bun run dev      # development window
 | `modoptions`      | BAR's modoption schema, parsed out of the game's own `modoptions.lua` and vendored as JSON for the app                                                                                       |
 | `presets`         | Saved room setups with timestamps, the plan for applying one, and interop both ways with Chobby's `optionsPresets.json`                                                                      |
 | `startbox`        | Startbox arrangements: the `base64url(zlib(json))` modoptions, and the resolution order the game enforces                                                                                    |
+| `skirmish`        | A battle room with no server behind it: the same room the lobby draws, changed locally, and the start script it becomes                                                                       |
 | `pve`             | What a PvE room scores, from the service BAR's in-game PvE Stats widget uses                                                                                                                 |
 | `recoil`          | Engine launch: `spring://` URL, engine discovery in the BAR data dir, `--write-dir --isolation` command                                                                                      |
 | `modlobby-cli`    | Harness: log in as a Chobby-class client, watch the battle list, spectate a room, launch the engine                                                                                          |
@@ -51,8 +52,9 @@ completion, recall of what you sent, clickable links, and a mark on every line
 that says your name; friends, and a search over everyone online; content
 fetched through pr-downloader the moment you join a room that needs it;
 a replay browser, whose replays can be turned back into presets; and a skirmish
-against AI that needs no server at all. A PvE room shows its challenge score
-before anyone plays it.
+against AI that is the same room with nobody else in it — teams, settings,
+tweaks, start boxes and presets, all without a server. A PvE room shows its
+challenge score before anyone plays it.
 Background notifications cover direct messages, mentions, votes, rings, a
 friend arriving, and your game starting.
 

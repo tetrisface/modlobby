@@ -2887,6 +2887,7 @@ dependencies = [
  "content",
  "lobby-core",
  "lobby-ui",
+ "presets",
  "rand 0.10.2",
  "recoil",
  "serde",
@@ -4779,8 +4780,10 @@ name = "skirmish"
 version = "0.1.7"
 dependencies = [
  "lobby-ui",
+ "presets",
  "recoil",
  "serde",
+ "serde_json",
  "startbox",
  "ts-rs",
 ]

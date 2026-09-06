@@ -21,6 +21,7 @@ use lobby_ui::{
 };
 
 pub mod command;
+pub mod preset;
 pub mod script;
 
 pub use command::{Outcome, command};
@@ -28,6 +29,10 @@ pub use command::{Outcome, command};
 /// The prefix `SETSCRIPTTAGS` puts on modoptions, kept so the keys here are the
 /// keys the online room has and every reader of them works unchanged.
 const MODOPTION: &str = "game/modoptions/";
+
+/// Where players start, as the script names it: a `[game]` key rather than a
+/// modoption, which is why it is not in the settings table.
+const START_POS: &str = "game/startpostype";
 
 /// Nobody assigned this room a number, so it keeps the one that says so.
 pub const ROOM_ID: u32 = 0;
@@ -40,7 +45,7 @@ const DEFAULT_TITLE: &str = "Skirmish";
 pub const COLOURS: [u32; 6] = [0x4b73f2, 0x3fd07f, 0x2fb8f0, 0x9e5ce8, 0x50a0ff, 0x8fd04b];
 
 /// Where a participant sits.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Seat {
     pub team: u8,
     pub ally_team: u8,
@@ -62,12 +67,17 @@ impl Seat {
 
 /// An AI in the room. `ai` is what the engine is asked for — an engine AI's
 /// directory, or the name a game's `luaai.lua` declares.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Ai {
     pub name: String,
     pub ai: String,
     pub seat: Seat,
     pub colour: u32,
+    /// What it was told about itself: the keys its own `AIOptions.lua`
+    /// declares, which ride into the script as its `[options]` block. Only
+    /// what differs from the AI's default is kept.
+    #[serde(default)]
+    pub options: BTreeMap<String, String>,
 }
 
 /// One thing to do to the room.
@@ -108,6 +118,10 @@ pub enum Act {
     SetSide {
         side: u8,
     },
+    /// 0 fixed, 1 random, 2 in the start boxes.
+    SetStartPos {
+        start_pos: u8,
+    },
     AddBot {
         name: String,
         ai: String,
@@ -118,6 +132,12 @@ pub enum Act {
     RemoveBot {
         name: String,
     },
+    /// One of an AI's own options. An empty value restores its default.
+    SetBotOption {
+        name: String,
+        key: String,
+        value: String,
+    },
     /// A line from the console under the roster.
     Say {
         text: String,
@@ -125,7 +145,7 @@ pub enum Act {
 }
 
 /// A room of one's own.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Room {
     pub title: String,
     /// What the player appears as. An account's name when there is one, and
@@ -145,6 +165,13 @@ pub struct Room {
     history: Vec<OptionChangeView>,
     next_seq: u64,
     layout: Option<LayoutView>,
+    /// The colour the player's own team plays in. An AI carries its own.
+    #[serde(default = "first_colour")]
+    player_colour: u32,
+}
+
+fn first_colour() -> u32 {
+    COLOURS[0]
 }
 
 impl Room {
@@ -167,6 +194,7 @@ impl Room {
             history: Vec::new(),
             next_seq: 0,
             layout: None,
+            player_colour: COLOURS[0],
         }
     }
 
@@ -214,6 +242,29 @@ impl Room {
         (0u8..=u8::MAX)
             .find(|ally| !used.contains(ally))
             .unwrap_or(0)
+    }
+
+    /// Where players start.
+    ///
+    /// Kept as the script tag it is rather than as a field, so it travels in
+    /// `MyBattleView.script_tags` with everything else the room is set to and
+    /// needs no new place in the view for one number. `2` is boxes, which is
+    /// what BAR plays.
+    pub fn start_pos(&self) -> u8 {
+        self.script_tags
+            .get(START_POS)
+            .and_then(|held| held.parse().ok())
+            .filter(|held| *held <= 2)
+            .unwrap_or(2)
+    }
+
+    pub fn set_start_pos(&mut self, start_pos: u8) -> bool {
+        if start_pos > 2 || self.start_pos() == start_pos {
+            return false;
+        }
+        self.script_tags
+            .insert(START_POS.to_owned(), start_pos.to_string());
+        true
     }
 
     /// The room's shape, falling back to what is actually on the field.
@@ -331,6 +382,19 @@ impl Room {
         self.seat = None;
     }
 
+    /// Sets one of an AI's own options. An empty value puts it back to
+    /// whatever the AI's default is, which is not the same as setting it
+    /// to nothing.
+    pub fn set_ai_option(&mut self, name: &str, key: &str, value: &str) -> bool {
+        let Some(ai) = self.ais.iter_mut().find(|ai| ai.name == name) else {
+            return false;
+        };
+        if value.is_empty() {
+            return ai.options.remove(key).is_some();
+        }
+        ai.options.insert(key.to_owned(), value.to_owned()) != Some(value.to_owned())
+    }
+
     pub fn set_side(&mut self, side: u8) {
         if let Some(seat) = self.seat.as_mut() {
             seat.side = side;
@@ -348,9 +412,29 @@ impl Room {
             name: name.to_owned(),
             ai: ai.to_owned(),
             seat: Seat::new(team, ally_team),
-            colour,
+            colour: self.free_colour(colour),
+            options: BTreeMap::new(),
         });
         true
+    }
+
+    /// The asked-for colour, or the next nobody is using.
+    ///
+    /// The seat bar picks one at random, as it does online where the host
+    /// assigns them anyway. Here nobody does, and six colours across four AIs
+    /// collide often enough that two of them come out the same — which is the
+    /// one thing a colour is for.
+    fn free_colour(&self, wanted: u32) -> u32 {
+        let taken = |colour: u32| {
+            colour == self.player_colour || self.ais.iter().any(|ai| ai.colour == colour)
+        };
+        if !taken(wanted) {
+            return wanted;
+        }
+        COLOURS
+            .into_iter()
+            .find(|colour| !taken(*colour))
+            .unwrap_or(wanted)
     }
 
     pub fn remove_ai(&mut self, name: &str) -> bool {
@@ -359,17 +443,25 @@ impl Room {
         self.ais.len() != before
     }
 
-    /// One distinct colour per ally team, which is what `!fixColors` does
+    /// A distinct colour for every team, which is what `!fixColors` does
     /// online and what makes a screenshot readable.
+    ///
+    /// Per team, not per side: two AIs sharing an ally team are still two
+    /// economies, and giving them one colour makes the game unreadable in
+    /// exactly the arrangement people most often set up.
     pub fn fix_colours(&mut self) {
-        let teams = self.ally_teams();
-        for ai in &mut self.ais {
-            let place = teams
-                .iter()
-                .position(|ally| *ally == ai.seat.ally_team)
-                .unwrap_or(0);
-            ai.colour = COLOURS[place % COLOURS.len()];
+        self.player_colour = COLOURS[0];
+        // The player takes the first when they are playing, so the AIs start
+        // after them rather than on top of them.
+        let after = usize::from(self.seat.is_some());
+        for (place, ai) in self.ais.iter_mut().enumerate() {
+            ai.colour = COLOURS[(place + after) % COLOURS.len()];
         }
+    }
+
+    /// What the player's own team plays in.
+    pub fn player_colour(&self) -> u32 {
+        self.player_colour
     }
 
     /// Does one thing to the room and says what it was.
@@ -422,6 +514,13 @@ impl Room {
                 self.set_side(side);
                 Outcome::Did(format!("your faction is {side}"))
             }
+            Act::SetStartPos { start_pos } => {
+                if self.set_start_pos(start_pos) {
+                    Outcome::Did(format!("start positions: {}", start_pos_name(start_pos)))
+                } else {
+                    Outcome::Nothing
+                }
+            }
             Act::AddBot {
                 name,
                 ai,
@@ -433,6 +532,13 @@ impl Room {
                     Outcome::Did(format!("{name} ({ai}) on team {}", ally_team + 1))
                 } else {
                     Outcome::Said(format!("{name} is already here"))
+                }
+            }
+            Act::SetBotOption { name, key, value } => {
+                if self.set_ai_option(&name, &key, &value) {
+                    Outcome::Did(format!("{name}: {key} = {value}"))
+                } else {
+                    Outcome::Nothing
                 }
             }
             Act::RemoveBot { name } => {
@@ -528,6 +634,16 @@ fn bot_view(ai: &Ai) -> BotView {
         status: status_view(Some(ai.seat), false),
         team_colour: ai.colour,
         ai: ai.ai.clone(),
+        options: ai.options.clone(),
+    }
+}
+
+/// What a `startpostype` means, for the room's log.
+pub fn start_pos_name(start_pos: u8) -> &'static str {
+    match start_pos {
+        0 => "the map's own",
+        1 => "random",
+        _ => "chosen in the boxes",
     }
 }
 
@@ -688,15 +804,61 @@ mod tests {
     }
 
     #[test]
-    fn fixing_colours_gives_each_side_its_own() {
+    fn a_new_ai_does_not_take_a_colour_somebody_already_has() {
+        let mut room = room();
+        room.add_ai("a", "BARb", 1, 1, COLOURS[1]);
+        // Asking for one already in the room gets the next one instead.
+        room.add_ai("b", "BARb", 2, 2, COLOURS[1]);
+        assert_ne!(room.ais()[0].colour, room.ais()[1].colour);
+        // And never the player's.
+        room.add_ai("c", "BARb", 3, 3, room.player_colour());
+        assert_ne!(room.ais()[2].colour, room.player_colour());
+    }
+
+    #[test]
+    fn fixing_colours_gives_every_team_its_own() {
         let mut room = room();
         room.add_ai("a", "BARb", 1, 1, 0);
         room.add_ai("b", "BARb", 2, 1, 0);
         room.add_ai("c", "BARb", 3, 2, 0);
         room.fix_colours();
         let ais = room.ais();
-        assert_eq!(ais[0].colour, ais[1].colour);
-        assert_ne!(ais[0].colour, ais[2].colour);
+        // Two AIs on one side are still two economies, so they are still two
+        // colours -- and none of them is the player's.
+        assert_ne!(ais[0].colour, ais[1].colour);
+        assert_ne!(ais[1].colour, ais[2].colour);
+        assert!(ais.iter().all(|ai| ai.colour != room.player_colour()));
+    }
+
+    #[test]
+    fn an_ai_keeps_only_what_it_was_told_about_itself() {
+        let mut room = room();
+        room.add_ai("BARb", "BARb", 1, 1, 0);
+        assert!(room.set_ai_option("BARb", "cheating", "1"));
+        assert!(!room.set_ai_option("BARb", "cheating", "1"));
+        assert_eq!(room.ais()[0].options["cheating"], "1");
+        // Emptying it is asking for the AI's own default back, not for "".
+        assert!(room.set_ai_option("BARb", "cheating", ""));
+        assert!(room.ais()[0].options.is_empty());
+        // An AI that is not here takes nothing.
+        assert!(!room.set_ai_option("Nobody", "cheating", "1"));
+    }
+
+    #[test]
+    fn start_positions_travel_as_the_script_tag_they_are() {
+        let mut room = room();
+        // Boxes until told otherwise, which is what BAR plays.
+        assert_eq!(room.start_pos(), 2);
+        assert!(room.set_start_pos(0));
+        assert_eq!(
+            room.view(content()).my.script_tags.get("game/startpostype"),
+            Some(&"0".to_owned())
+        );
+        // Not a modoption, so it stays out of the settings table.
+        assert_eq!(room.modoptions().count(), 0);
+        assert!(!room.set_start_pos(0));
+        assert!(!room.set_start_pos(9));
+        assert_eq!(room.start_pos(), 0);
     }
 
     #[test]

@@ -48,7 +48,8 @@ const MONACO_WANTS_ESCAPE =
  * gets props.
  */
 export function Workspace() {
-  const space = tweakspaceFor(useRoom())
+  const room = useRoom()
+  const space = tweakspaceFor(room)
   const [busy, setBusy] = createSignal(false)
   const [goto, setGoto] = createSignal<Goto | null>(null)
   const doc = space.active
@@ -236,13 +237,21 @@ export function Workspace() {
 
         <Show when={space.prepared()}>
           {(ready) => (
-            <div class='gauge' classList={{ over: !ready().gauge.fits }}>
+            <div
+              class='gauge'
+              classList={{ over: room.caps.spads && !ready().gauge.fits }}
+            >
               <span>raw {ready().gauge.raw} B</span>
               <span>minified {ready().gauge.minified} B</span>
               <span>blob {ready().gauge.blob}</span>
-              <span>
-                command {ready().gauge.command} / {ready().gauge.cap}
-              </span>
+              {/* The cap is the room's chat limit. A tweak too long to say in
+                  a room still fits in a start script perfectly well, so where
+                  nothing is said there is nothing to be under. */}
+              <Show when={room.caps.spads}>
+                <span>
+                  command {ready().gauge.command} / {ready().gauge.cap}
+                </span>
+              </Show>
             </div>
           )}
         </Show>

@@ -37,6 +37,12 @@ export function onlineRoom(): RoomModel {
       ...api,
       renameRoom: (title) => api.sayBattle(`!rename ${title}`),
       setMap: (name) => api.sayBattle(`!map ${name}`),
+      setStartPos: (startPos) => api.sayBattle(`!set startPosType ${startPos}`),
+      // SPADS keeps no per-AI options, and there is no command that would
+      // set one. The room does not offer it, and this says so rather than
+      // pretending.
+      setBotOption: () =>
+        Promise.reject(new Error('a room on the server keeps no AI options')),
     },
     // A preset is read from and written to a room, so outside one there is
     // nothing to offer -- which is what greys Save and Load on the page.

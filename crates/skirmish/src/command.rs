@@ -172,6 +172,11 @@ fn set(room: &mut Room, tail: &str) -> Outcome {
             room.set_layout(teams, size);
             format!("{teams} teams")
         }),
+        "startpostype" => count(value, "!set startPosType <0-2>", |pos| {
+            let pos = (pos - 1) as u8;
+            room.set_start_pos(pos);
+            format!("start positions: {}", crate::start_pos_name(pos))
+        }),
         _ => Outcome::Said(format!("!set {key} is a host's setting; try !bSet.")),
     }
 }

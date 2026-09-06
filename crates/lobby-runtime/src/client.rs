@@ -111,6 +111,14 @@ enum Command {
     SkirmishDownload {
         reply: Reply<()>,
     },
+    /// The room itself, for whoever wants to write it down.
+    SkirmishRoom(oneshot::Sender<Option<Box<skirmish::Room>>>),
+    /// Puts a preset back into it.
+    SkirmishPreset {
+        preset: Box<presets::Preset>,
+        sections: presets::Sections,
+        reply: Reply<skirmish::preset::Applied>,
+    },
     JoinBattle {
         id: u32,
         password: Option<String>,
@@ -238,6 +246,8 @@ enum Command {
     /// would put the game in exclusive full screen. `None` while the
     /// overlay is switched off, which is also when nothing is written.
     SetOverlayConfigDir(Option<PathBuf>),
+    /// Where to keep the skirmish room between runs.
+    SetSkirmishPath(Option<PathBuf>),
     /// Asks a cluster manager for a room of our own; the runtime joins it
     /// when it appears. Replies with the manager asked.
     RequestPrivateHost {
@@ -566,6 +576,29 @@ impl Client {
         self.ask(|reply| Command::SkirmishDownload { reply }).await
     }
 
+    /// The room as it stands, for saving it as a preset.
+    pub async fn skirmish_room(&self) -> Result<Option<skirmish::Room>, ClientError> {
+        let (tx, rx) = oneshot::channel();
+        self.send(Command::SkirmishRoom(tx)).await?;
+        rx.await
+            .map(|held| held.map(|room| *room))
+            .map_err(|_| ClientError::Stopped)
+    }
+
+    /// Puts a preset back into it.
+    pub async fn skirmish_preset(
+        &self,
+        preset: presets::Preset,
+        sections: presets::Sections,
+    ) -> Result<skirmish::preset::Applied, ClientError> {
+        self.ask(|reply| Command::SkirmishPreset {
+            preset: Box::new(preset),
+            sections,
+            reply,
+        })
+        .await
+    }
+
     /// Starts the engine on a replay file.
     pub async fn play_replay(&self, dirs: DataDirs, path: String) -> Result<(), ClientError> {
         self.ask(|reply| Command::PlayReplay { dirs, path, reply })
@@ -628,6 +661,11 @@ impl Client {
 
     /// Where a borderless config may be kept, or `None` to launch with the
     /// user's settings exactly as they are.
+    /// Where to keep the skirmish room between runs.
+    pub async fn set_skirmish_path(&self, path: Option<PathBuf>) -> Result<(), ClientError> {
+        self.send(Command::SetSkirmishPath(path)).await
+    }
+
     pub async fn set_overlay_config_dir(&self, dir: Option<PathBuf>) -> Result<(), ClientError> {
         self.send(Command::SetOverlayConfigDir(dir)).await
     }
@@ -788,6 +826,9 @@ struct Runtime {
     /// the answer. Scanning the rapid index is far too slow to repeat on every
     /// click, and a room's content only changes when what it asks for does.
     skirmish_checked: Option<((String, String, String), ContentView)>,
+    /// Where that room is kept between runs. `None` keeps it nowhere, which is
+    /// what the CLI and the tests want.
+    skirmish_path: Option<PathBuf>,
 }
 
 /// What a pr-downloader child reports back to the runtime.
@@ -960,6 +1001,7 @@ impl Runtime {
             probing: false,
             skirmish: None,
             skirmish_checked: None,
+            skirmish_path: None,
             projector: Projector::new(),
             batcher: Batcher::default(),
         }
@@ -1577,6 +1619,17 @@ impl Runtime {
                 let result = self.start_skirmish_download().await;
                 let _ = reply.send(result);
             }
+            Command::SkirmishRoom(reply) => {
+                let _ = reply.send(self.skirmish.clone().map(Box::new));
+            }
+            Command::SkirmishPreset {
+                preset,
+                sections,
+                reply,
+            } => {
+                let result = self.skirmish_preset(&preset, sections);
+                let _ = reply.send(result);
+            }
             Command::PlayReplay { dirs, path, reply } => {
                 let result = self.play_replay(dirs, path);
                 let _ = reply.send(result);
@@ -1719,6 +1772,7 @@ impl Runtime {
                 }
             }
             Command::SetOverlayConfigDir(dir) => self.overlay_config_dir = dir,
+            Command::SetSkirmishPath(path) => self.skirmish_path = path,
             Command::SetDataDir(data_dir) => {
                 self.data_dir = data_dir;
                 // Re-check against the new directory.
@@ -2405,7 +2459,14 @@ impl Runtime {
     }
 
     /// Opens the room with no server behind it.
+    ///
+    /// Keeps the one already open rather than replacing it: "open the room" is
+    /// a request for there to be one, and arriving at the page twice should
+    /// not throw away what was set up the first time.
     fn open_skirmish(&mut self, room: skirmish::Room) {
+        if self.skirmish.is_some() {
+            return;
+        }
         self.skirmish = Some(room);
         self.skirmish_checked = None;
         self.push_skirmish();
@@ -2415,6 +2476,7 @@ impl Runtime {
         self.skirmish = None;
         self.skirmish_checked = None;
         self.batcher.push(Delta::Skirmish(None));
+        self.remember_skirmish();
     }
 
     /// Does one thing to the skirmish room and tells the front end what the
@@ -2447,6 +2509,24 @@ impl Runtime {
         self.batcher.push(Delta::Chat(line));
     }
 
+    /// Puts a preset back into the skirmish room and says what it did.
+    fn skirmish_preset(
+        &mut self,
+        preset: &presets::Preset,
+        sections: presets::Sections,
+    ) -> Result<skirmish::preset::Applied, ClientError> {
+        let Some(room) = self.skirmish.as_mut() else {
+            return Err(ClientError::Engine("there is no skirmish room".into()));
+        };
+        let done = skirmish::preset::apply(room, preset, sections);
+        self.say_in_skirmish(&format!(
+            "loaded {}: {} changed, {} already set, {} AIs",
+            preset.name, done.changed, done.already_set, done.bots
+        ));
+        self.push_skirmish();
+        Ok(done)
+    }
+
     /// Writes the skirmish room's script and starts the engine on it.
     fn launch_skirmish(&mut self) -> Result<(), ClientError> {
         let Some(room) = self.skirmish.as_ref() else {
@@ -2467,10 +2547,30 @@ impl Runtime {
             )));
         }
         let engine = room.engine.clone();
-        // Boxes, which is what the room draws. Fixed positions would need the
-        // map's own, and nothing offline knows them yet.
-        let script = room.to_script(recoil::script::StartPos::InGame);
+        let script = room.to_script();
         self.start_skirmish(dirs, &engine, &script)
+    }
+
+    /// Writes it down, so closing the lobby does not throw the setup away.
+    fn remember_skirmish(&self) {
+        let Some(path) = self.skirmish_path.as_ref() else {
+            return;
+        };
+        let Some(room) = self.skirmish.as_ref() else {
+            let _ = std::fs::remove_file(path);
+            return;
+        };
+        let Ok(text) = serde_json::to_string(room) else {
+            return;
+        };
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        // Not worth refusing a change over: the room is right in memory either
+        // way, and the next change tries again.
+        if let Err(err) = std::fs::write(path, text) {
+            tracing::warn!(%err, "the skirmish room was not kept");
+        }
     }
 
     /// The room as the front end sees it, with what this machine has of it.
@@ -2481,6 +2581,7 @@ impl Runtime {
         };
         let view = room.view(content);
         self.batcher.push(Delta::Skirmish(Some(Box::new(view))));
+        self.remember_skirmish();
     }
 
     /// Whether this machine has the skirmish room's engine, game and map.

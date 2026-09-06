@@ -31,6 +31,9 @@ export const skirmishIo = {
   sayBattle: (text) => act({ type: 'say', text }),
   renameRoom: (title) => act({ type: 'setTitle', title }),
   setMap: (map) => act({ type: 'setMap', map }),
+  setStartPos: (startPos) => act({ type: 'setStartPos', startPos }),
+  setBotOption: (name, key, value) =>
+    act({ type: 'setBotOption', name, key, value }),
   startBoxes: (teams) => api.skirmishStartBoxes(teams),
   currentArrangement: (teams) => api.skirmishCurrentArrangement(teams),
   downloadMissing: () => api.skirmishDownloadMissing(),
@@ -76,8 +79,11 @@ export function localRoom(): RoomModel {
     log: SKIRMISH_ROOM,
     caps: ALONE,
     io: skirmishIo,
-    // Reading a preset into this room is still to come; offering a button that
-    // could not do it would be worse than not offering one.
-    presets: () => null,
+    // A preset saved in a room on the server plays here, and one made from a
+    // replay becomes that game again against AI.
+    presets: () => ({
+      savePreset: api.skirmishSavePreset,
+      applyPreset: api.skirmishApplyPreset,
+    }),
   }
 }
