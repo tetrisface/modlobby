@@ -1,0 +1,44 @@
+# Maintainer: tetrisface@github
+#
+# The template for the AUR package. release.yml fills in pkgver, lets
+# updpkgsums write the checksums, test-builds it in an Arch container and
+# pushes the result to aur.archlinux.org on every release. Edit this file,
+# not the AUR copy.
+#
+# Repackages the .deb: same binary, same desktop file and icons. The binary
+# is stamped as a deb install, so its own updater would call dpkg, which Arch
+# does not have; the wrapper below turns the updater off and pacman does the
+# updating.
+pkgname=modlobby-bin
+pkgver=0.0.0
+pkgrel=1
+pkgdesc="Beyond All Reason lobby focused on modding, experiments and performance"
+arch=('x86_64')
+url="https://github.com/tetrisface/modlobby"
+license=('MIT')
+depends=('webkit2gtk-4.1' 'gtk3' 'hicolor-icon-theme')
+provides=('modlobby')
+conflicts=('modlobby')
+options=('!strip')
+source=(
+  "https://github.com/tetrisface/modlobby/releases/download/v${pkgver}/modlobby_${pkgver}_amd64.deb"
+  "LICENSE-${pkgver}::https://raw.githubusercontent.com/tetrisface/modlobby/v${pkgver}/LICENSE"
+)
+sha256sums=('SKIP' 'SKIP')
+
+package() {
+  # makepkg has already split the .deb into control.tar.*, data.tar.* and
+  # debian-binary; only the payload is wanted.
+  bsdtar -xf "${srcdir}"/data.tar.* -C "${pkgdir}"
+
+  install -d "${pkgdir}/usr/lib/modlobby"
+  mv "${pkgdir}/usr/bin/modlobby" "${pkgdir}/usr/lib/modlobby/modlobby"
+  cat > "${pkgdir}/usr/bin/modlobby" <<'WRAPPER'
+#!/bin/sh
+# pacman owns this install: the in-app updater stays off.
+MODLOBBY_AUTO_UPDATE=0 exec /usr/lib/modlobby/modlobby "$@"
+WRAPPER
+  chmod 755 "${pkgdir}/usr/bin/modlobby"
+
+  install -Dm644 "${srcdir}/LICENSE-${pkgver}" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

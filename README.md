@@ -4,8 +4,10 @@ A Beyond All Reason lobby focused on modding, experiments and performance.
 
 # Install
 
-## Binaries (.exe, .AppImage)
-[Releases](./releases) are tested on Windows 11 and has been said to work on linux.
+## Packages
+
+Packages are available at [releases](https://github.com/tetrisface/modlobby/releases) as .exe,
+.AppImage, .deb and .rpm, all of which update themselves from the next release.
 
 ## From source
 
@@ -23,22 +25,22 @@ bun run build    # installer under app/src-tauri/target/release/bundle/
 
 ## Rust workspace
 
-| Crate             | Role                                                                                                                                            |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `spring-protocol` | Legacy SpringLobbyProtocol (teiserver dialect): line codec, typed events, `LOGIN`/telemetry encoding, throttle policy, TLS-capable transport actor |
-| `lobby-core`      | Authoritative client state, the pure reducer `(state, event) -> effects`, and the SPADS announcement parser (votes, setting changes)              |
-| `lobby-ui`        | The UI contract: snapshot/delta types (exported to TypeScript by ts-rs), projection from core events, batching, the `UiTransport` seam            |
-| `lobby-runtime`   | The tokio actor every front end drives: connection, reducer, engine child, UI transport                                                          |
-| `settings`        | User settings as JSONC with comments preserved, live reload, a JSON Schema, and credentials in the OS keyring                                     |
-| `tweaks`          | `tweakdefs`/`tweakunits`: base64url, StyLua formatting, minification, `!bSet` commands with the 16 385-character gauge, diffs                     |
+| Crate             | Role                                                                                                                                                                                         |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `spring-protocol` | Legacy SpringLobbyProtocol (teiserver dialect): line codec, typed events, `LOGIN`/telemetry encoding, throttle policy, TLS-capable transport actor                                           |
+| `lobby-core`      | Authoritative client state, the pure reducer `(state, event) -> effects`, and the SPADS announcement parser (votes, setting changes)                                                         |
+| `lobby-ui`        | The UI contract: snapshot/delta types (exported to TypeScript by ts-rs), projection from core events, batching, the `UiTransport` seam                                                       |
+| `lobby-runtime`   | The tokio actor every front end drives: connection, reducer, engine child, UI transport                                                                                                      |
+| `settings`        | User settings as JSONC with comments preserved, live reload, a JSON Schema, and credentials in the OS keyring                                                                                |
+| `tweaks`          | `tweakdefs`/`tweakunits`: base64url, StyLua formatting, minification, `!bSet` commands with the 16 385-character gauge, diffs                                                                |
 | `content`         | What this machine has installed: engines, games via the rapid index, maps — the honest source of the sync bit; the one named HTTP client, and BAR's map index cached on disk behind its ETag |
-| `modoptions`      | BAR's modoption schema, parsed out of the game's own `modoptions.lua` and vendored as JSON for the app          |
-| `presets`         | Saved room setups with timestamps, the plan for applying one, and interop both ways with Chobby's `optionsPresets.json` |
-| `startbox`        | Startbox arrangements: the `base64url(zlib(json))` modoptions, and the resolution order the game enforces        |
-| `pve`             | What a PvE room scores, from the service BAR's in-game PvE Stats widget uses                                    |
-| `recoil`          | Engine launch: `spring://` URL, engine discovery in the BAR data dir, `--write-dir --isolation` command                                          |
-| `modlobby-cli`    | Harness: log in as a Chobby-class client, watch the battle list, spectate a room, launch the engine                                              |
-| `modlobby-app`    | The Tauri 2 shell (`app/src-tauri`) over `lobby-runtime`; the SolidJS front end lives in `app/`                                                  |
+| `modoptions`      | BAR's modoption schema, parsed out of the game's own `modoptions.lua` and vendored as JSON for the app                                                                                       |
+| `presets`         | Saved room setups with timestamps, the plan for applying one, and interop both ways with Chobby's `optionsPresets.json`                                                                      |
+| `startbox`        | Startbox arrangements: the `base64url(zlib(json))` modoptions, and the resolution order the game enforces                                                                                    |
+| `pve`             | What a PvE room scores, from the service BAR's in-game PvE Stats widget uses                                                                                                                 |
+| `recoil`          | Engine launch: `spring://` URL, engine discovery in the BAR data dir, `--write-dir --isolation` command                                                                                      |
+| `modlobby-cli`    | Harness: log in as a Chobby-class client, watch the battle list, spectate a room, launch the engine                                                                                          |
+| `modlobby-app`    | The Tauri 2 shell (`app/src-tauri`) over `lobby-runtime`; the SolidJS front end lives in `app/`                                                                                              |
 
 The app covers: the battle list with filters, sorting, map thumbnails and a
 hover card naming who is already in a room; the battle room with its minimap,

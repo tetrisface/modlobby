@@ -3,14 +3,14 @@
 # commit whose Cargo.toml already states its own version, and
 # `git checkout v<x> && cargo build` reproduces the shipped version string.
 #
-# Two jobs: `tag` bumps, tags and opens the GitHub release; `build` runs once
-# per platform (Windows NSIS, Linux AppImage; mac waits for a Recoil build)
-# and each attaches its own bundle, .sig and latest.json to that release as
-# soon as it finishes. tauri-action merges the `platforms` map of an existing
+# Three jobs: `tag` bumps, tags and opens the GitHub release; `build` runs once
+# per platform (Windows NSIS; Linux AppImage, .deb and .rpm; mac waits for a
+# Recoil build) and each attaches its bundles, .sig files and latest.json to
+# that release as soon as it finishes. tauri-action merges the `platforms` map of an existing
 # latest.json rather than replacing it, so the manifest fills in one platform
 # at a time. A client whose platform is not in the manifest yet sees a
 # transient "no update for this target" — the same class of window as the 404
-# before the first upload.
+# before the first upload. `aur` then publishes the Arch package from the .deb.
 name: release
 
 on:
@@ -122,7 +122,7 @@ jobs:
         working-directory: app
 
       # Builds the platform's bundle (tauri.conf.json names nsis,
-      # tauri.linux.conf.json overrides that with appimage), signs the updater
+      # tauri.linux.conf.json overrides that with appimage, deb and rpm), signs the updater
       # artifact, and attaches bundle, .sig and latest.json to the release. No
       # submodule is needed: the one file compiled in from external/ is only
       # read under #[cfg(test)].
@@ -137,3 +137,46 @@ jobs:
           tauriScript: bun run tauri
           tagName: v${{ needs.tag.outputs.next }}
           releaseName: ${{ needs.tag.outputs.next }}
+
+  # The Arch package: packaging/aur/PKGBUILD with this release's version,
+  # checksummed and test-built in an Arch container, then pushed to
+  # aur.archlinux.org. Needs an AUR account whose SSH key is in the secrets;
+  # without AUR_SSH_PRIVATE_KEY the job stops after printing the PKGBUILD.
+  aur:
+    needs: [tag, build]
+    # Only the Linux build matters here and the Windows one failing must not
+    # hide the package; the asset check below is what fails when the .deb is
+    # missing.
+    if: ${{ !cancelled() && needs.tag.result == 'success' }}
+    runs-on: ubuntu-24.04
+    env:
+      AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: v${{ needs.tag.outputs.next }}
+
+      - name: The .deb is on the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEXT: ${{ needs.tag.outputs.next }}
+        run: gh release view "v$NEXT" --json assets -q '.assets[].name' | grep -x "modlobby_${NEXT}_amd64.deb"
+
+      - name: PKGBUILD for this version
+        env:
+          NEXT: ${{ needs.tag.outputs.next }}
+        run: |
+          sed -i "s/^pkgver=.*/pkgver=$NEXT/" packaging/aur/PKGBUILD
+          cat packaging/aur/PKGBUILD
+
+      - uses: KSXGitHub/github-actions-deploy-aur@v4.2.0
+        if: ${{ env.AUR_SSH_PRIVATE_KEY != '' }}
+        with:
+          pkgname: modlobby-bin
+          pkgbuild: packaging/aur/PKGBUILD
+          updpkgsums: true
+          test: true
+          commit_username: ${{ secrets.AUR_USERNAME }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: ${{ needs.tag.outputs.next }}
