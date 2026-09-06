@@ -213,10 +213,13 @@ describe('the room with no server behind it', () => {
   })
 
   test('what needs somebody else is not drawn', async () => {
-    const { queryByText } = await open()
+    const { container, queryByText } = await open()
     expect(queryByText('Balance')).toBeNull()
     expect(queryByText('Host a public room')).toBeNull()
     expect(queryByText('Leave')).toBeNull()
+    // Nobody to host it for, and nobody to read its name.
+    expect(container.textContent).not.toContain('Host')
+    expect(container.querySelector('.room-title button')).toBeNull()
     // A preset, though, this room can carry.
     expect(localRoom().presets()).not.toBeNull()
   })

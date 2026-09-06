@@ -478,16 +478,22 @@ pub async fn skirmish_open(
         }
     }
     let library = content::Library::new(data_dirs(&app)?);
-    let first = |held: Option<String>, mut from: Vec<String>| {
-        held.filter(|held| !held.is_empty())
-            .or_else(|| from.pop())
+    // The newest, which is what both lists are ordered by and what somebody
+    // who installed BAR yesterday wants. Every part of it can be changed in
+    // the room afterwards.
+    let newest = |asked: Option<String>, from: Vec<String>| {
+        asked
+            .filter(|asked| !asked.is_empty())
+            .or_else(|| from.into_iter().next())
             .unwrap_or_default()
     };
     let room = skirmish::Room::new(
         player_name(&app),
-        first(game, library.installed_games()),
-        spring_name(&app, first(map, library.installed_map_files())).await,
-        first(engine, library.installed_engines()),
+        newest(game, library.installed_games()),
+        // Maps have no newest; the list is alphabetical and the first of it is
+        // at least the same one every time.
+        spring_name(&app, newest(map, library.installed_map_files())).await,
+        newest(engine, library.installed_engines()),
     );
     app.client.open_skirmish(room).await?;
     Ok(())

@@ -20,10 +20,11 @@ git clone https://github.com/tetrisface/modlobby
 cd modlobby/app
 bun install
 bun run build    # installer under app/src-tauri/target/release/bundle/
-bun run dev      # development window
 ```
 
 # Development
+
+After `bun install` above launch the app with `bun run dev`.
 
 ## Rust workspace
 
@@ -39,8 +40,8 @@ bun run dev      # development window
 | `modoptions`      | BAR's modoption schema, parsed out of the game's own `modoptions.lua` and vendored as JSON for the app                                                                                       |
 | `presets`         | Saved room setups with timestamps, the plan for applying one, and interop both ways with Chobby's `optionsPresets.json`                                                                      |
 | `startbox`        | Startbox arrangements: the `base64url(zlib(json))` modoptions, and the resolution order the game enforces                                                                                    |
-| `skirmish`        | A battle room with no server behind it: the same room the lobby draws, changed locally, and the start script it becomes                                                                       |
-| `pve`             | What a PvE room scores, from the service BAR's in-game PvE Stats widget uses                                                                                                                 |
+| `skirmish`        | A battle room with no server behind it: the same room the lobby draws, changed locally, and the start script it becomes                                                                      |
+| `pve`             | PvE room difficulty estimate from the 3rd-party service pve.bar.                                                                                                                             |
 | `recoil`          | Engine launch: `spring://` URL, engine discovery in the BAR data dir, `--write-dir --isolation` command                                                                                      |
 | `modlobby-cli`    | Harness: log in as a Chobby-class client, watch the battle list, spectate a room, launch the engine                                                                                          |
 | `modlobby-app`    | The Tauri 2 shell (`app/src-tauri`) over `lobby-runtime`; the SolidJS front end lives in `app/`                                                                                              |
@@ -112,7 +113,6 @@ Toolchains are pinned exactly: `rust-toolchain.toml` for Rust, `mise.toml` for t
 JS tooling needs. mise honours `rust-toolchain.toml` only when `rust` is listed in
 `idiomatic_version_file_enable_tools`; without it a global `[tools] rust` silently wins over
 the project pin.
-
 
 ## License
 

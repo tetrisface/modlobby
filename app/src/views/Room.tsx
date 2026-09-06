@@ -85,9 +85,12 @@ export function Room() {
    * `BarManagerCmd.conf`). Not drawing the pen beats a silent refusal.
    */
   const canRename = createMemo(() => {
+    // A room has a name because it is listed for other people to read. Where
+    // it is not listed there is nobody to name it for, so the pen stays away
+    // rather than offering to change a label only you will ever see.
+    if (!room.caps.spads) return false
     const me = room.me()
     if (me === null) return false
-    if (!room.caps.spads) return true
     if (room.my()?.boss === me) return true
     return room.users()[me]?.battleStatus?.player ?? false
   })
@@ -272,9 +275,13 @@ export function Room() {
                     </b>
                   </Show>
                 </span>
-                <span>
-                  Host <b>{b().founder}</b>
-                </span>
+                {/* Whose room it is, which is only worth saying when it is
+                    somebody else's. */}
+                <Show when={room.caps.spads}>
+                  <span>
+                    Host <b>{b().founder}</b>
+                  </span>
+                </Show>
                 <span>
                   Engine <Choice what='engine' shown={b().engineVersion} />
                 </span>

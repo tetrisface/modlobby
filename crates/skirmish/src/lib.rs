@@ -844,6 +844,68 @@ mod tests {
         assert!(!room.set_ai_option("Nobody", "cheating", "1"));
     }
 
+    /// The room is written to `skirmish.json` on every change and read back on
+    /// the next run, so what survives that round trip is what somebody finds
+    /// waiting for them. Everything they set has to be in it.
+    #[test]
+    fn a_room_comes_back_from_disk_as_the_room_it_was() {
+        let mut room = room();
+        room.set_option("ranked_game", "0");
+        room.set_option("tweakdefs1", "LS1OdXR0eUIgdjEuNTI");
+        room.set_start_pos(1);
+        room.set_title("Tuesday night raptors");
+        room.set_side(3);
+        room.take_seat(0, 2);
+        room.add_ai("BARb", "BARb", 1, 1, COLOURS[1]);
+        room.set_ai_option("BARb", "cheating", "1");
+        room.set_layout(3, 4);
+
+        let text = serde_json::to_string(&room).unwrap();
+        let back: Room = serde_json::from_str(&text).unwrap();
+        assert_eq!(back, room);
+
+        // And the things a person would notice were gone.
+        assert_eq!(back.title, "Tuesday night raptors");
+        assert_eq!(back.modoption("ranked_game"), "0");
+        assert_eq!(back.start_pos(), 1);
+        assert_eq!(back.seat().unwrap().ally_team, 2);
+        assert_eq!(back.seat().unwrap().side, 3);
+        assert_eq!(back.ais()[0].options["cheating"], "1");
+        assert_eq!(back.layout_teams(), 3);
+        assert_eq!(back.player_colour(), room.player_colour());
+    }
+
+    /// A file from before a field existed still opens: what is missing falls
+    /// back rather than throwing the whole room away.
+    #[test]
+    fn a_room_written_by_an_older_build_still_opens() {
+        let older = r#"{
+            "title": "Skirmish",
+            "player": "me",
+            "game": "BAR test-1",
+            "map": "Comet Catcher",
+            "engine": "2026.07.04",
+            "script_tags": {},
+            "seat": { "team": 0, "ally_team": 0, "side": 0, "handicap": 0 },
+            "ais": [
+                {
+                    "name": "BARb",
+                    "ai": "BARb",
+                    "seat": { "team": 1, "ally_team": 1, "side": 0, "handicap": 0 },
+                    "colour": 123
+                }
+            ],
+            "history": [],
+            "next_seq": 0,
+            "layout": null
+        }"#;
+        let back: Room = serde_json::from_str(older).unwrap();
+        assert_eq!(back.ais().len(), 1);
+        // Added since: an AI's own options, and the player's colour.
+        assert!(back.ais()[0].options.is_empty());
+        assert_eq!(back.player_colour(), COLOURS[0]);
+    }
+
     #[test]
     fn start_positions_travel_as_the_script_tag_they_are() {
         let mut room = room();

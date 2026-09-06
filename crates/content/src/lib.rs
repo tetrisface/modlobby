@@ -22,6 +22,7 @@ pub mod map_thumb;
 pub mod release;
 pub mod replays;
 
+use std::cmp::Ordering;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
@@ -160,7 +161,7 @@ impl Library {
             .find_map(|dir| recoil::find_downloader(dir, version))
     }
 
-    /// Every engine version installed anywhere, newest name first.
+    /// Every engine version installed anywhere, newest first.
     pub fn installed_engines(&self) -> Vec<String> {
         let mut versions: Vec<String> = self
             .dirs
@@ -169,7 +170,7 @@ impl Library {
             .collect();
         versions.sort();
         versions.dedup();
-        versions.reverse();
+        newest_first(&mut versions);
         versions
     }
 
@@ -417,6 +418,86 @@ mod tests {
     }
 }
 
+/// By name, then newest first within a name.
+///
+/// Neither of the two things this orders sorts right as plain text.
+///
+/// Engines are dated — `2026.07.04` — but an engine built from source is
+/// `local-build`, which as text comes above every date and would otherwise be
+/// the one a fresh room picked.
+///
+/// Games are worse: the list is every rapid package on the disk, so `Beyond
+/// All Reason test-31232-3649678` sits beside `BYAR Chobby test-4627-9d085d9`,
+/// and "newest" across two different things means nothing. Sorting the *name*
+/// up and the *version* down is what keeps each game's own versions together
+/// with its newest at the top, and puts the game whose name comes first at the
+/// top of the lot — which is the only ordering between two of them that is
+/// about anything at all.
+///
+/// So: text ascending, because it is a name; numbers descending, because they
+/// are a version; and a name with no numbers in it last, which is where a
+/// hand-built engine belongs among the releases.
+pub fn newest_first(names: &mut [String]) {
+    names.sort_by(|a, b| {
+        // A name that says nothing about when it is goes to the bottom.
+        has_digit(b)
+            .cmp(&has_digit(a))
+            .then_with(|| compare(&natural(a), &natural(b)))
+            .then_with(|| a.cmp(b))
+    });
+}
+
+fn has_digit(name: &str) -> bool {
+    name.chars().any(|c| c.is_ascii_digit())
+}
+
+fn compare(left: &[Run], right: &[Run]) -> Ordering {
+    for pair in left.iter().zip(right.iter()) {
+        let order = match pair {
+            (Run::Text(a), Run::Text(b)) => a.cmp(b),
+            (Run::Number(a), Run::Number(b)) => b.cmp(a),
+            // A name that opens with its version outranks one behind a prefix,
+            // so `2026.07.04` is offered above `recoil_2025.04.04`.
+            (Run::Number(_), Run::Text(_)) => Ordering::Less,
+            (Run::Text(_), Run::Number(_)) => Ordering::Greater,
+        };
+        if order != Ordering::Equal {
+            return order;
+        }
+    }
+    left.len().cmp(&right.len())
+}
+
+/// A name as the runs it is made of: text compared as text, digits as digits.
+///
+/// `u64` because a build number is at most a few million and a date has no
+/// component that could overflow; anything longer than a `u64` is not a
+/// version and falls back to being compared as the text it is.
+fn natural(name: &str) -> Vec<Run> {
+    let mut runs = Vec::new();
+    let mut rest = name;
+    while !rest.is_empty() {
+        let digits = rest.starts_with(|c: char| c.is_ascii_digit());
+        let end = rest
+            .find(|c: char| c.is_ascii_digit() != digits)
+            .unwrap_or(rest.len());
+        let (run, tail) = rest.split_at(end);
+        runs.push(match run.parse::<u64>() {
+            Ok(number) if digits => Run::Number(number),
+            _ => Run::Text(run.to_ascii_lowercase()),
+        });
+        rest = tail;
+    }
+    runs
+}
+
+/// A stretch of one kind.
+#[derive(Debug, PartialEq, Eq)]
+enum Run {
+    Text(String),
+    Number(u64),
+}
+
 impl Library {
     /// Every game version whose package is actually on the disk, newest name
     /// first. Rapid lists far more than is installed, so the `.sdp` decides.
@@ -448,7 +529,7 @@ impl Library {
         }
         names.sort();
         names.dedup();
-        names.reverse();
+        newest_first(&mut names);
         names
     }
 
@@ -566,5 +647,77 @@ mod listing_tests {
         let dir = tempfile::tempdir().unwrap();
         assert!(Library::new(dir.path()).installed_map_files().is_empty());
         assert!(Library::new(dir.path()).installed_games().is_empty());
+    }
+
+    fn ordered(names: &[&str]) -> Vec<String> {
+        let mut held: Vec<String> = names.iter().map(|n| (*n).to_owned()).collect();
+        newest_first(&mut held);
+        held
+    }
+
+    #[test]
+    fn engines_come_newest_first_with_a_hand_built_one_last() {
+        // As text `local-build` outranks every date, which would make it the
+        // one a fresh room picked.
+        assert_eq!(
+            ordered(&["2025.04.01", "local-build", "2026.07.04", "2026.07.03"]),
+            ["2026.07.04", "2026.07.03", "2025.04.01", "local-build"]
+        );
+    }
+
+    #[test]
+    fn a_build_number_is_compared_as_a_number_not_as_text() {
+        // The day BAR's build number gains a digit, text ordering puts the
+        // newest game at the bottom.
+        assert_eq!(
+            ordered(&[
+                "Beyond All Reason test-9999-aaa",
+                "Beyond All Reason test-100000-bbb",
+                "Beyond All Reason test-31232-ccc",
+            ]),
+            [
+                "Beyond All Reason test-100000-bbb",
+                "Beyond All Reason test-31232-ccc",
+                "Beyond All Reason test-9999-aaa",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_date_outranks_a_prefixed_one_rather_than_sorting_under_its_prefix() {
+        assert_eq!(
+            ordered(&["recoil_2025.04.04", "2026.07.04"]),
+            ["2026.07.04", "recoil_2025.04.04"]
+        );
+    }
+
+    #[test]
+    fn names_with_nothing_to_go_on_are_at_least_alphabetical() {
+        assert_eq!(
+            ordered(&["local-build", "another-build"]),
+            ["another-build", "local-build"]
+        );
+    }
+
+    /// The games list is every rapid package on the disk, so BAR sits beside
+    /// the Chobby menu archive. "Newest" across the two means nothing; what
+    /// keeps a room from opening on the lobby menu is ordering the name up and
+    /// the version down.
+    #[test]
+    fn each_games_versions_stay_together_with_its_newest_on_top() {
+        assert_eq!(
+            ordered(&[
+                "BYAR Chobby test-4627-9d085d9",
+                "Beyond All Reason test-31221-719595a",
+                "BYAR Chobby test-4600-aaaaaaa",
+                "Beyond All Reason test-31232-3649678",
+            ]),
+            [
+                "Beyond All Reason test-31232-3649678",
+                "Beyond All Reason test-31221-719595a",
+                "BYAR Chobby test-4627-9d085d9",
+                "BYAR Chobby test-4600-aaaaaaa",
+            ]
+        );
     }
 }

@@ -178,5 +178,9 @@ describe('a room behind the seam', () => {
     expect(buttons(container, '.card-actions')).toEqual(['Leave'])
     expect(buttons(container, '.host-bar')).toContain('Start')
     expect(buttons(container, '.host-bar')).toContain('Force start')
+    // A listed room is named for other people and run by somebody, so it says
+    // whose it is and offers the pen. The skirmish test asserts neither.
+    expect(container.textContent).toContain('Host')
+    expect(container.querySelector('.room-title button')).toBeTruthy()
   })
 })

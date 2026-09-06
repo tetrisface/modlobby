@@ -70,9 +70,7 @@ export function VersionPicker(props: {
   )
   const versions = createMemo(() => {
     const held = props.what === 'Game' ? options()?.games : options()?.engines
-    return [...(held ?? [])]
-      .reverse()
-      .map((value) => ({ value, label: value, known: true }))
+    return (held ?? []).map((value) => ({ value, label: value, known: true }))
   })
 
   return (
