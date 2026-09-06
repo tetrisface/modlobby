@@ -36,7 +36,13 @@ import { api, describeError } from '../ipc/client'
 import { boxSignature, centre, outline } from '../lib/boxes'
 import { downloadFraction } from '../lib/download'
 import { TILES } from '../lib/maps'
-import { type Roster, arrange, emptySeats } from '../lib/roster'
+import {
+  type Roster,
+  arrange,
+  emptySeats,
+  freeTeam,
+  unusedBotName,
+} from '../lib/roster'
 import { readSkills, teamSkill, type Skill } from '../lib/skill'
 import { chat, pushNotice } from '../store/chat'
 import { joinMilestone } from '../store/join'
@@ -46,7 +52,9 @@ import { HostBar } from './HostBar'
 import { PveScore } from './PveScore'
 import { RoomTitle } from './RoomTitle'
 import { useRoom, type RoomModel } from './room/model'
-import { Seat, seatsAllowed, sitOn } from './Seat'
+import { dragging } from '../lib/drag'
+import { Seat, sitOn } from './Seat'
+import { movable, moveTo, setBonus, type Target } from './room/move'
 import { StartBoxes } from './StartBoxes'
 import { Setup } from './Setup'
 import { VoteBar } from './VoteBar'
@@ -95,9 +103,35 @@ export function Room() {
     return room.users()[me]?.battleStatus?.player ?? false
   })
 
+  /** Every team drawn, which is where a dragged row may be dropped. */
+  const allyTeams = () => occupants().teams.map((team) => team.allyTeam)
+
+  /**
+   * What a row may do about where it sits, or nothing where it may do nothing.
+   *
+   * Handed to the row rather than worked out there: which teams exist is the
+   * room's question, and the answer is the same for the drag and for the menu.
+   */
+  const movesFor = (target: Target, on: number | null) => {
+    if (!movable(room, target)) return undefined
+    const say = (work: Promise<void>) =>
+      work.catch((error) => pushNotice('warning', describeError(error)))
+    return {
+      teams: allyTeams(),
+      on,
+      to: (ally: number) => say(moveTo(room, target, ally)),
+      ...(target.kind === 'bot'
+        ? {
+            bonus: (percent: number) =>
+              say(setBonus(room, target, percent, on ?? 0)),
+            bonusNow: target.handicap,
+          }
+        : {}),
+    }
+  }
+
   /** A team's header offers a seat on it unless we already hold one there. */
   const canJoin = (allyTeam: number): boolean => {
-    if (!seatsAllowed(room)) return false
     const me = room.me()
     const status = me === null ? undefined : room.users()[me]?.battleStatus
     return !(status?.player && status.allyTeam === allyTeam)
@@ -369,14 +403,14 @@ export function Room() {
           <div class='room-body'>
             <div class='room-main'>
               <div class='rosters'>
-                <div class='teams'>
+                <div class='teams' classList={{ dropping: dragging() }}>
                   {/* By position, not by object: the memo builds new team
                       objects on every status line, and a `For` keyed on
                       them rebuilt every row each time. The users inside are
                       the store's own objects, so their rows do survive. */}
                   <Index each={occupants().teams}>
                     {(team) => (
-                      <section class='team'>
+                      <section class='team' data-ally={team().allyTeam}>
                         <header class='team-head'>
                           <span class='name'>Team {team().allyTeam + 1}</span>
                           <span class='count'>{team().expected}</span>
@@ -411,6 +445,12 @@ export function Room() {
                                   ? lobby.download
                                   : undefined
                               }
+                              moves={movesFor(
+                                user.name === room.me()
+                                  ? { kind: 'me' }
+                                  : { kind: 'player', name: user.name },
+                                team().allyTeam,
+                              )}
                             />
                           )}
                         </For>
@@ -449,6 +489,40 @@ export function Room() {
                                         )
                                   : undefined
                               }
+                              onClone={
+                                bot.owner === room.me()
+                                  ? () =>
+                                      room.io
+                                        .addBot(
+                                          unusedBotName(room.battle(), bot.ai),
+                                          bot.ai,
+                                          freeTeam(
+                                            b(),
+                                            room.users(),
+                                            room.me(),
+                                          ),
+                                          bot.status.allyTeam,
+                                          bot.teamColour,
+                                        )
+                                        .catch((error) =>
+                                          pushNotice(
+                                            'warning',
+                                            describeError(error),
+                                          ),
+                                        )
+                                  : undefined
+                              }
+                              moves={movesFor(
+                                {
+                                  kind: 'bot',
+                                  name: bot.name,
+                                  mine: bot.owner === room.me(),
+                                  team: bot.status.team,
+                                  handicap: bot.status.handicap,
+                                  colour: bot.teamColour,
+                                },
+                                team().allyTeam,
+                              )}
                             />
                           )}
                         </For>

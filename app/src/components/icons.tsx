@@ -234,6 +234,26 @@ export function IconSprite() {
             stroke-linecap='round'
           />
         </symbol>
+        {/* A gear, on every corner notice: the way to the settings that
+            decide which of them appear and where. */}
+        <symbol id='act-gear' viewBox='0 0 20 20'>
+          <circle
+            cx='10'
+            cy='10'
+            r='2.6'
+            fill='none'
+            stroke='currentColor'
+            stroke-width='1.6'
+          />
+          <path
+            d='M10 2.6 v2 M10 15.4 v2 M17.4 10 h-2 M4.6 10 h-2
+               M15.2 4.8 l-1.4 1.4 M6.2 13.8 l-1.4 1.4
+               M15.2 15.2 l-1.4 -1.4 M6.2 6.2 l-1.4 -1.4'
+            stroke='currentColor'
+            stroke-width='1.6'
+            stroke-linecap='round'
+          />
+        </symbol>
         <symbol id='act-pen' viewBox='0 0 20 20'>
           <path
             d='M4 16 l0.9 -3.6 L13.4 3.9 a1.6 1.6 0 0 1 2.3 0 l0.4 0.4 a1.6 1.6 0 0 1 0 2.3 L7.6 15.1 Z'

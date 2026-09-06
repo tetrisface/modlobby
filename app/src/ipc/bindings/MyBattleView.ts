@@ -6,7 +6,13 @@ export type MyBattleView = {
 /**
  * Who SPADS says is bossing the room, when it has said.
  */
-boss: string | null, id: number, gameHash: string, 
+boss: string | null, 
+/**
+ * How the room balances itself: `off`, `on`, `advanced`. `null` where the
+ * room has not said, which is not the same as `off`: a host without BAR's
+ * BarManager plugin never reports it.
+ */
+autoBalance: string | null, id: number, gameHash: string, 
 /**
  * Lowercase script-tag keys (`game/modoptions/tweakdefs`, `game/hosttype`, …).
  */

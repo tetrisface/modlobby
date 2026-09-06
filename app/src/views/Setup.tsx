@@ -240,12 +240,15 @@ export function Setup() {
         </Show>
       </div>
 
+      {/* The paste banner is the chat throttle showing through; nothing is
+          throttled where nothing is said. Above the pane switch, because
+          loading a preset is a paste too -- and it is the pane you are on
+          while you wait for one. */}
+      <Show when={room.caps.spads}>
+        <PasteBanner />
+      </Show>
+
       <Show when={pane() === 'setup'} fallback={<Presets />}>
-        {/* The paste banner is the chat throttle showing through; nothing is
-            throttled where nothing is said. */}
-        <Show when={room.caps.spads}>
-          <PasteBanner />
-        </Show>
         <div class='setup-tabs' ref={strip}>
           <button
             class='setup-tab'

@@ -89,6 +89,7 @@ export function battle(over: Partial<BattleView> = {}): BattleView {
 export function myBattle(over: Partial<MyBattleView> = {}): MyBattleView {
   return {
     boss: null,
+    autoBalance: 'off',
     id: 1,
     gameHash: '',
     scriptTags: {},
@@ -134,6 +135,8 @@ export function recordingIo(calls: Calls): RoomIo {
     setSide: async (side) => note('setSide', side),
     addBot: async (name, ai, team, allyTeam, colour) =>
       note('addBot', name, ai, team, allyTeam, colour),
+    updateBot: async (name, team, allyTeam, handicap, colour) =>
+      note('updateBot', name, team, allyTeam, handicap, colour),
     removeBot: async (name) => note('removeBot', name),
     launch: async () => note('launch'),
     leaveBattle: async () => note('leaveBattle'),

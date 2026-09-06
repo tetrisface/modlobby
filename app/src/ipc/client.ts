@@ -109,6 +109,14 @@ export const api = {
     allyTeam: number,
     colour: number,
   ) => invoke<void>('add_bot', { name, ai, team, allyTeam, colour }),
+  /** Only for an AI we added: the server drops anyone else's, silently. */
+  updateBot: (
+    name: string,
+    team: number,
+    allyTeam: number,
+    handicap: number,
+    colour: number,
+  ) => invoke<void>('update_bot', { name, team, allyTeam, handicap, colour }),
   removeBot: (name: string) => invoke<void>('remove_bot', { name }),
   setAway: (away: boolean) => invoke<void>('set_away', { away }),
   activity: () => invoke<void>('activity'),

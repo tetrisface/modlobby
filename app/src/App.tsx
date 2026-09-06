@@ -21,11 +21,16 @@ import { clickLeavesOverlay, escapeLeavesOverlay } from './lib/overlay'
 import { api, describeError, errorCode } from './ipc/client'
 import type { Settings } from './ipc/bindings/Settings'
 import type { VersionView } from './ipc/bindings/VersionView'
-import { chat, pushNotice } from './store/chat'
+import { chat, holdNotices, pushNotice } from './store/chat'
 import { lobby, myRoom } from './store/lobby'
 import { loadNews, unreadNews } from './store/news'
 import { autoLogin } from './store/session'
-import { applySettings, settings } from './store/settings'
+import {
+  applySettings,
+  nudgeScale,
+  resetScale,
+  settings,
+} from './store/settings'
 import {
   available,
   busy as updating,
@@ -199,8 +204,28 @@ function Layout(props: ParentProps) {
     const clicks = (event: MouseEvent) => {
       if (over() && clickLeavesOverlay(event.target)) void api.overlayToggle()
     }
+    /**
+     * Ctrl+wheel sizes the interface, Ctrl+0 puts it back.
+     *
+     * Not passive: the whole point is to take the gesture off the browser,
+     * which would otherwise zoom the webview itself and leave the two
+     * fighting over the same wheel.
+     */
+    const zoom = (event: WheelEvent) => {
+      if (!event.ctrlKey) return
+      event.preventDefault()
+      if (event.deltaY !== 0) nudgeScale(event.deltaY < 0 ? 1 : -1)
+    }
+    const reset = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key === '0') {
+        event.preventDefault()
+        resetScale()
+      }
+    }
     window.addEventListener('keydown', keys)
+    window.addEventListener('keydown', reset)
     window.addEventListener('mousedown', clicks)
+    window.addEventListener('wheel', zoom, { passive: false })
     // The idle disconnect counts from the last of these. Passive: none of
     // them is prevented, and a scroll must not wait on IPC.
     const touch = activityReporter(() => void api.activity().catch(() => {}))
@@ -208,7 +233,9 @@ function Layout(props: ParentProps) {
       window.addEventListener(event, touch, { passive: true })
     onCleanup(() => {
       window.removeEventListener('keydown', keys)
+      window.removeEventListener('keydown', reset)
       window.removeEventListener('mousedown', clicks)
+      window.removeEventListener('wheel', zoom)
       for (const event of ACTIVITY_EVENTS)
         window.removeEventListener(event, touch)
     })
@@ -507,10 +534,30 @@ function Layout(props: ParentProps) {
 }
 
 function Notices() {
+  const navigate = useNavigate()
   return (
-    <div class='notices'>
+    // Held while the pointer is in here, so that reading one does not race
+    // its own timer -- which is the whole complaint about a corner like this.
+    <div
+      class='notices'
+      onPointerEnter={() => holdNotices(true)}
+      onPointerLeave={() => holdNotices(false)}
+    >
       <For each={chat.notices.slice(-3)}>
-        {(notice) => <div class={`notice ${notice.level}`}>{notice.text}</div>}
+        {(notice) => (
+          <div class={`notice ${notice.level}`}>
+            <span class='notice-text'>{notice.text}</span>
+            {/* The way out of the corner: which of these appear, and where. */}
+            <button
+              class='notice-settings'
+              title='Which notifications appear, and where'
+              aria-label='Notification settings'
+              onClick={() => navigate('/settings?tab=notifications')}
+            >
+              <Glyph id='act-gear' />
+            </button>
+          </div>
+        )}
       </For>
     </div>
   )

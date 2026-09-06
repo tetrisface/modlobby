@@ -15,6 +15,7 @@ import {
   user,
   type Calls,
 } from './fixture'
+import { status } from './fixture'
 import { RoomProvider, type RoomModel } from './model'
 
 /**
@@ -110,6 +111,45 @@ function alone(calls: Calls): RoomModel {
     io: recordingIo(calls),
   })
 }
+
+/** Me on the first team, an AI on the third: the second is an empty gap. */
+function gapped(): RoomModel {
+  return fakeRoom({
+    caps: ALONE,
+    battle: () =>
+      battle({
+        bots: [
+          bot('BARb', {
+            status: status({ allyTeam: 2, team: 1, sync: 'bot' }),
+          }),
+        ],
+      }),
+    users: () => ({
+      me: user('me', { battleStatus: status({ allyTeam: 0 }) }),
+    }),
+  })
+}
+
+describe('choosing a team', () => {
+  test('an empty team between two full ones can still be taken', async () => {
+    const { container } = await open(gapped())
+
+    const picker = container.querySelector<HTMLSelectElement>('.seat select')
+    const offered = [...(picker?.options ?? [])].map((o) => o.textContent)
+    // Team 2 is empty and sits below an occupied team 3. It used to be
+    // missing entirely: the list was the teams in use plus one past the top.
+    expect(offered).toContain('New team 2')
+    expect(offered).toContain('Join team 3')
+  })
+
+  test('the team you are on reads as yours, not as one to join', async () => {
+    const { container } = await open(gapped())
+
+    const picker = container.querySelector<HTMLSelectElement>('.seat select')
+    const offered = [...(picker?.options ?? [])].map((o) => o.textContent)
+    expect(offered[0]).toBe('Team 1')
+  })
+})
 
 describe('a room behind the seam', () => {
   test('draws teams, the map and the settings with no server at all', async () => {

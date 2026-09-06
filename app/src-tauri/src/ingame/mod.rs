@@ -23,6 +23,7 @@
 //! reach a loopback port, and this one can quit a game, so being reachable is
 //! not the same as being allowed.
 
+pub mod menu;
 pub mod protocol;
 pub mod widget;
 
@@ -47,11 +48,13 @@ pub trait Actions: Send + Sync + 'static {
     fn quit_game(&self) -> bool;
 }
 
-/// A running control socket, and where its widget was written.
+/// A running control socket, and where its two files were written.
 pub struct InGame {
     pub port: u16,
     pub token: String,
     installed: Option<PathBuf>,
+    /// The LuaMenu archive, when one was written.
+    menu: Option<PathBuf>,
 }
 
 impl InGame {
@@ -78,7 +81,17 @@ impl InGame {
             port,
             token,
             installed: None,
+            menu: None,
         })
+    }
+
+    /// Writes the LuaMenu archive, replacing any older one. Its name, for
+    /// `--menu`; the caller passes that to the engine only if [`menu::present`]
+    /// still agrees at launch time.
+    pub fn install_menu(&mut self, data_dir: &Path) -> std::io::Result<PathBuf> {
+        let path = menu::install(data_dir, self.port, &self.token)?;
+        self.menu = Some(path.clone());
+        Ok(path)
     }
 
     /// Writes the widget into the BAR data directory, replacing any older one.
@@ -92,8 +105,13 @@ impl InGame {
         Ok(path)
     }
 
-    /// Takes the widget back out. Called on the way down, and safe to repeat.
+    /// Takes both files back out. Called on the way down, and safe to repeat.
     pub fn uninstall(&mut self) {
+        if let Some(archive) = self.menu.take()
+            && let Err(err) = std::fs::remove_dir_all(&archive)
+        {
+            tracing::warn!(%err, path = %archive.display(), "leaving the in-game menu behind");
+        }
         let Some(path) = self.installed.take() else {
             return;
         };
@@ -234,6 +252,7 @@ mod tests {
             port: 4242,
             token: "abc".into(),
             installed: None,
+            menu: None,
         };
 
         let path = ingame.install(home.path()).unwrap();

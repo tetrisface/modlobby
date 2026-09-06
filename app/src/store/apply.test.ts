@@ -45,6 +45,7 @@ const room: SkirmishView = {
   battle: { ...battle(0, ['me']), title: 'Skirmish', founder: 'me' },
   my: {
     boss: 'me',
+    autoBalance: 'off',
     id: 0,
     gameHash: '',
     scriptTags: { 'game/modoptions/ranked_game': '0' },
@@ -181,6 +182,7 @@ describe('apply', () => {
       type: 'myBattle' as const,
       data: {
         boss: null,
+        autoBalance: 'off',
         id,
         gameHash: 'h',
         scriptTags: {},

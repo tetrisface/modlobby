@@ -49,10 +49,18 @@ function allowed(): Promise<boolean> {
   return permission
 }
 
-/** Where this kind of event is meant to be said, if anywhere. */
-function wanted(kind: AlertKind): Alert {
+/**
+ * Where this kind of event is meant to be said, if anywhere.
+ *
+ * Exported for the same reason [`plan`] is: between them they are the whole
+ * decision, and the rest of this file is desktop plumbing no test can reach.
+ */
+export function wanted(kind: AlertKind): Alert {
   const notifications = settings()?.notifications
   if (!notifications) return 'off'
+  // One switch over all of them, and it forgets nothing: how each kind was
+  // set is still there when it goes back off.
+  if (notifications.doNotDisturb) return 'off'
   switch (kind) {
     case 'privateMessage':
       return notifications.privateMessage

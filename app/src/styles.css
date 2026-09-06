@@ -42,7 +42,10 @@
   --silver: #c9d1db;
   --gold: #e8bd52;
   font-family: var(--body);
-  font-size: 14px;
+  /* The one lever every length hangs off: sizes below are `rem`, so the
+     whole interface scales with this. Ctrl+wheel and the settings control
+     write `--ui-scale`; nothing else touches the root size. */
+  font-size: calc(16px * var(--ui-scale, 1));
 }
 
 * {
@@ -89,10 +92,10 @@ button {
   color: var(--text);
   border: 1px solid var(--line);
   border-radius: 2px;
-  padding: 5px 12px;
+  padding: 0.3125rem 0.75rem;
   cursor: pointer;
   font-family: var(--display);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.05em;
 }
@@ -127,9 +130,9 @@ textarea {
   color: var(--text);
   border: 1px solid var(--line);
   border-radius: 2px;
-  padding: 5px 9px;
+  padding: 0.3125rem 0.5625rem;
   font-family: var(--body);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .shell {
@@ -141,8 +144,8 @@ textarea {
 .nav {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 8px 16px;
+  gap: 1.125rem;
+  padding: 0.625rem 1.125rem;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
   /* An over-full row shortens the room card rather than folding a button
@@ -155,8 +158,8 @@ textarea {
 .nav a {
   color: var(--muted);
   text-decoration: none;
-  font-size: 13px;
-  padding-bottom: 2px;
+  font-size: 1.0625rem;
+  padding-bottom: 0.125rem;
 }
 
 .nav a:hover {
@@ -171,8 +174,9 @@ textarea {
 .brand {
   display: inline-flex;
   align-items: baseline;
-  gap: 6px;
+  gap: 0.375rem;
   font-family: var(--display);
+  font-size: 1.1875rem;
   font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--accent);
@@ -182,12 +186,12 @@ textarea {
    warning colour because that is what it is: a caution, not a feature. */
 .brand .stage {
   position: relative;
-  top: -2px;
-  font-size: 7px;
+  top: -0.125rem;
+  font-size: 0.5625rem;
   font-weight: 500;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  padding: 1px 3.5px;
+  padding: 0.0625rem 0.21875rem;
   border-radius: 2px;
   border: 1px solid rgba(242, 184, 75, 0.4);
   color: var(--warn);
@@ -202,10 +206,10 @@ textarea {
 .nav a.nav-room {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-width: 128px;
-  max-width: 200px;
-  padding: 0 8px 0 0;
+  gap: 0.5rem;
+  min-width: 8rem;
+  max-width: 12.5rem;
+  padding: 0 0.5rem 0 0;
   border-radius: 3px;
   /* Clips the picture to the corners; the ring is outside and unclipped. */
   overflow: hidden;
@@ -224,9 +228,9 @@ textarea {
 
 .nav-room-title {
   font-family: var(--display);
-  font-size: 12px;
+  font-size: 0.9375rem;
   font-weight: 600;
-  line-height: 16px;
+  line-height: 1.25rem;
   letter-spacing: 0.01em;
   color: var(--text);
   overflow: hidden;
@@ -235,8 +239,8 @@ textarea {
 
 .nav-room-pic {
   flex: none;
-  width: 40px;
-  height: 28px;
+  width: 2.5rem;
+  height: 1.75rem;
   background-color: var(--sunken);
 }
 
@@ -250,8 +254,8 @@ textarea {
    under the title when it does. */
 .nav-room-count {
   font-family: var(--mono);
-  font-size: 10.5px;
-  line-height: 12px;
+  font-size: 0.84375rem;
+  line-height: 0.9375rem;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -279,19 +283,47 @@ textarea {
 
 .notices {
   position: fixed;
-  right: 16px;
-  bottom: 16px;
+  right: 1rem;
+  bottom: 1rem;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0.375rem;
+  /* Above the modal sheets, which are 60: a failure raised while one is open
+     is exactly the message that must not be painted behind it. */
+  z-index: 70;
 }
 
 .notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
   background: var(--panel);
   border-left: 3px solid var(--accent);
-  padding: 8px 12px;
+  padding: 0.5rem 0.75rem;
   border-radius: 4px;
-  max-width: 480px;
+  max-width: 30rem;
+}
+
+.notice-text {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Quiet until wanted: the corner is already asking for attention, and the
+   gear is the answer to that rather than more of it. */
+.notice-settings {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--faint);
+  opacity: 0.55;
+}
+
+.notice:hover .notice-settings,
+.notice-settings:focus-visible {
+  opacity: 1;
+  color: var(--text);
 }
 
 .notice.warning {
@@ -305,23 +337,23 @@ textarea {
 .login {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  width: 320px;
-  margin: 80px auto;
+  gap: 0.75rem;
+  width: 20rem;
+  margin: 5rem auto;
 }
 
 .login label,
 .settings label {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0.25rem;
 }
 
 .login label.row,
 .settings label.row {
   flex-direction: row;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
 }
 
 /* A column rather than a grid with named rows: the rejoin bar between the
@@ -339,14 +371,14 @@ textarea {
 .toolbar {
   display: flex;
   flex-shrink: 0;
-  gap: 12px;
+  gap: 0.75rem;
   align-items: center;
-  padding: 8px 16px;
+  padding: 0.5rem 1rem;
   border-bottom: 1px solid var(--line);
 }
 
 .toolbar input {
-  width: 320px;
+  width: 20rem;
 }
 
 /* Takes what is left of the column, and no more: `height: 100%` under a flex
@@ -360,10 +392,10 @@ textarea {
 /* The whole row is the button now, so it has to read as one. */
 .battle-row {
   display: grid;
-  grid-template-columns: 56px 80px 48px 1fr 220px 64px;
+  grid-template-columns: 3.5rem 5rem 3rem 1fr 13.75rem 4rem;
   align-items: center;
-  gap: 12px;
-  padding: 0 16px;
+  gap: 0.75rem;
+  padding: 0 1rem;
   border-bottom: 1px solid var(--line);
   cursor: pointer;
 }
@@ -409,9 +441,9 @@ textarea {
 
 .room-card {
   display: grid;
-  grid-template-columns: 132px 1fr auto;
-  gap: 16px;
-  padding: 13px 16px;
+  grid-template-columns: 8.25rem 1fr auto;
+  gap: 1rem;
+  padding: 0.8125rem 1rem;
   background: linear-gradient(180deg, var(--raised), var(--panel));
   border-bottom: 1px solid var(--line);
 }
@@ -419,7 +451,7 @@ textarea {
 .room-card h1 {
   margin: 0;
   font-family: var(--display);
-  font-size: 20px;
+  font-size: 1.25rem;
   font-weight: 600;
   line-height: 1.2;
   letter-spacing: -0.005em;
@@ -433,22 +465,22 @@ textarea {
 .room-title {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0.625rem;
 }
 
 .card-main {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 0.4375rem;
   min-width: 0;
 }
 
 .card-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 14px;
+  gap: 0.25rem 0.875rem;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .card-meta b {
@@ -459,7 +491,7 @@ textarea {
 .card-actions {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0.375rem;
   align-items: stretch;
 }
 
@@ -470,9 +502,9 @@ textarea {
   background: var(--raised);
   border: 1px solid var(--line);
   border-radius: 2px;
-  padding: 5px 12px;
+  padding: 0.3125rem 0.75rem;
   font-family: var(--display);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.05em;
 }
@@ -512,35 +544,35 @@ textarea {
   fill: #c2ccd8;
   fill-opacity: 0.7;
   font-family: var(--mono);
-  font-size: 16px;
+  font-size: 1rem;
   text-anchor: middle;
 }
 
 .mm-tag {
   position: absolute;
-  left: 4px;
-  bottom: 3px;
+  left: 0.25rem;
+  bottom: 0.1875rem;
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 0.5625rem;
   color: var(--muted);
   background: rgba(10, 14, 19, 0.78);
-  padding: 0 3px;
+  padding: 0 0.1875rem;
   border-radius: 2px;
 }
 
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 0.3125rem;
 }
 
 .chip {
   font-family: var(--display);
-  font-size: 10.5px;
+  font-size: 0.65625rem;
   font-weight: 500;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  padding: 2px 8px;
+  padding: 0.125rem 0.5rem;
   border-radius: 2px;
   border: 1px solid var(--line);
   color: var(--muted);
@@ -568,7 +600,7 @@ textarea {
 .chip.sync-chip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 0.3125rem;
   font-variant-numeric: tabular-nums;
   background-image: linear-gradient(
     to top,
@@ -578,8 +610,8 @@ textarea {
 }
 
 .chip.sync-chip .icon {
-  width: 13px;
-  height: 13px;
+  width: 0.8125rem;
+  height: 0.8125rem;
 }
 
 /* ---- rosters, then chat filling whatever is left ---- */
@@ -601,10 +633,10 @@ textarea {
 }
 
 .rosters {
-  padding: 12px 16px;
+  padding: 0.75rem 1rem;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 1rem;
   overflow-y: auto;
   flex-shrink: 0;
   max-height: 60%;
@@ -615,26 +647,26 @@ textarea {
 .teams {
   display: flex;
   flex-wrap: wrap;
-  gap: 14px 28px;
+  gap: 0.875rem 1.75rem;
 }
 
 .team {
-  flex: 0 1 268px;
-  min-width: 220px;
+  flex: 0 1 16.75rem;
+  min-width: 13.75rem;
 }
 
 .team-head {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  padding-bottom: 5px;
-  margin-bottom: 6px;
+  gap: 0.5rem;
+  padding-bottom: 0.3125rem;
+  margin-bottom: 0.375rem;
   border-bottom: 1px solid var(--line);
 }
 
 .team-head .name {
   font-family: var(--display);
-  font-size: 11.5px;
+  font-size: 0.71875rem;
   font-weight: 600;
   letter-spacing: 0.13em;
   text-transform: uppercase;
@@ -644,7 +676,7 @@ textarea {
 .team-head .count,
 .team-head .os {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--faint);
   font-variant-numeric: tabular-nums;
 }
@@ -656,8 +688,8 @@ textarea {
 /* Take a seat here, shown when the header is hovered — or reached by keyboard. */
 .team-head .team-join {
   margin-left: auto;
-  padding: 1px 8px;
-  font-size: 11px;
+  padding: 0.0625rem 0.5rem;
+  font-size: 0.6875rem;
   opacity: 0;
 }
 
@@ -673,10 +705,12 @@ textarea {
 /* Chobby's column order: status, country, rank, skill, faction, name. */
 .player {
   display: grid;
-  grid-template-columns: 18px 16px 18px 26px 20px minmax(0, 1fr) auto;
+  grid-template-columns:
+    1.125rem 1rem 1.125rem 1.625rem 1.25rem minmax(0, 1fr)
+    auto;
   align-items: center;
-  gap: 7px;
-  padding: 2px 4px;
+  gap: 0.4375rem;
+  padding: 0.125rem 0.25rem;
   border-radius: 2px;
 }
 
@@ -688,25 +722,25 @@ textarea {
 .spectator-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 3px 18px;
+  gap: 0.1875rem 1.125rem;
 }
 
 .spectator {
   display: grid;
-  grid-template-columns: 16px 18px auto auto;
+  grid-template-columns: 1rem 1.125rem auto auto;
   align-items: center;
-  gap: 7px;
-  padding: 1px 4px;
+  gap: 0.4375rem;
+  padding: 0.0625rem 0.25rem;
   border-radius: 2px;
 }
 
 /* A seat waiting for its player: the row's height, a hint of a name. */
 .player.empty {
-  min-height: 22px;
+  min-height: 1.375rem;
 }
 
 .player.empty .pname {
-  height: 8px;
+  height: 0.5rem;
   border-radius: 4px;
   background: var(--line-soft);
 }
@@ -719,13 +753,13 @@ textarea {
 
 .icon {
   display: block;
-  width: 18px;
-  height: 18px;
+  width: 1.125rem;
+  height: 1.125rem;
 }
 
 .icon.side {
-  width: 20px;
-  height: 20px;
+  width: 1.25rem;
+  height: 1.25rem;
 }
 
 .status.ready {
@@ -806,8 +840,8 @@ textarea {
 
 .flag {
   display: block;
-  width: 16px;
-  height: 12px;
+  width: 1rem;
+  height: 0.75rem;
   border-radius: 1px;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
   background-size: cover;
@@ -820,7 +854,7 @@ textarea {
 /* Brightness carries confidence: a dim number is one to trust less. */
 .skill {
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: 0.71875rem;
   text-align: right;
   font-variant-numeric: tabular-nums;
   color: var(--sig0);
@@ -857,15 +891,46 @@ textarea {
   color: var(--muted);
 }
 
+/* An AI has no rating, rank or country, so those three columns are its own:
+   the name spans them and reaches an ellipsis far later, and the bonus has
+   somewhere to sit that is not the name's space. */
+.player.bot-row .pname.bot {
+  grid-column: 1 / 6;
+}
+
+.bot-bonus {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--ok);
+  white-space: nowrap;
+}
+
+/* A row that can be picked up says so on hover, and only then: every row
+   showing a grab cursor would make the roster look like a toolbar. */
+.player.movable:hover {
+  cursor: grab;
+}
+
+/* While a row is in flight, the teams show that they are what it is for. */
+.teams.dropping .team {
+  outline: 1px dashed var(--line);
+  outline-offset: -1px;
+}
+
+.teams.dropping .team:hover {
+  outline-color: var(--accent);
+  background: var(--raised);
+}
+
 /* After the name, as Chobby stacks them: boss, then away. */
 .marks {
   display: flex;
-  gap: 3px;
+  gap: 0.1875rem;
 }
 
 .icon.mark {
-  width: 15px;
-  height: 15px;
+  width: 0.9375rem;
+  height: 0.9375rem;
 }
 
 .mark.boss {
@@ -897,11 +962,11 @@ textarea {
 
 .chat-log {
   overflow-y: auto;
-  padding: 9px 16px;
-  font-size: 13px;
+  padding: 0.5625rem 1rem;
+  font-size: 0.8125rem;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 0.1875rem;
   /* Its own paint layer. Without it, WebView2 smears stale lines over new
      ones after the window has been hidden and shown while messages arrived --
      double-drawn text offset by half a row. Scroll anchoring is also off,
@@ -915,15 +980,15 @@ textarea {
    both talking. */
 .line {
   display: grid;
-  grid-template-columns: 108px 1fr;
-  gap: 10px;
+  grid-template-columns: 6.75rem 1fr;
+  gap: 0.625rem;
   align-items: baseline;
 }
 
 .line .from {
   color: var(--faint);
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: 0.71875rem;
   text-align: right;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -944,8 +1009,8 @@ textarea {
 
 .chat-input {
   display: flex;
-  gap: 8px;
-  padding: 8px 16px;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
   border-top: 1px solid var(--line);
 }
 
@@ -978,13 +1043,13 @@ textarea {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
-  padding: 24px 16px;
+  gap: 1rem;
+  padding: 1.5rem 1rem;
 }
 
 .settings > * {
   width: 100%;
-  max-width: 560px;
+  max-width: 35rem;
 }
 
 .settings fieldset {
@@ -992,7 +1057,7 @@ textarea {
   border-radius: 4px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0.5rem;
 }
 
 /* Buttons per install to copy from, then the snapshot picker; the same
@@ -1001,14 +1066,14 @@ textarea {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 8px;
+  gap: 0.5rem;
 }
 
 /* ---- the tweak workspace ---- */
 
 .tweaks {
   display: grid;
-  grid-template-columns: 220px 1fr;
+  grid-template-columns: 13.75rem 1fr;
   flex: 1;
   height: 100%;
   min-height: 0;
@@ -1024,26 +1089,26 @@ textarea {
 
 .doc-segments {
   display: flex;
-  gap: 4px;
-  padding: 8px 10px 0;
+  gap: 0.25rem;
+  padding: 0.5rem 0.625rem 0;
 }
 
 .doc-find {
   display: flex;
-  gap: 4px;
-  padding: 8px 10px;
+  gap: 0.25rem;
+  padding: 0.5rem 0.625rem;
 }
 
 .doc-find input {
   flex: 1;
   min-width: 0;
-  padding: 4px 8px;
-  font-size: 12px;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
 }
 
 .doc-find select,
 .tweak-target select {
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--text);
   background: var(--sunken);
   border: 1px solid var(--line);
@@ -1053,10 +1118,10 @@ textarea {
 .doc-rows {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 0.0625rem;
   flex: 1;
   min-height: 0;
-  padding: 0 6px 8px;
+  padding: 0 0.375rem 0.5rem;
   overflow-y: auto;
 }
 
@@ -1066,11 +1131,11 @@ textarea {
 .doc {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  padding: 4px 6px;
+  gap: 0.0625rem;
+  padding: 0.25rem 0.375rem;
   text-align: left;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 0.65625rem;
   font-weight: 400;
   letter-spacing: 0;
   color: var(--muted);
@@ -1098,13 +1163,13 @@ textarea {
 .doc-line {
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: 0.375rem;
   min-width: 0;
 }
 
 .doc-kind {
   font-family: var(--display);
-  font-size: 9px;
+  font-size: 0.5625rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--faint);
@@ -1137,13 +1202,13 @@ textarea {
   white-space: nowrap;
   text-overflow: ellipsis;
   font-family: var(--body);
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--faint);
 }
 
 .doc-tag {
   font-family: var(--display);
-  font-size: 9px;
+  font-size: 0.5625rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--warn);
@@ -1155,9 +1220,9 @@ textarea {
 }
 
 .doc-foot {
-  padding: 6px 12px;
+  padding: 0.375rem 0.75rem;
   border-top: 1px solid var(--line);
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--accent);
 }
 
@@ -1171,8 +1236,8 @@ textarea {
 .tweak-bar {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px 12px;
+  gap: 0.375rem;
+  padding: 0.5rem 0.75rem;
   border-bottom: 1px solid var(--line);
 }
 
@@ -1180,13 +1245,13 @@ textarea {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
 }
 
 .tweak-bar h1 {
   margin: 0;
   font-family: var(--mono);
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 600;
 }
 
@@ -1195,13 +1260,13 @@ textarea {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
 }
 
 .gauge-badge {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -1211,8 +1276,8 @@ textarea {
 }
 
 .tweak-tool {
-  padding: 3px 9px;
-  font-size: 11px;
+  padding: 0.1875rem 0.5625rem;
+  font-size: 0.6875rem;
   color: var(--muted);
   background: transparent;
 }
@@ -1222,33 +1287,33 @@ textarea {
 .tweak-target {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 11.5px;
+  gap: 0.25rem;
+  font-size: 0.71875rem;
 }
 
 .tweak-copy {
-  gap: 8px;
+  gap: 0.5rem;
 }
 
 .draft-name {
-  width: 130px;
-  padding: 3px 8px;
-  font-size: 12px;
+  width: 8.125rem;
+  padding: 0.1875rem 0.5rem;
+  font-size: 0.75rem;
 }
 
 .tweak-editor {
   flex: 1;
-  min-height: 160px;
+  min-height: 10rem;
 }
 
 .gauge {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 5px 12px;
+  gap: 0.875rem;
+  padding: 0.3125rem 0.75rem;
   border-top: 1px solid var(--line);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--muted);
 }
 
@@ -1260,32 +1325,32 @@ textarea {
    the editor keeps most of the height. */
 .tweak-extra {
   max-height: 40%;
-  padding: 6px 12px;
+  padding: 0.375rem 0.75rem;
   border-top: 1px solid var(--line);
   overflow-y: auto;
 }
 
 .tweak-extra summary {
   cursor: pointer;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
 }
 
 .tweak-extra details details {
-  margin: 6px 0;
+  margin: 0.375rem 0;
 }
 
 .problem-list {
-  margin: 4px 0 0;
+  margin: 0.25rem 0 0;
   padding: 0;
   list-style: none;
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: 0.71875rem;
   color: var(--error);
 }
 
 .problem-list li {
-  padding: 2px 0;
+  padding: 0.125rem 0;
 }
 
 .problem-list li.warn {
@@ -1294,23 +1359,23 @@ textarea {
 
 .outline-find {
   width: 100%;
-  margin: 6px 0;
-  padding: 3px 8px;
-  font-size: 12px;
+  margin: 0.375rem 0;
+  padding: 0.1875rem 0.5rem;
+  font-size: 0.75rem;
 }
 
 .outline-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 3px;
+  gap: 0.1875rem;
 }
 
 .outline-item {
   display: inline-flex;
-  gap: 6px;
-  padding: 2px 7px;
+  gap: 0.375rem;
+  padding: 0.125rem 0.4375rem;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 0.65625rem;
   font-weight: 400;
   letter-spacing: 0;
   color: var(--muted);
@@ -1342,15 +1407,15 @@ textarea {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
   border-bottom: 1px solid var(--line);
-  font-size: 11.5px;
+  font-size: 0.71875rem;
 }
 
 .compare-head select {
   max-width: 38%;
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--text);
   background: var(--sunken);
   border: 1px solid var(--line);
@@ -1359,23 +1424,23 @@ textarea {
 
 .compare-editor {
   flex: 1;
-  min-height: 160px;
+  min-height: 10rem;
 }
 
 .history-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 3px 0;
-  font-size: 12px;
+  gap: 0.5rem;
+  padding: 0.1875rem 0;
+  font-size: 0.75rem;
 }
 
 .tweaks-away {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 8px;
-  padding: 16px;
+  gap: 0.5rem;
+  padding: 1rem;
 }
 
 /* Over the whole window, and nothing showing through: the tweaks people
@@ -1397,23 +1462,23 @@ textarea {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 6px 10px;
+  padding: 0.375rem 0.625rem;
   border-bottom: 1px solid var(--line);
 }
 
 .diff h2 {
   margin: 0;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .diff header .muted {
   display: flex;
-  gap: 10px;
+  gap: 0.625rem;
   align-items: center;
 }
 
 .diff-editor {
-  height: 280px;
+  height: 17.5rem;
 }
 
 /* Votes */
@@ -1421,13 +1486,13 @@ textarea {
    attention-coloured edge on the page. */
 .vote-bar {
   display: flex;
-  gap: 16px;
+  gap: 1rem;
   align-items: center;
-  padding: 9px 16px;
+  padding: 0.5625rem 1rem;
   background: var(--sunken);
   border-bottom: 1px solid var(--line);
   border-left: 2px solid var(--warn);
-  font-size: 12.5px;
+  font-size: 0.78125rem;
 }
 
 .vote-what {
@@ -1438,15 +1503,15 @@ textarea {
 }
 
 .vote-what code {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--accent);
 }
 
 .vote-tally {
   display: flex;
-  gap: 10px;
+  gap: 0.625rem;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1460,17 +1525,17 @@ textarea {
 
 .vote-buttons {
   display: flex;
-  gap: 6px;
+  gap: 0.375rem;
 }
 
 .seat {
   display: flex;
-  gap: 10px;
+  gap: 0.625rem;
   align-items: center;
-  padding: 7px 16px;
+  padding: 0.4375rem 1rem;
   background: var(--sunken);
   border-bottom: 1px solid var(--line);
-  font-size: 12.5px;
+  font-size: 0.78125rem;
 }
 
 .seat select {
@@ -1478,9 +1543,9 @@ textarea {
   color: var(--text);
   border: 1px solid var(--line);
   border-radius: 2px;
-  padding: 4px 7px;
+  padding: 0.25rem 0.4375rem;
   font-family: var(--display);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 /* ---- setup pane: BAR's tabs, opening on what differs ---- */
@@ -1489,7 +1554,7 @@ textarea {
   position: relative;
   display: flex;
   flex-direction: column;
-  width: var(--setup-width, 556px);
+  width: var(--setup-width, 34.75rem);
   min-height: 0;
   min-width: 0;
   background: var(--panel);
@@ -1501,8 +1566,8 @@ textarea {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: -3px;
-  width: 6px;
+  left: -0.1875rem;
+  width: 0.375rem;
   cursor: col-resize;
   z-index: 1;
 }
@@ -1520,8 +1585,8 @@ body.resizing {
 }
 
 .setup-back {
-  padding: 2px 9px;
-  font-size: 11px;
+  padding: 0.125rem 0.5625rem;
+  font-size: 0.6875rem;
   background: transparent;
   color: var(--muted);
 }
@@ -1529,15 +1594,15 @@ body.resizing {
 .setup-head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 9px 14px 0;
+  gap: 0.625rem;
+  padding: 0.5625rem 0.875rem 0;
 }
 
 /* The pane's two faces, Setup and Presets, as the head's title. */
 .pane-tab {
-  padding: 0 0 4px;
+  padding: 0 0 0.25rem;
   font-family: var(--display);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -1559,7 +1624,7 @@ body.resizing {
 
 .setup-head .note {
   margin-left: auto;
-  font-size: 11.5px;
+  font-size: 0.71875rem;
   color: var(--faint);
 }
 
@@ -1571,30 +1636,30 @@ body.resizing {
   position: relative;
   display: flex;
   align-items: center;
-  flex: 1 1 96px;
-  min-width: 96px;
-  max-width: 160px;
+  flex: 1 1 6rem;
+  min-width: 6rem;
+  max-width: 10rem;
   margin-left: auto;
-  margin-bottom: 4px;
+  margin-bottom: 0.25rem;
 }
 
 .setup-search input {
   width: 100%;
   min-width: 0;
-  padding: 3px 22px 3px 8px;
-  font-size: 11.5px;
+  padding: 0.1875rem 1.375rem 0.1875rem 0.5rem;
+  font-size: 0.71875rem;
 }
 
 .setup-search .clear {
   position: absolute;
-  right: 3px;
-  width: 16px;
-  height: 16px;
+  right: 0.1875rem;
+  width: 1rem;
+  height: 1rem;
   padding: 0;
   border: none;
   border-radius: 50%;
   background: none;
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1;
   color: var(--faint);
 }
@@ -1613,13 +1678,13 @@ body.resizing {
 /* A paste on its way out, above the tabs so it pushes them down. */
 .paste-banner {
   display: grid;
-  gap: 5px;
-  margin: 8px 14px 0;
-  padding: 7px 10px;
+  gap: 0.3125rem;
+  margin: 0.5rem 0.875rem 0;
+  padding: 0.4375rem 0.625rem;
   border: 1px solid rgba(88, 196, 255, 0.32);
   border-radius: 2px;
   background: color-mix(in srgb, var(--accent) 10%, transparent);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1629,7 +1694,7 @@ body.resizing {
 }
 
 .paste-bar {
-  height: 4px;
+  height: 0.25rem;
   border-radius: 2px;
   background: var(--sunken);
   overflow: hidden;
@@ -1639,12 +1704,12 @@ body.resizing {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 0.625rem;
 }
 
 .paste-cancel {
-  padding: 2px 9px;
-  font-size: 11px;
+  padding: 0.125rem 0.5625rem;
+  font-size: 0.6875rem;
 }
 
 /* Steps, not glides: the bar moves when the host answers and not before. */
@@ -1656,22 +1721,22 @@ body.resizing {
 .setup-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 2px;
-  padding: 8px 14px 0;
+  gap: 0.125rem;
+  padding: 0.5rem 0.875rem 0;
   border-bottom: 1px solid var(--line);
   overflow: hidden;
 }
 
 .setup-tab {
-  padding: 5px 8px 6px;
-  font-size: 11.5px;
+  padding: 0.3125rem 0.5rem 0.375rem;
+  font-size: 0.71875rem;
   letter-spacing: 0.04em;
   color: var(--faint);
   background: transparent;
   border: 1px solid transparent;
   border-bottom: none;
   border-radius: 2px 2px 0 0;
-  margin-bottom: -1px;
+  margin-bottom: -0.0625rem;
   white-space: nowrap;
 }
 
@@ -1693,19 +1758,19 @@ body.resizing {
 
 .badge {
   display: inline-block;
-  margin-left: 5px;
-  padding: 0 5px;
+  margin-left: 0.3125rem;
+  padding: 0 0.3125rem;
   border-radius: 7px;
   background: var(--accent-deep);
   color: var(--accent);
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: 0.75rem;
   font-weight: 400;
 }
 
 .setup-body {
   display: grid;
-  grid-template-columns: 132px 1fr;
+  grid-template-columns: 8.25rem 1fr;
   flex: 1;
   min-height: 0;
 }
@@ -1713,8 +1778,8 @@ body.resizing {
 .groups {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  padding: 10px 0;
+  gap: 0.0625rem;
+  padding: 0.625rem 0;
   overflow-y: auto;
   border-right: 1px solid var(--line);
 }
@@ -1722,10 +1787,10 @@ body.resizing {
 .group {
   display: flex;
   justify-content: space-between;
-  gap: 8px;
-  padding: 5px 12px;
+  gap: 0.5rem;
+  padding: 0.3125rem 0.75rem;
   font-family: var(--body);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 400;
   letter-spacing: 0;
   text-align: left;
@@ -1748,7 +1813,7 @@ body.resizing {
 
 .group .c {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 0.625rem;
   color: var(--faint);
   font-variant-numeric: tabular-nums;
 }
@@ -1756,8 +1821,8 @@ body.resizing {
 .setup-detail {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px 14px;
+  gap: 0.625rem;
+  padding: 0.75rem 0.875rem;
   overflow-y: auto;
   background: var(--raised);
   min-width: 0;
@@ -1766,9 +1831,9 @@ body.resizing {
 .setup-section {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 0.5rem;
   font-family: var(--display);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -1778,7 +1843,7 @@ body.resizing {
 .setup-section .count {
   margin-left: auto;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 0.6875rem;
   letter-spacing: 0;
   text-transform: none;
   font-variant-numeric: tabular-nums;
@@ -1792,15 +1857,15 @@ body.resizing {
 /* A changed row earns a marker; the rest stay quiet so it reads at a glance. */
 .opt {
   display: grid;
-  grid-template-columns: 2px 1fr auto;
+  grid-template-columns: 0.125rem 1fr auto;
   align-items: center;
-  gap: 9px;
-  padding: 3px 0;
-  font-size: 12.5px;
+  gap: 0.5625rem;
+  padding: 0.1875rem 0;
+  font-size: 0.78125rem;
 }
 
 .opt .mark {
-  height: 14px;
+  height: 0.875rem;
   border-radius: 1px;
   background: transparent;
 }
@@ -1822,11 +1887,11 @@ body.resizing {
 
 .opt .v {
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: 0.71875rem;
   color: var(--faint);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  max-width: 180px;
+  max-width: 11.25rem;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -1836,15 +1901,15 @@ body.resizing {
 }
 
 .setup-empty {
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   margin: 0;
 }
 
 .setup-reveal {
   align-self: flex-start;
-  padding: 4px 0;
+  padding: 0.25rem 0;
   font-family: var(--body);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 400;
   letter-spacing: 0;
   color: var(--accent);
@@ -1853,11 +1918,11 @@ body.resizing {
 }
 
 .setup-note {
-  padding: 7px 9px;
+  padding: 0.4375rem 0.5625rem;
   border: 1px solid rgba(242, 184, 75, 0.3);
   border-radius: 2px;
   background: rgba(242, 184, 75, 0.06);
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--warn);
 }
 
@@ -1868,17 +1933,17 @@ body.resizing {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 2px;
-  padding: 5px 12px;
+  padding: 0.3125rem 0.75rem;
   font-family: var(--display);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.05em;
 }
 
 .slot-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 3px;
+  grid-template-columns: repeat(auto-fill, minmax(9.375rem, 1fr));
+  gap: 0.1875rem;
 }
 
 /* A cell of small actions (`ActionCell`): the tweak slots' look, shared by
@@ -1890,7 +1955,7 @@ body.resizing {
   align-items: stretch;
   justify-self: end;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 0.625rem;
   color: var(--faint);
   background: var(--sunken);
   border: 1px solid var(--line-soft);
@@ -1904,8 +1969,8 @@ body.resizing {
 .act-cell button {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 6px;
+  gap: 0.375rem;
+  padding: 0.25rem 0.375rem;
   font: inherit;
   letter-spacing: 0;
   color: inherit;
@@ -1939,11 +2004,11 @@ body.resizing {
 
 /* In a settings row the cell is small and sits at the value's edge. */
 .opt .act-cell {
-  font-size: 10.5px;
+  font-size: 0.65625rem;
 }
 
 .opt .act-cell button {
-  padding: 2px 6px;
+  padding: 0.125rem 0.375rem;
 }
 
 .slot-open .kk {
@@ -1962,8 +2027,8 @@ body.resizing {
 }
 
 .icon.act {
-  width: 13px;
-  height: 13px;
+  width: 0.8125rem;
+  height: 0.8125rem;
   flex-shrink: 0;
 }
 
@@ -1973,10 +2038,10 @@ body.resizing {
 
 .v-edit {
   justify-self: end;
-  max-width: 180px;
+  max-width: 11.25rem;
   font-family: var(--mono);
-  font-size: 11.5px;
-  padding: 2px 6px;
+  font-size: 0.71875rem;
+  padding: 0.125rem 0.375rem;
 }
 
 select.v-edit {
@@ -1987,8 +2052,8 @@ select.v-edit {
 }
 
 input[type='checkbox'].v-edit {
-  width: 14px;
-  height: 14px;
+  width: 0.875rem;
+  height: 0.875rem;
   padding: 0;
   accent-color: var(--accent);
 }
@@ -2025,35 +2090,35 @@ input[type='checkbox'].v-edit {
 
 .toolbar {
   flex-wrap: wrap;
-  row-gap: 8px;
+  row-gap: 0.5rem;
 }
 
 .toolbar .search {
-  width: 260px;
+  width: 16.25rem;
 }
 
 .filter-group {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding-left: 12px;
+  gap: 0.25rem;
+  padding-left: 0.75rem;
   border-left: 1px solid var(--line);
 }
 
 .filter-label {
   font-family: var(--display);
-  font-size: 10.5px;
+  font-size: 0.65625rem;
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--faint);
-  margin-right: 2px;
+  margin-right: 0.125rem;
 }
 
 .chip-include,
 .chip-choice {
-  padding: 3px 9px;
-  font-size: 11.5px;
+  padding: 0.1875rem 0.5625rem;
+  font-size: 0.71875rem;
   font-weight: 500;
   letter-spacing: 0.02em;
   color: var(--text);
@@ -2087,22 +2152,22 @@ input[type='checkbox'].v-edit {
 
 .toolbar .count {
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: 0.71875rem;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .empty-list {
-  padding: 32px 16px;
+  padding: 2rem 1rem;
   text-align: center;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 /* ---- channels and private messages ---- */
 
 .chat-view {
   display: grid;
-  grid-template-columns: 210px 1fr;
+  grid-template-columns: 13.125rem 1fr;
   height: 100%;
   min-height: 0;
 }
@@ -2110,8 +2175,8 @@ input[type='checkbox'].v-edit {
 .room-list {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  padding: 10px 0;
+  gap: 0.0625rem;
+  padding: 0.625rem 0;
   overflow-y: auto;
   background: var(--panel);
   border-right: 1px solid var(--line);
@@ -2120,8 +2185,8 @@ input[type='checkbox'].v-edit {
 .room-list-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px 4px;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem 0.25rem;
 }
 
 .room-list-head .filter-label {
@@ -2131,10 +2196,10 @@ input[type='checkbox'].v-edit {
 .room-tab {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 5px 12px;
+  gap: 0.5rem;
+  padding: 0.3125rem 0.75rem;
   font-family: var(--body);
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   font-weight: 400;
   letter-spacing: 0;
   text-align: left;
@@ -2164,7 +2229,7 @@ input[type='checkbox'].v-edit {
 
 .room-count {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 0.65625rem;
   color: var(--faint);
   font-variant-numeric: tabular-nums;
 }
@@ -2179,15 +2244,15 @@ input[type='checkbox'].v-edit {
 .chat-head {
   display: flex;
   align-items: baseline;
-  gap: 12px;
-  padding: 10px 16px;
+  gap: 0.75rem;
+  padding: 0.625rem 1rem;
   border-bottom: 1px solid var(--line);
 }
 
 .chat-head h1 {
   margin: 0;
   font-family: var(--display);
-  font-size: 17px;
+  font-size: 1.0625rem;
   font-weight: 600;
 }
 
@@ -2212,9 +2277,9 @@ input[type='checkbox'].v-edit {
 .friend-request {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 10px;
-  font-size: 12.5px;
+  gap: 0.3125rem;
+  padding: 0.1875rem 0.625rem;
+  font-size: 0.78125rem;
   color: var(--text);
 }
 
@@ -2226,12 +2291,12 @@ input[type='checkbox'].v-edit {
   display: flex;
   flex-shrink: 0;
   align-items: center;
-  gap: 12px;
-  padding: 9px 16px;
+  gap: 0.75rem;
+  padding: 0.5625rem 1rem;
   background: var(--sunken);
   border-bottom: 1px solid var(--line);
   border-left: 2px solid var(--accent);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .rejoin-what {
@@ -2249,12 +2314,12 @@ input[type='checkbox'].v-edit {
 
 .replay-row {
   display: grid;
-  grid-template-columns: 165px 1fr 100px 90px 96px 90px;
+  grid-template-columns: 10.3125rem 1fr 6.25rem 5.625rem 6rem 5.625rem;
   align-items: center;
-  gap: 12px;
-  padding: 0 16px;
+  gap: 0.75rem;
+  padding: 0 1rem;
   border-bottom: 1px solid var(--line-soft);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .replay-row:hover {
@@ -2265,7 +2330,7 @@ input[type='checkbox'].v-edit {
 .col-engine,
 .col-size {
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: 0.71875rem;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -2278,9 +2343,9 @@ input[type='checkbox'].v-edit {
    The skirmish is a room now, so what is left of its own styles is the list of
    installed maps, in a sheet over the room rather than a column beside it. */
 .sheet-card.map-picker {
-  width: min(720px, calc(100vw - 40px));
+  width: min(45rem, calc(100vw - 40px));
   max-height: calc(100vh - 80px);
-  gap: 10px;
+  gap: 0.625rem;
   overflow: hidden;
 }
 
@@ -2295,9 +2360,9 @@ input[type='checkbox'].v-edit {
 
 /* What an AI can be told about itself, drawn as the settings rows are. */
 .sheet-card.bot-options {
-  width: min(720px, calc(100vw - 40px));
+  width: min(45rem, calc(100vw - 40px));
   max-height: calc(100vh - 80px);
-  gap: 10px;
+  gap: 0.625rem;
   overflow: hidden;
 }
 
@@ -2311,7 +2376,7 @@ input[type='checkbox'].v-edit {
 .card-choice {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 0.25rem;
 }
 
 .card-choice select {
@@ -2319,7 +2384,7 @@ input[type='checkbox'].v-edit {
   color: var(--text);
   border: none;
   border-bottom: 1px dotted var(--line);
-  padding: 0 2px;
+  padding: 0 0.125rem;
   font: inherit;
   font-weight: 600;
   cursor: pointer;
@@ -2329,7 +2394,7 @@ input[type='checkbox'].v-edit {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 0.0625rem;
 }
 
 /* ---- what you can do about a person ---- */
@@ -2337,11 +2402,11 @@ input[type='checkbox'].v-edit {
 .player-menu {
   position: fixed;
   z-index: 20;
-  min-width: 150px;
+  min-width: 9.375rem;
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  padding: 4px 0;
+  gap: 0.0625rem;
+  padding: 0.25rem 0;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 3px;
@@ -2349,10 +2414,10 @@ input[type='checkbox'].v-edit {
 }
 
 .player-menu-name {
-  padding: 4px 12px 6px;
-  margin-bottom: 2px;
+  padding: 0.25rem 0.75rem 0.375rem;
+  margin-bottom: 0.125rem;
   font-family: var(--display);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   color: var(--muted);
   border-bottom: 1px solid var(--line-soft);
@@ -2362,10 +2427,10 @@ input[type='checkbox'].v-edit {
 }
 
 .player-menu button {
-  padding: 5px 12px;
+  padding: 0.3125rem 0.75rem;
   text-align: left;
   font-family: var(--body);
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   font-weight: 400;
   letter-spacing: 0;
   color: var(--text);
@@ -2385,14 +2450,14 @@ input[type='checkbox'].v-edit {
 
 .line .at {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 0.65625rem;
   color: var(--line);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
 
 .chat-log .line {
-  grid-template-columns: 40px 108px 1fr;
+  grid-template-columns: 2.5rem 6.75rem 1fr;
 }
 
 .line.system .from,
@@ -2401,8 +2466,8 @@ input[type='checkbox'].v-edit {
 }
 
 .col-thumb {
-  width: 52px;
-  height: 34px;
+  width: 3.25rem;
+  height: 2.125rem;
   border: 1px solid var(--line-soft);
   border-radius: 2px;
   overflow: hidden;
@@ -2412,38 +2477,38 @@ input[type='checkbox'].v-edit {
 .host-bar {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 7px 16px;
+  gap: 0.375rem;
+  padding: 0.4375rem 1rem;
   background: var(--raised);
   border-bottom: 1px solid var(--line);
   border-left: 2px solid var(--accent);
-  font-size: 12.5px;
+  font-size: 0.78125rem;
 }
 
 .host-size {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-left: 6px;
+  gap: 0.375rem;
+  margin-left: 0.375rem;
   color: var(--muted);
 }
 
 .host-size input {
-  width: 56px;
+  width: 3.5rem;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .chat-link {
   color: var(--accent);
   text-decoration: underline;
-  text-underline-offset: 2px;
+  text-underline-offset: 0.125rem;
   cursor: pointer;
   overflow-wrap: anywhere;
 }
 
 .find-person {
-  margin: 0 10px 6px;
+  margin: 0 0.625rem 0.375rem;
   width: calc(100% - 20px);
 }
 
@@ -2453,13 +2518,13 @@ input[type='checkbox'].v-edit {
   position: fixed;
   /* `left` is set from the pointer; see `cardLeft` in BattleList.tsx, which
      knows this width. */
-  width: 300px;
-  max-height: 300px;
+  width: 18.75rem;
+  max-height: 18.75rem;
   overflow: hidden;
-  padding: 9px 11px;
+  padding: 0.5625rem 0.6875rem;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0.375rem;
   background: var(--raised);
   border: 1px solid var(--line);
   border-radius: 4px;
@@ -2474,7 +2539,7 @@ input[type='checkbox'].v-edit {
 }
 
 .occupants-head {
-  font-size: 11px;
+  font-size: 0.6875rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--dim);
@@ -2483,15 +2548,15 @@ input[type='checkbox'].v-edit {
 .occupants-names {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1px 10px;
+  gap: 0.0625rem 0.625rem;
   overflow: hidden;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .occupants-names span {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 0.25rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2521,11 +2586,11 @@ input[type='checkbox'].v-edit {
 .player-menu-about {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 2px 9px 5px;
-  font-size: 11px;
+  gap: 0.375rem;
+  padding: 0.125rem 0.5625rem 0.3125rem;
+  font-size: 0.6875rem;
   color: var(--muted);
-  max-width: 220px;
+  max-width: 13.75rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2541,12 +2606,12 @@ input[type='checkbox'].v-edit {
 }
 
 .chat-body.roster {
-  grid-template-columns: 1fr 190px;
+  grid-template-columns: 1fr 11.875rem;
 }
 
 .chat-roster {
   position: relative;
-  padding: 8px 10px;
+  padding: 0.5rem 0.625rem;
   min-height: 0;
   overflow-y: auto;
   border-left: 1px solid var(--line);
@@ -2556,9 +2621,9 @@ input[type='checkbox'].v-edit {
 .chat-roster .pname {
   background: none;
   border: 0;
-  padding: 1px 2px;
+  padding: 0.0625rem 0.125rem;
   text-align: left;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--text);
   cursor: pointer;
   overflow: hidden;
@@ -2579,8 +2644,8 @@ input[type='checkbox'].v-edit {
 }
 
 .nav a .badge {
-  margin-left: 5px;
-  vertical-align: 1px;
+  margin-left: 0.3125rem;
+  vertical-align: 0.0625rem;
 }
 
 /* ---- a question that does not stop the lobby ---- */
@@ -2595,11 +2660,11 @@ input[type='checkbox'].v-edit {
 }
 
 .sheet-card {
-  width: min(340px, calc(100vw - 40px));
+  width: min(21.25rem, calc(100vw - 40px));
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 16px;
+  gap: 0.625rem;
+  padding: 1rem;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 5px;
@@ -2609,7 +2674,7 @@ input[type='checkbox'].v-edit {
 .sheet-card h2 {
   margin: 0;
   font-family: var(--display);
-  font-size: 15px;
+  font-size: 0.9375rem;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2618,19 +2683,19 @@ input[type='checkbox'].v-edit {
 
 .sheet-card p {
   margin: 0;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .sheet-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 0.5rem;
 }
 
 .saved-mark {
-  margin-left: 10px;
+  margin-left: 0.625rem;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 400;
   color: var(--faint);
 }
@@ -2640,7 +2705,7 @@ input[type='checkbox'].v-edit {
 .choice-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 0.75rem;
   justify-content: space-between;
   cursor: help;
 }
@@ -2656,8 +2721,8 @@ input[type='checkbox'].v-edit {
 .choice button {
   border: 0;
   border-radius: 0;
-  padding: 3px 9px;
-  font-size: 11px;
+  padding: 0.1875rem 0.5625rem;
+  font-size: 0.6875rem;
   background: var(--sunken);
   color: var(--muted);
 }
@@ -2679,7 +2744,7 @@ input[type='checkbox'].v-edit {
 
 .tabs {
   display: flex;
-  gap: 2px;
+  gap: 0.125rem;
   border-bottom: 1px solid var(--line);
 }
 
@@ -2688,8 +2753,8 @@ input[type='checkbox'].v-edit {
   border: 0;
   border-bottom: 2px solid transparent;
   border-radius: 0;
-  padding: 5px 12px 6px;
-  font-size: 12px;
+  padding: 0.3125rem 0.75rem 0.375rem;
+  font-size: 0.75rem;
   letter-spacing: 0.03em;
   color: var(--faint);
 }
@@ -2704,9 +2769,9 @@ input[type='checkbox'].v-edit {
 }
 
 .running-for {
-  margin-right: 6px;
+  margin-right: 0.375rem;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 0.65625rem;
   color: var(--faint);
   cursor: help;
 }
@@ -2727,18 +2792,18 @@ input[type='checkbox'].v-edit {
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  max-width: 1100px;
+  max-width: 68.75rem;
   margin: 0 auto;
-  padding: 8px 16px;
+  padding: 0.5rem 1rem;
 }
 
 .presets .toolbar {
-  padding: 8px 14px;
+  padding: 0.5rem 0.875rem;
 }
 
 .presets .search {
   flex: 1;
-  min-width: 120px;
+  min-width: 7.5rem;
   width: auto;
 }
 
@@ -2746,8 +2811,8 @@ input[type='checkbox'].v-edit {
 .preset-sections {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  padding: 6px 14px;
+  gap: 0.375rem;
+  padding: 0.375rem 0.875rem;
   border-bottom: 1px solid var(--line);
   flex-shrink: 0;
 }
@@ -2765,8 +2830,8 @@ input[type='checkbox'].v-edit {
    everything else, since that is the column people write the most into. */
 .preset-rows {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) fit-content(30%) 72px 72px auto;
-  column-gap: 8px;
+  grid-template-columns: minmax(0, 1fr) fit-content(30%) 4.5rem 4.5rem auto;
+  column-gap: 0.5rem;
   align-content: start;
   overflow-y: auto;
   flex: 1;
@@ -2781,7 +2846,7 @@ input[type='checkbox'].v-edit {
 
 .preset-rows > .setup-empty {
   grid-column: 1 / -1;
-  padding: 12px 14px;
+  padding: 0.75rem 0.875rem;
 }
 
 .preset-row {
@@ -2789,8 +2854,8 @@ input[type='checkbox'].v-edit {
   grid-column: 1 / -1;
   grid-template-columns: subgrid;
   align-items: center;
-  padding: 0 14px;
-  height: 34px;
+  padding: 0 0.875rem;
+  height: 2.125rem;
   border-bottom: 1px solid var(--line-soft);
   cursor: pointer;
 }
@@ -2808,8 +2873,8 @@ input[type='checkbox'].v-edit {
   position: sticky;
   top: 0;
   z-index: 1;
-  height: 30px;
-  padding: 0 14px;
+  height: 1.875rem;
+  padding: 0 0.875rem;
   border-bottom: 1px solid var(--line);
   cursor: default;
   background: var(--panel);
@@ -2820,7 +2885,7 @@ input[type='checkbox'].v-edit {
   border: 0;
   padding: 0;
   text-align: left;
-  font-size: 11px;
+  font-size: 0.6875rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--faint);
@@ -2840,7 +2905,7 @@ input[type='checkbox'].v-edit {
 
 .tabular {
   font-variant-numeric: tabular-nums;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 /* ---- what a PvE room scores ---- */
@@ -2848,11 +2913,11 @@ input[type='checkbox'].v-edit {
 .pve-score {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 6px 16px;
+  gap: 0.75rem;
+  padding: 0.375rem 1rem;
   background: var(--sunken);
   border-bottom: 1px solid var(--line);
-  font-size: 12px;
+  font-size: 0.75rem;
   flex-shrink: 0;
 }
 
@@ -2862,7 +2927,7 @@ input[type='checkbox'].v-edit {
 
 .pve-figure b {
   display: inline-block;
-  margin-left: 4px;
+  margin-left: 0.25rem;
   /* Wide enough for "31%" so the dots hold the figure's place, not less. */
   min-width: 3ch;
   font-variant-numeric: tabular-nums;
@@ -2874,10 +2939,10 @@ input[type='checkbox'].v-edit {
 .reconnect {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 8px;
+  gap: 0.375rem;
+  padding: 0.1875rem 0.5rem;
   font-family: var(--body);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 400;
   letter-spacing: 0;
   color: var(--muted);
@@ -2895,7 +2960,7 @@ input[type='checkbox'].v-edit {
 .thinking {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 0.1875rem;
   vertical-align: middle;
 }
 
@@ -2905,8 +2970,8 @@ input[type='checkbox'].v-edit {
    motion as an indicator can have. The larger animations elsewhere keep
    honouring the setting. */
 .thinking i {
-  width: 4px;
-  height: 4px;
+  width: 0.25rem;
+  height: 0.25rem;
   border-radius: 50%;
   background: var(--faint);
   opacity: 0.35;
@@ -2984,11 +3049,11 @@ html.overlay .shell {
    the lobby, and these are about leaving it. */
 .overlay-chrome {
   position: absolute;
-  right: 14px;
-  bottom: 14px;
+  right: 0.875rem;
+  bottom: 0.875rem;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
   z-index: 40;
 }
 
@@ -2999,12 +3064,12 @@ html.overlay .shell {
 
 .overlay-close {
   position: absolute;
-  top: 6px;
-  right: 8px;
-  width: 28px;
-  height: 28px;
+  top: 0.375rem;
+  right: 0.5rem;
+  width: 1.75rem;
+  height: 1.75rem;
   padding: 0;
-  font-size: 17px;
+  font-size: 1.0625rem;
   line-height: 1;
   border-radius: 50%;
 }
@@ -3014,31 +3079,31 @@ html.overlay .shell {
   cursor: default;
 }
 
-.bot-remove {
+.row-act {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 1.25rem;
+  height: 1.25rem;
   padding: 0;
   border-radius: 50%;
   color: var(--faint);
   opacity: 0;
 }
 
-.player:hover .bot-remove,
-.bot-remove:focus-visible {
+.player:hover .row-act,
+.row-act:focus-visible {
   opacity: 1;
 }
 
-.bot-remove:hover {
+.row-act:hover {
   color: var(--error);
 }
 
 .add-ai {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 0.375rem;
 }
 
 /* The modoption arrangement, distinguished from the protocol's own rects: a
@@ -3054,46 +3119,46 @@ html.overlay .shell {
 
 .box-diff {
   grid-column: 1 / -1;
-  margin-top: 8px;
+  margin-top: 0.5rem;
 }
 
 .box-diff h2 {
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--muted);
-  margin: 0 0 6px;
+  margin: 0 0 0.375rem;
 }
 
 .box-pair {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0.625rem;
 }
 
 .box-arrow {
   color: var(--muted);
-  font-size: 16px;
+  font-size: 1rem;
 }
 
 .box-panel {
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 0.1875rem;
 }
 
 .box-panel figcaption {
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--muted);
   letter-spacing: 0.04em;
 }
 
 .box-map {
   position: relative;
-  width: 132px;
-  height: 132px;
+  width: 8.25rem;
+  height: 8.25rem;
   border: 1px solid var(--line);
   border-radius: 2px;
   overflow: hidden;
@@ -3120,7 +3185,7 @@ html.overlay .shell {
 
 .box-panel text {
   fill: var(--text);
-  font-size: 15px;
+  font-size: 0.9375rem;
   font-weight: 700;
   text-anchor: middle;
   paint-order: stroke;
@@ -3129,9 +3194,9 @@ html.overlay .shell {
 }
 
 .box-history {
-  padding: 6px 16px;
+  padding: 0.375rem 1rem;
   border-bottom: 1px solid var(--line);
-  font-size: 12.5px;
+  font-size: 0.78125rem;
 }
 
 .box-history > summary {
@@ -3140,7 +3205,7 @@ html.overlay .shell {
 }
 
 .box-history[open] > summary {
-  margin-bottom: 8px;
+  margin-bottom: 0.5rem;
 }
 
 /* A button that reads as prose, for switching between logging in and
@@ -3155,7 +3220,7 @@ button.link {
   font-weight: 500;
   letter-spacing: 0;
   text-decoration: underline;
-  text-underline-offset: 2px;
+  text-underline-offset: 0.125rem;
 }
 
 button.link:hover {
@@ -3178,26 +3243,26 @@ button.link:hover {
 .get-engine {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px 16px;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
   background: var(--raised);
   border: 1px solid var(--line);
   border-left: 2px solid var(--accent);
   border-radius: 3px;
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   align-items: flex-start;
 }
 
 .get-engine-progress {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
   width: 100%;
 }
 
 .get-engine .bar {
   flex: 1;
-  height: 4px;
+  height: 0.25rem;
   background: var(--line);
   border-radius: 2px;
   overflow: hidden;
@@ -3244,8 +3309,8 @@ button.link:hover {
 .tab-strip {
   display: flex;
   align-items: stretch;
-  gap: 1px;
-  padding: 0 8px;
+  gap: 0.0625rem;
+  padding: 0 0.5rem;
   background: var(--bg);
   border-bottom: 1px solid var(--line);
   overflow-x: auto;
@@ -3261,7 +3326,7 @@ button.link:hover {
   align-items: center;
   background: var(--raised);
   border-top: 2px solid transparent;
-  max-width: 200px;
+  max-width: 12.5rem;
   flex-shrink: 0;
 }
 
@@ -3284,11 +3349,11 @@ button.link:hover {
   background: none;
   border: none;
   border-radius: 0;
-  padding: 7px 4px 7px 11px;
+  padding: 0.4375rem 0.25rem 0.4375rem 0.6875rem;
   color: var(--muted);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 0.375rem;
   min-width: 0;
 }
 
@@ -3307,10 +3372,10 @@ button.link:hover {
   border: none;
   border-radius: 50%;
   padding: 0;
-  width: 18px;
-  height: 18px;
-  margin-right: 6px;
-  font-size: 13px;
+  width: 1.125rem;
+  height: 1.125rem;
+  margin-right: 0.375rem;
+  font-size: 0.8125rem;
   line-height: 1;
   color: var(--faint);
   opacity: 0;
@@ -3332,8 +3397,8 @@ button.link:hover {
 .win-controls {
   display: flex;
   align-items: center;
-  gap: 2px;
-  margin-left: 6px;
+  gap: 0.125rem;
+  margin-left: 0.375rem;
 }
 
 .win-btn {
@@ -3380,16 +3445,16 @@ button.link:hover {
   /* The build must not fold into the account name before the room card
      gives way. */
   flex-shrink: 0;
-  margin-right: 6px;
+  margin-right: 0.375rem;
 }
 
 .version {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 0.25rem;
   padding: 0;
   font-family: var(--mono, monospace);
-  font-size: 10px;
+  font-size: 0.625rem;
   color: var(--faint, var(--muted));
   background: transparent;
   border: none;
@@ -3413,8 +3478,8 @@ button.link:hover {
 }
 
 .version.waiting {
-  font-size: 9px;
-  padding: 2px 8px;
+  font-size: 0.5625rem;
+  padding: 0.125rem 0.5rem;
   color: var(--text);
   background: transparent;
   border: 1px solid var(--accent);
@@ -3433,16 +3498,16 @@ button.link:hover {
 }
 
 .sheet-card.map-editor {
-  width: min(1180px, calc(100vw - 40px));
+  width: min(73.75rem, calc(100vw - 40px));
   max-height: calc(100vh - 40px);
-  gap: 8px;
+  gap: 0.5rem;
   outline: none;
 }
 
 .ed-head {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 0.75rem;
 }
 
 .ed-head h2 {
@@ -3450,16 +3515,16 @@ button.link:hover {
 }
 
 .ed-head .note {
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--muted);
 }
 
 .ed-banner {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 10px;
-  font-size: 12px;
+  gap: 0.625rem;
+  padding: 0.375rem 0.625rem;
+  font-size: 0.75rem;
   border: 1px solid var(--line);
   border-left: 3px solid var(--accent);
   border-radius: 3px;
@@ -3472,8 +3537,8 @@ button.link:hover {
 
 .ed-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 260px;
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) 16.25rem;
+  gap: 0.75rem;
   min-height: 0;
 }
 
@@ -3602,7 +3667,7 @@ button.link:hover {
 .ed-side {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0.5rem;
   min-height: 0;
   overflow: auto;
 }
@@ -3610,7 +3675,7 @@ button.link:hover {
 .ed-tools {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 4px;
+  gap: 0.25rem;
 }
 
 .ed-tools button.on {
@@ -3621,21 +3686,21 @@ button.link:hover {
 
 .ed-hint {
   min-height: 2.4em;
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 
 .ed-actions {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 4px;
+  gap: 0.25rem;
 }
 
 .ed-strength {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 4px 8px;
+  gap: 0.25rem 0.5rem;
   align-items: center;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .ed-strength input {
@@ -3653,8 +3718,8 @@ button.link:hover {
 .ed-list li {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 4px;
+  gap: 0.25rem;
+  padding: 0.125rem 0.25rem;
   border-bottom: 1px solid var(--line-soft);
 }
 
@@ -3669,7 +3734,7 @@ button.link:hover {
 .ed-pick {
   flex: 1;
   display: flex;
-  gap: 8px;
+  gap: 0.5rem;
   align-items: baseline;
   text-align: left;
   background: transparent;
@@ -3683,15 +3748,15 @@ button.link:hover {
 
 .ed-warn {
   margin: 0;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--warn);
 }
 
 .ed-budget {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
+  gap: 0.5rem;
+  font-size: 0.75rem;
 }
 
 .ed-budget.over .mono {
@@ -3708,11 +3773,11 @@ button.link:hover {
   height: 100%;
   min-height: 0;
   overflow-y: auto;
-  padding: 20px 24px 32px;
+  padding: 1.25rem 1.5rem 2rem;
 }
 
 .news h1 {
-  margin: 0 0 16px;
+  margin: 0 0 1rem;
 }
 
 /* Cards rather than a list: a story is a headline, a picture and a sentence,
@@ -3720,16 +3785,16 @@ button.link:hover {
    measure is capped because a summary is prose. */
 .news-list {
   display: grid;
-  gap: 12px;
-  max-width: 720px;
+  gap: 0.75rem;
+  max-width: 45rem;
 }
 
 .news-card {
   display: grid;
-  grid-template-columns: 160px 1fr;
-  gap: 14px;
+  grid-template-columns: 10rem 1fr;
+  gap: 0.875rem;
   align-items: start;
-  padding: 12px;
+  padding: 0.75rem;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -3742,7 +3807,7 @@ button.link:hover {
 }
 
 .news-banner {
-  width: 160px;
+  width: 10rem;
   aspect-ratio: 16 / 9;
   object-fit: cover;
   background: var(--sunken);
@@ -3755,7 +3820,7 @@ button.link:hover {
 
 .news-text h2 {
   margin: 0;
-  font-size: 15px;
+  font-size: 0.9375rem;
   line-height: 1.3;
 }
 
@@ -3767,20 +3832,20 @@ button.link:hover {
 .news-text h2 a:hover {
   color: var(--accent);
   text-decoration: underline;
-  text-underline-offset: 2px;
+  text-underline-offset: 0.125rem;
 }
 
 .news-when {
-  margin: 4px 0 0;
+  margin: 0.25rem 0 0;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 0.65625rem;
   color: var(--faint);
 }
 
 .news-summary {
-  margin: 6px 0 0;
+  margin: 0.375rem 0 0;
   font-family: var(--body);
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   line-height: 1.45;
   color: var(--muted);
 }

@@ -32,4 +32,12 @@ gameStarting: Alert,
 /**
  * Your room's game finished.
  */
-gameEnded: Alert, };
+gameEnded: Alert, 
+/**
+ * Silences every kind above, without forgetting how each was set.
+ *
+ * Chobby has the same switch (`doNotDisturb`), and it is the one people
+ * reach for: turning seven rows off to get an hour's quiet, and then
+ * remembering how each of them stood, is not a thing anyone does.
+ */
+doNotDisturb: boolean, };

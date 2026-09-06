@@ -96,6 +96,28 @@ pub fn boss(json: &str) -> Option<String> {
     (!boss.is_empty()).then(|| boss.to_owned())
 }
 
+/// What the room says about balancing itself, from the same payload.
+///
+/// SPADS refuses `!force <name> team <n>` outright while this is anything but
+/// `off` (`spads.pl:8886`), and BAR's default team preset ships it as
+/// `advanced` -- so a room that offers to move people without reading this is
+/// offering something that will usually be declined in chat.
+///
+/// The payload is broadcast to the whole room, on every change and again
+/// whenever anybody joins (`spads_config_bar/var/plugins/barmanager.py`
+/// `SendChobbyState` via `hJOINEDBATTLE`), so a BAR host tells us this without
+/// being asked. `None` means a host that does not run that plugin at all, and
+/// is "not said" rather than "off".
+pub fn auto_balance(json: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(json).ok()?;
+    let mode = value
+        .get("BattleStateChanged")?
+        .get("autoBalance")?
+        .as_str()?
+        .trim();
+    (!mode.is_empty()).then(|| mode.to_ascii_lowercase())
+}
+
 /// Whether an announcement names `who` as the one who acted. SPADS writes
 /// "… by <name>" for a setting, preset or map change and "<name> called a
 /// vote" for a vote (`spads.pl`, `broadcastMsg` callers). Word-bounded, so

@@ -37,7 +37,7 @@ export type Roster = {
 }
 
 /** Teams to draw while the room is still arriving, when the server said none. */
-const DEFAULT_TEAMS = 2
+export const DEFAULT_TEAMS = 2
 
 export function arrange(
   room: BattleView,
@@ -149,6 +149,25 @@ export function freeTeam(
 }
 
 /** Seats a team shows empty, while its players are still on their way. */
+/**
+ * `BARb`, then `BARb2` -- a name for an AI that the room does not already hold.
+ *
+ * `claimed` carries names taken earlier in the same batch: the room's own list
+ * does not catch up between the messages of a single click.
+ */
+export function unusedBotName(
+  battle: BattleView | undefined,
+  base: string,
+  claimed: ReadonlySet<string> = new Set(),
+): string {
+  const taken = new Set((battle?.bots ?? []).map((bot) => bot.name))
+  for (const name of claimed) taken.add(name)
+  if (!taken.has(base)) return base
+  let n = 2
+  while (taken.has(`${base}${n}`)) n += 1
+  return `${base}${n}`
+}
+
 export function emptySeats(team: Team): number {
   return Math.max(
     0,

@@ -13,13 +13,32 @@ import { Flag, RankIcon } from './icons'
  * name you want is `[Crd]XxStormKittyxX`.
  */
 
+/**
+ * Where a row may be sent, handed in by the room rather than worked out here.
+ *
+ * This menu knows about people, not about rooms: which teams exist, and what
+ * moving somebody costs, are the room's questions -- and a skirmish answers
+ * them differently from a room on the server. Absent where a row cannot move.
+ */
+export type Moves = {
+  /** Ally team indices to offer, in the order the room draws them. */
+  teams: number[]
+  /** Where they are now, so it is not offered as somewhere to go. */
+  on: number | null
+  to: (allyTeam: number) => Promise<void>
+  /** Present only where a bonus can be set: an AI of ours, or a boss's word. */
+  bonus?: (percent: number) => Promise<void>
+  bonusNow?: number
+}
+
 type Target =
-  | { kind: 'user'; name: string; x: number; y: number }
+  | { kind: 'user'; name: string; moves?: Moves; x: number; y: number }
   /** One of our own AIs; `remove` is the one thing there is to do about it. */
   | {
       kind: 'bot'
       bot: BotView
       remove: () => Promise<void>
+      moves?: Moves
       x: number
       y: number
     }
@@ -27,10 +46,14 @@ type Target =
 const [openFor, setOpenFor] = createSignal<Target | null>(null)
 
 /** Opens the menu for a name at the pointer. */
-export function showPlayerMenu(name: string, event: MouseEvent): void {
+export function showPlayerMenu(
+  name: string,
+  event: MouseEvent,
+  moves?: Moves,
+): void {
   event.preventDefault()
   event.stopPropagation()
-  setOpenFor({ kind: 'user', name, x: event.clientX, y: event.clientY })
+  setOpenFor({ kind: 'user', name, moves, x: event.clientX, y: event.clientY })
 }
 
 /**
@@ -42,10 +65,18 @@ export function showBotMenu(
   bot: BotView,
   remove: () => Promise<void>,
   event: MouseEvent,
+  moves?: Moves,
 ): void {
   event.preventDefault()
   event.stopPropagation()
-  setOpenFor({ kind: 'bot', bot, remove, x: event.clientX, y: event.clientY })
+  setOpenFor({
+    kind: 'bot',
+    bot,
+    remove,
+    moves,
+    x: event.clientX,
+    y: event.clientY,
+  })
 }
 
 export function PlayerMenu() {
@@ -108,11 +139,34 @@ export function PlayerMenu() {
         const bossing = () =>
           lobby.myBattle?.boss !== null && lobby.myBattle?.boss === lobby.me
 
+        type Entry = [string, () => Promise<void> | void]
+
+        /**
+         * Where this row can be sent, as words.
+         *
+         * The same rows a drag produces, said out loud: dragging is quicker
+         * once you know it is there, and nothing tells you that it is.
+         */
+        const placings = (moves: Moves | undefined): Entry[] => {
+          if (!moves) return []
+          const rows: Entry[] = moves.teams
+            .filter((ally) => ally !== moves.on)
+            .map((ally) => [`Move to team ${ally + 1}`, () => moves.to(ally)])
+          const bonus = moves.bonus
+          if (bonus)
+            for (const percent of [0, 25, 50, 75, 100])
+              if (percent !== moves.bonusNow)
+                rows.push([`Bonus ${percent}%`, () => bonus(percent)])
+          return rows
+        }
+
         const items = () => {
           const ai = bot()
           if (ai) {
-            const remove: [string, () => Promise<void>] = ['Remove', ai.remove]
-            return [remove]
+            return [
+              ...placings(openFor()?.moves),
+              ['Remove', ai.remove] as Entry,
+            ]
           }
           const entries: Array<[string, () => Promise<void> | void]> = [
             [
@@ -132,6 +186,7 @@ export function PlayerMenu() {
           if (together) {
             entries.push(['Ring', () => api.ring(name())])
           }
+          if (together) entries.push(...placings(openFor()?.moves))
           if (together && bossing()) {
             entries.push(['Move to spectators', () => say(`!spec ${name()}`)])
             entries.push(['Kick from the room', () => say(`!kick ${name()}`)])

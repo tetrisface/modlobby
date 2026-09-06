@@ -4,7 +4,8 @@ import type { DownloadStatus } from '../ipc/bindings/DownloadStatus'
 import type { UserView } from '../ipc/bindings/UserView'
 import { type Skill, skillText, skillTier, skillTitle } from '../lib/skill'
 import { Flag, Glyph, Marks, RankIcon, SideIcon, StatusIcon } from './icons'
-import { showBotMenu, showPlayerMenu } from './PlayerMenu'
+import { rowGesture } from '../lib/drag'
+import { type Moves, showBotMenu, showPlayerMenu } from './PlayerMenu'
 
 /**
  * One player, in Chobby's column order: status, country, rank, skill, faction,
@@ -21,11 +22,24 @@ export function PlayerRow(props: {
   friend?: boolean
   boss?: boolean
   download?: DownloadStatus
+  /** Where this row may be sent. Absent outside a room, or where it may not. */
+  moves?: Moves
 }) {
+  const menu = (event: MouseEvent) =>
+    showPlayerMenu(props.user.name, event, props.moves)
+  const press = rowGesture({
+    canMove: () => props.moves !== undefined,
+    onMove: (ally) => void props.moves?.to(ally),
+    onMenu: menu,
+  })
   return (
     <Show when={props.user.battleStatus}>
       {(battle) => (
-        <div class='player'>
+        <div
+          class='player'
+          classList={{ movable: props.moves !== undefined }}
+          onPointerDown={press}
+        >
           <StatusIcon
             status={props.user.status}
             battle={battle()}
@@ -35,11 +49,12 @@ export function PlayerRow(props: {
           <RankIcon status={props.user.status} />
           <SkillCell skill={props.skill} />
           <SideIcon side={battle().side} />
+          {/* The press is handled by the row, so that a drag off the name
+              is the same gesture as a drag off anywhere else in it. */}
           <span
             class='pname'
             classList={{ me: props.me, friend: props.friend }}
-            onClick={(event) => showPlayerMenu(props.user.name, event)}
-            onContextMenu={(event) => showPlayerMenu(props.user.name, event)}
+            onContextMenu={menu}
           >
             {props.user.name}
           </span>
@@ -62,13 +77,26 @@ export function BotRow(props: {
   onRemove?: () => Promise<void>
   /** Offered where the room can tell an AI anything about itself. */
   onOptions?: () => void
+  /** Where this AI may be sent, and what bonus it may be given. */
+  moves?: Moves
+  /** Another of the same, on the same team. Ours to add, so ours to copy. */
+  onClone?: () => Promise<void>
 }) {
   const menu = (event: MouseEvent) => {
     const remove = props.onRemove
-    if (remove) showBotMenu(props.bot, remove, event)
+    if (remove) showBotMenu(props.bot, remove, event, props.moves)
   }
+  const press = rowGesture({
+    canMove: () => props.moves !== undefined,
+    onMove: (ally) => void props.moves?.to(ally),
+    onMenu: menu,
+  })
   return (
-    <div class='player'>
+    <div
+      class='player bot-row'
+      classList={{ movable: props.moves !== undefined }}
+      onPointerDown={press}
+    >
       <span />
       <span />
       <svg class='icon rank bot' role='img'>
@@ -81,14 +109,31 @@ export function BotRow(props: {
         class='pname bot'
         classList={{ mine: props.onRemove !== undefined }}
         title={`${props.bot.ai} · ${props.bot.owner}`}
-        onClick={menu}
         onContextMenu={menu}
       >
         {props.bot.name}
       </span>
+      {/* An AI has no rating, rank or country, so the columns those would sit
+          in are the AI's to use: a bonus reads there rather than pushing the
+          name into an ellipsis. */}
+      <Show when={props.bot.status.handicap > 0}>
+        <span class='bot-bonus' title='Resource bonus'>
+          +{props.bot.status.handicap}%
+        </span>
+      </Show>
+      <Show when={props.onClone}>
+        <button
+          class='row-act bot-clone'
+          title={`Another ${props.bot.ai} on this team`}
+          aria-label={`Add another ${props.bot.ai}`}
+          onClick={() => void props.onClone?.()}
+        >
+          <Glyph id='act-copy' />
+        </button>
+      </Show>
       <Show when={props.onOptions}>
         <button
-          class='bot-remove'
+          class='row-act bot-edit'
           title={`What ${props.bot.name} is told about itself`}
           aria-label={`Options for ${props.bot.name}`}
           onClick={() => props.onOptions?.()}
@@ -98,7 +143,7 @@ export function BotRow(props: {
       </Show>
       <Show when={props.onRemove}>
         <button
-          class='bot-remove'
+          class='row-act bot-remove'
           title={`Remove ${props.bot.name}`}
           aria-label={`Remove ${props.bot.name}`}
           onClick={() => void props.onRemove?.()}

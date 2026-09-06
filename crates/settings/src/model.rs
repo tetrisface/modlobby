@@ -1,6 +1,7 @@
 //! The settings shape. Every field has a default so a partial file is valid;
 //! unknown keys are kept on disk and ignored here.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use schemars::JsonSchema;
@@ -28,6 +29,7 @@ pub struct Settings {
     pub tweaks: Tweaks,
     pub logging: Logging,
     pub updates: Updates,
+    pub ui: Ui,
 }
 
 impl Settings {
@@ -209,12 +211,6 @@ pub enum JoinAs {
 #[serde(default, rename_all = "camelCase")]
 #[ts(export)]
 pub struct Play {
-    /// Whether a seat may be taken in a public room.
-    ///
-    /// On: this is a lobby, and sitting down in a room is what it is for. It
-    /// stays a setting because a client driving the protocol without a person
-    /// behind it should be able to say it is only watching.
-    pub in_public_rooms: bool,
     /// Whether joining a room seats you.
     pub join_as: JoinAs,
     /// Whether the engine starts on its own when your room's game does.
@@ -245,7 +241,6 @@ pub struct Play {
 impl Default for Play {
     fn default() -> Self {
         Self {
-            in_public_rooms: true,
             join_as: JoinAs::Remember,
             auto_launch: true,
             auto_download: true,
@@ -357,6 +352,12 @@ pub struct Notifications {
     pub game_starting: Alert,
     /// Your room's game finished.
     pub game_ended: Alert,
+    /// Silences every kind above, without forgetting how each was set.
+    ///
+    /// Chobby has the same switch (`doNotDisturb`), and it is the one people
+    /// reach for: turning seven rows off to get an hour's quiet, and then
+    /// remembering how each of them stood, is not a thing anyone does.
+    pub do_not_disturb: bool,
 }
 
 impl Default for Notifications {
@@ -371,6 +372,9 @@ impl Default for Notifications {
             friend_online: Alert::Lobby,
             vote: Alert::Lobby,
             game_ended: Alert::Lobby,
+            // Off: a lobby that says nothing until it is configured is a
+            // lobby that looks broken.
+            do_not_disturb: false,
         }
     }
 }
@@ -459,6 +463,22 @@ impl Default for Updates {
     fn default() -> Self {
         Self { automatic: true }
     }
+}
+
+/// How large the interface is drawn.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS, Default)]
+#[serde(default, rename_all = "camelCase")]
+#[ts(export)]
+pub struct Ui {
+    /// Interface scale as a percentage, per screen size.
+    ///
+    /// Keyed by a coarse bucket of the display's pixel size, so a laptop and
+    /// the monitor it is plugged into each keep their own answer instead of
+    /// the last one used winning — Chobby remembers it the same way
+    /// (`chobby/components/configuration.lua:593`). A screen with no entry is
+    /// drawn at a size derived from it, which is what makes a large display
+    /// legible without anyone opening this file.
+    pub scale: BTreeMap<String, u16>,
 }
 
 /// The JSON Schema editors use for completion, pretty-printed.

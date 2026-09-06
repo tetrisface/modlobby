@@ -1,10 +1,18 @@
+import { useSearchParams } from '@solidjs/router'
 import { For, Show, createEffect, createSignal, onCleanup } from 'solid-js'
 import { createStore, unwrap } from 'solid-js/store'
 import { PlayerFiles } from '../components/PlayerFiles'
 import type { Settings } from '../ipc/bindings/Settings'
 import { api, describeError } from '../ipc/client'
 import { pushNotice } from '../store/chat'
-import { applySettings, settings } from '../store/settings'
+import { bounds } from '../lib/scale'
+import {
+  applySettings,
+  resetScale,
+  setScale,
+  settings,
+  uiScale,
+} from '../store/settings'
 import { busy as updating, checkUpdate } from '../store/update'
 
 /** Long enough that typing a hostname is one write rather than twelve. */
@@ -50,12 +58,29 @@ function wholeNumber(text: string): number | null {
     : value
 }
 
+type Tab = 'general' | 'notifications' | 'advanced'
+
 export function SettingsView() {
   const [draft, setDraft] = createStore<Settings>(
-    structuredClone(unwrap(settings())) ?? blank(),
+    structuredClone(unwrap(settings())) ?? blankSettings(),
   )
   const [state, setState] = createSignal<'clean' | 'saving' | 'saved'>('clean')
-  const [tab, setTab] = createSignal<'general' | 'advanced'>('general')
+  const [params, setParams] = useSearchParams()
+  /**
+   * Which tab is open, kept in the URL rather than in a signal: the corner
+   * notices link straight to the notification settings, and a link has to be
+   * able to say which page it means.
+   */
+  const tab = (): Tab => {
+    const wanted = Array.isArray(params.tab) ? params.tab[0] : params.tab
+    return wanted === 'notifications' || wanted === 'advanced'
+      ? wanted
+      : 'general'
+  }
+  const setTab = (key: Tab) =>
+    setParams({ tab: key === 'general' ? undefined : key }, { replace: true })
+  /** How far the slider goes here: a bigger screen earns a bigger range. */
+  const limits = () => bounds(window.screen.width, window.screen.height)
 
   /**
    * The look on demand, shared with the corner of the nav. Said here as well,
@@ -67,7 +92,7 @@ export function SettingsView() {
   }
 
   /** What is in the file, as far as we know. */
-  let saved = fingerprint(unwrap(settings()) ?? blank())
+  let saved = fingerprint(unwrap(settings()) ?? blankSettings())
   let pending: ReturnType<typeof setTimeout> | undefined
 
   createEffect(() => {
@@ -121,6 +146,7 @@ export function SettingsView() {
           each={
             [
               ['general', 'General'],
+              ['notifications', 'Notifications'],
               ['advanced', 'Advanced'],
             ] as const
           }
@@ -146,6 +172,30 @@ export function SettingsView() {
       </p>
 
       <Show when={tab() === 'general'}>
+        <fieldset>
+          <legend>Interface</legend>
+          <label class='row'>
+            Size
+            <input
+              type='range'
+              min={limits().min}
+              max={limits().max}
+              step={5}
+              value={uiScale()}
+              onInput={(e) => setScale(Number(e.currentTarget.value))}
+            />
+            <output>{uiScale()}%</output>
+          </label>
+          <p class='muted'>
+            Holding Ctrl and turning the mouse wheel does this anywhere in the
+            window, and Ctrl+0 puts it back. Each screen is remembered on its
+            own, so plugging in a monitor does not resize the laptop.
+          </p>
+          <button type='button' onClick={() => resetScale()}>
+            Reset
+          </button>
+        </fieldset>
+
         <fieldset>
           <legend>Account</legend>
           <label class='row'>
@@ -296,13 +346,14 @@ export function SettingsView() {
             Escape in a game opens the lobby
           </label>
           <p class='muted'>
-            The engine gives an outside program no way to see Escape, so this is
-            the one thing that puts a file of modlobby's in your Beyond All
-            Reason folder: a small widget in <code>LuaUI/Widgets</code>. It
-            draws nothing, it comes back out when modlobby closes, and it only
-            takes the key when modlobby answers — so a game you start from
-            Chobby keeps its own Escape. Escape with units selected still
-            deselects them, as always.
+            The engine gives an outside program no way to see Escape, so this
+            writes a small widget into <code>LuaUI/Widgets</code> in the data
+            directory modlobby writes — its own, unless you have pointed{' '}
+            <code>paths.dataDir</code> at another lobby's install. It draws
+            nothing, it comes back out when modlobby closes, and it only takes
+            the key when modlobby answers — so a game you start from Chobby
+            keeps its own Escape. Escape with units selected still deselects
+            them, as always.
           </p>
           <p class='muted'>
             Nothing can be drawn over an exclusive full-screen game, so if your
@@ -319,21 +370,6 @@ export function SettingsView() {
           <label class='row'>
             <input
               type='checkbox'
-              checked={draft.play.autoLaunch}
-              onChange={(e) =>
-                setDraft('play', 'autoLaunch', e.currentTarget.checked)
-              }
-            />
-            Start the game automatically
-          </label>
-          <p class='muted'>
-            When your room's game starts, the engine starts with it — while
-            spectating too, which is otherwise the case that means watching the
-            room and pressing a button. Never without the content on disk.
-          </p>
-          <label class='row'>
-            <input
-              type='checkbox'
               checked={draft.play.autoDownload}
               onChange={(e) =>
                 setDraft('play', 'autoDownload', e.currentTarget.checked)
@@ -345,25 +381,6 @@ export function SettingsView() {
             Engine, game and map, as soon as you join a room that lacks them.
             Off leaves a button in the room for each, for a metered connection
             or a disk being kept small.
-          </p>
-        </fieldset>
-
-        <fieldset>
-          <legend>Chat</legend>
-          <label class='row'>
-            <input
-              type='checkbox'
-              checked={draft.chat.filterHostChatter}
-              onChange={(e) =>
-                setDraft('chat', 'filterHostChatter', e.currentTarget.checked)
-              }
-            />
-            Filter bot chatter
-          </label>
-          <p class='muted'>
-            SPADS rides the room's state on battle chat as
-            <code> BarManager|&#123;…&#125;</code>, which this reads and turns
-            into the room you see. Off, those lines are shown as they arrive.
           </p>
         </fieldset>
 
@@ -402,7 +419,47 @@ export function SettingsView() {
         </fieldset>
 
         <fieldset>
+          <legend>Paths</legend>
+          <label>
+            BAR data directory to write (blank = modlobby's own; the launcher's
+            and bar-lobby's are always read)
+            <input
+              value={draft.paths.dataDir ?? ''}
+              onInput={(e) =>
+                setDraft('paths', 'dataDir', e.currentTarget.value || null)
+              }
+            />
+          </label>
+          <button type='button' onClick={() => api.openDataDir()}>
+            Open data directory
+          </button>
+          <PlayerFiles />
+        </fieldset>
+      </Show>
+
+      <Show when={tab() === 'notifications'}>
+        <fieldset>
           <legend>Notifications</legend>
+          <label class='row'>
+            <input
+              type='checkbox'
+              checked={draft.notifications.doNotDisturb}
+              onChange={(e) =>
+                setDraft(
+                  'notifications',
+                  'doNotDisturb',
+                  e.currentTarget.checked,
+                )
+              }
+            />
+            Do not disturb
+          </label>
+          <p class='muted'>
+            Silences every row below without changing any of them, for when the
+            lobby is open beside something that matters more. The corner still
+            shows what modlobby itself has to say — an error, a download — since
+            that is an answer to something you did.
+          </p>
           <p class='muted'>
             <b>In lobby</b> puts a line in the corner of this window.{' '}
             <b>Desktop</b> raises a notification from your operating system and
@@ -479,50 +536,12 @@ export function SettingsView() {
             )}
           </For>
         </fieldset>
-
-        <fieldset>
-          <legend>Paths</legend>
-          <label>
-            BAR data directory to write (blank = modlobby's own; the launcher's
-            and bar-lobby's are always read)
-            <input
-              value={draft.paths.dataDir ?? ''}
-              onInput={(e) =>
-                setDraft('paths', 'dataDir', e.currentTarget.value || null)
-              }
-            />
-          </label>
-          <button type='button' onClick={() => api.openDataDir()}>
-            Open data directory
-          </button>
-          <PlayerFiles />
-        </fieldset>
-
-        <fieldset>
-          <legend>Logging</legend>
-          <label>
-            Filter (a `tracing` filter, e.g. `info,spring::rx=trace`)
-            <input
-              value={draft.logging.filter}
-              onInput={(e) =>
-                setDraft('logging', 'filter', e.currentTarget.value)
-              }
-            />
-          </label>
-          <p class='muted'>
-            Both the Rust side and the webview console write one JSON-per-line
-            file per day, kept across restarts. Applies on the next start.
-          </p>
-          <button type='button' onClick={() => api.openLogDir()}>
-            Open log folder
-          </button>
-        </fieldset>
       </Show>
 
       <Show when={tab() === 'advanced'}>
         <p class='muted'>
           Things you should not need. The defaults are what the game's own
-          server expects, and a seat in a public room is a real player's game.
+          server expects, and these are the switches behind them.
         </p>
 
         <fieldset>
@@ -563,7 +582,41 @@ export function SettingsView() {
         </fieldset>
 
         <fieldset>
+          <legend>Chat</legend>
+          <label class='row'>
+            <input
+              type='checkbox'
+              checked={draft.chat.filterHostChatter}
+              onChange={(e) =>
+                setDraft('chat', 'filterHostChatter', e.currentTarget.checked)
+              }
+            />
+            Filter bot chatter
+          </label>
+          <p class='muted'>
+            SPADS rides the room's state on battle chat as
+            <code> BarManager|&#123;…&#125;</code>, which this reads and turns
+            into the room you see. Off, those lines are shown as they arrive.
+          </p>
+        </fieldset>
+
+        <fieldset>
           <legend>Playing</legend>
+          <label class='row'>
+            <input
+              type='checkbox'
+              checked={draft.play.autoLaunch}
+              onChange={(e) =>
+                setDraft('play', 'autoLaunch', e.currentTarget.checked)
+              }
+            />
+            Start the game automatically
+          </label>
+          <p class='muted'>
+            When your room's game starts, the engine starts with it — while
+            spectating too, which is otherwise the case that means watching the
+            room and pressing a button. Never without the content on disk.
+          </p>
           <label class='row'>
             <input
               type='checkbox'
@@ -580,28 +633,32 @@ export function SettingsView() {
             being played. Sends the map, the settings and the team size; never a
             name or an account. Off hides the panel and sends nothing.
           </p>
+        </fieldset>
 
-          <label class='row'>
-            <input
-              type='checkbox'
-              checked={draft.play.inPublicRooms}
-              onChange={(e) =>
-                setDraft('play', 'inPublicRooms', e.currentTarget.checked)
-              }
-            />
-            Let me take a seat in public rooms
-          </label>
+        <fieldset>
+          <legend>Logs</legend>
           <p class='muted'>
-            On, because this is a lobby. Turn it off to watch only — a room of
-            your own is yours to sit in either way.
+            Both the Rust side and the webview console write one JSON-per-line
+            file per day, kept across restarts. What is written is the{' '}
+            <code>logging.filter</code> in the settings file.
           </p>
+          <button type='button' onClick={() => api.openLogDir()}>
+            Open log folder
+          </button>
         </fieldset>
       </Show>
     </form>
   )
 }
 
-function blank(): Settings {
+/**
+ * A whole settings object with nothing chosen in it.
+ *
+ * Exported because it is the one place the shape is written out in full, and
+ * a test that needs a settings object needs this one rather than a copy that
+ * drifts from it.
+ */
+export function blankSettings(): Settings {
   return {
     $schema: null,
     server: { host: '', port: 8201, tls: true },
@@ -609,7 +666,6 @@ function blank(): Settings {
     connection: { idleDisconnectMinutes: 60 },
     paths: { dataDir: null },
     play: {
-      inPublicRooms: true,
       joinAs: 'remember',
       lastWasPlayer: true,
       autoLaunch: true,
@@ -624,6 +680,7 @@ function blank(): Settings {
       vote: 'lobby',
       gameStarting: 'desktop',
       gameEnded: 'lobby',
+      doNotDisturb: false,
     },
     battleList: {
       showPassworded: true,
@@ -645,5 +702,6 @@ function blank(): Settings {
     tweaks: { styluaConfig: null, defaultSlot: 'tweakdefs1' },
     logging: { filter: 'info' },
     updates: { automatic: true },
+    ui: { scale: {} },
   }
 }

@@ -72,6 +72,8 @@ struct Seat {
     ally_team: u8,
     ready: bool,
     side: u8,
+    /// Resource bonus as a percentage, 0-100. SPADS calls it `bonus`.
+    handicap: u8,
 }
 
 impl MyBattleStatus {
@@ -89,6 +91,7 @@ impl MyBattleStatus {
                 ally_team,
                 ready: false,
                 side: 0,
+                handicap: 0,
             }),
         }
     }
@@ -103,6 +106,16 @@ impl MyBattleStatus {
     pub fn side(mut self, side: u8) -> Self {
         if let Some(seat) = self.seat.as_mut() {
             seat.side = side;
+        }
+        self
+    }
+
+    /// A resource bonus, as a percentage. SPADS caps `!force … bonus` at 100
+    /// and the field itself is seven bits, so anything larger is a mistake
+    /// rather than an intent.
+    pub fn handicap(mut self, handicap: u8) -> Self {
+        if let Some(seat) = self.seat.as_mut() {
+            seat.handicap = handicap.min(100);
         }
         self
     }
@@ -122,6 +135,7 @@ impl MyBattleStatus {
             | ((team & 0xF) << 2)
             | ((ally & 0xF) << 6)
             | (1 << 10)
+            | ((seat.handicap as u32 & 0x7F) << 11)
             | (((team >> 4) & 0xF) << 18)
             | ((seat.side as u32 & 0xF) << 24)
             | (((ally >> 4) & 0xF) << 28)
@@ -188,6 +202,23 @@ pub fn add_bot(name: &str, ai: &str, status: MyBattleStatus, colour: u32) -> Env
     Envelope::queue(
         Area::Other,
         format!("ADDBOT {name} {} {colour} {ai}", status.bits()),
+    )
+}
+
+/// `UPDATEBOT <name> <status> <colour>` — three fields, unlike the four-field
+/// broadcast the server echoes back with the lobby id in front
+/// (`spring_in.ex` regex `(\S+) (\S+) (\S+)`, `spring_out.ex:329`).
+///
+/// teiserver accepts it from the bot's owner, the room's founder and
+/// moderators, and from anyone else it is a silent no-op (`lobby.ex:722`) —
+/// so the caller checks, or the AI simply does not move. Chobby's encoder
+/// drops the handicap bits and re-sends `!force … bonus` to make up for it
+/// (`api_user_handler.lua:1585`); [`MyBattleStatus`] writes them, so this
+/// carries the bonus by itself.
+pub fn update_bot(name: &str, status: MyBattleStatus, colour: u32) -> Envelope {
+    Envelope::queue(
+        Area::Other,
+        format!("UPDATEBOT {name} {} {colour}", status.bits()),
     )
 }
 
@@ -355,6 +386,33 @@ mod tests {
         assert_eq!(
             MyBattleStatus::spectator(Sync::Unsynced).line(),
             "MYBATTLESTATUS 8388608 0"
+        );
+    }
+
+    /// A bonus set here has to survive the decoder, or an AI given 50% would
+    /// come back playing at par -- which is what Chobby works around by
+    /// re-sending `!force … bonus` after every `UPDATEBOT`.
+    #[test]
+    fn a_bonus_rides_the_status_and_comes_back_out() {
+        let status = MyBattleStatus::player(Sync::Bot, 1, 1).handicap(50);
+        assert_eq!(BattleStatus::from_bits(status.bits()).handicap, 50);
+
+        // Seven bits, and SPADS refuses more than 100 anyway.
+        let capped = MyBattleStatus::player(Sync::Bot, 1, 1).handicap(200);
+        assert_eq!(BattleStatus::from_bits(capped.bits()).handicap, 100);
+
+        // A spectator has no seat, so there is nothing to give a bonus to.
+        let watching = MyBattleStatus::spectator(Sync::Synced).handicap(50);
+        assert_eq!(BattleStatus::from_bits(watching.bits()).handicap, 0);
+    }
+
+    /// Three fields going out; the server echoes four, with the lobby id first.
+    #[test]
+    fn update_bot_sends_the_client_form() {
+        let status = MyBattleStatus::player(Sync::Bot, 2, 1).handicap(25);
+        assert_eq!(
+            update_bot("BARb", status, 0x4b73f2).line,
+            format!("UPDATEBOT BARb {} 4944882", status.bits())
         );
     }
 

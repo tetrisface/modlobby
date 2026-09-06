@@ -13,7 +13,9 @@ vi.mock('@tauri-apps/api/window', () => ({
   getCurrentWindow: () => ({ requestUserAttention: vi.fn(async () => {}) }),
 }))
 
-const { plan, flashTarget, keepTrying } = await import('./alerts')
+const { plan, flashTarget, keepTrying, wanted } = await import('./alerts')
+const { applySettings } = await import('../store/settings')
+const { blankSettings } = await import('../views/Settings')
 
 describe('where an alert goes', () => {
   test('off says nothing, whoever is looking', () => {
@@ -84,5 +86,30 @@ describe('waiting for the engine window', () => {
     expect(await keepTrying(attempt, 3000, 250, () => clock, sleep)).toBe(false)
     expect(clock).toBe(3000)
     expect(attempt).toHaveBeenCalledTimes(13)
+  })
+})
+
+describe('do not disturb', () => {
+  const withNotifications = (over: Record<string, unknown>) => {
+    const base = blankSettings()
+    applySettings({
+      ...base,
+      notifications: { ...base.notifications, ...over },
+    })
+  }
+
+  test('silences every kind at once', () => {
+    withNotifications({ doNotDisturb: true })
+    expect(wanted('mention')).toBe('off')
+    expect(wanted('privateMessage')).toBe('off')
+    expect(wanted('vote')).toBe('off')
+  })
+
+  test('and forgets none of them when it goes back off', () => {
+    withNotifications({ doNotDisturb: true, mention: 'desktop' })
+    expect(wanted('mention')).toBe('off')
+
+    withNotifications({ doNotDisturb: false, mention: 'desktop' })
+    expect(wanted('mention')).toBe('desktop')
   })
 })

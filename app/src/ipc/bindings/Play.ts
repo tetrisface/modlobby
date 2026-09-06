@@ -6,14 +6,6 @@ import type { JoinAs } from "./JoinAs";
  */
 export type Play = { 
 /**
- * Whether a seat may be taken in a public room.
- *
- * On: this is a lobby, and sitting down in a room is what it is for. It
- * stays a setting because a client driving the protocol without a person
- * behind it should be able to say it is only watching.
- */
-inPublicRooms: boolean, 
-/**
  * Whether joining a room seats you.
  */
 joinAs: JoinAs, 

@@ -56,6 +56,7 @@
     "notifications": {
       "$ref": "#/$defs/Notifications",
       "default": {
+        "doNotDisturb": false,
         "friendOnline": "lobby",
         "gameEnded": "lobby",
         "gameStarting": "desktop",
@@ -85,7 +86,6 @@
       "default": {
         "autoDownload": true,
         "autoLaunch": true,
-        "inPublicRooms": true,
         "joinAs": "remember",
         "lastWasPlayer": true,
         "pveStats": true
@@ -104,6 +104,12 @@
       "default": {
         "defaultSlot": "tweakdefs1",
         "styluaConfig": null
+      }
+    },
+    "ui": {
+      "$ref": "#/$defs/Ui",
+      "default": {
+        "scale": {}
       }
     },
     "updates": {
@@ -296,6 +302,11 @@
       "description": "What is worth saying something about, and where.",
       "type": "object",
       "properties": {
+        "doNotDisturb": {
+          "description": "Silences every kind above, without forgetting how each was set.\n\nChobby has the same switch (`doNotDisturb`), and it is the one people\nreach for: turning seven rows off to get an hour's quiet, and then\nremembering how each of them stood, is not a thing anyone does.",
+          "type": "boolean",
+          "default": false
+        },
         "friendOnline": {
           "description": "A friend logged in.",
           "$ref": "#/$defs/Alert",
@@ -385,11 +396,6 @@
           "type": "boolean",
           "default": true
         },
-        "inPublicRooms": {
-          "description": "Whether a seat may be taken in a public room.\n\nOn: this is a lobby, and sitting down in a room is what it is for. It\nstays a setting because a client driving the protocol without a person\nbehind it should be able to say it is only watching.",
-          "type": "boolean",
-          "default": true
-        },
         "joinAs": {
           "description": "Whether joining a room seats you.",
           "$ref": "#/$defs/JoinAs",
@@ -444,6 +450,23 @@
             "null"
           ],
           "default": null
+        }
+      }
+    },
+    "Ui": {
+      "description": "How large the interface is drawn.",
+      "type": "object",
+      "properties": {
+        "scale": {
+          "description": "Interface scale as a percentage, per screen size.\n\nKeyed by a coarse bucket of the display's pixel size, so a laptop and\nthe monitor it is plugged into each keep their own answer instead of\nthe last one used winning — Chobby remembers it the same way\n(`chobby/components/configuration.lua:593`). A screen with no entry is\ndrawn at a size derived from it, which is what makes a large display\nlegible without anyone opening this file.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "format": "uint16",
+            "maximum": 65535,
+            "minimum": 0
+          },
+          "default": {}
         }
       }
     },

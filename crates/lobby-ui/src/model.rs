@@ -355,6 +355,10 @@ impl From<&OptionChange> for OptionChangeView {
 pub struct MyBattleView {
     /// Who SPADS says is bossing the room, when it has said.
     pub boss: Option<String>,
+    /// How the room balances itself: `off`, `on`, `advanced`. `null` where the
+    /// room has not said, which is not the same as `off`: a host without BAR's
+    /// BarManager plugin never reports it.
+    pub auto_balance: Option<String>,
     pub id: u32,
     pub game_hash: String,
     /// Lowercase script-tag keys (`game/modoptions/tweakdefs`, `game/hosttype`, …).
@@ -368,6 +372,7 @@ impl From<&MyBattle> for MyBattleView {
     fn from(my: &MyBattle) -> Self {
         Self {
             boss: my.boss.clone(),
+            auto_balance: my.auto_balance.clone(),
             id: my.id,
             game_hash: my.game_hash.clone(),
             script_tags: my.script_tags.clone(),

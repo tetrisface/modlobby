@@ -127,6 +127,7 @@ function enter(bots: BotView[], others: UserView[] = []) {
   for (const held of others) next.users[held.name] = held
   next.myBattle = {
     boss: null,
+    autoBalance: 'off',
     id: 7,
     gameHash: '',
     scriptTags: { 'game/modoptions/raptor_endless': '0' },

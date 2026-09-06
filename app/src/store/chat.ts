@@ -4,7 +4,13 @@ import type { ChannelSummaryView } from '../ipc/bindings/ChannelSummaryView'
 import type { ChatLine } from '../ipc/bindings/ChatLine'
 import type { NoticeLevel } from '../ipc/bindings/NoticeLevel'
 
-export type Notice = { seq: number; level: NoticeLevel; text: string }
+export type Notice = {
+  seq: number
+  level: NoticeLevel
+  text: string
+  /** When this one leaves, pushed back while the pointer is in the corner. */
+  expiresAt: number
+}
 
 /** The room key for the battle we are in; `lobby-ui` writes the same string. */
 export const BATTLE_ROOM = '#battle'
@@ -161,21 +167,73 @@ export function openRooms(): string[] {
 /** How long a message sits in the corner before it goes. */
 const NOTICE_LIFE = 9_000
 
+/** How often the corner is checked for something to drop. */
+const SWEEP_EVERY = 250
+
+let sweeping: ReturnType<typeof setInterval> | undefined
+/** When the pointer entered the corner, or `null` when it is not in it. */
+let heldSince: number | null = null
+
+function sweep(): void {
+  // Held: the pointer is in the corner and somebody is reading.
+  if (heldSince !== null) return
+  const now = Date.now()
+  setChat('notices', (notices) =>
+    notices.filter((notice) => notice.expiresAt > now),
+  )
+  if (chat.notices.length === 0) {
+    clearInterval(sweeping)
+    sweeping = undefined
+  }
+}
+
 export function pushNotice(level: NoticeLevel, text: string): void {
   noticeSeq += 1
-  const seq = noticeSeq
-  setChat('notices', (notices) => [...notices.slice(-19), { seq, level, text }])
   // They leave on their own: these are alerts as much as errors now, and a
-  // corner that only ever fills up is a log nobody asked for.
-  setTimeout(() => {
-    setChat('notices', (notices) =>
-      notices.filter((notice) => notice.seq !== seq),
-    )
-  }, NOTICE_LIFE)
+  // corner that only ever fills up is a log nobody asked for. One sweeper for
+  // all of them rather than a timer each, so that holding them all back while
+  // the pointer is in the corner is a single decision.
+  const notice = {
+    seq: noticeSeq,
+    level,
+    text,
+    expiresAt: Date.now() + NOTICE_LIFE,
+  }
+  setChat('notices', (notices) => [...notices.slice(-19), notice])
+  sweeping ??= setInterval(sweep, SWEEP_EVERY)
+}
+
+/**
+ * Stop the corner emptying itself while somebody is reading it.
+ *
+ * The time spent held is given back to every notice on release rather than
+ * their being pinned outright: a message you have already read should not
+ * need dismissing, and one that arrived as you moved the mouse there should
+ * still get its full span.
+ */
+export function holdNotices(held: boolean): void {
+  if (held) {
+    heldSince ??= Date.now()
+    return
+  }
+  if (heldSince === null) return
+  const paused = Date.now() - heldSince
+  heldSince = null
+  setChat('notices', (notices) =>
+    notices.map((notice) => ({
+      ...notice,
+      expiresAt: notice.expiresAt + paused,
+    })),
+  )
 }
 
 export function clearChat(): void {
   watching = BATTLE_ROOM
+  // The corner goes with it, and so does the timer emptying it: an interval
+  // left running against notices that no longer exist is a handle nobody owns.
+  clearInterval(sweeping)
+  sweeping = undefined
+  heldSince = null
   setChat(empty())
 }
 

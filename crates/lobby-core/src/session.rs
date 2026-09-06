@@ -186,9 +186,6 @@ pub struct Session {
     pending_join: Option<String>,
     /// The seat we hold in our room; `None` is a spectator.
     seat: Option<Seat>,
-    /// Whether a seat may be taken in a public room. Off unless the owner says
-    /// otherwise: in a public room a slot is a real player's game.
-    allow_public_seat: bool,
     /// A `!privatehost` we asked for and the password it came back with.
     private_host: Option<String>,
     /// The spare autohost we are joining to make it ours; claimed on arrival.
@@ -244,10 +241,6 @@ impl std::str::FromStr for FriendAction {
 pub enum SeatError {
     #[error("not in a battle")]
     NotInARoom,
-    /// Seats in public rooms were declined for this session. A room that is
-    /// ours — passworded, or one SPADS says we boss — is never refused.
-    #[error("this session is watching only; seats are turned off in settings")]
-    PublicRoom,
     /// Ready and faction belong to a player; a spectator has neither.
     #[error("you are spectating")]
     Spectating,
@@ -276,7 +269,6 @@ impl Session {
             collecting_requests: None,
             collecting_ignored: None,
             seat: None,
-            allow_public_seat: false,
             private_host: None,
             hosting: None,
             synced: false,
@@ -434,17 +426,14 @@ impl Session {
     /// that is ours is always ours to sit in. Nothing here does it on its own —
     /// it is always a deliberate action from the user.
     pub fn take_seat(&mut self, team: u8, ally_team: u8) -> Result<Vec<Effect>, SeatError> {
-        let room = self
+        if self
             .state
             .my_battle
             .as_ref()
             .and_then(|my| self.state.battles.get(&my.id))
-            .ok_or(SeatError::NotInARoom)?;
-        // Ours if it was given to us (passworded), or if SPADS says we are
-        // bossing it — which is what joining an empty autohost makes you.
-        let ours = room.passworded || self.is_boss();
-        if !ours && !self.allow_public_seat {
-            return Err(SeatError::PublicRoom);
+            .is_none()
+        {
+            return Err(SeatError::NotInARoom);
         }
         // Ready never survives sitting down: a seat taken is not a game agreed to.
         self.seat = Some(Seat {
@@ -454,11 +443,6 @@ impl Session {
             side: self.seat.map_or(0, |seat| seat.side),
         });
         Ok(vec![self.battle_status()])
-    }
-
-    /// Whether a seat may be taken in a public room at all.
-    pub fn allow_public_seat(&mut self, allow: bool) {
-        self.allow_public_seat = allow;
     }
 
     /// Says we are ready, or not. Only a player can be either.
@@ -632,6 +616,26 @@ impl Session {
         let status =
             battle::MyBattleStatus::player(battle::Sync::Synced, team, ally_team).ready(true);
         vec![Effect::Send(battle::add_bot(name, ai, status, colour))]
+    }
+
+    /// Moves an AI, or changes its bonus, colour or faction.
+    ///
+    /// Only the AI's owner, the room's founder and moderators may: teiserver
+    /// drops anyone else's `UPDATEBOT` without a word (`lobby.ex:722`), so a
+    /// caller that is none of those should be asking the host by chat instead.
+    /// The whole status goes out each time, since the message replaces it.
+    pub fn update_bot(
+        &mut self,
+        name: &str,
+        team: u8,
+        ally_team: u8,
+        handicap: u8,
+        colour: u32,
+    ) -> Vec<Effect> {
+        let status = battle::MyBattleStatus::player(battle::Sync::Synced, team, ally_team)
+            .ready(true)
+            .handicap(handicap);
+        vec![Effect::Send(battle::update_bot(name, status, colour))]
     }
 
     /// Removes an AI by name; the server decides whether we may.
@@ -1268,15 +1272,19 @@ impl Session {
             }
             // The BAR plugin's JSON duplicates what the text already told us.
             Announcement::BarManager { json } => {
-                // The room's own statement of who is in charge of it.
+                // The room's own statement of who is in charge of it, and of
+                // whether it arranges its own teams.
                 let boss = spads::boss(&json);
+                let auto_balance = spads::auto_balance(&json);
                 let Some(my) = self.state.my_battle.as_mut() else {
                     return vec![];
                 };
-                if my.boss == boss {
+                let settled = my.boss == boss && my.auto_balance == auto_balance;
+                if settled {
                     return vec![];
                 }
                 my.boss = boss;
+                my.auto_balance = auto_balance;
                 vec![Effect::BossChanged]
             }
         }
@@ -2118,7 +2126,6 @@ mod tests {
     #[test]
     fn a_seat_may_be_taken_while_the_current_game_runs() {
         let mut s = in_a_public_room();
-        s.allow_public_seat(true);
 
         // Sitting down during a game is how you join the *next* one: SPADS has
         // the lineup ready when this one ends. Refusing it would make the
@@ -2128,40 +2135,22 @@ mod tests {
     }
 
     #[test]
-    fn a_room_we_boss_is_ours_without_any_licence() {
+    fn a_seat_in_a_public_room_is_simply_taken() {
         let mut s = in_a_public_room();
-        assert!(matches!(s.take_seat(0, 0), Err(SeatError::PublicRoom)));
 
-        // Joining an empty autohost makes you its boss, and SPADS says so.
-        feed(
-            &mut s,
-            &[r#"SAIDBATTLEEX host * BarManager|{"BattleStateChanged": {"boss": "me"}}"#],
-        );
-        assert!(s.take_seat(0, 0).is_ok(), "our own room needs no licence");
-
-        // Somebody else bossing it does not make it ours.
-        feed(
-            &mut s,
-            &[r#"SAIDBATTLEEX host * BarManager|{"BattleStateChanged": {"boss": "alice"}}"#],
-        );
-        s.release_seat();
-        assert!(matches!(s.take_seat(0, 0), Err(SeatError::PublicRoom)));
-    }
-
-    #[test]
-    fn a_public_seat_is_refused_until_the_owner_allows_it() {
-        let mut s = in_a_public_room();
-        assert!(matches!(s.take_seat(0, 0), Err(SeatError::PublicRoom)));
-
-        // The guard is a decision, not a law of nature.
-        s.allow_public_seat(true);
+        // There was a licence for this once -- a setting, and a session that
+        // started watching-only -- from when this client was first pointed at
+        // a live server. A lobby you cannot sit down in is not a lobby.
         assert!(s.take_seat(0, 0).is_ok());
+        assert_eq!(
+            s.seat().map(|seat| (seat.team, seat.ally_team)),
+            Some((0, 0))
+        );
     }
 
     #[test]
     fn ready_and_faction_ride_on_the_battle_status() {
         let mut s = in_a_public_room();
-        s.allow_public_seat(true);
         s.take_seat(3, 1).unwrap();
 
         let ready = sent_status(&s.set_ready(true).unwrap());
@@ -2289,7 +2278,6 @@ mod tests {
     #[test]
     fn saying_the_same_thing_twice_sends_nothing() {
         let mut s = in_a_public_room();
-        s.allow_public_seat(true);
         s.take_seat(0, 0).unwrap();
         s.set_ready(true).unwrap();
         assert!(
@@ -2309,7 +2297,6 @@ mod tests {
     #[test]
     fn sitting_down_again_is_not_a_game_agreed_to() {
         let mut s = in_a_public_room();
-        s.allow_public_seat(true);
         s.take_seat(0, 0).unwrap();
         s.set_side(3).unwrap();
         s.set_ready(true).unwrap();
@@ -2806,16 +2793,17 @@ mod tests {
         );
     }
 
-    /// The safety property this project runs on: a seat is only ever taken in a
-    /// room we were given, and only when asked for.
+    /// The safety property this project runs on: a seat is never taken outside
+    /// a room, and never without being asked for.
     #[test]
-    fn a_seat_is_refused_in_a_public_room_and_granted_in_a_private_one() {
+    fn a_seat_is_refused_outside_a_room_and_never_taken_unasked() {
         let mut s = ready_with_room();
         assert_eq!(s.take_seat(0, 0), Err(SeatError::NotInARoom));
 
         s.join_battle(5, None, "1".into());
         feed(&mut s, &["JOINBATTLE 5 -1", "JOINEDBATTLE 5 me 1"]);
-        assert_eq!(s.take_seat(0, 0), Err(SeatError::PublicRoom));
+        // Joining is not sitting down: arriving in a room leaves us watching
+        // until something asks for a seat.
         assert_eq!(s.seat(), None);
 
         // What the room answers while we are a spectator.

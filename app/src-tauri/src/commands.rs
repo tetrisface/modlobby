@@ -865,6 +865,25 @@ pub async fn add_bot(
     Ok(())
 }
 
+/// Moves one of our AIs, or changes its bonus, colour or faction.
+///
+/// Only for an AI we added: the server drops the message for anyone else's,
+/// silently, so the caller asks the host in chat instead.
+#[tauri::command]
+pub async fn update_bot(
+    app: State<'_, App>,
+    name: String,
+    team: u8,
+    ally_team: u8,
+    handicap: u8,
+    colour: u32,
+) -> Result<()> {
+    app.client
+        .update_bot(name, team, ally_team, handicap, colour)
+        .await?;
+    Ok(())
+}
+
 /// Removes an AI by name; whether we may is the server's call.
 #[tauri::command]
 pub async fn remove_bot(app: State<'_, App>, name: String) -> Result<()> {

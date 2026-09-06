@@ -23,6 +23,8 @@ export const skirmishIo = {
   setSide: (side) => act({ type: 'setSide', side }),
   addBot: (name, ai, team, allyTeam, colour) =>
     act({ type: 'addBot', name, ai, team, allyTeam, colour }),
+  updateBot: (name, team, allyTeam, handicap, colour) =>
+    act({ type: 'updateBot', name, team, allyTeam, handicap, colour }),
   removeBot: (name) => act({ type: 'removeBot', name }),
   launch: () => api.skirmishLaunch(),
   // There is no room to leave, only one to put away.

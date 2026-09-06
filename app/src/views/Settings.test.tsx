@@ -1,3 +1,4 @@
+import { MemoryRouter, Route, createMemoryHistory } from '@solidjs/router'
 import { fireEvent, render } from '@solidjs/testing-library'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { Settings } from '../ipc/bindings/Settings'
@@ -20,7 +21,6 @@ function loaded(): Settings {
     connection: { idleDisconnectMinutes: 60 },
     paths: { dataDir: null },
     play: {
-      inPublicRooms: true,
       joinAs: 'remember',
       lastWasPlayer: true,
       autoLaunch: true,
@@ -35,6 +35,7 @@ function loaded(): Settings {
       vote: 'lobby',
       gameStarting: 'desktop',
       gameEnded: 'lobby',
+      doNotDisturb: false,
     },
     battleList: {
       showPassworded: true,
@@ -56,6 +57,7 @@ function loaded(): Settings {
     tweaks: { styluaConfig: null, defaultSlot: 'tweakdefs1' },
     logging: { filter: 'info' },
     updates: { automatic: true },
+    ui: { scale: {} },
   }
 }
 
@@ -79,11 +81,28 @@ function choiceFor(container: HTMLElement, label: string) {
   }
 }
 
+/**
+ * The view on its Notifications tab.
+ *
+ * Opened at the address rather than by clicking the tab, because that address
+ * is the feature: the corner notices link straight to this page, and the tab
+ * is a search parameter so that a link can name it.
+ */
+function openNotifications() {
+  const history = createMemoryHistory()
+  history.set({ value: '/?tab=notifications' })
+  return render(() => (
+    <MemoryRouter history={history}>
+      <Route path='/' component={SettingsView} />
+    </MemoryRouter>
+  ))
+}
+
 describe('choosing where a notification goes', () => {
   beforeEach(() => applySettings(loaded()))
 
   test('exactly one of the three is ever chosen', () => {
-    const { container } = render(() => <SettingsView />)
+    const { container } = openNotifications()
     const mention = choiceFor(container, 'Someone says my name')
 
     expect(mention.lit()).toEqual(['Desktop'])
@@ -99,7 +118,7 @@ describe('choosing where a notification goes', () => {
   })
 
   test('a row is chosen on its own, leaving its neighbours alone', () => {
-    const { container } = render(() => <SettingsView />)
+    const { container } = openNotifications()
     const mention = choiceFor(container, 'Someone says my name')
     const ring = choiceFor(container, 'Someone rings me')
 

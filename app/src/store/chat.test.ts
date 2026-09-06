@@ -1,12 +1,14 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatLine } from '../ipc/bindings/ChatLine'
 import {
   chat,
   clearChat,
   closePrivate,
   openPrivates,
+  holdNotices,
   privateRoom,
   pushLine,
+  pushNotice,
   watchRoom,
 } from './chat'
 
@@ -62,5 +64,61 @@ describe('closing a private conversation', () => {
 
   it('is harmless on a conversation that was never open', () => {
     expect(() => closePrivate(privateRoom('nobody'))).not.toThrow()
+  })
+})
+
+describe('the corner notices', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    clearChat()
+  })
+  afterEach(() => {
+    holdNotices(false)
+    vi.useRealTimers()
+  })
+
+  it('leaves on its own, so the corner is not a log', () => {
+    pushNotice('info', 'something happened')
+    expect(chat.notices.length).toBe(1)
+
+    vi.advanceTimersByTime(9_500)
+    expect(chat.notices.length).toBe(0)
+  })
+
+  it('stays while the pointer is in the corner', () => {
+    pushNotice('info', 'read me')
+    holdNotices(true)
+
+    // Long past its span, and still there to be read.
+    vi.advanceTimersByTime(30_000)
+    expect(chat.notices.length).toBe(1)
+  })
+
+  it('gets the held time back rather than being pinned', () => {
+    pushNotice('info', 'read me')
+    holdNotices(true)
+    vi.advanceTimersByTime(30_000)
+    holdNotices(false)
+
+    // Released with its whole span still ahead of it...
+    vi.advanceTimersByTime(8_000)
+    expect(chat.notices.length).toBe(1)
+
+    // ...and then it goes.
+    vi.advanceTimersByTime(1_500)
+    expect(chat.notices.length).toBe(0)
+  })
+
+  it('holds every notice in the corner, not just the one under the pointer', () => {
+    pushNotice('info', 'first')
+    vi.advanceTimersByTime(8_000)
+    pushNotice('warning', 'second')
+    holdNotices(true)
+
+    vi.advanceTimersByTime(30_000)
+    expect(chat.notices.map((notice) => notice.text)).toEqual([
+      'first',
+      'second',
+    ])
   })
 })

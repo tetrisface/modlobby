@@ -60,6 +60,32 @@ pub struct Launch {
     /// their `springsettings.cfg` survives a modlobby launch untouched. See
     /// [`window_mode::borderless_config`].
     pub config: Option<PathBuf>,
+    /// `--menu`, when there is a menu archive to launch against.
+    pub menu: Option<MenuArchive>,
+}
+
+/// A LuaMenu archive to start the engine with.
+///
+/// Carries where it is as well as what it is called, because the two have to
+/// agree before the name reaches the command line: `--menu` naming an archive
+/// the scanner did not find throws a `content_error` out of `Init`
+/// (`VFSHandler.cpp:215`) and the engine never opens a window. A game that
+/// will not start is a far worse failure than a missing button, so the check
+/// happens here, at the point of use, rather than wherever the archive was
+/// written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MenuArchive {
+    /// The `name` from its `modinfo.lua`, which is what the scanner indexes.
+    pub name: String,
+    pub dir: PathBuf,
+}
+
+impl MenuArchive {
+    /// Whether the engine will find it. Only `modinfo.lua` matters: without
+    /// one the scanner does not index the directory at all.
+    pub fn found(&self) -> bool {
+        self.dir.join("modinfo.lua").is_file()
+    }
 }
 
 impl Launch {
@@ -79,6 +105,9 @@ impl Launch {
         }
         if let Some(config) = &self.config {
             cmd.arg("--config").arg(config);
+        }
+        if let Some(menu) = self.menu.as_ref().filter(|menu| menu.found()) {
+            cmd.arg("--menu").arg(&menu.name);
         }
         cmd.arg(&self.target);
         cmd
@@ -120,6 +149,7 @@ mod tests {
             read_dirs: Vec::new(),
             target: "spring://me:1@h:2".into(),
             config: None,
+            menu: None,
         };
         let cmd = launch.command();
         let args: Vec<String> = cmd
@@ -145,6 +175,7 @@ mod tests {
             read_dirs: vec!["/launcher".into(), "/bar-lobby".into()],
             target: "spring://me:1@h:2".into(),
             config: None,
+            menu: None,
         };
         let cmd = launch.command();
         let datadir = cmd
@@ -165,6 +196,47 @@ mod tests {
         assert_eq!(&args[..2], ["--write-dir", "C:/d"]);
     }
 
+    /// The engine dies during startup on a menu it cannot find, so a name only
+    /// reaches the command line once its archive is on disk.
+    #[test]
+    fn a_menu_the_scanner_would_not_find_is_left_off() {
+        let root = std::env::temp_dir().join("modlobby-menu-arg-test");
+        let archive = root.join("games").join("shim.sdd");
+        let _ = std::fs::remove_dir_all(&root);
+
+        let menu = MenuArchive {
+            name: "modlobby chobby shim".into(),
+            dir: archive.clone(),
+        };
+        assert!(!menu.found(), "nothing written yet");
+
+        let launch = Launch {
+            engine_dir: "C:/e".into(),
+            data_dir: "C:/d".into(),
+            read_dirs: Vec::new(),
+            target: "spring://me:1@h:2".into(),
+            config: None,
+            menu: Some(menu.clone()),
+        };
+        let args = |launch: &Launch| -> Vec<String> {
+            launch
+                .command()
+                .get_args()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect()
+        };
+        assert!(!args(&launch).contains(&"--menu".to_string()));
+
+        std::fs::create_dir_all(&archive).unwrap();
+        std::fs::write(archive.join("modinfo.lua"), "return {}").unwrap();
+        assert!(menu.found());
+        let with = args(&launch);
+        assert!(with.contains(&"--menu".to_string()));
+        assert!(with.contains(&"modlobby chobby shim".to_string()));
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
     #[test]
     fn a_borderless_config_goes_on_the_command_line_before_the_target() {
         let launch = Launch {
@@ -173,6 +245,7 @@ mod tests {
             read_dirs: Vec::new(),
             target: "spring://me:1@h:2".into(),
             config: Some("C:/mine/springsettings.cfg".into()),
+            menu: None,
         };
         let args: Vec<String> = launch
             .command()

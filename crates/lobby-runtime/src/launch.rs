@@ -126,6 +126,7 @@ pub fn spawn(
     engine_version: &str,
     target: String,
     overlay_config_dir: Option<&Path>,
+    menu: Option<recoil::MenuArchive>,
 ) -> Result<Launched, String> {
     let engine_dir = content::Library::new(dirs.clone())
         .find_engine(engine_version)
@@ -163,6 +164,7 @@ pub fn spawn(
         read_dirs: dirs.read.clone(),
         target,
         config: config.clone(),
+        menu,
     };
     tracing::info!(engine = %launch.engine_dir.display(), "launching");
     let child = tokio::process::Command::from(launch.command())

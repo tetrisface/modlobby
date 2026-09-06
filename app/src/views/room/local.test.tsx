@@ -191,7 +191,7 @@ describe('the room with no server behind it', () => {
 
     // The pen on the AI's row, which only a room that can tell it anything
     // draws at all.
-    const pen = container.querySelector('.team .bot-remove') as HTMLElement
+    const pen = container.querySelector('.team .bot-edit') as HTMLElement
     fireEvent.click(pen)
     await settle()
 

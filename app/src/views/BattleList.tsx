@@ -196,12 +196,13 @@ export function BattleList() {
   const [hostBusy, setHostBusy] = createSignal(false)
   createEffect(() => {
     const wanted = hosting()
-    const mine = lobby.myBattle?.id
-    if (wanted === null || mine === undefined) return
-    // Whatever room we ended up in settles the wait; a refused host is a
-    // notice from the runtime, and the next room clicked is its own choice.
+    // Only arriving settles the wait. Hosting while already in another room
+    // leaves `myBattle` pointing at the old one for the whole round trip --
+    // the implicit leave is not projected to the front end -- so a mismatch
+    // here means "not there yet", never "went somewhere else".
+    if (wanted === null || lobby.myBattle?.id !== wanted) return
     setHosting(null)
-    if (mine === wanted) navigate('/room')
+    navigate('/room')
   })
 
   async function host() {

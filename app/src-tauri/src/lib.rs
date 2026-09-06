@@ -173,6 +173,11 @@ pub fn run() {
             let widget_dir = lobby_runtime::launch::data_dirs(app.settings.get().paths.data_dir)
                 .map(|dirs| dirs.write);
             let want_widget = app.settings.get().overlay.in_game_escape;
+            // The menu archive buys BAR's in-game "Lobby" button, and what
+            // that button does is raise the overlay -- so it is only worth
+            // writing where the overlay is on to be raised.
+            let want_menu = app.settings.get().overlay.enabled;
+            let menu_client = app.client.clone();
             // Held by the app so it lives as long as the process, and so the
             // exit handler can drop it — dropping is what removes the widget.
             let held: InGameHandle = std::sync::Arc::new(std::sync::Mutex::new(None));
@@ -190,6 +195,25 @@ pub fn run() {
                                 Err(err) => tracing::warn!(%err, "could not install the widget"),
                             }
                         }
+                        if let (true, Some(dir)) = (want_menu, widget_dir.as_deref()) {
+                            match ingame.install_menu(dir) {
+                                Ok(path) => {
+                                    tracing::info!(
+                                        path = %path.display(),
+                                        "in-game lobby menu installed"
+                                    );
+                                    let _ = menu_client
+                                        .set_menu_archive(Some(recoil::MenuArchive {
+                                            name: ingame::menu::menu_name(),
+                                            dir: path,
+                                        }))
+                                        .await;
+                                }
+                                Err(err) => {
+                                    tracing::warn!(%err, "could not install the lobby menu");
+                                }
+                            }
+                        }
                         *held.lock().expect("in-game") = Some(ingame);
                     }
                     Err(err) => tracing::warn!(%err, "no in-game control socket"),
@@ -200,7 +224,6 @@ pub fn run() {
             let handle = tauri_app.handle().clone();
             let client = app.client.clone();
             let data_dir = app.settings.get().paths.data_dir;
-            let in_public = app.settings.get().play.in_public_rooms;
             let auto_launch = app.settings.get().play.auto_launch;
             let auto_download = app.settings.get().play.auto_download;
             let engine_config = overlay_config_dir(&app.settings.get());
@@ -212,7 +235,6 @@ pub fn run() {
                 // The content check needs to know where BAR keeps its files,
                 // both now and whenever the setting changes.
                 let _ = client.set_data_dir(data_dir).await;
-                let _ = client.allow_public_seat(in_public).await;
                 let _ = client.set_auto_launch(auto_launch).await;
                 let _ = client.set_auto_download(auto_download).await;
                 let _ = client.set_overlay_config_dir(engine_config).await;
@@ -221,9 +243,6 @@ pub fn run() {
                 while let Some(event) = watch.recv().await {
                     if let settings::SettingsEvent::Changed(settings) = &event {
                         let _ = client.set_data_dir(settings.paths.data_dir.clone()).await;
-                        let _ = client
-                            .allow_public_seat(settings.play.in_public_rooms)
-                            .await;
                         let _ = client.set_auto_launch(settings.play.auto_launch).await;
                         let _ = client.set_auto_download(settings.play.auto_download).await;
                         let _ = client
@@ -280,6 +299,7 @@ pub fn run() {
             commands::cancel_paste,
             commands::ring,
             commands::add_bot,
+            commands::update_bot,
             commands::remove_bot,
             commands::set_away,
             commands::activity,

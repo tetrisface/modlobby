@@ -22,6 +22,101 @@ bun install
 bun run build    # installer under app/src-tauri/target/release/bundle/
 ```
 
+# Alongside other lobbies
+
+modlobby is built to sit next to Chobby and bar-lobby on the same machine rather
+than to replace them, and the arrangement is deliberate: it reads their installs
+so nothing is downloaded twice, and it writes almost nothing back. The one rule
+behind all of it is that a half-finished download of ours can never appear in
+their view of the world, and theirs can at worst be missing from ours.
+
+## Where things are
+
+| Directory              | Windows                                          | Linux                                                            | modlobby         |
+| ---------------------- | ------------------------------------------------ | ---------------------------------------------------------------- | ---------------- |
+| Its own content        | `%LOCALAPPDATA%\modlobby\data`                   | `~/.local/share/modlobby/data`                                   | reads and writes |
+| Its own settings       | `%APPDATA%\modlobby\config`                      | `~/.config/modlobby`                                             | reads and writes |
+| The launcher's install | `%LOCALAPPDATA%\Programs\Beyond-All-Reason\data` | `$XDG_STATE_HOME/Beyond-All-Reason`                              | reads            |
+| bar-lobby's assets     | `%LOCALAPPDATA%\Programs\BeyondAllReason\assets` | `$BAR_ASSETS_PATH`, else `$XDG_DATA_HOME/BeyondAllReason/assets` | reads            |
+
+Engines, games, maps, replays and even pr-downloader itself are taken from
+whichever of those directories already has them, so a machine that has played
+BAR before needs no second copy of anything. Everything modlobby fetches goes
+into its own directory. Setting `paths.dataDir` points the writing somewhere
+else — at another lobby's install, if that is what you want — and the reading is
+unchanged either way.
+
+## What it writes where another lobby can see it
+
+Two things, and only two.
+
+The first is **presets**, and only when you ask. Chobby keeps its own in
+`optionsPresets.json`; modlobby keeps `presets.json` in its config directory and
+interoperates with that file in both directions. Export writes to wherever a
+Chobby `optionsPresets.json` already exists, backing up what was there as
+`optionsPresets.json.modlobby.bak` first. Import never overwrites a preset of
+yours that has the same name — it skips it. Nothing syncs by itself; the file is
+the hand-over.
+
+The second is a pair of **generated files for the running game**, both written
+on start and removed when modlobby exits: `LuaUI/Widgets/modlobby_escape.lua`,
+and a small LuaMenu archive under `games/`. It goes in the directory
+modlobby writes, which is its own unless you have changed `paths.dataDir`. It
+draws nothing, and it is inert unless modlobby is listening on the loopback port
+baked into it — so a game launched from Chobby behaves exactly as it always did,
+including keeping its own Escape. Turn it off with the Escape setting under
+Overlay.
+
+The menu archive exists for one reason: BAR's in-game top bar offers a **Lobby**
+button in place of **Quit** when the engine was started with a menu whose name
+contains `chobby` (`gui_top_bar.lua:3574`), and that button leaves the game
+running and asks the menu to show itself — which is exactly modlobby's overlay.
+The archive has no interface of its own and never draws; it turns that one
+message into the same request the Escape widget sends, and quits the process
+when a finished game drops back into it. It is a menu rather than a game
+(`modtype = 5`, `onlyLocal`), so it does not appear in anyone's game list, and
+modlobby passes `--menu` only when the archive is actually on disk — a name the
+engine cannot resolve stops it starting at all. Turning the overlay off turns
+this off with it.
+
+## What is not shared, though it looks as if it should be
+
+`springsettings.cfg` is **never written** — not by modlobby, and not by the game
+modlobby starts. When the overlay needs a borderless window and your settings say
+exclusive full screen, the engine is launched with `--config` pointed at a private
+copy under `%APPDATA%\modlobby\config\engine\`, which is exclusive
+(`ConfigHandler.cpp:420`), so the file Chobby reads is left byte for byte as you
+left it. The corollary is that graphics settings you change _inside_ a
+modlobby-launched game land in that private copy and do not reach Chobby.
+
+`uikeys.txt` and `LuaUI/Config/` — your keybinds, and which widgets you have
+enabled with their own stored data — are copied **once**, when modlobby's data
+directory is new and another install has a healthy set. After that they are two
+separate files that drift apart: a widget you disable in a modlobby game stays
+enabled in Chobby. The seeding never overwrites a file that is already there, and
+it skips a source whose settings file looks damaged.
+
+Chat logs, the battle-list filters, the notification settings and everything else
+in `settings.jsonc` are modlobby's alone. Your password is in the operating
+system's keyring under the service name `modlobby`, not in any file and not
+shared with Chobby's own stored login.
+
+## What is shared that you might not expect
+
+Games launched from modlobby **do** load the user widgets in other lobbies'
+installs. The engine searches every data directory it is given for
+`LuaUI/Widgets`, and modlobby passes the other installs in `SPRING_DATADIR` so
+that their maps and games are visible (`DataDirsAccess.cpp:45`). Widgets come
+along with that. This is usually what you want and is worth knowing when a game
+started from modlobby behaves like your Chobby one.
+
+Before every launch, modlobby takes a copy of `springsettings.cfg`, `uikeys.txt`
+and `LuaUI/Config/` into `modlobby-backups/` in its write directory, keeping the
+last ten. The engine has emptied the settings file before — spring-launcher has
+carried a backup against exactly that since 2022 — so if one comes back out of a
+game with most of its keys gone, modlobby says so and tells you where the copy
+from before the game is. Putting it back is your decision, from Settings.
+
 # Development
 
 After `bun install` above launch the app with `bun run dev`.

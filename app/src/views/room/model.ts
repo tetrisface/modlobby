@@ -27,6 +27,7 @@ export type RoomIo = Pick<
   | 'setReady'
   | 'setSide'
   | 'addBot'
+  | 'updateBot'
   | 'removeBot'
   | 'launch'
   | 'leaveBattle'

@@ -39,8 +39,19 @@ export function HostBar() {
   /** The commands worth a button; everything else is still typeable. */
   const actions = createMemo(() => {
     const locked = room.battle()?.locked ?? false
+    // While the room balances itself, SPADS refuses to move anybody by hand --
+    // which is what dragging a player asks it to do (`spads.pl:8886`).
+    const auto = room.my()?.autoBalance
+    const balancing = auto !== null && auto !== undefined && auto !== 'off'
     return [
       ['Balance', '!balance', 'Even the teams by skill'],
+      [
+        balancing ? 'Auto balance off' : 'Auto balance on',
+        balancing ? '!autoBalance off' : '!autoBalance advanced',
+        balancing
+          ? 'Stop the room arranging its own teams, so players can be moved'
+          : 'Let the room arrange its own teams again',
+      ],
       ['Fix colours', '!fixColors', 'Give every team a distinct colour'],
       [
         locked ? 'Unlock' : 'Lock',

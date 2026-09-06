@@ -45,6 +45,10 @@ pub struct OptionChange {
 pub struct MyBattle {
     /// Who SPADS says is bossing this room, when it has said.
     pub boss: Option<String>,
+    /// How the room balances itself, when it has said: `off`, `on`,
+    /// `advanced`. While it is anything but `off`, SPADS declines to move
+    /// anybody by hand.
+    pub auto_balance: Option<String>,
     pub id: u32,
     /// From the `JOINBATTLE` reply; identifies the game archive.
     pub game_hash: String,
@@ -70,6 +74,7 @@ impl MyBattle {
     pub fn new(id: u32, game_hash: String, script_password: String) -> Self {
         Self {
             boss: None,
+            auto_balance: None,
             id,
             game_hash,
             script_password,

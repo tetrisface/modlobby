@@ -1,3 +1,4 @@
+import { PasteBanner } from './PasteBanner'
 import { Presets } from './Presets'
 import { RoomProvider } from './room/model'
 import { onlineRoom } from './room/online'
@@ -14,6 +15,9 @@ export function PresetsPage() {
   return (
     <section class='presets-page'>
       <RoomProvider value={onlineRoom()}>
+        {/* Loading a preset is a burst of throttled host commands that can
+            take a minute; the bar is how that minute reads as progress. */}
+        <PasteBanner />
         <Presets />
       </RoomProvider>
     </section>

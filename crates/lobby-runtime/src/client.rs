@@ -181,6 +181,14 @@ enum Command {
         colour: u32,
         reply: Reply<()>,
     },
+    UpdateBot {
+        name: String,
+        team: u8,
+        ally_team: u8,
+        handicap: u8,
+        colour: u32,
+        reply: Reply<()>,
+    },
     RemoveBot {
         name: String,
         reply: Reply<()>,
@@ -236,7 +244,6 @@ enum Command {
         side: u8,
         reply: Reply<()>,
     },
-    AllowPublicSeat(bool),
     ReleaseSeat,
     SetDataDir(Option<PathBuf>),
     /// The disk changed under us — an engine was installed — so the room's
@@ -246,6 +253,7 @@ enum Command {
     /// would put the game in exclusive full screen. `None` while the
     /// overlay is switched off, which is also when nothing is written.
     SetOverlayConfigDir(Option<PathBuf>),
+    SetMenuArchive(Option<recoil::MenuArchive>),
     /// Where to keep the skirmish room between runs.
     SetSkirmishPath(Option<PathBuf>),
     /// Asks a cluster manager for a room of our own; the runtime joins it
@@ -488,6 +496,29 @@ impl Client {
         .await
     }
 
+    /// Moves one of our AIs, or changes its bonus, colour or faction.
+    ///
+    /// The server ignores this for an AI somebody else added, so the caller
+    /// checks ownership first or asks the host in chat.
+    pub async fn update_bot(
+        &self,
+        name: String,
+        team: u8,
+        ally_team: u8,
+        handicap: u8,
+        colour: u32,
+    ) -> Result<(), ClientError> {
+        self.ask(|reply| Command::UpdateBot {
+            name,
+            team,
+            ally_team,
+            handicap,
+            colour,
+            reply,
+        })
+        .await
+    }
+
     pub async fn remove_bot(&self, name: String) -> Result<(), ClientError> {
         self.ask(|reply| Command::RemoveBot { name, reply }).await
     }
@@ -628,13 +659,8 @@ impl Client {
         self.ask(|reply| Command::SetSide { side, reply }).await
     }
 
-    /// Whether a seat may be taken in a public room at all.
-    pub async fn allow_public_seat(&self, allow: bool) -> Result<(), ClientError> {
-        self.send(Command::AllowPublicSeat(allow)).await
-    }
-
-    /// Takes a player slot. Refused unless the room is passworded — see
-    /// [`lobby_core::SeatError`]; in a public room the slot is someone else's.
+    /// Takes a player slot. Refused only outside a room — see
+    /// [`lobby_core::SeatError`].
     pub async fn take_seat(&self, team: u8, ally_team: u8) -> Result<(), ClientError> {
         self.ask(|reply| Command::TakeSeat {
             team,
@@ -664,6 +690,18 @@ impl Client {
     /// Where to keep the skirmish room between runs.
     pub async fn set_skirmish_path(&self, path: Option<PathBuf>) -> Result<(), ClientError> {
         self.send(Command::SetSkirmishPath(path)).await
+    }
+
+    /// The LuaMenu archive to launch games against, when there is one.
+    ///
+    /// What it buys is BAR's in-game "Lobby" button, which raises the overlay
+    /// instead of quitting. Cleared when the overlay is off, since raising a
+    /// lobby that will not come up is worse than the plain Quit button.
+    pub async fn set_menu_archive(
+        &self,
+        menu: Option<recoil::MenuArchive>,
+    ) -> Result<(), ClientError> {
+        self.send(Command::SetMenuArchive(menu)).await
     }
 
     pub async fn set_overlay_config_dir(&self, dir: Option<PathBuf>) -> Result<(), ClientError> {
@@ -778,6 +816,7 @@ struct Runtime {
     /// own would not let the overlay cover it. `None` leaves their settings
     /// entirely alone, which is also what happens when they already work.
     overlay_config_dir: Option<PathBuf>,
+    menu_archive: Option<recoil::MenuArchive>,
     /// The room's (engine, game, map) the content check last ran against;
     /// scanning the rapid index is too slow to repeat per message.
     checked: Option<(String, String, String)>,
@@ -788,8 +827,6 @@ struct Runtime {
     /// When to let the server go because nobody has touched the window.
     /// Off until the app pushes a limit; the CLI has no window to watch.
     idle: idle::Idle,
-    /// Carried across reconnects, since the session is rebuilt each time.
-    allow_public_seat: bool,
     /// A multi-line paste on its way out, counted down as its writes leave.
     paste: Option<PasteProgress>,
     /// What a running pr-downloader was asked for, or `None` when none is.
@@ -981,11 +1018,11 @@ impl Runtime {
             data_dir: None,
             engine_run: None,
             overlay_config_dir: None,
+            menu_archive: None,
             checked: None,
             credentials: None,
             reconnect: reconnect::Reconnect::default(),
             idle: idle::Idle::default(),
-            allow_public_seat: false,
             paste: None,
             downloading: None,
             download_stop: None,
@@ -1031,6 +1068,7 @@ impl Runtime {
             engine_version,
             path.to_string_lossy().into_owned(),
             self.overlay_config_dir.as_deref(),
+            self.menu_archive.clone(),
         )
         .map_err(ClientError::Engine)?;
         self.started(launched, dirs.write);
@@ -1052,7 +1090,13 @@ impl Runtime {
             .and_then(|stem| stem.rsplit_once('_').map(|(_, engine)| engine.to_owned()))
             .unwrap_or_default();
 
-        let launched = launch::spawn(&dirs, &version, path, self.overlay_config_dir.as_deref())
+        let launched = launch::spawn(
+            &dirs,
+            &version,
+            path,
+            self.overlay_config_dir.as_deref(),
+            self.menu_archive.clone(),
+        )
             .map_err(ClientError::Engine)?;
         self.started(launched, dirs.write);
         Ok(())
@@ -1716,6 +1760,21 @@ impl Runtime {
                 })
                 .await;
             }
+            Command::UpdateBot {
+                name,
+                team,
+                ally_team,
+                handicap,
+                colour,
+                reply,
+            } => {
+                self.run_session(reply, |session| {
+                    Ok::<_, std::convert::Infallible>(
+                        session.update_bot(&name, team, ally_team, handicap, colour),
+                    )
+                })
+                .await;
+            }
             Command::RemoveBot { name, reply } => {
                 self.run_session(reply, |session| {
                     Ok::<_, std::convert::Infallible>(session.remove_bot(&name))
@@ -1746,12 +1805,6 @@ impl Runtime {
                 self.run_session(reply, |session| session.set_side(side))
                     .await;
             }
-            Command::AllowPublicSeat(allow) => {
-                self.allow_public_seat = allow;
-                if let Some(conn) = self.conn.as_mut() {
-                    conn.session.allow_public_seat(allow);
-                }
-            }
             Command::TakeSeat {
                 team,
                 ally_team,
@@ -1772,6 +1825,7 @@ impl Runtime {
                 }
             }
             Command::SetOverlayConfigDir(dir) => self.overlay_config_dir = dir,
+            Command::SetMenuArchive(menu) => self.menu_archive = menu,
             Command::SetSkirmishPath(path) => self.skirmish_path = path,
             Command::SetDataDir(data_dir) => {
                 self.data_dir = data_dir;
@@ -1887,14 +1941,11 @@ impl Runtime {
         self.flush();
         match (self.connector)(endpoint, self.policy.clone()).await {
             Ok((transport, inbound)) => {
-                let mut session = Session::new(
+                let session = Session::new(
                     request,
                     self.hardware.properties.clone(),
                     self.hardware.machine_hash.clone(),
                 );
-                // A fresh session starts guarded; the setting has to be
-                // reapplied, or a reconnect would quietly revoke the choice.
-                session.allow_public_seat(self.allow_public_seat);
                 self.conn = Some(Connection {
                     transport,
                     inbound,
@@ -2368,6 +2419,7 @@ impl Runtime {
             &engine_version,
             url,
             self.overlay_config_dir.as_deref(),
+            self.menu_archive.clone(),
         )
         .map_err(ClientError::Engine)?;
         self.started(launched, dirs.write);

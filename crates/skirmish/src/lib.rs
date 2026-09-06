@@ -129,6 +129,14 @@ pub enum Act {
         ally_team: u8,
         colour: u32,
     },
+    /// Moves an AI, or changes its bonus.
+    UpdateBot {
+        name: String,
+        team: u8,
+        ally_team: u8,
+        handicap: u8,
+        colour: u32,
+    },
     RemoveBot {
         name: String,
     },
@@ -418,6 +426,32 @@ impl Room {
         true
     }
 
+    /// Moves an AI already here, or changes its bonus or colour.
+    pub fn update_ai(
+        &mut self,
+        name: &str,
+        team: u8,
+        ally_team: u8,
+        handicap: u8,
+        colour: u32,
+    ) -> bool {
+        // Its own colour is not a collision with itself, so the search for a
+        // free one runs before the AI is touched.
+        let settled = if self.ais.iter().any(|ai| ai.name == name && ai.colour == colour) {
+            colour
+        } else {
+            self.free_colour(colour)
+        };
+        let Some(ai) = self.ais.iter_mut().find(|ai| ai.name == name) else {
+            return false;
+        };
+        ai.seat.team = team;
+        ai.seat.ally_team = ally_team;
+        ai.seat.handicap = handicap.min(100);
+        ai.colour = settled;
+        true
+    }
+
     /// The asked-for colour, or the next nobody is using.
     ///
     /// The seat bar picks one at random, as it does online where the host
@@ -534,6 +568,19 @@ impl Room {
                     Outcome::Said(format!("{name} is already here"))
                 }
             }
+            Act::UpdateBot {
+                name,
+                team,
+                ally_team,
+                handicap,
+                colour,
+            } => {
+                if self.update_ai(&name, team, ally_team, handicap, colour) {
+                    Outcome::Did(format!("{name} on team {}", ally_team + 1))
+                } else {
+                    Outcome::Said(format!("no AI called {name}"))
+                }
+            }
             Act::SetBotOption { name, key, value } => {
                 if self.set_ai_option(&name, &key, &value) {
                     Outcome::Did(format!("{name}: {key} = {value}"))
@@ -599,6 +646,8 @@ impl Room {
             // There is one person here and it is you. Saying so is what lets
             // the room offer everything a boss may do.
             boss: Some(self.player.clone()),
+            // Nothing arranges these teams but you.
+            auto_balance: Some("off".into()),
             id: ROOM_ID,
             game_hash: String::new(),
             script_tags: self.script_tags.clone(),

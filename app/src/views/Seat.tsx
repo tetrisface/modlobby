@@ -2,7 +2,7 @@ import { For, Show, createEffect, createMemo, createSignal } from 'solid-js'
 import { SideIcon } from '../components/icons'
 import type { AiChoice } from '../ipc/bindings/AiChoice'
 import { api, describeError } from '../ipc/client'
-import { freeTeam } from '../lib/roster'
+import { DEFAULT_TEAMS, freeTeam, unusedBotName } from '../lib/roster'
 import { pushNotice } from '../store/chat'
 import { applySettings, settings } from '../store/settings'
 import { useRoom, type RoomModel } from './room/model'
@@ -14,22 +14,6 @@ const SIDES = [
   { id: 2, label: 'Random' },
   { id: 3, label: 'Legion' },
 ]
-
-/** Ours if it was given to us, or if SPADS says we are bossing it. */
-function ours(room: RoomModel): boolean {
-  // A room nobody else runs is yours by definition; there is no host to ask.
-  if (!room.caps.spads) return true
-  const boss = room.my()?.boss
-  return (
-    (room.battle()?.passworded ?? false) ||
-    (boss !== null && boss === room.me())
-  )
-}
-
-/** Whether a seat may be taken here: our own room, or the setting says so. */
-export function seatsAllowed(room: RoomModel): boolean {
-  return ours(room) || (settings()?.play.inPublicRooms ?? false)
-}
 
 /** The lowest team number nobody else in the room holds. */
 function nextTeam(room: RoomModel): number {
@@ -76,24 +60,38 @@ export function Seat() {
   const seat = () => me()?.battleStatus
   const seated = () => seat()?.player ?? false
   const running = () => room.running() !== null
-  const allowed = () => seatsAllowed(room)
 
   /**
    * Ally teams already in use, plus the next free one — you can join a side or
    * open a new one, and nothing else would mean anything.
    */
-  const allyTeams = createMemo(() => {
+  /** Ally teams somebody is already sitting on. */
+  const usedAllies = createMemo(() => {
     const battle = battleOf()
-    if (!battle) return [0]
     const used = new Set<number>()
+    if (!battle) return used
     for (const name of battle.members) {
       const status = room.users()[name]?.battleStatus
       if (status?.player) used.add(status.allyTeam)
     }
     for (const bot of battle.bots) used.add(bot.status.allyTeam)
-    const sorted = [...used].sort((a, b) => a - b)
-    const next = sorted.length === 0 ? 0 : (sorted[sorted.length - 1] ?? 0) + 1
-    return [...sorted, next]
+    return used
+  })
+
+  const allyTeams = createMemo(() => {
+    const battle = battleOf()
+    if (!battle) return [0]
+    const used = usedAllies()
+    const highest = used.size === 0 ? -1 : Math.max(...used)
+    // Every team the room draws, and then one more to open a new one. Gaps
+    // are offered as well: an empty team between two full ones is a seat you
+    // can take, not a hole in the list -- and the room is already drawing it.
+    const drawn = Math.max(
+      battle.layout?.teams ?? 0,
+      highest + 1,
+      DEFAULT_TEAMS,
+    )
+    return Array.from({ length: drawn + 1 }, (_, ally) => ally)
   })
 
   /** The ally team a seat would join: the emptiest one already in play. */
@@ -109,8 +107,8 @@ export function Seat() {
     for (const bot of battle.bots)
       held.set(bot.status.allyTeam, (held.get(bot.status.allyTeam) ?? 0) + 1)
     const teams = allyTeams()
-    // The last entry is always the new, empty one; prefer a side that exists.
-    const existing = teams.slice(0, -1)
+    // Prefer a side somebody is on; the empty ones are all equally new.
+    const existing = teams.filter((ally) => held.has(ally))
     if (existing.length === 0) return teams[0] ?? 0
     return existing.reduce((best, ally) =>
       (held.get(ally) ?? 0) < (held.get(best) ?? 0) ? ally : best,
@@ -134,7 +132,7 @@ export function Seat() {
   createEffect(() => {
     const battle = battleOf()
     const play = settings()?.play
-    if (!battle || !play || seated() || !allowed()) return
+    if (!battle || !play || seated()) return
     if (seatedIn === battle.id) return
     const wanted =
       play.joinAs === 'remember' ? play.lastWasPlayer : play.joinAs === 'player'
@@ -179,66 +177,57 @@ export function Seat() {
 
   return (
     <div class='seat'>
-      <Show
-        when={allowed()}
-        fallback={
-          <span class='muted'>Spectating; seats are off in Settings.</span>
-        }
+      <select
+        value={current()}
+        disabled={busy()}
+        onChange={(e) => void pickSeat(e.currentTarget)}
       >
-        <select
-          value={current()}
-          disabled={busy()}
-          onChange={(e) => void pickSeat(e.currentTarget)}
-        >
-          <For each={allyTeams()}>
-            {(ally, index) => (
-              <option value={String(ally)}>
-                {index() === allyTeams().length - 1
-                  ? 'New team'
-                  : current() === String(ally)
-                    ? `Team ${ally + 1}`
-                    : `Join team ${ally + 1}`}
-              </option>
-            )}
-          </For>
-          <option value={SPECTATOR}>Spectator</option>
-        </select>
+        <For each={allyTeams()}>
+          {(ally) => (
+            <option value={String(ally)}>
+              {current() === String(ally)
+                ? `Team ${ally + 1}`
+                : usedAllies().has(ally)
+                  ? `Join team ${ally + 1}`
+                  : `New team ${ally + 1}`}
+            </option>
+          )}
+        </For>
+        <option value={SPECTATOR}>Spectator</option>
+      </select>
 
-        <Show when={seated()}>
-          {/* Sitting down mid-game puts you in the lineup for the next one,
+      <Show when={seated()}>
+        {/* Sitting down mid-game puts you in the lineup for the next one,
               which is worth saying so nobody waits for this one to let them in. */}
-          <Show when={running()}>
-            <span class='muted'>next game</span>
-          </Show>
+        <Show when={running()}>
+          <span class='muted'>next game</span>
+        </Show>
 
-          {/* Ready is a thing you say to somebody. */}
-          <Show when={room.caps.ready}>
-            <button
-              class={seat()?.ready ? 'primary' : ''}
-              disabled={busy()}
-              onClick={() =>
-                act('ready', () => room.io.setReady(!(seat()?.ready ?? false)))
-              }
-            >
-              {seat()?.ready ? 'Ready' : 'Not ready'}
-            </button>
-          </Show>
-
-          <select
-            value={String(seat()?.side ?? 0)}
+        {/* Ready is a thing you say to somebody. */}
+        <Show when={room.caps.ready}>
+          <button
+            class={seat()?.ready ? 'primary' : ''}
             disabled={busy()}
-            onChange={(e) =>
-              act('faction', () =>
-                room.io.setSide(Number(e.currentTarget.value)),
-              )
+            onClick={() =>
+              act('ready', () => room.io.setReady(!(seat()?.ready ?? false)))
             }
           >
-            <For each={SIDES}>
-              {(side) => <option value={String(side.id)}>{side.label}</option>}
-            </For>
-          </select>
-          <SideIcon side={seat()?.side ?? 0} />
+            {seat()?.ready ? 'Ready' : 'Not ready'}
+          </button>
         </Show>
+
+        <select
+          value={String(seat()?.side ?? 0)}
+          disabled={busy()}
+          onChange={(e) =>
+            act('faction', () => room.io.setSide(Number(e.currentTarget.value)))
+          }
+        >
+          <For each={SIDES}>
+            {(side) => <option value={String(side.id)}>{side.label}</option>}
+          </For>
+        </select>
+        <SideIcon side={seat()?.side ?? 0} />
       </Show>
 
       <AddAi
@@ -246,10 +235,11 @@ export function Seat() {
         act={act}
         freeTeam={() => nextTeam(room)}
         freeAlly={freeAlly}
+        allyTeams={allyTeams}
       />
 
       {/* One click onto the emptiest side; the picker above is for choosing. */}
-      <Show when={allowed() && !seated()}>
+      <Show when={!seated()}>
         <button
           disabled={busy()}
           title='Take a seat on the emptiest team'
@@ -284,7 +274,14 @@ export function Seat() {
           disabled={busy()}
           onClick={() =>
             act('host a room', async () => {
+              // Already standing in a room: the view swaps to the new one as
+              // soon as the host lets us in. Said out loud because until then
+              // the old room is still on screen and nothing looks to happen.
               await api.hostPublic()
+              pushNotice(
+                'info',
+                'took a room; opening it when the host answers',
+              )
             })
           }
         >
@@ -326,10 +323,16 @@ function AddAi(props: {
   act: (what: string, run: () => Promise<void>) => Promise<boolean>
   freeTeam: () => number
   freeAlly: () => number
+  /** The ally teams this room draws, plus the next one that could be opened. */
+  allyTeams: () => number[]
 }) {
   const room = useRoom()
   const [ais, setAis] = createSignal<AiChoice[]>([])
   const [ai, setAi] = createSignal('')
+  const [open, setOpen] = createSignal(false)
+  const [count, setCount] = createSignal(1)
+  const [bonus, setBonus] = createSignal(0)
+  const [ally, setAlly] = createSignal<number | null>(null)
 
   createEffect(() => {
     // The room's game, whose Lua AIs are part of the offer.
@@ -346,51 +349,119 @@ function AddAi(props: {
       .catch(() => setAis([]))
   })
 
-  /** `BARb`, then `BARb2` — never a name the room already holds. */
-  function unusedName(base: string): string {
-    const taken = new Set((room.battle()?.bots ?? []).map((bot) => bot.name))
-    if (!taken.has(base)) return base
-    let n = 2
-    while (taken.has(`${base}${n}`)) n += 1
-    return `${base}${n}`
+  const chosen = () => ais().find((choice) => choice.name === ai())
+  /** The team the sheet is set to, which starts wherever a seat would go. */
+  const team = () => ally() ?? props.freeAlly()
+
+  const colour = () =>
+    BOT_COLOURS[Math.floor(Math.random() * BOT_COLOURS.length)] as number
+
+  async function add() {
+    const claimed = new Set<string>()
+    const wanted = bonus()
+    for (let n = 0; n < count(); n++) {
+      const name = unusedBotName(room.battle(), ai(), claimed)
+      claimed.add(name)
+      const seat = props.freeTeam() + n
+      await room.io.addBot(name, ai(), seat, team(), colour())
+      // `ADDBOT` carries no bonus, so one is a second message -- which the
+      // server takes from us because the AI we just added is ours.
+      if (wanted > 0)
+        await room.io.updateBot(name, seat, team(), wanted, colour())
+    }
   }
 
   return (
     <Show when={ais().length > 0}>
-      <span class='add-ai'>
-        <select
-          value={ai()}
-          disabled={props.busy}
-          onChange={(e) => setAi(e.currentTarget.value)}
-        >
-          <For each={ais()}>
-            {(choice) => (
-              <option value={choice.name} title={choice.desc}>
-                {choice.name}
-              </option>
-            )}
-          </For>
-        </select>
-        <button
-          disabled={props.busy || !ai()}
-          title='The AI plays from this machine'
-          onClick={() =>
-            props.act('add an AI', () =>
-              room.io.addBot(
-                unusedName(ai()),
-                ai(),
-                props.freeTeam(),
-                props.freeAlly(),
-                BOT_COLOURS[
-                  Math.floor(Math.random() * BOT_COLOURS.length)
-                ] as number,
-              ),
-            )
-          }
-        >
-          Add AI
-        </button>
-      </span>
+      <button
+        disabled={props.busy}
+        title='The AI plays from this machine'
+        onClick={() => setOpen(true)}
+      >
+        Add AI
+      </button>
+
+      <Show when={open()}>
+        <div class='sheet' onMouseDown={() => setOpen(false)}>
+          <form
+            class='sheet-card'
+            onMouseDown={(event) => event.stopPropagation()}
+            onSubmit={(event) => {
+              event.preventDefault()
+              setOpen(false)
+              void props.act('add an AI', add)
+            }}
+          >
+            <h2>Add AI</h2>
+            <label>
+              Which
+              <select
+                value={ai()}
+                onChange={(e) => setAi(e.currentTarget.value)}
+              >
+                <For each={ais()}>
+                  {(choice) => (
+                    <option value={choice.name}>{choice.name}</option>
+                  )}
+                </For>
+              </select>
+            </label>
+            <Show when={chosen()?.desc}>
+              <p class='muted'>{chosen()?.desc}</p>
+            </Show>
+            <label>
+              Team
+              <select
+                value={String(team())}
+                onChange={(e) => setAlly(Number(e.currentTarget.value))}
+              >
+                <For each={props.allyTeams()}>
+                  {(one) => <option value={String(one)}>Team {one + 1}</option>}
+                </For>
+              </select>
+            </label>
+            <label>
+              How many
+              <input
+                type='number'
+                min={1}
+                max={16}
+                value={count()}
+                onInput={(e) => {
+                  const many = Number(e.currentTarget.value)
+                  if (Number.isFinite(many))
+                    setCount(Math.max(1, Math.min(16, Math.round(many))))
+                }}
+              />
+            </label>
+            <label>
+              Bonus
+              <input
+                type='range'
+                min={0}
+                max={100}
+                step={5}
+                value={bonus()}
+                onInput={(e) => setBonus(Number(e.currentTarget.value))}
+              />
+              <output>{bonus()}%</output>
+            </label>
+            <p class='muted'>
+              A resource bonus, the same one a host gives with{' '}
+              <code>!force … bonus</code>. Every AI added here runs on this
+              machine when the game starts.
+            </p>
+            <div class='sheet-actions'>
+              <button type='button' onClick={() => setOpen(false)}>
+                Cancel
+              </button>
+              <button type='submit' class='primary' disabled={!ai()}>
+                Add
+              </button>
+            </div>
+          </form>
+        </div>
+      </Show>
     </Show>
   )
 }
