@@ -130,8 +130,25 @@ pub async fn login(
 
     guarded_login(&app, app.client.login(endpoint, request)).await?;
 
+    remember_account(&app, username, &password, remember, auto_login)
+}
+
+/// Keeps the account a session was just opened as: the password in the OS
+/// keyring, the rest beside it in the settings file.
+///
+/// Shared by logging in and by confirming a new account's code, because both
+/// end in a session and there is one thing worth remembering about either.
+/// Written only after the server has said yes, so a failed attempt leaves
+/// nothing behind.
+fn remember_account(
+    app: &App,
+    username: String,
+    password: &str,
+    remember: bool,
+    auto_login: bool,
+) -> Result<()> {
     if remember {
-        app.credentials.set(&username, &password)?;
+        app.credentials.set(&username, password)?;
     } else {
         app.credentials.delete(&username)?;
     }
@@ -194,17 +211,18 @@ fn throttled(wait: Duration) -> ApiError {
     )
 }
 
-/// Creates an account, then leaves the connection closed.
+/// Creates an account and logs in on it, answering with the user agreement.
 ///
-/// The account cannot log in yet: the server emails a code, and
-/// [`confirm_agreement`] carries it back during the first login attempt.
+/// A new account is unverified: the server emails a code, and answers the
+/// login that follows with its agreement rather than with a session.
+/// [`confirm_agreement`] finishes the job, on the connection this leaves open.
 #[tauri::command]
 pub async fn register(
     app: State<'_, App>,
     username: String,
     password: String,
     email: String,
-) -> Result<()> {
+) -> Result<Vec<String>> {
     if let Some(problem) = spring_protocol::login::name_problem(&username) {
         return Err(ApiError::new("input", problem));
     }
@@ -228,26 +246,47 @@ pub async fn register(
         app.hardware.lobby_hash.clone(),
     );
 
-    // The server counts a registration against the same allowance a login
-    // uses, so the guard applies here too.
-    if let Some(wait) = app.login_guard.wait(SystemTime::now()) {
-        return Err(throttled(wait));
-    }
-    app.login_guard.record_attempt(SystemTime::now());
-    app.client
+    // No login guard here. `REGISTER` never reaches teiserver's flood check —
+    // `spring_in.ex:335` goes straight to `CacheUser.register_user_with_md5`
+    // — and that check is keyed by account, so the login that follows starts
+    // from zero on an account that did not exist a moment ago. Counting it
+    // here throttled nothing but that login.
+    Ok(app
+        .client
         .register(endpoint, request, email, password)
-        .await?;
-    Ok(())
+        .await?)
 }
 
-/// Sends the emailed code for an account that is logging in for the first time.
+/// Sends the emailed code, which is what finishes a new account's first login.
+///
+/// The server verifies the account and completes the login on the same
+/// connection (`spring_in.ex:353` ends in `do_login_accepted`), so this
+/// resolves the way a login does — and, like a login, it is where the account
+/// becomes the one this machine remembers.
 #[tauri::command]
-pub async fn confirm_agreement(app: State<'_, App>, code: String) -> Result<()> {
+pub async fn confirm_agreement(
+    app: State<'_, App>,
+    username: String,
+    password: String,
+    code: String,
+    remember: bool,
+    auto_login: bool,
+) -> Result<()> {
     if code.trim().is_empty() {
         return Err(ApiError::new("input", "the emailed code is required"));
     }
     app.client.confirm_agreement(code.trim().to_owned()).await?;
-    Ok(())
+    remember_account(&app, username, &password, remember, auto_login)
+}
+
+/// Why a username would be refused, answered without asking the server.
+///
+/// The rules are teiserver's own and purely mechanical, so a typo costs
+/// neither a round trip nor one of the three logins it allows per ten seconds.
+/// Whether the name is taken only the server can say, and it does.
+#[tauri::command]
+pub fn name_problem(username: String) -> Option<String> {
+    spring_protocol::login::name_problem(&username)
 }
 
 #[tauri::command]
@@ -441,6 +480,24 @@ pub async fn download_missing(app: State<'_, App>) -> Result<()> {
 #[tauri::command]
 pub async fn map_index(app: State<'_, App>) -> Result<content::map_index::MapIndex> {
     Ok(app.map_index().await)
+}
+
+/// BAR's news, and how much of it has turned up since it was last looked at.
+///
+/// Both in one answer so the count on the tab and the page behind it cannot
+/// disagree about what the feed held.
+#[tauri::command]
+pub async fn news(app: State<'_, App>) -> Result<news::NewsFeed> {
+    let items = app.news().await;
+    let unread = app.news_read.unread(news::SOURCE, &items);
+    Ok(news::NewsFeed { items, unread })
+}
+
+/// Remembers what the list showed, which is what clears the count.
+#[tauri::command]
+pub async fn mark_news_read(app: State<'_, App>) -> Result<()> {
+    app.news_read.mark_read(news::SOURCE, &app.news().await);
+    Ok(())
 }
 
 /// Makes the pictures of `maps` at `tiles` ahead of time, in the order given,

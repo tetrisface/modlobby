@@ -16,6 +16,10 @@
 //! decode. So the list can ask for the maps it shows to be made ahead of time
 //! ([`Service::warm`]), on one worker, so that at most one core is busy with
 //! it and what the screen asks for now is never queued behind it.
+//!
+//! Nothing here is about maps in particular: everything is keyed by the URL a
+//! picture was published at, so the banner on a news card comes through the
+//! same cache and the same resizing.
 
 use std::collections::{HashMap, VecDeque};
 use std::io::Cursor;

@@ -1,5 +1,5 @@
 import { batch } from 'solid-js'
-import { produce, reconcile } from 'solid-js/store'
+import { produce, reconcile, unwrap } from 'solid-js/store'
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { Delta } from '../ipc/bindings/Delta'
 import type { Snapshot } from '../ipc/bindings/Snapshot'
@@ -65,7 +65,19 @@ export function applyDelta(delta: Delta): void {
     case 'phase':
       setLobby('phase', delta.data)
       if (delta.data === null) {
-        setLobby(reconcile(emptyLobby()))
+        // Losing the session drops everything the server told us — but the
+        // engine and a download belong to this machine and outlive it. A
+        // skirmish started from here keeps running when the connection goes,
+        // and resetting `engine` to idle would re-enable the button that
+        // starts a second one on top of it.
+        const kept = unwrap(lobby)
+        setLobby(
+          reconcile({
+            ...emptyLobby(),
+            engine: kept.engine,
+            download: kept.download,
+          }),
+        )
       }
       return
     case 'userAdded':

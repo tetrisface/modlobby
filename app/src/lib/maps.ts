@@ -19,10 +19,10 @@
  * nothing.
  */
 
-import { convertFileSrc } from '@tauri-apps/api/core'
 import type { MapIndex } from '../ipc/bindings/MapIndex'
 import type { Tile } from '../ipc/bindings/Tile'
 import { api } from '../ipc/client'
+import { devicePixels, thumbSrc } from './thumb'
 
 /**
  * The boxes map pictures are drawn in, in CSS pixels, where the box is fixed
@@ -91,7 +91,7 @@ export function mapThumb(
 ): string | null {
   if (!springName) return null
   const tile = devicePixels({ width, height })
-  return convertFileSrc(`${tile.width}x${tile.height}/${springName}`, 'thumb')
+  return thumbSrc(`${tile.width}x${tile.height}/${springName}`)
 }
 
 /**
@@ -101,16 +101,7 @@ export function mapThumb(
  */
 export function mapPicture(springName: string): string | null {
   if (!springName) return null
-  return convertFileSrc(`full/${springName}`, 'thumb')
-}
-
-/** A CSS-pixel box in the device pixels it is drawn with. */
-function devicePixels(tile: Tile): Tile {
-  const scale = window.devicePixelRatio || 1
-  return {
-    width: Math.round(tile.width * scale),
-    height: Math.round(tile.height * scale),
-  }
+  return thumbSrc(`full/${springName}`)
 }
 
 /**

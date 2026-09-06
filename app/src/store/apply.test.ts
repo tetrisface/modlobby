@@ -116,6 +116,30 @@ describe('apply', () => {
     expect(Object.keys(lobby.battles)).toHaveLength(0)
   })
 
+  test('losing the session leaves the running engine and the download alone', () => {
+    applySnapshot(snapshot)
+    applyDelta({ type: 'engine', data: { state: 'running', pid: 42 } })
+    applyDelta({
+      type: 'download',
+      data: { state: 'running', what: 'BAR', current: 1, total: 4 },
+    })
+
+    applyDelta({ type: 'phase', data: null })
+
+    // The game keeps playing when the lobby loses its session, and a reset
+    // here would re-enable the button that starts a second one on top of it.
+    expect(lobby.engine).toEqual({ state: 'running', pid: 42 })
+    expect(lobby.download).toEqual({
+      state: 'running',
+      what: 'BAR',
+      current: 1,
+      total: 4,
+    })
+    // Everything the server told us still goes.
+    expect(Object.keys(lobby.battles)).toHaveLength(0)
+    expect(lobby.me).toBeNull()
+  })
+
   test('a change of room empties the battle chat, a repeat does not', () => {
     const room = (id: number) => ({
       type: 'myBattle' as const,

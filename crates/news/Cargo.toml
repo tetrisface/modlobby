@@ -1,0 +1,24 @@
+[package]
+name = "news"
+description = "BAR's news feed: the site's RSS, kept on disk and read once an hour"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+httpdate = { workspace = true }
+quick-xml = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+ts-rs = { workspace = true }
+
+[dev-dependencies]
+# For the client the tests hand the loader, and the server they point it at.
+content = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true }
+wiremock = { workspace = true }

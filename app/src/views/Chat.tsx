@@ -1,3 +1,4 @@
+import { A } from '@solidjs/router'
 import { createVirtualizer } from '@tanstack/solid-virtual'
 import {
   For,
@@ -528,8 +529,20 @@ export function Chat() {
               each={lines()}
               fallback={
                 <p class='muted setup-empty'>
-                  Nothing here yet. <code>/join &lt;channel&gt;</code> or{' '}
-                  <code>/msg &lt;user&gt; …</code>
+                  {/* The commands need a server to answer them, so offering
+                      them to somebody with no session is offering nothing. */}
+                  <Show
+                    when={lobby.phase === 'ready'}
+                    fallback={
+                      <>
+                        <A href='/login'>Log in</A> to join a channel or message
+                        someone.
+                      </>
+                    }
+                  >
+                    Nothing here yet. <code>/join &lt;channel&gt;</code> or{' '}
+                    <code>/msg &lt;user&gt; …</code>
+                  </Show>
                 </p>
               }
             >

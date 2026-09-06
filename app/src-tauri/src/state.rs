@@ -26,6 +26,10 @@ pub struct App {
     pub pve: pve::Service,
     /// BAR's map index for this run, loaded the first time anything asks.
     map_index: tokio::sync::Mutex<Option<content::map_index::MapIndex>>,
+    /// What of BAR's news has already been read, kept between runs.
+    pub news_read: news::Memory,
+    /// The news for this run, loaded the first time anything asks.
+    news: tokio::sync::Mutex<Option<Vec<news::NewsItem>>>,
     /// The map pictures at tile size, made here and kept under `cache/`.
     pub thumbs: content::map_thumb::Service,
     /// Files read out of installed games — `modoptions.lua`, `luaai.lua` —
@@ -58,6 +62,7 @@ impl App {
             rejoin: RejoinMemory::new(settings.dir()),
             update_memory: UpdateMemory::new(settings.dir()),
             presets: presets::Store::new(settings.dir()),
+            news_read: news::Memory::new(settings.dir()),
             client,
             settings,
             credentials: Arc::new(KeyringStore),
@@ -66,6 +71,7 @@ impl App {
             thumbs: content::map_thumb::Service::new(http.clone(), &cache_dir),
             http,
             map_index: tokio::sync::Mutex::new(None),
+            news: tokio::sync::Mutex::new(None),
             game_files: Arc::new(content::game_cache::GameFileCache::new()),
             engine_downloads: tokio::sync::Mutex::new(()),
         })
@@ -92,5 +98,29 @@ impl App {
             *held = Some(index.clone());
         }
         index
+    }
+
+    /// BAR's news, newest first.
+    ///
+    /// Loaded once per run, from the disk cache while that is inside the hour
+    /// it is trusted for. An empty answer — offline, or a first run with no
+    /// network — is not kept, so the next ask tries again rather than leaving
+    /// the whole session with an empty page.
+    pub async fn news(&self) -> Vec<news::NewsItem> {
+        let mut held = self.news.lock().await;
+        if let Some(items) = held.as_ref() {
+            return items.clone();
+        }
+        let items = news::load(
+            &self.http,
+            news::FEED_URL,
+            &self.settings.dir().join("cache"),
+            std::time::SystemTime::now(),
+        )
+        .await;
+        if !items.is_empty() {
+            *held = Some(items.clone());
+        }
+        items
     }
 }

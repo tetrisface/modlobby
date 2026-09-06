@@ -100,7 +100,14 @@ export function Room() {
   }
 
   createEffect(() => {
-    if (lobby.phase === 'ready' && !lobby.myBattle)
+    // No connection at all — logged out, or a launch that reopened on a stale
+    // `#/room` hash. Either way there is no room here to be in. Waiting for
+    // `ready` instead would leave an empty shell on screen indefinitely.
+    if (lobby.phase === null) navigate('/', { replace: true })
+    // Connected and in no room. Gated on `ready` so a reconnect, which has
+    // not replayed `myBattle` yet, does not throw you out of the room you are
+    // standing in.
+    else if (lobby.phase === 'ready' && !lobby.myBattle)
       navigate('/battles', { replace: true })
   })
   createEffect(() => {

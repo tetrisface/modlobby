@@ -8,6 +8,7 @@ import type { DefTags } from './bindings/DefTags'
 import type { DiffView } from './bindings/DiffView'
 import type { Kind } from './bindings/Kind'
 import type { MapIndex } from './bindings/MapIndex'
+import type { NewsFeed } from './bindings/NewsFeed'
 import type { Prepared } from './bindings/Prepared'
 import type { ReplayView } from './bindings/ReplayView'
 import type { SkirmishOptions } from './bindings/SkirmishOptions'
@@ -42,10 +43,27 @@ export const api = {
   ) => invoke<void>('login', { username, password, remember, autoLogin }),
   logout: () => invoke<void>('logout'),
   reconnect: () => invoke<void>('reconnect'),
+  /** Answers with the user agreement the server replies to the first login with. */
   register: (username: string, password: string, email: string) =>
-    invoke<void>('register', { username, password, email }),
-  confirmAgreement: (code: string) =>
-    invoke<void>('confirm_agreement', { code }),
+    invoke<string[]>('register', { username, password, email }),
+  /** Finishes that login; the account is what this machine remembers after. */
+  confirmAgreement: (
+    username: string,
+    password: string,
+    code: string,
+    remember: boolean,
+    autoLogin: boolean,
+  ) =>
+    invoke<void>('confirm_agreement', {
+      username,
+      password,
+      code,
+      remember,
+      autoLogin,
+    }),
+  /** Why a username would be refused, without spending a round trip on it. */
+  nameProblem: (username: string) =>
+    invoke<string | null>('name_problem', { username }),
   loginWait: () => invoke<number>('login_wait'),
   joinBattle: (id: number, password: string | null) =>
     invoke<void>('join_battle', { id, password }),
@@ -69,6 +87,12 @@ export const api = {
   mapIndex: () => invoke<MapIndex>('map_index'),
   warmMapPictures: (maps: string[], tiles: Tile[]) =>
     invoke<void>('warm_map_pictures', { maps, tiles }),
+
+  // ---- news ----
+  /** The feed and how much of it is new, in one answer so the two agree. */
+  news: () => invoke<NewsFeed>('news'),
+  markNewsRead: () => invoke<void>('mark_news_read'),
+
   downloadEngine: (version: string) =>
     invoke<string>('download_engine', { version }),
   stopDownload: () => invoke<void>('stop_download'),

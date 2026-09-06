@@ -43,15 +43,19 @@ export function split(text: string): Piece[] {
   return pieces
 }
 
-export function Linkify(props: { text: string }) {
-  async function open(href: string) {
-    try {
-      await api.openUrl(href)
-    } catch (error) {
-      pushNotice('warning', describeError(error))
-    }
+/**
+ * Hands a link to the system browser, for anywhere that spells its own anchor
+ * text rather than showing the address.
+ */
+export async function openExternal(href: string): Promise<void> {
+  try {
+    await api.openUrl(href)
+  } catch (error) {
+    pushNotice('warning', describeError(error))
   }
+}
 
+export function Linkify(props: { text: string }) {
   return (
     <For each={split(props.text)}>
       {(piece) =>
@@ -62,7 +66,7 @@ export function Linkify(props: { text: string }) {
             title={piece.href}
             onClick={(event) => {
               event.preventDefault()
-              void open(piece.href!)
+              void openExternal(piece.href!)
             }}
           >
             {piece.text}

@@ -304,6 +304,22 @@ impl Session {
         self
     }
 
+    /// Logs in on a connection that was opened to register.
+    ///
+    /// The account exists now but is unverified, and the server answers a login
+    /// from one with the agreement rather than a session — which is what puts
+    /// it in the state where `CONFIRMAGREEMENT` means something
+    /// (`spring_in.ex:353` only answers the code once a login has set
+    /// `unverified_id`). The intent flips with it, so a reconnect on this
+    /// connection logs in rather than registering the account a second time.
+    pub fn begin_login(&mut self) -> Vec<Effect> {
+        self.intent = Intent::Login;
+        vec![Effect::Send(Envelope::queue(
+            Area::Login,
+            self.login.line(),
+        ))]
+    }
+
     /// Confirms the emailed agreement code for an account that has just been
     /// created; the server then lets it log in.
     pub fn confirm_agreement(&mut self, code: &str) -> Vec<Effect> {
@@ -1594,6 +1610,38 @@ mod tests {
             panic!("expected one line");
         };
         assert_eq!(envelope.line, "CONFIRMAGREEMENT A1B2C3");
+    }
+
+    #[test]
+    fn beginning_a_login_after_registering_sends_login_and_not_register_again() {
+        let mut session = session().registering("a@b.c", "pw");
+        // The account now exists; the connection that made it logs in on it.
+        assert_eq!(
+            feed(&mut session, &["REGISTRATIONACCEPTED"]),
+            vec![Effect::Registered]
+        );
+
+        let effects = session.begin_login();
+        let [Effect::Send(envelope)] = &effects[..] else {
+            panic!("expected one line, got {effects:?}");
+        };
+        assert_eq!(envelope.area, Area::Login);
+        assert_eq!(
+            envelope.line,
+            LoginRequest::new("me", "pw", "test", "h h").line()
+        );
+
+        // And the intent stays flipped, so a reconnect on this connection does
+        // not try to create the account a second time.
+        let again = feed(&mut session, &["TASSERVER 0.38 * 8201 0"]);
+        let [Effect::Send(envelope)] = &again[..] else {
+            panic!("expected one line, got {again:?}");
+        };
+        assert!(
+            envelope.line.starts_with("LOGIN "),
+            "expected a login, got {}",
+            envelope.line
+        );
     }
 
     fn feed(session: &mut Session, lines: &[&str]) -> Vec<Effect> {

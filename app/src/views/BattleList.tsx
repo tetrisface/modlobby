@@ -1,8 +1,10 @@
-import { useNavigate } from '@solidjs/router'
+import { A, useNavigate } from '@solidjs/router'
 import { createVirtualizer } from '@tanstack/solid-virtual'
 import {
   For,
+  Match,
   Show,
+  Switch,
   createEffect,
   createMemo,
   createSignal,
@@ -376,14 +378,7 @@ export function BattleList() {
       >
         <Show
           when={rows().length > 0}
-          fallback={
-            <p class='muted empty-list'>
-              <Show when={all().length > 0} fallback='No rooms open right now.'>
-                Nothing matches. {hidden()} rooms are hidden by the filters
-                above.
-              </Show>
-            </p>
-          }
+          fallback={<EmptyList total={all().length} hidden={hidden()} />}
         >
           <div
             style={{
@@ -537,6 +532,27 @@ export function cardLeft(x: number, viewport: number): number {
   const right = x + CARD_GAP
   if (right + CARD_WIDTH <= viewport - CARD_GAP) return right
   return Math.max(CARD_GAP, x - CARD_GAP - CARD_WIDTH)
+}
+
+/**
+ * Why the list is empty, which is three different things and used to read as
+ * one. Without a session there are rooms — we simply cannot see them, and
+ * saying "no rooms open right now" to somebody who is not logged in is a lie
+ * that looks like a broken server.
+ */
+function EmptyList(props: { total: number; hidden: number }) {
+  return (
+    <p class='muted empty-list'>
+      <Switch fallback='No rooms open right now.'>
+        <Match when={lobby.phase !== 'ready'}>
+          <A href='/login'>Log in</A> to see the rooms people are playing in.
+        </Match>
+        <Match when={props.total > 0}>
+          Nothing matches. {props.hidden} rooms are hidden by the filters above.
+        </Match>
+      </Switch>
+    </p>
+  )
 }
 
 function Occupants(props: { peek: Peek | null; now: number; x: number }) {

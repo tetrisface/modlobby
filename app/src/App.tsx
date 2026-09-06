@@ -1,4 +1,4 @@
-import { A, HashRouter, Navigate, Route, useNavigate } from '@solidjs/router'
+import { A, HashRouter, Route, useNavigate } from '@solidjs/router'
 import { listen } from '@tauri-apps/api/event'
 import {
   For,
@@ -23,7 +23,9 @@ import type { Settings } from './ipc/bindings/Settings'
 import type { VersionView } from './ipc/bindings/VersionView'
 import { chat, pushNotice } from './store/chat'
 import { lobby, myRoom } from './store/lobby'
-import { applySettings } from './store/settings'
+import { loadNews, unreadNews } from './store/news'
+import { autoLogin } from './store/session'
+import { applySettings, settings } from './store/settings'
 import {
   available,
   busy as updating,
@@ -36,7 +38,9 @@ import {
 } from './store/update'
 import { BattleList } from './views/BattleList'
 import { Chat } from './views/Chat'
+import { Home } from './views/Home'
 import { Login } from './views/Login'
+import { News } from './views/News'
 import { PresetsPage } from './views/PresetsPage'
 import { Replays } from './views/Replays'
 import { Room } from './views/Room'
@@ -230,6 +234,10 @@ function Layout(props: ParentProps) {
   let restored = false
 
   createEffect(() => {
+    // A session that ends takes its channel membership with it. Without this
+    // reset, logging out and back in within one run leaves you in none of
+    // your channels, because the restore had already happened.
+    if (lobby.phase === null) restored = false
     if (lobby.phase !== 'ready' || restored) return
     restored = true
     void (async () => {
@@ -246,8 +254,17 @@ function Layout(props: ParentProps) {
 
   onMount(async () => {
     try {
-      applySettings(await api.getSettings())
+      const saved = await api.getSettings()
+      applySettings(saved)
       await connectChannel()
+      // The one place that already holds the settings, so auto-login neither
+      // reads them again nor races the signal that carries them.
+      void autoLogin(saved.account)
+      // The count belongs to the nav, which is here whether or not the News
+      // tab ever is, so the feed is asked for from the shell. Rust answers
+      // from its own cache for the hour it trusts one, so most launches make
+      // no request at all, and nothing is scheduled.
+      void loadNews()
     } catch (error) {
       pushNotice('error', describeError(error))
     }
@@ -287,25 +304,36 @@ function Layout(props: ParentProps) {
             alpha
           </span>
         </span>
-        <Show when={lobby.phase === 'ready'}>
-          <A href='/battles'>Battles</A>
-        </Show>
+        {/* Battles and chat are the two things that need a session, but the
+            links stay: a row that loses half its tabs when the server drops
+            reads as an app that has broken, and each view says for itself
+            what it is waiting for. */}
+        <A href='/battles'>Battles</A>
         <A href='/skirmish'>Skirmish</A>
-        <Show when={lobby.phase === 'ready'}>
-          <A href='/chat'>
-            Chat
-            <Show when={unread() > 0}>
-              <span class='badge' classList={{ named: named() }}>
-                {unread()}
-              </span>
-            </Show>
-          </A>
-        </Show>
+        <A href='/chat'>
+          Chat
+          <Show when={unread() > 0}>
+            <span class='badge' classList={{ named: named() }}>
+              {unread()}
+            </span>
+          </Show>
+        </A>
         {/* Replays and presets are files on this machine, so they are here
             whether or not anyone is logged in. */}
+        <A href='/news'>
+          News
+          <Show when={unreadNews() > 0}>
+            <span class='badge'>{unreadNews()}</span>
+          </Show>
+        </A>
         <A href='/replays'>Replays</A>
         <A href='/presets'>Presets</A>
         <A href='/settings'>Settings</A>
+        {/* The way in, while there is no session. The corner's reconnect
+            button resumes one that dropped; this is for not having one. */}
+        <Show when={lobby.phase === null}>
+          <A href='/login'>Log in</A>
+        </Show>
         {/* The room you are in, at the end of the tabs. The spacer takes up
             its coming and going, so nothing else in the row moves. Gated on
             the phase like the lobby links: a reconnect keeps myBattle. */}
@@ -487,16 +515,6 @@ function Notices() {
     </div>
   )
 }
-
-function Home() {
-  createEffect(() => lobby.phase)
-  return (
-    <Show when={lobby.phase === 'ready'} fallback={<Login />}>
-      <Navigate href='/battles' />
-    </Show>
-  )
-}
-
 export function App() {
   return (
     <HashRouter root={Layout}>
@@ -504,6 +522,7 @@ export function App() {
       <Route path='/login' component={Login} />
       <Route path='/battles' component={BattleList} />
       <Route path='/chat' component={Chat} />
+      <Route path='/news' component={News} />
       <Route path='/replays' component={Replays} />
       <Route path='/presets' component={PresetsPage} />
       <Route path='/skirmish' component={Skirmish} />

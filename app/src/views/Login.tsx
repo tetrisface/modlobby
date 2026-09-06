@@ -1,5 +1,6 @@
 import { useNavigate } from '@solidjs/router'
-import { Show, createEffect, createSignal, onCleanup } from 'solid-js'
+import { For, Show, createEffect, createSignal, onCleanup } from 'solid-js'
+import { Linkify, openExternal } from '../components/Linkify'
 import { api, describeError } from '../ipc/client'
 import { lobby } from '../store/lobby'
 import { settings } from '../store/settings'
@@ -13,11 +14,9 @@ const phaseText: Record<string, string> = {
 /** What a stored password looks like: present, and not readable. */
 const MASKED = '••••••••'
 
-/**
- * Auto-login is attempted once per run, not once per mount — otherwise
- * returning to this view after logging out would immediately log back in.
- */
-let autoLoginAttempted = false
+/** What the server's own agreement asks a new account to have read. */
+const PRIVACY = 'https://www.beyondallreason.info/privacy'
+const CONDUCT = 'https://www.beyondallreason.info/code-of-conduct'
 
 export function Login() {
   const navigate = useNavigate()
@@ -30,14 +29,20 @@ export function Login() {
    */
   const [mode, setMode] = createSignal<'login' | 'register'>('login')
   const [email, setEmail] = createSignal('')
-  /** Set once the server has taken the registration and emailed a code. */
+  /** Set once the account exists and the server has emailed its code. */
   const [awaitingCode, setAwaitingCode] = createSignal(false)
   const [code, setCode] = createSignal('')
+  /** The agreement the server answered the new account's first login with. */
+  const [agreement, setAgreement] = createSignal<string[]>([])
   const [username, setUsername] = createSignal('')
   const [password, setPassword] = createSignal('')
+  /** Whether the password is being read back, rather than a confirm field. */
+  const [reveal, setReveal] = createSignal(false)
   const [remember, setRemember] = createSignal(false)
   const [autoLogin, setAutoLogin] = createSignal(false)
   const [hasStored, setHasStored] = createSignal(false)
+  /** Why this username cannot be had, answered without asking the server. */
+  const [nameProblem, setNameProblem] = createSignal<string | null>(null)
   const [error, setError] = createSignal<string | null>(null)
   const [busy, setBusy] = createSignal(false)
   /** Seconds teiserver's login limit still needs; 0 when clear. */
@@ -67,29 +72,29 @@ export function Login() {
     if (s.account.rememberPassword && s.account.username) {
       void api
         .hasPassword(s.account.username)
-        .then(async (stored) => {
-          setHasStored(stored)
-          if (stored && s.account.autoLogin) await attemptAutoLogin()
-        })
+        .then(setHasStored)
         .catch(() => setHasStored(false))
     }
   })
 
+  // Logging in anywhere lands here as a phase change, including the login that
+  // an emailed code finishes, and this is what carries the form off screen.
   createEffect(() => {
     if (lobby.phase === 'ready') navigate('/battles', { replace: true })
   })
 
-  async function attemptAutoLogin() {
-    if (autoLoginAttempted || lobby.phase !== null) return
-    autoLoginAttempted = true
-    const held = await api.loginWait().catch(() => 0)
-    if (held > 0) {
-      setWait(held)
-      // Waiting it out beats failing: the rebuild that caused this is over.
-      setTimeout(() => void login(), (held + 1) * 1000)
+  /**
+   * The name rules, checked when the field is left rather than per keystroke:
+   * they are teiserver's own and mechanical, so the answer costs nothing, but
+   * telling somebody their name is wrong while they are still typing it is
+   * the kind of form that makes people give up.
+   */
+  async function checkName() {
+    if (mode() !== 'register' || !username().trim()) {
+      setNameProblem(null)
       return
     }
-    await login()
+    setNameProblem(await api.nameProblem(username().trim()).catch(() => null))
   }
 
   /** Sends the typed password, or falls back to the remembered one. */
@@ -118,9 +123,10 @@ export function Login() {
     setBusy(true)
     setError(null)
     try {
-      await api.register(username().trim(), password(), email().trim())
-      // The account exists but cannot log in yet; the server has emailed a
-      // code, and the first login is what asks for it.
+      // The account is made and logged in on in one go; what comes back is the
+      // agreement the server answers that login with, because a new account is
+      // unverified until the emailed code says otherwise.
+      setAgreement(await api.register(username().trim(), password(), email()))
       setAwaitingCode(true)
     } catch (err) {
       setError(describeError(err))
@@ -129,16 +135,34 @@ export function Login() {
     }
   }
 
+  /**
+   * A wrong code is a `DENIED`, and teiserver hangs up on those — so a second
+   * attempt needs the connection back first. Logging in again puts the server
+   * exactly where it was: an unverified account is answered with the agreement
+   * rather than a session, which arrives here as a refusal and is the expected
+   * outcome, not a failure worth showing.
+   */
+  async function reopen() {
+    if (lobby.phase !== null) return
+    await api
+      .login(username().trim(), password(), remember(), autoLogin())
+      .catch(() => {})
+  }
+
   async function confirm() {
     setBusy(true)
     setError(null)
     try {
-      // The code is confirmed on a live connection, so a login is started and
-      // the code answers the agreement the server replies with.
-      await api.confirmAgreement(code().trim())
-      setAwaitingCode(false)
-      setMode('login')
-      await login()
+      await reopen()
+      // This is the login finishing, not a step before one: teiserver verifies
+      // the account and accepts it on the same connection.
+      await api.confirmAgreement(
+        username().trim(),
+        password(),
+        code(),
+        remember(),
+        autoLogin(),
+      )
     } catch (err) {
       setError(describeError(err))
     } finally {
@@ -167,27 +191,54 @@ export function Login() {
     return mode() === 'register' ? 'Create account' : 'Log in'
   }
 
+  function heading(): string {
+    if (awaitingCode()) return 'Check your email'
+    return mode() === 'register' ? 'Create an account' : 'Log in'
+  }
+
   return (
     <form class='login' onSubmit={submit}>
-      <h1>{mode() === 'register' ? 'Create an account' : 'Log in'}</h1>
+      <h1>{heading()}</h1>
       <label>
         Username
         <input
           value={username()}
-          onInput={(e) => setUsername(e.currentTarget.value)}
+          onInput={(e) => {
+            setUsername(e.currentTarget.value)
+            setNameProblem(null)
+          }}
+          onBlur={() => void checkName()}
+          disabled={awaitingCode()}
           autocomplete='username'
         />
       </label>
+      <Show when={nameProblem()}>
+        {(problem) => <p class='error'>{problem()}</p>}
+      </Show>
       <label>
         Password
         <input
-          type='password'
+          // Read back rather than typed twice: the login that follows sends
+          // whatever was typed and succeeds either way, so a confirm field
+          // would not catch the typo it exists to catch — it would only be
+          // found on the next launch, out of the keyring.
+          type={reveal() ? 'text' : 'password'}
           value={password()}
           onInput={(e) => setPassword(e.currentTarget.value)}
-          placeholder={hasStored() ? MASKED : ''}
-          autocomplete='current-password'
+          placeholder={hasStored() && mode() === 'login' ? MASKED : ''}
+          disabled={awaitingCode()}
+          autocomplete={
+            mode() === 'register' ? 'new-password' : 'current-password'
+          }
         />
       </label>
+      <button
+        type='button'
+        class='link login-reveal'
+        onClick={() => setReveal(!reveal())}
+      >
+        {reveal() ? 'Hide password' : 'Show password'}
+      </button>
       <Show when={mode() === 'register'}>
         <label>
           Email
@@ -195,6 +246,7 @@ export function Login() {
             type='email'
             value={email()}
             onInput={(e) => setEmail(e.currentTarget.value)}
+            disabled={awaitingCode()}
             autocomplete='email'
           />
         </label>
@@ -203,6 +255,14 @@ export function Login() {
         </p>
       </Show>
       <Show when={awaitingCode()}>
+        {/* The server's own words, and the thing the code agrees to. */}
+        <For each={agreement().filter((line) => line.trim() !== '')}>
+          {(line) => (
+            <p class='muted'>
+              <Linkify text={line} />
+            </p>
+          )}
+        </For>
         <label>
           Code from the email
           <input
@@ -232,28 +292,66 @@ export function Login() {
         />
         Log in automatically on startup
       </label>
-      <button
-        type='submit'
-        disabled={busy() || wait() > 0 || !username().trim()}
-      >
-        {submitLabel()}
-      </button>
+      <Show when={mode() === 'register' && !awaitingCode()}>
+        <p class='muted'>
+          Creating an account accepts BAR's{' '}
+          <a
+            href={PRIVACY}
+            onClick={(event) => {
+              event.preventDefault()
+              void openExternal(PRIVACY)
+            }}
+          >
+            privacy policy
+          </a>{' '}
+          and{' '}
+          <a
+            href={CONDUCT}
+            onClick={(event) => {
+              event.preventDefault()
+              void openExternal(CONDUCT)
+            }}
+          >
+            code of conduct
+          </a>
+          .
+        </p>
+      </Show>
+      {/* Above the button, because it is the reason the last press did
+          nothing and reading it after pressing again is too late. */}
       <Show when={error()}>
         {(message) => <p class='error'>{message()}</p>}
       </Show>
+      <button
+        type='submit'
+        disabled={
+          busy() ||
+          wait() > 0 ||
+          !username().trim() ||
+          (mode() === 'register' && nameProblem() !== null)
+        }
+      >
+        {submitLabel()}
+      </button>
+      {/* Directly under the button: a change of mind about which form this
+          is, next to the thing that submits it. */}
       <Show when={!awaitingCode()}>
-        <button
-          type='button'
-          class='link'
-          onClick={() => {
-            setMode(mode() === 'login' ? 'register' : 'login')
-            setError(null)
-          }}
-        >
+        <p class='muted login-switch'>
           {mode() === 'login'
-            ? 'No account yet? Create one'
-            : 'Already have an account? Log in'}
-        </button>
+            ? "Don't have an account?"
+            : 'Already have an account?'}{' '}
+          <button
+            type='button'
+            class='link'
+            onClick={() => {
+              setMode(mode() === 'login' ? 'register' : 'login')
+              setNameProblem(null)
+              setError(null)
+            }}
+          >
+            {mode() === 'login' ? 'Register' : 'Log in'}
+          </button>
+        </p>
       </Show>
       <p class='muted'>
         Server: {settings()?.server.host}:{settings()?.server.port}

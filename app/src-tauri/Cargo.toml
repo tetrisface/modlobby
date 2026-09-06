@@ -19,6 +19,7 @@ md-5 = { workspace = true }
 percent-encoding = { workspace = true }
 recoil = { workspace = true }
 lobby-runtime = { workspace = true }
+news = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 sevenz-rust2 = { workspace = true }

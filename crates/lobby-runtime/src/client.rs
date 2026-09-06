@@ -76,13 +76,14 @@ enum Command {
     Reconnect {
         reply: Reply<()>,
     },
-    /// Creates an account on a connection of its own, then hangs up.
+    /// Creates an account and logs in on it, answering with the agreement the
+    /// server replies to that login with.
     Register {
         endpoint: Endpoint,
         request: LoginRequest,
         email: String,
         password: String,
-        reply: Reply<()>,
+        reply: Reply<Vec<String>>,
     },
     /// Confirms the emailed code for an account that has just been created.
     ConfirmAgreement {
@@ -337,13 +338,19 @@ impl Client {
     ///
     /// The account cannot log in yet: the server emails a code that
     /// [`Self::confirm_agreement`] carries back.
+    /// Creates the account and logs in on the same connection.
+    ///
+    /// Answers with the user agreement the server sends instead of a session:
+    /// a new account is unverified, and the code that verifies it can only be
+    /// sent on a connection that has already tried to log in. Leaving the
+    /// connection open is the point — [`Self::confirm_agreement`] needs it.
     pub async fn register(
         &self,
         endpoint: Endpoint,
         request: LoginRequest,
         email: String,
         password: String,
-    ) -> Result<(), ClientError> {
+    ) -> Result<Vec<String>, ClientError> {
         self.ask(|reply| Command::Register {
             endpoint,
             request,
@@ -687,9 +694,12 @@ struct Runtime {
     /// Whether this machine has everything the room needs. Launching without
     /// it produces an engine that quits with a sync error.
     content_ready: bool,
+    /// Whoever is waiting to be logged in: the login that opened the
+    /// connection, or the code that finishes one the server would not accept.
     login_reply: Option<Reply<()>>,
-    /// Waiting on `REGISTRATIONACCEPTED`/`REGISTRATIONDENIED`.
-    register_reply: Option<Reply<()>>,
+    /// Waiting on `REGISTRATIONDENIED`, or on the agreement that the login
+    /// after `REGISTRATIONACCEPTED` is answered with.
+    register_reply: Option<Reply<Vec<String>>>,
     join_reply: Option<Reply<()>>,
     /// When the room was asked for, until its state has all arrived: the
     /// `join:` milestones in the log are measured from here.
@@ -1681,32 +1691,45 @@ impl Runtime {
                     .await
             }
             Command::ConfirmAgreement { code, reply } => {
-                self.run_session(reply, |session| {
-                    Ok::<_, std::convert::Infallible>(session.confirm_agreement(&code))
-                })
-                .await;
+                // Not `run_session`: that answers as soon as the line is
+                // queued, which for a code would report a wrong one as a
+                // success. The server's reply is the answer — `ACCEPTED` when
+                // the code was right (teiserver runs the whole login on it),
+                // `DENIED Incorrect code` when it was not — so this waits
+                // where a login waits.
+                let Some(conn) = self.conn.as_mut() else {
+                    let _ = reply.send(Err(ClientError::NotConnected));
+                    return;
+                };
+                let effects = conn.session.confirm_agreement(&code);
+                self.login_reply = Some(reply);
+                self.apply_effects(effects).await;
             }
             Command::Shutdown => unreachable!("handled by the run loop"),
         }
     }
 
-    /// Opens a connection whose only purpose is to create an account.
+    /// Opens the connection an account is created on, and then lives on.
     ///
-    /// Separate from `connect` because it must not become a logged-in session:
-    /// the server answers `REGISTER` and leaves the connection unauthenticated,
-    /// and someone registering is by definition not logged in yet.
+    /// Separate from `connect` because what it sends on `Welcome` is a
+    /// `REGISTER` rather than a `LOGIN`. Everything after that is a login:
+    /// the account exists but is unverified, so the connection stays open for
+    /// the code that verifies it, and the credentials are kept exactly as a
+    /// login keeps them — without them a reconnect later in the session would
+    /// have nothing to reconnect with.
     async fn register(
         &mut self,
         endpoint: Endpoint,
         request: LoginRequest,
         email: String,
         password: String,
-        reply: Reply<()>,
+        reply: Reply<Vec<String>>,
     ) {
         if self.conn.is_some() {
             let _ = reply.send(Err(ClientError::AlreadyConnected));
             return;
         }
+        self.credentials = Some((endpoint.clone(), request.clone()));
         match (self.connector)(endpoint, self.policy.clone()).await {
             Ok((transport, inbound)) => {
                 let session = Session::new(
@@ -1887,33 +1910,48 @@ impl Runtime {
                     }
                 }
                 Effect::LoginDenied { reason } => self.refuse(reason).await,
-                Effect::AgreementRequired { .. } => {
-                    // Not a refusal: an account that has just been created is
-                    // expected to land here, and the code it needs is in an
-                    // email. Hanging up would throw away the very connection
-                    // that can confirm it.
-                    self.batcher.push(Delta::Notice {
-                        level: lobby_ui::NoticeLevel::Warning,
-                        text: "this account must confirm the emailed code before it can log in"
-                            .into(),
-                    });
-                    if let Some(reply) = self.login_reply.take() {
-                        let _ = reply.send(Err(ClientError::Refused(
-                            "confirm the code emailed to you".into(),
-                        )));
+                Effect::AgreementRequired { text } => {
+                    // Not a refusal, and never a reason to hang up: this is
+                    // the one connection the emailed code can be sent on.
+                    if let Some(reply) = self.register_reply.take() {
+                        // Registering, so the form is already asking for the
+                        // code and a notice would only repeat the screen. The
+                        // agreement itself goes back as the answer, because
+                        // entering the code is what accepts it.
+                        let _ = reply.send(Ok(text));
+                    } else {
+                        // An older account that never confirmed. Nothing is
+                        // waiting on an agreement, so this has to be said.
+                        self.batcher.push(Delta::Notice {
+                            level: lobby_ui::NoticeLevel::Warning,
+                            text: "this account must confirm the emailed code before it can log in"
+                                .into(),
+                        });
+                        if let Some(reply) = self.login_reply.take() {
+                            let _ = reply.send(Err(ClientError::Refused(
+                                "confirm the code emailed to you".into(),
+                            )));
+                        }
                     }
                 }
                 Effect::Registered => {
-                    if let Some(reply) = self.register_reply.take() {
-                        let _ = reply.send(Ok(()));
+                    // The account exists but is unverified. Logging in on this
+                    // same connection is what puts the server in the state
+                    // where `CONFIRMAGREEMENT` means anything, and the
+                    // agreement it answers with is what the caller is waiting
+                    // for. Hanging up here — as this once did — threw away the
+                    // connection the code had to be sent on.
+                    if let Some(conn) = self.conn.as_mut() {
+                        let effects = conn.session.begin_login();
+                        queue.extend(effects);
                     }
-                    // The connection has done its one job.
-                    self.disconnect().await;
                 }
                 Effect::RegistrationDenied { reason } => {
                     if let Some(reply) = self.register_reply.take() {
                         let _ = reply.send(Err(ClientError::Refused(reason)));
                     }
+                    // No account was made, so there is nothing to come back to.
+                    self.credentials = None;
                     self.disconnect().await;
                 }
                 Effect::Redirect { host, port } => {
@@ -2611,6 +2649,146 @@ mod tests {
         assert!(matches!(
             client.reconnect().await,
             Err(ClientError::NoCredentials)
+        ));
+        client.shutdown().await;
+    }
+
+    /// Plays the server through a registration: the greeting, the account
+    /// made, and the agreement it answers the first login with. The trailing
+    /// empty `AGREEMENT ` is teiserver's own (`spring_out.ex:111-121`).
+    async fn accept_registration(server: DuplexStream) -> FakeServer {
+        let (read, mut write) = tokio::io::split(server);
+        let mut lines = BufReader::new(read).lines();
+        write.write_all(b"TASSERVER 0.38 * 8201 0\n").await.unwrap();
+        let sent = lines.next_line().await.unwrap().unwrap();
+        assert!(sent.starts_with("REGISTER me "), "{sent}");
+        write.write_all(b"REGISTRATIONACCEPTED\n").await.unwrap();
+        let sent = lines.next_line().await.unwrap().unwrap();
+        assert!(sent.starts_with("LOGIN me "), "{sent}");
+        write
+            .write_all(
+                b"AGREEMENT Read the terms at https://example/privacy\nAGREEMENT \nAGREEMENTEND\n",
+            )
+            .await
+            .unwrap();
+        (lines, write)
+    }
+
+    fn registering(client: &Client) -> tokio::task::JoinHandle<Result<Vec<String>, ClientError>> {
+        let client = client.clone();
+        let endpoint = Endpoint::parse("test:8200", false).unwrap();
+        tokio::spawn(async move {
+            client
+                .register(
+                    endpoint,
+                    LoginRequest::new("me", "pw", "test", "h h"),
+                    "a@b.c".into(),
+                    "pw".into(),
+                )
+                .await
+        })
+    }
+
+    #[tokio::test]
+    async fn registering_logs_in_on_the_same_connection_and_answers_with_the_agreement() {
+        let (connector, mut servers) = in_memory_many(1);
+        let client = spawn(connector);
+        let made = registering(&client);
+        let _server = accept_registration(servers.remove(0)).await;
+
+        let agreement = made.await.unwrap().unwrap();
+        assert_eq!(agreement, ["Read the terms at https://example/privacy", ""]);
+        // Still connected: the code has nowhere else to go.
+        assert_eq!(
+            client.snapshot().await.unwrap().phase,
+            Some(Phase::AwaitingLogin)
+        );
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn a_confirmed_code_finishes_the_login_that_registering_started() {
+        let (connector, mut servers) = in_memory_many(1);
+        let client = spawn(connector);
+        let made = registering(&client);
+        let (mut lines, mut write) = accept_registration(servers.remove(0)).await;
+        made.await.unwrap().unwrap();
+
+        let confirming = tokio::spawn({
+            let client = client.clone();
+            async move { client.confirm_agreement("A1B2C3".into()).await }
+        });
+        let sent = lines.next_line().await.unwrap().unwrap();
+        assert_eq!(sent, "CONFIRMAGREEMENT A1B2C3");
+        // teiserver verifies the account and runs the whole login on it.
+        write
+            .write_all(b"ACCEPTED me\nADDUSER me SE 1 LuaLobby Chobby\nLOGININFOEND\n")
+            .await
+            .unwrap();
+
+        confirming.await.unwrap().unwrap();
+        assert_eq!(client.snapshot().await.unwrap().phase, Some(Phase::Ready));
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn a_wrong_code_answers_the_caller_rather_than_failing_silently() {
+        let (connector, mut servers) = in_memory_many(1);
+        let client = spawn(connector);
+        let made = registering(&client);
+        let (mut lines, mut write) = accept_registration(servers.remove(0)).await;
+        made.await.unwrap().unwrap();
+
+        let confirming = tokio::spawn({
+            let client = client.clone();
+            async move { client.confirm_agreement("nope".into()).await }
+        });
+        lines.next_line().await.unwrap().unwrap();
+        write.write_all(b"DENIED Incorrect code\n").await.unwrap();
+
+        let answer = confirming.await.unwrap();
+        assert!(
+            matches!(&answer, Err(ClientError::Refused(reason)) if reason == "Incorrect code"),
+            "{answer:?}"
+        );
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn a_registration_the_server_refuses_leaves_nothing_to_reconnect_with() {
+        let (connector, mut servers) = in_memory_many(1);
+        let client = spawn(connector);
+        let made = registering(&client);
+
+        let (read, mut write) = tokio::io::split(servers.remove(0));
+        let mut lines = BufReader::new(read).lines();
+        write.write_all(b"TASSERVER 0.38 * 8201 0\n").await.unwrap();
+        lines.next_line().await.unwrap().unwrap();
+        write
+            .write_all(b"REGISTRATIONDENIED Username already taken\n")
+            .await
+            .unwrap();
+
+        let answer = made.await.unwrap();
+        assert!(
+            matches!(&answer, Err(ClientError::Refused(r)) if r == "Username already taken"),
+            "{answer:?}"
+        );
+        // No account was made, so nothing was left behind to come back to.
+        assert!(matches!(
+            client.reconnect().await,
+            Err(ClientError::NoCredentials)
+        ));
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn confirming_with_no_connection_says_so() {
+        let (connector, _server) = in_memory();
+        let client = spawn(connector);
+        assert!(matches!(
+            client.confirm_agreement("A1B2C3".into()).await,
+            Err(ClientError::NotConnected)
         ));
         client.shutdown().await;
     }
