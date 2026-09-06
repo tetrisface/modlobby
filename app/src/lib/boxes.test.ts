@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { boxSignature, centre, isBoxKey, outline } from './boxes'
+import { boxSignature, centre, extent, isBoxKey, outline } from './boxes'
 
 describe('recognising a start-box modoption', () => {
   it('takes both keys, bare or under their scripttag prefix', () => {
@@ -57,5 +57,21 @@ describe('drawing a box', () => {
 
   it('has an answer for a polygon with no corners rather than NaN', () => {
     expect(centre([])).toEqual({ x: 100, y: 100 })
+  })
+})
+
+describe('the rectangle a polygon fits in', () => {
+  it('takes the far corners whatever order the points came in', () => {
+    expect(
+      extent([
+        [60, 20],
+        [20, 50],
+        [40, 80],
+      ]),
+    ).toEqual({ left: 20, top: 20, right: 60, bottom: 80 })
+  })
+
+  it('gives a polygon with nothing in it a rectangle with nothing in it', () => {
+    expect(extent([])).toEqual({ left: 0, top: 0, right: 0, bottom: 0 })
   })
 })

@@ -181,5 +181,41 @@ export function fixtureOptions(): ModOption[] {
     options.push(option({ key, section }))
   }
 
+  // BAR's `mapmetadata` section: hidden, unweighted, and every option in it
+  // hidden too, as `modoptions.lua` declares them.
+  options.push(
+    option({
+      key: 'mapmetadata',
+      name: 'MapMetadata',
+      type: 'section',
+      hidden: true,
+    }),
+  )
+  options.push(
+    option({
+      key: 'sub_header',
+      type: 'subheader',
+      name: 'Hidden map metadata options',
+      section: 'mapmetadata',
+      hidden: true,
+    }),
+  )
+  for (const [key, name] of [
+    ['mapmetadata_startpos', 'Map Metadata: StartPos'],
+    ['mapmetadata_startboxes_set', 'Map Metadata: Startboxes Set'],
+    ['mapmetadata_startbox_override', 'Map Metadata: Startbox Override'],
+  ] as const) {
+    options.push(
+      option({
+        key,
+        name,
+        type: 'string',
+        def: '',
+        section: 'mapmetadata',
+        hidden: true,
+      }),
+    )
+  }
+
   return options
 }

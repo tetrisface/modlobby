@@ -61,6 +61,27 @@ pub struct Arrangement {
     pub startboxes: Vec<Box>,
 }
 
+/// The third map-metadata modoption, `mapmetadata_startpos`: fixed start
+/// positions, which BAR's `map_start_position_suggestions.lua` reads. Only
+/// what a lobby has a use for is modelled -- how many positions there are and
+/// which team layouts they serve -- the rest of the JSON is left where it is.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct StartPos {
+    /// Named spawn points; the names are what a layout's sides refer to.
+    #[serde(default)]
+    pub positions: BTreeMap<String, serde_json::Value>,
+    #[serde(default)]
+    pub team: Vec<Layout>,
+}
+
+/// One team layout the positions are laid out for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Layout {
+    pub players_per_team: u32,
+    pub team_count: u32,
+}
+
 /// Which modoption an arrangement came from, which is worth showing: an
 /// override is somebody's deliberate choice, a set entry is the map's own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -130,9 +151,14 @@ pub fn decode_set(raw: &str) -> Result<BTreeMap<u32, Arrangement>, Error> {
         .collect())
 }
 
+/// The fixed start positions, from `mapmetadata_startpos`.
+pub fn decode_start_pos(raw: &str) -> Result<StartPos, Error> {
+    serde_json::from_value(decode_json(raw)?).map_err(|err| Error::Json(err.to_string()))
+}
+
 /// Encodes an arrangement the way the game reads it back.
 pub fn encode_override(arrangement: &Arrangement) -> Result<String, Error> {
-    encode(&serde_json::to_value(arrangement).map_err(|err| Error::Json(err.to_string()))?)
+    encode_json(&serde_json::to_value(arrangement).map_err(|err| Error::Json(err.to_string()))?)
 }
 
 /// Encodes a per-team-count table.
@@ -141,10 +167,12 @@ pub fn encode_set(set: &BTreeMap<u32, Arrangement>) -> Result<String, Error> {
         .iter()
         .map(|(count, arrangement)| (count.to_string(), arrangement))
         .collect();
-    encode(&serde_json::to_value(table).map_err(|err| Error::Json(err.to_string()))?)
+    encode_json(&serde_json::to_value(table).map_err(|err| Error::Json(err.to_string()))?)
 }
 
-fn encode(value: &serde_json::Value) -> Result<String, Error> {
+/// Encodes any JSON the way the three modoptions carry it; the typed
+/// encoders above are the ones to reach for, this is for tools and tests.
+pub fn encode_json(value: &serde_json::Value) -> Result<String, Error> {
     use std::io::Write as _;
     let text = serde_json::to_string(value).map_err(|err| Error::Json(err.to_string()))?;
     let mut writer = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
@@ -290,6 +318,30 @@ mod tests {
     #[test]
     fn nothing_at_all_defers_to_the_engine_rects() {
         assert!(resolve(None, &BTreeMap::new(), 2).is_none());
+    }
+
+    #[test]
+    fn start_positions_are_read_for_their_count_and_layouts() {
+        // The shape maps-metadata publishes (`schemas/map_list.yaml` StartPosConf),
+        // with the fields a lobby does not read left in.
+        let json = serde_json::json!({
+            "positions": { "a": { "x": 100, "y": 200 }, "b": { "x": 900, "y": 200 } },
+            "team": [
+                { "playersPerTeam": 1, "teamCount": 2,
+                  "sides": [ { "starts": [ { "spawnPoint": "a" } ] }, { "starts": [ { "spawnPoint": "b" } ] } ] }
+            ]
+        });
+        let raw = encode_json(&json).unwrap();
+        let held = decode_start_pos(&raw).unwrap();
+        assert_eq!(held.positions.len(), 2);
+        assert_eq!(
+            held.team,
+            [Layout {
+                players_per_team: 1,
+                team_count: 2
+            }]
+        );
+        assert!(decode_start_pos("not a blob").is_err());
     }
 
     #[test]

@@ -1,6 +1,9 @@
 import { invoke, type Channel } from '@tauri-apps/api/core'
 import type { AiChoice } from './bindings/AiChoice'
+import type { Arrangement } from './bindings/Arrangement'
+import type { ArrangementView } from './bindings/ArrangementView'
 import type { Check } from './bindings/Check'
+import type { Encoded } from './bindings/Encoded'
 import type { DefTags } from './bindings/DefTags'
 import type { DiffView } from './bindings/DiffView'
 import type { Kind } from './bindings/Kind'
@@ -95,6 +98,12 @@ export const api = {
     invoke<BoxesView | null>('start_boxes', { teams }),
   decodeBoxes: (raw: string, teams: number) =>
     invoke<[number, number][][] | null>('decode_boxes', { raw, teams }),
+  currentArrangement: (teams: number) =>
+    invoke<ArrangementView | null>('current_arrangement', { teams }),
+  encodeBoxes: (arrangement: Arrangement) =>
+    invoke<Encoded>('encode_boxes', { arrangement }),
+  describeMapOption: (key: string, raw: string) =>
+    invoke<string>('describe_map_option', { key, raw }),
   flashEngine: () => invoke<boolean>('flash_engine'),
   requestGameStatus: (founder: string) =>
     invoke<void>('request_game_status', { founder }),

@@ -8,10 +8,12 @@ import {
   createEffect,
   createMemo,
   createResource,
+  createSignal,
 } from 'solid-js'
 import { Composer } from '../components/Composer'
 import { GetEngine } from '../components/GetEngine'
 import { Linkify } from '../components/Linkify'
+import { MapEditor } from '../components/MapEditor'
 import { MapPicture } from '../components/MapPicture'
 import { showPlayerMenu } from '../components/PlayerMenu'
 import {
@@ -106,6 +108,9 @@ export function Room() {
     if (roster.teams.length > 0 && roster.pending.length === 0)
       joinMilestone('roster settled')
   })
+  /** Whether the large map with the start-box editor is open over the room. */
+  const [editing, setEditing] = createSignal(false)
+
   const lines = () => chat.rooms[BATTLE_ROOM] ?? []
   createEffect(() => {
     lines().length
@@ -137,7 +142,15 @@ export function Room() {
               rects={b().startRects}
               mapName={b().mapName}
               teams={occupants().teams.length}
+              onOpen={() => setEditing(true)}
             />
+            <Show when={editing()}>
+              <MapEditor
+                mapName={b().mapName}
+                teams={Math.max(occupants().teams.length, 2)}
+                onClose={() => setEditing(false)}
+              />
+            </Show>
             <div class='card-main'>
               <RoomTitle
                 title={b().title}
@@ -365,6 +378,8 @@ function Minimap(props: {
   rects: StartRectView[]
   mapName: string
   teams: number
+  /** Opens the large map, where the boxes can be drawn. */
+  onOpen: () => void
 }) {
   /**
    * The modoption boxes, which are a different system from `props.rects`.
@@ -386,7 +401,19 @@ function Minimap(props: {
   )
 
   return (
-    <div class='minimap'>
+    <div
+      class='minimap'
+      role='button'
+      tabIndex={0}
+      title='Open the map and edit the start boxes'
+      onClick={props.onOpen}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          props.onOpen()
+        }
+      }}
+    >
       <MapPicture
         class='map-under'
         mapName={props.mapName}

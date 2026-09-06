@@ -74,6 +74,20 @@ export const TWEAK_SLOTS: readonly string[] = ['defs', 'units'].flatMap(
 export const MODDING_TAB = 'modding'
 
 /**
+ * BAR's `mapmetadata` section: the three modoptions SPADS and the lobby set
+ * from the map's metadata (start boxes, a custom box arrangement, fixed start
+ * positions). BAR declares the section and every option in it hidden, since
+ * their values are base64 blobs no row can show. Rather than drop them we
+ * give them a tab of their own, with each blob described in words.
+ */
+export const MAP_TAB = 'map'
+const MAP_SECTION = 'mapmetadata'
+
+export function isMapOption(option: ModOption): boolean {
+  return option.section === MAP_SECTION
+}
+
+/**
  * Not one of BAR's tabs: the one that shows what is changed in all of them.
  * A room's four changed settings are spread over three tabs, and finding
  * them was a tour.
@@ -137,9 +151,35 @@ function moddingTab(options: ModOption[]): Tab {
 }
 
 /**
+ * The Map tab, when the game declares the section: its options in file
+ * order, hidden or not, named without BAR's `Map Metadata: ` prefix since
+ * the tab already says so. Nothing when the game has no such section.
+ */
+function mapTab(options: ModOption[]): Tab | null {
+  const rows = options
+    .filter(
+      (option) =>
+        isMapOption(option) &&
+        option.type !== 'subheader' &&
+        option.type !== 'separator',
+    )
+    .map((option) => ({
+      ...option,
+      name: (option.name ?? option.key).replace(/^Map Metadata:\s*/i, ''),
+    }))
+  if (rows.length === 0) return null
+  return {
+    key: MAP_TAB,
+    name: 'Map',
+    desc: 'What the map brings to the room: its start boxes, any custom arrangement, and fixed start positions.',
+    groups: [{ name: 'Map metadata', options: rows }],
+  }
+}
+
+/**
  * Tabs in Chobby's order: weight descending, with an unweighted section
  * treated as zero so it lands between Experimental and Cheats. Modding goes
- * last, next to Cheats, where the tweak slots used to live.
+ * next to Cheats, where the tweak slots used to live, and Map last.
  */
 export function tabs(options: ModOption[]): Tab[] {
   const sections = options
@@ -162,7 +202,8 @@ export function tabs(options: ModOption[]): Tab[] {
     ),
   }))
 
-  return [...declared, moddingTab(options)]
+  const map = mapTab(options)
+  return [...declared, moddingTab(options), ...(map === null ? [] : [map])]
 }
 
 /** Modoptions the room has set, keyed without the `game/modoptions/` prefix. */
@@ -191,7 +232,14 @@ export function isOn(text: string): boolean {
   return text === '1' || text.toLowerCase() === 'true'
 }
 
+/** SPADS empties a slot by writing `0` (`sendBattleSetting` skips `''`). */
+function isCleared(text: string): boolean {
+  return text === '' || text === '0'
+}
+
 function isChanged(option: ModOption, current: string): boolean {
+  // A map option is set or cleared; there is no default to sit on.
+  if (isMapOption(option)) return !isCleared(current)
   const def = defaultText(option)
   if (option.type === 'number') return Number(current) !== Number(def)
   if (option.type === 'bool') return isOn(current) !== isOn(def)
@@ -266,9 +314,10 @@ export function searchRows(
  */
 function searchText(row: Row): string {
   const { option } = row
-  const value = isTweakSlot(row)
-    ? ''
-    : `${displayText(row)} ${row.current ?? ''}`
+  const value =
+    isTweakSlot(row) || isMapOption(row.option)
+      ? ''
+      : `${displayText(row)} ${row.current ?? ''}`
   return `${label(option)} ${option.key} ${option.desc ?? ''} ${value}`
 }
 
@@ -300,6 +349,9 @@ export function displayText(row: Row): string {
   // A tweak is a blob of base64; its size is the one thing a row can say.
   if (TWEAK_SLOTS.includes(row.option.key))
     return text === '' ? 'empty' : `${text.length} B`
+  // The Map tab asks Rust for words; this is what it says until then.
+  if (isMapOption(row.option))
+    return isCleared(text) ? 'none' : `${text.length} B`
   if (row.option.type === 'bool') return isOn(text) ? 'on' : 'off'
   if (row.option.type === 'string' && text === '') return 'empty'
   const item = row.option.items?.find((entry) => entry.key === text)

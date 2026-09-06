@@ -54,8 +54,15 @@ pub struct MyBattle {
     pub script_tags: BTreeMap<String, String>,
     /// The vote the host is running, if any.
     pub vote: Option<VoteState>,
-    /// Modoption changes seen this session, oldest first.
+    /// Modoption changes since the join replay settled, oldest first. The
+    /// room as we found it is not a change; what moved while we sat here is.
     pub history: Vec<OptionChange>,
+    /// Whether the join replay has ended. teiserver answers `JOINBATTLE` with
+    /// the room's whole modoption map as `SETSCRIPTTAGS`, then the members,
+    /// bots and start rects, and closes with `REQUESTBATTLESTATUS`
+    /// (`spring_out.ex` `do_join_battle`). Until then a tag arriving is the
+    /// room describing itself, not somebody changing it.
+    pub settled: bool,
     next_seq: u64,
 }
 
@@ -69,6 +76,7 @@ impl MyBattle {
             script_tags: BTreeMap::new(),
             vote: None,
             history: Vec::new(),
+            settled: false,
             next_seq: 0,
         }
     }
@@ -86,8 +94,9 @@ impl MyBattle {
             .map_or("", String::as_str)
     }
 
-    /// Applies `SETSCRIPTTAGS`, recording every modoption that really changed.
-    /// Returns those keys, without the prefix.
+    /// Applies `SETSCRIPTTAGS`. Returns the modoptions that really changed,
+    /// without the prefix; those are also recorded in the history once the
+    /// join replay has settled.
     pub fn set_script_tags(&mut self, tags: Vec<(String, String)>) -> Vec<String> {
         let mut changed = Vec::new();
         for (key, value) in tags {
@@ -96,10 +105,13 @@ impl MyBattle {
                 continue;
             };
             let from = previous.unwrap_or_default();
-            if from != value {
-                self.record(option.to_owned(), from, value, None);
-                changed.push(option.to_owned());
+            if from == value {
+                continue;
             }
+            if self.settled {
+                self.record(option.to_owned(), from, value, None);
+            }
+            changed.push(option.to_owned());
         }
         changed
     }

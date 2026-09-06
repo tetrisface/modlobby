@@ -883,7 +883,14 @@ impl Session {
                 self.hosting = None;
                 vec![Effect::JoinFailed { reason }]
             }
-            E::RequestBattleStatus => vec![self.battle_status()],
+            E::RequestBattleStatus => {
+                // The last line of the join replay: from here on a tag that
+                // changes is history, not the room introducing itself.
+                if let Some(my) = state.my_battle.as_mut() {
+                    my.settled = true;
+                }
+                vec![self.battle_status()]
+            }
             E::SentPrivate { name, text } => {
                 // The server echoing us back is the only confirmation the
                 // message left, so it is what puts our own words on screen.
@@ -2629,7 +2636,14 @@ mod tests {
     fn a_tweak_vote_is_followed_from_call_to_setting() {
         let mut s = ready_with_room();
         s.join_battle(5, None, "1".into());
-        feed(&mut s, &["JOINBATTLE 5 -1", "JOINEDBATTLE 5 me 1"]);
+        feed(
+            &mut s,
+            &[
+                "JOINBATTLE 5 -1",
+                "JOINEDBATTLE 5 me 1",
+                "REQUESTBATTLESTATUS",
+            ],
+        );
 
         let effects = feed(
             &mut s,
@@ -2697,14 +2711,51 @@ mod tests {
             &[
                 "JOINBATTLE 5 -1",
                 "SETSCRIPTTAGS game/modoptions/tweakdefs1=QUJD",
+                "REQUESTBATTLESTATUS",
                 "SAIDBATTLEEX host * Battle setting changed by Bob (tweakdefs1=)",
             ],
         );
         let my = s.state.my_battle.as_ref().unwrap();
         assert_eq!(my.modoption("tweakdefs1"), "");
-        assert_eq!(my.history.len(), 2);
-        assert_eq!(my.history[1].from, "QUJD");
-        assert!(my.history[1].to.is_empty());
+        assert_eq!(my.history.len(), 1);
+        assert_eq!(my.history[0].from, "QUJD");
+        assert!(my.history[0].to.is_empty());
+    }
+
+    /// teiserver replays the room's whole modoption map after `JOINBATTLE`
+    /// (`spring_out.ex` `do_join_battle`). That is the room as found, not a
+    /// change, and the history starts at the `REQUESTBATTLESTATUS` that ends
+    /// the replay. The values still land, so the frontend sees them.
+    #[test]
+    fn the_join_replay_is_not_history() {
+        let mut s = ready_with_room();
+        s.join_battle(5, None, "1".into());
+        let effects = feed(
+            &mut s,
+            &[
+                "JOINBATTLE 5 -1",
+                "SETSCRIPTTAGS game/modoptions/startmetal=1000\tgame/modoptions/mapmetadata_startbox_override=QUJD",
+            ],
+        );
+        assert!(effects.contains(&Effect::ModOptionsChanged {
+            keys: vec!["startmetal".into(), "mapmetadata_startbox_override".into()]
+        }));
+        let my = s.state.my_battle.as_ref().unwrap();
+        assert_eq!(my.modoption("startmetal"), "1000");
+        assert!(my.history.is_empty(), "the replay is not a change");
+
+        feed(&mut s, &["REQUESTBATTLESTATUS"]);
+        feed(
+            &mut s,
+            &["SETSCRIPTTAGS game/modoptions/mapmetadata_startbox_override=REVG"],
+        );
+        let my = s.state.my_battle.as_ref().unwrap();
+        assert_eq!(my.history.len(), 1);
+        assert_eq!(my.history[0].seq, 1);
+        assert_eq!(
+            (my.history[0].from.as_str(), my.history[0].to.as_str()),
+            ("QUJD", "REVG")
+        );
     }
 
     /// The safety property this project runs on: a seat is only ever taken in a

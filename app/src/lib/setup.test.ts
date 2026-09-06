@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import {
+  MAP_TAB,
   MODDING_TAB,
   TWEAK_SLOTS,
   changedByTab,
@@ -26,7 +27,7 @@ const optionKeys = (tab: Tab) =>
   tab.groups.flatMap((group) => group.options.map((option) => option.key))
 
 describe('tabs', () => {
-  test('are BAR sections by weight, with Modding last', () => {
+  test('are BAR sections by weight, then Modding, then Map', () => {
     expect(TABS.map((tab) => tab.name)).toEqual([
       'Main',
       'Raptors',
@@ -36,7 +37,34 @@ describe('tabs', () => {
       'Other',
       'Cheats',
       'Modding',
+      'Map',
     ])
+  })
+
+  test('Map holds the three metadata options, hidden or not, and nothing else', () => {
+    const map = byKey(MAP_TAB)
+    expect(optionKeys(map)).toEqual([
+      'mapmetadata_startpos',
+      'mapmetadata_startboxes_set',
+      'mapmetadata_startbox_override',
+    ])
+    expect(map.groups.map((group) => group.name)).toEqual(['Map metadata'])
+    expect(map.groups[0]?.options.map((option) => option.name)).toEqual([
+      'StartPos',
+      'Startboxes Set',
+      'Startbox Override',
+    ])
+    for (const tab of TABS.filter((entry) => entry.key !== MAP_TAB)) {
+      expect(optionKeys(tab)).not.toContain('mapmetadata_startbox_override')
+    }
+  })
+
+  test('there is no Map tab for a game without the section', () => {
+    const without = fixtureOptions().filter(
+      (option) =>
+        option.key !== 'mapmetadata' && option.section !== 'mapmetadata',
+    )
+    expect(tabs(without).map((tab) => tab.name)).not.toContain('Map')
   })
 
   test('Cheats keeps its name and its balance settings', () => {
@@ -155,6 +183,27 @@ describe('changes against BAR defaults', () => {
 
   test('a room on BAR defaults has nothing under All', () => {
     expect(changedByTab(TABS, {})).toEqual([])
+  })
+
+  test('a map option is changed when set and not when SPADS cleared it to 0', () => {
+    const map = byKey(MAP_TAB)
+    const set = readModOptions({
+      'game/modoptions/mapmetadata_startbox_override': 'eJyrVjJS',
+      'game/modoptions/mapmetadata_startboxes_set': '0',
+      'game/modoptions/mapmetadata_startpos': '',
+    })
+    const rows = rowsOf(map.groups[0]!, set)
+    expect(rows.map((row) => [row.option.key, row.changed])).toEqual([
+      ['mapmetadata_startpos', false],
+      ['mapmetadata_startboxes_set', false],
+      ['mapmetadata_startbox_override', true],
+    ])
+    expect(changedCount(map, set)).toBe(1)
+    expect(changedByTab(TABS, set).map((entry) => entry.tab.name)).toEqual([
+      'Map',
+    ])
+    expect(displayText(rows[2]!)).toBe('8 B')
+    expect(displayText(rows[1]!)).toBe('none')
   })
 
   test('showing the unchanged too lists every tab with all of its rows', () => {

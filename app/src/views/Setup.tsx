@@ -15,6 +15,7 @@ import { api, describeError } from '../ipc/client'
 import { clamp, dragWidth, readWidth, writeWidth } from '../lib/resize'
 import {
   ALL_TAB,
+  MAP_TAB,
   MODDING_TAB,
   TWEAK_SLOTS,
   changedByTab,
@@ -22,6 +23,7 @@ import {
   defaultText,
   displayText,
   isOn,
+  isMapOption,
   isTweakSlot,
   readModOptions,
   label,
@@ -263,7 +265,7 @@ export function Setup() {
                   class='setup-tab'
                   classList={{
                     on: !searching() && tab().key === entry.key,
-                    ours: entry.key === MODDING_TAB,
+                    ours: entry.key === MODDING_TAB || entry.key === MAP_TAB,
                   }}
                   title={entry.desc}
                   onClick={() => {
@@ -549,6 +551,9 @@ function Rows(props: {
               {label(row.option)}
             </span>
             <Switch fallback={<span class='v'>{displayText(row)}</span>}>
+              <Match when={isMapOption(row.option)}>
+                <MapValue row={row} />
+              </Match>
               <Match when={isTweakSlot(row)}>
                 <SlotActions
                   slot={row.option.key}
@@ -564,6 +569,24 @@ function Rows(props: {
         )}
       </For>
     </div>
+  )
+}
+
+/**
+ * A map-metadata row's value in words. The blob is base64url(zlib(json)) and
+ * says nothing; Rust decodes it (`boxes::describe_map_option`) and answers
+ * with what it holds. Read-only: the override is set from the map, the other
+ * two by SPADS from the map's metadata.
+ */
+function MapValue(props: { row: Row }) {
+  const [words] = createResource(
+    () => [props.row.option.key, props.row.current ?? ''] as const,
+    ([key, raw]) => api.describeMapOption(key, raw).catch(() => null),
+  )
+  return (
+    <span class='v' title={props.row.current ?? ''}>
+      {words.loading ? '…' : (words() ?? displayText(props.row))}
+    </span>
   )
 }
 
