@@ -382,44 +382,122 @@ pub fn skirmish_options(app: State<'_, App>) -> Result<SkirmishOptions> {
     })
 }
 
-/// Starts a game against AI with no server involved.
-#[tauri::command]
-pub async fn start_skirmish(
-    app: State<'_, App>,
-    game: String,
-    map: String,
-    engine: String,
-    opponents: Vec<String>,
-) -> Result<()> {
-    let dirs = data_dirs(&app)?;
-    if game.is_empty() || map.is_empty() || engine.is_empty() {
-        return Err(ApiError::new("input", "pick a game, a map and an engine"));
+/// A map's spring name, which is what a start script names it by.
+///
+/// What is on disk is the archive's file name -- lowercased and underscored --
+/// and nothing there records the capitalisation, so it comes from BAR's
+/// published index, the same one the minimaps do. Offline the file name is
+/// used as-is: it is the best guess there is, and it is what the old skirmish
+/// form did.
+async fn spring_name(app: &State<'_, App>, map: String) -> String {
+    if map.is_empty() {
+        return map;
     }
-    // A skirmish needs no account, so someone who has never logged in still
-    // needs a name to appear under.
+    let index = app.map_index().await;
+    index.names.get(&map).cloned().unwrap_or(map)
+}
+
+/// The name to play under.
+///
+/// A skirmish needs no account, so someone who has never logged in still needs
+/// something to appear as.
+fn player_name(app: &State<'_, App>) -> String {
     let username = app.settings.get().account.username;
-    let player = if username.trim().is_empty() {
+    if username.trim().is_empty() {
         "Player".to_owned()
     } else {
         username
-    };
+    }
+}
 
-    let skirmish = recoil::script::Skirmish {
-        game,
-        map,
-        player,
-        start_pos: recoil::script::StartPos::InGame,
-        opponents: opponents
-            .into_iter()
-            .enumerate()
-            .map(|(index, short_name)| recoil::script::Ai {
-                name: format!("{short_name} {}", index + 1),
-                short_name,
-            })
-            .collect(),
-        modoptions: Vec::new(),
+/// Opens the room with no server behind it, on whatever this machine has.
+///
+/// The newest of each is the useful guess: it is what a person who installed
+/// BAR yesterday wants, and every part of it can be changed in the room.
+#[tauri::command]
+pub async fn skirmish_open(
+    app: State<'_, App>,
+    game: Option<String>,
+    map: Option<String>,
+    engine: Option<String>,
+) -> Result<()> {
+    let library = content::Library::new(data_dirs(&app)?);
+    let first = |held: Option<String>, mut from: Vec<String>| {
+        held.filter(|held| !held.is_empty())
+            .or_else(|| from.pop())
+            .unwrap_or_default()
     };
-    app.client.start_skirmish(dirs, engine, skirmish).await?;
+    let room = skirmish::Room::new(
+        player_name(&app),
+        first(game, library.installed_games()),
+        spring_name(&app, first(map, library.installed_map_files())).await,
+        first(engine, library.installed_engines()),
+    );
+    app.client.open_skirmish(room).await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn skirmish_close(app: State<'_, App>) -> Result<()> {
+    app.client.close_skirmish().await?;
+    Ok(())
+}
+
+/// One change to that room. Every way it can change comes through here, which
+/// is what makes its log a complete account of what happened to it.
+#[tauri::command]
+pub async fn skirmish_act(app: State<'_, App>, act: skirmish::Act) -> Result<()> {
+    app.client.skirmish(act).await?;
+    Ok(())
+}
+
+/// Writes its script and starts the engine on it.
+#[tauri::command]
+pub async fn skirmish_launch(app: State<'_, App>) -> Result<()> {
+    app.client.launch_skirmish().await?;
+    Ok(())
+}
+
+/// Fetches whatever of the skirmish room's engine, game and map is missing.
+#[tauri::command]
+pub async fn skirmish_download_missing(app: State<'_, App>) -> Result<()> {
+    app.client.skirmish_download().await?;
+    Ok(())
+}
+
+/// Puts a tweak in one of the room's slots.
+///
+/// Prepared exactly as it would be for a room on the server, then handed to
+/// the same `!bSet` the console takes — so what the editor copies to the
+/// clipboard and what it sends here are one command, not two code paths.
+///
+/// The length gauge is not enforced. Its cap is the server's chat limit, and
+/// there is no chat here: a tweak too big to say in a room still fits in a
+/// start script perfectly well.
+#[tauri::command]
+pub async fn skirmish_tweak_send(
+    app: State<'_, App>,
+    lua: String,
+    slot: Slot,
+    direct: bool,
+) -> Result<Prepared> {
+    let prepared = tweaks::prepare(&lua, slot, direct)?;
+    app.client
+        .skirmish(skirmish::Act::Say {
+            text: prepared.command.clone(),
+        })
+        .await?;
+    Ok(prepared)
+}
+
+/// Clears a slot the way Chobby does, with the literal `0`.
+#[tauri::command]
+pub async fn skirmish_tweak_clear(app: State<'_, App>, slot: Slot) -> Result<()> {
+    app.client
+        .skirmish(skirmish::Act::Say {
+            text: tweaks::command::clear(slot),
+        })
+        .await?;
     Ok(())
 }
 

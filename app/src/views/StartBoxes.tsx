@@ -1,7 +1,7 @@
 import { For, Show, createMemo } from 'solid-js'
 import { BoxDiff } from '../components/BoxDiff'
 import { isBoxKey } from '../lib/boxes'
-import { lobby } from '../store/lobby'
+import { useRoom } from './room/model'
 
 /**
  * Where the start boxes have been moved to this session.
@@ -15,8 +15,9 @@ import { lobby } from '../store/lobby'
  * nothing at all.
  */
 export function StartBoxes(props: { teams: number; mapName: string }) {
+  const room = useRoom()
   const changes = createMemo(() =>
-    (lobby.myBattle?.history ?? [])
+    (room.my()?.history ?? [])
       .filter((change) => isBoxKey(change.key))
       .reverse(),
   )

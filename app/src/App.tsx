@@ -43,9 +43,9 @@ import { Login } from './views/Login'
 import { News } from './views/News'
 import { PresetsPage } from './views/PresetsPage'
 import { Replays } from './views/Replays'
-import { Room } from './views/Room'
+import { OnlineRoom } from './views/room/OnlineRoom'
+import { SkirmishRoom } from './views/room/SkirmishRoom'
 import { SettingsView } from './views/Settings'
-import { Skirmish } from './views/Skirmish'
 
 type SettingsEvent = { changed: Settings } | { invalid: string }
 
@@ -525,12 +525,12 @@ export function App() {
       <Route path='/news' component={News} />
       <Route path='/replays' component={Replays} />
       <Route path='/presets' component={PresetsPage} />
-      <Route path='/skirmish' component={Skirmish} />
-      <Route path='/room' component={Room} />
+      <Route path='/skirmish' component={SkirmishRoom} />
+      <Route path='/room' component={OnlineRoom} />
       {/* The tweak editor lives inside the room's setup pane, which is where
           the slots it edits are listed. It was reachable here as well, drawing
           the same component with none of that around it. */}
-      <Route path='/room/tweaks' component={Room} />
+      <Route path='/room/tweaks' component={OnlineRoom} />
       <Route path='/settings' component={SettingsView} />
     </HashRouter>
   )

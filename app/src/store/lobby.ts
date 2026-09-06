@@ -4,6 +4,7 @@ import type { EngineStatus } from '../ipc/bindings/EngineStatus'
 import type { GameRunningView } from '../ipc/bindings/GameRunningView'
 import type { MyBattleView } from '../ipc/bindings/MyBattleView'
 import type { Phase } from '../ipc/bindings/Phase'
+import type { SkirmishView } from '../ipc/bindings/SkirmishView'
 import type { DownloadStatus } from '../ipc/bindings/DownloadStatus'
 import type { PasteStatus } from '../ipc/bindings/PasteStatus'
 import type { FriendsView } from '../ipc/bindings/FriendsView'
@@ -24,6 +25,14 @@ export type LobbyState = {
   download: DownloadStatus
   /** A multi-line paste on its way to the room. */
   paste: PasteStatus
+  /**
+   * The room with no server behind it.
+   *
+   * Its own branch rather than a row in `battles`, because it is not the
+   * session's: it is still here after a logout, a dropped connection or a
+   * reconnect, all of which clear everything above.
+   */
+  skirmish: SkirmishView | null
 }
 
 export function emptyLobby(): LobbyState {
@@ -39,6 +48,7 @@ export function emptyLobby(): LobbyState {
     friends: { friends: [], requests: [], ignored: [] },
     download: { state: 'idle' },
     paste: { state: 'idle' },
+    skirmish: null,
   }
 }
 

@@ -18,6 +18,7 @@ content = { workspace = true }
 md-5 = { workspace = true }
 percent-encoding = { workspace = true }
 recoil = { workspace = true }
+skirmish = { workspace = true }
 lobby-runtime = { workspace = true }
 news = { workspace = true }
 rand = { workspace = true }

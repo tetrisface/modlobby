@@ -3,7 +3,8 @@ import { Portal } from 'solid-js/web'
 import { describeError } from '../../ipc/client'
 import { slotId } from '../../lib/tweakspace'
 import { pushNotice } from '../../store/chat'
-import { tweakspace as space } from '../../store/tweakspaceInstance'
+import { tweakspaceFor } from '../../store/tweakspaceInstance'
+import { useRoom } from '../room/model'
 import { Workspace } from './Workspace'
 
 /**
@@ -15,6 +16,7 @@ import { Workspace } from './Workspace'
  * space than a mirror.
  */
 export function Tweaks(props: { initial?: string }) {
+  const space = tweakspaceFor(useRoom())
   onMount(() => {
     if (props.initial) space.open(slotId(props.initial))
     void space

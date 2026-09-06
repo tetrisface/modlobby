@@ -36,9 +36,9 @@ import {
   type Tab,
 } from '../lib/setup'
 import { pushNotice } from '../store/chat'
-import { lobby } from '../store/lobby'
 import { PasteBanner } from './PasteBanner'
 import { Presets } from './Presets'
+import { useRoom, type RoomModel } from './room/model'
 import { Tweaks } from './tweaks/Tweaks'
 
 const TWEAK_GROUP = 'Tweak slots'
@@ -79,6 +79,7 @@ const TAB_GAP = 2
  * written to this room, so beside the settings is where they belong.
  */
 export function Setup() {
+  const room = useRoom()
   const [pane, setPane] = createSignal<'setup' | 'presets'>('setup')
 
   /**
@@ -87,7 +88,7 @@ export function Setup() {
    * changes game, which is also what keeps it matching the version in play.
    */
   const [catalogue] = createResource(
-    () => lobby.battles[lobby.myBattle?.id ?? -1]?.gameName,
+    () => room.battle()?.gameName,
     (game) => api.gameModOptions(game).catch(() => []),
   )
   const TABS = createMemo(() => tabs(catalogue() ?? []))
@@ -109,16 +110,19 @@ export function Setup() {
   /** The slot being edited, or nothing; the pane is the editor while one is. */
   const [editing, setEditing] = createSignal<{ slot?: string } | null>(null)
 
-  const values = createMemo(() => readModOptions(lobby.myBattle?.scriptTags))
+  const values = createMemo(() => readModOptions(room.my()?.scriptTags))
 
   /**
    * SPADS refuses `bSet` from a spectator outright and auto-converts it into a
    * vote for a player below level 100, so holding a seat is the honest gate.
-   * What happens after the send is the host's call, not ours.
+   * What happens after the send is the host's call, not ours. Where no host is
+   * being asked, there is nobody to refuse and a spectator may still set up
+   * the game they are about to watch.
    */
   const editable = createMemo(() => {
-    const me = lobby.me
-    return me !== null && lobby.users[me]?.battleStatus?.player === true
+    if (!room.caps.spads) return true
+    const me = room.me()
+    return me !== null && room.users()[me]?.battleStatus?.player === true
   })
 
   const changed = createMemo(() =>
@@ -227,11 +231,7 @@ export function Setup() {
           Presets
         </button>
         <Show when={pane() === 'setup'}>
-          <span class='note'>
-            {editable()
-              ? 'a change is proposed to the host'
-              : 'read-only · spectator'}
-          </span>
+          <span class='note'>{noteOfPane(room, editable())}</span>
           <Show when={editing()}>
             <button class='setup-back' onClick={() => setEditing(null)}>
               Settings
@@ -241,7 +241,11 @@ export function Setup() {
       </div>
 
       <Show when={pane() === 'setup'} fallback={<Presets />}>
-        <PasteBanner />
+        {/* The paste banner is the chat throttle showing through; nothing is
+            throttled where nothing is said. */}
+        <Show when={room.caps.spads}>
+          <PasteBanner />
+        </Show>
         <div class='setup-tabs' ref={strip}>
           <button
             class='setup-tab'
@@ -407,6 +411,16 @@ export function Setup() {
   function firstGroup() {
     return tab().groups[0]?.name ?? null
   }
+}
+
+/**
+ * What the pane says a change will do, which is not the same sentence when
+ * there is a host to persuade and when there is not.
+ */
+function noteOfPane(room: RoomModel, editable: boolean): string {
+  if (!editable) return 'read-only · spectator'
+  if (room.caps.spads) return 'a change is proposed to the host'
+  return 'a change takes effect here'
 }
 
 /** `localStorage`, when the webview lets us at it. */
@@ -646,12 +660,13 @@ function SlotActions(props: {
  * every keystroke: each send is a chat command the whole room sees.
  */
 function Control(props: { row: Row }) {
+  const room = useRoom()
   const value = () => props.row.current ?? defaultText(props.row.option)
 
   async function set(next: string) {
     if (next === value()) return
     try {
-      await api.setOption(props.row.option.key, next)
+      await room.io.setOption(props.row.option.key, next)
     } catch (error) {
       pushNotice('warning', `${props.row.option.key}: ${describeError(error)}`)
     }
@@ -700,6 +715,7 @@ function TweakSlots(props: {
   values: Record<string, string>
   onEdit: (slot?: string) => void
 }) {
+  const room = useRoom()
   const filled = createMemo(() =>
     TWEAK_SLOTS.filter((key) => (props.values[key] ?? '') !== ''),
   )
@@ -724,10 +740,20 @@ function TweakSlots(props: {
         </For>
       </div>
 
-      <div class='setup-note'>
-        Spectators cannot set a modoption or call a vote on one. The editor
-        formats, diffs and copies the command for someone who can.
-      </div>
+      <Show
+        when={room.caps.spads}
+        fallback={
+          <div class='setup-note'>
+            The editor formats and diffs a tweak before it goes in. Nothing
+            leaves this machine.
+          </div>
+        }
+      >
+        <div class='setup-note'>
+          Spectators cannot set a modoption or call a vote on one. The editor
+          formats, diffs and copies the command for someone who can.
+        </div>
+      </Show>
       <button onClick={() => props.onEdit()}>Open editor</button>
     </>
   )

@@ -49,6 +49,7 @@ describe('applyMessage', () => {
         friends: { friends: [], requests: [], ignored: [] },
         download: { state: 'idle' },
         paste: { state: 'idle' },
+        skirmish: null,
       },
     })
     const runs: number[] = []

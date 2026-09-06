@@ -20,7 +20,7 @@ import {
   when,
 } from '../lib/presets'
 import { pushNotice } from '../store/chat'
-import { myRoom } from '../store/lobby'
+import { useRoom } from './room/model'
 
 /**
  * The columns the pane has room for. Settings and Created are still sortable
@@ -76,6 +76,7 @@ function initialText(asked: Asking): string {
  * on a small display without opening something by accident.
  */
 export function Presets() {
+  const room = useRoom()
   const [column, setColumn] = createSignal<Column>(DEFAULT_SORT)
   const [descending, setDescending] = createSignal(true)
   const [needle, setNeedle] = createSignal('')
@@ -108,7 +109,7 @@ export function Presets() {
    * rest -- import, export, rename, delete -- is the file, and the table is
    * reachable from the nav with nobody logged in.
    */
-  const inRoom = () => myRoom() !== undefined
+  const inRoom = () => room.presets() !== null
 
   function head(next: Column) {
     if (next === column()) return setDescending(!descending())
@@ -132,13 +133,17 @@ export function Presets() {
 
   const save = (name: string) =>
     act('save', async () => {
-      mutate(await api.savePreset(name))
+      const presets = room.presets()
+      if (presets === null) return
+      mutate(await presets.savePreset(name))
       setChosen(name)
     })
 
   const load = (preset: Preset) =>
     act('load', async () => {
-      const plan = await api.applyPreset(preset.name, sections())
+      const presets = room.presets()
+      if (presets === null) return
+      const plan = await presets.applyPreset(preset.name, sections())
       void refetch()
       const already = plan.alreadySet ? `, ${plan.alreadySet} already set` : ''
       pushNotice(

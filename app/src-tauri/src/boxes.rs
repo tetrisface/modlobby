@@ -52,6 +52,17 @@ pub async fn start_boxes(app: State<'_, App>, teams: u32) -> Result<Option<Boxes
     Ok(from_tags(&my.script_tags, teams))
 }
 
+/// The same, for the room with no server behind it. Its modoptions are kept
+/// under the keys the online room uses, so the reading is the same reading.
+#[tauri::command]
+pub async fn skirmish_start_boxes(app: State<'_, App>, teams: u32) -> Result<Option<BoxesView>> {
+    let snapshot = app.client.snapshot().await.map_err(ApiError::from)?;
+    let Some(room) = snapshot.skirmish else {
+        return Ok(None);
+    };
+    Ok(from_tags(&room.my.script_tags, teams))
+}
+
 /// The boxes in one blob, for showing what a vote or a past change did.
 ///
 /// Takes either modoption's value: an override is one arrangement, a set is
@@ -145,6 +156,18 @@ pub async fn current_arrangement(
         return Ok(None);
     };
     Ok(arrangement_from_tags(&my.script_tags, teams))
+}
+
+#[tauri::command]
+pub async fn skirmish_current_arrangement(
+    app: State<'_, App>,
+    teams: u32,
+) -> Result<Option<ArrangementView>> {
+    let snapshot = app.client.snapshot().await.map_err(ApiError::from)?;
+    let Some(room) = snapshot.skirmish else {
+        return Ok(None);
+    };
+    Ok(arrangement_from_tags(&room.my.script_tags, teams))
 }
 
 fn arrangement_from_tags(tags: &BTreeMap<String, String>, teams: u32) -> Option<ArrangementView> {

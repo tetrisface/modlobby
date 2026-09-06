@@ -14,6 +14,7 @@ rand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 recoil = { workspace = true }
+skirmish = { workspace = true }
 spring-protocol = { workspace = true }
 sysinfo = { workspace = true }
 thiserror = { workspace = true }

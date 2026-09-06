@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { Delta } from '../ipc/bindings/Delta'
+import type { SkirmishView } from '../ipc/bindings/SkirmishView'
 import type { Snapshot } from '../ipc/bindings/Snapshot'
 import type { UserView } from '../ipc/bindings/UserView'
 import { applyDelta, applySnapshot } from './apply'
@@ -39,6 +40,22 @@ const battle = (id: number, members: string[]): BattleView => ({
   startRects: [],
 })
 
+/** A room with no server behind it, as the runtime sends one. */
+const room: SkirmishView = {
+  battle: { ...battle(0, ['me']), title: 'Skirmish', founder: 'me' },
+  my: {
+    boss: 'me',
+    id: 0,
+    gameHash: '',
+    scriptTags: { 'game/modoptions/ranked_game': '0' },
+    vote: null,
+    history: [],
+  },
+  users: [user('me', 0)],
+  me: 'me',
+  content: { engine: true, game: true, map: true },
+}
+
 const snapshot: Snapshot = {
   phase: 'ready',
   me: 'me',
@@ -51,6 +68,7 @@ const snapshot: Snapshot = {
   friends: { friends: [], requests: [], ignored: [] },
   download: { state: 'idle' },
   paste: { state: 'idle' },
+  skirmish: null,
 }
 
 describe('apply', () => {
@@ -138,6 +156,24 @@ describe('apply', () => {
     // Everything the server told us still goes.
     expect(Object.keys(lobby.battles)).toHaveLength(0)
     expect(lobby.me).toBeNull()
+  })
+
+  test('a skirmish being set up outlives the session that dropped', () => {
+    applySnapshot(snapshot)
+    applyDelta({ type: 'skirmish', data: room })
+    expect(lobby.skirmish?.battle.title).toBe('Skirmish')
+
+    applyDelta({ type: 'phase', data: null })
+
+    // Somebody's half-built game is not the server's to take away, and a
+    // dropped connection is the moment they most want to keep playing.
+    expect(lobby.skirmish?.battle.title).toBe('Skirmish')
+    expect(lobby.skirmish?.my.scriptTags).toEqual({
+      'game/modoptions/ranked_game': '0',
+    })
+    // And it goes when it is closed, not before.
+    applyDelta({ type: 'skirmish', data: null })
+    expect(lobby.skirmish).toBeNull()
   })
 
   test('a change of room empties the battle chat, a repeat does not', () => {

@@ -21,7 +21,8 @@ import {
 } from '../../lib/tweakspace'
 import { pushNotice } from '../../store/chat'
 import { lobby } from '../../store/lobby'
-import { tweakspace as space } from '../../store/tweakspaceInstance'
+import { tweakspaceFor } from '../../store/tweakspaceInstance'
+import { useRoom } from '../room/model'
 import { VoteDiff } from '../VoteDiff'
 import { ComparePane, type SideText } from './ComparePane'
 import { DocList } from './DocList'
@@ -47,6 +48,7 @@ const MONACO_WANTS_ESCAPE =
  * gets props.
  */
 export function Workspace() {
+  const space = tweakspaceFor(useRoom())
   const [busy, setBusy] = createSignal(false)
   const [goto, setGoto] = createSignal<Goto | null>(null)
   const doc = space.active

@@ -370,6 +370,37 @@ impl From<&MyBattle> for MyBattleView {
     }
 }
 
+/// What of a room's engine, game and map this machine already has.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ContentView {
+    pub engine: bool,
+    pub game: bool,
+    pub map: bool,
+}
+
+/// A room with nobody else in it.
+///
+/// The same shapes the online room draws, so the front end cannot tell them
+/// apart -- and a field added to `BattleView` for one has to be answered for
+/// the other before this compiles, which is what keeps the two from drifting.
+///
+/// It is carried whole rather than as a stream of small changes. The room is
+/// one person, a handful of AIs and a map of settings; replacing it outright
+/// costs little and removes every question about what a partial update means.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SkirmishView {
+    pub battle: BattleView,
+    pub my: MyBattleView,
+    /// The local player. The AIs are `battle.bots`, as they are online.
+    pub users: Vec<UserView>,
+    pub me: String,
+    pub content: ContentView,
+}
+
 /// The room's game is running; the script password stays in the runtime.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -501,6 +532,10 @@ pub struct Snapshot {
     pub friends: FriendsView,
     pub download: DownloadStatus,
     pub paste: PasteStatus,
+    /// The skirmish room, which outlives a session rather than belonging to
+    /// one: it is still there after a logout, a dropped connection or a
+    /// reloaded window.
+    pub skirmish: Option<Box<SkirmishView>>,
 }
 
 /// Who we are friends with, and who is waiting on an answer.
@@ -528,6 +563,9 @@ impl Snapshot {
             friends: FriendsView::default(),
             download: DownloadStatus::Idle,
             paste: PasteStatus::Idle,
+            // Not the session's to lose. The runtime owns both and fills this
+            // in, because a skirmish outlives whatever happened to the socket.
+            skirmish: None,
         }
     }
 
@@ -567,6 +605,8 @@ impl Snapshot {
             // snapshot says nothing about one that may be in flight.
             download: DownloadStatus::Idle,
             paste: PasteStatus::Idle,
+            // Likewise the skirmish room, which is not the session's at all.
+            skirmish: None,
         }
     }
 }
@@ -620,6 +660,11 @@ pub const BATTLE_ROOM: &str = "#battle";
 /// broadcasts. They belong in a room you can scroll back through rather than
 /// in a toast that disappears.
 pub const SERVER_ROOM: &str = "#server";
+
+/// Where a skirmish room's own lines go: what the console answered, and what
+/// changing a setting did. Cannot collide with a channel, which teiserver only
+/// lets be `\w+`.
+pub const SKIRMISH_ROOM: &str = "#skirmish";
 
 /// The room key for a private conversation with someone.
 pub fn private_room(user: &str) -> String {
@@ -731,6 +776,8 @@ pub enum Delta {
         map: bool,
     },
     MyBattle(Option<MyBattleView>),
+    /// The room with no server behind it, whole. `None` when there is none.
+    Skirmish(Option<Box<SkirmishView>>),
     GameRunning(Option<GameRunningView>),
     /// How long a room's game had already been going when we walked into it.
     /// The only statement of a game's age this protocol carries.

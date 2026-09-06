@@ -39,7 +39,7 @@ import {
 } from '../lib/startbox/scale'
 import { ring } from '../lib/startbox/spline'
 import { pushNotice } from '../store/chat'
-import { lobby } from '../store/lobby'
+import { useRoom } from '../views/room/model'
 
 /** The modoption a drawn arrangement is sent as; `"0"` clears it. */
 const OVERRIDE = BOX_KEYS[0]
@@ -87,15 +87,20 @@ export function MapEditor(props: {
   let svg: SVGSVGElement | undefined
   let card: HTMLDivElement | undefined
 
-  const me = () => lobby.me
-  const boss = () => me() !== null && lobby.myBattle?.boss === me()
-  /** SPADS refuses `!bSet` from a spectator (`commands.rs` `set_option`). */
+  const room = useRoom()
+  const me = () => room.me()
+  const boss = () => me() !== null && room.my()?.boss === me()
+  /**
+   * SPADS refuses `!bSet` from a spectator (`commands.rs` `set_option`). In a
+   * room with no host there is nobody to refuse it.
+   */
   const editable = createMemo(() => {
+    if (!room.caps.spads) return true
     const name = me()
-    return name !== null && lobby.users[name]?.battleStatus?.player === true
+    return name !== null && room.users()[name]?.battleStatus?.player === true
   })
 
-  const tags = () => lobby.myBattle?.scriptTags
+  const tags = () => room.my()?.scriptTags
   const overrideSet = () => {
     const held = tags()?.[`game/modoptions/${OVERRIDE}`] ?? ''
     return held !== '' && held !== '0'
@@ -103,7 +108,7 @@ export function MapEditor(props: {
 
   /** Who last moved the boxes, from the host's announcement when there was one. */
   const lastMover = () => {
-    const changes = lobby.myBattle?.history ?? []
+    const changes = room.my()?.history ?? []
     for (let i = changes.length - 1; i >= 0; i--) {
       const change = changes[i]
       if (change !== undefined && isBoxKey(change.key))
@@ -114,7 +119,7 @@ export function MapEditor(props: {
 
   async function load() {
     try {
-      const held = await api.currentArrangement(props.teams)
+      const held = await room.io.currentArrangement(props.teams)
       dispatch({ type: 'load', boxes: held?.arrangement.startboxes ?? [] })
     } catch (error) {
       pushNotice('warning', `start boxes: ${describeError(error)}`)
@@ -196,18 +201,27 @@ export function MapEditor(props: {
       state().drag === null,
   )
 
+  /** What applying them will have done, which depends on who decides here. */
+  const sent = () => {
+    if (!room.caps.spads) return 'start boxes set'
+    if (boss()) return 'start boxes sent to the host'
+    return 'start boxes proposed as a vote'
+  }
+
+  /** The same question before the fact, in the header. */
+  const applyNote = () => {
+    if (!editable()) return 'read-only · spectator'
+    if (!room.caps.spads) return 'Apply sets them'
+    return boss() ? 'Apply sends to the host' : 'Apply proposes a vote'
+  }
+
   const [sending, setSending] = createSignal(false)
   async function send(value: string) {
     setSending(true)
     try {
-      await api.setOption(OVERRIDE, value)
+      await room.io.setOption(OVERRIDE, value)
       dispatch({ type: 'applied' })
-      pushNotice(
-        'info',
-        boss()
-          ? 'start boxes sent to the host'
-          : 'start boxes proposed as a vote',
-      )
+      pushNotice('info', sent())
       // Sending is the end of the sheet's job. It leaves through the ordinary
       // door: the draft is no longer unsaved work, so nothing is asked.
       close()
@@ -416,13 +430,7 @@ export function MapEditor(props: {
       >
         <header class='ed-head'>
           <h2>Start boxes · {props.mapName}</h2>
-          <span class='note'>
-            {editable()
-              ? boss()
-                ? 'Apply sends to the host'
-                : 'Apply proposes a vote'
-              : 'read-only · spectator'}
-          </span>
+          <span class='note'>{applyNote()}</span>
           <button type='button' onClick={close}>
             Close
           </button>

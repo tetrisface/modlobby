@@ -44,6 +44,7 @@ export function applySnapshot(snapshot: Snapshot): void {
     friends: snapshot.friends,
     download: snapshot.download,
     paste: snapshot.paste,
+    skirmish: snapshot.skirmish,
   }
   for (const user of snapshot.users) next.users[user.name] = user
   for (const battle of snapshot.battles) next.battles[battle.id] = battle
@@ -66,16 +67,19 @@ export function applyDelta(delta: Delta): void {
       setLobby('phase', delta.data)
       if (delta.data === null) {
         // Losing the session drops everything the server told us — but the
-        // engine and a download belong to this machine and outlive it. A
-        // skirmish started from here keeps running when the connection goes,
-        // and resetting `engine` to idle would re-enable the button that
-        // starts a second one on top of it.
+        // engine, a download and the skirmish room belong to this machine and
+        // outlive it. A skirmish started from here keeps running when the
+        // connection goes, and resetting `engine` to idle would re-enable the
+        // button that starts a second one on top of it; a skirmish being set
+        // up is somebody's work, and dropping it because a socket died would
+        // be the one moment they most wanted to keep playing.
         const kept = unwrap(lobby)
         setLobby(
           reconcile({
             ...emptyLobby(),
             engine: kept.engine,
             download: kept.download,
+            skirmish: kept.skirmish,
           }),
         )
       }
@@ -234,6 +238,9 @@ export function applyDelta(delta: Delta): void {
       // backlog, as the snapshot's own comment says.
       if (lobby.myBattle?.id !== delta.data?.id) clearRoom(BATTLE_ROOM)
       setLobby('myBattle', delta.data)
+      return
+    case 'skirmish':
+      setLobby('skirmish', delta.data)
       return
     case 'gameRunning':
       setLobby('gameRunning', delta.data)

@@ -216,6 +216,29 @@ pub fn resolve(
 }
 
 impl Box {
+    /// The rectangle that contains it, in the same 0-200 space.
+    ///
+    /// A polygon has to be squared off somewhere: the engine's own
+    /// `startrect*` is a rectangle and nothing else, so what it gets is the
+    /// extent of whatever shape the game's gadget will actually enforce.
+    pub fn bounds(&self) -> (f32, f32, f32, f32) {
+        let corners = self.corners();
+        let Some(first) = corners.first() else {
+            return (0.0, 0.0, 0.0, 0.0);
+        };
+        corners.iter().fold(
+            (first.x, first.y, first.x, first.y),
+            |(left, top, right, bottom), point| {
+                (
+                    left.min(point.x),
+                    top.min(point.y),
+                    right.max(point.x),
+                    bottom.max(point.y),
+                )
+            },
+        )
+    }
+
     /// The corners to draw, in order.
     ///
     /// Two points are opposite corners and become four; anything else is

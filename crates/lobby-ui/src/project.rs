@@ -359,6 +359,27 @@ impl Projector {
         }
     }
 
+    /// A line this machine wrote rather than heard: what a skirmish room's
+    /// console answered, and what changing one of its settings did.
+    ///
+    /// It shares the sequence the heard lines use, so a log with both in it is
+    /// in the order things happened.
+    pub fn said(&mut self, room: &str, from: &str, text: &str) -> ChatLine {
+        self.seq += 1;
+        ChatLine {
+            seq: self.seq,
+            room: room.to_owned(),
+            from: from.to_owned(),
+            text: text.to_owned(),
+            kind: ChatKind::System,
+            mention: false,
+            at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|since| since.as_secs())
+                .unwrap_or_default(),
+        }
+    }
+
     fn line(
         &mut self,
         state: &LobbyState,

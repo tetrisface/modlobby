@@ -11,6 +11,7 @@ members = [
     "crates/modoptions",
     "crates/presets",
     "crates/startbox",
+    "crates/skirmish",
     "crates/pve",
     "crates/news",
     "crates/recoil",
@@ -45,6 +46,7 @@ lobby-ui = { path = "crates/lobby-ui" }
 settings = { path = "crates/settings" }
 presets = { path = "crates/presets" }
 startbox = { path = "crates/startbox" }
+skirmish = { path = "crates/skirmish" }
 pve = { path = "crates/pve" }
 news = { path = "crates/news" }
 tweaks = { path = "crates/tweaks" }

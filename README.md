@@ -23,6 +23,8 @@ bun run build    # installer under app/src-tauri/target/release/bundle/
 bun run dev      # development window
 ```
 
+# Development
+
 ## Rust workspace
 
 | Crate             | Role                                                                                                                                                                                         |
@@ -73,7 +75,7 @@ that decide which unit definitions exist (`forceallunits`, the Legion faction, a
 unit packs). `section` is a lobby display hint by BAR's own description, so regrouping changes
 nothing on the wire, and Cheats keeps its name and every balance setting.
 
-## Development
+## Extras
 
 `scripts/webview.ts` drives the running window over the DevTools protocol so those checks can be
 made without a pair of hands:
@@ -83,11 +85,6 @@ WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222 bun run dev
 bun scripts/webview.ts eval "document.querySelectorAll('.battle-row').length"
 bun scripts/webview.ts shot battles.png
 ```
-
-Toolchains are pinned exactly: `rust-toolchain.toml` for Rust, `mise.toml` for the Node the
-JS tooling needs. mise honours `rust-toolchain.toml` only when `rust` is listed in
-`idiomatic_version_file_enable_tools`; without it a global `[tools] rust` silently wins over
-the project pin.
 
 The app keeps its settings in `%APPDATA%\modlobby\config\settings.jsonc` on Windows and
 `~/.config/modlobby/settings.jsonc` on Linux — JSONC with a
@@ -109,13 +106,11 @@ before every launch (the last ten kept), and checked when the engine exits: it r
 settings file on its way out and has emptied it before. Settings → Paths copies them from an
 install or puts a snapshot back.
 
-You join a room as a spectator and sit down when you want to play. `play.inPublicRooms`,
-under Settings → Advanced, turns the seats off for a session that is only watching — a
-client driving the protocol with nobody at the keyboard; a room of your own never consults
-it. For a room of your own, ask a cluster manager: the app's "Private room" button sends
-`!privatehost` and joins the room it opens.
+Toolchains are pinned exactly: `rust-toolchain.toml` for Rust, `mise.toml` for the Node the
+JS tooling needs. mise honours `rust-toolchain.toml` only when `rust` is listed in
+`idiomatic_version_file_enable_tools`; without it a global `[tools] rust` silently wins over
+the project pin.
 
-Toolchain is pinned in `rust-toolchain.toml`; dependency versions are exact.
 
 ## License
 

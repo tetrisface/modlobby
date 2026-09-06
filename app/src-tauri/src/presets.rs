@@ -209,22 +209,49 @@ pub async fn pve_score(app: State<'_, App>) -> Result<Option<pve::Score>> {
     let Some(room) = snapshot.battles.iter().find(|battle| battle.id == my.id) else {
         return Ok(None);
     };
-
-    let ai_names: Vec<String> = room.bots.iter().map(|bot| bot.ai.clone()).collect();
-    let Some(kind) = pve::ai_type(&ai_names) else {
+    // What lists the room as a game being played. Answers the service already
+    // gave are memoised by body, so a room that stops changing stops
+    // refreshing its row; the row expires on the service's own clock, which is
+    // what a lobby that went quiet should do.
+    let listed = pve::lobby_game_id(&app.settings.get().server.host, room.id, &room.founder);
+    let Some(ask) = pve_ask(my, room, &snapshot.users, Some(listed)) else {
         return Ok(None);
     };
+    ask_pve(&app, ask).await
+}
 
-    let ask = pve::Ask {
-        // What lists the room as a game being played. Answers the service
-        // already gave are memoised by body, so a room that stops changing
-        // stops refreshing its row; the row expires on the service's own
-        // clock, which is what a lobby that went quiet should do.
-        game_id: Some(pve::lobby_game_id(
-            &app.settings.get().server.host,
-            room.id,
-            &room.founder,
-        )),
+/// The same question for a room with no server behind it.
+///
+/// Asked without a `game_id`, which is what keeps it a question rather than an
+/// announcement: listing a skirmish would put a game nobody can join on a
+/// service whose whole job is saying what is being played.
+#[tauri::command]
+pub async fn skirmish_pve_score(app: State<'_, App>) -> Result<Option<pve::Score>> {
+    if !app.settings.get().play.pve_stats {
+        return Ok(None);
+    }
+    let snapshot = app.client.snapshot().await?;
+    let Some(room) = snapshot.skirmish.as_ref() else {
+        return Ok(None);
+    };
+    let Some(ask) = pve_ask(&room.my, &room.battle, &room.users, None) else {
+        return Ok(None);
+    };
+    ask_pve(&app, ask).await
+}
+
+/// What the service is told about a room, whichever kind it is.
+fn pve_ask(
+    my: &lobby_ui::MyBattleView,
+    room: &lobby_ui::BattleView,
+    users: &[lobby_ui::UserView],
+    game_id: Option<String>,
+) -> Option<pve::Ask> {
+    let ai_names: Vec<String> = room.bots.iter().map(|bot| bot.ai.clone()).collect();
+    let kind = pve::ai_type(&ai_names)?;
+
+    Some(pve::Ask {
+        game_id,
         ai_type: kind.as_str(),
         map: room.map_name.clone(),
         game_settings: my
@@ -260,15 +287,18 @@ pub async fn pve_score(app: State<'_, App>) -> Result<Option<pve::Score>> {
             human_player_income_multipliers: room
                 .members
                 .iter()
-                .filter_map(|name| snapshot.users.iter().find(|user| &user.name == name))
+                .filter_map(|name| users.iter().find(|user| &user.name == name))
                 .filter_map(|user| user.battle_status.as_ref())
                 .filter(|status| status.player)
                 .map(|status| pve::income_multiplier(status.handicap))
                 .collect(),
         },
         player_filter_requested: true,
-    };
+    })
+}
 
+/// Puts the question, and keeps the reason for a refusal out of the panel.
+async fn ask_pve(app: &State<'_, App>, ask: pve::Ask) -> Result<Option<pve::Score>> {
     tracing::debug!(
         ai = ask.ai_type,
         map = %ask.map,

@@ -16,8 +16,8 @@ use std::time::{Duration, Instant};
 use content::DataDirs;
 use lobby_core::{Effect, Session, hosting};
 use lobby_ui::{
-    Batcher, Delta, DownloadStatus, EngineStatus, GameRunningView, PasteStatus, Phase, Projector,
-    Snapshot, UiMessage, UiTransport,
+    Batcher, ContentView, Delta, DownloadStatus, EngineStatus, GameRunningView, PasteStatus, Phase,
+    Projector, SKIRMISH_ROOM, Snapshot, UiMessage, UiTransport,
 };
 use spring_protocol::battle::TooLong;
 use spring_protocol::policy::PolicyEvent;
@@ -91,6 +91,26 @@ enum Command {
         reply: Reply<()>,
     },
     Snapshot(oneshot::Sender<Snapshot>),
+    /// Opens the room with no server behind it, or replaces the one there.
+    OpenSkirmish {
+        room: Box<skirmish::Room>,
+        reply: Reply<()>,
+    },
+    CloseSkirmish {
+        reply: Reply<()>,
+    },
+    /// One change to that room. `Say` carries the console, which is the only
+    /// one of them that can ask for a launch.
+    Skirmish {
+        act: Box<skirmish::Act>,
+        reply: Reply<()>,
+    },
+    LaunchSkirmish {
+        reply: Reply<()>,
+    },
+    SkirmishDownload {
+        reply: Reply<()>,
+    },
     JoinBattle {
         id: u32,
         password: Option<String>,
@@ -188,12 +208,6 @@ enum Command {
     PlayReplay {
         dirs: DataDirs,
         path: String,
-        reply: Reply<()>,
-    },
-    StartSkirmish {
-        dirs: DataDirs,
-        engine_version: String,
-        skirmish: Box<recoil::script::Skirmish>,
         reply: Reply<()>,
     },
     FriendAction {
@@ -520,20 +534,36 @@ impl Client {
         self.ask(|reply| Command::StopEngine { reply }).await
     }
 
-    /// Starts a game against AI with no server involved.
-    pub async fn start_skirmish(
-        &self,
-        dirs: DataDirs,
-        engine_version: String,
-        skirmish: recoil::script::Skirmish,
-    ) -> Result<(), ClientError> {
-        self.ask(|reply| Command::StartSkirmish {
-            dirs,
-            engine_version,
-            skirmish: Box::new(skirmish),
+    /// Opens the room with no server behind it, replacing any already open.
+    pub async fn open_skirmish(&self, room: skirmish::Room) -> Result<(), ClientError> {
+        self.ask(|reply| Command::OpenSkirmish {
+            room: Box::new(room),
             reply,
         })
         .await
+    }
+
+    pub async fn close_skirmish(&self) -> Result<(), ClientError> {
+        self.ask(|reply| Command::CloseSkirmish { reply }).await
+    }
+
+    /// One change to that room.
+    pub async fn skirmish(&self, act: skirmish::Act) -> Result<(), ClientError> {
+        self.ask(|reply| Command::Skirmish {
+            act: Box::new(act),
+            reply,
+        })
+        .await
+    }
+
+    /// Writes its script and starts the engine on it.
+    pub async fn launch_skirmish(&self) -> Result<(), ClientError> {
+        self.ask(|reply| Command::LaunchSkirmish { reply }).await
+    }
+
+    /// Fetches whatever of that room's content this machine lacks.
+    pub async fn skirmish_download(&self) -> Result<(), ClientError> {
+        self.ask(|reply| Command::SkirmishDownload { reply }).await
     }
 
     /// Starts the engine on a replay file.
@@ -750,6 +780,14 @@ struct Runtime {
     probing: bool,
     projector: Projector,
     batcher: Batcher,
+    /// The room with no server behind it. Not part of the session: it is still
+    /// here after a logout, a dropped connection or a reconnect, which is why
+    /// it lives beside `conn` rather than inside it.
+    skirmish: Option<skirmish::Room>,
+    /// What the skirmish room's (engine, game, map) last checked out as, and
+    /// the answer. Scanning the rapid index is far too slow to repeat on every
+    /// click, and a room's content only changes when what it asks for does.
+    skirmish_checked: Option<((String, String, String), ContentView)>,
 }
 
 /// What a pr-downloader child reports back to the runtime.
@@ -920,6 +958,8 @@ impl Runtime {
             probe_tx,
             probe_rx,
             probing: false,
+            skirmish: None,
+            skirmish_checked: None,
             projector: Projector::new(),
             batcher: Batcher::default(),
         }
@@ -1004,9 +1044,6 @@ impl Runtime {
     /// it arrives, and the content check runs again when it exits, so a room
     /// that was short a map becomes joinable without anyone asking twice.
     async fn start_download(&mut self) -> Result<(), ClientError> {
-        if self.downloading.is_some() {
-            return Err(ClientError::Refused("a download is already running".into()));
-        }
         let Some(conn) = self.conn.as_ref() else {
             return Err(ClientError::NotConnected);
         };
@@ -1017,12 +1054,36 @@ impl Runtime {
             .as_ref()
             .and_then(|my| conn.session.state.battles.get(&my.id))
             .ok_or_else(|| ClientError::Refused("not in a room".into()))?;
-        let (engine_version, game, map) = (
+        let wanted = (
             room.engine_version.clone(),
             room.game_name.clone(),
             room.map_name.clone(),
         );
+        self.fetch(wanted).await
+    }
 
+    /// The same, for the room with no server behind it.
+    async fn start_skirmish_download(&mut self) -> Result<(), ClientError> {
+        let room = self
+            .skirmish
+            .as_ref()
+            .ok_or_else(|| ClientError::Refused("there is no skirmish room".into()))?;
+        let wanted = (room.engine.clone(), room.game.clone(), room.map.clone());
+        self.fetch(wanted).await
+    }
+
+    /// Fetches whatever of an (engine, game, map) this machine lacks.
+    ///
+    /// One invocation for the whole set, and one at a time: pr-downloader
+    /// rewrites rapid's repo index on every run, so two at once corrupt each
+    /// other's view of it.
+    async fn fetch(
+        &mut self,
+        (engine_version, game, map): (String, String, String),
+    ) -> Result<(), ClientError> {
+        if self.downloading.is_some() {
+            return Err(ClientError::Refused("a download is already running".into()));
+        }
         let Some(dirs) = self.data_dirs() else {
             return Err(ClientError::Refused("no BAR data directory".into()));
         };
@@ -1496,13 +1557,24 @@ impl Runtime {
                 })
                 .await;
             }
-            Command::StartSkirmish {
-                dirs,
-                engine_version,
-                skirmish,
-                reply,
-            } => {
-                let result = self.start_skirmish(dirs, &engine_version, &skirmish);
+            Command::OpenSkirmish { room, reply } => {
+                self.open_skirmish(*room);
+                let _ = reply.send(Ok(()));
+            }
+            Command::CloseSkirmish { reply } => {
+                self.close_skirmish();
+                let _ = reply.send(Ok(()));
+            }
+            Command::Skirmish { act, reply } => {
+                let result = self.skirmish_act(*act).await;
+                let _ = reply.send(result);
+            }
+            Command::LaunchSkirmish { reply } => {
+                let result = self.launch_skirmish();
+                let _ = reply.send(result);
+            }
+            Command::SkirmishDownload { reply } => {
+                let result = self.start_skirmish_download().await;
                 let _ = reply.send(result);
             }
             Command::PlayReplay { dirs, path, reply } => {
@@ -2332,6 +2404,117 @@ impl Runtime {
         }
     }
 
+    /// Opens the room with no server behind it.
+    fn open_skirmish(&mut self, room: skirmish::Room) {
+        self.skirmish = Some(room);
+        self.skirmish_checked = None;
+        self.push_skirmish();
+    }
+
+    fn close_skirmish(&mut self) {
+        self.skirmish = None;
+        self.skirmish_checked = None;
+        self.batcher.push(Delta::Skirmish(None));
+    }
+
+    /// Does one thing to the skirmish room and tells the front end what the
+    /// room is now.
+    ///
+    /// The room says what happened; this decides who needs to hear it. A
+    /// change is worth both a line in the log and a new view; an answer is
+    /// worth only the line; a click that changed nothing is worth neither.
+    async fn skirmish_act(&mut self, act: skirmish::Act) -> Result<(), ClientError> {
+        let Some(room) = self.skirmish.as_mut() else {
+            return Err(ClientError::Engine("there is no skirmish room".into()));
+        };
+        let outcome = room.act(act);
+        match outcome {
+            skirmish::Outcome::Did(said) => {
+                self.say_in_skirmish(&said);
+                self.push_skirmish();
+            }
+            skirmish::Outcome::Said(said) => self.say_in_skirmish(&said),
+            skirmish::Outcome::Nothing => {}
+            skirmish::Outcome::Launch => return self.launch_skirmish(),
+        }
+        Ok(())
+    }
+
+    /// A line in the skirmish room's own log, which is where its console
+    /// answers and where every change to it is recorded.
+    fn say_in_skirmish(&mut self, text: &str) {
+        let line = self.projector.said(SKIRMISH_ROOM, "setup", text);
+        self.batcher.push(Delta::Chat(line));
+    }
+
+    /// Writes the skirmish room's script and starts the engine on it.
+    fn launch_skirmish(&mut self) -> Result<(), ClientError> {
+        let Some(room) = self.skirmish.as_ref() else {
+            return Err(ClientError::Engine("there is no skirmish room".into()));
+        };
+        let Some(dirs) = self.data_dirs() else {
+            return Err(ClientError::Engine("no data directory".into()));
+        };
+        // The same refusal the multiplayer path gives, for the same reason: an
+        // engine that starts without the content quits with a sync error, and
+        // a message naming what is missing is worth more than that.
+        let available =
+            content::Library::new(dirs.clone()).check(&room.engine, &room.game, &room.map);
+        if !available.complete() {
+            return Err(ClientError::Engine(format!(
+                "this game needs content you do not have: {}",
+                available.missing().join(", ")
+            )));
+        }
+        let engine = room.engine.clone();
+        // Boxes, which is what the room draws. Fixed positions would need the
+        // map's own, and nothing offline knows them yet.
+        let script = room.to_script(recoil::script::StartPos::InGame);
+        self.start_skirmish(dirs, &engine, &script)
+    }
+
+    /// The room as the front end sees it, with what this machine has of it.
+    fn push_skirmish(&mut self) {
+        let content = self.skirmish_content();
+        let Some(room) = self.skirmish.as_ref() else {
+            return;
+        };
+        let view = room.view(content);
+        self.batcher.push(Delta::Skirmish(Some(Box::new(view))));
+    }
+
+    /// Whether this machine has the skirmish room's engine, game and map.
+    ///
+    /// Re-read only when one of the three changes: the answer comes from
+    /// scanning the rapid index, which is far too slow to repeat per click.
+    fn skirmish_content(&mut self) -> ContentView {
+        let absent = ContentView {
+            engine: false,
+            game: false,
+            map: false,
+        };
+        let Some(room) = self.skirmish.as_ref() else {
+            return absent;
+        };
+        let key = (room.engine.clone(), room.game.clone(), room.map.clone());
+        if let Some((checked, content)) = &self.skirmish_checked
+            && *checked == key
+        {
+            return *content;
+        }
+        let Some(dirs) = self.data_dirs() else {
+            return absent;
+        };
+        let available = content::Library::new(dirs).check(&key.0, &key.1, &key.2);
+        let content = ContentView {
+            engine: available.engine,
+            game: available.game,
+            map: available.map,
+        };
+        self.skirmish_checked = Some((key, content));
+        content
+    }
+
     fn snapshot(&self) -> Snapshot {
         let mut snapshot = match &self.conn {
             Some(conn) => Snapshot::from_state(
@@ -2348,6 +2531,19 @@ impl Runtime {
             .paste
             .as_ref()
             .map_or(PasteStatus::Idle, PasteProgress::status);
+        // Joined on here rather than built into either constructor, because a
+        // skirmish belongs to the machine and a snapshot describes a session.
+        snapshot.skirmish = self.skirmish.as_ref().map(|room| {
+            let content = self.skirmish_checked.as_ref().map_or(
+                ContentView {
+                    engine: false,
+                    game: false,
+                    map: false,
+                },
+                |(_, content)| *content,
+            );
+            Box::new(room.view(content))
+        });
         snapshot
     }
 

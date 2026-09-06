@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { Arrangement } from '../ipc/bindings/Arrangement'
 import type { UserView } from '../ipc/bindings/UserView'
 import { emptyLobby, setLobby } from '../store/lobby'
+import { RoomProvider } from '../views/room/model'
+import { onlineRoom } from '../views/room/online'
 import { MapEditor } from './MapEditor'
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -108,12 +110,25 @@ function square(svg: SVGSVGElement) {
     }) as DOMRect
 }
 
+/**
+ * The editor over the room the helper above sets up.
+ *
+ * It reads the room through `useRoom()` now, so a test has to say which room
+ * it is editing -- here the online one, over the same mirrored state these
+ * tests were already writing.
+ */
+function editor(onClose: () => void) {
+  return (
+    <RoomProvider value={onlineRoom()}>
+      <MapEditor mapName='Comet Catcher' teams={2} onClose={onClose} />
+    </RoomProvider>
+  )
+}
+
 async function open(player = true) {
   room('me', player)
   const onClose = vi.fn()
-  const result = render(() => (
-    <MapEditor mapName='Comet Catcher' teams={2} onClose={onClose} />
-  ))
+  const result = render(() => editor(onClose))
   await settle()
   const svg = result.container.querySelector('svg') as SVGSVGElement
   square(svg)
@@ -317,9 +332,7 @@ describe('MapEditor', () => {
     Element.prototype.getBoundingClientRect = () => wide
     try {
       room('me', true)
-      const { container } = render(() => (
-        <MapEditor mapName='Comet Catcher' teams={2} onClose={vi.fn()} />
-      ))
+      const { container } = render(() => editor(vi.fn()))
       await settle()
       expect(
         container.querySelector('.ed-box text')?.getAttribute('transform'),
@@ -362,9 +375,7 @@ describe('MapEditor', () => {
         }) as DOMRect
       try {
         room('me', true)
-        const { container, unmount } = render(() => (
-          <MapEditor mapName='Comet Catcher' teams={2} onClose={vi.fn()} />
-        ))
+        const { container, unmount } = render(() => editor(vi.fn()))
         await settle()
         // A press inside box 1, in map units either way round, so its handles
         // are drawn as well as its number.

@@ -11,6 +11,17 @@ import { STAGGER_STEP } from '../lib/stagger'
 import { emptyLobby, setLobby } from '../store/lobby'
 import { setSettingsSignal } from '../store/settings'
 import { PveScore, QUIET_FOR } from './PveScore'
+import { RoomProvider } from './room/model'
+import { onlineRoom } from './room/online'
+
+/** The panel over the online room these tests set up in the mirrored state. */
+function panel() {
+  return (
+    <RoomProvider value={onlineRoom()}>
+      <PveScore />
+    </RoomProvider>
+  )
+}
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
 
@@ -157,7 +168,7 @@ describe('PveScore', () => {
   test('every figure shows dots in its own slot while the service is asked', () => {
     asked.mockReturnValue(deferred<Score>().promise)
     enter([bot('RaptorsAI')])
-    const { container } = render(() => <PveScore />)
+    const { container } = render(panel)
     vi.advanceTimersByTime(0)
 
     expect(asked).toHaveBeenCalledWith('pve_score')
@@ -177,7 +188,7 @@ describe('PveScore', () => {
     asked.mockReturnValue(deferred<Score>().promise)
     // Someone outranks us, so our ask waits its turn.
     enter([bot('BARb')], [user('boss', { player: true, rank: 8 })])
-    const { container } = render(() => <PveScore />)
+    const { container } = render(panel)
     expect(asked).not.toHaveBeenCalled()
     expect(container.querySelectorAll('.pve-figure b .thinking')).toHaveLength(
       3,
@@ -191,7 +202,7 @@ describe('PveScore', () => {
   test('the numbers land in their slots', async () => {
     asked.mockResolvedValue(scored)
     enter([bot('RaptorsAI')])
-    const { container } = render(() => <PveScore />)
+    const { container } = render(panel)
     vi.advanceTimersByTime(0)
     await settle()
 
@@ -205,7 +216,7 @@ describe('PveScore', () => {
   test('a setup the service cannot place gets the same blank as any other missing figure', async () => {
     asked.mockResolvedValue({ ...scored, challenge: null, percentile: null })
     enter([bot('BARb')])
-    const { container } = render(() => <PveScore />)
+    const { container } = render(panel)
     vi.advanceTimersByTime(0)
     await settle()
 
@@ -221,7 +232,7 @@ describe('PveScore', () => {
     const cold = deferred<Score>()
     asked.mockReturnValueOnce(cold.promise).mockResolvedValue(scored)
     enter([bot('RaptorsAI')])
-    render(() => <PveScore />)
+    render(panel)
     vi.advanceTimersByTime(0)
     expect(asked).toHaveBeenCalledTimes(1)
 
@@ -248,7 +259,7 @@ describe('PveScore', () => {
   test('a room that stops changing is asked about again after it settles', async () => {
     asked.mockResolvedValue(scored)
     enter([bot('ScavengersAI')])
-    render(() => <PveScore />)
+    render(panel)
     vi.advanceTimersByTime(0)
     await settle()
     expect(asked).toHaveBeenCalledTimes(1)
@@ -267,7 +278,7 @@ describe('PveScore', () => {
     asked.mockRejectedValue({ code: 'pve', message: 'pve stats answered 504' })
     const quiet = vi.spyOn(console, 'warn').mockImplementation(() => {})
     enter([bot('RaptorsAI')])
-    const { container } = render(() => <PveScore />)
+    const { container } = render(panel)
     vi.advanceTimersByTime(0)
     await settle()
 
@@ -278,7 +289,7 @@ describe('PveScore', () => {
 
   test('a room without a PvE opponent asks nothing and shows nothing', () => {
     enter([])
-    const { container } = render(() => <PveScore />)
+    const { container } = render(panel)
     expect(asked).not.toHaveBeenCalled()
     expect(container.querySelector('.pve-score')).toBeNull()
   })
@@ -286,7 +297,7 @@ describe('PveScore', () => {
   test('a room the setting turns off shows nothing', async () => {
     asked.mockResolvedValue(null)
     enter([bot('RaptorsAI')])
-    const { container } = render(() => <PveScore />)
+    const { container } = render(panel)
     vi.advanceTimersByTime(0)
     await settle()
     expect(container.querySelector('.pve-score')).toBeNull()
@@ -296,7 +307,7 @@ describe('PveScore', () => {
     pveStats(false)
     asked.mockResolvedValue(scored)
     enter([bot('RaptorsAI')])
-    const { container } = render(() => <PveScore />)
+    const { container } = render(panel)
     vi.advanceTimersByTime(STAGGER_STEP)
     expect(asked).not.toHaveBeenCalled()
     expect(container.querySelector('.pve-score')).toBeNull()
@@ -306,7 +317,7 @@ describe('PveScore', () => {
     pveStats(false)
     asked.mockResolvedValue(scored)
     enter([bot('RaptorsAI')])
-    const { container } = render(() => <PveScore />)
+    const { container } = render(panel)
     vi.advanceTimersByTime(0)
     expect(asked).not.toHaveBeenCalled()
 

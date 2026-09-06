@@ -11,8 +11,8 @@ import type { Score } from '../ipc/bindings/Score'
 import { api, describeError } from '../ipc/client'
 import { asker } from '../lib/asking'
 import { askDelay } from '../lib/stagger'
-import { lobby } from '../store/lobby'
 import { settings } from '../store/settings'
+import { useRoom, type RoomModel } from './room/model'
 
 /**
  * What BAR's PvE Stats service says this room scores.
@@ -38,23 +38,23 @@ export const AT_MOST_EVERY = 2000
  * mutates the settings object in place, so watching the object itself would
  * never fire again after the first look.
  */
-function fingerprint(): string | undefined {
-  const my = lobby.myBattle
-  const room = my ? lobby.battles[my.id] : undefined
-  if (!my || !room) return undefined
+function fingerprint(room: RoomModel): string | undefined {
+  const my = room.my()
+  const battle = room.battle()
+  if (!my || !battle) return undefined
   const settings = Object.entries(my.scriptTags)
     .filter(([key]) => key.startsWith('game/modoptions/'))
     .map(([key, value]) => `${key}=${value}`)
     .sort()
-  const bots = room.bots.map((bot) => `${bot.ai}@${bot.status.handicap}`)
-  const seats = room.members.map((name) => {
-    const status = lobby.users[name]?.battleStatus
+  const bots = battle.bots.map((bot) => `${bot.ai}@${bot.status.handicap}`)
+  const seats = battle.members.map((name) => {
+    const status = room.users()[name]?.battleStatus
     return status?.player ? String(status.handicap) : ''
   })
   return [
     my.id,
-    room.mapName,
-    room.playerCount,
+    battle.mapName,
+    battle.playerCount,
     ...bots,
     ...seats,
     ...settings,
@@ -70,10 +70,10 @@ function fingerprint(): string | undefined {
  * and every settings change in every ordinary room costs a round trip to
  * find out nothing.
  */
-function isPve(): boolean {
-  const id = lobby.myBattle?.id
-  const room = id === undefined ? undefined : lobby.battles[id]
-  const names = (room?.bots ?? []).map((bot) => bot.ai.toLowerCase()).join(' ')
+function isPve(room: RoomModel): boolean {
+  const names = (room.battle()?.bots ?? [])
+    .map((bot) => bot.ai.toLowerCase())
+    .join(' ')
   const raptors = names.includes('raptor')
   const scavengers = names.includes('scavenger')
   // Both at once is not a setup the model knows, so it is not asked about.
@@ -92,17 +92,17 @@ function enabled(): boolean {
 }
 
 /** This client's place in the room's asking order, as a wait. */
-function myStagger(): number {
-  const my = lobby.myBattle
+function myStagger(room: RoomModel): number {
   return askDelay({
-    me: lobby.me,
-    members: my ? (lobby.battles[my.id]?.members ?? []) : [],
-    boss: my?.boss ?? null,
-    users: lobby.users,
+    me: room.me(),
+    members: room.battle()?.members ?? [],
+    boss: room.my()?.boss ?? null,
+    users: room.users(),
   })
 }
 
 export function PveScore() {
+  const room = useRoom()
   /** `undefined` before any answer; `null` when Rust declined to ask. */
   const [score, setScore] = createSignal<Score | null | undefined>(undefined)
   const [asking, setAsking] = createSignal(false)
@@ -120,7 +120,7 @@ export function PveScore() {
     async () => {
       setAsking(true)
       try {
-        setScore(await api.pveScore())
+        setScore(await room.io.pveScore())
         setFailure(null)
       } catch (err) {
         setFailure(describeError(err))
@@ -129,7 +129,7 @@ export function PveScore() {
         setAsking(false)
       }
     },
-    { floor: AT_MOST_EVERY, stagger: myStagger },
+    { floor: AT_MOST_EVERY, stagger: () => myStagger(room) },
   )
 
   /**
@@ -143,14 +143,14 @@ export function PveScore() {
   let pending: ReturnType<typeof setTimeout> | undefined
   // A memo, so a change that leaves the string as it was — someone toggling
   // ready, say — does not count as the room changing.
-  const room = createMemo(fingerprint)
+  const print = createMemo(() => fingerprint(room))
   // The setting is part of the key: turning it on in a room asks once, and
   // turning it off drops whatever was waiting to go out.
-  const watched = createMemo(() => (enabled() ? room() : undefined))
+  const watched = createMemo(() => (enabled() ? print() : undefined))
   createEffect(
     on(watched, (now, before) => {
       clearTimeout(pending)
-      if (now === undefined || !isPve()) return
+      if (now === undefined || !isPve(room)) return
       const sameRoom = before?.split('\n')[0] === now.split('\n')[0]
       if (sameRoom) {
         pending = setTimeout(asks.ask, QUIET_FOR)
@@ -200,7 +200,7 @@ export function PveScore() {
   )
 
   return (
-    <Show when={enabled() && isPve() && score() !== null}>
+    <Show when={enabled() && isPve(room) && score() !== null}>
       <div class='pve-score'>
         <span class='filter-label'>PvE</span>
 

@@ -3,7 +3,7 @@ import { BoxDiff } from '../components/BoxDiff'
 import { isBoxKey } from '../lib/boxes'
 import { api, describeError } from '../ipc/client'
 import { pushNotice } from '../store/chat'
-import { lobby } from '../store/lobby'
+import { useRoom } from './room/model'
 
 /**
  * The room's vote, scraped from what the host says. `!vote` is open to any
@@ -16,12 +16,8 @@ import { lobby } from '../store/lobby'
  * different answers to the same question.
  */
 export function VoteBar(props: { teams: number }) {
-  const vote = () => lobby.myBattle?.vote ?? null
-
-  const room = createMemo(() => {
-    const id = lobby.myBattle?.id
-    return id === undefined ? undefined : lobby.battles[id]
-  })
+  const room = useRoom()
+  const vote = () => room.my()?.vote ?? null
 
   /**
    * A vote that would move the start boxes, and what it would move them to.
@@ -34,7 +30,7 @@ export function VoteBar(props: { teams: number }) {
     if (proposal?.type !== 'setOption') return null
     if (!isBoxKey(proposal.key)) return null
     const current =
-      lobby.myBattle?.scriptTags[`game/modoptions/${proposal.key}`] ?? ''
+      room.my()?.scriptTags[`game/modoptions/${proposal.key}`] ?? ''
     return { current, proposed: proposal.value }
   })
 
@@ -79,7 +75,7 @@ export function VoteBar(props: { teams: number }) {
                 current={change().current}
                 proposed={change().proposed}
                 teams={props.teams}
-                mapName={room()?.mapName ?? ''}
+                mapName={room.battle()?.mapName ?? ''}
               />
             )}
           </Show>

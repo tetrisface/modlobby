@@ -1,4 +1,5 @@
 import { invoke, type Channel } from '@tauri-apps/api/core'
+import type { Act } from './bindings/Act'
 import type { AiChoice } from './bindings/AiChoice'
 import type { Arrangement } from './bindings/Arrangement'
 import type { ArrangementView } from './bindings/ArrangementView'
@@ -159,12 +160,28 @@ export const api = {
   rememberChannels: (channels: string[]) =>
     invoke<Settings>('remember_channels', { channels }),
   skirmishOptions: () => invoke<SkirmishOptions>('skirmish_options'),
-  startSkirmish: (
-    game: string,
-    map: string,
-    engine: string,
-    opponents: string[],
-  ) => invoke<void>('start_skirmish', { game, map, engine, opponents }),
+
+  // ---- the room with no server behind it ----
+  /** Opens it, on the newest of whatever this machine has unless told otherwise. */
+  skirmishOpen: (
+    game: string | null,
+    map: string | null,
+    engine: string | null,
+  ) => invoke<void>('skirmish_open', { game, map, engine }),
+  skirmishClose: () => invoke<void>('skirmish_close'),
+  /** One change to it. Every way it can change goes through here. */
+  skirmishAct: (act: Act) => invoke<void>('skirmish_act', { act }),
+  skirmishLaunch: () => invoke<void>('skirmish_launch'),
+  skirmishDownloadMissing: () => invoke<void>('skirmish_download_missing'),
+  skirmishStartBoxes: (teams: number) =>
+    invoke<BoxesView | null>('skirmish_start_boxes', { teams }),
+  skirmishCurrentArrangement: (teams: number) =>
+    invoke<ArrangementView | null>('skirmish_current_arrangement', { teams }),
+  skirmishPveScore: () => invoke<Score | null>('skirmish_pve_score'),
+  skirmishTweakSend: (lua: string, slot: Slot, direct: boolean) =>
+    invoke<Prepared>('skirmish_tweak_send', { lua, slot, direct }),
+  skirmishTweakClear: (slot: Slot) =>
+    invoke<void>('skirmish_tweak_clear', { slot }),
   listReplays: () => invoke<ReplayView[]>('list_replays'),
   playReplay: (path: string) => invoke<void>('play_replay', { path }),
   refreshFriends: () => invoke<void>('refresh_friends'),

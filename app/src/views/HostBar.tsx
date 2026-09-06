@@ -1,7 +1,7 @@
 import { For, Show, createMemo, createSignal } from 'solid-js'
-import { api, describeError } from '../ipc/client'
+import { describeError } from '../ipc/client'
 import { pushNotice } from '../store/chat'
-import { lobby } from '../store/lobby'
+import { useRoom } from './room/model'
 
 /**
  * Running a room you boss.
@@ -16,21 +16,19 @@ import { lobby } from '../store/lobby'
  * lands in the server room anyway.
  */
 export function HostBar() {
+  const room = useRoom()
   const [busy, setBusy] = createSignal(false)
   const [size, setSize] = createSignal('')
 
-  const boss = createMemo(
-    () => lobby.myBattle?.boss !== null && lobby.myBattle?.boss === lobby.me,
-  )
-  const room = createMemo(() => {
-    const id = lobby.myBattle?.id
-    return id === undefined ? undefined : lobby.battles[id]
+  const boss = createMemo(() => {
+    const who = room.my()?.boss
+    return who !== null && who === room.me()
   })
 
   async function run(command: string) {
     setBusy(true)
     try {
-      await api.sayBattle(command)
+      await room.io.sayBattle(command)
     } catch (error) {
       pushNotice('warning', `${command}: ${describeError(error)}`)
     } finally {
@@ -40,7 +38,7 @@ export function HostBar() {
 
   /** The commands worth a button; everything else is still typeable. */
   const actions = createMemo(() => {
-    const locked = room()?.locked ?? false
+    const locked = room.battle()?.locked ?? false
     return [
       ['Balance', '!balance', 'Even the teams by skill'],
       ['Fix colours', '!fixColors', 'Give every team a distinct colour'],
@@ -77,7 +75,7 @@ export function HostBar() {
             type='number'
             min='1'
             max='16'
-            placeholder={String(room()?.layout?.teamSize ?? '')}
+            placeholder={String(room.battle()?.layout?.teamSize ?? '')}
             value={size()}
             onInput={(e) => setSize(e.currentTarget.value)}
             onChange={(e) => {

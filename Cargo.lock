@@ -2891,6 +2891,7 @@ dependencies = [
  "recoil",
  "serde",
  "serde_json",
+ "skirmish",
  "spring-protocol",
  "sysinfo",
  "tempfile",
@@ -3056,6 +3057,7 @@ dependencies = [
  "serde_json",
  "settings",
  "sevenz-rust2",
+ "skirmish",
  "spring-protocol",
  "startbox",
  "tauri",
@@ -4771,6 +4773,17 @@ name = "siphasher"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ee5873ec9cce0195efcb7a4e9507a04cd49aec9c83d0389df45b1ef7ba2e649"
+
+[[package]]
+name = "skirmish"
+version = "0.1.7"
+dependencies = [
+ "lobby-ui",
+ "recoil",
+ "serde",
+ "startbox",
+ "ts-rs",
+]
 
 [[package]]
 name = "slab"

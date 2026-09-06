@@ -6,6 +6,21 @@ import type { Book } from '../ipc/bindings/Book'
 import type { Preset } from '../ipc/bindings/Preset'
 import { emptyLobby, setLobby } from '../store/lobby'
 import { Presets } from './Presets'
+import { RoomProvider } from './room/model'
+import { onlineRoom } from './room/online'
+
+/**
+ * The pane over the online room, which is where the mirrored state these tests
+ * write is read from. Outside a room it answers "none", which is what greys
+ * Save and Load.
+ */
+function pane() {
+  return (
+    <RoomProvider value={onlineRoom()}>
+      <Presets />
+    </RoomProvider>
+  )
+}
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
 
@@ -113,7 +128,7 @@ afterEach(() => {
 describe('Presets', () => {
   test('without a room, Save and Load wait and the file actions do not', async () => {
     setLobby(reconcile(emptyLobby()))
-    const { getByText } = render(() => <Presets />)
+    const { getByText } = render(pane)
     await settle()
     const save = getByText('Save') as HTMLButtonElement
     const load = getByText('Load') as HTMLButtonElement
@@ -130,7 +145,7 @@ describe('Presets', () => {
   })
 
   test('the toolbar reads Save, Load, Import from Chobby, Export to Chobby', async () => {
-    const { container } = render(() => <Presets />)
+    const { container } = render(pane)
     await settle()
     const labels = [...container.querySelectorAll('.toolbar button')].map(
       (button) => button.textContent,
@@ -144,7 +159,7 @@ describe('Presets', () => {
   })
 
   test('Load and Export wait for a row to be chosen', async () => {
-    const { getByText, container } = render(() => <Presets />)
+    const { getByText, container } = render(pane)
     await settle()
     const load = getByText('Load') as HTMLButtonElement
     const exportButton = getByText('Export to Chobby') as HTMLButtonElement
@@ -160,7 +175,7 @@ describe('Presets', () => {
   })
 
   test('clicking the name only selects; the pen is what renames', async () => {
-    const { getByText, getByLabelText, container } = render(() => <Presets />)
+    const { getByText, getByLabelText, container } = render(pane)
     await settle()
 
     fireEvent.click(getByText('raptors'))
@@ -176,13 +191,13 @@ describe('Presets', () => {
   })
 
   test('the name column carries no tweak count', async () => {
-    const { container } = render(() => <Presets />)
+    const { container } = render(pane)
     await settle()
     expect(container.querySelector('.preset-name .chip')).toBeNull()
   })
 
   test('Reset lobby is off by default, and Load says so', async () => {
-    const { getByText } = render(() => <Presets />)
+    const { getByText } = render(pane)
     await settle()
     const reset = getByText('Reset lobby')
     expect(reset.classList.contains('on')).toBe(false)
@@ -209,7 +224,7 @@ describe('Presets', () => {
   })
 
   test('the bin on a row deletes that preset', async () => {
-    const { getByLabelText } = render(() => <Presets />)
+    const { getByLabelText } = render(pane)
     await settle()
     fireEvent.click(getByLabelText('Delete ffa'))
     await settle()

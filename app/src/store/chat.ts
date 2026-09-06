@@ -10,6 +10,9 @@ export type Notice = { seq: number; level: NoticeLevel; text: string }
 export const BATTLE_ROOM = '#battle'
 
 /** Where the server's own words go: the message of the day, and broadcasts. */
+/** A skirmish room's own log: what its console answered, and what changed. */
+export const SKIRMISH_ROOM = '#skirmish'
+
 export const SERVER_ROOM = '#server'
 
 export const privateRoom = (user: string) => `@${user}`

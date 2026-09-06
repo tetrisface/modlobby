@@ -8,6 +8,7 @@ import type { GameRunningView } from "./GameRunningView";
 import type { MyBattleView } from "./MyBattleView";
 import type { PasteStatus } from "./PasteStatus";
 import type { Phase } from "./Phase";
+import type { SkirmishView } from "./SkirmishView";
 import type { UserView } from "./UserView";
 
 /**
@@ -20,4 +21,10 @@ export type Snapshot = { phase: Phase | null, me: string | null, users: Array<Us
  * whichever backlog the front end still holds — but membership is, so the
  * channel list is right the moment the window comes back.
  */
-channels: Array<ChannelView>, friends: FriendsView, download: DownloadStatus, paste: PasteStatus, };
+channels: Array<ChannelView>, friends: FriendsView, download: DownloadStatus, paste: PasteStatus, 
+/**
+ * The skirmish room, which outlives a session rather than belonging to
+ * one: it is still there after a logout, a dropped connection or a
+ * reloaded window.
+ */
+skirmish: SkirmishView | null, };

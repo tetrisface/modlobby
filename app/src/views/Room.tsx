@@ -14,6 +14,7 @@ import { Composer } from '../components/Composer'
 import { GetEngine } from '../components/GetEngine'
 import { Linkify } from '../components/Linkify'
 import { MapEditor } from '../components/MapEditor'
+import { MapPicker, pickMap } from '../components/MapPicker'
 import { MapPicture } from '../components/MapPicture'
 import { showPlayerMenu } from '../components/PlayerMenu'
 import {
@@ -36,13 +37,14 @@ import { downloadFraction } from '../lib/download'
 import { TILES } from '../lib/maps'
 import { type Roster, arrange, emptySeats } from '../lib/roster'
 import { readSkills, teamSkill, type Skill } from '../lib/skill'
-import { BATTLE_ROOM, chat, pushNotice } from '../store/chat'
+import { chat, pushNotice } from '../store/chat'
 import { joinMilestone } from '../store/join'
-import { lobby, myRoom } from '../store/lobby'
+import { lobby } from '../store/lobby'
 import { settings } from '../store/settings'
 import { HostBar } from './HostBar'
 import { PveScore } from './PveScore'
 import { RoomTitle } from './RoomTitle'
+import { useRoom, type RoomModel } from './room/model'
 import { Seat, seatsAllowed, sitOn } from './Seat'
 import { StartBoxes } from './StartBoxes'
 import { Setup } from './Setup'
@@ -50,22 +52,23 @@ import { VoteBar } from './VoteBar'
 
 export function Room() {
   const navigate = useNavigate()
+  const room = useRoom()
   let log: HTMLDivElement | undefined
 
-  const battle = createMemo(myRoom)
+  const battle = createMemo(room.battle)
 
   const friends = createMemo(() => new Set(lobby.friends.friends))
   const isFriend = (name: string) => friends().has(name)
 
   /** SPADS keys its player tags by lowercased name. */
-  const skills = createMemo(() => readSkills(lobby.myBattle?.scriptTags))
+  const skills = createMemo(() => readSkills(room.my()?.scriptTags))
   const skillOf = (name: string): Skill | null =>
     skills()[name.toLowerCase()] ?? null
 
   const occupants = createMemo((): Roster => {
     const b = battle()
     if (!b) return { teams: [], spectators: [], pending: [], spectatorCount: 0 }
-    return arrange(b, lobby.users, lobby.me)
+    return arrange(b, room.users(), room.me())
   })
 
   /**
@@ -74,23 +77,24 @@ export function Room() {
    * `BarManagerCmd.conf`). Not drawing the pen beats a silent refusal.
    */
   const canRename = createMemo(() => {
-    const me = lobby.me
+    const me = room.me()
     if (me === null) return false
-    if (lobby.myBattle?.boss === me) return true
-    return lobby.users[me]?.battleStatus?.player ?? false
+    if (!room.caps.spads) return true
+    if (room.my()?.boss === me) return true
+    return room.users()[me]?.battleStatus?.player ?? false
   })
 
   /** A team's header offers a seat on it unless we already hold one there. */
   const canJoin = (allyTeam: number): boolean => {
-    if (!seatsAllowed()) return false
-    const mine = lobby.me === null ? undefined : lobby.users[lobby.me]
-    const status = mine?.battleStatus
+    if (!seatsAllowed(room)) return false
+    const me = room.me()
+    const status = me === null ? undefined : room.users()[me]?.battleStatus
     return !(status?.player && status.allyTeam === allyTeam)
   }
 
   async function join(allyTeam: number) {
     try {
-      await sitOn(allyTeam)
+      await sitOn(room, allyTeam)
     } catch (error) {
       pushNotice(
         'warning',
@@ -99,16 +103,11 @@ export function Room() {
     }
   }
 
+  // Whoever provided the room decides what a missing one means; the router
+  // only lives here, so the going is done here.
   createEffect(() => {
-    // No connection at all — logged out, or a launch that reopened on a stale
-    // `#/room` hash. Either way there is no room here to be in. Waiting for
-    // `ready` instead would leave an empty shell on screen indefinitely.
-    if (lobby.phase === null) navigate('/', { replace: true })
-    // Connected and in no room. Gated on `ready` so a reconnect, which has
-    // not replayed `myBattle` yet, does not throw you out of the room you are
-    // standing in.
-    else if (lobby.phase === 'ready' && !lobby.myBattle)
-      navigate('/battles', { replace: true })
+    const away = room.exit()
+    if (away !== null) navigate(away, { replace: true })
   })
   createEffect(() => {
     const roster = occupants()
@@ -117,8 +116,10 @@ export function Room() {
   })
   /** Whether the large map with the start-box editor is open over the room. */
   const [editing, setEditing] = createSignal(false)
+  /** Whether the list of installed maps is open over it. */
+  const [picking, setPicking] = createSignal(false)
 
-  const lines = () => chat.rooms[BATTLE_ROOM] ?? []
+  const lines = () => chat.rooms[room.log] ?? []
   createEffect(() => {
     lines().length
     log?.scrollTo({ top: log.scrollHeight })
@@ -126,7 +127,7 @@ export function Room() {
 
   async function send(line: string) {
     try {
-      await api.sayBattle(line.trim())
+      await room.io.sayBattle(line.trim())
     } catch (error) {
       pushNotice('warning', describeError(error))
     }
@@ -134,7 +135,7 @@ export function Room() {
 
   async function launch() {
     try {
-      await api.launch()
+      await room.io.launch()
     } catch (error) {
       pushNotice('error', describeError(error))
     }
@@ -158,6 +159,16 @@ export function Room() {
                 onClose={() => setEditing(false)}
               />
             </Show>
+            <Show when={picking()}>
+              <MapPicker
+                current={b().mapName}
+                onPick={(name) => {
+                  setPicking(false)
+                  void pickMap(room.io.setMap, name)
+                }}
+                onClose={() => setPicking(false)}
+              />
+            </Show>
             <div class='card-main'>
               <RoomTitle
                 title={b().title}
@@ -167,23 +178,38 @@ export function Room() {
               <div class='card-meta'>
                 <span>
                   Map{' '}
-                  {/* The page Chobby opens for a map, so the link lands where
-                      people already expect it to. */}
-                  <b
-                    class='chat-link'
-                    title='Open this map on beyondallreason.info'
-                    onClick={() =>
-                      void api
-                        .openUrl(
-                          `https://www.beyondallreason.info/maps?mapname=${encodeURIComponent(b().mapName)}`,
-                        )
-                        .catch((error) =>
-                          pushNotice('warning', describeError(error)),
-                        )
+                  {/* Where the map is ours to choose, its name is the way to
+                      choose it. Where it is the host's, the name is a link to
+                      the page Chobby opens for a map, so it lands where people
+                      already expect it to. */}
+                  <Show
+                    when={room.caps.picksContent}
+                    fallback={
+                      <b
+                        class='chat-link'
+                        title='Open this map on beyondallreason.info'
+                        onClick={() =>
+                          void api
+                            .openUrl(
+                              `https://www.beyondallreason.info/maps?mapname=${encodeURIComponent(b().mapName)}`,
+                            )
+                            .catch((error) =>
+                              pushNotice('warning', describeError(error)),
+                            )
+                        }
+                      >
+                        {b().mapName}
+                      </b>
                     }
                   >
-                    {b().mapName}
-                  </b>
+                    <b
+                      class='chat-link'
+                      title='Play a different map'
+                      onClick={() => setPicking(true)}
+                    >
+                      {b().mapName}
+                    </b>
+                  </Show>
                 </span>
                 <span>
                   Host <b>{b().founder}</b>
@@ -198,18 +224,11 @@ export function Room() {
               <Chips battle={b()} />
             </div>
             <div class='card-actions'>
-              <Show when={lobby.gameRunning}>
-                {/* While our own engine runs, the useful button is not another
-                    launch — it is the way back to the game the lobby is
-                    sitting on top of. */}
-                <Show
-                  when={lobby.engine.state === 'running'}
-                  fallback={
-                    <button class='primary' onClick={launch}>
-                      Watch the game
-                    </button>
-                  }
-                >
+              {/* While our own engine runs, the useful button is not another
+                  launch — it is the way back to the game the lobby is
+                  sitting on top of. */}
+              <Switch>
+                <Match when={lobby.engine.state === 'running'}>
                   <button
                     class='primary'
                     title={`Or press ${settings()?.overlay.hotkey ?? 'the overlay shortcut'}`}
@@ -217,19 +236,42 @@ export function Room() {
                   >
                     Back to game
                   </button>
-                </Show>
+                </Match>
+                <Match when={room.running()}>
+                  <button class='primary' onClick={launch}>
+                    Watch the game
+                  </button>
+                </Match>
+                {/* Nobody else is going to start this one. */}
+                <Match when={room.caps.startsGame}>
+                  <button
+                    class='primary'
+                    disabled={missingParts(room).length > 0}
+                    onClick={launch}
+                  >
+                    Start
+                  </button>
+                </Match>
+              </Switch>
+              <Show when={room.caps.leave}>
+                <button onClick={() => room.io.leaveBattle()}>Leave</button>
               </Show>
-              <button onClick={() => api.leaveBattle()}>Leave</button>
             </div>
           </header>
 
           <PveScore />
-          <VoteBar teams={Math.max(occupants().teams.length, 2)} />
+          {/* Votes and the host bar are SPADS: there is nothing behind them
+              in a room that answers to nobody. */}
+          <Show when={room.caps.spads}>
+            <VoteBar teams={Math.max(occupants().teams.length, 2)} />
+          </Show>
           <StartBoxes
             teams={Math.max(occupants().teams.length, 2)}
             mapName={b().mapName}
           />
-          <HostBar />
+          <Show when={room.caps.spads}>
+            <HostBar />
+          </Show>
           <Seat />
 
           <div class='room-body'>
@@ -269,11 +311,11 @@ export function Room() {
                             <PlayerRow
                               user={user}
                               skill={skillOf(user.name)}
-                              me={user.name === lobby.me}
+                              me={user.name === room.me()}
                               friend={isFriend(user.name)}
-                              boss={lobby.myBattle?.boss === user.name}
+                              boss={room.my()?.boss === user.name}
                               download={
-                                user.name === lobby.me
+                                user.name === room.me()
                                   ? lobby.download
                                   : undefined
                               }
@@ -284,7 +326,7 @@ export function Room() {
                           {(user) => (
                             <GuessedRow
                               user={user}
-                              me={user.name === lobby.me}
+                              me={user.name === room.me()}
                               friend={isFriend(user.name)}
                             />
                           )}
@@ -298,9 +340,9 @@ export function Room() {
                                 // the host and moderators; a boss is none of
                                 // those. Not drawing the action beats a
                                 // silent refusal.
-                                bot.owner === lobby.me
+                                bot.owner === room.me()
                                   ? () =>
-                                      api
+                                      room.io
                                         .removeBot(bot.name)
                                         .catch((error) =>
                                           pushNotice(
@@ -333,9 +375,9 @@ export function Room() {
                       {(user) => (
                         <SpectatorRow
                           user={user}
-                          me={user.name === lobby.me}
+                          me={user.name === room.me()}
                           friend={isFriend(user.name)}
-                          boss={lobby.myBattle?.boss === user.name}
+                          boss={room.my()?.boss === user.name}
                         />
                       )}
                     </For>
@@ -346,7 +388,7 @@ export function Room() {
                       {(user) => (
                         <SpectatorRow
                           user={user}
-                          me={user.name === lobby.me}
+                          me={user.name === room.me()}
                           friend={isFriend(user.name)}
                           pending
                         />
@@ -361,7 +403,11 @@ export function Room() {
                   <For each={lines()}>{(line) => <Line line={line} />}</For>
                 </div>
                 <Composer
-                  placeholder='Say something, or a !command'
+                  placeholder={
+                    room.caps.chat
+                      ? 'Say something, or a !command'
+                      : 'A !command — !start, !bSet, !map'
+                  }
                   names={() => b().members}
                   onSend={(line) => void send(line)}
                 />
@@ -388,6 +434,7 @@ function Minimap(props: {
   /** Opens the large map, where the boxes can be drawn. */
   onOpen: () => void
 }) {
+  const room = useRoom()
   /**
    * The modoption boxes, which are a different system from `props.rects`.
    *
@@ -402,9 +449,9 @@ function Minimap(props: {
     () =>
       [
         props.teams > 0 ? props.teams : 1,
-        boxSignature(lobby.myBattle?.scriptTags),
+        boxSignature(room.my()?.scriptTags),
       ] as const,
-    ([teams]) => api.startBoxes(teams).catch(() => null),
+    ([teams]) => room.io.startBoxes(teams).catch(() => null),
   )
 
   return (
@@ -488,30 +535,35 @@ function Minimap(props: {
   )
 }
 
+/**
+ * What the room needs and this machine lacks. Empty while the answer has not
+ * arrived, which reads the same as having everything and is why the caller
+ * that offers a download asks whether the content is known at all.
+ */
+function missingParts(room: RoomModel): readonly string[] {
+  const content = room.content()
+  if (!content) return []
+  return (['engine', 'game', 'map'] as const).filter((part) => !content[part])
+}
+
 function Chips(props: { battle: BattleView }) {
-  const missing = createMemo(() => {
-    const content = lobby.content
-    if (!content) return null
-    return (['engine', 'game', 'map'] as const).filter((part) => !content[part])
-  })
+  const room = useRoom()
+  const parts = createMemo(() => missingParts(room))
 
   return (
     <div class='chips'>
-      <Show when={lobby.gameRunning}>
+      <Show when={room.running()}>
         <span class='chip running'>In game</span>
       </Show>
-      <Show when={missing()}>
-        {(parts) => (
-          <Show
-            when={parts().length > 0}
-            fallback={<span class='chip ok'>Content ready</span>}
-          >
-            <Missing
-              parts={parts()}
-              engineVersion={props.battle.engineVersion}
-            />
-          </Show>
-        )}
+      {/* Nothing until the content has been looked at: an empty answer and a
+          complete one are the same list, and only one of them is good news. */}
+      <Show when={room.content()}>
+        <Show
+          when={parts().length > 0}
+          fallback={<span class='chip ok'>Content ready</span>}
+        >
+          <Missing parts={parts()} engineVersion={props.battle.engineVersion} />
+        </Show>
       </Show>
       <Show when={props.battle.layout}>
         {(layout) => (
@@ -544,14 +596,15 @@ function Chips(props: { battle: BattleView }) {
  * thing it cannot fetch; that download is modlobby's own, offered here for the
  * room's version. Once it lands the runtime checks again and fetches the rest.
  */
-function Missing(props: { parts: string[]; engineVersion: string }) {
+function Missing(props: { parts: readonly string[]; engineVersion: string }) {
+  const room = useRoom()
   const download = () => lobby.download
   const fetchable = () => !props.parts.includes('engine')
   const auto = () => settings()?.play.autoDownload ?? true
 
   async function start() {
     try {
-      await api.downloadMissing()
+      await room.io.downloadMissing()
     } catch (error) {
       pushNotice('warning', describeError(error))
     }
