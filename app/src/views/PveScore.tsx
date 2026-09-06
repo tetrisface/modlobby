@@ -230,7 +230,7 @@ export function PveScore() {
             class='pve-figure muted'
             title='Where this setup sits among eligible played games for this opponent.'
           >
-            harder than{' '}
+            Harder than{' '}
             <Slot
               value={
                 score()?.percentile == null

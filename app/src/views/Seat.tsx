@@ -233,6 +233,17 @@ export function Seat() {
 
       <AddAi busy={busy()} act={act} freeTeam={nextTeam} freeAlly={freeAlly} />
 
+      {/* One click onto the emptiest side; the picker above is for choosing. */}
+      <Show when={allowed() && !seated()}>
+        <button
+          disabled={busy()}
+          title='Take a seat on the emptiest team'
+          onClick={() => act('take a seat', () => sitOn(freeAlly()))}
+        >
+          Join
+        </button>
+      </Show>
+
       <Show when={lobby.content}>
         {(content) => {
           const missing = () =>

@@ -155,16 +155,17 @@ export function Setup() {
   let chosen = width() !== null
   let host: HTMLElement | undefined
   let strip: HTMLDivElement | undefined
+  let search: HTMLInputElement | undefined
   const bounds = () => ({
     min: NARROWEST,
     max: Math.max(NARROWEST, window.innerWidth - ROOM_KEEPS),
   })
 
   /**
-   * As wide as it takes for the tabs to sit on one row: their widths and the
-   * gaps between them, the strip's padding and the pane's border. Summed
-   * from the tabs themselves, so the answer is the same whether they are
-   * currently on one row or wrapped onto two.
+   * As wide as it takes for the tabs and the search to sit on one row: their
+   * widths and the gaps between them, the strip's padding and the pane's
+   * border. Summed from the tabs themselves, so the answer is the same
+   * whether they are currently on one row or wrapped onto two.
    */
   function fit() {
     if (chosen || !strip) return
@@ -224,18 +225,6 @@ export function Setup() {
           Presets
         </button>
         <Show when={pane() === 'setup'}>
-          <Show when={!editing()}>
-            <input
-              class='search'
-              placeholder='Search settings'
-              aria-label='Search settings'
-              value={needle()}
-              onInput={(event) => setNeedle(event.currentTarget.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') setNeedle('')
-              }}
-            />
-          </Show>
           <span class='note'>
             {editable()
               ? 'a change is proposed to the host'
@@ -290,6 +279,34 @@ export function Setup() {
               )
             }}
           </For>
+          <Show when={!editing()}>
+            <div class='setup-search'>
+              <input
+                ref={search}
+                placeholder='Search settings'
+                aria-label='Search settings'
+                value={needle()}
+                onInput={(event) => setNeedle(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') setNeedle('')
+                }}
+              />
+              <Show when={searching()}>
+                <button
+                  type='button'
+                  class='clear'
+                  title='Clear search'
+                  aria-label='Clear search'
+                  onClick={() => {
+                    setNeedle('')
+                    search?.focus()
+                  }}
+                >
+                  ×
+                </button>
+              </Show>
+            </div>
+          </Show>
         </div>
 
         <Show when={!editing()} fallback={<Tweaks initial={editing()?.slot} />}>

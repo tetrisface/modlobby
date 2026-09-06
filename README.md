@@ -19,8 +19,8 @@ for your platform. [mise](https://mise.jdx.dev/) installs the pinned node and bu
 git clone https://github.com/tetrisface/modlobby
 cd modlobby/app
 bun install
-bun run dev      # development window
 bun run build    # installer under app/src-tauri/target/release/bundle/
+bun run dev      # development window
 ```
 
 ## Rust workspace
@@ -54,15 +54,6 @@ before anyone plays it.
 Background notifications cover direct messages, mentions, votes, rings, a
 friend arriving, and your game starting.
 
-```sh
-cargo test
-cp .env.example .env                                                        # MODLOBBY_USERNAME / MODLOBBY_PASSWORD, for the CLI only
-cargo run -p modlobby-cli -- login                                          # TLS to server4.beyondallreason.info:8201; --plain for 8200
-cargo run -p modlobby-cli -- join --battle <id> --launch                    # spectate a room; connects the engine while its game runs
-cargo run -p modlobby-cli -- policy > policy.toml                           # dump the default throttle policy to tune with --policy
-cargo run -p content --example read_game_file -- <data dir> "<game version>"  # the modoption table this machine would read
-```
-
 ### Modoptions
 
 Chobby reads `modoptions.lua` out of the game archive with the engine's Lua VM. modlobby has no
@@ -82,21 +73,10 @@ that decide which unit definitions exist (`forceallunits`, the Legion faction, a
 unit packs). `section` is a lobby display hint by BAR's own description, so regrouping changes
 nothing on the wire, and Cheats keeps its name and every balance setting.
 
-## Desktop app
+## Development
 
-```sh
-cd app
-bun install
-bun run dev                                                                 # Tauri window + Vite
-bun run check                                                               # prettier, tsc, vitest
-bun run test:watch                                                          # vitest, watching
-```
-
-A lobby is only honest against a real server, and several bugs the tests were
-happy with turned up only there — an empty channel list saved over a good one,
-a settings watcher that had already been dropped. `scripts/webview.ts` drives
-the running window over the DevTools protocol so those checks can be made
-without a pair of hands:
+`scripts/webview.ts` drives the running window over the DevTools protocol so those checks can be
+made without a pair of hands:
 
 ```sh
 WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222 bun run dev
