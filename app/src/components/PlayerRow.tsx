@@ -91,20 +91,29 @@ export function BotRow(props: {
     onMove: (ally) => void props.moves?.to(ally),
     onMenu: menu,
   })
+  const showSideIcon = () => {
+    const ai = props.bot.ai.toLowerCase()
+    return !(ai.includes('raptor') || ai.includes('scav') || ai.includes('barb'))
+  }
+  const botRowClass = () => ({
+    player: true,
+    'bot-row': true,
+    'bot-row-no-side': !showSideIcon(),
+    movable: props.moves !== undefined,
+  })
+
   return (
     <div
-      class='player bot-row'
-      classList={{ movable: props.moves !== undefined }}
+      classList={botRowClass()}
       onPointerDown={press}
     >
-      <span />
-      <span />
       <svg class='icon rank bot' role='img'>
         <title>AI</title>
         <use href='#rank-bot' />
       </svg>
-      <span />
-      <SideIcon side={props.bot.status.side} />
+      <Show when={showSideIcon()}>
+        <SideIcon side={props.bot.status.side} />
+      </Show>
       <span
         class='pname bot'
         classList={{ mine: props.onRemove !== undefined }}

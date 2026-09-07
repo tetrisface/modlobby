@@ -215,6 +215,20 @@ describe('PveScore', () => {
     expect(container.querySelector('.thinking')).toBeNull()
   })
 
+  test('the PvE row keeps a compact label/value layout', async () => {
+    asked.mockResolvedValue(scored)
+    enter([bot('RaptorsAI')])
+    const { container } = render(panel)
+    vi.advanceTimersByTime(0)
+    await settle()
+
+    expect(container.querySelectorAll('.pve-stat')).toHaveLength(3)
+    expect(container.querySelectorAll('.pve-label')).toHaveLength(3)
+    expect(container.textContent).toContain('Challenge')
+    expect(container.textContent).toContain('Win')
+    expect(container.textContent).toContain('Harder than')
+  })
+
   test('a setup the service cannot place gets the same blank as any other missing figure', async () => {
     asked.mockResolvedValue({ ...scored, challenge: null, percentile: null })
     enter([bot('BARb')])

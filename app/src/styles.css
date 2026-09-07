@@ -910,8 +910,32 @@ textarea {
 /* An AI has no rating, rank or country, so those three columns are its own:
    the name spans them and reaches an ellipsis far later, and the bonus has
    somewhere to sit that is not the name's space. */
+.player.bot-row {
+	grid-template-columns: 1.125rem 1.25rem minmax(0, 1fr) auto;
+	}
+
+	.player.bot-row-no-side {
+		grid-template-columns: 1.125rem minmax(0, 1fr) auto;
+}
+
+.player.bot-row .rank.bot {
+  grid-column: 1;
+}
+
+.player.bot-row .icon.side {
+	grid-column: 2;
+}
+
 .player.bot-row .pname.bot {
-  grid-column: 1 / 6;
+	grid-column: 2;
+	}
+
+	.player.bot-row-no-side .rank.bot {
+		grid-column: 1;
+	}
+
+	.player.bot-row-no-side .pname.bot {
+		grid-column: 2;
 }
 
 .bot-bonus {
@@ -2947,25 +2971,46 @@ input[type='checkbox'].v-edit {
 .pve-score {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+	flex-wrap: nowrap;
+		gap: 0.5rem;
   padding: 0.375rem 1rem;
   background: var(--sunken);
   border-bottom: 1px solid var(--line);
   font-size: 0.75rem;
   flex-shrink: 0;
+	white-space: nowrap;
+		overflow: hidden;
+	}
+
+	.pve-stat {
+		display: inline-flex;
+		align-items: baseline;
+		gap: 0.25rem;
+		padding-right: 0.125rem;
+		color: var(--muted);
+		cursor: help;
+		white-space: nowrap;
+		flex: 0 0 auto;
+	}
+
+	.pve-label {
+		color: var(--faint);
+		letter-spacing: 0.02em;
+		white-space: nowrap;
 }
 
 .pve-figure {
-  cursor: help;
+	color: var(--text);
+		font-weight: 600;
+		white-space: nowrap;
 }
 
 .pve-figure b {
-  display: inline-block;
-  margin-left: 0.25rem;
-  /* Wide enough for "31%" so the dots hold the figure's place, not less. */
+	display: inline-block;
   min-width: 3ch;
   font-variant-numeric: tabular-nums;
   color: var(--text);
+	font-weight: 600;
 }
 
 /* The corner while nobody is logged in. Quiet like the text it replaces, a

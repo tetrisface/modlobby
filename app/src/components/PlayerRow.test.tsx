@@ -4,7 +4,7 @@ import type { BattleStatusView } from '../ipc/bindings/BattleStatusView'
 import type { UserView } from '../ipc/bindings/UserView'
 import type { UserStatusView } from '../ipc/bindings/UserStatusView'
 import type { Skill } from '../lib/skill'
-import { PlayerRow, SpectatorRow } from './PlayerRow'
+import { BotRow, PlayerRow, SpectatorRow } from './PlayerRow'
 
 const status = (over: Partial<UserStatusView> = {}): UserStatusView => ({
   inGame: false,
@@ -225,6 +225,84 @@ describe('a player row', () => {
     // the row may carry one.
     expect(container.querySelector('[class*="team-"]')).toBeNull()
     expect(container.querySelector('.player')?.getAttribute('style')).toBeNull()
+  })
+
+  test('BAR special AIs hide the faction icon but normal AIs keep it', () => {
+    const { container, unmount } = render(() => (
+      <>
+        <BotRow bot={{
+          name: 'RaptorsDefenseAI(1)',
+          owner: 'host',
+          status: {
+            ready: true,
+            team: 1,
+            allyTeam: 1,
+            player: true,
+            handicap: 0,
+            sync: 'bot',
+            side: 0,
+          },
+          teamColour: 0,
+          ai: 'RaptorsAI',
+          options: {},
+        }} />
+        <BotRow bot={{
+          name: 'ScavengerAI(1)',
+          owner: 'host',
+          status: {
+            ready: true,
+            team: 1,
+            allyTeam: 1,
+            player: true,
+            handicap: 0,
+            sync: 'bot',
+            side: 1,
+          },
+          teamColour: 0,
+          ai: 'ScavengersAI',
+          options: {},
+        }} />
+        <BotRow bot={{
+          name: 'BARb(1)',
+          owner: 'host',
+          status: {
+            ready: true,
+            team: 1,
+            allyTeam: 1,
+            player: true,
+            handicap: 0,
+            sync: 'bot',
+            side: 3,
+          },
+          teamColour: 0,
+          ai: 'BARb',
+          options: {},
+        }} />
+        <BotRow bot={{
+          name: 'OtherAI(1)',
+          owner: 'host',
+          status: {
+            ready: true,
+            team: 1,
+            allyTeam: 1,
+            player: true,
+            handicap: 0,
+            sync: 'bot',
+            side: 2,
+          },
+          teamColour: 0,
+          ai: 'OtherAI',
+          options: {},
+        }} />
+      </>
+    ))
+
+    const rows = [...container.querySelectorAll('.player.bot-row')]
+    expect(rows[0].querySelector('.icon.side')).toBeNull()
+    expect(rows[1].querySelector('.icon.side')).toBeNull()
+    expect(rows[2].querySelector('.icon.side')).toBeNull()
+    expect(rows[3].querySelector('.icon.side')).not.toBeNull()
+    unmount()
   })
 
   test('an unknown country falls back rather than guessing', () => {

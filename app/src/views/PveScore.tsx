@@ -213,31 +213,39 @@ export function PveScore() {
           }
         >
           <span
-            class='pve-figure'
+            class='pve-stat'
             title='Absolute difficulty on a 0-34 scale. 17 is an estimated even game for a representative human team; higher is harder. A dash means the service has not placed this setup among played games yet.'
           >
-            Challenge <Slot value={challenge()} />
+            <span class='pve-label'>Challenge</span>
+            <span class='pve-figure'>
+              <Slot value={challenge()} />
+            </span>
           </span>
 
           <span
-            class='pve-figure'
+            class='pve-stat'
             title='Estimated chance a representative current BAR human team wins this map and setup. The people in this room are not part of that estimate.'
           >
-            Win <Slot value={percent(score()?.winChance)} />
+            <span class='pve-label'>Win</span>
+            <span class='pve-figure'>
+              <Slot value={percent(score()?.winChance)} />
+            </span>
           </span>
 
           <span
-            class='pve-figure muted'
+            class='pve-stat muted'
             title='Where this setup sits among eligible played games for this opponent.'
           >
-            Harder than{' '}
-            <Slot
-              value={
-                score()?.percentile == null
-                  ? '—'
-                  : `${Math.round(score()?.percentile ?? 0)}%`
-              }
-            />
+            <span class='pve-label'>Harder than</span>
+            <span class='pve-figure'>
+              <Slot
+                value={
+                  score()?.percentile == null
+                    ? '—'
+                    : `${Math.round(score()?.percentile ?? 0)}%`
+                }
+              />
+            </span>
           </span>
 
           <Show when={!waiting() && score()?.bestEffort}>
