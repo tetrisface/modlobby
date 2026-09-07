@@ -93,7 +93,11 @@ export function BotRow(props: {
   })
   const showSideIcon = () => {
     const ai = props.bot.ai.toLowerCase()
-    return !(ai.includes('raptor') || ai.includes('scav') || ai.includes('barb'))
+    return !(
+      ai.includes('raptor') ||
+      ai.includes('scav') ||
+      ai.includes('barb')
+    )
   }
   const botRowClass = () => ({
     player: true,
@@ -103,10 +107,7 @@ export function BotRow(props: {
   })
 
   return (
-    <div
-      classList={botRowClass()}
-      onPointerDown={press}
-    >
+    <div classList={botRowClass()} onPointerDown={press}>
       <svg class='icon rank bot' role='img'>
         <title>AI</title>
         <use href='#rank-bot' />

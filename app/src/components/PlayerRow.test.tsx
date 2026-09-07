@@ -230,70 +230,78 @@ describe('a player row', () => {
   test('BAR special AIs hide the faction icon but normal AIs keep it', () => {
     const { container, unmount } = render(() => (
       <>
-        <BotRow bot={{
-          name: 'RaptorsDefenseAI(1)',
-          owner: 'host',
-          status: {
-            ready: true,
-            team: 1,
-            allyTeam: 1,
-            player: true,
-            handicap: 0,
-            sync: 'bot',
-            side: 0,
-          },
-          teamColour: 0,
-          ai: 'RaptorsAI',
-          options: {},
-        }} />
-        <BotRow bot={{
-          name: 'ScavengerAI(1)',
-          owner: 'host',
-          status: {
-            ready: true,
-            team: 1,
-            allyTeam: 1,
-            player: true,
-            handicap: 0,
-            sync: 'bot',
-            side: 1,
-          },
-          teamColour: 0,
-          ai: 'ScavengersAI',
-          options: {},
-        }} />
-        <BotRow bot={{
-          name: 'BARb(1)',
-          owner: 'host',
-          status: {
-            ready: true,
-            team: 1,
-            allyTeam: 1,
-            player: true,
-            handicap: 0,
-            sync: 'bot',
-            side: 3,
-          },
-          teamColour: 0,
-          ai: 'BARb',
-          options: {},
-        }} />
-        <BotRow bot={{
-          name: 'OtherAI(1)',
-          owner: 'host',
-          status: {
-            ready: true,
-            team: 1,
-            allyTeam: 1,
-            player: true,
-            handicap: 0,
-            sync: 'bot',
-            side: 2,
-          },
-          teamColour: 0,
-          ai: 'OtherAI',
-          options: {},
-        }} />
+        <BotRow
+          bot={{
+            name: 'RaptorsDefenseAI(1)',
+            owner: 'host',
+            status: {
+              ready: true,
+              team: 1,
+              allyTeam: 1,
+              player: true,
+              handicap: 0,
+              sync: 'bot',
+              side: 0,
+            },
+            teamColour: 0,
+            ai: 'RaptorsAI',
+            options: {},
+          }}
+        />
+        <BotRow
+          bot={{
+            name: 'ScavengerAI(1)',
+            owner: 'host',
+            status: {
+              ready: true,
+              team: 1,
+              allyTeam: 1,
+              player: true,
+              handicap: 0,
+              sync: 'bot',
+              side: 1,
+            },
+            teamColour: 0,
+            ai: 'ScavengersAI',
+            options: {},
+          }}
+        />
+        <BotRow
+          bot={{
+            name: 'BARb(1)',
+            owner: 'host',
+            status: {
+              ready: true,
+              team: 1,
+              allyTeam: 1,
+              player: true,
+              handicap: 0,
+              sync: 'bot',
+              side: 3,
+            },
+            teamColour: 0,
+            ai: 'BARb',
+            options: {},
+          }}
+        />
+        <BotRow
+          bot={{
+            name: 'OtherAI(1)',
+            owner: 'host',
+            status: {
+              ready: true,
+              team: 1,
+              allyTeam: 1,
+              player: true,
+              handicap: 0,
+              sync: 'bot',
+              side: 2,
+            },
+            teamColour: 0,
+            ai: 'OtherAI',
+            options: {},
+          }}
+        />
       </>
     ))
 
