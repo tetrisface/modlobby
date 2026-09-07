@@ -22,4 +22,25 @@ commit: string,
  * room you can watch rather than one whose buttons all fail —
  * `recoil::refuse_target` is what actually enforces it.
  */
-playsOnline: boolean, };
+playsOnline: boolean, 
+/**
+ * Why no engine can be fetched onto this machine, when none can.
+ *
+ * `None` everywhere Beyond All Reason publishes a build. Where it does
+ * not, it is `content::release::NOT_PUBLISHED_HERE` — the same fact
+ * `download_engine` refuses with, carried here so the room can decline to
+ * offer the download rather than offer it and be told. The engine that
+ * runs there arrived by hand, so it is named rather than chosen: a picker
+ * over it could only list what somebody had already put on the disk.
+ *
+ * The reason rather than a `bool`, so nothing can draw the refusal
+ * without the words that explain it, and so the sentence is written once
+ * instead of once per language.
+ *
+ * Not derived from `plays_online`: they are two facts with one cause
+ * today, and they come apart the moment the Apple Silicon build's author
+ * is approved — the servers would open while BAR's index still published
+ * no Apple build, and a room deriving one from the other would go back to
+ * offering a 404.
+ */
+noPublishedEngine: string | null, };

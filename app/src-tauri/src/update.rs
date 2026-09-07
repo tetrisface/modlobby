@@ -42,6 +42,25 @@ pub struct VersionView {
     /// room you can watch rather than one whose buttons all fail —
     /// `recoil::refuse_target` is what actually enforces it.
     pub plays_online: bool,
+    /// Why no engine can be fetched onto this machine, when none can.
+    ///
+    /// `None` everywhere Beyond All Reason publishes a build. Where it does
+    /// not, it is `content::release::NOT_PUBLISHED_HERE` — the same fact
+    /// `download_engine` refuses with, carried here so the room can decline to
+    /// offer the download rather than offer it and be told. The engine that
+    /// runs there arrived by hand, so it is named rather than chosen: a picker
+    /// over it could only list what somebody had already put on the disk.
+    ///
+    /// The reason rather than a `bool`, so nothing can draw the refusal
+    /// without the words that explain it, and so the sentence is written once
+    /// instead of once per language.
+    ///
+    /// Not derived from `plays_online`: they are two facts with one cause
+    /// today, and they come apart the moment the Apple Silicon build's author
+    /// is approved — the servers would open while BAR's index still published
+    /// no Apple build, and a room deriving one from the other would go back to
+    /// offering a 404.
+    pub no_published_engine: Option<&'static str>,
 }
 
 #[tauri::command]
@@ -50,6 +69,7 @@ pub fn app_version() -> VersionView {
         version: env!("CARGO_PKG_VERSION"),
         commit: env!("MODLOBBY_COMMIT"),
         plays_online: recoil::may_join_hosted_games(),
+        no_published_engine: content::release::no_published_engine(),
     }
 }
 
@@ -304,6 +324,17 @@ fn install(handle: &AppHandle, update: &Update, bytes: &[u8]) -> Result<UpdatePr
 #[cfg(test)]
 mod tests {
     use super::allows;
+
+    /// The two answers cannot drift on the one platform where either of them
+    /// is the uncommon one, which is the only platform nobody develops on.
+    #[test]
+    fn the_refusal_is_carried_exactly_where_there_is_no_category() {
+        let view = super::app_version();
+        assert_eq!(
+            view.no_published_engine.is_some(),
+            content::release::category().is_none()
+        );
+    }
 
     #[test]
     fn unset_and_anything_else_mean_on() {

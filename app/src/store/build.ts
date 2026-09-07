@@ -20,3 +20,28 @@ export const [build, setBuild] = createSignal<VersionView | null>(null)
  * away, and every platform but one says yes.
  */
 export const playsOnline = (): boolean => build()?.playsOnline ?? true
+
+/**
+ * Why no engine can be fetched onto this machine, when none can.
+ *
+ * `null` everywhere Beyond All Reason publishes a build, and `undefined` until
+ * the shell has said which this is. Where it is a sentence, BAR's index has no
+ * entry to ask for: the engine that runs here is a third-party bundle somebody
+ * installed by hand, so every offer to fetch one, choose between them or try
+ * again ends in a 404 the app then has to apologise for. The room says where
+ * an engine comes from instead of making the offer.
+ *
+ * The words come from Rust rather than from here because the same fact is what
+ * `download_engine` refuses with: two spellings of one refusal is how the room
+ * and the runtime come to disagree about what this machine can do.
+ *
+ * The third state is the point, and it is why this does not read `?? null` the
+ * way `playsOnline` above reads `?? true`. Both callers are one local round
+ * trip from the answer and they want opposite things from the gap: what is
+ * *drawn* would rather guess than flicker, so it takes not-knowing as no
+ * refusal; what *asks for a download* would rather wait, so it gates on
+ * `build()` itself. An offer a frame late is nothing. A request a frame early
+ * is a red notice on the first room the machine opens.
+ */
+export const noPublishedEngine = (): string | null | undefined =>
+  build()?.noPublishedEngine

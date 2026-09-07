@@ -616,6 +616,22 @@ pub async fn download_missing(app: State<'_, App>) -> Result<()> {
     Ok(())
 }
 
+/// Looks at what is installed again, for an engine that arrived from outside
+/// this app.
+///
+/// Not the same as [`download_missing`], which fetches with pr-downloader out
+/// of the named engine and so can do nothing at all when the engine is what is
+/// missing. The answer is cached against the room's engine, game and map
+/// because it comes of scanning the rapid index, which is far too slow to
+/// repeat per click; a bundle dropped into the engine folder by hand changes
+/// none of those three names, so nothing invalidates the cache and only being
+/// asked finds it.
+#[tauri::command]
+pub async fn recheck_content(app: State<'_, App>) -> Result<()> {
+    app.client.recheck_content().await?;
+    Ok(())
+}
+
 /// BAR's map index: each map's picture and its spring name.
 #[tauri::command]
 pub async fn map_index(app: State<'_, App>) -> Result<content::map_index::MapIndex> {
@@ -1069,6 +1085,21 @@ pub fn open_data_dir(app: State<'_, App>) -> Result<()> {
     std::fs::create_dir_all(&dirs.write)
         .map_err(|err| ApiError::new("io", format!("making the data directory: {err}")))?;
     open(dirs.write)
+}
+
+/// The folder an engine is dropped into, for the machine where that is how one
+/// arrives.
+///
+/// Made if it is not there, for the same reason [`open_data_dir`] makes its
+/// own: a message that names a folder and then opens nothing is worse than no
+/// button at all, and on a machine that has never had an engine nothing has
+/// created it yet.
+#[tauri::command]
+pub fn open_engine_dir(app: State<'_, App>) -> Result<()> {
+    let engine = data_dirs(&app)?.write.join("engine");
+    std::fs::create_dir_all(&engine)
+        .map_err(|err| ApiError::new("io", format!("making the engine directory: {err}")))?;
+    open(engine)
 }
 
 /// The player's files — engine settings, hotkeys, widget state — as the

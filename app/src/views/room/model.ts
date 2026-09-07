@@ -89,6 +89,11 @@ export type RoomCaps = {
   /**
    * The map, game and engine are chosen here rather than by whoever set the
    * room up. Off, they are shown as what they are and changed by asking.
+   *
+   * Whether there is anything to choose between is a second question, and not
+   * one about the room: an engine can only be picked where an engine can be
+   * fetched, which `store/build`'s `noPublishedEngine` answers. That one is
+   * asked at the cell, because it is the same answer in every room here.
    */
   picksContent: boolean
   /**

@@ -1836,6 +1836,13 @@ impl Runtime {
             Command::RecheckContent => {
                 self.checked = None;
                 self.refresh_content().await;
+                // The room with no server behind it keeps its own answer,
+                // keyed on the same three names and cached for the same
+                // reason — and `refresh_content` above returns at once when
+                // there is no connection, so without this an engine put in the
+                // folder by hand is found only by restarting the app.
+                self.skirmish_checked = None;
+                self.push_skirmish();
             }
             Command::ReleaseSeat => {
                 let Some(conn) = self.conn.as_mut() else {

@@ -44,6 +44,7 @@ import {
   unusedBotName,
 } from '../lib/roster'
 import { readSkills, teamSkill, type Skill } from '../lib/skill'
+import { noPublishedEngine } from '../store/build'
 import { chat, pushNotice } from '../store/chat'
 import { joinMilestone } from '../store/join'
 import { lobby } from '../store/lobby'
@@ -65,6 +66,10 @@ const START_POS = [
   { id: 0, label: "The map's own" },
   { id: 1, label: 'Random' },
 ]
+
+/** Where the only Beyond All Reason engine for Apple Silicon is published. */
+const APPLE_ENGINE =
+  'https://github.com/Vandomas/RecoilEngine-AppleSilicon/releases'
 
 export function Room() {
   const navigate = useNavigate()
@@ -189,10 +194,24 @@ export function Room() {
    *
    * A room that has not been told which it wants shows the invitation rather
    * than nothing: an empty link is a click target with no width, which reads
-   * as dead text beside its label.
+   * as dead text beside its label. The same hole opens on the other side — a
+   * fact with no value is a label with nothing after it — which is what
+   * `absent` fills where the caller has something to put there. The two do not
+   * share one placeholder, because one of them is an invitation and the other
+   * is news.
+   *
+   * `picks` is asked for rather than read here, because the room's permission
+   * is only half of it: an engine this machine can only be given by hand is a
+   * fact about the machine, and a list of the one engine on the disk is not a
+   * choice.
    */
-  const Choice = (props: { what: 'game' | 'engine'; shown: string }) => (
-    <Show when={room.caps.picksContent} fallback={<b>{props.shown}</b>}>
+  const Choice = (props: {
+    what: 'game' | 'engine'
+    shown: string
+    picks: boolean
+    absent?: string
+  }) => (
+    <Show when={props.picks} fallback={<b>{props.shown || props.absent}</b>}>
       <b
         class='chat-link'
         title={`Play a different ${props.what}`}
@@ -321,10 +340,25 @@ export function Room() {
                   </span>
                 </Show>
                 <span>
-                  Engine <Choice what='engine' shown={b().engineVersion} />
+                  Engine{' '}
+                  {/* Where nothing publishes an engine for this machine, the
+                      one on the disk is not a choice: it is the only one there
+                      is, and somebody put it there by hand. Said as a fact
+                      instead of offered as a list of one. */}
+                  <Choice
+                    what='engine'
+                    shown={b().engineVersion}
+                    picks={room.caps.picksContent && !noPublishedEngine()}
+                    absent='none installed'
+                  />
                 </span>
                 <span>
-                  Game <Choice what='game' shown={b().gameName} />
+                  Game{' '}
+                  <Choice
+                    what='game'
+                    shown={b().gameName}
+                    picks={room.caps.picksContent}
+                  />
                 </span>
                 {/* A `[game]` key rather than a modoption, so it has no row in
                     the settings table and belongs here with the rest of what
@@ -842,17 +876,70 @@ function Missing(props: { parts: readonly string[]; engineVersion: string }) {
           </button>
         </Match>
         <Match when={!fetchable()}>
-          {/* Asking BAR's index for the engine called "" answers 404, and a
-              retry asks the same question again. Saying so is the honest end
-              of that road until the room is given a version. */}
-          <Show
-            when={props.engineVersion}
-            fallback={
-              <span class='chip warn'>This room names no engine to fetch</span>
-            }
+          <Switch
+            fallback={<GetEngine version={props.engineVersion} auto={auto()} />}
           >
-            <GetEngine version={props.engineVersion} auto={auto()} />
-          </Show>
+            {/* An index with no build for this machine is not a failure to
+                retry: it is the answer, and the way past it is not in this
+                app. Ahead of the empty-version arm because a first run here
+                has neither a version nor an engine, and "this room names no
+                engine" would blame the room for a fact about the machine.
+                Three buttons because the instruction has three steps and each
+                of them is a thing this app can do. */}
+            <Match when={noPublishedEngine()}>
+              {(why) => (
+                <>
+                  <button
+                    class='chip-choice'
+                    onClick={() =>
+                      void api
+                        .openUrl(APPLE_ENGINE)
+                        .catch((error) =>
+                          pushNotice('warning', describeError(error)),
+                        )
+                    }
+                  >
+                    Get one
+                  </button>
+                  <button
+                    class='chip-choice'
+                    onClick={() =>
+                      void api
+                        .openEngineDir()
+                        .catch((error) =>
+                          pushNotice('warning', describeError(error)),
+                        )
+                    }
+                  >
+                    Engine folder
+                  </button>
+                  {/* What is installed is cached against the room's three
+                      names, and dropping a bundle into the folder changes none
+                      of them — so an engine that arrived from outside this app
+                      is found only by being asked for. */}
+                  <button
+                    class='chip-choice'
+                    onClick={() =>
+                      void api
+                        .recheckContent()
+                        .catch((error) =>
+                          pushNotice('warning', describeError(error)),
+                        )
+                    }
+                  >
+                    Look again
+                  </button>
+                  <span class='muted chip-say'>{why()}</span>
+                </>
+              )}
+            </Match>
+            {/* Asking BAR's index for the engine called "" answers 404, and a
+                retry asks the same question again. Saying so is the honest end
+                of that road until the room is given a version. */}
+            <Match when={!props.engineVersion}>
+              <span class='chip warn'>This room names no engine to fetch</span>
+            </Match>
+          </Switch>
         </Match>
       </Switch>
     </>

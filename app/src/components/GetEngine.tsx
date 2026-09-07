@@ -1,7 +1,8 @@
 import { listen } from '@tauri-apps/api/event'
-import { Show, createSignal, onCleanup, onMount } from 'solid-js'
+import { Show, createEffect, createSignal, onCleanup, onMount } from 'solid-js'
 import type { EngineProgress } from '../ipc/bindings/EngineProgress'
 import { api, describeError } from '../ipc/client'
+import { build } from '../store/build'
 import { pushNotice } from '../store/chat'
 
 /** Bytes as something a person reads, which for this is always whole MB. */
@@ -20,6 +21,14 @@ function mb(bytes: number): string {
  * by itself, which is what a room does: joining one whose engine you lack is
  * a request for that engine, as bar-lobby and the launcher both treat it.
  * Without `auto` it says the size and waits for the click.
+ *
+ * Whether this machine has an engine to fetch at all is one local round trip
+ * behind the window, so `auto` waits for that answer rather than asking on
+ * mount: a reload straight into a room used to ask before it knew, and on a
+ * machine Beyond All Reason publishes nothing for that is a red notice
+ * carrying instructions nobody asked for. The button stays live either way — a
+ * click is a question somebody meant to ask, and it gets the whole refusal
+ * back rather than being quietly ignored.
  */
 export function GetEngine(props: {
   version: string
@@ -28,15 +37,26 @@ export function GetEngine(props: {
 }) {
   const [progress, setProgress] = createSignal<EngineProgress | null>(null)
   const [busy, setBusy] = createSignal(false)
+  /** Once per mount, whatever the answer turns out to be. */
+  let asked = false
 
   onMount(() => {
     const pending = listen<EngineProgress>('engine-download', (event) =>
       setProgress(event.payload),
     )
     onCleanup(() => void pending.then((unlisten) => unlisten()))
-    // A version we do not have is a question the index answers 404 to, and
-    // firing it on mount is what turned an empty room into a retry loop.
-    if (props.auto && props.version) void get()
+  })
+
+  // A version we do not have is a question the index answers 404 to, and
+  // firing it on mount is what turned an empty room into a retry loop. So is
+  // a machine no build is published for, which the shell answers a moment
+  // after the window: waiting for it costs a frame, and asking without it
+  // costs an error nobody can act on.
+  createEffect(() => {
+    const known = build()
+    if (!known || asked || !props.auto || !props.version) return
+    asked = true
+    if (!known.noPublishedEngine) void get()
   })
 
   async function get() {

@@ -5,6 +5,8 @@ import { reconcile } from 'solid-js/store'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { ModOption } from '../../ipc/bindings/ModOption'
 import type { SkirmishView } from '../../ipc/bindings/SkirmishView'
+import type { VersionView } from '../../ipc/bindings/VersionView'
+import { setBuild } from '../../store/build'
 import { emptyLobby, setLobby } from '../../store/lobby'
 import { Room } from '../Room'
 import { battle, bot, myBattle, user } from './fixture'
@@ -66,8 +68,20 @@ function sent(command: string) {
     .map(([, args]) => args)
 }
 
+/** What the shell says about this machine. */
+const BUILD = (why: string | null = null): VersionView => ({
+  version: '0.0.0',
+  commit: 'abc1234',
+  playsOnline: true,
+  noPublishedEngine: why,
+})
+
 beforeEach(() => {
   setLobby(reconcile(emptyLobby()))
+  // The engine download waits for the shell to say whether this machine has
+  // one to fetch. Saying so here is what makes these tests about Windows and
+  // Linux rather than about a question nobody answered.
+  setBuild(BUILD())
   // A fresh copy each time: the store writes through to whatever object it
   // is given, so a test that empties a field would empty it for the rest.
   setLobby('skirmish', structuredClone(room))
@@ -92,6 +106,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   setLobby(reconcile(emptyLobby()))
+  // Module state shared across the file, so the reset is not optional.
+  setBuild(null)
   vi.clearAllMocks()
 })
 
@@ -273,6 +289,78 @@ describe('a room whose content is not all here', () => {
   })
 })
 
+/**
+ * What the room offers a machine Beyond All Reason publishes no engine for.
+ *
+ * The only one that will ever be here is a bundle somebody dropped into the
+ * data directory, so every offer to fetch one, choose between them or try
+ * again is an offer that ends in a 404. What is left is saying where an engine
+ * comes from, and the three steps of doing it.
+ */
+describe('a room on a machine no engine is published for', () => {
+  const WHY =
+    'Beyond All Reason publishes no engine for this machine, so modlobby cannot fetch one. An Apple Silicon build goes into the engine folder by hand.'
+
+  beforeEach(() => setBuild(BUILD(WHY)))
+
+  test('says where an engine comes from rather than asking for one', async () => {
+    setLobby('skirmish', 'content', { engine: false, game: false, map: false })
+    // The real first-run shape: `newest()` ends in `unwrap_or_default()`, so a
+    // machine with no engine opens its room with no version either.
+    setLobby('skirmish', 'battle', 'engineVersion', '')
+    const { container, getByText, queryByText } = await open()
+
+    expect(sent('download_engine')).toEqual([])
+    // The older sentence is the wrong answer here: it blames the room for a
+    // fact about the machine.
+    expect(queryByText('This room names no engine to fetch')).toBeNull()
+    expect(getByText('Get one')).toBeTruthy()
+    expect(getByText('Engine folder')).toBeTruthy()
+    expect(container.textContent).toContain(
+      'publishes no engine for this machine',
+    )
+  })
+
+  test('and no Download either, since pr-downloader is inside the engine', async () => {
+    setLobby('skirmish', 'content', { engine: false, game: false, map: false })
+    setLobby('skirmish', 'battle', 'engineVersion', '')
+    const { queryByText } = await open()
+    expect(queryByText('Download')).toBeNull()
+  })
+
+  test('names the engine rather than offering a choice of one', async () => {
+    const { container } = await open()
+    expect(
+      container.querySelector('b.chat-link[title="Play a different engine"]'),
+    ).toBeNull()
+    // The pair is the assertion: the game is still pickable here, because
+    // pr-downloader lives inside the hand-installed bundle and fetches games
+    // and maps normally. Anything that reached for `picksContent` would take
+    // both.
+    expect(
+      container.querySelector('b.chat-link[title="Play a different game"]'),
+    ).toBeTruthy()
+  })
+
+  test('a room with nothing installed says none is installed', async () => {
+    setLobby('skirmish', 'battle', 'engineVersion', '')
+    const { getByText } = await open()
+    // Rather than the word "Engine" with a gap after it.
+    expect(getByText('none installed')).toBeTruthy()
+  })
+
+  test('asks the runtime to look again once something is in the folder', async () => {
+    setLobby('skirmish', 'content', { engine: false, game: false, map: false })
+    setLobby('skirmish', 'battle', 'engineVersion', '')
+    const { getByText } = await open()
+    fireEvent.click(getByText('Look again'))
+    await settle()
+    // Nothing about the room changes when a bundle is dropped in by hand, so
+    // being asked is the only way it is found.
+    expect(sent('recheck_content').length).toBe(1)
+  })
+})
+
 describe('what the room says about itself', () => {
   test('counts agree with their words', async () => {
     const { container } = await open()
@@ -291,6 +379,17 @@ describe('what the room says about itself', () => {
     setLobby('skirmish', 'battle', 'gameName', '')
     const { getAllByText } = await open()
     // An empty link is a click target with no width, which reads as dead text.
+    // Map and Game: the engine has a link too, but this room was given a
+    // version for it. Suppressing the engine by way of `picksContent` would
+    // take these two with it, which is what this count is here to catch.
     expect(getAllByText('choose one').length).toBe(2)
+  })
+
+  test('an engine it was never given is an invitation where one can be fetched', async () => {
+    setLobby('skirmish', 'battle', 'mapName', '')
+    setLobby('skirmish', 'battle', 'gameName', '')
+    setLobby('skirmish', 'battle', 'engineVersion', '')
+    const { getAllByText } = await open()
+    expect(getAllByText('choose one').length).toBe(3)
   })
 })

@@ -85,6 +85,8 @@ export const api = {
     invoke<void>('say_private', { user, text }),
   listChannels: () => invoke<void>('list_channels'),
   downloadMissing: () => invoke<void>('download_missing'),
+  /** Looks at what is installed again, for an engine that arrived by hand. */
+  recheckContent: () => invoke<void>('recheck_content'),
   mapIndex: () => invoke<MapIndex>('map_index'),
   warmMapPictures: (maps: string[], tiles: Tile[]) =>
     invoke<void>('warm_map_pictures', { maps, tiles }),
@@ -213,6 +215,7 @@ export const api = {
     invoke<void>('clear_password', { username }),
   openSettingsFile: () => invoke<void>('open_settings_file'),
   openDataDir: () => invoke<void>('open_data_dir'),
+  openEngineDir: () => invoke<void>('open_engine_dir'),
   playerFiles: () => invoke<PlayerFilesView>('player_files'),
   importPlayerFiles: (from: string) =>
     invoke<number>('import_player_files', { from }),

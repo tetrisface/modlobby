@@ -37,7 +37,44 @@ pub const fn category() -> Option<&'static str> {
 }
 
 /// Why there is no engine to download here, in words for a person.
-pub const NO_CATEGORY: &str = "Beyond All Reason publishes no macOS engine, so modlobby cannot     fetch one. Install an Apple Silicon build by hand -- the BAR Launcher app from     github.com/Vandomas/RecoilEngine-AppleSilicon -- into the engine folder of the data     directory, and modlobby will find the engine inside it.";
+///
+/// The whole instruction, because this answers a request somebody actually
+/// made: an error has no buttons beside it, so it has to carry both where the
+/// engine comes from and where it goes.
+pub const NO_CATEGORY: &str = "Beyond All Reason publishes no macOS engine, so modlobby cannot fetch one. Install an Apple Silicon build by hand -- the BAR Launcher app from github.com/Vandomas/RecoilEngine-AppleSilicon -- into the engine folder of the data directory, and modlobby will find the engine inside it.";
+
+/// The same fact for a room, which has the buttons this sentence would
+/// otherwise have to describe.
+///
+/// Two spellings of one refusal is how a room and a runtime come to disagree
+/// about what a machine can do, so both live here and both come from
+/// [`category`]. What differs is only who is being told: [`NO_CATEGORY`]
+/// answers a request that was made, this one is said before anyone makes it.
+pub const NOT_PUBLISHED_HERE: &str = "Beyond All Reason publishes no engine for this machine, so modlobby cannot fetch one. An Apple Silicon build goes into the engine folder by hand.";
+
+/// Why no engine can be fetched for `category`, when none can.
+///
+/// The absence [`category`] returns, in words. Both callers that have to
+/// explain themselves to a person -- the download that refuses, and the room
+/// that would otherwise offer it -- would each have to work out for themselves
+/// that a missing category is what "no Apple build" looks like from here, and
+/// a fact spelled out twice is how the room comes to offer what the runtime
+/// refuses.
+///
+/// Takes the category rather than reading it, the way `recoil::refuse_target`
+/// takes the platform answer: an invariant only ever tested on the platform it
+/// fires on is one nobody notices breaking.
+pub const fn no_published_engine_for(category: Option<&str>) -> Option<&'static str> {
+    match category {
+        Some(_) => None,
+        None => Some(NOT_PUBLISHED_HERE),
+    }
+}
+
+/// This machine's own answer, for a caller with no category in hand.
+pub const fn no_published_engine() -> Option<&'static str> {
+    no_published_engine_for(category())
+}
 
 /// One entry from the index. Only the fields worth acting on are read; the
 /// index carries more and may grow.
@@ -94,6 +131,24 @@ fn urlencode(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Written against a room that offers a download the runtime refuses.
+    ///
+    /// Both arms go through `_for`, so the uncommon one is exercised from
+    /// every machine rather than only from the one it fires on. The last line
+    /// is the invariant rather than a restatement of the first: `find_url` is
+    /// `None` only by way of `category()?`, so the reason the room reads and
+    /// the URL the downloader builds have to agree or one of them is lying.
+    #[test]
+    fn the_reason_and_the_category_are_one_answer() {
+        assert_eq!(no_published_engine_for(Some("engine_linux64")), None);
+        assert_eq!(no_published_engine_for(None), Some(NOT_PUBLISHED_HERE));
+        assert_eq!(no_published_engine().is_none(), category().is_some());
+        assert_eq!(
+            find_url("2026.07.04").is_none(),
+            no_published_engine().is_some()
+        );
+    }
 
     #[test]
     fn the_query_names_this_platform_and_the_version() {

@@ -588,6 +588,11 @@ textarea {
   gap: 0.3125rem;
 }
 
+/* A sentence among pills takes the row rather than sharing one. */
+.chips .chip-say {
+  flex-basis: 100%;
+}
+
 /* Sentence case, not shouted: these are short statements about the room —
    "Missing engine, game, map", "1 player · 0 spectators" — and they sit beside
    .chip-choice buttons that have always been sentence case. */
