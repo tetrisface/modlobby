@@ -33,17 +33,15 @@ pub struct VersionView {
     pub version: &'static str,
     /// The short commit hash, stamped by `build.rs`.
     pub commit: &'static str,
-    /// Whether this build may talk to the lobby server at all.
+    /// Whether the engine here may be run against somebody's hosted game.
     ///
-    /// False on macOS. Beyond All Reason publishes no Apple engine, so the
-    /// only one that exists is a third-party build whose author has asked
-    /// that it not be pointed at the community servers until they approve it
-    /// — and disables online play by neutering Chobby's server address
-    /// (`packaging/release-build.sh`, "online play is blocked outside the
-    /// game, not inside it"). modlobby does not read that config and speaks
-    /// to the server itself, so nothing about the engine stops us: honouring
-    /// it is this flag's job. macOS is skirmish, replays and settings.
-    pub online: bool,
+    /// False on macOS, where the only engine that exists is a third-party
+    /// build its author asks not be used on the community servers. Talking in
+    /// a room costs those servers nothing and is left alone; playing is what
+    /// stops. This is the front end's copy of the answer, so it can draw a
+    /// room you can watch rather than one whose buttons all fail —
+    /// `recoil::refuse_target` is what actually enforces it.
+    pub plays_online: bool,
 }
 
 #[tauri::command]
@@ -51,9 +49,7 @@ pub fn app_version() -> VersionView {
     VersionView {
         version: env!("CARGO_PKG_VERSION"),
         commit: env!("MODLOBBY_COMMIT"),
-        // A `cfg!` in value position, so every branch still compiles and every
-        // test still runs on every platform.
-        online: cfg!(not(target_os = "macos")),
+        plays_online: recoil::may_join_hosted_games(),
     }
 }
 

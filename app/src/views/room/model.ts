@@ -91,6 +91,14 @@ export type RoomCaps = {
    * room up. Off, they are shown as what they are and changed by asking.
    */
   picksContent: boolean
+  /**
+   * The game this room is for can be played on this machine.
+   *
+   * Off leaves a room to read and talk in: no seat to take, no ready flag and
+   * no way to start or join the game. macOS turns this off for rooms on the
+   * server, where the only engine available may not be used.
+   */
+  plays: boolean
 }
 
 /**

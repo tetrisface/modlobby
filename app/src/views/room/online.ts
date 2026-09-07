@@ -1,5 +1,6 @@
 import { api } from '../../ipc/client'
 import { BATTLE_ROOM } from '../../store/chat'
+import { playsOnline } from '../../store/build'
 import { lobby, myRoom } from '../../store/lobby'
 import type { RoomCaps, RoomModel } from './model'
 
@@ -13,6 +14,11 @@ const ONLINE: RoomCaps = {
   leave: true,
   // The host's room, and `!map` is how anyone asks it to change.
   picksContent: false,
+  // Read at draw time rather than fixed here: the answer arrives from the
+  // shell a moment after the window does.
+  get plays() {
+    return playsOnline()
+  },
 }
 
 /**

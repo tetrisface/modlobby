@@ -52,6 +52,8 @@ const ALONE: RoomCaps = {
   startsGame: true,
   leave: false,
   picksContent: true,
+  // A skirmish is this machine's own game; nothing about it reaches a server.
+  plays: true,
 }
 
 /**

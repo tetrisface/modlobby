@@ -367,10 +367,15 @@ export function Room() {
                     Back to game
                   </button>
                 </Match>
-                <Match when={room.running()}>
+                <Match when={room.running() && room.caps.plays}>
                   <button class='primary' onClick={launch}>
                     Watch the game
                   </button>
+                </Match>
+                {/* The game is on, and this machine has no engine allowed to
+                    join it. Said rather than left as an empty corner. */}
+                <Match when={room.running()}>
+                  <span class='muted'>Game in progress</span>
                 </Match>
                 {/* Nobody else is going to start this one. */}
                 <Match when={room.caps.startsGame}>

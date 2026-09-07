@@ -132,7 +132,7 @@ export function Seat() {
   createEffect(() => {
     const battle = battleOf()
     const play = settings()?.play
-    if (!battle || !play || seated()) return
+    if (!battle || !play || seated() || !room.caps.plays) return
     if (seatedIn === battle.id) return
     const wanted =
       play.joinAs === 'remember' ? play.lastWasPlayer : play.joinAs === 'player'
@@ -177,76 +177,90 @@ export function Seat() {
 
   return (
     <div class='seat'>
-      <select
-        value={current()}
-        disabled={busy()}
-        onChange={(e) => void pickSeat(e.currentTarget)}
+      {/* A room whose game cannot be played here is one to watch and talk in:
+          every control below ends, sooner or later, in the engine being
+          started on somebody else's game. */}
+      <Show
+        when={room.caps.plays}
+        fallback={
+          <span class='muted'>
+            Spectating. This build has no engine that may play on the server.
+          </span>
+        }
       >
-        <For each={allyTeams()}>
-          {(ally) => (
-            <option value={String(ally)}>
-              {current() === String(ally)
-                ? `Team ${ally + 1}`
-                : usedAllies().has(ally)
-                  ? `Join team ${ally + 1}`
-                  : `New team ${ally + 1}`}
-            </option>
-          )}
-        </For>
-        <option value={SPECTATOR}>Spectator</option>
-      </select>
+        <select
+          value={current()}
+          disabled={busy()}
+          onChange={(e) => void pickSeat(e.currentTarget)}
+        >
+          <For each={allyTeams()}>
+            {(ally) => (
+              <option value={String(ally)}>
+                {current() === String(ally)
+                  ? `Team ${ally + 1}`
+                  : usedAllies().has(ally)
+                    ? `Join team ${ally + 1}`
+                    : `New team ${ally + 1}`}
+              </option>
+            )}
+          </For>
+          <option value={SPECTATOR}>Spectator</option>
+        </select>
 
-      <Show when={seated()}>
-        {/* Sitting down mid-game puts you in the lineup for the next one,
+        <Show when={seated()}>
+          {/* Sitting down mid-game puts you in the lineup for the next one,
               which is worth saying so nobody waits for this one to let them in. */}
-        <Show when={running()}>
-          <span class='muted'>next game</span>
-        </Show>
+          <Show when={running()}>
+            <span class='muted'>next game</span>
+          </Show>
 
-        {/* Ready is a thing you say to somebody. */}
-        <Show when={room.caps.ready}>
-          <button
-            class={seat()?.ready ? 'primary' : ''}
+          {/* Ready is a thing you say to somebody. */}
+          <Show when={room.caps.ready}>
+            <button
+              class={seat()?.ready ? 'primary' : ''}
+              disabled={busy()}
+              onClick={() =>
+                act('ready', () => room.io.setReady(!(seat()?.ready ?? false)))
+              }
+            >
+              {seat()?.ready ? 'Ready' : 'Not ready'}
+            </button>
+          </Show>
+
+          <select
+            value={String(seat()?.side ?? 0)}
             disabled={busy()}
-            onClick={() =>
-              act('ready', () => room.io.setReady(!(seat()?.ready ?? false)))
+            onChange={(e) =>
+              act('faction', () =>
+                room.io.setSide(Number(e.currentTarget.value)),
+              )
             }
           >
-            {seat()?.ready ? 'Ready' : 'Not ready'}
-          </button>
+            <For each={SIDES}>
+              {(side) => <option value={String(side.id)}>{side.label}</option>}
+            </For>
+          </select>
+          <SideIcon side={seat()?.side ?? 0} />
         </Show>
 
-        <select
-          value={String(seat()?.side ?? 0)}
-          disabled={busy()}
-          onChange={(e) =>
-            act('faction', () => room.io.setSide(Number(e.currentTarget.value)))
-          }
-        >
-          <For each={SIDES}>
-            {(side) => <option value={String(side.id)}>{side.label}</option>}
-          </For>
-        </select>
-        <SideIcon side={seat()?.side ?? 0} />
-      </Show>
+        <AddAi
+          busy={busy()}
+          act={act}
+          freeTeam={() => nextTeam(room)}
+          freeAlly={freeAlly}
+          allyTeams={allyTeams}
+        />
 
-      <AddAi
-        busy={busy()}
-        act={act}
-        freeTeam={() => nextTeam(room)}
-        freeAlly={freeAlly}
-        allyTeams={allyTeams}
-      />
-
-      {/* One click onto the emptiest side; the picker above is for choosing. */}
-      <Show when={!seated()}>
-        <button
-          disabled={busy()}
-          title='Take a seat on the emptiest team'
-          onClick={() => act('take a seat', () => sitOn(room, freeAlly()))}
-        >
-          Join
-        </button>
+        {/* One click onto the emptiest side; the picker above is for choosing. */}
+        <Show when={!seated()}>
+          <button
+            disabled={busy()}
+            title='Take a seat on the emptiest team'
+            onClick={() => act('take a seat', () => sitOn(room, freeAlly()))}
+          >
+            Join
+          </button>
+        </Show>
       </Show>
 
       <span class='spacer' />

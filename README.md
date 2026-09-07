@@ -27,8 +27,19 @@ bun run build    # installer under app/src-tauri/target/release/bundle/
 macOS runs **skirmish against AI, and nothing that needs a server**. Beyond All Reason
 publishes no engine for Apple, and the Apple Silicon build that exists —
 [RecoilEngine-AppleSilicon](https://github.com/Vandomas/RecoilEngine-AppleSilicon) — has online
-play turned off at the build level, because unofficial builds are not permitted on the official
-servers. modlobby does not work around that.
+play turned off, because unofficial builds are not permitted on the official servers until their
+author has approval.
+
+That build turns it off by pointing Chobby's lobby-server address at a reserved name that can never
+resolve, which modlobby never reads: it talks to the server itself. So the restriction is one
+modlobby has to keep rather than one it inherits.
+
+It keeps it where the engine is started, not where the buttons are. `recoil::refuse_target` is
+checked at the single place any game is launched, so a skirmish and a replay run and a
+`spring://` join cannot — by any route, present or future. The lobby is otherwise whole: the
+battle list, chat and rooms all work, and a room you join is one you watch, with no seat to take,
+no ready flag, no launch and no auto-launch. Everything that was removed is a thing that ends in
+the engine being started on somebody else's game.
 
 Because there is no engine to fetch, the engine is installed by hand. Download the
 `BAR-Launcher-*.zip`, then drop `BAR Launcher.app` into modlobby's engine folder:

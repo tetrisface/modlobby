@@ -130,6 +130,33 @@ function gapped(): RoomModel {
   })
 }
 
+describe('a room whose game cannot be played here', () => {
+  /** What macOS gets for a room on the server: watch and talk, nothing else. */
+  function watching(): RoomModel {
+    return fakeRoom({
+      caps: { ...SERVED, plays: false },
+      battle: () => battle({ bots: [bot('BARb')] }),
+      users: () => ({ me: user('me') }),
+    })
+  }
+
+  test('offers no seat at all, rather than one that fails', async () => {
+    const { container, getByText } = await open(watching())
+
+    expect(container.querySelector('.seat select')).toBeNull()
+    expect(getByText(/Spectating/)).toBeTruthy()
+  })
+
+  test('and the room itself is still there to read', async () => {
+    const { container } = await open(watching())
+
+    // The point of allowing this at all: the teams, the map and the chat are
+    // what a lobby is for, and none of them start an engine.
+    expect(container.querySelectorAll('.team').length).toBeGreaterThan(0)
+    expect(named(container, '.team')).toContain('BARb')
+  })
+})
+
 describe('choosing a team', () => {
   test('an empty team between two full ones can still be taken', async () => {
     const { container } = await open(gapped())

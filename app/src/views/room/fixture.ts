@@ -175,6 +175,7 @@ export const ALONE: RoomCaps = {
   startsGame: true,
   leave: false,
   picksContent: true,
+  plays: true,
 }
 
 /** A room on the server, as `onlineRoom()` describes one. */
@@ -185,6 +186,7 @@ export const SERVED: RoomCaps = {
   startsGame: false,
   leave: true,
   picksContent: false,
+  plays: true,
 }
 
 export function fakeRoom(over: Partial<RoomModel> = {}): RoomModel {

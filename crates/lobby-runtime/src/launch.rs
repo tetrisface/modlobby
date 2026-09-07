@@ -155,6 +155,15 @@ pub fn spawn(
     overlay_config_dir: Option<&Path>,
     menu: Option<recoil::MenuArchive>,
 ) -> Result<Launched, String> {
+    // The one place the engine is ever started, so the one place this has to
+    // hold. A skirmish and a replay are this machine's own business; joining
+    // somebody's hosted game is what the Apple build's author asked nobody to
+    // do with it, and refusing here means no button, route or future caller
+    // can get around it by accident.
+    if let Some(refusal) = recoil::refuse_target(&target, recoil::may_join_hosted_games()) {
+        return Err(refusal);
+    }
+
     let engine = content::Library::new(dirs.clone())
         .find_engine(engine_version)
         .ok_or_else(|| {

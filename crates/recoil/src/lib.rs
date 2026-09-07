@@ -170,11 +170,48 @@ fn plist_string(plist: &str, key: &str) -> Option<String> {
     Some(after[open..close].trim().to_owned())
 }
 
+/// What the engine is handed to join somebody else's hosted game, rather than
+/// a start script or a replay of its own.
+pub const JOIN_SCHEME: &str = "spring://";
+
+/// Whether the engine on this platform may be run against a hosted game.
+///
+/// False on macOS. Beyond All Reason publishes no Apple engine, so the only
+/// one that exists is a third-party build whose author asks that it not reach
+/// the community servers until they approve it — and enforces that by
+/// neutering Chobby's server address, which modlobby never reads. Chatting in
+/// a room costs the servers nothing and is left alone; *playing* is what this
+/// stops, and it stops it at the one place the engine is started rather than
+/// by hiding buttons, so no path can arrive at it by another route.
+pub const fn may_join_hosted_games() -> bool {
+    cfg!(not(target_os = "macos"))
+}
+
+/// Whether this target is somebody else's hosted game.
+pub fn is_hosted_game(target: &str) -> bool {
+    target.starts_with(JOIN_SCHEME)
+}
+
+/// Why the engine must not be started on `target`, when it must not.
+///
+/// Split from the platform answer so it can be exercised both ways from any
+/// machine: an invariant only ever tested on the platform it fires on is one
+/// nobody notices breaking.
+pub fn refuse_target(target: &str, may_join: bool) -> Option<String> {
+    if !is_hosted_game(target) || may_join {
+        return None;
+    }
+    Some(
+        "this build cannot join hosted games: the only Beyond All Reason engine for macOS is a          third-party build its author asks not be used on the community servers. Skirmish          against AI and replays still run."
+            .to_owned(),
+    )
+}
+
 /// `spring://<user>:<script password>@<host>:<port>` — what Chobby hands the
 /// engine to join a hosted game (`liblobby/lobby/lobby.lua` `ConnectToBattle`,
 /// parsed in `rts/System/SpringApp.cpp`).
 pub fn spring_url(username: &str, script_password: &str, host: &str, port: u16) -> String {
-    format!("spring://{username}:{script_password}@{host}:{port}")
+    format!("{JOIN_SCHEME}{username}:{script_password}@{host}:{port}")
 }
 
 /// The engine under `<data>/engine` holding `version`, as the BAR launcher
@@ -492,6 +529,31 @@ mod tests {
         assert_eq!(installed_ais(&root), ["BARb"], "Ghost has no library");
 
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// The invariant the macOS support rests on: a hosted game never starts
+    /// the engine where the engine may not join one, and everything local
+    /// still does.
+    #[test]
+    fn a_hosted_game_is_refused_where_the_engine_may_not_join_one() {
+        let url = spring_url("me", "4242", "1.2.3.4", 8452);
+        assert!(is_hosted_game(&url));
+        assert!(refuse_target(&url, false).is_some());
+        assert!(refuse_target(&url, true).is_none(), "allowed everywhere else");
+    }
+
+    #[test]
+    fn a_skirmish_and_a_replay_are_this_machines_own_business() {
+        for target in [
+            "C:/data/modlobby-skirmish.txt",
+            "/Users/ann/Library/Application Support/modlobby/data/demos/x.sdfz",
+        ] {
+            assert!(!is_hosted_game(target));
+            assert!(
+                refuse_target(target, false).is_none(),
+                "{target} needs no server"
+            );
+        }
     }
 
     #[test]

@@ -2192,11 +2192,15 @@ impl Runtime {
                     // to watch, and starts on its own only when the game does.
                     // Never without the content either: that only produces an
                     // engine that quits with a sync error.
+                    // Nor where the engine may not join a hosted game at all:
+                    // the launch would be refused, and refusing it once per
+                    // game start is a notice nobody asked for.
                     let wanted = self.auto_launch.take().or_else(|| {
                         (just_started
                             && self.auto_launch_always
                             && self.content_ready
-                            && self.engine.is_none())
+                            && self.engine.is_none()
+                            && recoil::may_join_hosted_games())
                         .then(|| self.data_dirs())
                         .flatten()
                     });
