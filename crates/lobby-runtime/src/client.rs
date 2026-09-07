@@ -1097,7 +1097,7 @@ impl Runtime {
             self.overlay_config_dir.as_deref(),
             self.menu_archive.clone(),
         )
-            .map_err(ClientError::Engine)?;
+        .map_err(ClientError::Engine)?;
         self.started(launched, dirs.write);
         Ok(())
     }

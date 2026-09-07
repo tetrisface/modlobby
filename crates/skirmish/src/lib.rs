@@ -437,7 +437,11 @@ impl Room {
     ) -> bool {
         // Its own colour is not a collision with itself, so the search for a
         // free one runs before the AI is touched.
-        let settled = if self.ais.iter().any(|ai| ai.name == name && ai.colour == colour) {
+        let settled = if self
+            .ais
+            .iter()
+            .any(|ai| ai.name == name && ai.colour == colour)
+        {
             colour
         } else {
             self.free_colour(colour)

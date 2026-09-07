@@ -166,14 +166,14 @@ async fn fetch(
     recoil::find_engine(data_dir, version)
         .map(|engine| engine.bin)
         .ok_or_else(|| {
-        ApiError::new(
-            "archive",
-            format!(
-                "the archive unpacked but holds no {}",
-                recoil::ENGINE_BINARY
-            ),
-        )
-    })
+            ApiError::new(
+                "archive",
+                format!(
+                    "the archive unpacked but holds no {}",
+                    recoil::ENGINE_BINARY
+                ),
+            )
+        })
 }
 
 /// Tries every mirror the index named, in its order, and verifies what arrived.

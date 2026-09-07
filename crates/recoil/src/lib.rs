@@ -140,7 +140,9 @@ impl EngineLayout {
             ("DYLD_FALLBACK_LIBRARY_PATH", frameworks.clone().into()),
         ];
         if let Some(icd) = icd {
-            let moltenvk = icd.file_name().is_some_and(|name| name == "moltenvk_icd.json");
+            let moltenvk = icd
+                .file_name()
+                .is_some_and(|name| name == "moltenvk_icd.json");
             env.push(("VK_ICD_FILENAMES", icd.clone().into()));
             env.push(("VK_DRIVER_FILES", icd.into()));
             if moltenvk {
@@ -227,9 +229,7 @@ pub fn find_engine(data_dir: &Path, version: &str) -> Option<EngineLayout> {
             let named = named == version || named.ends_with(&suffix);
             EngineLayout::at(&path).map(|layout| (named, layout))
         })
-        .find(|(named, layout)| {
-            *named || layout.declared_version().as_deref() == Some(version)
-        })
+        .find(|(named, layout)| *named || layout.declared_version().as_deref() == Some(version))
         .map(|(_, layout)| layout)
 }
 
@@ -337,7 +337,10 @@ mod tests {
     /// Builds a macOS-shaped engine: an `.app` inside the version directory,
     /// with the binary, the content and the libraries in their three places.
     fn bundled_engine(root: &Path) -> PathBuf {
-        let app = root.join("engine").join("recoil_2026.07.04").join("BAR Launcher.app");
+        let app = root
+            .join("engine")
+            .join("recoil_2026.07.04")
+            .join("BAR Launcher.app");
         let contents = app.join("Contents");
         std::fs::create_dir_all(contents.join("MacOS")).unwrap();
         std::fs::create_dir_all(contents.join("Resources").join("vulkan").join("icd.d")).unwrap();
@@ -385,7 +388,10 @@ mod tests {
         assert_eq!(plist_string(BUNDLE_PLIST, "Nothing"), None);
         // A key whose value is missing must not borrow the next key's.
         assert_eq!(
-            plist_string("<key>Alone</key><key>Other</key><string>x</string>", "Alone"),
+            plist_string(
+                "<key>Alone</key><key>Other</key><string>x</string>",
+                "Alone"
+            ),
             None
         );
     }
@@ -400,7 +406,9 @@ mod tests {
         let odd = root.join("engine").join("dropped-here");
         std::fs::rename(app.parent().unwrap(), &odd).unwrap();
         std::fs::write(
-            odd.join("BAR Launcher.app").join("Contents").join("Info.plist"),
+            odd.join("BAR Launcher.app")
+                .join("Contents")
+                .join("Info.plist"),
             BUNDLE_PLIST,
         )
         .unwrap();
@@ -440,8 +448,14 @@ mod tests {
         let app = bundled_engine(&root);
 
         let layout = find_engine(&root, "2026.07.04").expect("an engine in the bundle");
-        assert_eq!(layout.engine(), app.join("Contents").join("MacOS").join(ENGINE_BINARY));
-        assert_eq!(layout.downloader(), app.join("Contents").join("MacOS").join(DOWNLOADER_BINARY));
+        assert_eq!(
+            layout.engine(),
+            app.join("Contents").join("MacOS").join(ENGINE_BINARY)
+        );
+        assert_eq!(
+            layout.downloader(),
+            app.join("Contents").join("MacOS").join(DOWNLOADER_BINARY)
+        );
         assert_eq!(layout.content, app.join("Contents").join("Resources"));
         assert!(layout.bundled());
         // And it is listed as an installed version like any other.
@@ -539,7 +553,10 @@ mod tests {
         let url = spring_url("me", "4242", "1.2.3.4", 8452);
         assert!(is_hosted_game(&url));
         assert!(refuse_target(&url, false).is_some());
-        assert!(refuse_target(&url, true).is_none(), "allowed everywhere else");
+        assert!(
+            refuse_target(&url, true).is_none(),
+            "allowed everywhere else"
+        );
     }
 
     #[test]
@@ -572,7 +589,10 @@ mod tests {
         std::fs::write(engine.join(ENGINE_BINARY), b"").unwrap();
         std::fs::create_dir_all(root.join("engine").join("recoil_2025.04.01")).unwrap();
 
-        assert_eq!(find_engine(&root, "2026.07.04"), Some(EngineLayout::flat(engine)));
+        assert_eq!(
+            find_engine(&root, "2026.07.04"),
+            Some(EngineLayout::flat(engine))
+        );
         assert_eq!(find_engine(&root, "2025.04.01"), None, "no binary");
         assert_eq!(find_engine(&root, "1999.01.01"), None);
 
