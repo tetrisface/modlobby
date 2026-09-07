@@ -354,7 +354,6 @@ function Layout(props: ParentProps) {
           </Show>
         </A>
         <A href='/replays'>Replays</A>
-        <A href='/presets'>Presets</A>
         <A href='/settings'>Settings</A>
         {/* The way in, while there is no session. The corner's reconnect
             button resumes one that dropped; this is for not having one. */}
