@@ -45,7 +45,7 @@
   /* The one lever every length hangs off: sizes below are `rem`, so the
      whole interface scales with this. Ctrl+wheel and the settings control
      write `--ui-scale`; nothing else touches the root size. */
-  font-size: calc(16px * var(--ui-scale, 1));
+  font-size: calc(15.2px * var(--ui-scale, 1));
 }
 
 * {
