@@ -249,20 +249,6 @@ export function Seat() {
         </button>
       </Show>
 
-      <Show when={room.content()}>
-        {(content) => {
-          const missing = () =>
-            (['engine', 'game', 'map'] as const).filter(
-              (what) => !content()[what],
-            )
-          return (
-            <Show when={missing().length}>
-              <span class='error'>missing {missing().join(', ')}</span>
-            </Show>
-          )
-        }}
-      </Show>
-
       <span class='spacer' />
       {/* Both halves of Chobby's Host button: an empty autohost is a listed
           room you boss, `!privatehost` is a passworded one made on request.

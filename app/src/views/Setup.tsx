@@ -421,9 +421,9 @@ export function Setup() {
  * there is a host to persuade and when there is not.
  */
 function noteOfPane(room: RoomModel, editable: boolean): string {
-  if (!editable) return 'read-only · spectator'
-  if (room.caps.spads) return 'a change is proposed to the host'
-  return 'a change takes effect here'
+  if (!editable) return 'Read-only · spectator'
+  if (room.caps.spads) return 'A change is proposed to the host'
+  return 'A change takes effect here'
 }
 
 /** `localStorage`, when the webview lets us at it. */

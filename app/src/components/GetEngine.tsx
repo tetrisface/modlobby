@@ -34,10 +34,13 @@ export function GetEngine(props: {
       setProgress(event.payload),
     )
     onCleanup(() => void pending.then((unlisten) => unlisten()))
-    if (props.auto) void get()
+    // A version we do not have is a question the index answers 404 to, and
+    // firing it on mount is what turned an empty room into a retry loop.
+    if (props.auto && props.version) void get()
   })
 
   async function get() {
+    if (!props.version) return
     setBusy(true)
     try {
       await api.downloadEngine(props.version)
@@ -48,6 +51,12 @@ export function GetEngine(props: {
       setBusy(false)
     }
   }
+
+  /** Named where the room knows the version, general where it does not. */
+  const heading = () =>
+    props.version
+      ? `Engine ${props.version} is not installed.`
+      : 'The engine is not installed.'
 
   const said = () => {
     const at = progress()
@@ -76,7 +85,7 @@ export function GetEngine(props: {
   return (
     <div class='get-engine'>
       <div class='get-engine-say'>
-        <strong>Engine {props.version} is not installed.</strong>{' '}
+        <strong>{heading()}</strong>{' '}
         <span class='muted'>
           It is a few hundred megabytes and only needs fetching once.
         </span>

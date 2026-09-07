@@ -186,6 +186,10 @@ export function Room() {
   /**
    * A version, as a thing to change where it is ours to change and as a plain
    * statement of fact where it is not.
+   *
+   * A room that has not been told which it wants shows the invitation rather
+   * than nothing: an empty link is a click target with no width, which reads
+   * as dead text beside its label.
    */
   const Choice = (props: { what: 'game' | 'engine'; shown: string }) => (
     <Show when={room.caps.picksContent} fallback={<b>{props.shown}</b>}>
@@ -194,7 +198,7 @@ export function Room() {
         title={`Play a different ${props.what}`}
         onClick={() => setPicking(props.what)}
       >
-        {props.shown}
+        {props.shown || 'choose one'}
       </b>
     </Show>
   )
@@ -305,7 +309,7 @@ export function Room() {
                       title='Play a different map'
                       onClick={() => setPicking('map')}
                     >
-                      {b().mapName}
+                      {b().mapName || 'choose one'}
                     </b>
                   </Show>
                 </span>
@@ -414,13 +418,18 @@ export function Room() {
                         <header class='team-head'>
                           <span class='name'>Team {team().allyTeam + 1}</span>
                           <span class='count'>{team().expected}</span>
-                          <Show when={team().users.length > 0}>
-                            <span class='os'>
-                              Σ{' '}
-                              {teamSkill(
-                                team().users.map((u) => skillOf(u.name)),
-                              ).toFixed(1)}
-                            </span>
+                          {/* Nothing to say where nobody is rated, which is
+                              every skirmish and any room whose skills have
+                              not arrived yet. A sum of zero is not a fact
+                              about the team. */}
+                          <Show
+                            when={teamSkill(
+                              team().users.map((u) => skillOf(u.name)),
+                            )}
+                          >
+                            {(sum) => (
+                              <span class='os'>Σ {sum().toFixed(1)}</span>
+                            )}
                           </Show>
                           <Show when={canJoin(team().allyTeam)}>
                             <button
@@ -717,6 +726,11 @@ function missingParts(room: RoomModel): readonly string[] {
   return (['engine', 'game', 'map'] as const).filter((part) => !content[part])
 }
 
+/** `1 player`, `2 players` — a count with its word, agreeing with it. */
+function count(n: number, what: string): string {
+  return `${n} ${what}${n === 1 ? '' : 's'}`
+}
+
 function Chips(props: { battle: BattleView }) {
   const room = useRoom()
   const parts = createMemo(() => missingParts(room))
@@ -750,8 +764,8 @@ function Chips(props: { battle: BattleView }) {
         <span class='chip warn'>Passworded</span>
       </Show>
       <span class='chip'>
-        {props.battle.playerCount} players · {props.battle.spectatorCount}{' '}
-        spectators
+        {count(props.battle.playerCount, 'player')} ·{' '}
+        {count(props.battle.spectatorCount, 'spectator')}
       </span>
     </div>
   )
@@ -784,7 +798,16 @@ function Missing(props: { parts: readonly string[]; engineVersion: string }) {
   return (
     <>
       <span class='chip warn'>Missing {props.parts.join(', ')}</span>
-      <Switch>
+      {/* The fallback is the point: with auto-download on and the engine
+          already here, none of the arms matched and the row offered nothing
+          at all — a dead end one second after the engine landed. */}
+      <Switch
+        fallback={
+          <button class='chip-choice' onClick={start}>
+            Download
+          </button>
+        }
+      >
         <Match when={download().state === 'running'}>
           {(() => {
             const running = () =>
@@ -814,12 +837,17 @@ function Missing(props: { parts: readonly string[]; engineVersion: string }) {
           </button>
         </Match>
         <Match when={!fetchable()}>
-          <GetEngine version={props.engineVersion} auto={auto()} />
-        </Match>
-        <Match when={!auto()}>
-          <button class='chip-choice' onClick={start}>
-            Download
-          </button>
+          {/* Asking BAR's index for the engine called "" answers 404, and a
+              retry asks the same question again. Saying so is the honest end
+              of that road until the room is given a version. */}
+          <Show
+            when={props.engineVersion}
+            fallback={
+              <span class='chip warn'>This room names no engine to fetch</span>
+            }
+          >
+            <GetEngine version={props.engineVersion} auto={auto()} />
+          </Show>
         </Match>
       </Switch>
     </>

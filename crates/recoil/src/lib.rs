@@ -20,6 +20,156 @@ pub const ENGINE_BINARY: &str = if cfg!(windows) {
     "spring"
 };
 
+/// Where the parts of an installed engine are.
+///
+/// On Windows and Linux an engine directory is flat: `spring`, `pr-downloader`,
+/// `AI/` and `base/` all sit in it together. A macOS build is an application
+/// bundle and splits those across `Contents/MacOS` and `Contents/Resources`,
+/// with the libraries it links in `Contents/Frameworks`. Everything that
+/// reaches into an engine goes through this, so exactly one place knows the
+/// difference and a bundle cannot be half-handled.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EngineLayout {
+    /// Holds `spring` and `pr-downloader`, and is the working directory.
+    pub bin: PathBuf,
+    /// Holds `AI/Skirmish`, `base/`, and the engine's own content.
+    pub content: PathBuf,
+    /// The bundle's libraries. `None` for a flat install, which needs none.
+    pub frameworks: Option<PathBuf>,
+}
+
+impl EngineLayout {
+    /// Reads an engine directory, or `None` where there is no engine in it.
+    pub fn at(root: &Path) -> Option<Self> {
+        if root.join(ENGINE_BINARY).is_file() {
+            return Some(Self {
+                bin: root.to_owned(),
+                content: root.to_owned(),
+                frameworks: None,
+            });
+        }
+        Self::bundle(root).or_else(|| {
+            std::fs::read_dir(root)
+                .ok()?
+                .filter_map(Result::ok)
+                .find_map(|entry| Self::bundle(&entry.path()))
+        })
+    }
+
+    /// The layout of an `.app`, whether it was named as one or found inside a
+    /// version directory. Recognised by the engine being where a bundle puts
+    /// it rather than by the extension, so an oddly named one still works.
+    fn bundle(path: &Path) -> Option<Self> {
+        let contents = path.join("Contents");
+        let bin = contents.join("MacOS");
+        if !bin.join(ENGINE_BINARY).is_file() {
+            return None;
+        }
+        Some(Self {
+            content: contents.join("Resources"),
+            frameworks: Some(contents.join("Frameworks")),
+            bin,
+        })
+    }
+
+    /// A flat install, where everything is in the one directory. What every
+    /// platform but macOS ships, and what a hand-assembled tree looks like.
+    pub fn flat(dir: impl Into<PathBuf>) -> Self {
+        let dir = dir.into();
+        Self {
+            bin: dir.clone(),
+            content: dir,
+            frameworks: None,
+        }
+    }
+
+    pub fn engine(&self) -> PathBuf {
+        self.bin.join(ENGINE_BINARY)
+    }
+
+    pub fn downloader(&self) -> PathBuf {
+        self.bin.join(DOWNLOADER_BINARY)
+    }
+
+    /// The engine version a bundle declares, when it declares one.
+    ///
+    /// A bundle knows what it is -- the Apple Silicon build writes
+    /// `EngineVersion` into its `Info.plist` beside its own port version -- so
+    /// a person can drop the app into the engine folder under whatever name
+    /// they like and be understood, rather than having to rename it to the
+    /// `recoil_<version>` the launcher happens to use. A flat install has
+    /// nothing to read and keeps being named by its directory.
+    pub fn declared_version(&self) -> Option<String> {
+        let plist = self.frameworks.as_ref()?.parent()?.join("Info.plist");
+        plist_string(&std::fs::read_to_string(plist).ok()?, "EngineVersion")
+    }
+
+    /// Whether the engine and its content are in different places, which is
+    /// only true of a bundle.
+    pub fn bundled(&self) -> bool {
+        self.frameworks.is_some()
+    }
+
+    /// What a bundled engine needs in its environment to draw anything.
+    ///
+    /// The macOS build has no native OpenGL 4.6, so it renders through zink on
+    /// Vulkan on Metal and needs to be told so: the driver, the Vulkan ICD to
+    /// load and the version to claim. Its own launcher script sets exactly this
+    /// before running the engine, and an engine started without it comes up
+    /// blank. A flat install needs none of it, so this is empty there and the
+    /// same code path serves every platform.
+    ///
+    /// MoltenVK is preferred over KosmicKrisp, which needs Metal 4 and so
+    /// macOS 26; MoltenVK works everywhere the build does. The two MVK settings
+    /// are the bundle author's, against a command pool that is not thread safe
+    /// under threaded submission and argument buffers that hold plain pointers.
+    pub fn environment(&self) -> Vec<(&'static str, std::ffi::OsString)> {
+        let Some(frameworks) = self.frameworks.as_ref() else {
+            return Vec::new();
+        };
+        let icds = self.content.join("vulkan").join("icd.d");
+        let icd = ["moltenvk_icd.json", "kosmickrisp_mesa_icd.aarch64.json"]
+            .into_iter()
+            .map(|name| icds.join(name))
+            .find(|path| path.is_file());
+        let mut env: Vec<(&'static str, std::ffi::OsString)> = vec![
+            ("EGL_PLATFORM", "surfaceless".into()),
+            ("GALLIUM_DRIVER", "zink".into()),
+            ("MESA_LOADER_DRIVER_OVERRIDE", "zink".into()),
+            ("MESA_GL_VERSION_OVERRIDE", "4.6".into()),
+            ("DYLD_FALLBACK_LIBRARY_PATH", frameworks.clone().into()),
+        ];
+        if let Some(icd) = icd {
+            let moltenvk = icd.file_name().is_some_and(|name| name == "moltenvk_icd.json");
+            env.push(("VK_ICD_FILENAMES", icd.clone().into()));
+            env.push(("VK_DRIVER_FILES", icd.into()));
+            if moltenvk {
+                env.push(("MVK_CONFIG_USE_COMMAND_POOLING", "0".into()));
+                env.push(("MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS", "0".into()));
+            }
+        }
+        env
+    }
+}
+
+/// The string value of `key` in an XML property list.
+///
+/// A plist is XML, but the two lines that matter here are
+/// `<key>Name</key><string>value</string>` and nothing about them needs a
+/// parser: a whole XML dependency to read one version out of one file would be
+/// the larger mistake. Whitespace and a line break between the two tags are
+/// allowed for, since Apple's own tools write it both ways.
+fn plist_string(plist: &str, key: &str) -> Option<String> {
+    let after = plist.split_once(&format!("<key>{key}</key>"))?.1;
+    let open = after.find("<string>")? + "<string>".len();
+    let close = after[open..].find("</string>")? + open;
+    // Only when the value really is the next tag, not some later key's.
+    if after[..open].contains("<key>") {
+        return None;
+    }
+    Some(after[open..close].trim().to_owned())
+}
+
 /// `spring://<user>:<script password>@<host>:<port>` — what Chobby hands the
 /// engine to join a hosted game (`liblobby/lobby/lobby.lua` `ConnectToBattle`,
 /// parsed in `rts/System/SpringApp.cpp`).
@@ -27,24 +177,42 @@ pub fn spring_url(username: &str, script_password: &str, host: &str, port: u16) 
     format!("spring://{username}:{script_password}@{host}:{port}")
 }
 
-/// The directory under `<data>/engine` holding `version`, as the BAR launcher
-/// names them (`2026.07.04` → `recoil_2026.07.04`), and only if the binary is there.
-pub fn find_engine(data_dir: &Path, version: &str) -> Option<PathBuf> {
+/// The engine under `<data>/engine` holding `version`, as the BAR launcher
+/// names them (`2026.07.04` → `recoil_2026.07.04`), and only if it has a binary.
+pub fn find_engine(data_dir: &Path, version: &str) -> Option<EngineLayout> {
     let suffix = format!("_{version}");
     std::fs::read_dir(data_dir.join("engine"))
         .ok()?
         .filter_map(Result::ok)
         .map(|entry| entry.path())
-        .find(|path| {
-            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            (name == version || name.ends_with(&suffix)) && path.join(ENGINE_BINARY).is_file()
+        .filter_map(|path| {
+            let named = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            let named = named == version || named.ends_with(&suffix);
+            EngineLayout::at(&path).map(|layout| (named, layout))
         })
+        .find(|(named, layout)| {
+            *named || layout.declared_version().as_deref() == Some(version)
+        })
+        .map(|(_, layout)| layout)
+}
+
+/// Every engine installed under `<data>/engine`, in directory order.
+fn engine_layouts(data_dir: &Path) -> Vec<(std::ffi::OsString, EngineLayout)> {
+    let Ok(entries) = std::fs::read_dir(data_dir.join("engine")) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            EngineLayout::at(&entry.path()).map(|layout| (entry.file_name(), layout))
+        })
+        .collect()
 }
 
 /// One engine invocation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Launch {
-    pub engine_dir: PathBuf,
+    pub engine: EngineLayout,
     /// The BAR data directory (`--write-dir`); `--isolation` keeps the engine from reading anything else.
     pub data_dir: PathBuf,
     /// Directories the engine may read and never writes: other lobbies'
@@ -91,17 +259,28 @@ impl MenuArchive {
 impl Launch {
     /// Mirrors `bar-lobby/src/main/game/game.ts`.
     pub fn command(&self) -> Command {
-        let mut cmd = Command::new(self.engine_dir.join(ENGINE_BINARY));
-        cmd.current_dir(&self.engine_dir)
+        let mut cmd = Command::new(self.engine.engine());
+        cmd.current_dir(&self.engine.bin)
             .arg("--write-dir")
             .arg(&self.data_dir)
             .arg("--isolation");
         // `join_paths` uses the same separator the engine splits on: `;` on
-        // Windows, `:` elsewhere.
-        if let Ok(read_dirs) = std::env::join_paths(&self.read_dirs)
+        // Windows, `:` elsewhere. A bundled engine carries its own base
+        // content and skirmish AIs inside it, so the bundle is a read
+        // directory of its own -- last, because ours comes first.
+        let read_dirs = self
+            .read_dirs
+            .iter()
+            .cloned()
+            .chain(self.engine.bundled().then(|| self.engine.content.clone()));
+        if let Ok(read_dirs) = std::env::join_paths(read_dirs)
             && !read_dirs.is_empty()
         {
             cmd.env("SPRING_DATADIR", read_dirs);
+        }
+        // Blank without it, on a build that renders through zink.
+        for (key, value) in self.engine.environment() {
+            cmd.env(key, value);
         }
         if let Some(config) = &self.config {
             cmd.arg("--config").arg(config);
@@ -117,6 +296,203 @@ impl Launch {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Builds a macOS-shaped engine: an `.app` inside the version directory,
+    /// with the binary, the content and the libraries in their three places.
+    fn bundled_engine(root: &Path) -> PathBuf {
+        let app = root.join("engine").join("recoil_2026.07.04").join("BAR Launcher.app");
+        let contents = app.join("Contents");
+        std::fs::create_dir_all(contents.join("MacOS")).unwrap();
+        std::fs::create_dir_all(contents.join("Resources").join("vulkan").join("icd.d")).unwrap();
+        std::fs::create_dir_all(contents.join("Frameworks")).unwrap();
+        std::fs::write(contents.join("MacOS").join(ENGINE_BINARY), b"").unwrap();
+        std::fs::write(
+            contents
+                .join("Resources")
+                .join("vulkan")
+                .join("icd.d")
+                .join("moltenvk_icd.json"),
+            b"{}",
+        )
+        .unwrap();
+        app
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("recoil-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        root
+    }
+
+    /// The real Info.plist the Apple Silicon build ships, trimmed to the keys
+    /// that matter here -- note the port version comes first, so reading the
+    /// wrong one is a live mistake.
+    const BUNDLE_PLIST: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+  <key>CFBundleExecutable</key><string>launcher</string>
+  <key>CFBundleShortVersionString</key><string>0.15.0</string>
+  <key>EngineVersion</key><string>2026.07.04</string>
+  <key>PortVersion</key><string>0.15.0</string>
+</dict></plist>"#;
+
+    #[test]
+    fn a_bundle_says_which_engine_it_holds() {
+        assert_eq!(
+            plist_string(BUNDLE_PLIST, "EngineVersion").as_deref(),
+            Some("2026.07.04")
+        );
+        assert_eq!(
+            plist_string(BUNDLE_PLIST, "CFBundleShortVersionString").as_deref(),
+            Some("0.15.0")
+        );
+        assert_eq!(plist_string(BUNDLE_PLIST, "Nothing"), None);
+        // A key whose value is missing must not borrow the next key's.
+        assert_eq!(
+            plist_string("<key>Alone</key><key>Other</key><string>x</string>", "Alone"),
+            None
+        );
+    }
+
+    /// Dropped in under any name and still understood, which is the whole
+    /// point: nobody should have to rename an app to `recoil_2026.07.04`.
+    #[test]
+    fn a_bundle_is_found_by_the_version_it_declares_not_its_folder() {
+        let root = scratch("declared");
+        let app = bundled_engine(&root);
+        // Rename the version directory to something meaningless.
+        let odd = root.join("engine").join("dropped-here");
+        std::fs::rename(app.parent().unwrap(), &odd).unwrap();
+        std::fs::write(
+            odd.join("BAR Launcher.app").join("Contents").join("Info.plist"),
+            BUNDLE_PLIST,
+        )
+        .unwrap();
+
+        assert_eq!(installed_engines(&root), ["2026.07.04"]);
+        assert!(
+            find_engine(&root, "2026.07.04").is_some(),
+            "found by what it says it is"
+        );
+        assert!(find_engine(&root, "2020.01.01").is_none());
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_flat_engine_keeps_everything_in_one_place() {
+        let root = scratch("flat");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join(ENGINE_BINARY), b"").unwrap();
+
+        let layout = EngineLayout::at(&root).expect("an engine");
+        assert_eq!(layout, EngineLayout::flat(&root));
+        assert!(!layout.bundled());
+        assert!(
+            layout.environment().is_empty(),
+            "nothing to say about drawing on a platform with its own OpenGL"
+        );
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// The macOS build is an application bundle, so the binary, the content and
+    /// the libraries are three different directories.
+    #[test]
+    fn a_bundled_engine_is_found_inside_its_app() {
+        let root = scratch("bundle");
+        let app = bundled_engine(&root);
+
+        let layout = find_engine(&root, "2026.07.04").expect("an engine in the bundle");
+        assert_eq!(layout.engine(), app.join("Contents").join("MacOS").join(ENGINE_BINARY));
+        assert_eq!(layout.downloader(), app.join("Contents").join("MacOS").join(DOWNLOADER_BINARY));
+        assert_eq!(layout.content, app.join("Contents").join("Resources"));
+        assert!(layout.bundled());
+        // And it is listed as an installed version like any other.
+        assert_eq!(installed_engines(&root), ["2026.07.04"]);
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// Without this the engine comes up blank: the macOS build has no native
+    /// OpenGL 4.6 and renders through zink on Vulkan on Metal.
+    #[test]
+    fn a_bundled_engine_carries_its_graphics_environment() {
+        let root = scratch("env");
+        let app = bundled_engine(&root);
+        let layout = find_engine(&root, "2026.07.04").unwrap();
+
+        let env: std::collections::HashMap<_, _> = layout.environment().into_iter().collect();
+        assert_eq!(env.get("GALLIUM_DRIVER").unwrap(), "zink");
+        assert_eq!(env.get("MESA_GL_VERSION_OVERRIDE").unwrap(), "4.6");
+        assert_eq!(
+            env.get("DYLD_FALLBACK_LIBRARY_PATH").unwrap(),
+            app.join("Contents").join("Frameworks").as_os_str()
+        );
+        // MoltenVK is preferred, and brings its own two corrections with it.
+        assert!(
+            env.get("VK_ICD_FILENAMES")
+                .unwrap()
+                .to_string_lossy()
+                .ends_with("moltenvk_icd.json")
+        );
+        assert_eq!(env.get("MVK_CONFIG_USE_COMMAND_POOLING").unwrap(), "0");
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// The bundle carries the base content and the skirmish AIs inside it, so
+    /// the engine has to be told to read from itself.
+    #[test]
+    fn a_bundle_is_a_read_directory_of_its_own() {
+        let root = scratch("readdirs");
+        let app = bundled_engine(&root);
+        let launch = Launch {
+            engine: find_engine(&root, "2026.07.04").unwrap(),
+            data_dir: root.join("write"),
+            read_dirs: vec![root.join("theirs")],
+            target: "script.txt".into(),
+            config: None,
+            menu: None,
+        };
+
+        let cmd = launch.command();
+        let (_, datadir) = cmd
+            .get_envs()
+            .filter_map(|(k, v)| v.map(|v| (k, v)))
+            .find(|(k, _)| *k == "SPRING_DATADIR")
+            .expect("read directories");
+        let dirs: Vec<PathBuf> = std::env::split_paths(datadir).collect();
+        assert_eq!(
+            dirs,
+            vec![root.join("theirs"), app.join("Contents").join("Resources")],
+            "ours first, the bundle last"
+        );
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// A directory of configuration with no library for this platform is an AI
+    /// that fails at game start; not offering it is the honest answer.
+    #[test]
+    fn an_ai_without_a_library_is_not_offered() {
+        let root = scratch("ais");
+        bundled_engine(&root);
+        let skirmish = root
+            .join("engine")
+            .join("recoil_2026.07.04")
+            .join("BAR Launcher.app")
+            .join("Contents")
+            .join("Resources")
+            .join("AI")
+            .join("Skirmish");
+        std::fs::create_dir_all(skirmish.join("BARb").join("stable")).unwrap();
+        std::fs::create_dir_all(skirmish.join("Ghost").join("stable")).unwrap();
+        std::fs::write(skirmish.join("BARb").join("stable").join(AI_LIBRARY), b"").unwrap();
+
+        assert_eq!(installed_ais(&root), ["BARb"], "Ghost has no library");
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
 
     #[test]
     fn url_matches_chobby() {
@@ -134,7 +510,7 @@ mod tests {
         std::fs::write(engine.join(ENGINE_BINARY), b"").unwrap();
         std::fs::create_dir_all(root.join("engine").join("recoil_2025.04.01")).unwrap();
 
-        assert_eq!(find_engine(&root, "2026.07.04"), Some(engine));
+        assert_eq!(find_engine(&root, "2026.07.04"), Some(EngineLayout::flat(engine)));
         assert_eq!(find_engine(&root, "2025.04.01"), None, "no binary");
         assert_eq!(find_engine(&root, "1999.01.01"), None);
 
@@ -144,7 +520,7 @@ mod tests {
     #[test]
     fn command_mirrors_bar_lobby() {
         let launch = Launch {
-            engine_dir: "C:/e".into(),
+            engine: EngineLayout::flat("C:/e"),
             data_dir: "C:/d".into(),
             read_dirs: Vec::new(),
             target: "spring://me:1@h:2".into(),
@@ -170,7 +546,7 @@ mod tests {
     #[test]
     fn other_installs_are_handed_to_the_engine_as_read_only_data_dirs() {
         let launch = Launch {
-            engine_dir: "C:/e".into(),
+            engine: EngineLayout::flat("C:/e"),
             data_dir: "C:/d".into(),
             read_dirs: vec!["/launcher".into(), "/bar-lobby".into()],
             target: "spring://me:1@h:2".into(),
@@ -211,7 +587,7 @@ mod tests {
         assert!(!menu.found(), "nothing written yet");
 
         let launch = Launch {
-            engine_dir: "C:/e".into(),
+            engine: EngineLayout::flat("C:/e"),
             data_dir: "C:/d".into(),
             read_dirs: Vec::new(),
             target: "spring://me:1@h:2".into(),
@@ -240,7 +616,7 @@ mod tests {
     #[test]
     fn a_borderless_config_goes_on_the_command_line_before_the_target() {
         let launch = Launch {
-            engine_dir: "C:/e".into(),
+            engine: EngineLayout::flat("C:/e"),
             data_dir: "C:/d".into(),
             read_dirs: Vec::new(),
             target: "spring://me:1@h:2".into(),
@@ -266,6 +642,15 @@ mod tests {
     }
 }
 
+/// What a loadable skirmish AI is called on this platform.
+pub const AI_LIBRARY: &str = if cfg!(windows) {
+    "SkirmishAI.dll"
+} else if cfg!(target_os = "macos") {
+    "libSkirmishAI.dylib"
+} else {
+    "libSkirmishAI.so"
+};
+
 /// pr-downloader binary inside an engine directory. It ships as part of an
 /// engine, so a data directory with no engine cannot fetch anything.
 pub const DOWNLOADER_BINARY: &str = if cfg!(windows) {
@@ -278,17 +663,16 @@ pub const DOWNLOADER_BINARY: &str = if cfg!(windows) {
 /// installed, otherwise any engine's, since the binary does not care which
 /// engine it came from.
 pub fn find_downloader(data_dir: &Path, version: &str) -> Option<PathBuf> {
-    let preferred = find_engine(data_dir, version).map(|dir| dir.join(DOWNLOADER_BINARY));
+    let preferred = find_engine(data_dir, version).map(|engine| engine.downloader());
     if let Some(path) = preferred
         && path.is_file()
     {
         return Some(path);
     }
 
-    std::fs::read_dir(data_dir.join("engine"))
-        .ok()?
-        .filter_map(Result::ok)
-        .map(|entry| entry.path().join(DOWNLOADER_BINARY))
+    engine_layouts(data_dir)
+        .into_iter()
+        .map(|(_, engine)| engine.downloader())
         .find(|path| path.is_file())
 }
 
@@ -579,14 +963,13 @@ mod download_tests {
 
 /// Every engine version installed, newest name first.
 pub fn installed_engines(data_dir: &Path) -> Vec<String> {
-    let Ok(entries) = std::fs::read_dir(data_dir.join("engine")) else {
-        return Vec::new();
-    };
-    let mut versions: Vec<String> = entries
-        .filter_map(Result::ok)
-        .filter(|entry| entry.path().join(ENGINE_BINARY).is_file())
-        .filter_map(|entry| {
-            let name = entry.file_name().to_str()?.to_owned();
+    let mut versions: Vec<String> = engine_layouts(data_dir)
+        .into_iter()
+        .filter_map(|(dir, layout)| {
+            if let Some(declared) = layout.declared_version() {
+                return Some(declared);
+            }
+            let name = dir.to_str()?.to_owned();
             // The launcher names them `recoil_<version>`; anything else is
             // taken as the version itself, which is how `find_engine` reads them.
             Some(
@@ -610,8 +993,8 @@ pub fn installed_engines(data_dir: &Path) -> Vec<String> {
 ///
 /// The file is the same `local options = { … }` table a game's `modoptions.lua`
 /// is, so whatever reads one reads the other.
-pub fn ai_options_file(engine_dir: &Path, ai: &str) -> Option<PathBuf> {
-    let versions = std::fs::read_dir(engine_dir.join("AI").join("Skirmish").join(ai)).ok()?;
+pub fn ai_options_file(content_dir: &Path, ai: &str) -> Option<PathBuf> {
+    let versions = std::fs::read_dir(content_dir.join("AI").join("Skirmish").join(ai)).ok()?;
     versions
         .filter_map(Result::ok)
         .map(|version| version.path().join("AIOptions.lua"))
@@ -620,21 +1003,35 @@ pub fn ai_options_file(engine_dir: &Path, ai: &str) -> Option<PathBuf> {
 
 /// The skirmish AIs any installed engine ships.
 pub fn installed_ais(data_dir: &Path) -> Vec<String> {
-    let Ok(engines) = std::fs::read_dir(data_dir.join("engine")) else {
-        return Vec::new();
-    };
-    let mut ais: Vec<String> = engines
-        .filter_map(Result::ok)
-        .flat_map(|engine| {
-            std::fs::read_dir(engine.path().join("AI").join("Skirmish"))
+    let mut ais: Vec<String> = engine_layouts(data_dir)
+        .into_iter()
+        .flat_map(|(_, engine)| {
+            std::fs::read_dir(engine.content.join("AI").join("Skirmish"))
                 .into_iter()
                 .flatten()
                 .filter_map(Result::ok)
-                .filter(|ai| ai.path().is_dir())
+                .filter(|ai| has_ai_library(&ai.path()))
                 .filter_map(|ai| ai.file_name().to_str().map(str::to_owned))
         })
         .collect();
     ais.sort();
     ais.dedup();
     ais
+}
+
+/// Whether an AI directory holds a library this platform can load.
+///
+/// The directory alone means nothing: an engine can ship `AI/Skirmish/BARb`
+/// with configuration and scripts and no build for the platform in hand, and
+/// listing it then offers a choice that fails at game start rather than at the
+/// picker. The engine loads `SkirmishAI.dll` / `libSkirmishAI.dylib` /
+/// `libSkirmishAI.so` from the AI's own version directory
+/// (`AI/Interfaces/C/src/Interface.cpp`).
+fn has_ai_library(ai_dir: &Path) -> bool {
+    let Ok(versions) = std::fs::read_dir(ai_dir) else {
+        return false;
+    };
+    versions
+        .filter_map(Result::ok)
+        .any(|version| version.path().join(AI_LIBRARY).is_file())
 }

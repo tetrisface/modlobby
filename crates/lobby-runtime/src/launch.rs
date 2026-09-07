@@ -29,7 +29,10 @@ fn xdg(var: Var, name: &str, default: &str) -> Option<PathBuf> {
 /// modlobby's own data directory: where what it downloads goes.
 ///
 /// Local rather than roaming on Windows, and XDG data rather than config on
-/// Linux: it holds gigabytes of content, not settings.
+/// Linux: it holds gigabytes of content, not settings. macOS keeps both in
+/// `Application Support` -- it has nowhere else to put them, and this is also
+/// the directory a person has to open to install an engine by hand, so it is
+/// worth it being the one they expect.
 pub fn own_data_dir() -> Option<PathBuf> {
     let var = |name: &str| std::env::var_os(name);
     own_data_dir_in(&var)
@@ -38,6 +41,10 @@ pub fn own_data_dir() -> Option<PathBuf> {
 fn own_data_dir_in(var: Var) -> Option<PathBuf> {
     let base = if cfg!(windows) {
         var("LOCALAPPDATA").map(PathBuf::from)
+    } else if cfg!(target_os = "macos") {
+        var("HOME")
+            .map(PathBuf::from)
+            .map(|home| home.join("Library").join("Application Support"))
     } else {
         xdg(var, "XDG_DATA_HOME", ".local/share")
     };
@@ -49,6 +56,8 @@ pub fn installed_dirs() -> Vec<PathBuf> {
     let var = |name: &str| std::env::var_os(name);
     let candidates = if cfg!(windows) {
         windows_candidates(&var)
+    } else if cfg!(target_os = "macos") {
+        macos_candidates(&var)
     } else {
         unix_candidates(&var)
     };
@@ -67,6 +76,24 @@ fn windows_candidates(var: Var) -> Vec<PathBuf> {
         programs.join("Beyond-All-Reason").join("data"),
         programs.join("BeyondAllReason").join("assets"),
     ]
+}
+
+/// The Apple Silicon BAR Launcher writes to
+/// `~/Library/Application Support/Beyond-All-Reason-mac`
+/// (`packaging/launcher.sh`, overridable with `BAR_WRITEDIR_OVERRIDE`), and
+/// keeps the base content and the skirmish AIs inside the app bundle itself.
+/// Neither spring-launcher nor bar-lobby ships for macOS, so there is nothing
+/// else to look for.
+fn macos_candidates(var: Var) -> Vec<PathBuf> {
+    let launcher = var("BAR_WRITEDIR_OVERRIDE").map(PathBuf::from).or_else(|| {
+        var("HOME").map(|home| {
+            PathBuf::from(home)
+                .join("Library")
+                .join("Application Support")
+                .join("Beyond-All-Reason-mac")
+        })
+    });
+    launcher.into_iter().collect()
 }
 
 /// The launcher writes to `$XDG_STATE_HOME/Beyond-All-Reason`
@@ -128,7 +155,7 @@ pub fn spawn(
     overlay_config_dir: Option<&Path>,
     menu: Option<recoil::MenuArchive>,
 ) -> Result<Launched, String> {
-    let engine_dir = content::Library::new(dirs.clone())
+    let engine = content::Library::new(dirs.clone())
         .find_engine(engine_version)
         .ok_or_else(|| {
             format!(
@@ -159,14 +186,14 @@ pub fn spawn(
     }
 
     let launch = recoil::Launch {
-        engine_dir,
+        engine,
         data_dir: dirs.write.clone(),
         read_dirs: dirs.read.clone(),
         target,
         config: config.clone(),
         menu,
     };
-    tracing::info!(engine = %launch.engine_dir.display(), "launching");
+    tracing::info!(engine = %launch.engine.engine().display(), "launching");
     let child = tokio::process::Command::from(launch.command())
         .spawn()
         .map_err(|err| format!("spawning the engine: {err}"))?;
@@ -213,6 +240,38 @@ pub fn spawn_download(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The one BAR install a Mac can have: the Apple Silicon launcher's own
+    /// write directory, where its downloaded maps and games are.
+    #[test]
+    fn a_mac_reuses_the_apple_silicon_launchers_content() {
+        let vars = env(&[("HOME", "/Users/ann")]);
+        assert_eq!(
+            macos_candidates(&vars),
+            vec![PathBuf::from(
+                "/Users/ann/Library/Application Support/Beyond-All-Reason-mac"
+            )]
+        );
+    }
+
+    /// The launcher honours this, so following it finds a moved install.
+    #[test]
+    fn a_moved_mac_install_is_followed() {
+        let vars = env(&[
+            ("HOME", "/Users/ann"),
+            ("BAR_WRITEDIR_OVERRIDE", "/Volumes/Games/bar"),
+        ]);
+        assert_eq!(
+            macos_candidates(&vars),
+            vec![PathBuf::from("/Volumes/Games/bar")]
+        );
+    }
+
+    #[test]
+    fn a_mac_with_no_home_offers_nothing_rather_than_a_bare_path() {
+        let vars = env(&[]);
+        assert!(macos_candidates(&vars).is_empty());
+    }
 
     /// An environment made of the given variables and nothing else.
     fn env<'a>(vars: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<OsString> + 'a {

@@ -20,13 +20,24 @@ use serde::Deserialize;
 pub const FIND_URL: &str = recoil::HTTP_SEARCH_URL;
 
 /// The engine build for this machine, as BAR's index categorises them.
-pub const fn category() -> &'static str {
+///
+/// `None` on macOS, and that is the point: BAR publishes no Apple build, and
+/// answering `engine_linux64` there would fetch an ELF, unpack it, mark it
+/// executable and report an engine installed -- a failure that only shows
+/// itself as an exec error at the moment somebody tries to play. A missing
+/// category is a refusal the caller can explain.
+pub const fn category() -> Option<&'static str> {
     if cfg!(windows) {
-        "engine_windows64"
+        Some("engine_windows64")
+    } else if cfg!(target_os = "macos") {
+        None
     } else {
-        "engine_linux64"
+        Some("engine_linux64")
     }
 }
+
+/// Why there is no engine to download here, in words for a person.
+pub const NO_CATEGORY: &str = "Beyond All Reason publishes no macOS engine, so modlobby cannot     fetch one. Install an Apple Silicon build by hand -- the BAR Launcher app from     github.com/Vandomas/RecoilEngine-AppleSilicon -- into the engine folder of the data     directory, and modlobby will find the engine inside it.";
 
 /// One entry from the index. Only the fields worth acting on are read; the
 /// index carries more and may grow.
@@ -45,15 +56,15 @@ pub struct Release {
     pub md5: Option<String>,
 }
 
-/// The query for one engine version on this platform.
-pub fn find_url(version: &str) -> String {
+/// The query for one engine version on this platform, where there is one.
+pub fn find_url(version: &str) -> Option<String> {
     // The version can carry characters that matter in a query string; BAR's
     // own versions are dotted digits, but encoding is still the correct thing.
-    format!(
+    Some(format!(
         "{FIND_URL}?category={}&springname={}",
-        category(),
+        category()?,
         urlencode(version)
-    )
+    ))
 }
 
 /// The build to fetch, or `None` when the index knows of none.
@@ -86,7 +97,9 @@ mod tests {
 
     #[test]
     fn the_query_names_this_platform_and_the_version() {
-        let url = find_url("2026.07.04");
+        let Some(url) = find_url("2026.07.04") else {
+            return;
+        };
         assert!(url.starts_with(FIND_URL));
         assert!(url.contains("springname=2026.07.04"));
         assert!(url.contains(if cfg!(windows) {
@@ -98,7 +111,9 @@ mod tests {
 
     #[test]
     fn a_version_with_awkward_characters_is_encoded() {
-        let url = find_url("2026.07.04 rc/1");
+        let Some(url) = find_url("2026.07.04 rc/1") else {
+            return;
+        };
         assert!(url.contains("2026.07.04%20rc%2F1"));
         assert!(!url.contains(' '));
     }

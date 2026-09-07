@@ -22,6 +22,30 @@ bun install
 bun run build    # installer under app/src-tauri/target/release/bundle/
 ```
 
+## macOS
+
+macOS runs **skirmish against AI, and nothing that needs a server**. Beyond All Reason
+publishes no engine for Apple, and the Apple Silicon build that exists —
+[RecoilEngine-AppleSilicon](https://github.com/Vandomas/RecoilEngine-AppleSilicon) — has online
+play turned off at the build level, because unofficial builds are not permitted on the official
+servers. modlobby does not work around that.
+
+Because there is no engine to fetch, the engine is installed by hand. Download the
+`BAR-Launcher-*.zip`, then drop `BAR Launcher.app` into modlobby's engine folder:
+
+```sh
+~/Library/Application\ Support/modlobby/data/engine/
+```
+
+The folder it sits in can be called anything: the app declares which engine it holds in its
+`Info.plist`, and modlobby reads that. It also finds the engine, `pr-downloader`, the base content
+and the `BARb` skirmish AI inside the bundle, and launches the engine with the graphics environment
+the bundle needs — it renders OpenGL through zink on Vulkan on Metal, and comes up blank without it.
+If you have already run BAR Launcher, the maps and games it downloaded to
+`~/Library/Application Support/Beyond-All-Reason-mac` are read from there rather than fetched again.
+
+The app is ad-hoc signed, so the first launch needs a right-click and Open. Apple Silicon only.
+
 # Alongside other lobbies
 
 modlobby is built to sit next to Chobby and bar-lobby on the same machine rather

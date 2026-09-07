@@ -141,8 +141,8 @@ impl Library {
         self.find_engine(version).is_some()
     }
 
-    /// The installed engine directory for `version`, ours before anyone else's.
-    pub fn find_engine(&self, version: &str) -> Option<PathBuf> {
+    /// The installed engine for `version`, ours before anyone else's.
+    pub fn find_engine(&self, version: &str) -> Option<recoil::EngineLayout> {
         self.dirs
             .all()
             .find_map(|dir| recoil::find_engine(dir, version))
@@ -151,7 +151,7 @@ impl Library {
     /// Where an engine AI declares its own options, in any installed engine.
     pub fn find_ai_options(&self, version: &str, ai: &str) -> Option<PathBuf> {
         let engine = self.find_engine(version)?;
-        recoil::ai_options_file(&engine, ai)
+        recoil::ai_options_file(&engine.content, ai)
     }
 
     /// A pr-downloader to run, from any installed engine.
@@ -254,6 +254,11 @@ impl Library {
 
     /// Scans every rapid index for the version with this display name.
     fn rapid_md5(&self, display_name: &str) -> Option<String> {
+        // An index line whose name field is empty would otherwise answer for
+        // a room that names no game at all, and report it as installed.
+        if display_name.is_empty() {
+            return None;
+        }
         for index in self.rapid_indexes() {
             let Ok(file) = std::fs::File::open(&index) else {
                 continue;
@@ -600,7 +605,7 @@ mod union_tests {
         assert!(library.has_map("Supreme Isthmus v2.1"));
         assert_eq!(
             library.find_engine("2026.07.04").unwrap(),
-            theirs.path().join("engine").join("recoil_2026.07.04")
+            recoil::EngineLayout::flat(theirs.path().join("engine").join("recoil_2026.07.04"))
         );
         assert_eq!(library.installed_engines(), ["2026.07.04"]);
         assert_eq!(library.installed_map_files(), ["supreme_isthmus_v2.1"]);
@@ -613,7 +618,10 @@ mod union_tests {
         let engine = ours.path().join("engine").join("2026.07.04");
         std::fs::create_dir_all(&engine).unwrap();
         std::fs::write(engine.join(recoil::ENGINE_BINARY), b"").unwrap();
-        assert_eq!(library.find_engine("2026.07.04").unwrap(), engine);
+        assert_eq!(
+            library.find_engine("2026.07.04").unwrap(),
+            recoil::EngineLayout::flat(engine)
+        );
         assert_eq!(library.installed_engines(), ["2026.07.04"], "listed once");
     }
 }

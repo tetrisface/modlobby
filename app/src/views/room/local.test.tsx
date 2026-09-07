@@ -23,6 +23,9 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
   convertFileSrc: (path: string, scheme: string) => `${scheme}://${path}`,
 }))
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn(async () => () => {}),
+}))
 
 const OPTIONS: ModOption[] = [
   { key: 'options', name: 'Options', desc: '', type: 'section', weight: 1 },
@@ -65,7 +68,9 @@ function sent(command: string) {
 
 beforeEach(() => {
   setLobby(reconcile(emptyLobby()))
-  setLobby('skirmish', room)
+  // A fresh copy each time: the store writes through to whatever object it
+  // is given, so a test that empties a field would empty it for the rest.
+  setLobby('skirmish', structuredClone(room))
   vi.mocked(invoke).mockImplementation(async (command: string) => {
     switch (command) {
       case 'game_modoptions':
@@ -222,5 +227,70 @@ describe('the room with no server behind it', () => {
     expect(container.querySelector('.room-title button')).toBeNull()
     // A preset, though, this room can carry.
     expect(localRoom().presets()).not.toBeNull()
+  })
+})
+
+/**
+ * What the room offers a machine that has nothing on it.
+ *
+ * The fixture above has all three installed, which is why none of this was
+ * covered: every state below is one a first run actually passes through.
+ */
+describe('a room whose content is not all here', () => {
+  test('offers the download once the engine is in place', async () => {
+    setLobby('skirmish', 'content', { engine: true, game: false, map: false })
+    const { getByText } = await open()
+    // Auto-download on, nothing running, engine present: every arm of the
+    // switch missed, and the row used to offer nothing at all.
+    expect(getByText('Download')).toBeTruthy()
+  })
+
+  test('says so rather than asking for the engine called nothing', async () => {
+    setLobby('skirmish', 'content', { engine: false, game: false, map: false })
+    setLobby('skirmish', 'battle', 'engineVersion', '')
+    const { getByText } = await open()
+    expect(getByText('This room names no engine to fetch')).toBeTruthy()
+    expect(sent('download_engine')).toEqual([])
+  })
+
+  test('fetches the engine the room does name', async () => {
+    setLobby('skirmish', 'content', { engine: false, game: false, map: false })
+    const { container } = await open()
+    expect(sent('download_engine')).toEqual([{ version: '2026.07.04' }])
+    expect(container.textContent).toContain(
+      'Engine 2026.07.04 is not installed.',
+    )
+  })
+
+  test('Start is refused while anything is missing', async () => {
+    setLobby('skirmish', 'content', { engine: true, game: false, map: false })
+    const { container } = await open()
+    const start = container.querySelector(
+      '.card-actions button',
+    ) as HTMLButtonElement
+    expect(start.textContent).toBe('Start')
+    expect(start.disabled).toBe(true)
+  })
+})
+
+describe('what the room says about itself', () => {
+  test('counts agree with their words', async () => {
+    const { container } = await open()
+    // One player, no spectators — not "1 players · 0 spectators".
+    expect(container.textContent).toContain('1 player · 0 spectators')
+  })
+
+  test('a team nobody has rated carries no sum', async () => {
+    const { container } = await open()
+    // A skirmish has no skills at all, and Σ 0.0 is not a fact about the team.
+    expect(container.querySelector('.team-head .os')).toBeNull()
+  })
+
+  test('a room that has not been told what to play still offers the choice', async () => {
+    setLobby('skirmish', 'battle', 'mapName', '')
+    setLobby('skirmish', 'battle', 'gameName', '')
+    const { getAllByText } = await open()
+    // An empty link is a click target with no width, which reads as dead text.
+    expect(getAllByText('choose one').length).toBe(2)
   })
 })

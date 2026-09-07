@@ -100,7 +100,7 @@ async fn fetch(
     // to download it again.
     let library = content::Library::new(dirs.clone());
     if let Some(found) = library.find_engine(version) {
-        return Ok(found);
+        return Ok(found.bin);
     }
     let data_dir = library.write_dir();
     let engine_dir = data_dir.join("engine");
@@ -108,9 +108,14 @@ async fn fetch(
         .map_err(|err| ApiError::new("io", format!("making the engine directory: {err}")))?;
     sweep_stale_parts(&engine_dir, STALE_PART_AFTER);
 
+    // No index entry to ask for is not a network problem, and saying so early
+    // beats downloading something that cannot run here.
+    let find = content::release::find_url(version)
+        .ok_or_else(|| ApiError::new("platform", content::release::NO_CATEGORY))?;
+
     say(EngineProgress::Finding);
     let index = http
-        .get(content::release::find_url(version))
+        .get(find)
         .send()
         .await
         .and_then(reqwest::Response::error_for_status)
@@ -124,7 +129,7 @@ async fn fetch(
             "notFound",
             format!(
                 "BAR's index has no {} build of engine {version}",
-                content::release::category()
+                content::release::category().unwrap_or("matching")
             ),
         )
     })?;
@@ -158,7 +163,9 @@ async fn fetch(
     recoil::mark_executable(&target)
         .map_err(|err| ApiError::new("io", format!("marking the engine executable: {err}")))?;
 
-    recoil::find_engine(data_dir, version).ok_or_else(|| {
+    recoil::find_engine(data_dir, version)
+        .map(|engine| engine.bin)
+        .ok_or_else(|| {
         ApiError::new(
             "archive",
             format!(

@@ -1,4 +1,11 @@
-import { A, HashRouter, Route, useNavigate } from '@solidjs/router'
+import {
+  A,
+  HashRouter,
+  Navigate,
+  Route,
+  useNavigate,
+  type RouteSectionProps,
+} from '@solidjs/router'
 import { listen } from '@tauri-apps/api/event'
 import {
   For,
@@ -9,8 +16,10 @@ import {
   createSignal,
   onCleanup,
   onMount,
+  type Component,
   type ParentProps,
 } from 'solid-js'
+import { Dynamic } from 'solid-js/web'
 import { Glyph, IconSprite } from './components/icons'
 import { Thinking } from './components/Thinking'
 import { NavRoom } from './components/NavRoom'
@@ -21,6 +30,7 @@ import { clickLeavesOverlay, escapeLeavesOverlay } from './lib/overlay'
 import { api, describeError, errorCode } from './ipc/client'
 import type { Settings } from './ipc/bindings/Settings'
 import type { VersionView } from './ipc/bindings/VersionView'
+import { build, online, setBuild } from './store/build'
 import { chat, holdNotices, pushNotice } from './store/chat'
 import { lobby, myRoom } from './store/lobby'
 import { loadNews, unreadNews } from './store/news'
@@ -135,7 +145,10 @@ function Layout(props: ParentProps) {
   onMount(() => {
     void api
       .appVersion()
-      .then(setVersion)
+      .then((found) => {
+        setVersion(found)
+        setBuild(found)
+      })
       .catch(() => {})
     onCleanup(watchUpdates())
   })
@@ -286,7 +299,7 @@ function Layout(props: ParentProps) {
       await connectChannel()
       // The one place that already holds the settings, so auto-login neither
       // reads them again nor races the signal that carries them.
-      void autoLogin(saved.account)
+      if (online()) void autoLogin(saved.account)
       // The count belongs to the nav, which is here whether or not the News
       // tab ever is, so the feed is asked for from the shell. Rust answers
       // from its own cache for the hour it trusts one, so most launches make
@@ -334,17 +347,22 @@ function Layout(props: ParentProps) {
         {/* Battles and chat are the two things that need a session, but the
             links stay: a row that loses half its tabs when the server drops
             reads as an app that has broken, and each view says for itself
-            what it is waiting for. */}
-        <A href='/battles'>Battles</A>
+            what it is waiting for. A build with no server at all is the one
+            exception -- there is nothing for them to wait for. */}
+        <Show when={online()}>
+          <A href='/battles'>Battles</A>
+        </Show>
         <A href='/skirmish'>Skirmish</A>
-        <A href='/chat'>
-          Chat
-          <Show when={unread() > 0}>
-            <span class='badge' classList={{ named: named() }}>
-              {unread()}
-            </span>
-          </Show>
-        </A>
+        <Show when={online()}>
+          <A href='/chat'>
+            Chat
+            <Show when={unread() > 0}>
+              <span class='badge' classList={{ named: named() }}>
+                {unread()}
+              </span>
+            </Show>
+          </A>
+        </Show>
         {/* Replays and presets are files on this machine, so they are here
             whether or not anyone is logged in. */}
         <A href='/news'>
@@ -357,13 +375,13 @@ function Layout(props: ParentProps) {
         <A href='/settings'>Settings</A>
         {/* The way in, while there is no session. The corner's reconnect
             button resumes one that dropped; this is for not having one. */}
-        <Show when={lobby.phase === null}>
+        <Show when={online() && lobby.phase === null}>
           <A href='/login'>Log in</A>
         </Show>
         {/* The room you are in, at the end of the tabs. The spacer takes up
             its coming and going, so nothing else in the row moves. Gated on
             the phase like the lobby links: a reconnect keeps myBattle. */}
-        <Show when={lobby.phase === 'ready' && myRoom()}>
+        <Show when={online() && lobby.phase === 'ready' && myRoom()}>
           {(b) => <NavRoom battle={b()} />}
         </Show>
         <span
@@ -561,22 +579,38 @@ function Notices() {
     </div>
   )
 }
+/**
+ * A page that needs the lobby server, on a build that has none.
+ *
+ * The links to these are already gone, so this is for an address typed or
+ * remembered rather than clicked. It sends you to the skirmish room rather
+ * than drawing a view that would sit forever waiting for a session that is
+ * never coming.
+ */
+function needsServer(view: Component<RouteSectionProps>) {
+  return (props: RouteSectionProps) => (
+    <Show when={online()} fallback={<Navigate href='/skirmish' />}>
+      <Dynamic component={view} {...props} />
+    </Show>
+  )
+}
+
 export function App() {
   return (
     <HashRouter root={Layout}>
       <Route path='/' component={Home} />
-      <Route path='/login' component={Login} />
-      <Route path='/battles' component={BattleList} />
-      <Route path='/chat' component={Chat} />
+      <Route path='/login' component={needsServer(Login)} />
+      <Route path='/battles' component={needsServer(BattleList)} />
+      <Route path='/chat' component={needsServer(Chat)} />
       <Route path='/news' component={News} />
       <Route path='/replays' component={Replays} />
       <Route path='/presets' component={PresetsPage} />
       <Route path='/skirmish' component={SkirmishRoom} />
-      <Route path='/room' component={OnlineRoom} />
+      <Route path='/room' component={needsServer(OnlineRoom)} />
       {/* The tweak editor lives inside the room's setup pane, which is where
           the slots it edits are listed. It was reachable here as well, drawing
           the same component with none of that around it. */}
-      <Route path='/room/tweaks' component={OnlineRoom} />
+      <Route path='/room/tweaks' component={needsServer(OnlineRoom)} />
       <Route path='/settings' component={SettingsView} />
     </HashRouter>
   )

@@ -11,4 +11,17 @@ version: string,
 /**
  * The short commit hash, stamped by `build.rs`.
  */
-commit: string, };
+commit: string, 
+/**
+ * Whether this build may talk to the lobby server at all.
+ *
+ * False on macOS. Beyond All Reason publishes no Apple engine, so the
+ * only one that exists is a third-party build whose author has asked
+ * that it not be pointed at the community servers until they approve it
+ * — and disables online play by neutering Chobby's server address
+ * (`packaging/release-build.sh`, "online play is blocked outside the
+ * game, not inside it"). modlobby does not read that config and speaks
+ * to the server itself, so nothing about the engine stops us: honouring
+ * it is this flag's job. macOS is skirmish, replays and settings.
+ */
+online: boolean, };

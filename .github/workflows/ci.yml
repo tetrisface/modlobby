@@ -9,12 +9,15 @@ on:
 
 jobs:
   check:
-    # Both platforms compile the Tauri crate; Linux needs WebKitGTK for it.
+    # Every platform compiles the Tauri crate; Linux needs WebKitGTK for it.
     # The checks that produce the same answer everywhere run on Windows only.
+    # macOS is Apple Silicon and builds nothing here -- it is the only thing
+    # that proves the macOS branches compile, and the next Linux-shaped `cfg!`
+    # fails here rather than on somebody's Mac.
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-2022, ubuntu-22.04]
+        os: [windows-2022, ubuntu-22.04, macos-15]
     runs-on: ${{ matrix.os }}
     defaults:
       run:

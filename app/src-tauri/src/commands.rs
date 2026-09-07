@@ -1286,7 +1286,7 @@ pub async fn engine_def_tags(app: State<'_, App>, version: String) -> Result<twe
                 .ok_or_else(|| {
                     ApiError::new("deftags", format!("engine {version} is not installed"))
                 })?;
-            let text = tauri::async_runtime::spawn_blocking(move || dump_def_tags(&engine))
+            let text = tauri::async_runtime::spawn_blocking(move || dump_def_tags(&engine.bin))
                 .await
                 .map_err(|err| ApiError::new("deftags", err.to_string()))??;
             if let Some(parent) = cache.parent() {
