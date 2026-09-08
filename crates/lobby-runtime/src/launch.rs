@@ -307,6 +307,8 @@ mod tests {
         .unwrap();
         let expected = if cfg!(windows) {
             "C:/u/AppData/Local/modlobby/data"
+        } else if cfg!(target_os = "macos") {
+            "/home/dev/Library/Application Support/modlobby/data"
         } else {
             "/home/dev/.local/share/modlobby/data"
         };

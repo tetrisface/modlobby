@@ -305,11 +305,10 @@ describe('a player row', () => {
       </>
     ))
 
-    const rows = [...container.querySelectorAll('.player.bot-row')]
-    expect(rows[0].querySelector('.icon.side')).toBeNull()
-    expect(rows[1].querySelector('.icon.side')).toBeNull()
-    expect(rows[2].querySelector('.icon.side')).toBeNull()
-    expect(rows[3].querySelector('.icon.side')).not.toBeNull()
+    const hasSide = [...container.querySelectorAll('.player.bot-row')].map(
+      (row) => row.querySelector('.icon.side') !== null,
+    )
+    expect(hasSide).toEqual([false, false, false, true])
     unmount()
   })
 
