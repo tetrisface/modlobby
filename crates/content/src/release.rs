@@ -43,6 +43,15 @@ pub const fn category() -> Option<&'static str> {
 /// engine comes from and where it goes.
 pub const NO_CATEGORY: &str = "Beyond All Reason publishes no macOS engine, so modlobby cannot fetch one. Install an Apple Silicon build by hand -- the BAR Launcher app from github.com/Vandomas/RecoilEngine-AppleSilicon -- into the engine folder of the data directory, and modlobby will find the engine inside it.";
 
+/// Why a blank version is not a question worth asking.
+///
+/// The index answers `springname=` with a bare 404, which reaches a person as
+/// a network error about a URL rather than as the missing version it is -- and
+/// it is a request that could not have succeeded whatever the server did, so
+/// it is one BAR's CDN should never have been asked. This says what modlobby
+/// actually knows, which is not which engine to fetch.
+pub const NO_VERSION: &str = "modlobby does not know which engine version to fetch, so there is nothing to ask BAR's index for. Open a battle or pick an engine version and try again.";
+
 /// The same fact for a room, which has the buttons this sentence would
 /// otherwise have to describe.
 ///
@@ -93,13 +102,54 @@ pub struct Release {
     pub md5: Option<String>,
 }
 
-/// The query for one engine version on this platform, where there is one.
-pub fn find_url(version: &str) -> Option<String> {
+/// Why there is no index query to make, when there is none.
+///
+/// Two reasons, and they are not the same kind of thing: one is a fact about
+/// the machine that will still be true tomorrow, the other is modlobby not
+/// knowing its own mind. They are told apart here so the error carries which,
+/// rather than both arriving as "no".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NoQuery {
+    /// No version to ask about.
+    Version,
+    /// No build published for this machine.
+    Platform,
+}
+
+impl NoQuery {
+    /// The tag the error carries, so a log tells a machine that will never have
+    /// an engine apart from one that momentarily does not know which.
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::Version => "version",
+            Self::Platform => "platform",
+        }
+    }
+
+    pub const fn reason(self) -> &'static str {
+        match self {
+            Self::Version => NO_VERSION,
+            Self::Platform => NO_CATEGORY,
+        }
+    }
+}
+
+/// The query for one engine version on this platform, or why there is none.
+///
+/// Both refusals live here because both end at the same request, and a request
+/// that cannot succeed is one to not send. The blank version is checked first
+/// on purpose: it is a defect in modlobby rather than a fact about the machine,
+/// and answering it with the macOS refusal on macOS is how a defect comes to be
+/// invisible on the one platform whose users would report it.
+pub fn find_url(version: &str) -> Result<String, NoQuery> {
+    if version.trim().is_empty() {
+        return Err(NoQuery::Version);
+    }
     // The version can carry characters that matter in a query string; BAR's
     // own versions are dotted digits, but encoding is still the correct thing.
-    Some(format!(
+    Ok(format!(
         "{FIND_URL}?category={}&springname={}",
-        category()?,
+        category().ok_or(NoQuery::Platform)?,
         urlencode(version)
     ))
 }
@@ -136,8 +186,8 @@ mod tests {
     ///
     /// Both arms go through `_for`, so the uncommon one is exercised from
     /// every machine rather than only from the one it fires on. The last line
-    /// is the invariant rather than a restatement of the first: `find_url` is
-    /// `None` only by way of `category()?`, so the reason the room reads and
+    /// is the invariant rather than a restatement of the first: a named version
+    /// is refused only by way of `category()`, so the reason the room reads and
     /// the URL the downloader builds have to agree or one of them is lying.
     #[test]
     fn the_reason_and_the_category_are_one_answer() {
@@ -145,14 +195,31 @@ mod tests {
         assert_eq!(no_published_engine_for(None), Some(NOT_PUBLISHED_HERE));
         assert_eq!(no_published_engine().is_none(), category().is_some());
         assert_eq!(
-            find_url("2026.07.04").is_none(),
-            no_published_engine().is_some()
+            find_url("2026.07.04").err(),
+            no_published_engine().map(|_| NoQuery::Platform)
         );
+    }
+
+    /// The bug in the report: a blank version reached BAR's index as
+    /// `springname=` and came back a 404 nobody could act on.
+    ///
+    /// Asserted on every platform, because the version is blank for reasons
+    /// that have nothing to do with which machine is asking -- and on macOS the
+    /// platform refusal must not be what answers it, or the defect is invisible
+    /// exactly where it was reported.
+    #[test]
+    fn a_blank_version_is_never_asked_about() {
+        for blank in ["", " ", "\t\n"] {
+            assert_eq!(find_url(blank), Err(NoQuery::Version));
+        }
+        assert_eq!(NoQuery::Version.code(), "version");
+        assert_eq!(NoQuery::Version.reason(), NO_VERSION);
+        assert_eq!(NoQuery::Platform.reason(), NO_CATEGORY);
     }
 
     #[test]
     fn the_query_names_this_platform_and_the_version() {
-        let Some(url) = find_url("2026.07.04") else {
+        let Ok(url) = find_url("2026.07.04") else {
             return;
         };
         assert!(url.starts_with(FIND_URL));
@@ -166,7 +233,7 @@ mod tests {
 
     #[test]
     fn a_version_with_awkward_characters_is_encoded() {
-        let Some(url) = find_url("2026.07.04 rc/1") else {
+        let Ok(url) = find_url("2026.07.04 rc/1") else {
             return;
         };
         assert!(url.contains("2026.07.04%20rc%2F1"));

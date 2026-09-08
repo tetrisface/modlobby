@@ -855,12 +855,52 @@ pub const HTTP_SEARCH_URL: &str = "https://files-cdn.beyondallreason.dev/find";
 /// ships `prdRapidUseStreamer` defaulting to `"false"` for this reason.
 pub const RAPID_USE_STREAMER: &str = "false";
 
+/// The variable pr-downloader reads its own request rate limit from.
+pub const MAX_REQS_ENV: &str = "PRD_MAX_HTTP_REQS_PER_SEC";
+
+/// The most requests a second modlobby will make of BAR's servers through
+/// pr-downloader.
+///
+/// A guard against a runaway rather than a throttle on ordinary work. With the
+/// streamer off a game arrives as one HTTP request per rapid pool file, and a
+/// BAR install is some 36 000 of them, so a limit low enough to be felt is low
+/// enough to turn a first install into hours. This one sits above what a good
+/// connection reaches anyway, and bounds a retry storm or a loop that reinvokes
+/// the downloader to something the CDN would not notice. bar-lobby sets no
+/// limit at all, so it makes modlobby gentler than the official client rather
+/// than slower than it.
+pub const MAX_HTTP_REQS_PER_SEC: u32 = 200;
+
+/// The limit to hand the child, never raising one somebody already set.
+///
+/// Not a plain minimum, because pr-downloader spells "no limit" `0`
+/// (`Throttler::get_token` returns true whenever the rate is zero), and the
+/// smallest of `0` and a ceiling is no ceiling. It also reads anything it
+/// cannot parse as unlimited -- `getMaxReqsPerSecLimit` returns `false` from a
+/// function returning `unsigned` -- so a value we do not understand is replaced
+/// rather than passed on, and the child always gets a number it will honour.
+///
+/// Takes the setting rather than reading it, so both the raising and the
+/// lowering can be tested without a process to set variables on.
+pub fn max_reqs_per_sec(existing: Option<&str>) -> u32 {
+    existing
+        .and_then(|value| value.trim().parse::<u32>().ok())
+        .filter(|limit| *limit > 0)
+        .map_or(MAX_HTTP_REQS_PER_SEC, |limit| {
+            limit.min(MAX_HTTP_REQS_PER_SEC)
+        })
+}
+
 impl Download {
     pub fn command(&self) -> Command {
         let mut cmd = Command::new(&self.binary);
         cmd.env("PRD_RAPID_REPO_MASTER", RAPID_REPO_MASTER)
             .env("PRD_HTTP_SEARCH_URL", HTTP_SEARCH_URL)
             .env("PRD_RAPID_USE_STREAMER", RAPID_USE_STREAMER)
+            .env(
+                MAX_REQS_ENV,
+                max_reqs_per_sec(std::env::var(MAX_REQS_ENV).ok().as_deref()).to_string(),
+            )
             .arg("--filesystem-writepath")
             .arg(&self.data_dir);
         for (want, name) in &self.wants {
@@ -978,6 +1018,38 @@ mod download_tests {
             "PRD_RAPID_USE_STREAMER".into(),
             Some(RAPID_USE_STREAMER.into())
         )));
+        // A rate limit always goes over, and it is never pr-downloader's
+        // spelling of "unlimited" -- which is what an absent or unreadable one
+        // would leave it with.
+        let limit: u32 = env
+            .iter()
+            .find(|(key, _)| key == MAX_REQS_ENV)
+            .and_then(|(_, value)| value.as_deref())
+            .expect("a rate limit is handed over")
+            .parse()
+            .expect("a number pr-downloader can read");
+        assert!((1..=MAX_HTTP_REQS_PER_SEC).contains(&limit));
+    }
+
+    /// The ceiling is one, not a floor and not a replacement: somebody who has
+    /// asked for less traffic than modlobby would make keeps their answer.
+    #[test]
+    fn the_request_rate_is_capped_without_raising_a_lower_one() {
+        // Every way of saying "no limit" to pr-downloader becomes the ceiling:
+        // unset, its own zero, and anything it would fail to parse -- which it
+        // treats as zero rather than as an error.
+        assert_eq!(max_reqs_per_sec(None), MAX_HTTP_REQS_PER_SEC);
+        assert_eq!(max_reqs_per_sec(Some("0")), MAX_HTTP_REQS_PER_SEC);
+        assert_eq!(max_reqs_per_sec(Some("")), MAX_HTTP_REQS_PER_SEC);
+        assert_eq!(
+            max_reqs_per_sec(Some("as fast as you like")),
+            MAX_HTTP_REQS_PER_SEC
+        );
+        assert_eq!(max_reqs_per_sec(Some("-1")), MAX_HTTP_REQS_PER_SEC);
+        // Above it comes down, below it is left alone.
+        assert_eq!(max_reqs_per_sec(Some("100000")), MAX_HTTP_REQS_PER_SEC);
+        assert_eq!(max_reqs_per_sec(Some(" 5 ")), 5);
+        assert_eq!(max_reqs_per_sec(Some("1")), 1);
     }
 
     #[test]

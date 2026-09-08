@@ -5,6 +5,24 @@
 //! instead of handshaking again. And it says who is asking — the people who run
 //! those services should be able to tell modlobby's traffic from everyone
 //! else's in their logs, which is what a `User-Agent` is for.
+//!
+//! # Asking again
+//!
+//! Nothing built on this client retries, and that is a decision rather than an
+//! omission. Every caller has something better than a second attempt: the map
+//! index and the news feed fall back to their last copy, a picture that is not
+//! there is remembered as not being there, and the one download that matters
+//! resumes from the part file it left behind. A retry would buy little and is
+//! the shape a client takes on just before somebody has to block it.
+//!
+//! Should one ever be wanted, it has three obligations, and none of them are
+//! satisfied by a loop with a sleep in it:
+//!
+//! - Honour `Retry-After` on a 429 or a 503. The server saying when to come
+//!   back is the whole mechanism; ignoring it is what makes a retry an attack.
+//! - Back off between attempts, and give up. Two or three tries, growing.
+//! - Never repeat a 4xx. It is an answer about the request, and the request
+//!   will not have changed.
 
 use std::time::Duration;
 

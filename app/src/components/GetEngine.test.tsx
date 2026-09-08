@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { VersionView } from '../ipc/bindings/VersionView'
 import { setBuild } from '../store/build'
-import { GetEngine } from './GetEngine'
+import { GetEngine, forgetAskedEngines } from './GetEngine'
 
 /**
  * The one download modlobby does itself, and the one it must not.
@@ -48,6 +48,9 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   setBuild(null)
+  // What `auto` has already asked for outlives a mount on purpose, so it has
+  // to be forgotten between tests the way the build signal is.
+  forgetAskedEngines()
   vi.clearAllMocks()
 })
 
@@ -95,6 +98,40 @@ describe('getting the first engine onto a machine', () => {
     fireEvent.click(getByText('Download the engine'))
     await settle()
     expect(sent('download_engine')).toEqual([])
+  })
+
+  test('a room that remounts does not ask the index again', async () => {
+    // A reload, a tab away and back, a list rebuilding its rows: each of those
+    // used to be another trip to BAR's index for a version it may well have no
+    // build for, and each 404 arrived as a red notice about the network.
+    const first = render(() => <GetEngine version='2026.07.04' auto />)
+    await settle()
+    first.unmount()
+
+    const second = render(() => <GetEngine version='2026.07.04' auto />)
+    await settle()
+    expect(sent('download_engine')).toEqual([{ version: '2026.07.04' }])
+    second.unmount()
+
+    // A version nobody has asked about yet is still a new question.
+    render(() => <GetEngine version='2026.09.01' auto />)
+    await settle()
+    expect(sent('download_engine')).toEqual([
+      { version: '2026.07.04' },
+      { version: '2026.09.01' },
+    ])
+  })
+
+  test('a click asks again for a version already tried on its own', async () => {
+    // The standing question is only about asking unprompted. Somebody who
+    // clicks after a failure means it, and gets the whole answer back.
+    const { getByText } = render(() => <GetEngine version='2026.07.04' auto />)
+    await settle()
+    expect(sent('download_engine')).toHaveLength(1)
+
+    fireEvent.click(getByText('Download the engine'))
+    await settle()
+    expect(sent('download_engine')).toHaveLength(2)
   })
 
   test('the heading names the version when there is one', async () => {

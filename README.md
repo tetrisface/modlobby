@@ -117,6 +117,37 @@ carried a backup against exactly that since 2022 — so if one comes back out of
 game with most of its keys gone, modlobby says so and tells you where the copy
 from before the game is. Putting it back is your decision, from Settings.
 
+# What modlobby asks of BAR's servers
+
+Every request modlobby makes of a `beyondallreason.dev` or
+`beyondallreason.info` host, so the people who run them can tell what to expect
+from a client identifying itself as
+`modlobby/<version> (+https://github.com/tetrisface/modlobby)`.
+
+| What                                         | When                                                                       | Kept                                                                                     |
+| -------------------------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `files-cdn…/find`                            | Only when an engine is missing and one is published for the machine        | A version the index has no build for is not asked about twice while the window is open   |
+| `repos-cdn…/repos.gz`, then rapid pool files | Through pr-downloader, when a game or map is missing                       | pr-downloader's own pool on disk                                                         |
+| `maps-metadata…/lobby_maps.validated.json`   | Once a run, then once a day                                                | On disk, revalidated with `If-None-Match` — usually a bodiless 304                       |
+| Map and news pictures                        | Once per picture, at most six at a time                                    | On disk for good; the URL changes when the picture does                                  |
+| `beyondallreason.info/news/rss.xml`          | Once a run, then hourly                                                    | On disk                                                                                  |
+
+Nothing is on a timer and nothing polls: each of those is a consequence of
+somebody opening a window, a room or a list. There is no per-item existence
+check anywhere — the map index is fetched whole, once, and every "is this map
+known" question is answered from the local copy. A picture or an engine version
+that answers 404 is remembered as absent rather than asked for again.
+
+Requests made through pr-downloader are capped at 200 a second
+(`PRD_MAX_HTTP_REQS_PER_SEC`), which bar-lobby does not set at all. A lower
+limit already in the environment is kept rather than raised.
+
+Nothing retries. Should that ever change, a retry has to honour `Retry-After`,
+back off between attempts, and never repeat a 4xx.
+
+If you run these services and would rather modlobby did something differently,
+please open an issue — this list exists to make that conversation easy to have.
+
 # Development
 
 After `bun install` above launch the app with `bun run dev`.

@@ -110,8 +110,8 @@ async fn fetch(
 
     // No index entry to ask for is not a network problem, and saying so early
     // beats downloading something that cannot run here.
-    let find = content::release::find_url(version)
-        .ok_or_else(|| ApiError::new("platform", content::release::NO_CATEGORY))?;
+    let find =
+        content::release::find_url(version).map_err(|no| ApiError::new(no.code(), no.reason()))?;
 
     say(EngineProgress::Finding);
     let index = http

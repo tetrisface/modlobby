@@ -97,7 +97,15 @@ sevenz-rust2 = "=0.22.2"
 # default is installed — which surfaced as "client stopped" on login. One
 # provider (ring, installed at startup) serves both the lobby connection and
 # every HTTPS fetch.
+#
+# `gzip` and `brotli` are what make reqwest send `Accept-Encoding` at all: with
+# neither, every fetch asks for the identity encoding and BAR's servers are
+# obliged to send it. The map index is close to a megabyte of JSON that
+# compresses to about a tenth of that, and it is asked for again whenever a day
+# has passed and its ETag has changed.
 reqwest = { version = "=0.13.4", default-features = false, features = [
+  "brotli",
+  "gzip",
   "json",
   "rustls-no-provider",
 ] }

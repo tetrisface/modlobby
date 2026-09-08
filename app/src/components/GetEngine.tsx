@@ -11,6 +11,25 @@ function mb(bytes: number): string {
 }
 
 /**
+ * Versions already asked about on their own, for as long as the window lives.
+ *
+ * `auto` is a standing question rather than a fresh one per mount. This used
+ * to be a variable inside the component, which meant a room that remounts — a
+ * reload, a tab away and back, a list rebuilding its rows — asked again, and a
+ * version the index has no build for is a 404 each time. Kept by version so a
+ * different one is still a new question, and out here so remounting is not.
+ *
+ * A click is never suppressed by it: that is somebody asking on purpose, and
+ * they get the whole answer back.
+ */
+const askedFor = new Set<string>()
+
+/** Forgets what was asked automatically. For tests, which share this module. */
+export function forgetAskedEngines() {
+  askedFor.clear()
+}
+
+/**
  * Getting the first engine onto a machine that has none.
  *
  * This is the one download modlobby does itself. Everything else goes through
@@ -37,8 +56,6 @@ export function GetEngine(props: {
 }) {
   const [progress, setProgress] = createSignal<EngineProgress | null>(null)
   const [busy, setBusy] = createSignal(false)
-  /** Once per mount, whatever the answer turns out to be. */
-  let asked = false
 
   onMount(() => {
     const pending = listen<EngineProgress>('engine-download', (event) =>
@@ -54,8 +71,9 @@ export function GetEngine(props: {
   // costs an error nobody can act on.
   createEffect(() => {
     const known = build()
-    if (!known || asked || !props.auto || !props.version) return
-    asked = true
+    const version = props.version
+    if (!known || !props.auto || !version || askedFor.has(version)) return
+    askedFor.add(version)
     if (!known.noPublishedEngine) void get()
   })
 

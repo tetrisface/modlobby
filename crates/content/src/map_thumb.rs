@@ -17,6 +17,13 @@
 //! ([`Service::warm`]), on one worker, so that at most one core is busy with
 //! it and what the screen asks for now is never queued behind it.
 //!
+//! A picture that is not there is remembered as not being there. The URL names
+//! the picture — it changes when the picture does — so a 404 is an answer about
+//! that URL and not about the moment, and a list that repaints must not send
+//! BAR's image server the same one every frame. What is about the moment
+//! instead — a dropped connection, a 500 — is not remembered, because the
+//! moment passes.
+//!
 //! Nothing here is about maps in particular: everything is keyed by the URL a
 //! picture was published at, so the banner on a news card comes through the
 //! same cache and the same resizing.
@@ -38,6 +45,8 @@ pub const CACHE_DIR: &str = "map-thumbs";
 /// The longest side served. The source is 1024 on its long side; anything
 /// bigger would be an upscale, and a tile does not need one.
 pub const MAX_SIDE: u32 = 1024;
+/// How many pictures are fetched at once. See [`Inner::gate`].
+pub const AT_ONCE: usize = 6;
 
 /// The box a picture is made to fill, in pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
@@ -72,6 +81,26 @@ pub enum Error {
     Image(#[from] image::ImageError),
     #[error("{0}")]
     Io(#[from] std::io::Error),
+    /// The answer this URL already got, given again without asking again.
+    #[error("{0}")]
+    Refused(String),
+}
+
+impl Error {
+    /// Whether this says something about the URL or something about the moment.
+    ///
+    /// A 4xx and a body that is not a picture are answers about this URL, and
+    /// the URL names the picture, so asking again can only get the same answer
+    /// back. A dropped connection, a 5xx and a local IO failure are about now,
+    /// and now passes -- remembering those would turn a moment of bad network
+    /// into a picture missing until the lobby is restarted.
+    fn settled(&self) -> bool {
+        match self {
+            Self::Status(code) => (400..500).contains(code),
+            Self::Image(_) => true,
+            Self::Request(_) | Self::Io(_) | Self::Refused(_) => false,
+        }
+    }
 }
 
 /// The pictures made this run, and where they are kept. Cheap to clone: a
@@ -82,6 +111,20 @@ pub struct Service(Arc<Inner>);
 struct Inner {
     client: reqwest::Client,
     dir: PathBuf,
+    /// How many pictures may be in flight at once.
+    ///
+    /// The per-file lock joins callers asking for the *same* picture; a list
+    /// painting thirty rooms asks for thirty different ones in the same frame,
+    /// and those it does not join. Six is what a browser allows itself per
+    /// host, and the rest wait a moment rather than arriving all at once at
+    /// somebody else's image server.
+    gate: tokio::sync::Semaphore,
+    /// URLs that answered something about themselves, and what they answered.
+    ///
+    /// Kept for the run rather than on disk: a picture missing because it was
+    /// published late should come back on the next start, and a lobby that has
+    /// been open for hours should not still be asking for it.
+    refused: Mutex<HashMap<String, String>>,
     /// One lock per file — the picture as published and each size made from
     /// it — so a list showing the same map in twenty rooms fetches and
     /// resizes it once and the other nineteen wait for the file. Kept for the
@@ -101,6 +144,8 @@ impl Service {
         Self(Arc::new(Inner {
             client,
             dir: cache_dir.join(CACHE_DIR),
+            gate: tokio::sync::Semaphore::new(AT_ONCE),
+            refused: Mutex::new(HashMap::new()),
             making: Mutex::new(HashMap::new()),
             queue: Mutex::new(VecDeque::new()),
             busy: watch::Sender::new(false),
@@ -178,20 +223,55 @@ impl Service {
         }
     }
 
-    /// The picture as published, from disk after the first time.
+    /// The picture as published, from disk after the first time — and from the
+    /// refusal it already got, if it got one.
     pub async fn published(&self, url: &str) -> Result<Vec<u8>, Error> {
         let path = self.0.dir.join(format!("{}.src", hash(url)));
         if let Ok(picture) = tokio::fs::read(&path).await {
             return Ok(picture);
         }
+        if let Some(refused) = self.refused(url) {
+            return Err(Error::Refused(refused));
+        }
         let lock = self.lock_for(&path);
         let _fetching = lock.lock().await;
+        // Either could have happened while somebody else held the lock asking
+        // this same question, and both are answers.
         if let Ok(picture) = tokio::fs::read(&path).await {
             return Ok(picture);
         }
-        let picture = self.fetch(url).await?;
+        if let Some(refused) = self.refused(url) {
+            return Err(Error::Refused(refused));
+        }
+        let picture = self
+            .fetch(url)
+            .await
+            .inspect_err(|err| self.refuse(url, err))?;
         write(&path, &picture).await?;
         Ok(picture)
+    }
+
+    /// The answer this URL already got, when it got one worth keeping.
+    fn refused(&self, url: &str) -> Option<String> {
+        self.0
+            .refused
+            .lock()
+            .expect("the refusal map is never poisoned")
+            .get(url)
+            .cloned()
+    }
+
+    /// Keeps an answer that was about the URL, so it is not asked for twice.
+    fn refuse(&self, url: &str, err: &Error) {
+        if !err.settled() {
+            return;
+        }
+        tracing::debug!(url, %err, "picture refused; not asking again this run");
+        self.0
+            .refused
+            .lock()
+            .expect("the refusal map is never poisoned")
+            .insert(url.to_owned(), err.to_string());
     }
 
     fn lock_for(&self, path: &Path) -> Arc<tokio::sync::Mutex<()>> {
@@ -207,6 +287,12 @@ impl Service {
     /// A body that is a picture, by its magic bytes: a maintenance page or an
     /// error dressed as 200 must not be kept as if it were one.
     async fn fetch(&self, url: &str) -> Result<Vec<u8>, Error> {
+        let _turn = self
+            .0
+            .gate
+            .acquire()
+            .await
+            .expect("the gate is never closed");
         let response = self.0.client.get(url).send().await?;
         if !response.status().is_success() {
             return Err(Error::Status(response.status().as_u16()));
@@ -422,6 +508,69 @@ mod tests {
         let err = thumbs.get(&url, tile(50, 32)).await.unwrap_err();
         assert!(matches!(err, Error::Image(_)), "{err}");
         assert!(!dir.path().join(CACHE_DIR).exists());
+    }
+
+    /// A room whose map has no published picture sits in the list like any
+    /// other, and the list repaints — on a new room, a filter, a scroll. Every
+    /// one of those used to be another 404 for BAR's image server.
+    #[tokio::test]
+    async fn a_picture_that_is_not_there_is_asked_for_once() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/gone.png"))
+            .respond_with(ResponseTemplate::new(404))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let url = format!("{}/gone.png", server.uri());
+        let dir = tempfile::tempdir().unwrap();
+        let thumbs = service(dir.path());
+
+        // The first answer is the server's, and every one after it is the
+        // same answer without the asking.
+        let first = thumbs.get(&url, tile(50, 32)).await.unwrap_err();
+        assert!(matches!(first, Error::Status(404)), "{first}");
+        for _ in 0..4 {
+            let again = thumbs.get(&url, tile(50, 32)).await.unwrap_err();
+            assert!(matches!(again, Error::Refused(_)), "{again}");
+            assert_eq!(again.to_string(), first.to_string());
+        }
+        // A size never asked for before goes through the same refusal rather
+        // than fetching the picture it would be cut from.
+        let other = thumbs.get(&url, tile(130, 130)).await.unwrap_err();
+        assert!(matches!(other, Error::Refused(_)), "{other}");
+
+        // Warming is the other way the same URL comes round again.
+        thumbs.warm(vec![Job {
+            url: url.clone(),
+            tiles: vec![tile(50, 32)],
+        }]);
+        thumbs.settled().await;
+
+        // The mock's own expectation is the assertion: one request, not seven.
+        server.verify().await;
+    }
+
+    /// The other half of the rule: a server having a bad minute is asked again,
+    /// or one 500 would cost the picture until the lobby is restarted.
+    #[tokio::test]
+    async fn a_moment_of_bad_luck_is_not_held_against_the_url() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/later.png"))
+            .respond_with(ResponseTemplate::new(503))
+            .expect(3)
+            .mount(&server)
+            .await;
+        let url = format!("{}/later.png", server.uri());
+        let dir = tempfile::tempdir().unwrap();
+        let thumbs = service(dir.path());
+
+        for _ in 0..3 {
+            let err = thumbs.get(&url, tile(50, 32)).await.unwrap_err();
+            assert!(matches!(err, Error::Status(503)), "{err}");
+        }
+        server.verify().await;
     }
 
     #[tokio::test]
