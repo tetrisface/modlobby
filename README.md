@@ -7,7 +7,7 @@ A Beyond All Reason lobby focused on modding, experiments and performance.
 ## Packages
 
 Packages are available at [releases](https://github.com/tetrisface/modlobby/releases) as .exe,
-.AppImage, .deb and .rpm, all of which update themselves from the next release.
+.AppImage, .deb and .rpm, all of which update themselves from the next release. MacOS is not supported for skirmish yet.
 
 ## From source
 
@@ -21,41 +21,6 @@ cd modlobby/app
 bun install
 bun run build    # installer under app/src-tauri/target/release/bundle/
 ```
-
-## macOS
-
-macOS runs **skirmish against AI, and nothing that needs a server**. Beyond All Reason
-publishes no engine for Apple, and the Apple Silicon build that exists —
-[RecoilEngine-AppleSilicon](https://github.com/Vandomas/RecoilEngine-AppleSilicon) — has online
-play turned off, because unofficial builds are not permitted on the official servers until their
-author has approval.
-
-That build turns it off by pointing Chobby's lobby-server address at a reserved name that can never
-resolve, which modlobby never reads: it talks to the server itself. So the restriction is one
-modlobby has to keep rather than one it inherits.
-
-It keeps it where the engine is started, not where the buttons are. `recoil::refuse_target` is
-checked at the single place any game is launched, so a skirmish and a replay run and a
-`spring://` join cannot — by any route, present or future. The lobby is otherwise whole: the
-battle list, chat and rooms all work, and a room you join is one you watch, with no seat to take,
-no ready flag, no launch and no auto-launch. Everything that was removed is a thing that ends in
-the engine being started on somebody else's game.
-
-Because there is no engine to fetch, the engine is installed by hand. Download the
-`BAR-Launcher-*.zip`, then drop `BAR Launcher.app` into modlobby's engine folder:
-
-```sh
-~/Library/Application\ Support/modlobby/data/engine/
-```
-
-The folder it sits in can be called anything: the app declares which engine it holds in its
-`Info.plist`, and modlobby reads that. It also finds the engine, `pr-downloader`, the base content
-and the `BARb` skirmish AI inside the bundle, and launches the engine with the graphics environment
-the bundle needs — it renders OpenGL through zink on Vulkan on Metal, and comes up blank without it.
-If you have already run BAR Launcher, the maps and games it downloaded to
-`~/Library/Application Support/Beyond-All-Reason-mac` are read from there rather than fetched again.
-
-The app is ad-hoc signed, so the first launch needs a right-click and Open. Apple Silicon only.
 
 # Alongside other lobbies
 
@@ -209,6 +174,11 @@ unit packs). `section` is a lobby display hint by BAR's own description, so regr
 nothing on the wire, and Cheats keeps its name and every balance setting.
 
 ## Extras
+
+Beyond All Reason publishes no engine for MacOS, and the Apple Silicon build that exists —
+[RecoilEngine-AppleSilicon](https://github.com/Vandomas/RecoilEngine-AppleSilicon) — has online
+play turned off, because unofficial builds are not permitted on the official servers until their
+author has approval and lobby integration is done.
 
 `scripts/webview.ts` drives the running window over the DevTools protocol so those checks can be
 made without a pair of hands:
