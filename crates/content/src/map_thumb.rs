@@ -21,8 +21,8 @@
 //! the picture — it changes when the picture does — so a 404 is an answer about
 //! that URL and not about the moment, and a list that repaints must not send
 //! BAR's image server the same one every frame. What is about the moment
-//! instead — a dropped connection, a 500 — is not remembered, because the
-//! moment passes.
+//! instead — a dropped connection, a 500, a 429, a login page dressed as a
+//! picture — is not remembered, because the moment passes.
 //!
 //! Nothing here is about maps in particular: everything is keyed by the URL a
 //! picture was published at, so the banner on a news card comes through the
@@ -81,6 +81,10 @@ pub enum Error {
     Image(#[from] image::ImageError),
     #[error("{0}")]
     Io(#[from] std::io::Error),
+    /// A picture in a format this build does not decode: real, published, and
+    /// no use here.
+    #[error("the picture is a {0:?}, which this build cannot decode")]
+    Format(image::ImageFormat),
     /// The answer this URL already got, given again without asking again.
     #[error("{0}")]
     Refused(String),
@@ -89,16 +93,22 @@ pub enum Error {
 impl Error {
     /// Whether this says something about the URL or something about the moment.
     ///
-    /// A 4xx and a body that is not a picture are answers about this URL, and
-    /// the URL names the picture, so asking again can only get the same answer
-    /// back. A dropped connection, a 5xx and a local IO failure are about now,
-    /// and now passes -- remembering those would turn a moment of bad network
-    /// into a picture missing until the lobby is restarted.
+    /// A 4xx is an answer about this URL, and the URL names the picture, so
+    /// asking again can only get the same answer back -- except the two that
+    /// exist to say "later": a 429 carries the server's own `Retry-After`, and
+    /// a 408 is the connection's, not the picture's. A format this build does
+    /// not decode is about the URL too; the picture will not change formats.
+    /// Everything else is about now, and now passes: a dropped connection, a
+    /// 5xx, a local IO failure, and a body that is not a picture at all, which
+    /// is what a captive portal or a maintenance page looks like from here --
+    /// every map asked for through a hotel's login page would otherwise stay
+    /// blank until the lobby restarts.
     fn settled(&self) -> bool {
         match self {
+            Self::Status(408 | 429) => false,
             Self::Status(code) => (400..500).contains(code),
-            Self::Image(_) => true,
-            Self::Request(_) | Self::Io(_) | Self::Refused(_) => false,
+            Self::Format(_) => true,
+            Self::Request(_) | Self::Image(_) | Self::Io(_) | Self::Refused(_) => false,
         }
     }
 }
@@ -298,7 +308,15 @@ impl Service {
             return Err(Error::Status(response.status().as_u16()));
         }
         let picture = response.bytes().await?;
-        image::guess_format(&picture)?;
+        // Two questions, not one: the magic bytes know some twenty formats,
+        // the build decodes three. A real picture in one of the others must
+        // not be kept as if it could be drawn, or it is decoded and fails on
+        // every paint for good -- the files are kept forever, and this is the
+        // one place that decides what gets in.
+        let format = image::guess_format(&picture)?;
+        if !format.reading_enabled() {
+            return Err(Error::Format(format));
+        }
         Ok(picture.to_vec())
     }
 }
@@ -551,24 +569,68 @@ mod tests {
         server.verify().await;
     }
 
-    /// The other half of the rule: a server having a bad minute is asked again,
-    /// or one 500 would cost the picture until the lobby is restarted.
+    /// The magic-byte check knows some twenty formats and the build decodes
+    /// three. A picture in one of the others used to be kept as published and
+    /// then fail to decode on every paint, forever, since kept files are for
+    /// good. Now it is an answer about the URL: asked once, and nothing kept.
     #[tokio::test]
-    async fn a_moment_of_bad_luck_is_not_held_against_the_url() {
+    async fn a_format_this_build_cannot_draw_is_asked_for_once_and_not_kept() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
-            .and(path("/later.png"))
-            .respond_with(ResponseTemplate::new(503))
-            .expect(3)
+            .and(path("/anim.gif"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_bytes(b"GIF89a\x01\x00\x01\x00\x00".to_vec()),
+            )
+            .expect(1)
             .mount(&server)
             .await;
-        let url = format!("{}/later.png", server.uri());
+        let url = format!("{}/anim.gif", server.uri());
         let dir = tempfile::tempdir().unwrap();
         let thumbs = service(dir.path());
 
-        for _ in 0..3 {
-            let err = thumbs.get(&url, tile(50, 32)).await.unwrap_err();
-            assert!(matches!(err, Error::Status(503)), "{err}");
+        let first = thumbs.get(&url, tile(50, 32)).await.unwrap_err();
+        assert!(
+            matches!(first, Error::Format(image::ImageFormat::Gif)),
+            "{first}"
+        );
+        let again = thumbs.get(&url, tile(50, 32)).await.unwrap_err();
+        assert!(matches!(again, Error::Refused(_)), "{again}");
+        assert!(!dir.path().join(CACHE_DIR).exists());
+        server.verify().await;
+    }
+
+    /// The other half of the rule: a server having a bad minute is asked again,
+    /// or one 500 would cost the picture until the lobby is restarted. So is
+    /// one that said "later" in so many words -- a 429 is the one 4xx that is
+    /// about the moment by definition -- and so is a login page dressed as a
+    /// picture, which is what every URL looks like from behind a hotel's Wi-Fi.
+    #[tokio::test]
+    async fn a_moment_of_bad_luck_is_not_held_against_the_url() {
+        let server = MockServer::start().await;
+        for (name, answer) in [
+            ("/later.png", ResponseTemplate::new(503)),
+            ("/slower.png", ResponseTemplate::new(429)),
+            (
+                "/portal.png",
+                ResponseTemplate::new(200).set_body_bytes(b"<html>sign in</html>".to_vec()),
+            ),
+        ] {
+            Mock::given(method("GET"))
+                .and(path(name))
+                .respond_with(answer)
+                .expect(3)
+                .mount(&server)
+                .await;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let thumbs = service(dir.path());
+
+        for name in ["/later.png", "/slower.png", "/portal.png"] {
+            let url = format!("{}{name}", server.uri());
+            for _ in 0..3 {
+                let err = thumbs.get(&url, tile(50, 32)).await.unwrap_err();
+                assert!(!matches!(err, Error::Refused(_)), "{name}: {err}");
+            }
         }
         server.verify().await;
     }

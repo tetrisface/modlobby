@@ -7,6 +7,7 @@ import type { ModOption } from '../../ipc/bindings/ModOption'
 import type { SkirmishView } from '../../ipc/bindings/SkirmishView'
 import type { VersionView } from '../../ipc/bindings/VersionView'
 import { setBuild } from '../../store/build'
+import { forgetAskedEngines } from '../../components/GetEngine'
 import { emptyLobby, setLobby } from '../../store/lobby'
 import { Room } from '../Room'
 import { battle, bot, myBattle, user } from './fixture'
@@ -108,6 +109,7 @@ afterEach(() => {
   setLobby(reconcile(emptyLobby()))
   // Module state shared across the file, so the reset is not optional.
   setBuild(null)
+  forgetAskedEngines()
   vi.clearAllMocks()
 })
 

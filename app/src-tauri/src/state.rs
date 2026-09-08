@@ -7,6 +7,19 @@ use lobby_runtime::{Client, Hardware, platform};
 use settings::{CredentialStore, KeyringStore, LoginGuard, RejoinMemory, Store, UpdateMemory};
 use spring_protocol::ThrottlePolicy;
 
+/// How long a map index that could not be fetched is not asked for again.
+///
+/// Long enough that a server having a bad minute is not asked for a megabyte
+/// thirty times, short enough that the pictures come back in the same sitting.
+const MAP_INDEX_RETRY_AFTER: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+
+/// The map index for this run: what was loaded, or when loading last failed.
+#[derive(Default)]
+struct MapIndexHeld {
+    index: Option<content::map_index::MapIndex>,
+    failed_at: Option<std::time::Instant>,
+}
+
 pub struct App {
     pub client: Client,
     pub settings: Store,
@@ -25,7 +38,7 @@ pub struct App {
     /// BAR's PvE Stats service, with what it has already answered this run.
     pub pve: pve::Service,
     /// BAR's map index for this run, loaded the first time anything asks.
-    map_index: tokio::sync::Mutex<Option<content::map_index::MapIndex>>,
+    map_index: tokio::sync::Mutex<MapIndexHeld>,
     /// What of BAR's news has already been read, kept between runs.
     pub news_read: news::Memory,
     /// The news for this run, loaded the first time anything asks.
@@ -70,7 +83,7 @@ impl App {
             pve: pve::Service::new(http.clone(), pve::ENDPOINT),
             thumbs: content::map_thumb::Service::new(http.clone(), &cache_dir),
             http,
-            map_index: tokio::sync::Mutex::new(None),
+            map_index: tokio::sync::Mutex::new(MapIndexHeld::default()),
             news: tokio::sync::Mutex::new(None),
             game_files: Arc::new(content::game_cache::GameFileCache::new()),
             engine_downloads: tokio::sync::Mutex::new(()),
@@ -84,8 +97,18 @@ impl App {
     /// again rather than leaving the whole session without pictures.
     pub async fn map_index(&self) -> content::map_index::MapIndex {
         let mut held = self.map_index.lock().await;
-        if let Some(index) = held.as_ref() {
+        if let Some(index) = held.index.as_ref() {
             return index.clone();
+        }
+        // An empty index is not kept, so a run that started offline gets the
+        // pictures once the network is back. But it is asked for by every
+        // picture on the screen, and a server that is down would otherwise be
+        // asked for a megabyte of JSON thirty times per battle list until it
+        // came back. A failure is remembered for a while instead.
+        if let Some(failed) = held.failed_at
+            && failed.elapsed() < MAP_INDEX_RETRY_AFTER
+        {
+            return content::map_index::MapIndex::default();
         }
         let index = content::map_index::load(
             &self.http,
@@ -94,8 +117,10 @@ impl App {
             std::time::SystemTime::now(),
         )
         .await;
-        if !index.is_empty() {
-            *held = Some(index.clone());
+        if index.is_empty() {
+            held.failed_at = Some(std::time::Instant::now());
+        } else {
+            held.index = Some(index.clone());
         }
         index
     }

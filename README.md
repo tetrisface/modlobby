@@ -119,31 +119,37 @@ from before the game is. Putting it back is your decision, from Settings.
 
 # What modlobby asks of BAR's servers
 
-Every request modlobby makes of a `beyondallreason.dev` or
+Every HTTP request modlobby makes of a `beyondallreason.dev` or
 `beyondallreason.info` host, so the people who run them can tell what to expect
 from a client identifying itself as
-`modlobby/<version> (+https://github.com/tetrisface/modlobby)`.
+`modlobby/<version> (+https://github.com/tetrisface/modlobby)`. The lobby
+protocol itself is one TCP connection to the lobby server with its keepalive
+pings, the same as any client's, and is not what this section is about.
 
-| What                                         | When                                                                       | Kept                                                                                     |
-| -------------------------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `files-cdn…/find`                            | Only when an engine is missing and one is published for the machine        | A version the index has no build for is not asked about twice while the window is open   |
-| `repos-cdn…/repos.gz`, then rapid pool files | Through pr-downloader, when a game or map is missing                       | pr-downloader's own pool on disk                                                         |
-| `maps-metadata…/lobby_maps.validated.json`   | Once a run, then once a day                                                | On disk, revalidated with `If-None-Match` — usually a bodiless 304                       |
-| Map and news pictures                        | Once per picture, at most six at a time                                    | On disk for good; the URL changes when the picture does                                  |
-| `beyondallreason.info/news/rss.xml`          | Once a run, then hourly                                                    | On disk                                                                                  |
+| What                                         | When                                                                                                          | Kept                                                                                            |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `files-cdn…/find`                            | By modlobby itself only when an engine is missing and one is published for the machine; by pr-downloader once per game or map it is about to fetch | A version the index has no build for is not asked about twice while the page is open           |
+| `repos-cdn…/repos.gz`, then rapid pool files | Through pr-downloader, when a game or map is missing                                                           | pr-downloader's own pool on disk                                                                 |
+| `maps-metadata…/lobby_maps.validated.json`   | Once a run, then once a day; a fetch that fails is not tried again for five minutes                            | On disk, revalidated with `If-None-Match` — usually a bodiless 304                               |
+| Map and news pictures                        | Once per picture that exists, at most six at a time; one that answers 5xx or drops is asked again on the next paint | On disk for good; the URL changes when the picture does. A 404 is remembered for the run          |
+| `beyondallreason.info/news/rss.xml`          | Once a run, then hourly                                                                                        | On disk                                                                                          |
 
 Nothing is on a timer and nothing polls: each of those is a consequence of
-somebody opening a window, a room or a list. There is no per-item existence
-check anywhere — the map index is fetched whole, once, and every "is this map
-known" question is answered from the local copy. A picture or an engine version
-that answers 404 is remembered as absent rather than asked for again.
+somebody opening a window, a room or a list. There is no "does BAR have this
+map" probing — the map index is fetched whole, once, and every such question
+is answered from the local copy. The one lookup pr-downloader makes on `/find`
+is for a game or map it is about to download, never for one it is not.
 
-Requests made through pr-downloader are capped at 200 a second
-(`PRD_MAX_HTTP_REQS_PER_SEC`), which bar-lobby does not set at all. A lower
-limit already in the environment is kept rather than raised.
+File downloads through pr-downloader are capped at 3 000 request starts a
+second (`PRD_MAX_HTTP_REQS_PER_SEC`) — a guard against a runaway, above what a
+residential line reaches, not a speed limit. bar-lobby sets none at all; a
+lower limit already in the environment is kept rather than raised. Its own
+`/find` lookup sits outside that cap.
 
-Nothing retries. Should that ever change, a retry has to honour `Retry-After`,
-back off between attempts, and never repeat a 4xx.
+modlobby's own client never retries. pr-downloader retries a failed file with
+backoff and honours `Retry-After` — its behaviour upstream, the same as under
+bar-lobby. Should modlobby's client ever retry, it has to honour `Retry-After`,
+back off between attempts, and never repeat any other 4xx.
 
 If you run these services and would rather modlobby did something differently,
 please open an issue — this list exists to make that conversation easy to have.

@@ -221,7 +221,15 @@ async fn download_from(
         .await
         .map(|meta| meta.len())
         .unwrap_or(0);
-    let mut request = http.get(url);
+    // The archive as it is on the mirror, byte for byte: the offset resumed
+    // from, the size the index quoted and the checksum it gave are all of the
+    // stored file, and the client otherwise asks for gzip on every request.
+    // A mirror that compressed the answer would make a resume append the
+    // wrong bytes at the wrong offset, and the checksum would then reject
+    // the whole download rather than the mirror.
+    let mut request = http
+        .get(url)
+        .header(reqwest::header::ACCEPT_ENCODING, "identity");
     if have > 0 {
         request = request.header(reqwest::header::RANGE, format!("bytes={have}-"));
     }

@@ -101,9 +101,10 @@ describe('getting the first engine onto a machine', () => {
   })
 
   test('a room that remounts does not ask the index again', async () => {
-    // A reload, a tab away and back, a list rebuilding its rows: each of those
-    // used to be another trip to BAR's index for a version it may well have no
-    // build for, and each 404 arrived as a red notice about the network.
+    // A tab away and back, a list rebuilding its rows: each of those used to
+    // be another trip to BAR's index for a version it may well have no build
+    // for, and each 404 arrived as a red notice about the network. (A page
+    // load is a new page and asks once, which is the floor intended.)
     const first = render(() => <GetEngine version='2026.07.04' auto />)
     await settle()
     first.unmount()
@@ -120,6 +121,64 @@ describe('getting the first engine onto a machine', () => {
       { version: '2026.07.04' },
       { version: '2026.09.01' },
     ])
+  })
+
+  test('an answer about the version is kept, one about the network is not', async () => {
+    // The index saying there is no such build is settled: a remount gets
+    // nothing new by asking. A connection that dropped is about the moment,
+    // and the next mount after it may ask — or a laptop that was briefly
+    // offline would go the whole session without its engine, silently.
+    vi.mocked(invoke).mockRejectedValueOnce({
+      code: 'network',
+      message: 'fetching the engine: connection reset',
+    })
+    const dropped = render(() => <GetEngine version='2026.07.04' auto />)
+    await settle()
+    dropped.unmount()
+    render(() => <GetEngine version='2026.07.04' auto />)
+    await settle()
+    expect(sent('download_engine')).toHaveLength(2)
+    cleanup()
+    vi.clearAllMocks()
+    vi.mocked(invoke).mockResolvedValue(null)
+
+    vi.mocked(invoke).mockRejectedValueOnce({
+      code: 'notFound',
+      message: "BAR's index has no engine_windows64 build of engine 2026.09.01",
+    })
+    const missing = render(() => <GetEngine version='2026.09.01' auto />)
+    await settle()
+    missing.unmount()
+    render(() => <GetEngine version='2026.09.01' auto />)
+    await settle()
+    expect(sent('download_engine')).toHaveLength(1)
+  })
+
+  test('a page reload remembers what was asked', async () => {
+    // A reload is a fresh module: the variable starts empty. The window is
+    // the same, though, and so is its sessionStorage, which is what carries
+    // the answer across. The reloaded module gets the same build signal set
+    // on its own store instance, or its effect would never fire at all and
+    // the test would pass by saying nothing.
+    render(() => <GetEngine version='2026.07.04' auto />)
+    await settle()
+    expect(sent('download_engine')).toHaveLength(1)
+    cleanup()
+
+    vi.resetModules()
+    const reloaded = await import('./GetEngine')
+    const store = await import('../store/build')
+    store.setBuild(BUILD())
+    render(() => <reloaded.GetEngine version='2026.07.04' auto />)
+    await settle()
+    expect(sent('download_engine')).toHaveLength(1)
+
+    // And it is the memory that stopped it, not a dead effect.
+    render(() => <reloaded.GetEngine version='2026.09.01' auto />)
+    await settle()
+    expect(sent('download_engine')).toHaveLength(2)
+    store.setBuild(null)
+    reloaded.forgetAskedEngines()
   })
 
   test('a click asks again for a version already tried on its own', async () => {

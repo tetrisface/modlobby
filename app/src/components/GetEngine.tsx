@@ -1,7 +1,7 @@
 import { listen } from '@tauri-apps/api/event'
 import { Show, createEffect, createSignal, onCleanup, onMount } from 'solid-js'
 import type { EngineProgress } from '../ipc/bindings/EngineProgress'
-import { api, describeError } from '../ipc/client'
+import { api, describeError, errorCode } from '../ipc/client'
 import { build } from '../store/build'
 import { pushNotice } from '../store/chat'
 
@@ -10,23 +10,63 @@ function mb(bytes: number): string {
   return `${Math.round(bytes / 1_000_000)} MB`
 }
 
+/** Where `askedFor` is mirrored. Before it, since it is read at load. */
+const ASKED_KEY = 'modlobby.engines-asked'
+
 /**
- * Versions already asked about on their own, for as long as the window lives.
+ * Versions the index has already answered, for as long as the window lives.
  *
  * `auto` is a standing question rather than a fresh one per mount. This used
  * to be a variable inside the component, which meant a room that remounts — a
- * reload, a tab away and back, a list rebuilding its rows — asked again, and a
- * version the index has no build for is a 404 each time. Kept by version so a
- * different one is still a new question, and out here so remounting is not.
+ * tab away and back, a list rebuilding its rows — asked again, and a version
+ * the index has no build for is a 404 each time. Kept by version so a different
+ * one is still a new question, and out here so remounting is not. A module
+ * variable alone still starts empty on a page reload, so it is mirrored into
+ * `sessionStorage`, which a reload keeps and closing the window clears — the
+ * lifetime meant. A webview that allows no storage asks once per load, which
+ * is still the floor.
  *
- * A click is never suppressed by it: that is somebody asking on purpose, and
- * they get the whole answer back.
+ * Only a settled answer stays in it. A network that dropped mid-download is
+ * about the moment, and a remount after the moment passes may ask again;
+ * keeping that would leave the engine unfetched for the whole session with
+ * nothing on screen to say why. A click is never suppressed either way: that is
+ * somebody asking on purpose, and they get the whole answer back.
  */
-const askedFor = new Set<string>()
+const askedFor = recall()
+
+/** Error codes that are answers about the version, not about the network. */
+const SETTLED = new Set(['notFound', 'version', 'platform'])
+
+/** `sessionStorage`, when the webview lets us at it. */
+function session(): Storage | null {
+  try {
+    return window.sessionStorage
+  } catch {
+    return null
+  }
+}
+
+function recall(): Set<string> {
+  try {
+    const kept = session()?.getItem(ASKED_KEY)
+    return new Set(kept ? (JSON.parse(kept) as string[]) : [])
+  } catch {
+    return new Set()
+  }
+}
+
+function keep(asked: Set<string>) {
+  try {
+    session()?.setItem(ASKED_KEY, JSON.stringify([...asked]))
+  } catch {
+    // Nothing to do: the module variable still covers a remount.
+  }
+}
 
 /** Forgets what was asked automatically. For tests, which share this module. */
 export function forgetAskedEngines() {
   askedFor.clear()
+  keep(askedFor)
 }
 
 /**
@@ -73,17 +113,24 @@ export function GetEngine(props: {
     const known = build()
     const version = props.version
     if (!known || !props.auto || !version || askedFor.has(version)) return
+    // In before the answer, so a second mount during the download does not
+    // ask too; taken out again if the answer turns out to be about the moment.
     askedFor.add(version)
-    if (!known.noPublishedEngine) void get()
+    keep(askedFor)
+    if (!known.noPublishedEngine) void get(version)
   })
 
-  async function get() {
-    if (!props.version) return
+  async function get(version: string) {
+    if (!version) return
     setBusy(true)
     try {
-      await api.downloadEngine(props.version)
+      await api.downloadEngine(version)
       props.onDone?.()
     } catch (error) {
+      if (!SETTLED.has(errorCode(error) ?? '')) {
+        askedFor.delete(version)
+        keep(askedFor)
+      }
       pushNotice('error', describeError(error))
     } finally {
       setBusy(false)
@@ -147,7 +194,7 @@ export function GetEngine(props: {
         )}
       </Show>
       <Show when={!busy()}>
-        <button class='primary' onClick={() => void get()}>
+        <button class='primary' onClick={() => void get(props.version)}>
           {progress()?.phase === 'failed' ? 'Try again' : 'Download the engine'}
         </button>
       </Show>

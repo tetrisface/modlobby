@@ -861,15 +861,18 @@ pub const MAX_REQS_ENV: &str = "PRD_MAX_HTTP_REQS_PER_SEC";
 /// The most requests a second modlobby will make of BAR's servers through
 /// pr-downloader.
 ///
-/// A guard against a runaway rather than a throttle on ordinary work. With the
-/// streamer off a game arrives as one HTTP request per rapid pool file, and a
-/// BAR install is some 36 000 of them, so a limit low enough to be felt is low
-/// enough to turn a first install into hours. This one sits above what a good
-/// connection reaches anyway, and bounds a retry storm or a loop that reinvokes
-/// the downloader to something the CDN would not notice. bar-lobby sets no
-/// limit at all, so it makes modlobby gentler than the official client rather
-/// than slower than it.
-pub const MAX_HTTP_REQS_PER_SEC: u32 = 200;
+/// A guard against a runaway, not a "never faster than this" -- and the
+/// arithmetic that separates the two is worth having in view. With the
+/// streamer off a game arrives as one HTTP request per rapid pool file: a BAR
+/// install is some 36 000 of them averaging 56 KB, so a limit on request
+/// *starts* is a limit on bandwidth of about 56 KB times the number. At 200 a
+/// second that was 11 MB/s, a throttle on any fibre line. At 3 000 it is
+/// 170 MB/s, about 1.3 Gbit/s -- past what a residential line does, so a
+/// first install runs at whatever the link allows -- while a retry storm or a
+/// loop reinvoking the downloader is still bounded to something the CDN can
+/// absorb. bar-lobby sets no limit at all, so this makes modlobby gentler than
+/// the official client without making it slower.
+pub const MAX_HTTP_REQS_PER_SEC: u32 = 3_000;
 
 /// The limit to hand the child, never raising one somebody already set.
 ///

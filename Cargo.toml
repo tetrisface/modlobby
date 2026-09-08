@@ -99,10 +99,11 @@ sevenz-rust2 = "=0.22.2"
 # every HTTPS fetch.
 #
 # `gzip` and `brotli` are what make reqwest send `Accept-Encoding` at all: with
-# neither, every fetch asks for the identity encoding and BAR's servers are
-# obliged to send it. The map index is close to a megabyte of JSON that
-# compresses to about a tenth of that, and it is asked for again whenever a day
-# has passed and its ETag has changed.
+# neither, no fetch says it can take a compressed answer, and BAR's servers
+# send the map index -- close to a megabyte of JSON that compresses to about a
+# tenth of that -- as it is, every time a day has passed and its ETag has
+# changed. The one download that must not be compressed, the engine archive,
+# asks for `identity` by name.
 reqwest = { version = "=0.13.4", default-features = false, features = [
   "brotli",
   "gzip",

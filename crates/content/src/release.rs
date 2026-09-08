@@ -117,8 +117,9 @@ pub enum NoQuery {
 }
 
 impl NoQuery {
-    /// The tag the error carries, so a log tells a machine that will never have
-    /// an engine apart from one that momentarily does not know which.
+    /// The tag the error carries: a machine that will never have an engine is
+    /// a different case from one that momentarily does not know which, and a
+    /// caller that wants to treat them differently can.
     pub const fn code(self) -> &'static str {
         match self {
             Self::Version => "version",
@@ -142,7 +143,10 @@ impl NoQuery {
 /// and answering it with the macOS refusal on macOS is how a defect comes to be
 /// invisible on the one platform whose users would report it.
 pub fn find_url(version: &str) -> Result<String, NoQuery> {
-    if version.trim().is_empty() {
+    // Trimmed for the query as well as for the check: a padded version is
+    // still one the index would 404, and a 404 is what this is here to stop.
+    let version = version.trim();
+    if version.is_empty() {
         return Err(NoQuery::Version);
     }
     // The version can carry characters that matter in a query string; BAR's
