@@ -1,3 +1,4 @@
+import { Select } from '../../components/Select'
 import { For, Show, createSignal } from 'solid-js'
 import type { Prepared } from '../../ipc/bindings/Prepared'
 import { TWEAK_SLOTS } from '../../lib/setup'
@@ -173,14 +174,14 @@ export function Toolbar(props: {
         <Show when={props.doc.origin === 'draft'}>
           <label class='tweak-target'>
             <span class='muted'>to</span>
-            <select
+            <Select
               value={props.target}
               onChange={(event) => props.onTarget(event.currentTarget.value)}
             >
               <For each={slots()}>
                 {(key) => <option value={key}>{key}</option>}
               </For>
-            </select>
+            </Select>
           </label>
         </Show>
         <button

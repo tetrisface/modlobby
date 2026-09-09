@@ -1,3 +1,4 @@
+import { Select } from '../components/Select'
 import { For, Show, createMemo, createSignal } from 'solid-js'
 import { describeError } from '../ipc/client'
 import { pushNotice } from '../store/chat'
@@ -97,7 +98,7 @@ export function HostBar() {
 
         <label class='host-size'>
           Preset
-          <select
+          <Select
             disabled={busy()}
             title='!preset — the settings the room starts from'
             value={room.my()?.preset ?? ''}
@@ -106,7 +107,7 @@ export function HostBar() {
             <For each={presets()}>
               {(name) => <option value={name}>{name || '—'}</option>}
             </For>
-          </select>
+          </Select>
         </label>
 
         <label class='host-size'>

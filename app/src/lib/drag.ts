@@ -26,6 +26,32 @@ function allyUnder(x: number, y: number): number | null {
   return Number.isFinite(ally) ? ally : null
 }
 
+/**
+ * The row in flight: a copy under the pointer, held where it was grabbed.
+ * The row itself stays put, dimmed, so nothing in the lists moves until the
+ * drop is real -- a cancelled drag then has nothing to jump back from.
+ */
+function lift(row: HTMLElement, at: PointerEvent) {
+  const rect = row.getBoundingClientRect()
+  const ghost = row.cloneNode(true) as HTMLElement
+  ghost.classList.add('drag-ghost')
+  ghost.style.width = `${rect.width}px`
+  ghost.style.height = `${rect.height}px`
+  const dx = at.clientX - rect.left
+  const dy = at.clientY - rect.top
+  document.body.append(ghost)
+  row.classList.add('lifted')
+  return {
+    follow(to: PointerEvent) {
+      ghost.style.transform = `translate(${to.clientX - dx}px, ${to.clientY - dy}px)`
+    },
+    drop() {
+      ghost.remove()
+      row.classList.remove('lifted')
+    },
+  }
+}
+
 export function rowGesture(options: {
   /** Whether this row may be dragged; a row that may not still opens a menu. */
   canMove: () => boolean
@@ -34,14 +60,24 @@ export function rowGesture(options: {
 }): (event: PointerEvent) => void {
   return (event: PointerEvent) => {
     if (event.button !== 0) return
+    // A press on a control in the row -- copy, options, remove -- is that
+    // control's, not a press on the row.
+    if ((event.target as Element | null)?.closest('button, input, select'))
+      return
+    const row = event.currentTarget as HTMLElement
     const fromX = event.clientX
     const fromY = event.clientY
-    let moved = false
+    let flight: ReturnType<typeof lift> | undefined
 
     const move = (at: PointerEvent) => {
-      if (moved || !options.canMove()) return
+      if (flight) {
+        flight.follow(at)
+        return
+      }
+      if (!options.canMove()) return
       if (Math.hypot(at.clientX - fromX, at.clientY - fromY) < THRESHOLD) return
-      moved = true
+      flight = lift(row, at)
+      flight.follow(at)
       setDragging(true)
     }
 
@@ -49,10 +85,11 @@ export function rowGesture(options: {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
       window.removeEventListener('pointercancel', up)
-      if (!moved) {
+      if (!flight) {
         options.onMenu(at)
         return
       }
+      flight.drop()
       setDragging(false)
       // Dropped on nothing -- the chat, the map, outside the window -- is a
       // cancelled drag rather than a move to somewhere unnamed.

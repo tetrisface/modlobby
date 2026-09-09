@@ -113,6 +113,17 @@ a:focus-visible {
   outline-offset: 1px;
 }
 
+/* The one way a choice is drawn, wherever it is: `components/Select.tsx`. */
+.select {
+  padding: 0.1875rem 0.4375rem;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text);
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+}
+
 button.primary {
   background: var(--accent);
   color: #10131a;
@@ -688,10 +699,12 @@ textarea {
 
 /* Bounded columns that pack left. `auto-fit` with `1fr` would stretch two
    teams across the whole pane and leave a corridor of nothing between them. */
+/* Rows are dragged; a drag that also selects text reads as a mess. */
 .teams {
   display: flex;
   flex-wrap: wrap;
   gap: 0.875rem 1.75rem;
+  user-select: none;
 }
 
 .team {
@@ -975,6 +988,22 @@ textarea {
   background: var(--raised);
 }
 
+/* The row in flight follows the pointer; where it came from stays, dimmed. */
+.drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 30;
+  pointer-events: none;
+  opacity: 0.9;
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 55%);
+}
+
+.player.lifted {
+  opacity: 0.35;
+}
+
 /* After the name, as Chobby stacks them: boss, then away. */
 .marks {
   display: flex;
@@ -1160,14 +1189,6 @@ textarea {
 }
 
 .doc-find select,
-.tweak-target select {
-  font-size: 0.6875rem;
-  color: var(--text);
-  background: var(--sunken);
-  border: 1px solid var(--line);
-  border-radius: 2px;
-}
-
 .doc-rows {
   display: flex;
   flex-direction: column;
@@ -1469,11 +1490,6 @@ textarea {
 
 .compare-head select {
   max-width: 38%;
-  font-size: 0.6875rem;
-  color: var(--text);
-  background: var(--sunken);
-  border: 1px solid var(--line);
-  border-radius: 2px;
 }
 
 .compare-editor {
@@ -1590,16 +1606,6 @@ textarea {
   background: var(--sunken);
   border-bottom: 1px solid var(--line);
   font-size: 0.78125rem;
-}
-
-.seat select {
-  background: var(--raised);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: 2px;
-  padding: 0.25rem 0.4375rem;
-  font-family: var(--display);
-  font-size: 0.75rem;
 }
 
 /* ---- setup pane: BAR's tabs, opening on what differs ---- */
@@ -2109,13 +2115,6 @@ body.resizing {
   font-family: var(--mono);
   font-size: 0.71875rem;
   padding: 0.125rem 0.375rem;
-}
-
-select.v-edit {
-  background: var(--sunken);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: 2px;
 }
 
 input[type='checkbox'].v-edit {

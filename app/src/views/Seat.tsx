@@ -1,3 +1,4 @@
+import { Select } from '../components/Select'
 import { For, Show, createEffect, createMemo, createSignal } from 'solid-js'
 import { SideIcon } from '../components/icons'
 import type { AiChoice } from '../ipc/bindings/AiChoice'
@@ -213,7 +214,7 @@ export function Seat() {
       >
         {/* Where to sit; whether to sit is the button after it. The picker
             stays whether you are seated or watching, so nothing moves. */}
-        <select
+        <Select
           value={current()}
           disabled={busy()}
           onChange={(e) => void pickSeat(e.currentTarget)}
@@ -234,7 +235,7 @@ export function Seat() {
               </option>
             )}
           </For>
-        </select>
+        </Select>
 
         <Show when={seated()}>
           {/* Sitting down mid-game puts you in the lineup for the next one,
@@ -256,7 +257,7 @@ export function Seat() {
             </button>
           </Show>
 
-          <select
+          <Select
             value={String(seat()?.side ?? 0)}
             disabled={busy()}
             onChange={(e) =>
@@ -268,7 +269,7 @@ export function Seat() {
             <For each={SIDES}>
               {(side) => <option value={String(side.id)}>{side.label}</option>}
             </For>
-          </select>
+          </Select>
           <SideIcon side={seat()?.side ?? 0} />
         </Show>
 
@@ -450,7 +451,7 @@ function AddAi(props: {
             <h2>Add AI</h2>
             <label>
               Which
-              <select
+              <Select
                 value={ai()}
                 onChange={(e) => setAi(e.currentTarget.value)}
               >
@@ -459,18 +460,18 @@ function AddAi(props: {
                     <option value={choice.name}>{choice.name}</option>
                   )}
                 </For>
-              </select>
+              </Select>
             </label>
             <label>
               Team
-              <select
+              <Select
                 value={String(team())}
                 onChange={(e) => setAlly(Number(e.currentTarget.value))}
               >
                 <For each={props.allyTeams()}>
                   {(one) => <option value={String(one)}>Team {one + 1}</option>}
                 </For>
-              </select>
+              </Select>
             </label>
             <Show when={!gameMode()}>
               <label>

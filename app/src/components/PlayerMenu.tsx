@@ -87,9 +87,17 @@ export function PlayerMenu() {
     setPicking(false)
   }
 
-  // Any click elsewhere, or Escape, dismisses it — the usual bargain for
-  // something that floats above everything.
-  const onDown = () => close()
+  let root: HTMLDivElement | undefined
+
+  // Any press elsewhere, or Escape, dismisses it — the usual bargain for
+  // something that floats above everything. "Elsewhere" is checked here, on
+  // the document, rather than stopped at the menu: Solid delegates
+  // `onMouseDown` to the document too, and stopping propagation there does
+  // not reach a listener on the same node.
+  const onDown = (event: MouseEvent) => {
+    if (root?.contains(event.target as Node)) return
+    close()
+  }
   const onKey = (event: KeyboardEvent) => {
     if (event.key === 'Escape') close()
   }
@@ -234,9 +242,9 @@ export function PlayerMenu() {
 
         return (
           <div
+            ref={root}
             class='player-menu'
             style={{ left: `${target().x}px`, top: `${target().y}px` }}
-            onMouseDown={(event) => event.stopPropagation()}
           >
             <div class='player-menu-name'>{name()}</div>
             <Show when={bot()}>
@@ -272,11 +280,14 @@ export function PlayerMenu() {
               fallback={
                 <BonusPanel
                   now={target().moves?.bonusNow ?? 0}
-                  apply={(percent) =>
+                  apply={(percent) => {
+                    // Taken before `act` closes the menu: once it has, the
+                    // target is gone and there is nothing to read it off.
+                    const bonus = target().moves?.bonus
                     void act('bonus', async () => {
-                      await target().moves?.bonus?.(percent)
+                      await bonus?.(percent)
                     })
-                  }
+                  }}
                   cancel={close}
                 />
               }

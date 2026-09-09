@@ -1,3 +1,4 @@
+import { Select } from '../components/Select'
 import { useNavigate } from '@solidjs/router'
 import {
   For,
@@ -149,11 +150,16 @@ export function Room() {
       teams: allyTeams(),
       on,
       to: (ally: number) => say(moveTo(room, target, ally)),
-      ...(target.kind === 'bot'
+      // A bonus is the host's to give, so it goes with the right to move the
+      // row -- the same permission -- for anybody but ourselves.
+      ...(target.kind !== 'me'
         ? {
             bonus: (percent: number) =>
               say(setBonus(room, target, percent, on ?? 0)),
-            bonusNow: target.handicap,
+            bonusNow:
+              target.kind === 'bot'
+                ? target.handicap
+                : (room.users()[target.name]?.battleStatus?.handicap ?? 0),
           }
         : {}),
     }
@@ -417,7 +423,7 @@ export function Room() {
                 <Show when={room.caps.picksContent}>
                   <label class='card-choice'>
                     Start
-                    <select
+                    <Select
                       value={startPos()}
                       onChange={(event) =>
                         void room.io
@@ -432,7 +438,7 @@ export function Room() {
                           <option value={String(kind.id)}>{kind.label}</option>
                         )}
                       </For>
-                    </select>
+                    </Select>
                   </label>
                 </Show>
               </div>

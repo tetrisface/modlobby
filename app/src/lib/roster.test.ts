@@ -129,9 +129,11 @@ describe('arrange', () => {
       'me',
     )
     expect(roster.pending).toEqual([])
-    expect(roster.teams.map((t) => t.allyTeam)).toEqual([0, 3])
-    expect(roster.teams.map(emptySeats)).toEqual([0, 0])
-    expect(roster.teams.map((t) => t.guessed)).toEqual([[], []])
+    // Team 2 is empty and drawn anyway: the second team always is, so a
+    // room of one side has somewhere to drag a row to.
+    expect(roster.teams.map((t) => t.allyTeam)).toEqual([0, 1, 3])
+    expect(roster.teams.map(emptySeats)).toEqual([0, 0, 0])
+    expect(roster.teams.map((t) => t.guessed)).toEqual([[], [], []])
     expect(roster.spectatorCount).toBe(4)
   })
 

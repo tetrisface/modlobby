@@ -1,9 +1,10 @@
-import { render } from '@solidjs/testing-library'
-import { describe, expect, test } from 'vitest'
+import { cleanup, fireEvent, render } from '@solidjs/testing-library'
+import { afterEach, describe, expect, test } from 'vitest'
 import type { BattleStatusView } from '../ipc/bindings/BattleStatusView'
 import type { UserView } from '../ipc/bindings/UserView'
 import type { UserStatusView } from '../ipc/bindings/UserStatusView'
 import type { Skill } from '../lib/skill'
+import { PlayerMenu } from './PlayerMenu'
 import { BotRow, PlayerRow, SpectatorRow } from './PlayerRow'
 
 const status = (over: Partial<UserStatusView> = {}): UserStatusView => ({
@@ -376,5 +377,97 @@ describe('a spectator row', () => {
       />
     ))
     expect(icons(container)).toEqual(['#rank-bot'])
+  })
+})
+
+describe('a press on an AI row', () => {
+  const barb = {
+    name: 'BARb(1)',
+    owner: 'me',
+    status: {
+      ready: true,
+      team: 1,
+      allyTeam: 1,
+      player: true,
+      handicap: 0,
+      sync: 'bot' as const,
+      side: 0,
+    },
+    teamColour: 0,
+    ai: 'BARb',
+    options: {},
+  }
+  const nothing = () => Promise.resolve()
+
+  // The menu's open state outlives a render, so each test shuts it.
+  afterEach(() => {
+    fireEvent.keyDown(document, { key: 'Escape' })
+    cleanup()
+  })
+
+  /** A press and release in one place, which is what a click is. */
+  function tap(element: Element) {
+    fireEvent.pointerDown(element, { button: 0, clientX: 5, clientY: 5 })
+    fireEvent.pointerUp(element, { button: 0, clientX: 5, clientY: 5 })
+  }
+
+  test('on the name opens the menu', () => {
+    const { container } = render(() => (
+      <>
+        <BotRow bot={barb} onRemove={nothing} onClone={nothing} />
+        <PlayerMenu />
+      </>
+    ))
+    tap(container.querySelector('.pname') as Element)
+    expect(container.querySelector('.player-menu')).toBeTruthy()
+  })
+
+  test('that travels lifts a copy and leaves the row where it was', () => {
+    const { container } = render(() => (
+      <BotRow
+        bot={barb}
+        onRemove={nothing}
+        moves={{ teams: [0, 1], on: 1, to: nothing }}
+      />
+    ))
+    const row = container.querySelector('.player') as HTMLElement
+    fireEvent.pointerDown(row, { button: 0, clientX: 5, clientY: 5 })
+    fireEvent.pointerMove(window, { clientX: 60, clientY: 40 })
+
+    const ghost = document.body.querySelector('.drag-ghost')
+    expect(ghost).toBeTruthy()
+    expect(ghost?.parentElement).toBe(document.body)
+    expect(row.classList.contains('lifted')).toBe(true)
+    // Still the only row in the list: nothing was taken out or moved.
+    expect(container.querySelectorAll('.player').length).toBe(1)
+
+    fireEvent.pointerUp(window, { clientX: 60, clientY: 40 })
+    expect(document.body.querySelector('.drag-ghost')).toBeNull()
+    expect(row.classList.contains('lifted')).toBe(false)
+    expect(container.querySelector('.player-menu')).toBeNull()
+  })
+
+  test('on the copy or remove button is that button, not the row', () => {
+    let removed = 0
+    const { container } = render(() => (
+      <>
+        <BotRow
+          bot={barb}
+          onRemove={() => {
+            removed++
+            return Promise.resolve()
+          }}
+          onClone={nothing}
+        />
+        <PlayerMenu />
+      </>
+    ))
+    tap(container.querySelector('.bot-clone') as Element)
+    expect(container.querySelector('.player-menu')).toBeNull()
+    const remove = container.querySelector('.bot-remove') as Element
+    tap(remove)
+    fireEvent.click(remove)
+    expect(container.querySelector('.player-menu')).toBeNull()
+    expect(removed).toBe(1)
   })
 })

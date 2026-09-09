@@ -1,3 +1,4 @@
+import { Select } from './Select'
 import { For, Show, createResource, createSignal } from 'solid-js'
 import { api, describeError } from '../ipc/client'
 import { pushNotice } from '../store/chat'
@@ -69,14 +70,14 @@ export function PlayerFiles() {
       <Show when={view()?.snapshots.length}>
         <label class='row'>
           Copy from before a launch
-          <select
+          <Select
             value={snapshot()}
             onChange={(e) => setChosen(e.currentTarget.value)}
           >
             <For each={view()?.snapshots ?? []}>
               {(dir) => <option value={dir}>{snapshotLabel(dir)}</option>}
             </For>
-          </select>
+          </Select>
           <button
             type='button'
             disabled={busy() || !snapshot()}

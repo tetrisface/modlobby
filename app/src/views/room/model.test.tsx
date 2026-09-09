@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { BotView } from '../../ipc/bindings/BotView'
 import type { ModOption } from '../../ipc/bindings/ModOption'
 import { emptyLobby, setLobby } from '../../store/lobby'
+import { PlayerMenu } from '../../components/PlayerMenu'
 import { Room } from '../Room'
 import {
   ALONE,
@@ -291,6 +292,87 @@ describe('copying an AI', () => {
     await settle()
     expect(calls.some(([name]) => name === 'addBot')).toBe(true)
     expect(calls.some(([name]) => name === 'sayBattle')).toBe(false)
+  })
+})
+
+describe('the bonus, from a row to the host', () => {
+  /** Me bossing a hosted room, with alice and my BARb in it. */
+  function bossed(calls: Calls): RoomModel {
+    return fakeRoom({
+      caps: SERVED,
+      battle: () => battle({ members: ['me', 'alice'], bots: [bot('BARb')] }),
+      my: () => myBattle({ boss: 'me' }),
+      users: () => ({
+        me: user('me'),
+        alice: user('alice', {
+          battleStatus: status({ allyTeam: 1, team: 2 }),
+        }),
+      }),
+      io: recordingIo(calls),
+    })
+  }
+
+  /** The menu lives beside the page, as in the app; what it knows of people
+   *  it reads off the lobby store. */
+  async function openWithMenu(model: RoomModel) {
+    setLobby('me', 'me')
+    setLobby('myBattle', myBattle({ boss: 'me' }))
+    setLobby('users', { alice: user('alice') })
+    const result = render(() => (
+      <MemoryRouter
+        root={(props) => (
+          <RoomProvider value={model}>
+            {props.children}
+            <PlayerMenu />
+          </RoomProvider>
+        )}
+      >
+        <Route path='/' component={Room} />
+      </MemoryRouter>
+    ))
+    await settle()
+    return result
+  }
+
+  async function setBonusOf(container: HTMLElement, name: string) {
+    const cell = [...container.querySelectorAll('.pname')].find(
+      (c) => c.textContent === name,
+    ) as HTMLElement
+    expect(cell, `a row for ${name}`).toBeTruthy()
+    fireEvent.contextMenu(cell, { clientX: 5, clientY: 5 })
+    await settle()
+    const entry = [...container.querySelectorAll('.player-menu button')].find(
+      (b) => b.textContent === 'Bonus',
+    ) as HTMLElement
+    expect(entry, `a Bonus entry for ${name}`).toBeTruthy()
+    fireEvent.mouseDown(entry)
+    fireEvent.click(entry)
+    await settle()
+    const panel = container.querySelector('.bonus-pick') as HTMLFormElement
+    expect(panel, 'the panel').toBeTruthy()
+    fireEvent.input(panel.querySelector('input[type=number]') as HTMLElement, {
+      target: { value: '40' },
+    })
+    fireEvent.submit(panel)
+    await settle()
+  }
+
+  test('an AI of ours: one command, said to the host', async () => {
+    const calls: Calls = []
+    const { container } = await openWithMenu(bossed(calls))
+    await setBonusOf(container, 'BARb')
+    expect(calls.filter(([name]) => name === 'sayBattle')).toEqual([
+      ['sayBattle', ['!force %BARb bonus 40']],
+    ])
+  })
+
+  test('a person, by name, as the boss may', async () => {
+    const calls: Calls = []
+    const { container } = await openWithMenu(bossed(calls))
+    await setBonusOf(container, 'alice')
+    expect(calls.filter(([name]) => name === 'sayBattle')).toEqual([
+      ['sayBattle', ['!force alice bonus 40']],
+    ])
   })
 })
 

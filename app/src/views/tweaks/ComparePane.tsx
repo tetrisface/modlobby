@@ -1,3 +1,4 @@
+import { Select } from '../../components/Select'
 import { For, Show, createEffect, createSignal, onCleanup } from 'solid-js'
 import { createDiffEditor, disposeDiff, monaco } from '../../editor/monaco'
 import type { DiffView } from '../../ipc/bindings/DiffView'
@@ -157,7 +158,7 @@ function SidePick(props: {
   onPick: (key: string) => void
 }) {
   return (
-    <select
+    <Select
       aria-label={props.label}
       value={props.value}
       onChange={(event) => props.onPick(event.currentTarget.value)}
@@ -181,6 +182,6 @@ function SidePick(props: {
           </Show>
         )}
       </For>
-    </select>
+    </Select>
   )
 }

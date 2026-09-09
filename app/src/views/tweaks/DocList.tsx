@@ -1,3 +1,4 @@
+import { Select } from '../../components/Select'
 import { For, Show } from 'solid-js'
 import type { DocId, Filter, Item, Sort } from '../../lib/tweakspace'
 
@@ -52,7 +53,7 @@ export function DocList(props: {
             props.onFilter({ query: event.currentTarget.value })
           }
         />
-        <select
+        <Select
           aria-label='Sort'
           value={props.filter.sort}
           onChange={(event) =>
@@ -62,7 +63,7 @@ export function DocList(props: {
           <For each={SORTS}>
             {(sort) => <option value={sort.key}>{sort.label}</option>}
           </For>
-        </select>
+        </Select>
       </div>
 
       <div class='doc-rows'>

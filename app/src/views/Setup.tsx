@@ -1,3 +1,4 @@
+import { Select } from '../components/Select'
 import {
   For,
   Match,
@@ -693,7 +694,7 @@ function Control(props: {
         />
       </Match>
       <Match when={props.row.option.type === 'list'}>
-        <select
+        <Select
           class='v-edit'
           value={value()}
           onChange={(event) => void set(event.currentTarget.value)}
@@ -701,7 +702,7 @@ function Control(props: {
           <For each={props.row.option.items ?? []}>
             {(item) => <option value={item.key}>{item.name}</option>}
           </For>
-        </select>
+        </Select>
       </Match>
     </Switch>
   )

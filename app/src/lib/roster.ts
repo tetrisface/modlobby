@@ -36,7 +36,11 @@ export type Roster = {
   spectatorCount: number
 }
 
-/** Teams to draw while the room is still arriving, when the server said none. */
+/**
+ * The fewest teams ever drawn. Two, so that a room of one side still has
+ * somewhere to drag a player or an AI to; and what an arriving room shows
+ * while the server has said nothing about its shape.
+ */
 export const DEFAULT_TEAMS = 2
 
 export function arrange(
@@ -72,6 +76,7 @@ export function arrange(
     else pending.push(user)
   }
   for (const bot of room.bots) team(bot.status.allyTeam).bots.push(bot)
+  for (let allyTeam = 0; allyTeam < DEFAULT_TEAMS; allyTeam++) team(allyTeam)
 
   if (pending.length === 0) {
     for (const t of teams.values()) t.expected = t.users.length + t.bots.length
