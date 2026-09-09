@@ -283,6 +283,29 @@ export function rowsByTab(
     .filter((entry) => entry.rows.length > 0)
 }
 
+/** Rows under one heading: a tab's on the All tab, a group's inside a tab. */
+export type Section = { name: string; rows: Row[] }
+
+/** What a group BAR left unnamed is called, in the nav and over its rows. */
+export const GENERAL_GROUP = 'General'
+
+/**
+ * A tab's settings by the group they live in -- only what differs from BAR's
+ * default, or all of it. Groups with nothing to show are left out.
+ */
+export function rowsByGroup(
+  tab: Tab,
+  values: Record<string, string>,
+  onlyChanged: boolean,
+): Section[] {
+  return tab.groups
+    .map((group) => ({
+      name: group.name || GENERAL_GROUP,
+      rows: rowsOf(group, values).filter((row) => row.changed || !onlyChanged),
+    }))
+    .filter((entry) => entry.rows.length > 0)
+}
+
 /**
  * Every setting whose name, key, description or value carries every word of
  * the needle, by the tab it lives in. Nothing for an empty needle: that is

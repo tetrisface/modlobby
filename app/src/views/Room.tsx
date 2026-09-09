@@ -11,6 +11,7 @@ import {
   createSignal,
 } from 'solid-js'
 import { Composer } from '../components/Composer'
+import { GameActions } from '../components/GameActions'
 import { GetEngine } from '../components/GetEngine'
 import { Linkify } from '../components/Linkify'
 import { MapEditor } from '../components/MapEditor'
@@ -48,6 +49,7 @@ import { noPublishedEngine } from '../store/build'
 import { chat, pushNotice } from '../store/chat'
 import { joinMilestone } from '../store/join'
 import { lobby } from '../store/lobby'
+import { over } from '../store/overlay'
 import { settings } from '../store/settings'
 import { HostBar } from './HostBar'
 import { PveScore } from './PveScore'
@@ -395,7 +397,11 @@ export function Room() {
                 <Match when={lobby.engine.state === 'running'}>
                   <button
                     class='primary'
-                    title={`Or press ${settings()?.overlay.hotkey ?? 'the overlay shortcut'}`}
+                    title={
+                      over()
+                        ? 'Or press Escape'
+                        : `Or press ${settings()?.overlay.hotkey ?? 'the overlay shortcut'}`
+                    }
                     onClick={() => void api.overlayToggle()}
                   >
                     Back to game
@@ -423,7 +429,15 @@ export function Room() {
                 </Match>
               </Switch>
               <Show when={room.caps.leave}>
-                <button onClick={() => room.io.leaveBattle()}>Leave</button>
+                <button onClick={() => room.io.leaveBattle()}>
+                  Leave room
+                </button>
+              </Show>
+              {/* Ending the game belongs beside leaving the room: one column
+                  for every way out, rather than two corners of the window
+                  offering much the same thing. */}
+              <Show when={lobby.engine.state === 'running'}>
+                <GameActions />
               </Show>
             </div>
           </header>

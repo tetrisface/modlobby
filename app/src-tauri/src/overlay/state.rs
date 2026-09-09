@@ -41,6 +41,9 @@ pub enum Input {
     /// The registered accelerator fired.
     Hotkey,
     Settings(OverlaySettings),
+    /// The process is on its way out. The window gets its ordinary shape
+    /// back before anything remembers it, and is not shown for it.
+    Shutdown,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -130,9 +133,14 @@ impl Overlay {
                     return out;
                 }
                 if !self.is_over() {
-                    self.entered = true;
+                    // Once: a window hidden behind the game is still in the
+                    // overlay's shape, and entering it again would record that
+                    // shape as the one to restore to.
+                    if !self.entered {
+                        self.entered = true;
+                        out.push(Effect::EnterOverlay);
+                    }
                     self.visible = true;
-                    out.push(Effect::EnterOverlay);
                     out.push(Effect::Show);
                     out.push(Effect::FocusSelf);
                 } else {
@@ -148,6 +156,13 @@ impl Overlay {
                     }
                 }
                 return out;
+            }
+            Input::Shutdown => {
+                // Nothing to sit over any more, and no window to bring back
+                // either: it is about to go. Counted as visible so the
+                // reconciliation below does not show it on the way out.
+                self.engine = None;
+                self.visible = true;
             }
         }
         out
@@ -241,6 +256,29 @@ mod tests {
             vec![Effect::Hide, Effect::FocusEngine(42)]
         );
         assert!(!overlay.is_over());
+
+        // Hidden, not left: the shape is still on, so it is only shown again.
+        assert_eq!(
+            step(&mut overlay, Input::Hotkey),
+            vec![Effect::Show, Effect::FocusSelf]
+        );
+        assert!(overlay.is_over());
+    }
+
+    #[test]
+    fn shutting_down_gives_the_shape_back_without_showing_the_window() {
+        let mut overlay = armed();
+        step(&mut overlay, Input::Hotkey);
+        step(&mut overlay, Input::Hotkey);
+        assert!(!overlay.is_over());
+
+        // What the window looks like at exit is what gets remembered for the
+        // next start, so it must not be the overlay's shape -- and a window
+        // shown for the last few milliseconds is a flash nobody asked for.
+        assert_eq!(
+            step(&mut overlay, Input::Shutdown),
+            vec![Effect::UnregisterHotkey, Effect::LeaveOverlay]
+        );
     }
 
     #[test]

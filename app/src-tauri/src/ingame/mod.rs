@@ -105,6 +105,19 @@ impl InGame {
         Ok(path)
     }
 
+    /// Forgets both files without removing them.
+    ///
+    /// For an exit while a game we launched is still running. The engine was
+    /// started against the menu archive and asks for it again the moment the
+    /// player quits to the menu, so taking it away is what turns that quit
+    /// into a content error. Left in place, both are inert -- the widget
+    /// leaves Escape alone when nobody answers, and the menu quits the engine
+    /// on activation -- and the next start rewrites them anyway.
+    pub fn leave_behind(&mut self) {
+        self.installed = None;
+        self.menu = None;
+    }
+
     /// Takes both files back out. Called on the way down, and safe to repeat.
     pub fn uninstall(&mut self) {
         if let Some(archive) = self.menu.take()
@@ -265,5 +278,26 @@ mod tests {
         assert!(!path.exists());
         // Removing twice is what a drop after an explicit stop does.
         ingame.uninstall();
+    }
+
+    #[test]
+    fn left_behind_for_a_running_game_both_files_stay() {
+        let home = tempfile::tempdir().unwrap();
+        let mut ingame = InGame {
+            port: 4242,
+            token: "abc".into(),
+            installed: None,
+            menu: None,
+        };
+        let widget = ingame.install(home.path()).unwrap();
+        let menu = ingame.install_menu(home.path()).unwrap();
+
+        ingame.leave_behind();
+        drop(ingame);
+
+        // The engine that was started against them may ask for them again.
+        assert!(widget.is_file());
+        assert!(menu.join("modinfo.lua").is_file());
+        assert!(menu.join("LuaMenu").join("main.lua").is_file());
     }
 }

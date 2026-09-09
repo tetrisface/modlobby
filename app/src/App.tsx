@@ -1,4 +1,4 @@
-import { A, HashRouter, Route, useNavigate } from '@solidjs/router'
+import { A, HashRouter, Route, useLocation, useNavigate } from '@solidjs/router'
 import { listen } from '@tauri-apps/api/event'
 import {
   For,
@@ -11,13 +11,18 @@ import {
   onMount,
   type ParentProps,
 } from 'solid-js'
+import { GameActions } from './components/GameActions'
 import { Glyph, IconSprite } from './components/icons'
 import { Thinking } from './components/Thinking'
 import { NavRoom } from './components/NavRoom'
 import { PlayerMenu } from './components/PlayerMenu'
 import { connectChannel } from './ipc/channel'
 import { ACTIVITY_EVENTS, activityReporter } from './lib/activity'
-import { clickLeavesOverlay, escapeLeavesOverlay } from './lib/overlay'
+import {
+  clickLeavesOverlay,
+  escapeLeavesOverlay,
+  roomOnScreen,
+} from './lib/overlay'
 import { api, describeError, errorCode } from './ipc/client'
 import type { Settings } from './ipc/bindings/Settings'
 import type { VersionView } from './ipc/bindings/VersionView'
@@ -25,6 +30,7 @@ import { setBuild } from './store/build'
 import { chat, holdNotices, pushNotice } from './store/chat'
 import { lobby, myRoom } from './store/lobby'
 import { loadNews, unreadNews } from './store/news'
+import { over, setOver } from './store/overlay'
 import { autoLogin } from './store/session'
 import {
   applySettings,
@@ -162,39 +168,16 @@ function Layout(props: ParentProps) {
   /** What the server says about us, which is what everyone else can see. */
   const away = () => (lobby.me ? lobby.users[lobby.me]?.status.away : false)
 
-  /**
-   * Whether the window is sitting over a running game.
-   *
-   * Over a game the page dresses as a modal: a centred card on a see-through
-   * scrim, and every way out a modal has — Esc, a click on the scrim, an X —
-   * hands the game back. Seeded by asking, because a webview that reloads
-   * mid-overlay was not there for the event.
-   */
-  const [over, setOver] = createSignal(false)
-  // Quitting a game by mis-clicking once would be unforgivable, so the
-  // button asks again. The doubt resets whenever the overlay comes or goes.
-  const [confirming, setConfirming] = createSignal<'leave' | 'quit' | null>(
-    null,
-  )
-  createEffect(() => {
-    over()
-    setConfirming(null)
-  })
+  /** Which page is up: a room page carries the game buttons itself. */
+  const route = useLocation()
 
   /**
-   * Two clicks for anything that ends a game in progress.
-   *
-   * The first arms it and the second does it, and arming one disarms the
-   * other — so a mis-click never ends a match, and never quits the lobby.
+   * Over a game the page dresses as a modal: a centred card on a see-through
+   * scrim, and every way out a modal has — Esc, or a click on the scrim —
+   * hands the game back. `over` lives in `store/overlay`; it is seeded here
+   * by asking, because a webview that reloads mid-overlay was not there for
+   * the event.
    */
-  function guarded(which: 'leave' | 'quit', run: () => void) {
-    if (confirming() !== which) {
-      setConfirming(which)
-      return
-    }
-    setConfirming(null)
-    run()
-  }
   onMount(() => {
     void api.overlayActive().then(setOver)
     const pending = listen<boolean>('overlay', (event) =>
@@ -446,75 +429,59 @@ function Layout(props: ParentProps) {
           </button>
           <button onClick={() => api.logout()}>Log out</button>
         </Show>
-        <div class='win-controls'>
-          <button
-            class='win-btn'
-            title={fullscreen() ? 'Windowed' : 'Full screen'}
-            aria-label={fullscreen() ? 'Windowed' : 'Full screen'}
-            onClick={() =>
-              void api
-                .toggleFullscreen()
-                .then(setFullscreen)
-                .catch((error) => pushNotice('warning', describeError(error)))
-            }
-          >
-            <svg viewBox='0 0 12 12' aria-hidden='true'>
-              <Show
-                when={fullscreen()}
-                fallback={
-                  // Corners pointing out: take the whole screen.
-                  <path d='M1 4V1h3M8 1h3v3M11 8v3H8M4 11H1V8' />
-                }
-              >
-                {/* Corners pointing in: back to a window. */}
-                <path d='M4 1v3H1M11 4H8V1M8 11V8h3M1 8h3v3' />
-              </Show>
-            </svg>
-          </button>
-          <button
-            class='win-btn close'
-            title='Close modlobby (a running game keeps going)'
-            aria-label='Close modlobby'
-            onClick={() => void api.shutdown()}
-          >
-            <svg viewBox='0 0 12 12' aria-hidden='true'>
-              <path d='M2 2l8 8M10 2l-8 8' />
-            </svg>
-          </button>
-        </div>
+        {/* Not over a game. The page is a modal there, and its ways out are
+            Back to game and the guarded Quit; a close in this corner would
+            end the lobby under a game that still depends on it, and it sits
+            exactly where a hand expects "back to game". */}
+        <Show when={!over()}>
+          <div class='win-controls'>
+            <button
+              class='win-btn'
+              title={fullscreen() ? 'Windowed' : 'Full screen'}
+              aria-label={fullscreen() ? 'Windowed' : 'Full screen'}
+              onClick={() =>
+                void api
+                  .toggleFullscreen()
+                  .then(setFullscreen)
+                  .catch((error) => pushNotice('warning', describeError(error)))
+              }
+            >
+              <svg viewBox='0 0 12 12' aria-hidden='true'>
+                <Show
+                  when={fullscreen()}
+                  fallback={
+                    // Corners pointing out: take the whole screen.
+                    <path d='M1 4V1h3M8 1h3v3M11 8v3H8M4 11H1V8' />
+                  }
+                >
+                  {/* Corners pointing in: back to a window. */}
+                  <path d='M4 1v3H1M11 4H8V1M8 11V8h3M1 8h3v3' />
+                </Show>
+              </svg>
+            </button>
+            <button
+              class='win-btn close'
+              title='Close modlobby (a running game keeps going)'
+              aria-label='Close modlobby'
+              onClick={() => void api.shutdown()}
+            >
+              <svg viewBox='0 0 12 12' aria-hidden='true'>
+                <path d='M2 2l8 8M10 2l-8 8' />
+              </svg>
+            </button>
+          </div>
+        </Show>
       </nav>
       <main class='main'>{props.children}</main>
       <Notices />
       <PlayerMenu />
-      <Show when={over()}>
-        {/* The three things you can do standing here, in the order you are
-            likely to want them: carry on in the lobby (already true, so no
-            button), go back, or stop playing. */}
+      {/* The ways out, for the pages that have no room card: the card draws
+          these itself, in its own column, so they are never in two corners
+          at once. In the order you are likely to want them: carry on in the
+          lobby (already true, so no button), stop playing, or go back. */}
+      <Show when={over() && !roomOnScreen(route.pathname)}>
         <div class='overlay-chrome'>
-          <button
-            class='quit'
-            title='Ends the game and leaves you here in the lobby'
-            onClick={() =>
-              guarded(
-                'leave',
-                () =>
-                  void api
-                    .stopGame()
-                    .catch((error) =>
-                      pushNotice('warning', describeError(error)),
-                    ),
-              )
-            }
-          >
-            {confirming() === 'leave' ? 'End the game?' : 'Leave game'}
-          </button>
-          <button
-            class='quit'
-            title='Ends the game and closes modlobby'
-            onClick={() => guarded('quit', () => void api.quitAll())}
-          >
-            {confirming() === 'quit' ? 'Quit everything?' : 'Quit'}
-          </button>
+          <GameActions />
           <button
             class='primary'
             title='Or press Escape'
@@ -523,14 +490,6 @@ function Layout(props: ParentProps) {
             Back to game
           </button>
         </div>
-        <button
-          class='overlay-close'
-          title='Back to game (Esc)'
-          aria-label='Back to game'
-          onClick={() => void api.overlayToggle()}
-        >
-          ×
-        </button>
       </Show>
     </div>
   )

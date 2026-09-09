@@ -1,11 +1,13 @@
 import { describe, expect, test } from 'vitest'
 import {
+  GENERAL_GROUP,
   MAP_TAB,
   MODDING_TAB,
   TWEAK_SLOTS,
   changedByTab,
   changedCount,
   isTweakSlot,
+  rowsByGroup,
   rowsByTab,
   defaultText,
   displayText,
@@ -217,6 +219,56 @@ describe('changes against BAR defaults', () => {
     const modding = all.find((entry) => entry.tab.key === MODDING_TAB)!
     expect(modding.rows.filter(isTweakSlot)).toHaveLength(20)
     expect(cheats.rows.some(isTweakSlot)).toBe(false)
+  })
+
+  test("a tab's changes come under BAR's own groups", () => {
+    const cheats = rowsByGroup(byKey('options_cheats'), values, true)
+    expect(cheats.map((entry) => entry.name)).toEqual([
+      'Starting Resources',
+      'Resource Multipliers',
+    ])
+    expect(
+      cheats.map((entry) => entry.rows.map((row) => row.option.key)),
+    ).toEqual([['startmetal'], ['multiplier_buildpower']])
+  })
+
+  test('showing the unchanged inside a tab lists every group with all of its rows', () => {
+    const tab = byKey('options_cheats')
+    const all = rowsByGroup(tab, values, false)
+    expect(all.map((entry) => entry.name)).toEqual(
+      tab.groups.map((group) => group.name),
+    )
+    expect(all.map((entry) => entry.rows.length)).toEqual(
+      tab.groups.map((group) => group.options.length),
+    )
+    expect(
+      all.flatMap((entry) => entry.rows).filter((row) => row.changed),
+    ).toHaveLength(2)
+  })
+
+  test('a group BAR left unnamed is called General', () => {
+    const raptors = byKey('raptor_defense_options')
+    expect(rowsByGroup(raptors, {}, true)).toEqual([])
+    expect(
+      rowsByGroup(raptors, {}, false).map((entry) => [
+        entry.name,
+        entry.rows.length,
+      ]),
+    ).toEqual([[GENERAL_GROUP, 1]])
+  })
+
+  test('the tweak slots are rows of the Modding tab, not a grid', () => {
+    const modding = byKey(MODDING_TAB)
+    expect(
+      rowsByGroup(modding, values, true).map((entry) => [
+        entry.name,
+        entry.rows.map((row) => row.option.key),
+      ]),
+    ).toEqual([['Tweak slots', ['tweakdefs1']]])
+    const slots = rowsByGroup(modding, values, false)[0]!
+    expect(slots.name).toBe('Tweak slots')
+    expect(slots.rows).toHaveLength(20)
+    expect(slots.rows.every(isTweakSlot)).toBe(true)
   })
 })
 

@@ -15,6 +15,7 @@ import { api, describeError } from '../ipc/client'
 import { clamp, dragWidth, readWidth, writeWidth } from '../lib/resize'
 import {
   ALL_TAB,
+  GENERAL_GROUP,
   MAP_TAB,
   MODDING_TAB,
   TWEAK_SLOTS,
@@ -27,12 +28,14 @@ import {
   isTweakSlot,
   readModOptions,
   label,
+  rowsByGroup,
   rowsByTab,
   rowsOf,
   searchRows,
   tabs,
   type Changed,
   type Row,
+  type Section,
   type Tab,
 } from '../lib/setup'
 import { pushNotice } from '../store/chat'
@@ -53,6 +56,10 @@ const ALL: Tab = {
   desc: "Every setting that differs from BAR's default, whichever tab it is in.",
   groups: [],
 }
+
+/** The All tab's sections: one per tab, headed by the tab's name. */
+const byTabName = (entries: Changed[]): Section[] =>
+  entries.map(({ tab, rows }) => ({ name: tab.name, rows }))
 
 const WIDTH_KEY = 'modlobby.setupWidth'
 const NARROWEST = 420
@@ -125,12 +132,6 @@ export function Setup() {
     return me !== null && room.users()[me]?.battleStatus?.player === true
   })
 
-  const changed = createMemo(() =>
-    tab()
-      .groups.flatMap((entry) => rowsOf(entry, values()))
-      .filter((row) => row.changed),
-  )
-
   const everywhere = createMemo(() => changedByTab(TABS(), values()))
   const total = createMemo(() =>
     everywhere().reduce((sum, entry) => sum + entry.rows.length, 0),
@@ -151,9 +152,16 @@ export function Setup() {
   const searching = () => needle().trim() !== ''
   const found = createMemo(() => searchRows(TABS(), values(), needle()))
 
+  /**
+   * Whether the Changed view is showing everything else as well. Reset with
+   * the tab: opening one means landing on what is changed in it.
+   */
+  const [unchanged, setUnchanged] = createSignal(false)
+
   function open(next: Tab) {
     setTabKey(next.key)
     setGroup(null)
+    setUnchanged(false)
   }
 
   const [width, setWidth] = createSignal(readWidth(storage(), WIDTH_KEY))
@@ -352,7 +360,8 @@ export function Setup() {
                     classList={{ on: group() === null }}
                     onClick={() => setGroup(null)}
                   >
-                    Changed<span class='c'>{changed().length}</span>
+                    Changed
+                    <span class='c'>{changedCount(tab(), values())}</span>
                   </button>
                   <For each={tab().groups}>
                     {(entry) => (
@@ -361,7 +370,7 @@ export function Setup() {
                         classList={{ on: group() === entry.name }}
                         onClick={() => setGroup(entry.name)}
                       >
-                        {entry.name || 'General'}
+                        {entry.name || GENERAL_GROUP}
                         <span class='c'>{entry.options.length}</span>
                       </button>
                     )}
@@ -372,18 +381,24 @@ export function Setup() {
               <div class='setup-detail'>
                 <Switch>
                   <Match when={tab().key === ALL_TAB}>
-                    <Everywhere
-                      changed={everywhere}
-                      all={() => rowsByTab(TABS(), values(), false)}
+                    <Changes
+                      changed={() => byTabName(everywhere())}
+                      all={() => byTabName(rowsByTab(TABS(), values(), false))}
+                      empty="Every setting is on BAR's default."
+                      unchanged={unchanged()}
+                      onToggle={() => setUnchanged(!unchanged())}
                       editable={editable()}
                       onEdit={(slot) => setEditing({ slot })}
                     />
                   </Match>
                   <Match when={group() === null}>
-                    <ChangedHere
-                      rows={changed}
+                    <Changes
+                      changed={() => rowsByGroup(tab(), values(), true)}
+                      all={() => rowsByGroup(tab(), values(), false)}
+                      empty="Every setting in this tab is on BAR's default."
+                      unchanged={unchanged()}
+                      onToggle={() => setUnchanged(!unchanged())}
                       editable={editable()}
-                      onShowAll={() => setGroup(firstGroup())}
                       onEdit={(slot) => setEditing({ slot })}
                     />
                   </Match>
@@ -410,10 +425,6 @@ export function Setup() {
       </Show>
     </aside>
   )
-
-  function firstGroup() {
-    return tab().groups[0]?.name ?? null
-  }
 }
 
 /**
@@ -436,30 +447,36 @@ function storage(): Storage | null {
 }
 
 /**
- * The All tab: what is changed anywhere, under the tab it belongs to -- and,
- * on request, everything else beside it.
+ * What is changed, under the heading it belongs to -- and, on request,
+ * everything else beside it. On the All tab the headings are tabs; inside a
+ * tab they are its groups.
+ *
+ * The toggle reveals rows in place. It used to open the tab's first group
+ * instead, which lost the changed rows it had been showing and, on Modding,
+ * landed on the slot grid rather than the rows it had promised.
  */
-function Everywhere(props: {
-  changed: Accessor<Changed[]>
-  all: Accessor<Changed[]>
+function Changes(props: {
+  changed: Accessor<Section[]>
+  all: Accessor<Section[]>
+  /** What to say when nothing here is changed. */
+  empty: string
+  unchanged: boolean
+  onToggle: () => void
   editable: boolean
   onEdit: (slot: string) => void
 }) {
-  const [unchanged, setUnchanged] = createSignal(false)
-  const shown = () => (unchanged() ? props.all() : props.changed())
+  const shown = () => (props.unchanged ? props.all() : props.changed())
   return (
     <>
       <Show
         when={shown().length > 0}
-        fallback={
-          <p class='muted setup-empty'>Every setting is on BAR's default.</p>
-        }
+        fallback={<p class='muted setup-empty'>{props.empty}</p>}
       >
         <For each={shown()}>
           {(entry) => (
             <>
               <div class='setup-section'>
-                <span>{entry.tab.name}</span>
+                <span>{entry.name}</span>
                 <span class='count'>{entry.rows.length}</span>
               </div>
               <Rows
@@ -471,8 +488,8 @@ function Everywhere(props: {
           )}
         </For>
       </Show>
-      <button class='setup-reveal' onClick={() => setUnchanged(!unchanged())}>
-        {unchanged() ? 'Hide unchanged' : 'Show unchanged'}
+      <button class='setup-reveal' onClick={props.onToggle}>
+        {props.unchanged ? 'Hide unchanged' : 'Show unchanged'}
       </button>
     </>
   )
@@ -510,39 +527,6 @@ function Found(props: {
         )}
       </For>
     </Show>
-  )
-}
-
-function ChangedHere(props: {
-  rows: Accessor<Row[]>
-  editable: boolean
-  onShowAll: () => void
-  onEdit: (slot: string) => void
-}) {
-  return (
-    <>
-      <div class='setup-section'>
-        <span>Changed from default</span>
-        <span class='count'>{props.rows().length}</span>
-      </div>
-      <Show
-        when={props.rows().length > 0}
-        fallback={
-          <p class='muted setup-empty'>
-            Every setting in this tab is on BAR's default.
-          </p>
-        }
-      >
-        <Rows
-          rows={props.rows()}
-          editable={props.editable}
-          onEdit={props.onEdit}
-        />
-      </Show>
-      <button class='setup-reveal' onClick={props.onShowAll}>
-        Show unchanged
-      </button>
-    </>
   )
 }
 

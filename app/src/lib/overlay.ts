@@ -35,11 +35,23 @@ export function escapeLeavesOverlay(event: {
  * Whether this click landed on the scrim rather than in the lobby.
  *
  * The card is `.shell`; everything outside it is the game showing through, and
- * clicking the game is how you say you want the game. Buttons that float
- * outside the card — the close X — are inside `.shell` in the markup for
- * exactly this reason, so they are not treated as a click-away.
+ * clicking the game is how you say you want the game. Anything drawn past the
+ * card's visible edge must still sit inside `.shell` in the markup for exactly
+ * this reason, or a click on it would be taken for a click-away.
  */
 export function clickLeavesOverlay(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false
   return target.closest('.shell') === null
+}
+
+/**
+ * Whether the page at this path draws the room card.
+ *
+ * The card carries the game buttons in its own column, so the corner draws
+ * them only where there is no card. Asked of the path rather than of the room
+ * view: both room pages (`/room`, `/skirmish`) render the card, and a URL
+ * needs no mount and cleanup to answer for.
+ */
+export function roomOnScreen(pathname: string): boolean {
+  return /^\/(room|skirmish)(\/|$)/.test(pathname)
 }

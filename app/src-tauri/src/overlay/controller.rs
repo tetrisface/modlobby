@@ -50,6 +50,12 @@ impl Controller {
         self.drive(Input::Settings(settings));
     }
 
+    /// The process is exiting: the window gets its ordinary shape back first,
+    /// since the shape it is closed in is the shape it opens in next time.
+    pub fn shut_down(&self) {
+        self.drive(Input::Shutdown);
+    }
+
     /// Whether the window is currently over a game, for the front end to show
     /// a different face.
     pub fn is_over(&self) -> bool {
@@ -80,7 +86,9 @@ impl Controller {
         // would deadlock the next hotkey press.
         let effects = {
             let mut overlay = self.overlay.lock().expect("overlay");
-            super::state::step(&mut overlay, input)
+            let effects = super::state::step(&mut overlay, input.clone());
+            tracing::info!(?input, ?effects, over = overlay.is_over(), "overlay");
+            effects
         };
         for effect in effects {
             self.apply(effect);

@@ -162,6 +162,20 @@ pub fn run() {
             tauri_app.manage(controller.clone());
             tauri_app.manage(screen::Screen::default());
 
+            // The window-state plugin opens the window the way it was closed.
+            // Closed over a game it was in the overlay's shape, and a start
+            // in that shape leaves the toolkit's idea of the window at odds
+            // with the shape the overlay then asks for. Nothing but the
+            // overlay ever takes the frame off, so a frameless window here
+            // is that, and it gets its frame back before anything else runs.
+            if let Some(window) = overlay::surface::main_window(tauri_app.handle())
+                && !window.is_decorated().unwrap_or(true)
+            {
+                tracing::info!("window opened in the overlay's shape; restoring it");
+                let _ = window.set_decorations(true);
+                let _ = window.set_shadow(true);
+            }
+
             // Escape inside a game. The listener is bound before anything is
             // written, so the widget always names a port that answers.
             let actions = std::sync::Arc::new(InGameActions {
@@ -390,13 +404,56 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("building modlobby")
         .run(|handle, event| {
+            // Before the window-state plugin looks at the window, which it
+            // does on `Exit`: closed over a game, the window is in the
+            // overlay's shape, and that is not the shape to open in next time.
+            if matches!(event, tauri::RunEvent::ExitRequested { .. })
+                && let Some(overlay) = handle.try_state::<std::sync::Arc<overlay::Controller>>()
+            {
+                overlay.shut_down();
+            }
+            if !matches!(event, tauri::RunEvent::Exit) {
+                return;
+            }
+            let game_running = engine_running(handle);
+            tracing::info!(game_running, "exiting");
+            let Some(held) = handle.try_state::<InGameHandle>() else {
+                return;
+            };
+            let Some(mut ingame) = held.lock().expect("in-game").take() else {
+                return;
+            };
             // Leaving a widget behind that talks to a port nobody answers is
             // harmless — it stops consuming Escape — but tidying up is the
-            // whole promise, so it is done on the way out.
-            if matches!(event, tauri::RunEvent::Exit)
-                && let Some(held) = handle.try_state::<InGameHandle>()
-            {
-                drop(held.lock().expect("in-game").take());
+            // whole promise, so it is done on the way out. Not from under a
+            // running game, though: the engine asks for the menu archive
+            // again when the player quits to it, and finding it gone is a
+            // content error in their face.
+            if game_running {
+                ingame.leave_behind();
             }
+            // Dropping is what removes whatever is still tracked.
+            drop(ingame);
         });
+}
+
+/// Whether a game we launched is still running, asked of the runtime on the
+/// way out.
+///
+/// No answer counts as running: the two files are inert when left behind and
+/// harmful when taken from under an engine, so a runtime that has stopped or
+/// does not answer in time gets the safe reading.
+fn engine_running(handle: &tauri::AppHandle) -> bool {
+    let Some(app) = handle.try_state::<state::App>() else {
+        return false;
+    };
+    let client = app.client.clone();
+    tauri::async_runtime::block_on(async move {
+        let asked =
+            tokio::time::timeout(std::time::Duration::from_millis(500), client.engine_pid());
+        match asked.await {
+            Ok(Ok(pid)) => pid.is_some(),
+            Ok(Err(_)) | Err(_) => true,
+        }
+    })
 }

@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'vitest'
-import { clickLeavesOverlay, escapeLeavesOverlay } from './overlay'
+import {
+  clickLeavesOverlay,
+  escapeLeavesOverlay,
+  roomOnScreen,
+} from './overlay'
 
 function key(overrides: Partial<Parameters<typeof escapeLeavesOverlay>[0]>) {
   return escapeLeavesOverlay({
@@ -57,5 +61,20 @@ describe('clicking while sitting over a game', () => {
 
   test('a stray event with no element behind it changes nothing', () => {
     expect(clickLeavesOverlay(null)).toBe(false)
+  })
+})
+
+describe('the corner buttons while a room is on screen', () => {
+  test('a room page carries its own, so the corner stays empty', () => {
+    expect(roomOnScreen('/room')).toBe(true)
+    expect(roomOnScreen('/room/tweaks')).toBe(true)
+    expect(roomOnScreen('/skirmish')).toBe(true)
+  })
+
+  test('every other page gets them in the corner', () => {
+    expect(roomOnScreen('/')).toBe(false)
+    expect(roomOnScreen('/battles')).toBe(false)
+    expect(roomOnScreen('/settings')).toBe(false)
+    expect(roomOnScreen('/roomy')).toBe(false)
   })
 })

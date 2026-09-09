@@ -1,8 +1,10 @@
 import { MemoryRouter, Route } from '@solidjs/router'
 import { cleanup, fireEvent, render } from '@solidjs/testing-library'
 import { invoke } from '@tauri-apps/api/core'
+import { reconcile } from 'solid-js/store'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { ModOption } from '../../ipc/bindings/ModOption'
+import { emptyLobby, setLobby } from '../../store/lobby'
 import { Room } from '../Room'
 import {
   ALONE,
@@ -41,6 +43,15 @@ const OPTIONS: ModOption[] = [
     type: 'bool',
     section: 'options',
     def: true,
+  },
+  // Left on its default, so a tab has something unchanged to reveal.
+  {
+    key: 'deathmode',
+    name: 'Deathmode',
+    desc: '',
+    type: 'bool',
+    section: 'options',
+    def: false,
   },
 ]
 
@@ -83,6 +94,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
+  // The engine tests below write the mirrored state; nothing else here does.
+  setLobby(reconcile(emptyLobby()))
 })
 
 async function open(model: RoomModel) {
@@ -215,7 +228,7 @@ describe('a room behind the seam', () => {
     expect(queryByText('Force start')).toBeNull()
     expect(queryByText('Host a public room')).toBeNull()
     expect(queryByText('Private room')).toBeNull()
-    expect(queryByText('Leave')).toBeNull()
+    expect(queryByText('Leave room')).toBeNull()
     // Nobody to be ready for. Asked of the seat bar rather than of the page,
     // because a player row's sync icon is titled "Not ready" as well.
     expect(buttons(container, '.seat')).not.toContain('Not ready')
@@ -242,12 +255,146 @@ describe('a room behind the seam', () => {
 
     // Asked of the card, because the host bar has a Start of its own -- and
     // that one, `!start`, is exactly what a served room should still offer.
-    expect(buttons(container, '.card-actions')).toEqual(['Leave'])
+    expect(buttons(container, '.card-actions')).toEqual(['Leave room'])
     expect(buttons(container, '.host-bar')).toContain('Start')
     expect(buttons(container, '.host-bar')).toContain('Force start')
     // A listed room is named for other people and run by somebody, so it says
     // whose it is and offers the pen. The skirmish test asserts neither.
     expect(container.textContent).toContain('Host')
     expect(container.querySelector('.room-title button')).toBeTruthy()
+  })
+})
+
+/** One of the card's buttons, by what it says. */
+function cardButton(container: HTMLElement, label: string): HTMLButtonElement {
+  const found = [
+    ...container.querySelectorAll<HTMLButtonElement>('.card-actions button'),
+  ].find((button) => button.textContent === label)
+  if (!found) throw new Error(`no card button reading ${label}`)
+  return found
+}
+
+/** The Tauri commands that have been asked for, in order. */
+const invoked = () => vi.mocked(invoke).mock.calls.map(([name]) => name)
+
+describe('while our own engine is running', () => {
+  beforeEach(() => setLobby('engine', { state: 'running', pid: 1 }))
+
+  test('a served room holds every way out, in one column', async () => {
+    const { container } = await open(
+      fakeRoom({
+        caps: SERVED,
+        my: () => myBattle({ boss: 'me' }),
+        io: recordingIo([]),
+      }),
+    )
+    expect(buttons(container, '.card-actions')).toEqual([
+      'Back to game',
+      'Leave room',
+      'Leave game',
+      'Quit',
+    ])
+  })
+
+  test("a room of one's own has no room to leave, and the rest still", async () => {
+    const { container } = await open(alone([]))
+    expect(buttons(container, '.card-actions')).toEqual([
+      'Back to game',
+      'Leave game',
+      'Quit',
+    ])
+  })
+
+  test('Leave game asks before it acts', async () => {
+    const { container } = await open(alone([]))
+
+    fireEvent.click(cardButton(container, 'Leave game'))
+    await settle()
+    expect(cardButton(container, 'End the game?')).toBeTruthy()
+    expect(invoked()).not.toContain('stop_game')
+
+    fireEvent.click(cardButton(container, 'End the game?'))
+    await settle()
+    expect(invoked().filter((name) => name === 'stop_game')).toHaveLength(1)
+    expect(cardButton(container, 'Leave game')).toBeTruthy()
+  })
+
+  test('arming Quit disarms Leave game', async () => {
+    const { container } = await open(alone([]))
+
+    fireEvent.click(cardButton(container, 'Leave game'))
+    fireEvent.click(cardButton(container, 'Quit'))
+    await settle()
+    expect(cardButton(container, 'Quit everything?')).toBeTruthy()
+    expect(cardButton(container, 'Leave game')).toBeTruthy()
+    expect(invoked()).not.toContain('stop_game')
+    expect(invoked()).not.toContain('quit_all')
+  })
+})
+
+describe('the setup pane', () => {
+  /** The strip's button for a tab; its text is the name and then a badge. */
+  function setupTab(container: HTMLElement, name: string): HTMLButtonElement {
+    const found = [
+      ...container.querySelectorAll<HTMLButtonElement>('.setup-tab'),
+    ].find((button) => button.textContent?.startsWith(name))
+    if (!found) throw new Error(`no tab ${name}`)
+    return found
+  }
+  const reveal = (container: HTMLElement) =>
+    container.querySelector<HTMLButtonElement>('.setup-reveal')!
+  const openGroup = (container: HTMLElement) =>
+    container.querySelector('.groups .group.on')?.textContent ?? ''
+  const sections = (container: HTMLElement) =>
+    [
+      ...container.querySelectorAll(
+        '.setup-detail .setup-section > span:first-child',
+      ),
+    ].map((span) => span.textContent)
+  const rows = (container: HTMLElement) =>
+    container.querySelectorAll('.setup-detail .opt').length
+
+  test('showing the unchanged inside a tab stays on Changed', async () => {
+    const { container } = await open(alone([]))
+    fireEvent.click(setupTab(container, 'Options'))
+    await settle()
+    expect(openGroup(container)).toMatch(/^Changed/)
+    expect(sections(container)).toEqual(['General'])
+    expect(rows(container)).toBe(1)
+
+    fireEvent.click(reveal(container))
+    await settle()
+    expect(reveal(container).textContent).toBe('Hide unchanged')
+    expect(openGroup(container)).toMatch(/^Changed/)
+    expect(rows(container)).toBe(2)
+    expect(container.querySelector('.slot-grid')).toBeNull()
+
+    fireEvent.click(reveal(container))
+    await settle()
+    expect(reveal(container).textContent).toBe('Show unchanged')
+    expect(rows(container)).toBe(1)
+  })
+
+  test('Modding shows its slots as rows, and the grid only from its group', async () => {
+    const { container } = await open(alone([]))
+    fireEvent.click(setupTab(container, 'Modding'))
+    await settle()
+    expect(sections(container)).toEqual([])
+    expect(container.textContent).toContain(
+      "Every setting in this tab is on BAR's default.",
+    )
+
+    fireEvent.click(reveal(container))
+    await settle()
+    expect(sections(container)).toEqual(['Tweak slots'])
+    expect(rows(container)).toBe(20)
+    expect(container.querySelector('.slot-grid')).toBeNull()
+
+    const group = [
+      ...container.querySelectorAll<HTMLButtonElement>('.groups .group'),
+    ].find((button) => button.textContent?.startsWith('Tweak slots'))!
+    fireEvent.click(group)
+    await settle()
+    expect(container.querySelector('.slot-grid')).toBeTruthy()
   })
 })

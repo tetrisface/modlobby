@@ -10,8 +10,8 @@ use lobby_ui::UiMessage;
 use serde::Serialize;
 use settings::{CredentialError, Settings};
 use spring_protocol::{Endpoint, LoginRequest};
-use tauri::State;
 use tauri::ipc::Channel;
+use tauri::{Manager, State};
 use tweaks::{DiffView, Kind, Prepared, Slot, TweakView};
 
 use crate::state::App;
@@ -831,6 +831,13 @@ pub async fn stop_game(app: State<'_, App>) -> Result<bool> {
 #[tauri::command]
 pub async fn quit_all(app: State<'_, App>, handle: tauri::AppHandle) -> Result<()> {
     let _ = app.client.stop_engine().await;
+    // The game is being killed, not sent back to its menu, so nothing will ask
+    // for the widget or the menu archive again. Taken out here, because the
+    // exit handler would still see a process that has not finished dying and
+    // leave them for it.
+    if let Some(held) = handle.try_state::<crate::InGameHandle>() {
+        drop(held.lock().expect("in-game").take());
+    }
     handle.exit(0);
     Ok(())
 }

@@ -239,7 +239,7 @@ describe('the room with no server behind it', () => {
     const { container, queryByText } = await open()
     expect(queryByText('Balance')).toBeNull()
     expect(queryByText('Host a public room')).toBeNull()
-    expect(queryByText('Leave')).toBeNull()
+    expect(queryByText('Leave room')).toBeNull()
     // Nobody to host it for, and nobody to read its name.
     expect(container.textContent).not.toContain('Host')
     expect(container.querySelector('.room-title button')).toBeNull()

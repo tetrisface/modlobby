@@ -131,8 +131,11 @@ end
 -- Reached only with no game loaded: either the engine started here, or a game
 -- just ended and `ReloadForce` dropped back. Neither is a state this menu has
 -- anything to offer in, so it gets out of the way and lets the process end.
+-- `Spring.Quit` is how Chobby does the same; `Spring.SendCommands` does not
+-- exist in a LuaMenu, and a call-in that errors leaves the engine sitting on
+-- a black frame it never draws.
 function ActivateMenu()
-	Spring.SendCommands("QuitForce")
+	Spring.Quit()
 end
 
 -- Nothing to paint, ever.
@@ -197,6 +200,10 @@ mod tests {
         assert!(lua.contains(r#"local TOKEN = "secret""#));
         assert!(lua.contains("function RecvLuaMsg"));
         assert!(lua.contains("function ActivateMenu"));
+        // The one quit call a LuaMenu has. `SendCommands` is not in its
+        // environment, and the engine sat black on the error.
+        assert!(lua.contains("Spring.Quit()"));
+        assert!(!lua.contains("SendCommands("));
 
         let info = std::fs::read_to_string(written.join("modinfo.lua")).unwrap();
         assert!(info.contains("modtype = 5"), "a menu, not a game");
