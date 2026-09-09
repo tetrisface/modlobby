@@ -1,6 +1,6 @@
 # modlobby
 
-A Beyond All Reason lobby focused on modding, experiments and performance.
+A Beyond All Reason lobby that uses the legacy spring protocol focused on modding, experiments and performance.
 
 # Install
 
