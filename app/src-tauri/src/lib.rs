@@ -125,8 +125,14 @@ pub fn run() {
         .plugin(
             tauri_plugin_window_state::Builder::default()
                 .with_state_flags(
+                    // Neither the frame nor fullscreen is something this
+                    // window remembers: it is frameless by design (the nav
+                    // is its title bar), and a saved `decorated: true` --
+                    // which one buggy build wrote -- would put the OS bar
+                    // over the page's own on every start after.
                     tauri_plugin_window_state::StateFlags::all()
-                        - tauri_plugin_window_state::StateFlags::FULLSCREEN,
+                        - tauri_plugin_window_state::StateFlags::FULLSCREEN
+                        - tauri_plugin_window_state::StateFlags::DECORATIONS,
                 )
                 .build(),
         )
@@ -161,20 +167,6 @@ pub fn run() {
             ));
             tauri_app.manage(controller.clone());
             tauri_app.manage(screen::Screen::default());
-
-            // The window-state plugin opens the window the way it was closed.
-            // Closed over a game it was in the overlay's shape, and a start
-            // in that shape leaves the toolkit's idea of the window at odds
-            // with the shape the overlay then asks for. Nothing but the
-            // overlay ever takes the frame off, so a frameless window here
-            // is that, and it gets its frame back before anything else runs.
-            if let Some(window) = overlay::surface::main_window(tauri_app.handle())
-                && !window.is_decorated().unwrap_or(true)
-            {
-                tracing::info!("window opened in the overlay's shape; restoring it");
-                let _ = window.set_decorations(true);
-                let _ = window.set_shadow(true);
-            }
 
             // Escape inside a game. The listener is bound before anything is
             // written, so the widget always names a port that answers.

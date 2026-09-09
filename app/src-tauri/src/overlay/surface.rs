@@ -89,10 +89,9 @@ impl TauriSurface {
         // ordinary window wants its shadow.
         let _ = self.window.set_shadow(true);
 
+        // Nothing recorded means nothing was changed: the window is frameless
+        // by design, so there is no frame to give back.
         let Some(remembered) = remembered else {
-            // Nothing recorded: at least give the frame back rather than
-            // leaving a borderless window nobody can move.
-            let _ = self.window.set_decorations(true);
             return;
         };
         let _ = self.window.set_decorations(remembered.decorated);
@@ -217,6 +216,9 @@ impl WindowSurface for TauriSurface {
     }
 
     fn reveal(&self) {
+        // Counts as a new generation so the pending fallback finds nothing
+        // left to do, rather than revealing twice and saying the page was late.
+        self.veiled.fetch_add(1, Ordering::SeqCst);
         set_alpha(&self.window, u8::MAX);
     }
 
