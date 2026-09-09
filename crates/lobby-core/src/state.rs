@@ -49,6 +49,10 @@ pub struct MyBattle {
     /// `advanced`. While it is anything but `off`, SPADS declines to move
     /// anybody by hand.
     pub auto_balance: Option<String>,
+    /// The SPADS preset the room runs under, when it has said: `team`,
+    /// `ffa`, `coop`… A preset rewrites the settings under it, so it is the
+    /// first thing a boss picks.
+    pub preset: Option<String>,
     pub id: u32,
     /// From the `JOINBATTLE` reply; identifies the game archive.
     pub game_hash: String,
@@ -75,6 +79,7 @@ impl MyBattle {
         Self {
             boss: None,
             auto_balance: None,
+            preset: None,
             id,
             game_hash,
             script_password,

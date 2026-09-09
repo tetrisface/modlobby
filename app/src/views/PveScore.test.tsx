@@ -128,6 +128,7 @@ function enter(bots: BotView[], others: UserView[] = []) {
   next.myBattle = {
     boss: null,
     autoBalance: 'off',
+    preset: null,
     id: 7,
     gameHash: '',
     scriptTags: { 'game/modoptions/raptor_endless': '0' },

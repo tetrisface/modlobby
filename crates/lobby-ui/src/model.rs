@@ -359,6 +359,9 @@ pub struct MyBattleView {
     /// room has not said, which is not the same as `off`: a host without BAR's
     /// BarManager plugin never reports it.
     pub auto_balance: Option<String>,
+    /// The SPADS preset the room runs under (`team`, `ffa`, `coop`, `duel`,
+    /// `tourney`, `custom`), `null` where the room has not said.
+    pub preset: Option<String>,
     pub id: u32,
     pub game_hash: String,
     /// Lowercase script-tag keys (`game/modoptions/tweakdefs`, `game/hosttype`, …).
@@ -373,6 +376,7 @@ impl From<&MyBattle> for MyBattleView {
         Self {
             boss: my.boss.clone(),
             auto_balance: my.auto_balance.clone(),
+            preset: my.preset.clone(),
             id: my.id,
             game_hash: my.game_hash.clone(),
             script_tags: my.script_tags.clone(),

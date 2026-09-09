@@ -29,6 +29,7 @@ const battle = (id: number): BattleView => ({
 const mine = (id: number): MyBattleView => ({
   boss: null,
   autoBalance: 'off',
+  preset: null,
   id,
   gameHash: '',
   scriptTags: {},

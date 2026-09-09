@@ -98,8 +98,18 @@ describe('moving somebody', () => {
     const calls: Calls = []
     await moveTo(served(calls, 'alice'), MY_BOT, 2)
     // Its team, bonus and colour go out again: the message replaces the whole
-    // status, so anything not resent is lost.
-    expect(calls).toEqual([['updateBot', ['BARb', 3, 2, 25, 0x4b73f2]]])
+    // status, so anything not resent is lost. The host keeps its own book of
+    // bonuses, so the bonus is said to it once more, as Chobby does.
+    expect(calls).toEqual([
+      ['updateBot', ['BARb', 3, 2, 25, 0x4b73f2]],
+      ['sayBattle', ['!force %BARb bonus 25']],
+    ])
+  })
+
+  test('an AI with no bonus has none to repeat after the move', async () => {
+    const calls: Calls = []
+    await moveTo(served(calls, 'alice'), { ...MY_BOT, handicap: 0 }, 2)
+    expect(calls).toEqual([['updateBot', ['BARb', 3, 2, 0, 0x4b73f2]]])
   })
 
   test('anybody else is a request to the host in chat', async () => {
@@ -116,9 +126,20 @@ describe('moving somebody', () => {
 })
 
 describe('a bonus', () => {
-  test('rides the status for an AI of ours, keeping where it sits', async () => {
+  test('is asked of the host for an AI of ours, where there is one', async () => {
     const calls: Calls = []
-    await setBonus(served(calls, 'me'), MY_BOT, 50, 1)
+    await setBonus(served(calls, null), MY_BOT, 50, 1)
+    expect(calls).toEqual([['sayBattle', ['!force %BARb bonus 50']]])
+  })
+
+  test('rides the status where there is no host to ask', async () => {
+    const calls: Calls = []
+    const alone = fakeRoom({
+      caps: ALONE,
+      battle: () => battle(),
+      io: recordingIo(calls),
+    })
+    await setBonus(alone, MY_BOT, 50, 1)
     expect(calls).toEqual([['updateBot', ['BARb', 3, 1, 50, 0x4b73f2]]])
   })
 
@@ -151,9 +172,14 @@ describe('a room that arranges its own teams', () => {
     expect(calls).toEqual([])
   })
 
-  test('but an AI of ours does not go through the host at all', async () => {
+  test('but an AI of ours does not go through the host to move', async () => {
     const calls: Calls = []
     await moveTo(served(calls, 'me', 'advanced'), MY_BOT, 1)
-    expect(calls).toEqual([['updateBot', ['BARb', 3, 1, 25, 0x4b73f2]]])
+    // Only the bonus is said to it, which SPADS takes whatever the balance
+    // setting: `hForce` refuses `team` and `id` under auto balance, not `bonus`.
+    expect(calls).toEqual([
+      ['updateBot', ['BARb', 3, 1, 25, 0x4b73f2]],
+      ['sayBattle', ['!force %BARb bonus 25']],
+    ])
   })
 })

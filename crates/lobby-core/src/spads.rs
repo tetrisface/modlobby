@@ -87,13 +87,15 @@ fn spoken_duration(text: &str) -> Option<u64> {
 /// to speak up its boss, and a boss may change every setting in it. An empty
 /// string means nobody.
 pub fn boss(json: &str) -> Option<String> {
+    state_field(json, "boss")
+}
+
+/// One string out of a `BattleStateChanged` payload, trimmed. `None` where
+/// the payload is not one, lacks the key, or has it empty.
+fn state_field(json: &str, key: &str) -> Option<String> {
     let value: serde_json::Value = serde_json::from_str(json).ok()?;
-    let boss = value
-        .get("BattleStateChanged")?
-        .get("boss")?
-        .as_str()?
-        .trim();
-    (!boss.is_empty()).then(|| boss.to_owned())
+    let text = value.get("BattleStateChanged")?.get(key)?.as_str()?.trim();
+    (!text.is_empty()).then(|| text.to_owned())
 }
 
 /// What the room says about balancing itself, from the same payload.
@@ -109,13 +111,15 @@ pub fn boss(json: &str) -> Option<String> {
 /// being asked. `None` means a host that does not run that plugin at all, and
 /// is "not said" rather than "off".
 pub fn auto_balance(json: &str) -> Option<String> {
-    let value: serde_json::Value = serde_json::from_str(json).ok()?;
-    let mode = value
-        .get("BattleStateChanged")?
-        .get("autoBalance")?
-        .as_str()?
-        .trim();
-    (!mode.is_empty()).then(|| mode.to_ascii_lowercase())
+    state_field(json, "autoBalance").map(|mode| mode.to_ascii_lowercase())
+}
+
+/// The SPADS preset the room runs under, from the same payload: `team`,
+/// `ffa`, `coop`, `duel`, `tourney` or `custom` in BAR's configuration, which
+/// is the list Chobby offers (`gui_battle_room_window.lua:3490`). Changed
+/// with `!preset <name>`.
+pub fn preset(json: &str) -> Option<String> {
+    state_field(json, "preset").map(|name| name.to_ascii_lowercase())
 }
 
 /// Whether an announcement names `who` as the one who acted. SPADS writes
@@ -536,6 +540,17 @@ mod tests {
         // Anything else is not a claim about who is in charge.
         assert_eq!(boss(r#"{"onVoteStart": {}}"#), None);
         assert_eq!(boss("not json"), None);
+    }
+
+    #[test]
+    fn the_preset_is_read_off_the_state_payload_the_same_way() {
+        use super::{auto_balance, preset};
+        let json =
+            r#"{"BattleStateChanged": {"preset": "Coop", "autoBalance": "Advanced", "boss": ""}}"#;
+        assert_eq!(preset(json), Some("coop".into()));
+        assert_eq!(auto_balance(json), Some("advanced".into()));
+        // A host that does not say has not said; that is not `custom`.
+        assert_eq!(preset(r#"{"BattleStateChanged": {"boss": "me"}}"#), None);
     }
 
     #[test]

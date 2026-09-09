@@ -7,7 +7,7 @@ import { useRoom } from './room/model'
  * Running a room you boss.
  *
  * These are SPADS commands, sent as chat exactly as anyone would type them —
- * `!balance`, `!start`, `!lock`. There is no protocol behind them beyond
+ * `!balance`, `!forceStart`, `!lock`. There is no protocol behind them beyond
  * `SAYBATTLE`, which is why this needs nothing in the runtime: the throttle
  * policy already routes a `!` line through the command bucket.
  *
@@ -15,10 +15,24 @@ import { useRoom } from './room/model'
  * refusals, and SPADS answers a refused command with a private message that
  * lands in the server room anyway.
  */
+/** BAR's SPADS presets, as Chobby lists them (`gui_battle_room_window.lua:3490`). */
+const PRESETS = ['team', 'ffa', 'coop', 'duel', 'tourney', 'custom']
+
 export function HostBar() {
   const room = useRoom()
   const [busy, setBusy] = createSignal(false)
   const [size, setSize] = createSignal('')
+
+  /**
+   * What the preset picker lists: the known six, plus whatever the room says
+   * it runs under when that is none of them, and a blank where it has not
+   * said -- a host without the BarManager plugin never reports one.
+   */
+  const presets = createMemo(() => {
+    const now = room.my()?.preset ?? null
+    if (now === null) return ['', ...PRESETS]
+    return PRESETS.includes(now) ? PRESETS : [now, ...PRESETS]
+  })
 
   const boss = createMemo(() => {
     const who = room.my()?.boss
@@ -58,7 +72,8 @@ export function HostBar() {
         locked ? '!unlock' : '!lock',
         locked ? 'Let people join again' : 'Stop anyone else joining',
       ],
-      ['Start', '!start', 'Start the game once everyone is ready'],
+      // `!start` is the card's button, beside Leave room, for boss and
+      // player alike. Only the impatient form lives here.
       ['Force start', '!forceStart', 'Start without waiting for everyone'],
     ] as const
   })
@@ -79,6 +94,20 @@ export function HostBar() {
             </button>
           )}
         </For>
+
+        <label class='host-size'>
+          Preset
+          <select
+            disabled={busy()}
+            title='!preset — the settings the room starts from'
+            value={room.my()?.preset ?? ''}
+            onChange={(e) => void run(`!preset ${e.currentTarget.value}`)}
+          >
+            <For each={presets()}>
+              {(name) => <option value={name}>{name || '—'}</option>}
+            </For>
+          </select>
+        </label>
 
         <label class='host-size'>
           Team size

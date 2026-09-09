@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render } from '@solidjs/testing-library'
 import { invoke } from '@tauri-apps/api/core'
 import { reconcile } from 'solid-js/store'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import type { BotView } from '../../ipc/bindings/BotView'
 import type { ModOption } from '../../ipc/bindings/ModOption'
 import { emptyLobby, setLobby } from '../../store/lobby'
 import { Room } from '../Room'
@@ -189,6 +190,108 @@ describe('choosing a team', () => {
     const offered = [...(picker?.options ?? [])].map((o) => o.textContent)
     expect(offered[0]).toBe('Team 1')
   })
+
+  /** Me watching; alice and bob on team 1, carol on team 2. */
+  function watchingThree(calls: Calls, bots: BotView[]): RoomModel {
+    return fakeRoom({
+      caps: SERVED,
+      battle: () => battle({ members: ['me', 'alice', 'bob', 'carol'], bots }),
+      users: () => ({
+        me: user('me', { battleStatus: status({ player: false }) }),
+        alice: user('alice', { battleStatus: status({ allyTeam: 0 }) }),
+        bob: user('bob', { battleStatus: status({ allyTeam: 0, team: 1 }) }),
+        carol: user('carol', {
+          battleStatus: status({ allyTeam: 1, team: 2 }),
+        }),
+      }),
+      io: recordingIo(calls),
+    })
+  }
+
+  async function join(container: HTMLElement) {
+    const button = [...container.querySelectorAll('.seat button')].find(
+      (b) => b.textContent === 'Join',
+    )
+    expect(button).toBeTruthy()
+    fireEvent.click(button as HTMLButtonElement)
+    await settle()
+  }
+
+  test('Join takes the emptiest side against people', async () => {
+    const calls: Calls = []
+    const { container } = await open(watchingThree(calls, []))
+    await join(container)
+    const seat = calls.find(([name]) => name === 'takeSeat')
+    expect(seat?.[1][1]).toBe(1)
+  })
+
+  test('and the fullest side against AIs, which is where the people are', async () => {
+    const calls: Calls = []
+    const raptors = bot('RaptorsAI', {
+      status: status({ allyTeam: 1, team: 3, sync: 'bot' }),
+    })
+    const { container } = await open(watchingThree(calls, [raptors]))
+    await join(container)
+    const seat = calls.find(([name]) => name === 'takeSeat')
+    expect(seat?.[1][1]).toBe(0)
+  })
+
+  test('and, with nobody seated yet, the side the AIs are not on', async () => {
+    const calls: Calls = []
+    const { container } = await open(
+      fakeRoom({
+        caps: SERVED,
+        battle: () => battle({ bots: [bot('ScavengersAI')] }),
+        users: () => ({
+          me: user('me', { battleStatus: status({ player: false }) }),
+        }),
+        io: recordingIo(calls),
+      }),
+    )
+    await join(container)
+    const seat = calls.find(([name]) => name === 'takeSeat')
+    // The AI sits on team 2 (the fixture's default), so team 1 it is.
+    expect(seat?.[1][1]).toBe(0)
+  })
+})
+
+describe('copying an AI', () => {
+  test('brings its bonus along, said to the host like any bonus', async () => {
+    const calls: Calls = []
+    const barb = bot('BARb', { status: status({ allyTeam: 1, handicap: 25 }) })
+    const { container } = await open(
+      fakeRoom({
+        caps: SERVED,
+        battle: () => battle({ bots: [barb] }),
+        users: () => ({ me: user('me') }),
+        io: recordingIo(calls),
+      }),
+    )
+    fireEvent.click(container.querySelector('.bot-clone') as HTMLElement)
+    await settle()
+
+    const added = calls.find(([name]) => name === 'addBot')
+    expect(added?.[1][1]).toBe('BARb')
+    expect(added?.[1][3]).toBe(1)
+    const said = calls.find(([name]) => name === 'sayBattle')
+    expect(said?.[1][0]).toMatch(/^!force %\S+ bonus 25$/)
+  })
+
+  test('and says nothing more when there is no bonus to bring', async () => {
+    const calls: Calls = []
+    const { container } = await open(
+      fakeRoom({
+        caps: SERVED,
+        battle: () => battle({ bots: [bot('BARb')] }),
+        users: () => ({ me: user('me') }),
+        io: recordingIo(calls),
+      }),
+    )
+    fireEvent.click(container.querySelector('.bot-clone') as HTMLElement)
+    await settle()
+    expect(calls.some(([name]) => name === 'addBot')).toBe(true)
+    expect(calls.some(([name]) => name === 'sayBattle')).toBe(false)
+  })
 })
 
 describe('a room behind the seam', () => {
@@ -244,24 +347,64 @@ describe('a room behind the seam', () => {
     expect(calls).toContainEqual(['launch', []])
   })
 
-  test('a served room keeps its host bar and starts no game of its own', async () => {
+  test('a served room asks its host to start, and the boss tells it', async () => {
+    const calls: Calls = []
     const { container } = await open(
       fakeRoom({
         caps: SERVED,
         my: () => myBattle({ boss: 'me' }),
-        io: recordingIo([]),
+        io: recordingIo(calls),
       }),
     )
 
-    // Asked of the card, because the host bar has a Start of its own -- and
-    // that one, `!start`, is exactly what a served room should still offer.
-    expect(buttons(container, '.card-actions')).toEqual(['Leave room'])
-    expect(buttons(container, '.host-bar')).toContain('Start')
+    // Not `launch`: the host runs the engine, we say a `!` line to it. The
+    // card holds the plain start; the host bar keeps only the forced one.
+    expect(buttons(container, '.card-actions')).toEqual([
+      'Start the game',
+      'Leave room',
+    ])
+    fireEvent.click(cardButton(container, 'Start the game'))
+    await settle()
+    expect(calls).toContainEqual(['sayBattle', ['!start']])
+    expect(calls).not.toContainEqual(['launch', []])
+    expect(buttons(container, '.host-bar')).not.toContain('Start')
     expect(buttons(container, '.host-bar')).toContain('Force start')
     // A listed room is named for other people and run by somebody, so it says
     // whose it is and offers the pen. The skirmish test asserts neither.
     expect(container.textContent).toContain('Host')
     expect(container.querySelector('.room-title button')).toBeTruthy()
+  })
+
+  test('a player who is not the boss proposes the start as a vote', async () => {
+    const calls: Calls = []
+    const { container } = await open(
+      fakeRoom({
+        caps: SERVED,
+        my: () => myBattle({ boss: 'someone' }),
+        io: recordingIo(calls),
+      }),
+    )
+
+    expect(buttons(container, '.card-actions')).toEqual([
+      'Vote to start',
+      'Leave room',
+    ])
+    fireEvent.click(cardButton(container, 'Vote to start'))
+    await settle()
+    expect(calls).toContainEqual(['sayBattle', ['!cv start']])
+  })
+
+  test('a spectator is offered no start, since SPADS would refuse one', async () => {
+    const { container } = await open(
+      fakeRoom({
+        caps: SERVED,
+        users: () => ({
+          me: user('me', { battleStatus: status({ player: false }) }),
+        }),
+      }),
+    )
+
+    expect(buttons(container, '.card-actions')).toEqual(['Leave room'])
   })
 })
 

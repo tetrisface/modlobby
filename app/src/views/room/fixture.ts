@@ -90,6 +90,7 @@ export function myBattle(over: Partial<MyBattleView> = {}): MyBattleView {
   return {
     boss: null,
     autoBalance: 'off',
+    preset: null,
     id: 1,
     gameHash: '',
     scriptTags: {},

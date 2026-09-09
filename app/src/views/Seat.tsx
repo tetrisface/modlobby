@@ -6,6 +6,7 @@ import { DEFAULT_TEAMS, freeTeam, unusedBotName } from '../lib/roster'
 import { pushNotice } from '../store/chat'
 import { applySettings, settings } from '../store/settings'
 import { useRoom, type RoomModel } from './room/model'
+import { setBonus as sendBonus } from './room/move'
 
 /** side 2 is Random; Legion needs its modoption, so it is offered last. */
 const SIDES = [
@@ -94,26 +95,48 @@ export function Seat() {
     return Array.from({ length: drawn + 1 }, (_, ally) => ally)
   })
 
-  /** The ally team a seat would join: the emptiest one already in play. */
+  /**
+   * The ally team a seat would join.
+   *
+   * Against people, the emptiest side somebody is already on. Against AIs
+   * the sides are not alike: the usual room is one team of people against
+   * one of AIs, so the place to go is wherever the most people are -- and,
+   * before anybody has sat down, wherever the AIs are not.
+   */
   function freeAlly(): number {
     const battle = battleOf()
     if (!battle) return 0
-    const held = new Map<number, number>()
+    const people = new Map<number, number>()
     for (const name of battle.members) {
       const status = room.users()[name]?.battleStatus
       if (status?.player)
-        held.set(status.allyTeam, (held.get(status.allyTeam) ?? 0) + 1)
+        people.set(status.allyTeam, (people.get(status.allyTeam) ?? 0) + 1)
     }
-    for (const bot of battle.bots)
-      held.set(bot.status.allyTeam, (held.get(bot.status.allyTeam) ?? 0) + 1)
+    const count = (ally: number) => people.get(ally) ?? 0
     const teams = allyTeams()
-    // Prefer a side somebody is on; the empty ones are all equally new.
-    const existing = teams.filter((ally) => held.has(ally))
-    if (existing.length === 0) return teams[0] ?? 0
-    return existing.reduce((best, ally) =>
-      (held.get(ally) ?? 0) < (held.get(best) ?? 0) ? ally : best,
+    const peopled = teams.filter((ally) => people.has(ally))
+    const aiSides = new Set(battle.bots.map((bot) => bot.status.allyTeam))
+
+    if (aiSides.size > 0) {
+      if (peopled.length > 0)
+        return peopled.reduce((best, ally) =>
+          count(ally) > count(best) ? ally : best,
+        )
+      return teams.find((ally) => !aiSides.has(ally)) ?? teams[0] ?? 0
+    }
+    // The empty sides are all equally new; prefer one somebody is on.
+    if (peopled.length === 0) return teams[0] ?? 0
+    return peopled.reduce((best, ally) =>
+      count(ally) < count(best) ? ally : best,
     )
   }
+
+  /**
+   * The lowest ally team nobody sits on -- where an opponent goes. The list
+   * always ends in one more than the highest team held, so there is one.
+   */
+  const emptyAlly = () =>
+    allyTeams().find((ally) => !usedAllies().has(ally)) ?? 0
 
   /**
    * Sits down on arrival when that is the posture, once per room.
@@ -155,25 +178,25 @@ export function Seat() {
     }
   }
 
-  const SPECTATOR = 'spectator'
-  /** What the seat picker shows: the side we hold, or the spectator row. */
-  const current = () => (seated() ? String(seat()?.allyTeam ?? 0) : SPECTATOR)
+  /** What the seat picker shows: the side we hold, or nothing while watching. */
+  const current = () => (seated() ? String(seat()?.allyTeam ?? 0) : '')
 
   /**
-   * Sits, moves, or stands up as picked. A refused pick snaps the picker
-   * back, since the row it landed on never came true.
+   * Sits or moves as picked. A refused pick snaps the picker back, since the
+   * row it landed on never came true.
    */
   async function pickSeat(picker: HTMLSelectElement) {
-    const choice = picker.value
-    const done =
-      choice === SPECTATOR
-        ? await act('spectate', async () => {
-            await room.io.releaseSeat()
-            await remember(false)
-          })
-        : await act('take a seat', () => sitOn(room, Number(choice)))
+    const choice = Number(picker.value)
+    const done = await act('take a seat', () => sitOn(room, choice))
     if (!done) picker.value = current()
   }
+
+  /** Stands up. The one thing a seat holder does that is not about where. */
+  const spectate = () =>
+    act('spectate', async () => {
+      await room.io.releaseSeat()
+      await remember(false)
+    })
 
   return (
     <div class='seat'>
@@ -188,11 +211,18 @@ export function Seat() {
           </span>
         }
       >
+        {/* Where to sit; whether to sit is the button after it. The picker
+            stays whether you are seated or watching, so nothing moves. */}
         <select
           value={current()}
           disabled={busy()}
           onChange={(e) => void pickSeat(e.currentTarget)}
         >
+          <Show when={!seated()}>
+            <option value='' disabled hidden>
+              Team
+            </option>
+          </Show>
           <For each={allyTeams()}>
             {(ally) => (
               <option value={String(ally)}>
@@ -204,7 +234,6 @@ export function Seat() {
               </option>
             )}
           </For>
-          <option value={SPECTATOR}>Spectator</option>
         </select>
 
         <Show when={seated()}>
@@ -247,18 +276,26 @@ export function Seat() {
           busy={busy()}
           act={act}
           freeTeam={() => nextTeam(room)}
-          freeAlly={freeAlly}
+          emptyAlly={emptyAlly}
           allyTeams={allyTeams}
         />
 
-        {/* One click onto the emptiest side; the picker above is for choosing. */}
-        <Show when={!seated()}>
-          <button
-            disabled={busy()}
-            title='Take a seat on the emptiest team'
-            onClick={() => act('take a seat', () => sitOn(room, freeAlly()))}
-          >
-            Join
+        {/* One button, in one place: onto the emptiest side, or back out of
+            the seat. The picker beside it is for choosing which side. */}
+        <Show
+          when={seated()}
+          fallback={
+            <button
+              disabled={busy()}
+              title='Take a seat on the emptiest team'
+              onClick={() => act('take a seat', () => sitOn(room, freeAlly()))}
+            >
+              Join
+            </button>
+          }
+        >
+          <button disabled={busy()} title='Give the seat up' onClick={spectate}>
+            Spectate
           </button>
         </Show>
       </Show>
@@ -317,12 +354,16 @@ const BOT_COLOURS = [0x4b73f2, 0x3fd07f, 0x2fb8f0, 0x9e5ce8, 0x50a0ff, 0x8fd04b]
  * room's game implements in Lua — Scavengers and Raptors, for BAR. There is
  * nothing to offer until that list has been read. Whether the room takes it
  * is the host's call — SPADS answers a refusal in chat, where it can be seen.
+ *
+ * A Lua AI is a game mode rather than an opponent: the room holds one, and a
+ * bonus means nothing to it, so neither is asked for.
  */
 function AddAi(props: {
   busy: boolean
   act: (what: string, run: () => Promise<void>) => Promise<boolean>
   freeTeam: () => number
-  freeAlly: () => number
+  /** The next team nobody is on: the sheet starts there, an opponent's place. */
+  emptyAlly: () => number
   /** The ally teams this room draws, plus the next one that could be opened. */
   allyTeams: () => number[]
 }) {
@@ -350,24 +391,38 @@ function AddAi(props: {
   })
 
   const chosen = () => ais().find((choice) => choice.name === ai())
-  /** The team the sheet is set to, which starts wherever a seat would go. */
-  const team = () => ally() ?? props.freeAlly()
+  const gameMode = () => chosen()?.lua ?? false
+  /** The team the sheet is set to, until picked the next empty one. */
+  const team = () => ally() ?? props.emptyAlly()
 
   const colour = () =>
     BOT_COLOURS[Math.floor(Math.random() * BOT_COLOURS.length)] as number
 
   async function add() {
     const claimed = new Set<string>()
-    const wanted = bonus()
-    for (let n = 0; n < count(); n++) {
+    const wanted = gameMode() ? 0 : bonus()
+    const many = gameMode() ? 1 : count()
+    for (let n = 0; n < many; n++) {
       const name = unusedBotName(room.battle(), ai(), claimed)
       claimed.add(name)
       const seat = props.freeTeam() + n
-      await room.io.addBot(name, ai(), seat, team(), colour())
-      // `ADDBOT` carries no bonus, so one is a second message -- which the
-      // server takes from us because the AI we just added is ours.
+      const tint = colour()
+      await room.io.addBot(name, ai(), seat, team(), tint)
+      // `ADDBOT` carries no bonus, so one is a second message.
       if (wanted > 0)
-        await room.io.updateBot(name, seat, team(), wanted, colour())
+        await sendBonus(
+          room,
+          {
+            kind: 'bot',
+            name,
+            mine: true,
+            team: seat,
+            handicap: 0,
+            colour: tint,
+          },
+          wanted,
+          team(),
+        )
     }
   }
 
@@ -406,9 +461,6 @@ function AddAi(props: {
                 </For>
               </select>
             </label>
-            <Show when={chosen()?.desc}>
-              <p class='muted'>{chosen()?.desc}</p>
-            </Show>
             <label>
               Team
               <select
@@ -420,36 +472,40 @@ function AddAi(props: {
                 </For>
               </select>
             </label>
-            <label>
-              How many
-              <input
-                type='number'
-                min={1}
-                max={16}
-                value={count()}
-                onInput={(e) => {
-                  const many = Number(e.currentTarget.value)
-                  if (Number.isFinite(many))
-                    setCount(Math.max(1, Math.min(16, Math.round(many))))
-                }}
-              />
-            </label>
-            <label>
-              Bonus
-              <input
-                type='range'
-                min={0}
-                max={100}
-                step={5}
-                value={bonus()}
-                onInput={(e) => setBonus(Number(e.currentTarget.value))}
-              />
-              <output>{bonus()}%</output>
-            </label>
+            <Show when={!gameMode()}>
+              <label>
+                How many
+                <input
+                  type='number'
+                  min={1}
+                  max={16}
+                  value={count()}
+                  onInput={(e) => {
+                    const many = Number(e.currentTarget.value)
+                    if (Number.isFinite(many))
+                      setCount(Math.max(1, Math.min(16, Math.round(many))))
+                  }}
+                />
+              </label>
+              <label>
+                Bonus
+                <input
+                  type='range'
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={bonus()}
+                  onInput={(e) => setBonus(Number(e.currentTarget.value))}
+                />
+                <output>{bonus()}%</output>
+              </label>
+            </Show>
             <p class='muted'>
-              A resource bonus, the same one a host gives with{' '}
-              <code>!force … bonus</code>. Every AI added here runs on this
-              machine when the game starts.
+              <Show when={!gameMode()}>
+                A resource bonus, the same one a host gives with{' '}
+                <code>!force … bonus</code>.{' '}
+              </Show>
+              Every AI added here runs on this machine when the game starts.
             </p>
             <div class='sheet-actions'>
               <button type='button' onClick={() => setOpen(false)}>

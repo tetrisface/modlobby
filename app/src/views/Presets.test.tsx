@@ -107,6 +107,7 @@ function enterRoom() {
   next.myBattle = {
     boss: null,
     autoBalance: 'off',
+    preset: null,
     id: 7,
     gameHash: '',
     scriptTags: {},

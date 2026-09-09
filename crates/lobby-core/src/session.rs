@@ -1276,15 +1276,18 @@ impl Session {
                 // whether it arranges its own teams.
                 let boss = spads::boss(&json);
                 let auto_balance = spads::auto_balance(&json);
+                let preset = spads::preset(&json);
                 let Some(my) = self.state.my_battle.as_mut() else {
                     return vec![];
                 };
-                let settled = my.boss == boss && my.auto_balance == auto_balance;
+                let settled =
+                    my.boss == boss && my.auto_balance == auto_balance && my.preset == preset;
                 if settled {
                     return vec![];
                 }
                 my.boss = boss;
                 my.auto_balance = auto_balance;
+                my.preset = preset;
                 vec![Effect::BossChanged]
             }
         }

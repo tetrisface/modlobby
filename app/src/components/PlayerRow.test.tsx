@@ -312,6 +312,29 @@ describe('a player row', () => {
     unmount()
   })
 
+  test('a game-mode AI is one per room, so it offers no copy', () => {
+    const clone = () => Promise.resolve()
+    const row = (ai: string) => ({
+      name: `${ai}(1)`,
+      owner: 'host',
+      status: battle({ player: true }),
+      teamColour: 0,
+      ai,
+      options: {},
+    })
+    const { container } = render(() => (
+      <>
+        <BotRow bot={row('ScavengersAI')} onClone={clone} />
+        <BotRow bot={row('BARb')} onClone={clone} />
+      </>
+    ))
+
+    const hasClone = [...container.querySelectorAll('.player.bot-row')].map(
+      (one) => one.querySelector('.bot-clone') !== null,
+    )
+    expect(hasClone).toEqual([false, true])
+  })
+
   test('an unknown country falls back rather than guessing', () => {
     const { container } = render(() => (
       <PlayerRow user={user({ country: '??' })} skill={null} me={false} />

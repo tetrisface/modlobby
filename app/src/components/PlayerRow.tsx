@@ -91,14 +91,14 @@ export function BotRow(props: {
     onMove: (ally) => void props.moves?.to(ally),
     onMenu: menu,
   })
-  const showSideIcon = () => {
-    const ai = props.bot.ai.toLowerCase()
-    return !(
-      ai.includes('raptor') ||
-      ai.includes('scav') ||
-      ai.includes('barb')
-    )
-  }
+  /**
+   * Scavengers and Raptors are game modes rather than opponents: the room
+   * holds one, so there is no second to copy. Known by name, since a row is
+   * not told what the game's `luaai.lua` declares.
+   */
+  const gameMode = () => /raptor|scav/i.test(props.bot.ai)
+  const showSideIcon = () =>
+    !gameMode() && !props.bot.ai.toLowerCase().includes('barb')
   const botRowClass = () => ({
     player: true,
     'bot-row': true,
@@ -131,7 +131,7 @@ export function BotRow(props: {
           +{props.bot.status.handicap}%
         </span>
       </Show>
-      <Show when={props.onClone}>
+      <Show when={props.onClone && !gameMode()}>
         <button
           class='row-act bot-clone'
           title={`Another ${props.bot.ai} on this team`}

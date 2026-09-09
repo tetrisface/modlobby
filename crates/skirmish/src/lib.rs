@@ -652,6 +652,7 @@ impl Room {
             boss: Some(self.player.clone()),
             // Nothing arranges these teams but you.
             auto_balance: Some("off".into()),
+            preset: None,
             id: ROOM_ID,
             game_hash: String::new(),
             script_tags: self.script_tags.clone(),

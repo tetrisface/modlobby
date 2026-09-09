@@ -80,7 +80,12 @@ export function showBotMenu(
 }
 
 export function PlayerMenu() {
-  const close = () => setOpenFor(null)
+  /** Whether the menu shows the bonus panel in place of its entries. */
+  const [picking, setPicking] = createSignal(false)
+  const close = () => {
+    setOpenFor(null)
+    setPicking(false)
+  }
 
   // Any click elsewhere, or Escape, dismisses it — the usual bargain for
   // something that floats above everything.
@@ -139,7 +144,8 @@ export function PlayerMenu() {
         const bossing = () =>
           lobby.myBattle?.boss !== null && lobby.myBattle?.boss === lobby.me
 
-        type Entry = [string, () => Promise<void> | void]
+        /** `stay`: the entry opens something in the menu, so it stays. */
+        type Entry = [string, () => Promise<void> | void, 'stay'?]
 
         /**
          * Where this row can be sent, as words.
@@ -152,11 +158,14 @@ export function PlayerMenu() {
           const rows: Entry[] = moves.teams
             .filter((ally) => ally !== moves.on)
             .map((ally) => [`Move to team ${ally + 1}`, () => moves.to(ally)])
-          const bonus = moves.bonus
-          if (bonus)
-            for (const percent of [0, 25, 50, 75, 100])
-              if (percent !== moves.bonusNow)
-                rows.push([`Bonus ${percent}%`, () => bonus(percent)])
+          if (moves.bonus)
+            rows.push([
+              'Bonus',
+              () => {
+                setPicking(true)
+              },
+              'stay',
+            ])
           return rows
         }
 
@@ -168,7 +177,7 @@ export function PlayerMenu() {
               ['Remove', ai.remove] as Entry,
             ]
           }
-          const entries: Array<[string, () => Promise<void> | void]> = [
+          const entries: Entry[] = [
             [
               'Message',
               () => {
@@ -258,23 +267,93 @@ export function PlayerMenu() {
                 </div>
               )}
             </Show>
-            <For each={items()}>
-              {([label, run]) => (
-                <button
-                  onClick={() =>
-                    void act(
-                      label.toLowerCase(),
-                      async () => void (await run()),
-                    )
+            <Show
+              when={!picking()}
+              fallback={
+                <BonusPanel
+                  now={target().moves?.bonusNow ?? 0}
+                  apply={(percent) =>
+                    void act('bonus', async () => {
+                      await target().moves?.bonus?.(percent)
+                    })
                   }
-                >
-                  {label}
-                </button>
-              )}
-            </For>
+                  cancel={close}
+                />
+              }
+            >
+              <For each={items()}>
+                {([label, run, stay]) => (
+                  <button
+                    onClick={() =>
+                      stay
+                        ? void run()
+                        : void act(
+                            label.toLowerCase(),
+                            async () => void (await run()),
+                          )
+                    }
+                  >
+                    {label}
+                  </button>
+                )}
+              </For>
+            </Show>
           </div>
         )
       }}
     </Show>
+  )
+}
+
+/**
+ * A resource bonus, to the percent, in the menu's place: 100% is double the
+ * normal income, and SPADS takes nothing higher.
+ */
+function BonusPanel(props: {
+  now: number
+  apply: (percent: number) => void
+  cancel: () => void
+}) {
+  const [value, setValue] = createSignal(props.now)
+  const take = (text: string) => {
+    const n = Number(text)
+    if (Number.isFinite(n)) setValue(Math.max(0, Math.min(100, Math.round(n))))
+  }
+  return (
+    <form
+      class='bonus-pick'
+      onSubmit={(event) => {
+        event.preventDefault()
+        props.apply(value())
+      }}
+    >
+      <label>
+        Bonus
+        <input
+          type='range'
+          min={0}
+          max={100}
+          step={1}
+          value={value()}
+          onInput={(e) => take(e.currentTarget.value)}
+        />
+        <input
+          type='number'
+          min={0}
+          max={100}
+          value={value()}
+          onInput={(e) => take(e.currentTarget.value)}
+        />
+        %
+      </label>
+      <div class='sheet-actions'>
+        <button type='button' onClick={props.cancel}>
+          Cancel
+        </button>
+        <button type='submit' class='primary'>
+          Set
+        </button>
+      </div>
+    </form>
   )
 }

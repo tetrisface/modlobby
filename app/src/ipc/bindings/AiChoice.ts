@@ -9,6 +9,7 @@ export type AiChoice = {
  */
 name: string, 
 /**
- * The game's one-line description; empty for engine AIs.
+ * Implemented by the game in Lua rather than shipped by the engine. Such
+ * an AI is a game mode -- one per room, and nothing to give a bonus to.
  */
-desc: string, };
+lua: boolean, };

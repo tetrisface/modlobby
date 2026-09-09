@@ -6,7 +6,8 @@
 //! that returns a table of `{ name, desc }` rows. Chobby reads it through the
 //! engine's VFS; this parses the file itself, over bytes
 //! `content::Library::game_file` reads out of the installed game, so the list
-//! matches the game version the room is running.
+//! matches the game version the room is running. Only the names are kept: the
+//! description is the game's to show, not ours.
 
 use full_moon::ast::{Field, LastStmt};
 
@@ -21,11 +22,10 @@ pub enum Error {
 }
 
 /// One AI the game implements. `name` is what `ADDBOT` and the start script
-/// call it; `desc` is the game's one-line description, often empty.
+/// call it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LuaAi {
     pub name: String,
-    pub desc: String,
 }
 
 /// The AIs `luaai.lua` declares, in the order the file lists them.
@@ -50,21 +50,16 @@ fn read_ai(field: &Field) -> Option<LuaAi> {
     };
     let entry = table(expression)?;
 
-    let mut ai = LuaAi {
-        name: String::new(),
-        desc: String::new(),
-    };
-    for field in entry.fields() {
+    entry.fields().iter().find_map(|field| {
         let Field::NameKey { key, value, .. } = field else {
-            continue;
+            return None;
         };
-        match identifier(key.token().token_type()) {
-            Some("name") => ai.name = string(value).unwrap_or_default(),
-            Some("desc") => ai.desc = string(value).unwrap_or_default(),
-            _ => {}
+        if identifier(key.token().token_type()) != Some("name") {
+            return None;
         }
-    }
-    (!ai.name.is_empty()).then_some(ai)
+        let name = string(value)?;
+        (!name.is_empty()).then_some(LuaAi { name })
+    })
 }
 
 #[cfg(test)]
@@ -83,12 +78,10 @@ mod tests {
 
         assert!(names(&ais).contains(&"ScavengersAI"));
         assert!(names(&ais).contains(&"RaptorsAI"));
-        let raptors = ais.iter().find(|ai| ai.name == "RaptorsAI").unwrap();
-        assert_eq!(raptors.desc, "Raptor Defence");
     }
 
     #[test]
-    fn rows_keep_the_order_of_the_file_and_the_description_is_optional() {
+    fn rows_keep_the_order_of_the_file_and_only_the_name_matters() {
         let ais = parse(
             r#"
             -- a comment first
@@ -96,15 +89,13 @@ mod tests {
                 { name = "First", desc = "one" },
                 { name = "Second" },
                 { desc = "no name, so not an AI" },
-                { name = "Third", desc = "th" .. "ree" },
+                { name = "Th" .. "ird" },
             }
             "#,
         )
         .unwrap();
 
         assert_eq!(names(&ais), ["First", "Second", "Third"]);
-        assert_eq!(ais[1].desc, "");
-        assert_eq!(ais[2].desc, "three");
     }
 
     #[test]

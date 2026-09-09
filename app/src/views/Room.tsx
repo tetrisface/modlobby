@@ -95,19 +95,41 @@ export function Room() {
   })
 
   /**
-   * SPADS takes `!rename` from a player — outright from the boss, as a vote
-   * from anyone else — and refuses it from a spectator (`[rename]` in BAR's
-   * `BarManagerCmd.conf`). Not drawing the pen beats a silent refusal.
+   * What SPADS lets us ask of the room: a boss says, a player proposes, and a
+   * spectator is refused (`[start]` and `[rename]` in BAR's `commands.conf`
+   * and `BarManagerCmd.conf` both give a spectator no vote). Nothing where
+   * there is no host to ask.
    */
-  const canRename = createMemo(() => {
-    // A room has a name because it is listed for other people to read. Where
-    // it is not listed there is nobody to name it for, so the pen stays away
-    // rather than offering to change a label only you will ever see.
-    if (!room.caps.spads) return false
+  const standing = createMemo((): 'boss' | 'player' | null => {
+    if (!room.caps.spads) return null
     const me = room.me()
-    if (me === null) return false
-    if (room.my()?.boss === me) return true
-    return room.users()[me]?.battleStatus?.player ?? false
+    if (me === null) return null
+    if (room.my()?.boss === me) return 'boss'
+    const seated = room.users()[me]?.battleStatus?.player ?? false
+    return seated ? 'player' : null
+  })
+
+  // A room has a name because it is listed for other people to read. Where
+  // it is not listed there is nobody to name it for, so the pen stays away
+  // rather than offering to change a label only you will ever see. Not
+  // drawing it beats a silent refusal.
+  const canRename = () => standing() !== null
+
+  /**
+   * The start button, by standing. The boss says `!start`; a player calls
+   * the vote by name, as Chobby does (`Interface:StartBattle`), so the room
+   * reads what was asked rather than an auto-callvote's rewording of it.
+   */
+  const startAction = createMemo(() => {
+    if (!room.caps.plays) return null
+    switch (standing()) {
+      case 'boss':
+        return { label: 'Start the game', command: '!start' }
+      case 'player':
+        return { label: 'Vote to start', command: '!cv start' }
+      default:
+        return null
+    }
   })
 
   /** Every team drawn, which is where a dragged row may be dropped. */
@@ -135,6 +157,33 @@ export function Room() {
           }
         : {}),
     }
+  }
+
+  /**
+   * Another of the same AI on the same team, bonus included. `ADDBOT` carries
+   * no bonus, so that is a second message, by the road a bonus always takes.
+   */
+  async function clone(bot: BotView): Promise<void> {
+    const b = battle()
+    if (!b) return
+    const name = unusedBotName(b, bot.ai)
+    const team = freeTeam(b, room.users(), room.me())
+    const ally = bot.status.allyTeam
+    await room.io.addBot(name, bot.ai, team, ally, bot.teamColour)
+    if (bot.status.handicap > 0)
+      await setBonus(
+        room,
+        {
+          kind: 'bot',
+          name,
+          mine: true,
+          team,
+          handicap: 0,
+          colour: bot.teamColour,
+        },
+        bot.status.handicap,
+        ally,
+      )
   }
 
   /** A team's header offers a seat on it unless we already hold one there. */
@@ -417,6 +466,21 @@ export function Room() {
                 <Match when={room.running()}>
                   <span class='muted'>Game in progress</span>
                 </Match>
+                {/* Somebody else starts this one, but we may ask. Greyed
+                    while the game itself is not here to play: a start that
+                    goes through leaves this machine watching a download. */}
+                <Match when={startAction()}>
+                  {(action) => (
+                    <button
+                      class='primary'
+                      disabled={missingParts(room).length > 0}
+                      title={action().command}
+                      onClick={() => void send(action().command)}
+                    >
+                      {action().label}
+                    </button>
+                  )}
+                </Match>
                 {/* Nobody else is going to start this one. */}
                 <Match when={room.caps.startsGame}>
                   <button
@@ -554,24 +618,12 @@ export function Room() {
                               onClone={
                                 bot.owner === room.me()
                                   ? () =>
-                                      room.io
-                                        .addBot(
-                                          unusedBotName(room.battle(), bot.ai),
-                                          bot.ai,
-                                          freeTeam(
-                                            b(),
-                                            room.users(),
-                                            room.me(),
-                                          ),
-                                          bot.status.allyTeam,
-                                          bot.teamColour,
-                                        )
-                                        .catch((error) =>
-                                          pushNotice(
-                                            'warning',
-                                            describeError(error),
-                                          ),
-                                        )
+                                      clone(bot).catch((error) =>
+                                        pushNotice(
+                                          'warning',
+                                          describeError(error),
+                                        ),
+                                      )
                                   : undefined
                               }
                               moves={movesFor(

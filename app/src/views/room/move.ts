@@ -98,8 +98,7 @@ export async function moveTo(
   }
   if (target.kind === 'bot' && target.mine) {
     // The message replaces the whole status, so everything not being changed
-    // has to be sent again -- the bonus included, which is the bit Chobby
-    // loses and patches up with a second command.
+    // has to be sent again -- the bonus included.
     await room.io.updateBot(
       target.name,
       target.team,
@@ -107,6 +106,11 @@ export async function moveTo(
       target.handicap,
       target.colour,
     )
+    // A host keeps its own book of bonuses; the status we just sent does not
+    // reliably reach it, so the bonus is said again the way Chobby does after
+    // a move (`api_user_handler.lua:1585`).
+    if (room.caps.spads && target.handicap > 0)
+      await room.io.sayBattle(forceBonus(target, target.handicap))
     return
   }
   if (balancing(room)) {
@@ -125,6 +129,12 @@ export async function moveTo(
  *
  * Not for your own seat: a bonus is something a host gives, and asking for one
  * for yourself is a request like any other -- by name, through the host.
+ *
+ * An AI of ours is asked of the host too, where there is one. The host writes
+ * the start script from its own book of bonuses and answers in chat, where
+ * the room can see what was set; Chobby does the same for its own AIs
+ * (`api_user_handler.lua:1626`). Only a room with nobody to ask takes the
+ * bonus straight into the AI's status.
  */
 export async function setBonus(
   room: RoomModel,
@@ -133,7 +143,7 @@ export async function setBonus(
   allyTeam: number,
 ): Promise<void> {
   const wanted = Math.max(0, Math.min(100, Math.round(percent)))
-  if (target.kind === 'bot' && target.mine) {
+  if (target.kind === 'bot' && target.mine && !room.caps.spads) {
     await room.io.updateBot(
       target.name,
       target.team,

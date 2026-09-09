@@ -726,8 +726,9 @@ pub async fn game_modoptions(
 pub struct AiChoice {
     /// What `ADDBOT` names it: an engine AI's directory, or a Lua AI's `name`.
     pub name: String,
-    /// The game's one-line description; empty for engine AIs.
-    pub desc: String,
+    /// Implemented by the game in Lua rather than shipped by the engine. Such
+    /// an AI is a game mode -- one per room, and nothing to give a bonus to.
+    pub lua: bool,
 }
 
 /// The AIs a room running `game` can be given: what the installed engines
@@ -750,10 +751,7 @@ pub async fn game_ais(app: State<'_, App>, game: String) -> Result<Vec<AiChoice>
         let mut choices: Vec<AiChoice> = library
             .installed_ais()
             .into_iter()
-            .map(|name| AiChoice {
-                name,
-                desc: String::new(),
-            })
+            .map(|name| AiChoice { name, lua: false })
             .collect();
 
         let Some(bytes) = cache.game_file(&library, &game, "luaai.lua") else {
@@ -770,13 +768,29 @@ pub async fn game_ais(app: State<'_, App>, game: String) -> Result<Vec<AiChoice>
             if choices.iter().all(|choice| choice.name != ai.name) {
                 choices.push(AiChoice {
                     name: ai.name,
-                    desc: ai.desc,
+                    lua: true,
                 });
             }
         }
+        choices.sort_by_key(|choice| ai_rank(&choice.name));
         choices
     })
     .await
+}
+
+/// The order AIs are offered in: BARb, Raptors, Scavengers, then the rest as
+/// found. The stable sort keeps that rest in its own order.
+fn ai_rank(name: &str) -> u8 {
+    let name = name.to_ascii_lowercase();
+    if name.contains("barb") {
+        0
+    } else if name.contains("raptor") {
+        1
+    } else if name.contains("scav") {
+        2
+    } else {
+        3
+    }
 }
 
 /// Runs a read of the installed game off the main thread. Opening a rapid
@@ -1534,4 +1548,19 @@ pub struct SkirmishOptions {
     pub maps: Vec<String>,
     pub engines: Vec<String>,
     pub ais: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ai_rank;
+
+    #[test]
+    fn bar_s_own_ais_come_first_and_the_rest_keep_their_order() {
+        let mut names = vec!["NullAI", "ScavengersAI", "CircuitAI", "RaptorsAI", "BARb"];
+        names.sort_by_key(|name| ai_rank(name));
+        assert_eq!(
+            names,
+            ["BARb", "RaptorsAI", "ScavengersAI", "NullAI", "CircuitAI"]
+        );
+    }
 }

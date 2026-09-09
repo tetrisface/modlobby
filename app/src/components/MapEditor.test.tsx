@@ -90,6 +90,7 @@ function room(me: string, player: boolean) {
   setLobby('myBattle', {
     boss: null,
     autoBalance: 'off',
+    preset: null,
     id: 7,
     gameHash: '',
     scriptTags: { [OVERRIDE]: 'blob' },

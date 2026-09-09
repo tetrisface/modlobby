@@ -12,7 +12,12 @@ boss: string | null,
  * room has not said, which is not the same as `off`: a host without BAR's
  * BarManager plugin never reports it.
  */
-autoBalance: string | null, id: number, gameHash: string, 
+autoBalance: string | null, 
+/**
+ * The SPADS preset the room runs under (`team`, `ffa`, `coop`, `duel`,
+ * `tourney`, `custom`), `null` where the room has not said.
+ */
+preset: string | null, id: number, gameHash: string, 
 /**
  * Lowercase script-tag keys (`game/modoptions/tweakdefs`, `game/hosttype`, …).
  */

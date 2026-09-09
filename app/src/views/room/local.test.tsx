@@ -91,7 +91,7 @@ beforeEach(() => {
       case 'game_modoptions':
         return OPTIONS
       case 'game_ais':
-        return [{ name: 'BARb', desc: '' }]
+        return [{ name: 'BARb', lua: false }]
       case 'skirmish_options':
         return { games: [], maps: [], engines: [], ais: [] }
       case 'game_unit_names':

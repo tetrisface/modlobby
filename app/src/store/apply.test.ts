@@ -46,6 +46,7 @@ const room: SkirmishView = {
   my: {
     boss: 'me',
     autoBalance: 'off',
+    preset: null,
     id: 0,
     gameHash: '',
     scriptTags: { 'game/modoptions/ranked_game': '0' },
@@ -183,6 +184,7 @@ describe('apply', () => {
       data: {
         boss: null,
         autoBalance: 'off',
+        preset: null,
         id,
         gameHash: 'h',
         scriptTags: {},
