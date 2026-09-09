@@ -46,6 +46,11 @@ impl Controller {
         self.drive(Input::Hotkey);
     }
 
+    /// The page has painted its overlay dress; the veiled window can be seen.
+    pub fn painted(&self) {
+        self.drive(Input::Painted);
+    }
+
     pub fn settings_changed(&self, settings: OverlaySettings) {
         self.drive(Input::Settings(settings));
     }
@@ -102,6 +107,8 @@ impl Controller {
             Effect::EnterOverlay => self.surface.set_overlay(true),
             Effect::LeaveOverlay => self.surface.set_overlay(false),
             Effect::Show => self.surface.show(),
+            Effect::ShowVeiled => self.surface.show_veiled(),
+            Effect::Reveal => self.surface.reveal(),
             Effect::Hide => self.surface.hide(),
             Effect::FocusSelf => self.surface.focus(),
             Effect::FocusEngine(pid) => self.foreground.focus(pid),
@@ -154,6 +161,10 @@ mod tests {
         fn show(&self) {
             self.shown.store(true, Ordering::SeqCst);
         }
+        fn show_veiled(&self) {
+            self.shown.store(true, Ordering::SeqCst);
+        }
+        fn reveal(&self) {}
         fn hide(&self) {
             self.shown.store(false, Ordering::SeqCst);
         }

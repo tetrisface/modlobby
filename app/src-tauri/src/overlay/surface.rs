@@ -8,7 +8,9 @@
 //! the monitor — deliberately not `set_fullscreen(true)`, which asks the OS
 //! for its own fullscreen treatment and then fights the game for it.
 
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use tauri::{Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewWindow};
 
@@ -28,13 +30,22 @@ pub struct TauriSurface {
     /// mid-overlay cannot leave a decorationless always-on-top window behind
     /// on the next start.
     restore: Mutex<Option<Restore>>,
+    /// Which veiled show is current. The fallback reveal for an earlier one
+    /// must not lift a veil that a later show has just drawn.
+    veiled: Arc<AtomicU64>,
 }
+
+/// How long a veiled window waits for the page before showing itself
+/// anyway. Two frames is what the page needs; a page that has hung -- the
+/// case the overlay exists for -- never answers, and must not stay invisible.
+const VEIL_PATIENCE: Duration = Duration::from_millis(250);
 
 impl TauriSurface {
     pub fn new(window: WebviewWindow) -> Self {
         Self {
             window,
             restore: Mutex::new(None),
+            veiled: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -136,6 +147,37 @@ impl TauriSurface {
     }
 }
 
+/// A window's alpha, through the layered-window style.
+///
+/// The toolkit has no opacity call, and it rewrites `GWL_EXSTYLE` from its
+/// own cache whenever a flag changes, so the layered bit is put on after
+/// `show()` and taken off again once the window is opaque -- the toolkit
+/// never learns it was there, and it never has a chance to clear it early.
+#[cfg(windows)]
+fn set_alpha(window: &WebviewWindow, alpha: u8) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GWL_EXSTYLE, GetWindowLongPtrW, LWA_ALPHA, SetLayeredWindowAttributes, SetWindowLongPtrW,
+        WS_EX_LAYERED,
+    };
+    let Ok(hwnd) = window.hwnd() else {
+        return;
+    };
+    let hwnd = hwnd.0 as _;
+    let layered = WS_EX_LAYERED as isize;
+    // SAFETY: a live handle to our own window; plain style bits.
+    unsafe {
+        let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex | layered);
+        SetLayeredWindowAttributes(hwnd, 0, alpha, LWA_ALPHA);
+        if alpha == u8::MAX {
+            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex & !layered);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn set_alpha(_window: &WebviewWindow, _alpha: u8) {}
+
 impl WindowSurface for TauriSurface {
     fn set_overlay(&self, over: bool) {
         if over {
@@ -153,6 +195,29 @@ impl WindowSurface for TauriSurface {
     fn show(&self) {
         let _ = self.window.show();
         let _ = self.window.unminimize();
+    }
+
+    fn show_veiled(&self) {
+        let generation = self.veiled.fetch_add(1, Ordering::SeqCst) + 1;
+        let _ = self.window.show();
+        let _ = self.window.unminimize();
+        set_alpha(&self.window, 0);
+        // The page answers with `overlay_painted` after two frames.
+        let _ = self.window.emit("overlay-veiled", ());
+
+        let window = self.window.clone();
+        let veiled = Arc::clone(&self.veiled);
+        std::thread::spawn(move || {
+            std::thread::sleep(VEIL_PATIENCE);
+            if veiled.load(Ordering::SeqCst) == generation {
+                tracing::info!("overlay: page did not report painting; revealing anyway");
+                set_alpha(&window, u8::MAX);
+            }
+        });
+    }
+
+    fn reveal(&self) {
+        set_alpha(&self.window, u8::MAX);
     }
 
     fn hide(&self) {

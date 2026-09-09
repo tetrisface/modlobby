@@ -320,6 +320,7 @@ pub fn run() {
             commands::activity,
             commands::overlay_active,
             commands::overlay_toggle,
+            commands::overlay_painted,
             commands::stop_game,
             commands::quit_all,
             commands::shutdown,

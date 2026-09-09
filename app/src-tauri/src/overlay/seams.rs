@@ -10,6 +10,11 @@ pub trait WindowSurface: Send + Sync {
     /// or back to whatever it was before.
     fn set_overlay(&self, over: bool);
     fn show(&self);
+    /// Shown and focusable, but transparent until [`Self::reveal`]. A page
+    /// that never reports back is not left invisible: the surface reveals on
+    /// its own after a short wait.
+    fn show_veiled(&self);
+    fn reveal(&self);
     fn hide(&self);
     fn focus(&self);
 }

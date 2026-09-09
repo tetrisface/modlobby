@@ -41,6 +41,11 @@ pub enum Input {
     /// The registered accelerator fired.
     Hotkey,
     Settings(OverlaySettings),
+    /// The page has drawn itself in its overlay dress, so the window can be
+    /// seen. Until then it is shown but see-through: the first frames of a
+    /// window WebView2 was not rendering while hidden are whatever it had
+    /// last, at the old size, and that is the "pop" between game and lobby.
+    Painted,
     /// The process is on its way out. The window gets its ordinary shape
     /// back before anything remembers it, and is not shown for it.
     Shutdown,
@@ -55,6 +60,11 @@ pub enum Effect {
     /// Decorations and the previous geometry back.
     LeaveOverlay,
     Show,
+    /// On screen, focusable, but fully transparent until [`Effect::Reveal`]
+    /// or the surface's own patience runs out.
+    ShowVeiled,
+    /// Make the veiled window opaque.
+    Reveal,
     Hide,
     /// Put the game's window in front, by process id.
     FocusEngine(u32),
@@ -141,7 +151,7 @@ impl Overlay {
                         out.push(Effect::EnterOverlay);
                     }
                     self.visible = true;
-                    out.push(Effect::Show);
+                    out.push(Effect::ShowVeiled);
                     out.push(Effect::FocusSelf);
                 } else {
                     self.visible = false;
@@ -154,6 +164,14 @@ impl Overlay {
                     {
                         out.push(Effect::FocusEngine(pid));
                     }
+                }
+                return out;
+            }
+            Input::Painted => {
+                // A report from a page that is no longer over a game -- the
+                // hotkey was pressed twice inside two frames -- is stale.
+                if self.is_over() {
+                    out.push(Effect::Reveal);
                 }
                 return out;
             }
@@ -247,9 +265,10 @@ mod tests {
 
         assert_eq!(
             step(&mut overlay, Input::Hotkey),
-            vec![Effect::EnterOverlay, Effect::Show, Effect::FocusSelf]
+            vec![Effect::EnterOverlay, Effect::ShowVeiled, Effect::FocusSelf]
         );
         assert!(overlay.is_over());
+        assert_eq!(step(&mut overlay, Input::Painted), vec![Effect::Reveal]);
 
         assert_eq!(
             step(&mut overlay, Input::Hotkey),
@@ -260,9 +279,23 @@ mod tests {
         // Hidden, not left: the shape is still on, so it is only shown again.
         assert_eq!(
             step(&mut overlay, Input::Hotkey),
-            vec![Effect::Show, Effect::FocusSelf]
+            vec![Effect::ShowVeiled, Effect::FocusSelf]
         );
         assert!(overlay.is_over());
+    }
+
+    #[test]
+    fn a_paint_report_reveals_only_a_window_still_over_the_game() {
+        let mut overlay = armed();
+        // Never raised: nothing to reveal.
+        assert_eq!(step(&mut overlay, Input::Painted), vec![]);
+
+        step(&mut overlay, Input::Hotkey);
+        step(&mut overlay, Input::Hotkey);
+        // Raised and hidden again before the page got two frames in: the
+        // report is about a window nobody can see, and revealing it would
+        // undo nothing but must not be mistaken for a show either.
+        assert_eq!(step(&mut overlay, Input::Painted), vec![]);
     }
 
     #[test]

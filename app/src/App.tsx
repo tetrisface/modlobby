@@ -184,6 +184,18 @@ function Layout(props: ParentProps) {
       setOver(event.payload),
     )
     onCleanup(() => void pending.then((unlisten) => unlisten()))
+    /**
+     * Raised over a game the window is shown transparent, so that its first
+     * frames -- whatever the webview last had, at the old size -- are never
+     * seen. Two animation frames after being told is when the overlay dress
+     * has actually been painted, and the window is told it can be seen.
+     */
+    const veiled = listen('overlay-veiled', () =>
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => void api.overlayPainted().catch(() => {})),
+      ),
+    )
+    onCleanup(() => void veiled.then((unlisten) => unlisten()))
 
     const keys = (event: KeyboardEvent) => {
       if (over() && escapeLeavesOverlay(event)) void api.overlayToggle()

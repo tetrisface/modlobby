@@ -852,6 +852,13 @@ pub fn shutdown(handle: tauri::AppHandle) {
     handle.exit(0);
 }
 
+/// The page has drawn its overlay dress: the window shown see-through for
+/// it can become visible.
+#[tauri::command]
+pub fn overlay_painted(overlay: State<'_, std::sync::Arc<crate::overlay::Controller>>) {
+    overlay.painted();
+}
+
 /// The same thing the hotkey does, for people who would rather click.
 #[tauri::command]
 pub fn overlay_toggle(overlay: State<'_, std::sync::Arc<crate::overlay::Controller>>) {

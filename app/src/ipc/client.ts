@@ -124,6 +124,7 @@ export const api = {
   activity: () => invoke<void>('activity'),
   overlayActive: () => invoke<boolean>('overlay_active'),
   overlayToggle: () => invoke<void>('overlay_toggle'),
+  overlayPainted: () => invoke<void>('overlay_painted'),
   stopGame: () => invoke<boolean>('stop_game'),
   quitAll: () => invoke<void>('quit_all'),
   shutdown: () => invoke<void>('shutdown'),
