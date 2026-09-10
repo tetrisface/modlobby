@@ -70,6 +70,8 @@ impl From<tweaks::Error> for ApiError {
             tweaks::Error::Utf8 => "utf8",
             tweaks::Error::Lua(_) => "lua",
             tweaks::Error::Underscore(_) => "underscore",
+            tweaks::Error::Json(_) => "json",
+            tweaks::Error::Boxes(_) => "boxes",
         };
         Self::new(code, err.to_string())
     }
@@ -1237,18 +1239,19 @@ async fn lua_work<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) 
     .map_err(|err| ApiError::new("lua", err.to_string()))?
 }
 
-/// Decodes a stored slot value for display: Lua, formatted Lua, name, summary.
+/// Decodes a stored slot value for display: the text, formatted, name, summary.
 #[tauri::command]
 pub async fn tweak_decode(app: State<'_, App>, blob: String, kind: Kind) -> Result<TweakView> {
     let config = stylua(&app);
     Ok(lua_work(move || tweaks::decode(&blob, kind, &config)).await??)
 }
 
-/// Formats Lua with the user's `stylua.toml`, for the editor's Format action.
+/// Formats a payload for the editor's Format action: Lua with the user's
+/// `stylua.toml`, the start-box override as JSON.
 #[tauri::command]
 pub async fn tweak_format(app: State<'_, App>, lua: String, kind: Kind) -> Result<String> {
     let config = stylua(&app);
-    Ok(lua_work(move || tweaks::lua::format(&lua, kind, &config)).await??)
+    Ok(lua_work(move || tweaks::format(&lua, kind, &config)).await??)
 }
 
 /// Minifies, encodes and measures — the gauge the editor shows. Sends nothing.
@@ -1405,7 +1408,7 @@ pub async fn tweak_check(lua: String, kind: Kind) -> Result<tweaks::Check> {
     lua_work(move || tweaks::check(&lua, kind)).await
 }
 
-/// Two pieces of Lua, formatted alike and diffed -- what the editor compares.
+/// Two payloads of one kind, formatted alike and diffed -- what the editor compares.
 #[tauri::command]
 pub async fn tweak_diff_text(
     app: State<'_, App>,
@@ -1416,7 +1419,7 @@ pub async fn tweak_diff_text(
     let config = stylua(&app);
     lua_work(move || {
         let side =
-            |lua: &str| tweaks::lua::format(lua, kind, &config).unwrap_or_else(|_| lua.to_owned());
+            |text: &str| tweaks::format(text, kind, &config).unwrap_or_else(|_| text.to_owned());
         tweaks::diff::diff(&side(&left), &side(&right))
     })
     .await

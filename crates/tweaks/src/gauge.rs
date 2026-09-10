@@ -59,6 +59,13 @@ mod tests {
         assert!(!Gauge::measure("", "", "", &over).fits);
     }
 
+    /// The override rides `!bset mapmetadata…`, which teiserver keeps 1025 of.
+    #[test]
+    fn the_override_gets_the_middle_allowance() {
+        let gauge = Gauge::measure("", "", "", &command::bset(Slot::Boxes, ""));
+        assert_eq!(gauge.cap, 1025);
+    }
+
     /// A vote is capped at 257 characters: the allowance is only for `!bSet`.
     #[test]
     fn a_callvote_gets_the_short_allowance() {

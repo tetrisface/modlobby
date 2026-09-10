@@ -6,9 +6,13 @@
 //! `tweakdefs` is Lua **code** run with `UnitDefs` in scope; `tweakunits` is a
 //! table constructor evaluated as `return <text>` and merged into existing
 //! units. They differ in decoding too — see [`base64url`].
+//!
+//! A third document rides the same editor: the start-box override, which is
+//! JSON with zlib inside the base64url — see [`boxes`].
 
 pub mod assist;
 pub mod base64url;
+pub mod boxes;
 pub mod check;
 pub mod command;
 pub mod diff;
@@ -28,7 +32,8 @@ pub use diff::{ChangeOp, DiffView, Hunk};
 pub use gauge::{CAP, Gauge};
 pub use lua::Config;
 
-/// Which of the two tweak shapes a payload is.
+/// Which shape a payload is: one of the two tweak kinds, or the start-box
+/// override.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -37,6 +42,8 @@ pub enum Kind {
     Defs,
     /// `tweakunits*`: a table constructor, decoded after `_` becomes `=`.
     Units,
+    /// `mapmetadata_startbox_override`: JSON, zlib-compressed inside the base64url.
+    Boxes,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -50,6 +57,21 @@ pub enum Error {
     /// Only tweakunits: the payload would decode to something else in game.
     #[error("{0}")]
     Underscore(String),
+    #[error("JSON: {0}")]
+    Json(String),
+    /// Only the override: readable, but not something the game would use.
+    #[error("start boxes: {0}")]
+    Boxes(String),
+}
+
+impl From<startbox::Error> for Error {
+    fn from(err: startbox::Error) -> Self {
+        match err {
+            startbox::Error::Base64(why) => Error::Base64(why),
+            startbox::Error::Json(why) => Error::Json(why),
+            other => Error::Boxes(other.to_string()),
+        }
+    }
 }
 
 /// A slot's current value, ready to show.
@@ -57,9 +79,9 @@ pub enum Error {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct TweakView {
-    /// The decoded Lua, exactly as stored.
-    pub lua: String,
-    /// The same Lua through StyLua; equal to `lua` when it does not parse.
+    /// The decoded payload, exactly as stored: Lua, or the override's JSON.
+    pub text: String,
+    /// The same text formatted; equal to `text` when it does not parse.
     pub formatted: String,
     /// The leading `--` comment, which is how BAR names a tweak.
     pub name: Option<String>,
@@ -82,29 +104,53 @@ pub struct Prepared {
 
 /// Decodes a stored slot value for display.
 pub fn decode(blob: &str, kind: Kind, config: &Config) -> Result<TweakView, Error> {
-    let decoded = base64url::decode(blob, kind)?;
-    let lua = decoded.text;
-    let formatted = lua::format(&lua, kind, config).unwrap_or_else(|_| lua.clone());
+    let (text, diagnostics) = match kind {
+        Kind::Boxes => (boxes::decode(blob)?, Vec::new()),
+        Kind::Defs | Kind::Units => {
+            let decoded = base64url::decode(blob, kind)?;
+            (decoded.text, decoded.diagnostics)
+        }
+    };
+    let formatted = format(&text, kind, config).unwrap_or_else(|_| text.clone());
     Ok(TweakView {
-        name: name::name(&lua),
+        name: name::name(&text),
         summary: name::summary(blob),
         formatted,
-        lua,
-        diagnostics: decoded.diagnostics,
+        text,
+        diagnostics,
     })
 }
 
+/// Pretty-prints a payload as the editor shows it; `config` is StyLua's and
+/// only the Lua kinds read it.
+pub fn format(text: &str, kind: Kind, config: &Config) -> Result<String, Error> {
+    match kind {
+        Kind::Boxes => boxes::format(text),
+        Kind::Defs | Kind::Units => lua::format(text, kind, config),
+    }
+}
+
 /// Minifies, encodes and measures — without sending anything.
-pub fn prepare(lua: &str, slot: Slot, direct: bool) -> Result<Prepared, Error> {
+pub fn prepare(text: &str, slot: Slot, direct: bool) -> Result<Prepared, Error> {
     let kind = slot.kind();
-    let minified = lua::minify(lua, kind)?;
-    let blob = base64url::encode(&minified, kind)?;
+    let (minified, blob) = match kind {
+        Kind::Boxes => {
+            let minified = boxes::minify(text)?;
+            let blob = boxes::encode(&minified)?;
+            (minified, blob)
+        }
+        Kind::Defs | Kind::Units => {
+            let minified = lua::minify(text, kind)?;
+            let blob = base64url::encode(&minified, kind)?;
+            (minified, blob)
+        }
+    };
     let command = if direct {
         command::bset(slot, &blob)
     } else {
         command::callvote(slot, &blob)
     };
-    let gauge = Gauge::measure(lua, &minified, &blob, &command);
+    let gauge = Gauge::measure(text, &minified, &blob, &command);
     Ok(Prepared {
         minified,
         blob,
@@ -141,14 +187,49 @@ end
         assert_eq!(view.name.as_deref(), Some("Sphere spawner v3"));
         assert!(view.diagnostics.is_empty());
         // The header survives whole; a comment inside the body does not.
-        assert!(view.lua.contains("Authors: someone"), "credit is not noise");
-        assert!(!view.lua.contains("inline"), "comments cost bytes");
+        assert!(
+            view.text.contains("Authors: someone"),
+            "credit is not noise"
+        );
+        assert!(!view.text.contains("inline"), "comments cost bytes");
         assert!(view.formatted.contains("UnitDefs.armcom.metalcost"));
         // Formatting is display only: what we would send again is unchanged.
         assert_eq!(
             prepare(&view.formatted, slot, true).unwrap().blob,
             prepared.blob
         );
+    }
+
+    /// The same loop for the override, which the game reads as zlib JSON.
+    #[test]
+    fn the_override_round_trips_as_the_game_reads_it() {
+        let json = "{\n\t\"startboxes\": [\n\t\t{ \"poly\": [ { \"x\": 0, \"y\": 0 }, { \"x\": 50, \"y\": 200 } ] }\n\t]\n}\n";
+        let prepared = prepare(json, Slot::Boxes, true).unwrap();
+        assert!(
+            prepared
+                .command
+                .starts_with("!bSet mapmetadata_startbox_override ")
+        );
+        assert_eq!(prepared.gauge.cap, 1025, "teiserver's allowance for it");
+        assert!(prepared.gauge.fits);
+        assert_eq!(
+            startbox::decode_override(&prepared.blob)
+                .unwrap()
+                .startboxes
+                .len(),
+            1
+        );
+
+        let view = decode(&prepared.blob, Kind::Boxes, &Config::default()).unwrap();
+        assert_eq!(view.text, prepared.minified);
+        assert_eq!(view.name, None, "JSON has no header comment");
+        assert!(view.diagnostics.is_empty());
+        assert_eq!(
+            prepare(&view.formatted, Slot::Boxes, true).unwrap().blob,
+            prepared.blob
+        );
+        // A vote line is the short kind, like any other.
+        assert_eq!(prepare(json, Slot::Boxes, false).unwrap().gauge.cap, 257);
     }
 
     #[test]

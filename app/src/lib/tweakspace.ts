@@ -1,19 +1,45 @@
 /**
  * The tweak workspace, as data.
  *
- * Twenty room slots and however many drafts, each a document with the text it
- * was loaded with and the text it holds now. Nothing here talks to Rust or
- * to Monaco: the store (`store/tweakspace.ts`) does the asking and the
- * editor does the drawing, and this is what both of them agree on -- which
- * is why every rule about dirty, stale and sent lives here, where a test can
- * reach it.
+ * Twenty tweak slots, the start-box override and however many drafts, each a
+ * document with the text it was loaded with and the text it holds now.
+ * Nothing here talks to Rust or to Monaco: the store (`store/tweakspace.ts`)
+ * does the asking and the editor does the drawing, and this is what both of
+ * them agree on -- which is why every rule about dirty, stale and sent lives
+ * here, where a test can reach it.
  */
 
 import type { Diagnostic } from '../ipc/bindings/Diagnostic'
 import type { Kind } from '../ipc/bindings/Kind'
 import type { OptionChangeView } from '../ipc/bindings/OptionChangeView'
 import type { Slot } from '../ipc/bindings/Slot'
-import { TWEAK_SLOTS } from './setup'
+import { BOX_OVERRIDE } from './boxes'
+import { TWEAK_SLOTS, isCleared } from './setup'
+
+/**
+ * The room's documents: the twenty tweak slots, then the start-box override.
+ * The override is JSON where the rest are Lua, with zlib inside its
+ * base64url; Rust tells them apart by the kind.
+ */
+export const SLOT_KEYS: readonly string[] = [...TWEAK_SLOTS, BOX_OVERRIDE]
+
+/**
+ * Each kind as the screen names it: what Monaco highlights it as, what the
+ * buttons call the text, and what they call the wire form -- the override's
+ * is zlib inside the base64url, and a button saying only `base64url` would
+ * be handing over something it is not.
+ */
+export const KINDS: Record<
+  Kind,
+  { language: 'lua' | 'json'; text: string; blob: string }
+> = {
+  defs: { language: 'lua', text: 'Lua', blob: 'base64url' },
+  units: { language: 'lua', text: 'Lua', blob: 'base64url' },
+  boxes: { language: 'json', text: 'JSON', blob: 'base64url+zlib' },
+}
+
+/** How the kinds sort: the order the game applies them, the override last. */
+const KIND_ORDER: readonly Kind[] = ['defs', 'units', 'boxes']
 
 export type DocId = `slot:${string}` | `draft:${string}`
 export type Origin = 'slot' | 'draft'
@@ -73,26 +99,29 @@ export const isSlotId = (id: DocId): boolean => id.startsWith('slot:')
 export const titleOf = (id: DocId): string => id.slice(id.indexOf(':') + 1)
 
 export function kindOf(key: string): Kind {
+  if (key === BOX_OVERRIDE) return 'boxes'
   return key.startsWith('tweakunits') ? 'units' : 'defs'
 }
 
 /** `tweakdefs` is index 0, `tweakdefs1` index 1, and so on to 9. */
 export function slotOf(key: string): Slot | null {
+  if (key === BOX_OVERRIDE) return { kind: 'boxes' }
   const match = /^tweak(defs|units)([1-9]?)$/.exec(key)
   if (!match) return null
   return {
-    kind: match[1] as Kind,
+    kind: match[1] as 'defs' | 'units',
     index: match[2] === '' ? 0 : Number(match[2]),
   }
 }
 
 export function slotKey(slot: Slot): string {
+  if (slot.kind === 'boxes') return BOX_OVERRIDE
   return `tweak${slot.kind}${slot.index === 0 ? '' : slot.index}`
 }
 
 /** Where a draft goes unless told otherwise: the first numbered slot of its kind. */
 export function defaultTarget(kind: Kind): string {
-  return `tweak${kind}1`
+  return kind === 'boxes' ? BOX_OVERRIDE : `tweak${kind}1`
 }
 
 /**
@@ -146,10 +175,10 @@ export function firstComment(lua: string): string | null {
 }
 
 export function emptyWorkspace(
-  active: DocId = slotId(TWEAK_SLOTS[0]!),
+  active: DocId = slotId(SLOT_KEYS[0]!),
 ): Workspace {
   const docs: Record<string, Doc> = {}
-  for (const key of TWEAK_SLOTS) docs[slotId(key)] = slotDoc(key)
+  for (const key of SLOT_KEYS) docs[slotId(key)] = slotDoc(key)
   return {
     docs,
     active,
@@ -255,22 +284,22 @@ function itemOf(doc: Doc): Item {
     name: doc.name,
     dirty: isDirty(doc),
     stale: doc.stale,
-    empty: slot ? (doc.blob ?? '') === '' : doc.buffer === '',
+    empty: slot ? isCleared(doc.blob ?? '') : doc.buffer === '',
     size: slot ? (doc.blob ?? '').length : doc.buffer.length,
     unit: slot ? 'blob' : 'lua',
   }
 }
 
 const order = (item: Item) => {
-  const at = TWEAK_SLOTS.indexOf(item.title)
-  return at === -1 ? TWEAK_SLOTS.length : at
+  const at = SLOT_KEYS.indexOf(item.title)
+  return at === -1 ? SLOT_KEYS.length : at
 }
 
 const BY: Record<Sort, (a: Item, b: Item) => number> = {
   order: (a, b) => order(a) - order(b) || a.title.localeCompare(b.title),
   name: (a, b) => (a.name ?? a.title).localeCompare(b.name ?? b.title),
   kind: (a, b) =>
-    a.kind.localeCompare(b.kind) ||
+    KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) ||
     order(a) - order(b) ||
     a.title.localeCompare(b.title),
 }
@@ -336,9 +365,8 @@ export type SideOption = {
 /**
  * Everything worth putting on one side of a diff, grouped for a menu.
  *
- * Of the room's history, only the tweak slots: the other modoptions are a
- * number, a switch, or -- the start boxes -- zlib inside base64, none of
- * which is Lua anyone wants to see diffed as text.
+ * Of the room's history, only the slots this editor reads: the other
+ * modoptions are a number or a switch, which is nothing to diff as text.
  */
 export function sideOptions(
   ws: Workspace,
@@ -348,7 +376,7 @@ export function sideOptions(
   const out: SideOption[] = []
   for (const doc of Object.values(ws.docs)) {
     const slot = doc.origin === 'slot'
-    const held = slot ? (doc.blob ?? '') !== '' : true
+    const held = slot ? !isCleared(doc.blob ?? '') : true
     const dirty = isDirty(doc)
     if (!held && !dirty) continue
     const group: SideGroup = slot ? 'Slots' : 'Drafts'

@@ -4,6 +4,7 @@ import { createDiffEditor, disposeDiff, monaco } from '../../editor/monaco'
 import type { DiffView } from '../../ipc/bindings/DiffView'
 import type { Kind } from '../../ipc/bindings/Kind'
 import {
+  KINDS,
   parseSide,
   sideKey,
   type Compare,
@@ -65,9 +66,13 @@ export function ComparePane(props: {
     const sideBySide = abreast()
     if (!host || !pair) return
     if (editor) disposeDiff(editor)
-    editor = createDiffEditor(host, pair[0].text, pair[1].text, {
-      renderSideBySide: sideBySide,
-    })
+    editor = createDiffEditor(
+      host,
+      pair[0].text,
+      pair[1].text,
+      { renderSideBySide: sideBySide },
+      KINDS[pair[0].kind].language,
+    )
   })
   onCleanup(() => editor && disposeDiff(editor))
 

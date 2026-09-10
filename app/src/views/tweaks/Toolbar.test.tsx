@@ -1,6 +1,7 @@
 import { fireEvent, render } from '@solidjs/testing-library'
 import { describe, expect, test, vi } from 'vitest'
 import type { Prepared } from '../../ipc/bindings/Prepared'
+import { BOX_OVERRIDE } from '../../lib/boxes'
 import { draftDoc, edit, emptyWorkspace, slotId } from '../../lib/tweakspace'
 import { Toolbar } from './Toolbar'
 
@@ -129,6 +130,8 @@ describe('Toolbar', () => {
     expect(on.onSend).toHaveBeenCalledWith(false)
     fireEvent.click(ready.getByText('!bSet'))
     expect(on.onCopy).toHaveBeenCalledWith('command')
+    fireEvent.click(ready.getByText('base64url'))
+    expect(on.onCopy).toHaveBeenCalledWith('blob')
     fireEvent.click(ready.getByText('Fullscreen'))
     expect(on.onFullscreen).toHaveBeenCalledWith(true)
     fireEvent.click(ready.getByText('Compare'))
@@ -202,5 +205,33 @@ describe('Toolbar', () => {
     ))
     fireEvent.click(named.getByText('Save draft'))
     expect(on.onSave).toHaveBeenLastCalledWith('Nutty B')
+  })
+
+  test('the start-box override copies as JSON and offers no draft', () => {
+    const on = handlers()
+    const boxes = emptyWorkspace().docs[slotId(BOX_OVERRIDE)]!
+    const { getByText, queryByText } = render(() => (
+      <Toolbar
+        doc={boxes}
+        prepared={null}
+        problem={null}
+        busy={false}
+        fullscreen={false}
+        seated={true}
+        target={BOX_OVERRIDE}
+        {...on}
+      />
+    ))
+    expect(getByText('boxes')).toBeTruthy()
+    expect(queryByText('Save draft')).toBeNull()
+    expect(queryByText('Lua')).toBeNull()
+    fireEvent.click(getByText('JSON'))
+    expect(on.onCopy).toHaveBeenCalledWith('lua')
+    // The wire form is zlib inside the base64url, and the button says so.
+    expect(queryByText('base64url')).toBeNull()
+    expect(
+      (getByText('base64url+zlib') as HTMLButtonElement).disabled,
+      'nothing prepared yet',
+    ).toBe(true)
   })
 })

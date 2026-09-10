@@ -1,24 +1,27 @@
 //! The chat commands that carry a tweak. Twenty slots exist
 //! (`Beyond-All-Reason/modoptions.lua:2697-2769`); the game applies every
 //! `tweakdefs*` before every `tweakunits*`, ascending, with the unnumbered one
-//! first (`unitdefs_post.lua:242-258`).
+//! first (`unitdefs_post.lua:242-258`). The start-box override is one more
+//! modoption set by the same `!bSet`, so it is a slot here too.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::Kind;
 
-/// One of the twenty modoption slots; `0` is the unnumbered `tweakdefs` / `tweakunits`.
+/// One of the twenty tweak slots -- `0` is the unnumbered `tweakdefs` /
+/// `tweakunits` -- or the start-box override.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", content = "index", rename_all = "camelCase")]
 #[ts(export)]
 pub enum Slot {
     Defs(u8),
     Units(u8),
+    Boxes,
 }
 
 impl Slot {
-    /// Every slot, in the order the game applies them.
+    /// Every tweak slot, in the order the game applies them.
     pub fn all() -> Vec<Slot> {
         (0..=9)
             .map(Slot::Defs)
@@ -30,6 +33,7 @@ impl Slot {
         match self {
             Slot::Defs(_) => Kind::Defs,
             Slot::Units(_) => Kind::Units,
+            Slot::Boxes => Kind::Boxes,
         }
     }
 
@@ -38,6 +42,7 @@ impl Slot {
         let (name, index) = match self {
             Slot::Defs(index) => ("tweakdefs", index),
             Slot::Units(index) => ("tweakunits", index),
+            Slot::Boxes => return startbox::OVERRIDE_KEY.to_owned(),
         };
         match index {
             0 => name.to_owned(),
@@ -48,6 +53,9 @@ impl Slot {
     /// Parses a modoption key, with or without the `game/modoptions/` prefix.
     pub fn parse(key: &str) -> Option<Slot> {
         let key = key.rsplit('/').next()?.to_ascii_lowercase();
+        if key == startbox::OVERRIDE_KEY {
+            return Some(Slot::Boxes);
+        }
         let (make, rest) = if let Some(rest) = key.strip_prefix("tweakdefs") {
             (Slot::Defs as fn(u8) -> Slot, rest)
         } else {
@@ -100,6 +108,13 @@ mod tests {
         }
         assert_eq!(Slot::parse("tweakdefs10"), None);
         assert_eq!(Slot::parse("map_tweaklava"), None);
+        assert_eq!(
+            Slot::parse("game/modoptions/mapmetadata_startbox_override"),
+            Some(Slot::Boxes)
+        );
+        assert_eq!(Slot::Boxes.key(), "mapmetadata_startbox_override");
+        assert_eq!(Slot::Boxes.kind(), Kind::Boxes);
+        assert!(!Slot::all().contains(&Slot::Boxes), "not a tweak");
     }
 
     #[test]
@@ -110,5 +125,7 @@ mod tests {
             "!callvote bSet tweakunits QUJD"
         );
         assert_eq!(clear(Slot::Defs(0)), "!bSet tweakdefs 0");
+        // The map editor clears the override with the same `0`.
+        assert_eq!(clear(Slot::Boxes), "!bSet mapmetadata_startbox_override 0");
     }
 }

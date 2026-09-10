@@ -3,6 +3,7 @@ import type { DiffView } from '../ipc/bindings/DiffView'
 import type { Kind } from '../ipc/bindings/Kind'
 import { api, describeError } from '../ipc/client'
 import { createDiffEditor, disposeDiff, monaco } from '../editor/monaco'
+import { KINDS } from '../lib/tweakspace'
 
 /**
  * Two slot values side by side, both formatted first so the diff shows real
@@ -43,7 +44,13 @@ export function VoteDiff(props: {
     const pair = formatted()
     if (!host || !pair) return
     if (editor) disposeDiff(editor)
-    editor = createDiffEditor(host, pair[0], pair[1])
+    editor = createDiffEditor(
+      host,
+      pair[0],
+      pair[1],
+      {},
+      KINDS[props.kind].language,
+    )
   })
   onCleanup(() => editor && disposeDiff(editor))
 

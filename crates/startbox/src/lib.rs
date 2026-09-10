@@ -100,18 +100,24 @@ pub enum Error {
     Zlib(String),
     #[error("not a startbox arrangement: {0}")]
     Json(String),
+    /// Well-formed, but not something the game's reader would accept.
+    #[error("{0}")]
+    Shape(String),
 }
+
+/// The modoption an arrangement of somebody's own is carried in.
+pub const OVERRIDE_KEY: &str = "mapmetadata_startbox_override";
 
 fn base64url() -> base64::engine::GeneralPurpose {
     base64::engine::general_purpose::URL_SAFE_NO_PAD
 }
 
-/// Decodes one of the two modoptions into whatever JSON it holds.
+/// The text inside one of the modoptions: base64url undone, then zlib.
 ///
 /// The padding is tolerated because encoders disagree about it, and the
 /// standard alphabet is tolerated because a value pasted through something
 /// that re-encoded it will have `+` and `/` in it.
-fn decode_json(raw: &str) -> Result<serde_json::Value, Error> {
+pub fn decode_text(raw: &str) -> Result<String, Error> {
     let cleaned: String = raw
         .chars()
         .filter(|c| !c.is_whitespace())
@@ -131,8 +137,12 @@ fn decode_json(raw: &str) -> Result<serde_json::Value, Error> {
     flate2::read::ZlibDecoder::new(&bytes[..])
         .read_to_string(&mut text)
         .map_err(|err| Error::Zlib(err.to_string()))?;
+    Ok(text)
+}
 
-    serde_json::from_str(&text).map_err(|err| Error::Json(err.to_string()))
+/// Decodes one of the two modoptions into whatever JSON it holds.
+fn decode_json(raw: &str) -> Result<serde_json::Value, Error> {
+    serde_json::from_str(&decode_text(raw)?).map_err(|err| Error::Json(err.to_string()))
 }
 
 /// One arrangement, from `mapmetadata_startbox_override`.
@@ -173,8 +183,12 @@ pub fn encode_set(set: &BTreeMap<u32, Arrangement>) -> Result<String, Error> {
 /// Encodes any JSON the way the three modoptions carry it; the typed
 /// encoders above are the ones to reach for, this is for tools and tests.
 pub fn encode_json(value: &serde_json::Value) -> Result<String, Error> {
+    encode_text(&serde_json::to_string(value).map_err(|err| Error::Json(err.to_string()))?)
+}
+
+/// Text into a modoption value: zlib, then base64url without padding.
+pub fn encode_text(text: &str) -> Result<String, Error> {
     use std::io::Write as _;
-    let text = serde_json::to_string(value).map_err(|err| Error::Json(err.to_string()))?;
     let mut writer = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
     writer
         .write_all(text.as_bytes())
@@ -183,6 +197,33 @@ pub fn encode_json(value: &serde_json::Value) -> Result<String, Error> {
         .finish()
         .map_err(|err| Error::Zlib(err.to_string()))?;
     Ok(base64url().encode(bytes))
+}
+
+/// What the game's reader insists on (`decodeStartboxOverride`): boxes, each
+/// of two or more points, every point on the map. Anything else is refused
+/// before it costs a vote.
+pub fn check(arrangement: &Arrangement) -> Result<(), Error> {
+    let refuse = |why: &str| Err(Error::Shape(why.to_owned()));
+    if arrangement.startboxes.is_empty() {
+        return refuse("an arrangement has at least one box");
+    }
+    for held in &arrangement.startboxes {
+        if held.poly.len() < 2 {
+            return refuse("a box has at least two points");
+        }
+        for p in &held.poly {
+            let on_map = |v: f32| v.is_finite() && (0.0..=200.0).contains(&v);
+            if !on_map(p.x) || !on_map(p.y) {
+                return refuse("a point is on the map: 0-200 on both axes");
+            }
+            if p.strength
+                .is_some_and(|s| !s.is_finite() || !(0.0..=1.0).contains(&s))
+            {
+                return refuse("curvature is 0-1");
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Which arrangement the game will use for a given team count.
@@ -293,6 +334,44 @@ mod tests {
         // base64url, so none of the characters a modoption value cannot carry.
         assert!(!encoded.contains('+') && !encoded.contains('/') && !encoded.contains('='));
         assert_eq!(decode_override(&encoded).unwrap(), one);
+    }
+
+    #[test]
+    fn the_text_codec_is_what_the_typed_ones_are_built_on() {
+        let text = r#"{"startboxes":[{"poly":[{"x":0,"y":0},{"x":50,"y":200}]}]}"#;
+        let encoded = encode_text(text).unwrap();
+        assert_eq!(decode_text(&encoded).unwrap(), text);
+        assert_eq!(
+            decode_override(&encoded).unwrap(),
+            Arrangement {
+                startboxes: vec![rect(0.0, 0.0, 50.0, 200.0)]
+            }
+        );
+        assert!(matches!(decode_text("!!!"), Err(Error::Base64(_))));
+        // Base64 of plain text is not zlib, which is its own complaint.
+        let plain = base64url().encode(text.as_bytes());
+        assert!(matches!(decode_text(&plain), Err(Error::Zlib(_))));
+    }
+
+    #[test]
+    fn the_check_refuses_what_the_game_would_skip() {
+        assert!(check(&arrangement(2)).is_ok());
+        assert!(matches!(
+            check(&Arrangement { startboxes: vec![] }),
+            Err(Error::Shape(_))
+        ));
+        let mut one_point = arrangement(1);
+        one_point.startboxes[0].poly.truncate(1);
+        assert!(check(&one_point).is_err());
+        let mut off_map = arrangement(1);
+        off_map.startboxes[0].poly[0].x = -1.0;
+        assert!(check(&off_map).is_err());
+        let mut too_curved = arrangement(1);
+        too_curved.startboxes[0].poly[0].strength = Some(1.5);
+        assert_eq!(
+            check(&too_curved).unwrap_err().to_string(),
+            "curvature is 0-1"
+        );
     }
 
     #[test]

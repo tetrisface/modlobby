@@ -7,9 +7,11 @@ import {
   onMount,
 } from 'solid-js'
 import { dropModel } from '../../editor/monaco'
+import type { Kind } from '../../ipc/bindings/Kind'
 import { unknownUnits } from '../../lib/assist'
 import { describeError } from '../../ipc/client'
 import {
+  KINDS,
   defaultCompare,
   draftId,
   draftNameFor,
@@ -31,11 +33,15 @@ import { Outline } from './Outline'
 import { Problems } from './Problems'
 import { Toolbar, type Copyable } from './Toolbar'
 
-const COPIED: Record<Copyable, string> = {
-  lua: 'Lua',
-  minified: 'Minified Lua',
-  blob: 'base64url',
-  command: '!bSet command',
+/** What the notice calls what was copied. */
+function copied(what: Copyable, kind: Kind): string {
+  const { text, blob } = KINDS[kind]
+  return {
+    lua: text,
+    minified: `Minified ${text}`,
+    blob,
+    command: '!bSet command',
+  }[what]
 }
 
 /** Monaco widgets that take Escape for themselves before the window may. */
@@ -126,7 +132,7 @@ export function Workspace() {
       }[what]
       if (text === undefined) return
       await navigator.clipboard.writeText(text)
-      pushNotice('info', `${COPIED[what]} copied`)
+      pushNotice('info', `${copied(what, doc().kind)} copied`)
     })
 
   const save = (name: string) =>

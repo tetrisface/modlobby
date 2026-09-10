@@ -203,39 +203,13 @@ pub struct Encoded {
 /// a shape the game could not read is refused here, before it costs a vote.
 #[tauri::command]
 pub fn encode_boxes(arrangement: startbox::Arrangement) -> Result<Encoded> {
-    check(&arrangement)?;
-    let value = startbox::encode_override(&arrangement)
-        .map_err(|err| ApiError::new("boxes", err.to_string()))?;
+    let boxes = |err: startbox::Error| ApiError::new("boxes", err.to_string());
+    startbox::check(&arrangement).map_err(boxes)?;
+    let value = startbox::encode_override(&arrangement).map_err(boxes)?;
     Ok(Encoded {
         value,
         limit: override_limit(),
     })
-}
-
-/// What the game's decoder insists on (`decodeStartboxOverride`): boxes, each
-/// of two or more points, every point on the map.
-fn check(arrangement: &startbox::Arrangement) -> Result<()> {
-    let refuse = |why: &str| Err(ApiError::new("boxes", why));
-    if arrangement.startboxes.is_empty() {
-        return refuse("an arrangement has at least one box");
-    }
-    for held in &arrangement.startboxes {
-        if held.poly.len() < 2 {
-            return refuse("a box has at least two points");
-        }
-        for p in &held.poly {
-            let on_map = |v: f32| v.is_finite() && (0.0..=200.0).contains(&v);
-            if !on_map(p.x) || !on_map(p.y) {
-                return refuse("a point is on the map: 0-200 on both axes");
-            }
-            if p.strength
-                .is_some_and(|s| !s.is_finite() || !(0.0..=1.0).contains(&s))
-            {
-                return refuse("curvature is 0-1");
-            }
-        }
-    }
-    Ok(())
 }
 
 /// One `mapmetadata_*` modoption in words, for a row in the Setup pane: the

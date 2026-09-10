@@ -1,8 +1,10 @@
-// Only the editor core and Lua are pulled in; Monaco 0.56 keeps each language
-// behind `languages/definitions/<id>/register`, so the rest never ships. Its
-// exports map rewrites subpaths, so these are `monaco-editor/<path under esm/vs>`.
+// Only the editor core, Lua and JSON are pulled in; Monaco 0.56 keeps each
+// language behind `languages/definitions/<id>/register`, so the rest never
+// ships. Its exports map rewrites subpaths, so these are
+// `monaco-editor/<path under esm/vs>`.
 import * as monaco from 'monaco-editor/editor/editor.api'
 import 'monaco-editor/languages/definitions/lua/register'
+import { jsonDefaults } from 'monaco-editor/languages/features/json/register'
 import EditorWorker from 'monaco-editor/editor/editor.worker?worker'
 import type { Problem } from '../ipc/bindings/Problem'
 import type { Warning } from '../lib/assist'
@@ -17,7 +19,15 @@ declare global {
 // Lua has no language service, so the plain editor worker is the only one needed.
 self.MonacoEnvironment = { getWorker: () => new EditorWorker() }
 
+// JSON has one, but only its colouring is wanted: the squiggles come from
+// the Rust check, as they do for Lua, and everything else the service does
+// would want a worker of its own.
+jsonDefaults.setModeConfiguration({ tokens: true })
+
 export { monaco }
+
+/** What a document is highlighted as; see `KINDS` in `lib/tweakspace`. */
+export type Language = 'lua' | 'json'
 
 const OPTIONS: monaco.editor.IStandaloneEditorConstructionOptions = {
   language: 'lua',
@@ -48,6 +58,7 @@ export function createDiffEditor(
   original: string,
   modified: string,
   overrides: monaco.editor.IStandaloneDiffEditorConstructionOptions = {},
+  language: Language = 'lua',
 ): monaco.editor.IStandaloneDiffEditor {
   const editor = monaco.editor.createDiffEditor(host, {
     ...OPTIONS,
@@ -56,8 +67,8 @@ export function createDiffEditor(
     ...overrides,
   })
   editor.setModel({
-    original: monaco.editor.createModel(original, 'lua'),
-    modified: monaco.editor.createModel(modified, 'lua'),
+    original: monaco.editor.createModel(original, language),
+    modified: monaco.editor.createModel(modified, language),
   })
   return editor
 }
@@ -83,7 +94,11 @@ const ids = new WeakMap<monaco.editor.ITextModel, string>()
 const views = new Map<string, monaco.editor.ICodeEditorViewState | null>()
 
 /** The document's model, made on first sight and brought up to `text`. */
-export function modelFor(id: string, text: string): monaco.editor.ITextModel {
+export function modelFor(
+  id: string,
+  text: string,
+  language: Language,
+): monaco.editor.ITextModel {
   const found = models.get(id)
   if (found) {
     seedModel(found, text)
@@ -91,8 +106,8 @@ export function modelFor(id: string, text: string): monaco.editor.ITextModel {
   }
   const model = monaco.editor.createModel(
     text,
-    'lua',
-    monaco.Uri.from({ scheme: 'tweak', path: `/${id}.lua` }),
+    language,
+    monaco.Uri.from({ scheme: 'tweak', path: `/${id}.${language}` }),
   )
   model.updateOptions(MODEL_OPTIONS)
   models.set(id, model)
@@ -105,6 +120,7 @@ export function switchModel(
   editor: monaco.editor.IStandaloneCodeEditor,
   id: string,
   text: string,
+  language: Language,
 ): void {
   const current = editor.getModel()
   const leaving = current ? ids.get(current) : undefined
@@ -113,18 +129,19 @@ export function switchModel(
     seedModel(current!, text)
     return
   }
-  editor.setModel(modelFor(id, text))
+  editor.setModel(modelFor(id, text, language))
   const view = views.get(id)
   if (view) editor.restoreViewState(view)
 }
 
 /** Which document a model is, for an edit that arrives through the model. */
 export function idOfModel(model: monaco.editor.ITextModel): DocId {
-  return (ids.get(model) ?? model.uri.path.slice(1, -'.lua'.length)) as DocId
+  return (ids.get(model) ??
+    model.uri.path.slice(1).replace(/\.\w+$/, '')) as DocId
 }
 
 /**
- * The squiggles: red where the Lua stops making sense, per the Rust check;
+ * The squiggles: red where the text stops making sense, per the Rust check;
  * yellow along a line the game would skip.
  */
 export function setProblems(
@@ -132,7 +149,7 @@ export function setProblems(
   problems: Problem[],
   warnings: Warning[] = [],
 ): void {
-  monaco.editor.setModelMarkers(model, 'lua', [
+  monaco.editor.setModelMarkers(model, 'check', [
     ...problems.map((problem) => ({
       severity: monaco.MarkerSeverity.Error,
       message: problem.message,

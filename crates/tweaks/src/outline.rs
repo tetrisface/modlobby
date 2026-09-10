@@ -10,10 +10,12 @@ use full_moon::tokenizer::{TokenReference, TokenType};
 use crate::Kind;
 use crate::check::Symbol;
 
+/// The override never gets here: `check` answers for it before parsing Lua.
 pub fn symbols(ast: &Ast, kind: Kind) -> Vec<Symbol> {
     match kind {
         Kind::Units => units(ast),
         Kind::Defs => defs(ast),
+        Kind::Boxes => Vec::new(),
     }
 }
 

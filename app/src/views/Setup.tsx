@@ -13,6 +13,7 @@ import {
 import { ActionCell, CellButton } from '../components/ActionCell'
 import { ResizeHandle } from '../components/ResizeHandle'
 import { api, describeError } from '../ipc/client'
+import { BOX_OVERRIDE } from '../lib/boxes'
 import { clamp, dragWidth, readWidth, writeWidth } from '../lib/resize'
 import {
   ALL_TAB,
@@ -24,6 +25,7 @@ import {
   changedCount,
   defaultText,
   displayText,
+  isCleared,
   isOn,
   isMapOption,
   isTweakSlot,
@@ -560,7 +562,7 @@ export function Rows(props: {
             </span>
             <Switch fallback={<span class='v'>{displayText(row)}</span>}>
               <Match when={isMapOption(row.option)}>
-                <MapValue row={row} />
+                <MapValue row={row} onEdit={props.onEdit} />
               </Match>
               <Match when={isTweakSlot(row)}>
                 <SlotActions
@@ -583,35 +585,51 @@ export function Rows(props: {
 /**
  * A map-metadata row's value in words. The blob is base64url(zlib(json)) and
  * says nothing; Rust decodes it (`boxes::describe_map_option`) and answers
- * with what it holds. Read-only: the override is set from the map, the other
- * two by SPADS from the map's metadata.
+ * with what it holds. The two SPADS sets from the map's metadata are
+ * read-only; the override is somebody's own, drawn on the map or, from here,
+ * typed as JSON in the editor.
  */
-function MapValue(props: { row: Row }) {
+function MapValue(props: { row: Row; onEdit: (slot: string) => void }) {
   const [words] = createResource(
     () => [props.row.option.key, props.row.current ?? ''] as const,
     ([key, raw]) => api.describeMapOption(key, raw).catch(() => null),
   )
+  const text = () => (words.loading ? '…' : (words() ?? displayText(props.row)))
   return (
-    <span class='v' title={props.row.current ?? ''}>
-      {words.loading ? '…' : (words() ?? displayText(props.row))}
-    </span>
+    <Show
+      when={props.row.option.key === BOX_OVERRIDE}
+      fallback={
+        <span class='v' title={props.row.current ?? ''}>
+          {text()}
+        </span>
+      }
+    >
+      <SlotActions
+        slot={props.row.option.key}
+        blob={props.row.current ?? ''}
+        text={text()}
+        onEdit={props.onEdit}
+      />
+    </Show>
   )
 }
 
 /**
- * The two things to do with a tweak slot: copy the `!bSet` command that
- * carries it -- what a spectator can hand to someone with a seat -- and, the
- * wider target, open it in the editor, which is what the slot is for whether
- * it is full or still empty. `label` puts the slot's name on the button, for
- * a grid where the row has no other place for it.
+ * The two things to do with a slot: copy the `!bSet` command that carries it
+ * -- what a spectator can hand to someone with a seat -- and, the wider
+ * target, open it in the editor, which is what the slot is for whether it is
+ * full or still empty. `label` puts the slot's name on the button, for a grid
+ * where the row has no other place for it; `text` says what it holds, where
+ * the blob's size would not.
  */
 function SlotActions(props: {
   slot: string
   blob: string
   label?: string
+  text?: string
   onEdit: (slot: string) => void
 }) {
-  const empty = () => props.blob === ''
+  const empty = () => isCleared(props.blob)
 
   async function copy() {
     try {
@@ -635,7 +653,7 @@ function SlotActions(props: {
         icon='act-pen'
         title={
           empty()
-            ? `Write a tweak into ${props.slot}`
+            ? `Write into ${props.slot}`
             : `Open ${props.slot} in the editor`
         }
         onClick={() => props.onEdit(props.slot)}
@@ -643,7 +661,9 @@ function SlotActions(props: {
         <Show when={props.label}>
           {(label) => <span class='kk'>{label()}</span>}
         </Show>
-        <span class='vv'>{empty() ? '—' : `${props.blob.length} B`}</span>
+        <span class='vv'>
+          {props.text ?? (empty() ? '—' : `${props.blob.length} B`)}
+        </span>
       </CellButton>
     </ActionCell>
   )

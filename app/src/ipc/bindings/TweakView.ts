@@ -6,11 +6,11 @@ import type { Diagnostic } from "./Diagnostic";
  */
 export type TweakView = { 
 /**
- * The decoded Lua, exactly as stored.
+ * The decoded payload, exactly as stored: Lua, or the override's JSON.
  */
-lua: string, 
+text: string, 
 /**
- * The same Lua through StyLua; equal to `lua` when it does not parse.
+ * The same text formatted; equal to `text` when it does not parse.
  */
 formatted: string, 
 /**

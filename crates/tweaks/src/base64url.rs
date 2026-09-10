@@ -31,19 +31,19 @@ pub struct Decoded {
 }
 
 /// Decodes as the game would, tolerating padding and the standard alphabet.
+/// The two Lua kinds only; the override's zlib is the `startbox` crate's.
 pub fn decode(blob: &str, kind: Kind) -> Result<Decoded, Error> {
     let cleaned: String = blob.chars().filter(|c| !c.is_whitespace()).collect();
     let mut diagnostics = Vec::new();
-    let for_game = match kind {
-        Kind::Defs => cleaned.clone(),
-        Kind::Units => {
-            // What `CustomKeyToUsefulTable` does before decoding.
-            let count = cleaned.matches('_').count();
-            if count > 0 {
-                diagnostics.push(Diagnostic::UnderscoreCorruption { count });
-            }
-            cleaned.replace('_', "=")
+    let for_game = if kind == Kind::Units {
+        // What `CustomKeyToUsefulTable` does before decoding.
+        let count = cleaned.matches('_').count();
+        if count > 0 {
+            diagnostics.push(Diagnostic::UnderscoreCorruption { count });
         }
+        cleaned.replace('_', "=")
+    } else {
+        cleaned
     };
     let normalised: String = for_game
         .trim_end_matches('=')

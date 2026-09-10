@@ -8,7 +8,7 @@ import {
 } from '../../editor/monaco'
 import type { Problem } from '../../ipc/bindings/Problem'
 import type { Assist, Warning } from '../../lib/assist'
-import type { Doc, DocId } from '../../lib/tweakspace'
+import { KINDS, type Doc, type DocId } from '../../lib/tweakspace'
 import { registerAssist } from './providers'
 
 /** A place to go, stamped so that going to the same line twice still goes. */
@@ -34,6 +34,7 @@ export function EditorHost(props: {
 }) {
   let host: HTMLDivElement | undefined
   let editor: monaco.editor.IStandaloneCodeEditor | undefined
+  const language = () => KINDS[props.doc.kind].language
 
   onMount(() => {
     if (!host) return
@@ -52,13 +53,13 @@ export function EditorHost(props: {
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () =>
       props.onSave(),
     )
-    switchModel(editor, props.doc.id, props.doc.buffer)
+    switchModel(editor, props.doc.id, props.doc.buffer, language())
     registerAssist(() => ({ assist: props.assist, kind: props.doc.kind }))
   })
 
   createEffect(() => {
     const { id, buffer } = props.doc
-    if (editor) switchModel(editor, id, buffer)
+    if (editor) switchModel(editor, id, buffer, language())
   })
 
   // The problems are the active document's; on a switch they are cleared

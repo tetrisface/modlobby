@@ -2,6 +2,7 @@ import { createSignal } from 'solid-js'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { Prepared } from '../ipc/bindings/Prepared'
 import type { TweakView } from '../ipc/bindings/TweakView'
+import { BOX_OVERRIDE } from '../lib/boxes'
 import { draftId, slotId } from '../lib/tweakspace'
 import { createTweakspace, type TweakIo } from './tweakspace'
 
@@ -23,7 +24,7 @@ function fakeIo() {
   }))
   const io = {
     tweakDecode: vi.fn(async (blob: string): Promise<TweakView> => ({
-      lua: `lua of ${blob}`,
+      text: `lua of ${blob}`,
       formatted: `-- ${blob}\nlua of ${blob}\n`,
       name: blob,
       summary: `${blob.length}:hash`,
@@ -172,6 +173,38 @@ describe('the workspace', () => {
       { kind: 'defs', index: 1 },
       true,
     )
+    space.dispose()
+  })
+
+  test('the override is decoded as boxes, empties on a cleared 0, and keeps no drafts', async () => {
+    const { io } = fakeIo()
+    const [room, setRoom] = createSignal<Record<string, string>>({
+      [BOX_OVERRIDE]: 'eJyr',
+    })
+    const space = createTweakspace(io, room, slotId(BOX_OVERRIDE))
+    await flush()
+    expect(io.tweakDecode).toHaveBeenLastCalledWith('eJyr', 'boxes')
+    expect(space.active()).toMatchObject({ kind: 'boxes', loaded: true })
+
+    // SPADS clears it with `0`, which is nothing to decode.
+    setRoom({ [BOX_OVERRIDE]: '0' })
+    await flush()
+    expect(space.active()).toMatchObject({ blob: '0', buffer: '' })
+    expect(io.tweakDecode).toHaveBeenCalledTimes(1)
+    expect(space.items().at(-1)).toMatchObject({
+      title: BOX_OVERRIDE,
+      empty: true,
+    })
+
+    space.edit(slotId(BOX_OVERRIDE), '{"startboxes":[]}')
+    await space.send(true)
+    expect(io.tweakSend).toHaveBeenLastCalledWith(
+      '{"startboxes":[]}',
+      { kind: 'boxes' },
+      true,
+    )
+    await expect(space.saveDraft('boxes')).rejects.toThrow('presets')
+    expect(io.saveDraft).not.toHaveBeenCalled()
     space.dispose()
   })
 

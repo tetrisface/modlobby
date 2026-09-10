@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'vitest'
+import { BOX_OVERRIDE } from './boxes'
 import { TWEAK_SLOTS } from './setup'
 import {
+  SLOT_KEYS,
   defaultCompare,
+  defaultTarget,
   draftDoc,
   draftId,
   edit,
@@ -55,6 +58,15 @@ describe('slots', () => {
     expect(slotOf('tweakunits9')).toEqual({ kind: 'units', index: 9 })
     expect(slotOf('tweakunits10')).toBeNull()
     expect(slotOf('startmetal')).toBeNull()
+  })
+
+  test('the start-box override is the twenty-first, of its own kind', () => {
+    expect(SLOT_KEYS).toEqual([...TWEAK_SLOTS, BOX_OVERRIDE])
+    expect(slotOf(BOX_OVERRIDE)).toEqual({ kind: 'boxes' })
+    expect(slotKey({ kind: 'boxes' })).toBe(BOX_OVERRIDE)
+    expect(kindOf(BOX_OVERRIDE)).toBe('boxes')
+    expect(defaultTarget('boxes')).toBe(BOX_OVERRIDE)
+    expect(slotOf('mapmetadata_startboxes_set')).toBeNull()
   })
 
   test('ids carry their title', () => {
@@ -157,19 +169,29 @@ describe('the list', () => {
       loaded(docs[DEFS]!, arrived('YQ==', 'local a = 1')),
       'local a = 2',
     )
+    // SPADS cleared it: the `0` it writes is not a value.
+    docs[slotId(BOX_OVERRIDE)] = loaded(
+      docs[slotId(BOX_OVERRIDE)]!,
+      arrived('0', ''),
+    )
     docs[draftId('b-draft')] = draftDoc('b-draft', 'local b')
     docs[draftId('a-draft')] = draftDoc('a-draft', '{ x = 1 }')
     return { ...base, docs }
   })()
 
-  test('slots come in the order the game applies them', () => {
+  test('slots come in the order the game applies them, the override last', () => {
     const items = listItems(ws)
-    expect(items.map((item) => item.title)).toEqual([...TWEAK_SLOTS])
+    expect(items.map((item) => item.title)).toEqual([...SLOT_KEYS])
     expect(items[1]).toMatchObject({ dirty: true, size: 4, unit: 'blob' })
     expect(items[12]).toMatchObject({
       title: 'tweakunits2',
       name: 'Golem',
       empty: false,
+    })
+    expect(items[20]).toMatchObject({
+      title: BOX_OVERRIDE,
+      kind: 'boxes',
+      empty: true,
     })
   })
 
@@ -194,6 +216,7 @@ describe('the list', () => {
     const byKind = listItems(ws, { query: '', sort: 'kind', segment: 'slots' })
     expect(byKind[0]!.kind).toBe('defs')
     expect(byKind[19]!.kind).toBe('units')
+    expect(byKind[20]!.kind).toBe('boxes')
     const byName = listItems(ws, { query: '', sort: 'name', segment: 'slots' })
     expect(byName[0]!.title).toBe('tweakunits2')
   })
@@ -226,6 +249,11 @@ describe('comparing', () => {
       docs[slotId('tweakunits2')]!,
       arrived('e30=', '{}'),
     )
+    // A cleared override is not a side worth offering.
+    docs[slotId(BOX_OVERRIDE)] = loaded(
+      docs[slotId(BOX_OVERRIDE)]!,
+      arrived('0', ''),
+    )
     docs[draftId('walls')] = draftDoc('walls', '{ armwall = {} }')
     return { ...base, docs }
   })()
@@ -254,7 +282,7 @@ describe('comparing', () => {
     expect(parseSide('nonsense')).toBeNull()
   })
 
-  test('the menu lists held slots, edited buffers, drafts, tweak changes and the vote', () => {
+  test('the menu lists held slots, edited buffers, drafts, slot changes and the vote', () => {
     const options = sideOptions(ws, history, 'Yg==')
     expect(options.map((option) => option.label)).toEqual([
       'tweakdefs1 · room',
@@ -263,6 +291,8 @@ describe('comparing', () => {
       'walls · file',
       '#7 tweakdefs1 before by Lathek',
       '#7 tweakdefs1 after by Lathek',
+      '#8 mapmetadata_startbox_override before by Host',
+      '#8 mapmetadata_startbox_override after by Host',
       'what the vote proposes',
     ])
     expect(options[3]!.group).toBe('Drafts')
@@ -280,6 +310,10 @@ describe('comparing', () => {
     expect(resolveSide(ws, { history: 7, which: 'to' }, history, null)).toEqual(
       { label: '#7 tweakdefs1 after', kind: 'defs', blob: 'Yg==' },
     )
+    // The override's history decodes as boxes, which is what makes it JSON.
+    expect(
+      resolveSide(ws, { history: 8, which: 'to' }, history, null),
+    ).toMatchObject({ kind: 'boxes', blob: 'eJyr' })
     expect(resolveSide(ws, { vote: true }, history, 'Yg==')).toMatchObject({
       kind: 'defs',
       blob: 'Yg==',

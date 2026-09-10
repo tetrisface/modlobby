@@ -233,7 +233,7 @@ export function isOn(text: string): boolean {
 }
 
 /** SPADS empties a slot by writing `0` (`sendBattleSetting` skips `''`). */
-function isCleared(text: string): boolean {
+export function isCleared(text: string): boolean {
   return text === '' || text === '0'
 }
 

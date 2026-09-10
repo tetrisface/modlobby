@@ -38,10 +38,13 @@ pub fn load_config(path: Option<&Path>) -> Result<Config, Error> {
 
 /// Pretty-prints the payload. `Kind::Units` is a bare table constructor, so it
 /// is formatted as the `return <text>` the game evaluates and unwrapped again.
+/// Lua only; [`crate::format`] is the door that sends each kind its own way.
 pub fn format(source: &str, kind: Kind, config: &Config) -> Result<String, Error> {
-    let wrapped = match kind {
-        Kind::Defs => source.to_owned(),
-        Kind::Units => format!("return {source}"),
+    let table = kind == Kind::Units;
+    let wrapped = if table {
+        format!("return {source}")
+    } else {
+        source.to_owned()
     };
     let formatted = stylua_lib::format_code(
         &wrapped,
@@ -50,9 +53,10 @@ pub fn format(source: &str, kind: Kind, config: &Config) -> Result<String, Error
         stylua_lib::OutputVerification::None,
     )
     .map_err(|err| Error::Lua(err.to_string()))?;
-    Ok(match kind {
-        Kind::Defs => formatted,
-        Kind::Units => unwrap_return(&formatted),
+    Ok(if table {
+        unwrap_return(&formatted)
+    } else {
+        formatted
     })
 }
 

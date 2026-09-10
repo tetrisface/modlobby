@@ -15,8 +15,9 @@ import type { Prepared } from '../ipc/bindings/Prepared'
 import type { TweakView } from '../ipc/bindings/TweakView'
 import type { api } from '../ipc/client'
 import { NO_ASSIST, type Assist } from '../lib/assist'
-import { TWEAK_SLOTS } from '../lib/setup'
+import { isCleared } from '../lib/setup'
 import {
+  SLOT_KEYS,
   defaultTarget,
   draftDoc,
   draftId,
@@ -113,7 +114,8 @@ export function createTweakspace(
     }
 
     async function arrive(key: string, blob: string): Promise<Loaded> {
-      if (blob === '')
+      // SPADS empties a slot by writing `0`; that is nothing to decode.
+      if (isCleared(blob))
         return { blob, text: '', name: null, summary: null, notes: [] }
       try {
         const view = await decode(blob, kindOf(key))
@@ -149,7 +151,7 @@ export function createTweakspace(
 
     createEffect(() => {
       const values = room()
-      for (const key of TWEAK_SLOTS) {
+      for (const key of SLOT_KEYS) {
         const blob = values[key] ?? ''
         const doc = untrack(() => ws.docs[slotId(key)]!)
         if (doc.loaded && doc.blob === blob) continue
@@ -266,9 +268,16 @@ export function createTweakspace(
       )
     }
 
-    /** Saves the active buffer as a draft, which becomes clean at that name. */
+    /**
+     * Saves the active buffer as a draft, which becomes clean at that name.
+     *
+     * Not for the start boxes: drafts are Lua files, and an arrangement worth
+     * keeping is kept as a preset, which already carries the override.
+     */
     async function saveDraft(name: string) {
       const doc = active()
+      if (doc.kind === 'boxes')
+        throw new Error('start boxes are kept as presets, not drafts')
       await io.saveDraft(name, doc.buffer)
       setWs('docs', draftId(name), savedAs(doc, name))
     }
@@ -276,7 +285,7 @@ export function createTweakspace(
     async function deleteDraft(name: string) {
       await io.deleteDraft(name)
       const id = draftId(name)
-      if (ws.active === id) open(slotId(TWEAK_SLOTS[0]!))
+      if (ws.active === id) open(slotId(SLOT_KEYS[0]!))
       setWs(
         'docs',
         produce((docs) => {

@@ -10,7 +10,7 @@ use full_moon::tokenizer::Position;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::{Kind, outline};
+use crate::{Kind, boxes, outline};
 
 /// One place the Lua stops making sense. Lines and columns are 1-based, and
 /// the end is exclusive, which is how an editor draws a marker.
@@ -50,6 +50,7 @@ pub fn check(source: &str, kind: Kind) -> Check {
     let (wrapped, shift) = match kind {
         Kind::Defs => (source.to_owned(), 0),
         Kind::Units => (format!("{WRAP}{source}"), WRAP.len()),
+        Kind::Boxes => return boxes::check(source),
     };
     let result = full_moon::parse_fallible(&wrapped, LuaVersion::lua51());
     let problems = result

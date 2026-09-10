@@ -1,8 +1,14 @@
 import { Select } from '../../components/Select'
 import { For, Show, createSignal } from 'solid-js'
 import type { Prepared } from '../../ipc/bindings/Prepared'
-import { TWEAK_SLOTS } from '../../lib/setup'
-import { draftNameFor, isDirty, type Doc } from '../../lib/tweakspace'
+import {
+  KINDS,
+  SLOT_KEYS,
+  draftNameFor,
+  isDirty,
+  kindOf,
+  type Doc,
+} from '../../lib/tweakspace'
 
 export type Copyable = 'lua' | 'minified' | 'blob' | 'command'
 
@@ -40,8 +46,7 @@ export function Toolbar(props: {
   const [draftName, setDraftName] = createSignal('')
   const dirty = () => isDirty(props.doc)
   const fits = () => props.prepared?.gauge.fits === true
-  const slots = () =>
-    TWEAK_SLOTS.filter((key) => key.startsWith(`tweak${props.doc.kind}`))
+  const slots = () => SLOT_KEYS.filter((key) => kindOf(key) === props.doc.kind)
 
   function save() {
     props.onSave(draftName().trim() || draftNameFor(props.doc))
@@ -121,25 +126,28 @@ export function Toolbar(props: {
         >
           Reset
         </button>
-        <span class='tweak-save'>
-          <input
-            class='draft-name'
-            placeholder={
-              props.doc.origin === 'draft' ? props.doc.title : 'draft name'
-            }
-            aria-label='Draft name'
-            value={draftName()}
-            onInput={(event) => setDraftName(event.currentTarget.value)}
-            onKeyDown={(event) => event.key === 'Enter' && save()}
-          />
-          <button class='tweak-tool' onClick={save} disabled={props.busy}>
-            Save draft
-          </button>
-        </span>
+        {/* Drafts are Lua files; an arrangement is kept as a preset instead. */}
+        <Show when={props.doc.kind !== 'boxes'}>
+          <span class='tweak-save'>
+            <input
+              class='draft-name'
+              placeholder={
+                props.doc.origin === 'draft' ? props.doc.title : 'draft name'
+              }
+              aria-label='Draft name'
+              value={draftName()}
+              onInput={(event) => setDraftName(event.currentTarget.value)}
+              onKeyDown={(event) => event.key === 'Enter' && save()}
+            />
+            <button class='tweak-tool' onClick={save} disabled={props.busy}>
+              Save draft
+            </button>
+          </span>
+        </Show>
         <span class='tweak-copy'>
           <span class='muted'>Copy</span>
           <button class='link' onClick={() => props.onCopy('lua')}>
-            Lua
+            {KINDS[props.doc.kind].text}
           </button>
           <button
             class='link'
@@ -153,7 +161,7 @@ export function Toolbar(props: {
             disabled={!props.prepared}
             onClick={() => props.onCopy('blob')}
           >
-            base64url
+            {KINDS[props.doc.kind].blob}
           </button>
           <button
             class='link'
