@@ -12,18 +12,24 @@ import { onCleanup } from 'solid-js'
  * pixels wide and the pointer leaves it on the first frame of every drag.
  */
 export function ResizeHandle(props: {
-  /** Called as the drag begins; returns the width to reckon from. */
+  /** Called as the drag begins; returns the size to reckon from. */
   onStart: () => number
-  onMove: (startWidth: number, startX: number, x: number) => void
+  /** The start size, where the pointer began on the axis, and where it is. */
+  onMove: (start: number, from: number, to: number) => void
   onEnd?: () => void
   label?: string
+  /** `x` for a grip on a side edge (the default), `y` for one on the bottom. */
+  axis?: 'x' | 'y'
 }) {
-  let startWidth = 0
-  let startX = 0
+  let start = 0
+  let from = 0
   let dragging = false
+  const along = (event: PointerEvent) =>
+    props.axis === 'y' ? event.clientY : event.clientX
+  const resizing = () => (props.axis === 'y' ? 'resizing-y' : 'resizing')
 
   function move(event: PointerEvent) {
-    props.onMove(startWidth, startX, event.clientX)
+    props.onMove(start, from, along(event))
   }
 
   function end() {
@@ -32,17 +38,17 @@ export function ResizeHandle(props: {
     window.removeEventListener('pointermove', move)
     window.removeEventListener('pointerup', end)
     window.removeEventListener('pointercancel', end)
-    document.body.classList.remove('resizing')
+    document.body.classList.remove(resizing())
     props.onEnd?.()
   }
 
   function begin(event: PointerEvent) {
     if (event.button !== 0) return
     event.preventDefault()
-    startWidth = props.onStart()
-    startX = event.clientX
+    start = props.onStart()
+    from = along(event)
     dragging = true
-    document.body.classList.add('resizing')
+    document.body.classList.add(resizing())
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', end)
     window.addEventListener('pointercancel', end)
@@ -50,10 +56,14 @@ export function ResizeHandle(props: {
 
   /** The keyboard's drag: one arrow press is a sixteen pixel move. */
   function nudge(event: KeyboardEvent) {
-    const dx = { ArrowLeft: -16, ArrowRight: 16 }[event.key]
-    if (dx === undefined) return
+    const keys: Record<string, number> =
+      props.axis === 'y'
+        ? { ArrowUp: -16, ArrowDown: 16 }
+        : { ArrowLeft: -16, ArrowRight: 16 }
+    const delta = keys[event.key]
+    if (delta === undefined) return
     event.preventDefault()
-    props.onMove(props.onStart(), 0, dx)
+    props.onMove(props.onStart(), 0, delta)
     props.onEnd?.()
   }
 
@@ -61,9 +71,10 @@ export function ResizeHandle(props: {
 
   return (
     <div
-      class='grip'
+      class={props.axis === 'y' ? 'grip grip-y' : 'grip'}
       role='separator'
-      aria-orientation='vertical'
+      // A grip on a side edge is a vertical bar, and the other way round.
+      aria-orientation={props.axis === 'y' ? 'horizontal' : 'vertical'}
       aria-label={props.label ?? 'Resize'}
       tabIndex={0}
       onPointerDown={begin}

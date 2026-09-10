@@ -1,6 +1,10 @@
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { BotView } from '../ipc/bindings/BotView'
 import type { UserView } from '../ipc/bindings/UserView'
+import { isUnrated, type Skill } from './skill'
+
+/** A skill by name, where the host has sent one. */
+export type SkillOf = (name: string) => Skill | null
 
 /**
  * The room's roster, drawn before the server has said who sits where.
@@ -28,7 +32,7 @@ export type Roster = {
   teams: Team[]
   /** Spectators waiting for a seat, first in line first. */
   queue: UserView[]
-  /** Everyone else watching: the host first, then by name. */
+  /** Everyone else watching: the host first, then by skill, then by name. */
   spectators: UserView[]
   /** Unplaced members with no seat to guess for them; listed as spectators. */
   pending: UserView[]
@@ -50,6 +54,7 @@ export function arrange(
   room: BattleView,
   users: Record<string, UserView>,
   me: string | null = null,
+  skillOf: SkillOf = () => null,
 ): Roster {
   const teams = new Map<number, Team>()
   const team = (allyTeam: number) => {
@@ -83,11 +88,12 @@ export function arrange(
   for (const bot of room.bots) team(bot.status.allyTeam).bots.push(bot)
   for (let allyTeam = 0; allyTeam < DEFAULT_TEAMS; allyTeam++) team(allyTeam)
 
-  // Ordered by nothing a late status could change, so a skill tag landing
-  // late never reshuffles the list under the reader's eyes.
+  // The queue is the server's order and nothing else. The watchers read by
+  // strength, which a skill tag landing late can move -- one row, once,
+  // since the tags come in the join's own burst.
   queue.sort((a, b) => place.get(a.name)! - place.get(b.name)!)
-  spectators.sort(watching(room.founder))
-  pending.sort(watching(room.founder))
+  spectators.sort(watching(room.founder, skillOf))
+  pending.sort(watching(room.founder, skillOf))
   const watchers = queue.length + spectators.length
 
   if (pending.length === 0) {
@@ -148,14 +154,27 @@ function sorted(teams: Map<number, Team>): Team[] {
 }
 
 /**
- * Chobby's spectator order: the host on top, then by name. `localeCompare`
- * folds case, as the chat roster's sort does, so `Zed` does not lead `alice`
- * the way the wire's byte order has it.
+ * The watchers' order: the host on top, then the strongest first, then by
+ * name. A skill too uncertain to show (`??`) comes after every number, and
+ * no skill at all after that. `localeCompare` folds case, as the chat
+ * roster's sort does, so `Zed` does not lead `alice` the way the wire's
+ * byte order has it.
  */
-function watching(founder: string) {
-  return (a: UserView, b: UserView): number =>
-    Number(b.name === founder) - Number(a.name === founder) ||
-    a.name.localeCompare(b.name)
+function watching(founder: string, skillOf: SkillOf) {
+  type Key = [tier: number, strength: number]
+  const key = (user: UserView): Key => {
+    if (user.name === founder) return [0, 0]
+    const skill = skillOf(user.name)
+    if (skill === null) return [3, 0]
+    return [isUnrated(skill) ? 2 : 1, -skill.value]
+  }
+  return (a: UserView, b: UserView): number => {
+    const [tierA, strengthA] = key(a)
+    const [tierB, strengthB] = key(b)
+    return (
+      tierA - tierB || strengthA - strengthB || a.name.localeCompare(b.name)
+    )
+  }
 }
 
 /**

@@ -5,7 +5,7 @@ import type { UserView } from '../ipc/bindings/UserView'
 import type { UserStatusView } from '../ipc/bindings/UserStatusView'
 import type { Skill } from '../lib/skill'
 import { PlayerMenu } from './PlayerMenu'
-import { BotRow, PlayerRow, SpectatorRow } from './PlayerRow'
+import { BotRow, PlayerRow, WatcherRow } from './PlayerRow'
 
 const status = (over: Partial<UserStatusView> = {}): UserStatusView => ({
   inGame: false,
@@ -347,7 +347,8 @@ describe('a player row', () => {
 describe('a spectator row', () => {
   test('shows neither status nor faction, as Chobby hides both', () => {
     const { container } = render(() => (
-      <SpectatorRow
+      <WatcherRow
+        skill={null}
         user={user({ battleStatus: battle({ player: false }) })}
         me={true}
       />
@@ -360,7 +361,8 @@ describe('a spectator row', () => {
 
   test('a bossing spectator still wears the crown', () => {
     const { container } = render(() => (
-      <SpectatorRow
+      <WatcherRow
+        skill={null}
         user={user({ battleStatus: battle({ player: false }) })}
         me={false}
         boss={true}
@@ -371,7 +373,8 @@ describe('a spectator row', () => {
 
   test('an autohost gets the bot mark instead of a rank', () => {
     const { container } = render(() => (
-      <SpectatorRow
+      <WatcherRow
+        skill={null}
         user={user({ name: 'Host[US4][000]', status: status({ bot: true }) })}
         me={false}
       />
@@ -469,5 +472,27 @@ describe('a press on an AI row', () => {
     fireEvent.click(remove)
     expect(container.querySelector('.player-menu')).toBeNull()
     expect(removed).toBe(1)
+  })
+})
+
+describe("a watcher's skill", () => {
+  test('is the number the host sent, or an empty cell where it sent none', () => {
+    const rated = render(() => (
+      <WatcherRow
+        user={user({ battleStatus: battle({ player: false }) })}
+        skill={{ value: 25.3, origin: 'exact', sigma: 1 }}
+        me={false}
+      />
+    ))
+    expect(rated.container.querySelector('.skill')?.textContent).toBe('25')
+    rated.unmount()
+    const unrated = render(() => (
+      <WatcherRow
+        user={user({ battleStatus: battle({ player: false }) })}
+        skill={null}
+        me={false}
+      />
+    ))
+    expect(unrated.container.querySelector('.skill')?.textContent).toBe('')
   })
 })

@@ -1,8 +1,12 @@
 import { describe, expect, test } from 'vitest'
 import {
   clamp,
+  dragHeight,
   dragWidth,
+  readFlag,
   readWidth,
+  splitBounds,
+  writeFlag,
   writeWidth,
   type WidthStore,
 } from './resize'
@@ -86,5 +90,39 @@ describe('writeWidth', () => {
       },
     }
     expect(() => writeWidth(broken, 'w', 1)).not.toThrow()
+  })
+})
+
+describe('dragHeight', () => {
+  test('moving the pointer down makes a pane whose grip is on its bottom edge taller', () => {
+    expect(dragHeight(400, 500, 560, { min: 64, max: 700 })).toBe(460)
+    expect(dragHeight(400, 500, 440, { min: 64, max: 700 })).toBe(340)
+  })
+
+  test('never leaves the bounds however far the pointer goes', () => {
+    expect(dragHeight(400, 500, 5000, { min: 64, max: 700 })).toBe(700)
+    expect(dragHeight(400, 500, -5000, { min: 64, max: 700 })).toBe(64)
+  })
+})
+
+describe('splitBounds', () => {
+  test('leaves the neighbour its share', () => {
+    expect(splitBounds(1000, 176, 64)).toEqual({ min: 64, max: 824 })
+  })
+
+  test('a pane too small for the share still has its minimum', () => {
+    expect(splitBounds(100, 176, 64)).toEqual({ min: 64, max: 64 })
+  })
+})
+
+describe('flags', () => {
+  test('round-trip, and read as off when unset or unreadable', () => {
+    const store = memory()
+    expect(readFlag(store, 'k')).toBe(false)
+    writeFlag(store, 'k', true)
+    expect(readFlag(store, 'k')).toBe(true)
+    writeFlag(store, 'k', false)
+    expect(readFlag(store, 'k')).toBe(false)
+    expect(readFlag(null, 'k')).toBe(false)
   })
 })

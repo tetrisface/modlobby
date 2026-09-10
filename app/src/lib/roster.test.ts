@@ -4,6 +4,7 @@ import type { BattleView } from '../ipc/bindings/BattleView'
 import type { UserView } from '../ipc/bindings/UserView'
 import type { BotView } from '../ipc/bindings/BotView'
 import { arrange, emptySeats, freeTeam } from './roster'
+import type { Skill } from './skill'
 
 const seat = (allyTeam: number, player = true): BattleStatusView => ({
   ready: false,
@@ -155,6 +156,39 @@ describe('arrange', () => {
     )
     expect(names(roster.spectators)).toEqual(['Host', 'alice', 'me', 'Zed'])
     expect(names(roster.pending)).toEqual(['bob'])
+  })
+
+  test('with skills, the strongest watch first; the uncertain and the unrated last', () => {
+    const skills: Record<string, Skill> = {
+      alice: { value: 18, origin: 'exact', sigma: 1 },
+      zed: { value: 31.4, origin: 'exact', sigma: 1 },
+      // Too uncertain to show, so it reads `??` and sorts after every number.
+      carol: { value: 40, origin: 'exact', sigma: 7 },
+    }
+    const roster = arrange(
+      room({
+        members: ['Host', 'Zed', 'alice', 'bob', 'carol', 'me'],
+        playerCount: 0,
+      }),
+      byName(
+        user('Host', seat(0, false), true),
+        user('Zed', seat(0, false)),
+        user('alice', seat(0, false)),
+        user('bob', seat(0, false)),
+        user('carol', seat(0, false)),
+        user('me', seat(0, false)),
+      ),
+      'me',
+      (name) => skills[name.toLowerCase()] ?? null,
+    )
+    expect(names(roster.spectators)).toEqual([
+      'Host',
+      'Zed',
+      'alice',
+      'carol',
+      'bob',
+      'me',
+    ])
   })
 
   test('the queue is its own list, in the order the server gave', () => {

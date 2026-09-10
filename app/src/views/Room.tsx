@@ -25,8 +25,8 @@ import {
   EmptySeat,
   GuessedRow,
   PlayerRow,
-  SpectatorRow,
 } from '../components/PlayerRow'
+import { ResizeHandle } from '../components/ResizeHandle'
 import { SyncIcon } from '../components/icons'
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { BotView } from '../ipc/bindings/BotView'
@@ -45,6 +45,13 @@ import {
   freeTeam,
   unusedBotName,
 } from '../lib/roster'
+import {
+  dragHeight,
+  localStore,
+  readWidth,
+  splitBounds,
+  writeWidth,
+} from '../lib/resize'
 import { readSkills, teamSkill, type Skill } from '../lib/skill'
 import { noPublishedEngine } from '../store/build'
 import { chat, pushNotice } from '../store/chat'
@@ -56,6 +63,7 @@ import { HostBar } from './HostBar'
 import { PveScore } from './PveScore'
 import { RoomTitle } from './RoomTitle'
 import { useRoom, type RoomModel } from './room/model'
+import { WatcherStack } from './room/Watchers'
 import { dragging } from '../lib/drag'
 import { Seat, sitOn } from './Seat'
 import { movable, moveTo, setBonus, type Target } from './room/move'
@@ -73,6 +81,13 @@ const START_POS = [
 /** Where the only Beyond All Reason engine for Apple Silicon is published. */
 const APPLE_ENGINE =
   'https://github.com/Vandomas/RecoilEngine-AppleSilicon/releases'
+
+/** Where the roster's dragged height is remembered. */
+const CAP_KEY = 'modlobby.rosterHeight'
+/** The least a dragged roster keeps: its headers and a row or two. */
+const ROSTER_MIN = 64
+/** Rows past which a team card widens and flows its rows into columns. */
+const TALL = 32
 
 export function Room() {
   const navigate = useNavigate()
@@ -99,7 +114,7 @@ export function Room() {
         pending: [],
         spectatorCount: 0,
       }
-    return arrange(b, room.users(), room.me())
+    return arrange(b, room.users(), room.me(), skillOf)
   })
 
   /**
@@ -236,6 +251,22 @@ export function Room() {
   const [picking, setPicking] = createSignal<'map' | 'game' | 'engine' | null>(
     null,
   )
+
+  /**
+   * The roster's height, dragged by hand and remembered; `null` leaves the
+   * stylesheet's cap. Either way the chat keeps its floor: the stylesheet
+   * bounds the cap by it, and the drag is bounded the same way.
+   */
+  const [cap, setCap] = createSignal(readWidth(localStore(), CAP_KEY))
+  let main: HTMLDivElement | undefined
+  let rosters: HTMLDivElement | undefined
+  let chatPane: HTMLDivElement | undefined
+  const capBounds = () =>
+    splitBounds(
+      main?.clientHeight ?? 0,
+      chatPane ? parseFloat(getComputedStyle(chatPane).minHeight) || 0 : 0,
+      ROSTER_MIN,
+    )
 
   const lines = () => chat.rooms[room.log] ?? []
   createEffect(() => {
@@ -535,8 +566,14 @@ export function Room() {
           <Seat />
 
           <div class='room-body'>
-            <div class='room-main'>
-              <div class='rosters'>
+            <div class='room-main' ref={main}>
+              <div
+                class='rosters'
+                ref={rosters}
+                style={{
+                  '--rosters-cap': cap() === null ? undefined : `${cap()}px`,
+                }}
+              >
                 <div class='teams' classList={{ dropping: dragging() }}>
                   {/* By position, not by object: the memo builds new team
                       objects on every status line, and a `For` keyed on
@@ -544,7 +581,11 @@ export function Room() {
                       the store's own objects, so their rows do survive. */}
                   <Index each={occupants().teams}>
                     {(team) => (
-                      <section class='team' data-ally={team().allyTeam}>
+                      <section
+                        class='team'
+                        classList={{ tall: team().expected > TALL }}
+                        data-ally={team().allyTeam}
+                      >
                         <header class='team-head'>
                           <span class='name'>Team {team().allyTeam + 1}</span>
                           <span class='count'>{team().expected}</span>
@@ -571,156 +612,135 @@ export function Room() {
                             </button>
                           </Show>
                         </header>
-                        <For each={team().users}>
-                          {(user) => (
-                            <PlayerRow
-                              user={user}
-                              skill={skillOf(user.name)}
-                              me={user.name === room.me()}
-                              friend={isFriend(user.name)}
-                              boss={room.my()?.boss === user.name}
-                              download={
-                                user.name === room.me()
-                                  ? lobby.download
-                                  : undefined
-                              }
-                              moves={movesFor(
-                                user.name === room.me()
-                                  ? { kind: 'me' }
-                                  : { kind: 'player', name: user.name },
-                                team().allyTeam,
-                              )}
-                            />
-                          )}
-                        </For>
-                        <For each={team().guessed}>
-                          {(user) => (
-                            <GuessedRow
-                              user={user}
-                              me={user.name === room.me()}
-                              friend={isFriend(user.name)}
-                            />
-                          )}
-                        </For>
-                        <For each={team().bots}>
-                          {(bot) => (
-                            <BotRow
-                              bot={bot}
-                              onOptions={
-                                room.caps.picksContent
-                                  ? () => setBotOptions(bot.name)
-                                  : undefined
-                              }
-                              onRemove={
-                                // The server takes REMOVEBOT from the owner,
-                                // the host and moderators; a boss is none of
-                                // those. Not drawing the action beats a
-                                // silent refusal.
-                                bot.owner === room.me()
-                                  ? () =>
-                                      room.io
-                                        .removeBot(bot.name)
-                                        .catch((error) =>
+                        <div class='rows'>
+                          <For each={team().users}>
+                            {(user) => (
+                              <PlayerRow
+                                user={user}
+                                skill={skillOf(user.name)}
+                                me={user.name === room.me()}
+                                friend={isFriend(user.name)}
+                                boss={room.my()?.boss === user.name}
+                                download={
+                                  user.name === room.me()
+                                    ? lobby.download
+                                    : undefined
+                                }
+                                moves={movesFor(
+                                  user.name === room.me()
+                                    ? { kind: 'me' }
+                                    : { kind: 'player', name: user.name },
+                                  team().allyTeam,
+                                )}
+                              />
+                            )}
+                          </For>
+                          <For each={team().guessed}>
+                            {(user) => (
+                              <GuessedRow
+                                user={user}
+                                me={user.name === room.me()}
+                                friend={isFriend(user.name)}
+                              />
+                            )}
+                          </For>
+                          <For each={team().bots}>
+                            {(bot) => (
+                              <BotRow
+                                bot={bot}
+                                onOptions={
+                                  room.caps.picksContent
+                                    ? () => setBotOptions(bot.name)
+                                    : undefined
+                                }
+                                onRemove={
+                                  // The server takes REMOVEBOT from the owner,
+                                  // the host and moderators; a boss is none of
+                                  // those. Not drawing the action beats a
+                                  // silent refusal.
+                                  bot.owner === room.me()
+                                    ? () =>
+                                        room.io
+                                          .removeBot(bot.name)
+                                          .catch((error) =>
+                                            pushNotice(
+                                              'warning',
+                                              describeError(error),
+                                            ),
+                                          )
+                                    : undefined
+                                }
+                                onClone={
+                                  bot.owner === room.me()
+                                    ? () =>
+                                        clone(bot).catch((error) =>
                                           pushNotice(
                                             'warning',
                                             describeError(error),
                                           ),
                                         )
-                                  : undefined
-                              }
-                              onClone={
-                                bot.owner === room.me()
-                                  ? () =>
-                                      clone(bot).catch((error) =>
-                                        pushNotice(
-                                          'warning',
-                                          describeError(error),
-                                        ),
-                                      )
-                                  : undefined
-                              }
-                              moves={movesFor(
-                                {
-                                  kind: 'bot',
-                                  name: bot.name,
-                                  mine: bot.owner === room.me(),
-                                  team: bot.status.team,
-                                  handicap: bot.status.handicap,
-                                  colour: bot.teamColour,
-                                },
-                                team().allyTeam,
-                              )}
-                            />
-                          )}
-                        </For>
-                        <Index
-                          each={Array.from({ length: emptySeats(team()) })}
-                        >
-                          {() => <EmptySeat />}
-                        </Index>
+                                    : undefined
+                                }
+                                moves={movesFor(
+                                  {
+                                    kind: 'bot',
+                                    name: bot.name,
+                                    mine: bot.owner === room.me(),
+                                    team: bot.status.team,
+                                    handicap: bot.status.handicap,
+                                    colour: bot.teamColour,
+                                  },
+                                  team().allyTeam,
+                                )}
+                              />
+                            )}
+                          </For>
+                          <Index
+                            each={Array.from({ length: emptySeats(team()) })}
+                          >
+                            {() => <EmptySeat />}
+                          </Index>
+                        </div>
                       </section>
                     )}
                   </Index>
+                  {/* The watchers come last in the row, so players get
+                      first claim on the visible area. `pending` is not
+                      placed by the server yet: listed so the room has its
+                      names at once, dimmed because most are about to take
+                      a seat above. */}
+                  <WatcherStack
+                    teams={occupants().teams.length}
+                    tall={occupants().teams.some((t) => t.expected > TALL)}
+                    queue={occupants().queue}
+                    spectators={occupants().spectators}
+                    pending={occupants().pending}
+                    spectatorCount={occupants().spectatorCount}
+                    skillOf={skillOf}
+                    me={room.me()}
+                    isFriend={isFriend}
+                    boss={room.my()?.boss ?? null}
+                  />
                 </div>
-
-                {/* Whoever is waiting for a seat, in line. Above the
-                    spectators, because these are the next players. */}
-                <Show when={occupants().queue.length > 0}>
-                  <section class='spectators'>
-                    <header class='team-head'>
-                      <span class='name'>Join queue</span>
-                      <span class='count'>{occupants().queue.length}</span>
-                    </header>
-                    <div class='queue-list'>
-                      <For each={occupants().queue}>
-                        {(user, index) => (
-                          <SpectatorRow
-                            user={user}
-                            me={user.name === room.me()}
-                            friend={isFriend(user.name)}
-                            boss={room.my()?.boss === user.name}
-                            place={index() + 1}
-                          />
-                        )}
-                      </For>
-                    </div>
-                  </section>
-                </Show>
-
-                <section class='spectators'>
-                  <header class='team-head'>
-                    <span class='name'>Spectators</span>
-                    <span class='count'>{occupants().spectatorCount}</span>
-                  </header>
-                  <div class='spectator-list'>
-                    <For each={occupants().spectators}>
-                      {(user) => (
-                        <SpectatorRow
-                          user={user}
-                          me={user.name === room.me()}
-                          friend={isFriend(user.name)}
-                          boss={room.my()?.boss === user.name}
-                        />
-                      )}
-                    </For>
-                    {/* Not placed by the server yet: listed so the room has
-                        its names at once, dimmed because most are about to
-                        take a seat above. */}
-                    <For each={occupants().pending}>
-                      {(user) => (
-                        <SpectatorRow
-                          user={user}
-                          me={user.name === room.me()}
-                          friend={isFriend(user.name)}
-                          pending
-                        />
-                      )}
-                    </For>
-                  </div>
-                </section>
               </div>
 
-              <div class='room-chat'>
+              {/* The line between the roster and the chat, dragged to give
+                  either side more. The chat keeps its floor whatever is
+                  dragged or spread above it. */}
+              <ResizeHandle
+                axis='y'
+                label='Resize the roster'
+                onStart={() => rosters?.getBoundingClientRect().height ?? 0}
+                onMove={(start, y0, y) =>
+                  setCap(dragHeight(start, y0, y, capBounds()))
+                }
+                onEnd={() => {
+                  const now = cap()
+                  if (now !== null) writeWidth(localStore(), CAP_KEY, now)
+                }}
+              />
+
+              <div class='room-chat' ref={chatPane}>
                 <div class='chat-log' ref={log}>
                   <For each={lines()}>{(line) => <Line line={line} />}</For>
                 </div>

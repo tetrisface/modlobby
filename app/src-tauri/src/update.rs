@@ -114,19 +114,21 @@ pub struct Staged(Mutex<Option<Pending>>);
 /// How often the app looks on its own.
 pub const EVERY: Duration = Duration::from_secs(24 * 60 * 60);
 
-/// Whether this build may update itself. Unset means yes; `0`, `false`,
-/// `off` or `no` means no look at all, and the on-demand look says why it
-/// will not. For a build that has to stay put — a local one behind the
-/// released version, or one under test.
+/// Whether this build may update itself. Unset means yes in a release and no
+/// in a `tauri dev` run, which is always a local build the released one would
+/// replace; `0`, `false`, `off` or `no` means no look at all, anything else
+/// means look, and the on-demand look says why it will not. For a build that
+/// has to stay put — a local one behind the released version, or one under
+/// test — or, set on, for a dev run testing the update round trip.
 pub const AUTO_UPDATE_ENV: &str = "MODLOBBY_AUTO_UPDATE";
 
 pub fn enabled() -> bool {
-    allows(std::env::var_os(AUTO_UPDATE_ENV))
+    allows(std::env::var_os(AUTO_UPDATE_ENV), !tauri::is_dev())
 }
 
-fn allows(value: Option<std::ffi::OsString>) -> bool {
+fn allows(value: Option<std::ffi::OsString>, unset: bool) -> bool {
     let Some(value) = value else {
-        return true;
+        return unset;
     };
     let value = value.to_string_lossy().trim().to_ascii_lowercase();
     !matches!(value.as_str(), "0" | "false" | "off" | "no")
@@ -149,7 +151,7 @@ pub async fn check_update(
     if !enabled() {
         return Err(ApiError::new(
             "update",
-            format!("updates are off: {AUTO_UPDATE_ENV} says so"),
+            format!("updates are off: {AUTO_UPDATE_ENV} says so, or is unset in a dev run"),
         ));
     }
 
@@ -337,17 +339,22 @@ mod tests {
     }
 
     #[test]
-    fn unset_and_anything_else_mean_on() {
-        assert!(allows(None));
+    fn unset_takes_the_build_default() {
+        assert!(allows(None, true));
+        assert!(!allows(None, false));
+    }
+
+    #[test]
+    fn anything_but_the_off_words_means_on_even_in_a_dev_run() {
         for value in ["1", "true", "on", "yes", "", "whatever"] {
-            assert!(allows(Some(value.into())), "{value:?}");
+            assert!(allows(Some(value.into()), false), "{value:?}");
         }
     }
 
     #[test]
     fn the_four_off_words_mean_off_in_any_case() {
         for value in ["0", "false", "off", "no", " OFF ", "False"] {
-            assert!(!allows(Some(value.into())), "{value:?}");
+            assert!(!allows(Some(value.into()), true), "{value:?}");
         }
     }
 }

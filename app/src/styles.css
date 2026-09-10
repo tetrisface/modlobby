@@ -685,8 +685,16 @@ textarea {
   flex-direction: column;
   min-height: 0;
   min-width: 0;
+  /* What the chat keeps whatever the roster above it holds or is dragged
+     to: the composer and half a dozen lines. The roster's cap is bounded
+     by it here, and the drag on the line between them is bounded by it in
+     `Room.tsx`, which reads it back off the chat pane. */
+  --chat-floor: 11rem;
 }
 
+/* The roster takes what it needs, up to a cap: the stylesheet's, or the one
+   dragged by hand (`--rosters-cap`). Never so much that the chat loses its
+   floor. */
 .rosters {
   padding: 0.75rem 1rem;
   display: flex;
@@ -694,7 +702,28 @@ textarea {
   gap: 1rem;
   overflow-y: auto;
   flex-shrink: 0;
-  max-height: 60%;
+  max-height: min(var(--rosters-cap, 60%), calc(100% - var(--chat-floor)));
+}
+
+/* The grip between the roster and the chat rides their border. */
+.grip-y {
+  flex-shrink: 0;
+  height: 0.375rem;
+  margin: -0.1875rem 0;
+  cursor: row-resize;
+  z-index: 1;
+}
+
+.grip-y:hover,
+.grip-y:focus-visible,
+body.resizing-y .grip-y {
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+  outline: none;
+}
+
+body.resizing-y {
+  cursor: row-resize;
+  user-select: none;
 }
 
 /* Bounded columns that pack left. `auto-fit` with `1fr` would stretch two
@@ -710,6 +739,101 @@ textarea {
 .team {
   flex: 0 1 16.75rem;
   min-width: 13.75rem;
+}
+
+/* The watchers' stack -- the join queue over the spectators -- is the last
+   item in the teams' row. Beside the teams, when a card's width fits on
+   their row (`Watchers.tsx` measures), it is one column hugging the right.
+   Otherwise it has no box of its own, and its two cards flow after the
+   last team exactly as another team would. */
+.watchers-stack.beside {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  flex: 0 1 16.75rem;
+  min-width: 13.75rem;
+  margin-left: auto;
+}
+
+.watchers-stack.flow {
+  display: contents;
+}
+
+.watchers-stack.flow .watchers {
+  flex: 0 1 16.75rem;
+  min-width: 13.75rem;
+}
+
+/* A spread card leaves the stack for a full-width row of its own below the
+   teams; whatever is not spread keeps its place. A stack with nothing left
+   in it takes no room. */
+.teams > .watchers.spread {
+  flex: 1 1 100%;
+}
+
+.watchers-stack.empty {
+  display: none;
+}
+
+/* A team taller than a screen widens and flows its rows into columns of a
+   card's width, so an 80-a-side room is twenty rows deep, not eighty. */
+.team.tall {
+  flex: 1 1 100%;
+}
+
+.team.tall .rows {
+  columns: 16.75rem;
+  column-gap: 1.75rem;
+}
+
+.team.tall .rows > * {
+  break-inside: avoid;
+}
+
+/* A watchers' card reads as a team does, one name per row. */
+.watchers .names {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Spread: the full width, names in aligned columns read across. */
+.watchers.spread .names {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16.75rem, 1fr));
+  column-gap: 1.75rem;
+}
+
+/* The chevron under the header: one short row, and no more. */
+.spread-toggle {
+  display: block;
+  height: 0.875rem;
+  min-height: 0;
+  padding: 0 0.125rem;
+  margin: -0.25rem 0 0.125rem;
+  line-height: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: var(--faint);
+}
+
+.spread-toggle svg {
+  width: 0.625rem;
+  height: 0.625rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.spread-toggle:hover,
+.spread-toggle:focus-visible {
+  color: var(--ink);
+}
+
+.watchers.spread .spread-toggle svg {
+  transform: rotate(90deg);
 }
 
 .team-head {
@@ -773,40 +897,29 @@ textarea {
 }
 
 .player:hover,
-.spectator:hover {
+.watcher:hover {
   background: var(--raised);
 }
 
-.spectator-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.1875rem 1.125rem;
-}
-
-.spectator {
+/* A watcher's row: flag, rank, skill, name, marks -- the player row's
+   columns without status and faction, at the same widths, so a watchers'
+   card beside a team lines up with it. */
+.watcher {
   display: grid;
-  grid-template-columns: 1rem 1.125rem auto auto;
+  grid-template-columns: 1rem 1.125rem 1.625rem minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.4375rem;
-  padding: 0.0625rem 0.25rem;
+  padding: 0.125rem 0.25rem;
   border-radius: 2px;
   font-size: 0.9375rem;
 }
 
-/* The join queue wraps as the spectators do; the place in front of each
-   name is what carries the order, so a long queue reads as a numbered list
-   in columns rather than pushing the spectators off the screen. */
-.queue-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.1875rem 1.125rem;
+/* In the queue, the place in line comes first. */
+.watcher.queued {
+  grid-template-columns: 1.25rem 1rem 1.125rem 1.625rem minmax(0, 1fr) auto;
 }
 
-.spectator.queued {
-  grid-template-columns: 1.25rem 1rem 1.125rem auto auto;
-}
-
-.spectator .place {
+.watcher .place {
   font-family: var(--mono);
   font-size: 0.6875rem;
   color: var(--muted);
@@ -826,7 +939,7 @@ textarea {
 }
 
 /* A member the server has not placed yet. */
-.spectator.pending,
+.watcher.pending,
 .player.pending {
   opacity: 0.55;
 }

@@ -211,14 +211,19 @@ export function GuessedRow(props: {
 }
 
 /**
- * No status and no faction: Chobby hides both for spectators, and so do we.
+ * Somebody watching: in the join queue or simply spectating. No status and
+ * no faction, as Chobby hides both for spectators; the skill stays, since
+ * who is waiting to play is a question about strength as much as names. A
+ * host that sent no skill leaves the cell empty rather than marked.
+ *
  * `pending` is a member the server has not placed yet, listed here until it
  * does — most of them are about to move to a seat. `place` is a position in
  * the join queue, counted from one, drawn as Chobby draws it: `1.` before
  * the flag.
  */
-export function SpectatorRow(props: {
+export function WatcherRow(props: {
   user: UserView
+  skill: Skill | null
   me: boolean
   friend?: boolean
   boss?: boolean
@@ -227,7 +232,7 @@ export function SpectatorRow(props: {
 }) {
   return (
     <div
-      class='spectator'
+      class='watcher'
       classList={{ pending: props.pending, queued: props.place !== undefined }}
     >
       <Show when={props.place}>
@@ -235,6 +240,7 @@ export function SpectatorRow(props: {
       </Show>
       <Flag country={props.user.country} />
       <RankIcon status={props.user.status} />
+      <SkillCell skill={props.skill} absent='' />
       <span
         class='pname'
         classList={{
@@ -252,9 +258,13 @@ export function SpectatorRow(props: {
   )
 }
 
-function SkillCell(props: { skill: Skill | null }) {
+/** `absent` is what stands in for a skill nobody sent; a dot by default. */
+function SkillCell(props: { skill: Skill | null; absent?: string }) {
   return (
-    <Show when={props.skill} fallback={<span class='skill none'>·</span>}>
+    <Show
+      when={props.skill}
+      fallback={<span class='skill none'>{props.absent ?? '·'}</span>}
+    >
       {(skill) => (
         <span
           class={`skill tier${skillTier(skill())}`}

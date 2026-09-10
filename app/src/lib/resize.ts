@@ -27,6 +27,37 @@ export function dragWidth(
 }
 
 /**
+ * The height after the pointer moved from `startY` to `y`, for a grip on
+ * the pane's *bottom* edge: moving down makes the pane taller.
+ */
+export function dragHeight(
+  startHeight: number,
+  startY: number,
+  y: number,
+  bounds: Bounds,
+): number {
+  return clamp(Math.round(startHeight + (y - startY)), bounds)
+}
+
+/**
+ * Bounds for a pane that shares `total` with a neighbour which must keep at
+ * least `keep` of it: the roster over the chat. Never below `min`, so a
+ * pane too small to hold the neighbour's share still has a size.
+ */
+export function splitBounds(total: number, keep: number, min: number): Bounds {
+  return { min, max: Math.max(min, Math.round(total - keep)) }
+}
+
+/** `localStorage`, when the webview lets us at it. */
+export function localStore(): Storage | null {
+  try {
+    return window.localStorage
+  } catch {
+    return null
+  }
+}
+
+/**
  * The width saved last time, or `null` when there is none worth trusting.
  *
  * `null` rather than a default because the caller may have something better
@@ -59,5 +90,28 @@ export function writeWidth(
   } catch {
     // Storage that refuses a write (private mode, a full quota) costs the
     // reader nothing but remembering the width next time.
+  }
+}
+
+/** A yes-or-no remembered the same way: a form a pane was left in. */
+export function readFlag(storage: WidthStore | null, key: string): boolean {
+  if (!storage) return false
+  try {
+    return storage.getItem(key) === '1'
+  } catch {
+    return false
+  }
+}
+
+export function writeFlag(
+  storage: WidthStore | null,
+  key: string,
+  on: boolean,
+): void {
+  if (!storage) return
+  try {
+    storage.setItem(key, on ? '1' : '0')
+  } catch {
+    // As above: forgotten, not broken.
   }
 }

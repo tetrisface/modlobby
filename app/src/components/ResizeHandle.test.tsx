@@ -54,3 +54,39 @@ describe('ResizeHandle', () => {
     expect(onEnd).toHaveBeenCalledTimes(2)
   })
 })
+
+describe('ResizeHandle on a bottom edge', () => {
+  test('reads the pointer along y and nudges with up and down', () => {
+    const onMove = vi.fn()
+    const onEnd = vi.fn()
+    const { getByRole } = render(() => (
+      <ResizeHandle
+        axis='y'
+        onStart={() => 300}
+        onMove={onMove}
+        onEnd={onEnd}
+      />
+    ))
+    const grip = getByRole('separator')
+    expect(grip.getAttribute('aria-orientation')).toBe('horizontal')
+
+    grip.dispatchEvent(
+      new MouseEvent('pointerdown', { clientY: 400, bubbles: true, button: 0 }),
+    )
+    expect(document.body.classList.contains('resizing-y')).toBe(true)
+    window.dispatchEvent(new MouseEvent('pointermove', { clientY: 460 }))
+    window.dispatchEvent(new MouseEvent('pointerup', { clientY: 460 }))
+    expect(onMove.mock.calls).toEqual([[300, 400, 460]])
+    expect(document.body.classList.contains('resizing-y')).toBe(false)
+
+    grip.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }),
+    )
+    // A sideways key means nothing to a grip that moves up and down.
+    grip.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }),
+    )
+    expect(onMove.mock.calls.slice(1)).toEqual([[300, 0, -16]])
+    expect(onEnd).toHaveBeenCalledTimes(2)
+  })
+})

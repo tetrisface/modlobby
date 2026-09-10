@@ -142,15 +142,15 @@ describe('the room at event size', () => {
       expect(team.querySelectorAll('.player')).toHaveLength(25)
 
     // The queue is numbered through, in the server's order.
-    expect(texts(container, '.queue-list .place')).toEqual(
+    expect(texts(container, '.watchers.queue .place')).toEqual(
       Array.from({ length: 100 }, (_, i) => `${i + 1}.`),
     )
-    expect(texts(container, '.queue-list .pname')).toEqual(
+    expect(texts(container, '.watchers.queue .pname')).toEqual(
       Array.from({ length: 100 }, (_, i) => `spec${i}`),
     )
     // Which leaves one spectator, and a count that includes the queue.
-    expect(texts(container, '.spectator-list .pname')).toEqual(['me'])
-    expect(texts(container, '.spectators .team-head .count')).toEqual([
+    expect(texts(container, '.watchers.spectators .pname')).toEqual(['me'])
+    expect(texts(container, '.watchers .team-head .count')).toEqual([
       '100',
       '101',
     ])
@@ -173,7 +173,7 @@ describe('the room at event size', () => {
     expect(container.querySelectorAll('.player.pending')).toHaveLength(100)
     expect(container.querySelectorAll('.player.empty')).toHaveLength(0)
     // The other hundred wait, dimmed, among the spectators.
-    expect(container.querySelectorAll('.spectator.pending')).toHaveLength(100)
+    expect(container.querySelectorAll('.watcher.pending')).toHaveLength(100)
     expect(texts(container, '.rosters .pname')).toHaveLength(201)
   })
 
@@ -206,8 +206,116 @@ describe('the room at event size', () => {
     expect(performance.now() - started).toBeLessThan(BUDGET_MS)
 
     expect(container.querySelectorAll('.player.pending')).toHaveLength(0)
-    expect(container.querySelectorAll('.spectator.pending')).toHaveLength(0)
+    expect(container.querySelectorAll('.watcher.pending')).toHaveLength(0)
     expect(container.querySelectorAll('.team .player')).toHaveLength(100)
-    expect(texts(container, '.spectator-list .pname')).toHaveLength(101)
+    expect(texts(container, '.watchers.spectators .pname')).toHaveLength(101)
+  })
+})
+
+describe('how the room gives way', () => {
+  test('a side of eighty widens and flows its rows into columns; a side of 25 does not', async () => {
+    const tall = await open(
+      crowd({ teams: 2, teamSize: 80, spectators: 100, queued: 20 }),
+    )
+    expect(tall.container.querySelectorAll('.team.tall')).toHaveLength(2)
+    expect(
+      tall.container.querySelectorAll('.team.tall .rows .player'),
+    ).toHaveLength(160)
+    cleanup()
+    const wide = await open(
+      crowd({ teams: 4, teamSize: 25, spectators: 100, queued: 20 }),
+    )
+    expect(wide.container.querySelectorAll('.team.tall')).toHaveLength(0)
+  })
+
+  test('the watchers follow the last team as one stack, queue over spectators', async () => {
+    const { container } = await open(
+      crowd({ teams: 2, teamSize: 8, spectators: 30, queued: 5 }),
+    )
+    const items = [...container.querySelectorAll('.teams > *')]
+    expect(items.map((c) => c.className.split(' ')[0])).toEqual([
+      'team',
+      'team',
+      'watchers-stack',
+    ])
+    const stack = container.querySelector('.watchers-stack')!
+    expect(
+      [...stack.children].map((c) => c.className.split(' ').slice(0, 2)),
+    ).toEqual([
+      ['watchers', 'queue'],
+      ['watchers', 'spectators'],
+    ])
+    // A row with no width, as here, holds nothing beside the teams: the
+    // stack has no box and its cards flow after the last team.
+    expect(stack.classList.contains('flow')).toBe(true)
+    expect(stack.classList.contains('beside')).toBe(false)
+
+    // A spread card leaves the stack for a row of its own; the other stays.
+    const chevron = stack.querySelector<HTMLButtonElement>(
+      '.watchers.spectators .spread-toggle',
+    )!
+    expect(chevron.getAttribute('aria-expanded')).toBe('false')
+    chevron.click()
+    expect(stack.querySelector('.watchers.spectators')).toBeNull()
+    expect(stack.querySelector('.watchers.queue')).not.toBeNull()
+    const spread = container.querySelector('.teams > .watchers.spectators')!
+    expect(spread.classList.contains('spread')).toBe(true)
+    expect(
+      spread.querySelector('.spread-toggle')?.getAttribute('aria-expanded'),
+    ).toBe('true')
+    expect(stack.classList.contains('empty')).toBe(false)
+
+    // Both spread: the stack has nothing left and takes no room.
+    stack
+      .querySelector<HTMLButtonElement>('.watchers.queue .spread-toggle')!
+      .click()
+    expect(stack.children).toHaveLength(0)
+    expect(stack.classList.contains('empty')).toBe(true)
+    expect(
+      [...container.querySelectorAll('.teams > .watchers')].map(
+        (c) => c.className.split(' ')[1],
+      ),
+    ).toEqual(['queue', 'spectators'])
+
+    // And back.
+    for (const kind of ['queue', 'spectators'])
+      container
+        .querySelector<HTMLButtonElement>(`.watchers.${kind} .spread-toggle`)!
+        .click()
+    expect(stack.children).toHaveLength(2)
+    expect(container.querySelectorAll('.teams > .watchers')).toHaveLength(0)
+  })
+
+  test('watchers carry the skill the host sent, and an empty cell where it sent none', async () => {
+    const model = crowd({ teams: 2, teamSize: 8, spectators: 4, queued: 2 })
+    const { container } = await open(
+      fakeRoom({
+        ...model,
+        my: () => ({
+          ...model.my()!,
+          scriptTags: {
+            'game/players/spec0/skill': '[20.5]',
+            'game/players/spec1/skill': '[10]',
+          },
+        }),
+      }),
+    )
+    expect(texts(container, '.watchers.queue .skill')).toEqual(['21', '10'])
+    // No sum on the queue: the owner's call, 2026-09-10.
+    expect(container.querySelector('.watchers .team-head .os')).toBeNull()
+    // A spectator the host never rated has an empty cell, not a mark.
+    expect(texts(container, '.watchers.spectators .skill')).toEqual([
+      '',
+      '',
+      '',
+    ])
+  })
+
+  test('a grip between the roster and the chat, dragged along y', async () => {
+    const { container } = await open(
+      crowd({ teams: 2, teamSize: 8, spectators: 4, queued: 0 }),
+    )
+    const grip = container.querySelector('.room-main > .grip-y')
+    expect(grip?.getAttribute('aria-orientation')).toBe('horizontal')
   })
 })

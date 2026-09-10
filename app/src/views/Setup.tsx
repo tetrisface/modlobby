@@ -14,7 +14,13 @@ import { ActionCell, CellButton } from '../components/ActionCell'
 import { ResizeHandle } from '../components/ResizeHandle'
 import { api, describeError } from '../ipc/client'
 import { BOX_OVERRIDE } from '../lib/boxes'
-import { clamp, dragWidth, readWidth, writeWidth } from '../lib/resize'
+import {
+  clamp,
+  dragWidth,
+  localStore,
+  readWidth,
+  writeWidth,
+} from '../lib/resize'
 import {
   ALL_TAB,
   GENERAL_GROUP,
@@ -167,7 +173,7 @@ export function Setup() {
     setUnchanged(false)
   }
 
-  const [width, setWidth] = createSignal(readWidth(storage(), WIDTH_KEY))
+  const [width, setWidth] = createSignal(readWidth(localStore(), WIDTH_KEY))
   /** Once a width has been chosen by hand, the tabs stop deciding it. */
   let chosen = width() !== null
   let host: HTMLElement | undefined
@@ -222,7 +228,7 @@ export function Setup() {
           const now = width()
           if (now === null) return
           chosen = true
-          writeWidth(storage(), WIDTH_KEY, now)
+          writeWidth(localStore(), WIDTH_KEY, now)
         }}
       />
 
@@ -438,15 +444,6 @@ function noteOfPane(room: RoomModel, editable: boolean): string {
   if (!editable) return 'Read-only · spectator'
   if (room.caps.spads) return 'A change is proposed to the host'
   return 'A change takes effect here'
-}
-
-/** `localStorage`, when the webview lets us at it. */
-function storage(): Storage | null {
-  try {
-    return window.localStorage
-  } catch {
-    return null
-  }
 }
 
 /**
