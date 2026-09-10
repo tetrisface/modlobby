@@ -91,7 +91,14 @@ export function Room() {
 
   const occupants = createMemo((): Roster => {
     const b = battle()
-    if (!b) return { teams: [], spectators: [], pending: [], spectatorCount: 0 }
+    if (!b)
+      return {
+        teams: [],
+        queue: [],
+        spectators: [],
+        pending: [],
+        spectatorCount: 0,
+      }
     return arrange(b, room.users(), room.me())
   })
 
@@ -655,6 +662,30 @@ export function Room() {
                     )}
                   </Index>
                 </div>
+
+                {/* Whoever is waiting for a seat, in line. Above the
+                    spectators, because these are the next players. */}
+                <Show when={occupants().queue.length > 0}>
+                  <section class='spectators'>
+                    <header class='team-head'>
+                      <span class='name'>Join queue</span>
+                      <span class='count'>{occupants().queue.length}</span>
+                    </header>
+                    <div class='queue-list'>
+                      <For each={occupants().queue}>
+                        {(user, index) => (
+                          <SpectatorRow
+                            user={user}
+                            me={user.name === room.me()}
+                            friend={isFriend(user.name)}
+                            boss={room.my()?.boss === user.name}
+                            place={index() + 1}
+                          />
+                        )}
+                      </For>
+                    </div>
+                  </section>
+                </Show>
 
                 <section class='spectators'>
                   <header class='team-head'>

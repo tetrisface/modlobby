@@ -237,6 +237,30 @@ describe('choosing a team', () => {
     expect(seat?.[1][1]).toBe(0)
   })
 
+  test('in the queue, Join is Leave queue and says where you stand', async () => {
+    const calls: Calls = []
+    const model = watchingThree(calls, [])
+    const { container } = await open(
+      fakeRoom({
+        ...model,
+        battle: () =>
+          battle({
+            members: ['me', 'alice', 'bob', 'carol', 'dave'],
+            queue: ['dave', 'me'],
+          }),
+      }),
+    )
+    const buttons = [...container.querySelectorAll('.seat button')]
+    expect(buttons.some((b) => b.textContent === 'Join')).toBe(false)
+    expect(container.querySelector('.seat .muted')?.textContent).toBe(
+      'queued 2 of 2',
+    )
+    const leave = buttons.find((b) => b.textContent === 'Leave queue')
+    fireEvent.click(leave as HTMLButtonElement)
+    await settle()
+    expect(calls).toContainEqual(['sayBattle', ['$leaveq']])
+  })
+
   test('and, with nobody seated yet, the side the AIs are not on', async () => {
     const calls: Calls = []
     const { container } = await open(

@@ -225,6 +225,9 @@ pub struct BattleView {
     pub layout: Option<LayoutView>,
     pub bots: Vec<BotView>,
     pub start_rects: Vec<StartRectView>,
+    /// Spectators waiting for a seat, first in line first. Only our own
+    /// room's is known; every other room's is empty.
+    pub queue: Vec<String>,
 }
 
 impl From<&Battle> for BattleView {
@@ -256,6 +259,7 @@ impl From<&Battle> for BattleView {
                 .iter()
                 .map(|(ally, rect)| StartRectView::new(*ally, *rect))
                 .collect(),
+            queue: b.queue.clone(),
         }
     }
 }
@@ -752,6 +756,11 @@ pub enum Delta {
     BattleLayout {
         id: u32,
         layout: LayoutView,
+    },
+    /// The room's join queue, whole, first in line first.
+    BattleQueue {
+        id: u32,
+        names: Vec<String>,
     },
     Member {
         id: u32,

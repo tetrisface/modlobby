@@ -24,6 +24,7 @@ const battle = (id: number): BattleView => ({
   layout: null,
   bots: [],
   startRects: [],
+  queue: [],
 })
 
 const mine = (id: number): MyBattleView => ({

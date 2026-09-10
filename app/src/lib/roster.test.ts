@@ -49,6 +49,7 @@ const room = (over: Partial<BattleView> = {}): BattleView => ({
   layout: null,
   bots: [],
   startRects: [],
+  queue: [],
   ...over,
 })
 
@@ -135,6 +136,77 @@ describe('arrange', () => {
     expect(roster.teams.map(emptySeats)).toEqual([0, 0, 0])
     expect(roster.teams.map((t) => t.guessed)).toEqual([[], [], []])
     expect(roster.spectatorCount).toBe(4)
+  })
+
+  test('spectators read host first, then by name with case folded', () => {
+    const roster = arrange(
+      room({
+        members: ['Host', 'Zed', 'alice', 'bob', 'me'],
+        playerCount: 0,
+      }),
+      byName(
+        user('Host', seat(0, false), true),
+        user('Zed', seat(0, false)),
+        user('alice', seat(0, false)),
+        user('bob', null),
+        user('me', seat(0, false)),
+      ),
+      'me',
+    )
+    expect(names(roster.spectators)).toEqual(['Host', 'alice', 'me', 'Zed'])
+    expect(names(roster.pending)).toEqual(['bob'])
+  })
+
+  test('the queue is its own list, in the order the server gave', () => {
+    const roster = arrange(
+      room({
+        members: ['Host', 'alice', 'bob', 'carol', 'me'],
+        playerCount: 0,
+        queue: ['carol', 'alice'],
+      }),
+      byName(
+        user('Host', seat(0, false), true),
+        user('alice', seat(0, false)),
+        user('bob', seat(0, false)),
+        // Queued before any status arrived: the server's word wins.
+        user('carol', null),
+        user('me', seat(0, false)),
+      ),
+      'me',
+    )
+    expect(names(roster.queue)).toEqual(['carol', 'alice'])
+    expect(names(roster.spectators)).toEqual(['Host', 'bob', 'me'])
+    expect(roster.pending).toEqual([])
+    // Waiting is still watching.
+    expect(roster.spectatorCount).toBe(5)
+  })
+
+  test('a queued name that took a seat is a player, whatever the queue says', () => {
+    const roster = arrange(
+      room({ members: ['alice', 'bob'], playerCount: 1, queue: ['alice'] }),
+      byName(user('alice', seat(0)), user('bob', seat(0, false))),
+    )
+    expect(names(roster.teams[0]!.users)).toEqual(['alice'])
+    expect(roster.queue).toEqual([])
+  })
+
+  test('two hundred arrivals are dealt to the shape and no further', () => {
+    const members = Array.from({ length: 200 }, (_, i) => `p${i}`)
+    const roster = arrange(
+      room({
+        members,
+        playerCount: 100,
+        spectatorCount: 100,
+        layout: { teams: 4, teamSize: 25 },
+      }),
+      byName(...members.map((name) => user(name, null))),
+      'p0',
+    )
+    expect(roster.teams).toHaveLength(4)
+    expect(roster.teams.map((t) => t.guessed.length)).toEqual([25, 25, 25, 25])
+    expect(roster.teams.map(emptySeats)).toEqual([0, 0, 0, 0])
+    expect(roster.pending).toHaveLength(100)
+    expect(roster.spectatorCount).toBe(100)
   })
 
   test('a team fuller than the layout says grows rather than hides anyone', () => {

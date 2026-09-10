@@ -793,6 +793,27 @@ textarea {
   font-size: 0.9375rem;
 }
 
+/* The join queue wraps as the spectators do; the place in front of each
+   name is what carries the order, so a long queue reads as a numbered list
+   in columns rather than pushing the spectators off the screen. */
+.queue-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.1875rem 1.125rem;
+}
+
+.spectator.queued {
+  grid-template-columns: 1.25rem 1rem 1.125rem auto auto;
+}
+
+.spectator .place {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
 /* A seat waiting for its player: the row's height, a hint of a name. */
 .player.empty {
   min-height: 1.375rem;

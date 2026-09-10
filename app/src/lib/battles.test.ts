@@ -26,6 +26,7 @@ function battle(over: Partial<BattleView> = {}): BattleView {
     layout: null,
     bots: [],
     startRects: [],
+    queue: [],
     ...over,
   }
 }

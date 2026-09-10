@@ -38,6 +38,7 @@ const battle = (id: number, members: string[]): BattleView => ({
   layout: null,
   bots: [],
   startRects: [],
+  queue: [],
 })
 
 /** A room with no server behind it, as the runtime sends one. */
@@ -116,11 +117,13 @@ describe('apply', () => {
           at: 0,
         },
       },
+      { type: 'battleQueue', data: { id: 5, names: ['bob', 'alice'] } },
       { type: 'userRemoved', data: { name: 'alice' } },
     ]
     for (const delta of deltas) applyDelta(delta)
 
     expect(lobby.battles[5]?.members).toEqual(['alice', 'host'])
+    expect(lobby.battles[5]?.queue).toEqual(['bob', 'alice'])
     expect(lobby.battles[5]?.playerCount).toBe(1)
     expect(lobby.battles[5]?.locked).toBe(true)
     expect(lobby.battles[5]?.mapName).toBe('Map v2')

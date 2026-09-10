@@ -54,3 +54,7 @@
 	path = external/tachyon-client
 	url = https://github.com/beyond-all-reason/tachyon-client.git
 	branch = master
+[submodule "external/widgets-extra"]
+	path = external/widgets-extra
+	url = https://github.com/tetrisface/widgets-extra.git
+	branch = main

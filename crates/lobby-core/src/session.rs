@@ -1195,6 +1195,12 @@ impl Session {
                 }
                 vec![]
             }
+            E::BattleQueue { id, names } => {
+                if let Some(battle) = state.battles.get_mut(&id) {
+                    battle.queue = names;
+                }
+                vec![]
+            }
             E::Redirect { host, port } => vec![Effect::Redirect { host, port }],
             E::Disconnect { reason } => {
                 let flood = reason.contains("Flood");
@@ -2433,6 +2439,27 @@ mod tests {
         let battle = &s.state.battles[&22];
         assert_eq!(battle.title, "Beginner Players | 4v4");
         assert_eq!(battle.layout.map(|l| (l.teams, l.team_size)), Some((2, 8)));
+    }
+
+    #[test]
+    fn the_join_queue_is_replaced_whole_and_forgotten_on_leaving() {
+        let mut s = session();
+        feed(
+            &mut s,
+            &[
+                "BATTLEOPENED 22 0 0 bot 1.2.3.4 8452 16 0 0 h R\tv\tm\ttitle\tg",
+                "s.battle.queue_status 22\tAlice\tBob",
+            ],
+        );
+        assert_eq!(s.state.battles[&22].queue, ["Alice", "Bob"]);
+        feed(&mut s, &["s.battle.queue_status 22\tBob"]);
+        assert_eq!(s.state.battles[&22].queue, ["Bob"]);
+        feed(&mut s, &["s.battle.queue_status 22"]);
+        assert!(s.state.battles[&22].queue.is_empty());
+
+        feed(&mut s, &["s.battle.queue_status 22\tAlice"]);
+        s.state.forget_room_details(22);
+        assert!(s.state.battles[&22].queue.is_empty());
     }
 
     #[test]

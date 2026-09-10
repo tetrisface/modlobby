@@ -203,6 +203,9 @@ pub struct Battle {
     pub bots: BTreeMap<String, Bot>,
     /// Keyed by ally team; only known for our own room.
     pub start_rects: BTreeMap<u8, StartRect>,
+    /// Spectators waiting for a seat, first in line first; only known for
+    /// our own room (`s.battle.queue_status`).
+    pub queue: Vec<String>,
 }
 
 impl Battle {
@@ -212,6 +215,7 @@ impl Battle {
             members: BTreeSet::from([b.founder.clone()]),
             bots: BTreeMap::new(),
             start_rects: BTreeMap::new(),
+            queue: Vec::new(),
             founder: b.founder,
             ip: b.ip,
             port: b.port,
@@ -349,11 +353,12 @@ impl LobbyState {
         self.battles.get_mut(&id)
     }
 
-    /// Drops the room-only details (bots, start boxes) the server stops updating once we leave.
+    /// Drops the room-only details (bots, start boxes, join queue) the server stops updating once we leave.
     pub fn forget_room_details(&mut self, id: u32) {
         if let Some(battle) = self.battles.get_mut(&id) {
             battle.bots.clear();
             battle.start_rects.clear();
+            battle.queue.clear();
         }
     }
 

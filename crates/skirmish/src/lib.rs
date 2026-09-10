@@ -642,6 +642,7 @@ impl Room {
             // boxes; the `mapmetadata_*` modoptions are, and they are already
             // in `script_tags` where every reader looks for them.
             start_rects: Vec::new(),
+            queue: Vec::new(),
         }
     }
 

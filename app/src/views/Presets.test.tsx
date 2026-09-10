@@ -103,6 +103,7 @@ function enterRoom() {
     layout: null,
     bots: [],
     startRects: [],
+    queue: [],
   }
   next.myBattle = {
     boss: null,

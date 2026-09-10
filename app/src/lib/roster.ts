@@ -26,6 +26,9 @@ export type Team = {
 
 export type Roster = {
   teams: Team[]
+  /** Spectators waiting for a seat, first in line first. */
+  queue: UserView[]
+  /** Everyone else watching: the host first, then by name. */
   spectators: UserView[]
   /** Unplaced members with no seat to guess for them; listed as spectators. */
   pending: UserView[]
@@ -61,15 +64,17 @@ export function arrange(
     return found
   }
 
+  const place = new Map(room.queue.map((name, index) => [name, index]))
+  const queue: UserView[] = []
   const spectators: UserView[] = []
   const pending: UserView[] = []
-  // `members` arrives sorted by name; keeping that order means a skill tag
-  // landing late never reshuffles the list under the reader's eyes.
   for (const name of room.members) {
     const user = users[name]
     if (!user) continue
     if (user.battleStatus?.player)
       team(user.battleStatus.allyTeam).users.push(user)
+    // The server's word on who waits, whether or not a status has arrived.
+    else if (place.has(name)) queue.push(user)
     else if (user.battleStatus) spectators.push(user)
     // An autohost only ever spectates its own room, status or no status.
     else if (user.status.bot) spectators.push(user)
@@ -78,13 +83,21 @@ export function arrange(
   for (const bot of room.bots) team(bot.status.allyTeam).bots.push(bot)
   for (let allyTeam = 0; allyTeam < DEFAULT_TEAMS; allyTeam++) team(allyTeam)
 
+  // Ordered by nothing a late status could change, so a skill tag landing
+  // late never reshuffles the list under the reader's eyes.
+  queue.sort((a, b) => place.get(a.name)! - place.get(b.name)!)
+  spectators.sort(watching(room.founder))
+  pending.sort(watching(room.founder))
+  const watchers = queue.length + spectators.length
+
   if (pending.length === 0) {
     for (const t of teams.values()) t.expected = t.users.length + t.bots.length
     return {
       teams: sorted(teams),
+      queue,
       spectators,
       pending,
-      spectatorCount: spectators.length,
+      spectatorCount: watchers,
     }
   }
 
@@ -104,14 +117,14 @@ export function arrange(
   )
   let toSeat = Math.max(0, room.playerCount - placed)
   const dealt = new Set<string>()
-  const queue = pending.filter((user) => user.name !== me)
+  const unplaced = pending.filter((user) => user.name !== me)
   const round = sorted(teams)
-  for (let i = 0; toSeat > 0 && i < queue.length;) {
+  for (let i = 0; toSeat > 0 && i < unplaced.length;) {
     let seated = false
     for (const t of round) {
-      if (toSeat === 0 || i >= queue.length) break
+      if (toSeat === 0 || i >= unplaced.length) break
       if (emptySeats(t) === 0) continue
-      const user = queue[i]!
+      const user = unplaced[i]!
       t.guessed.push(user)
       dealt.add(user.name)
       i += 1
@@ -123,14 +136,26 @@ export function arrange(
 
   return {
     teams: round,
+    queue,
     spectators,
     pending: pending.filter((user) => !dealt.has(user.name)),
-    spectatorCount: Math.max(room.spectatorCount, spectators.length),
+    spectatorCount: Math.max(room.spectatorCount, watchers),
   }
 }
 
 function sorted(teams: Map<number, Team>): Team[] {
   return [...teams.values()].sort((a, b) => a.allyTeam - b.allyTeam)
+}
+
+/**
+ * Chobby's spectator order: the host on top, then by name. `localeCompare`
+ * folds case, as the chat roster's sort does, so `Zed` does not lead `alice`
+ * the way the wire's byte order has it.
+ */
+function watching(founder: string) {
+  return (a: UserView, b: UserView): number =>
+    Number(b.name === founder) - Number(a.name === founder) ||
+    a.name.localeCompare(b.name)
 }
 
 /**

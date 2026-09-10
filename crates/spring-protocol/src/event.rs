@@ -302,6 +302,13 @@ pub enum ServerEvent {
     BattleTeams {
         layouts: Vec<(u32, TeamLayout)>,
     },
+    /// `s.battle.queue_status <id>[\t<name>...]`: the room's join queue in
+    /// order, empty when nobody waits. Sent on joining, on request
+    /// (`c.battle.queue_status`) and whenever the queue changes.
+    BattleQueue {
+        id: u32,
+        names: Vec<String>,
+    },
     /// `s.system.disconnect <reason>`; reason `Flood protection` also blocks re-login for ~10 s.
     Disconnect {
         reason: String,
@@ -581,6 +588,18 @@ fn parse(raw: &RawMessage) -> Option<ServerEvent> {
         "s.battle.teams" => ServerEvent::BattleTeams {
             layouts: parse_battle_teams(a.trim())?,
         },
+        "s.battle.queue_status" => {
+            // An empty queue is the id alone, no tab after it.
+            let (id, names) = a.split_once('\t').unwrap_or((a, ""));
+            ServerEvent::BattleQueue {
+                id: id.trim().parse().ok()?,
+                names: names
+                    .split('\t')
+                    .filter(|name| !name.is_empty())
+                    .map(str::to_owned)
+                    .collect(),
+            }
+        }
         "s.system.disconnect" => ServerEvent::Disconnect { reason: a.into() },
         "s.system.shutdown" => ServerEvent::Shutdown,
         _ => ServerEvent::Unknown(raw.clone()),
@@ -850,6 +869,25 @@ mod tests {
             event("s.battle.teams !!!"),
             ServerEvent::Malformed(_)
         ));
+    }
+
+    #[test]
+    fn battle_queue_is_the_names_in_order_or_nobody() {
+        assert_eq!(
+            event("s.battle.queue_status 123\tAlice\tBob"),
+            ServerEvent::BattleQueue {
+                id: 123,
+                names: vec!["Alice".into(), "Bob".into()]
+            }
+        );
+        // spring_battle_out.ex sends the id alone for an empty queue.
+        assert_eq!(
+            event("s.battle.queue_status 123"),
+            ServerEvent::BattleQueue {
+                id: 123,
+                names: vec![]
+            }
+        );
     }
 
     #[test]

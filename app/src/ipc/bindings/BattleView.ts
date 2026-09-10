@@ -7,4 +7,9 @@ export type BattleView = { id: number, founder: string, ip: string, port: number
 /**
  * Sorted; includes the host bot and spectators.
  */
-members: Array<string>, spectatorCount: number, playerCount: number, layout: LayoutView | null, bots: Array<BotView>, startRects: Array<StartRectView>, };
+members: Array<string>, spectatorCount: number, playerCount: number, layout: LayoutView | null, bots: Array<BotView>, startRects: Array<StartRectView>, 
+/**
+ * Spectators waiting for a seat, first in line first. Only our own
+ * room's is known; every other room's is empty.
+ */
+queue: Array<string>, };

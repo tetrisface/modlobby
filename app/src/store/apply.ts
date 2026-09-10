@@ -137,6 +137,11 @@ export function applyDelta(delta: Delta): void {
         setLobby('battles', delta.data.id, 'layout', delta.data.layout)
       }
       return
+    case 'battleQueue':
+      if (lobby.battles[delta.data.id]) {
+        setLobby('battles', delta.data.id, 'queue', delta.data.names)
+      }
+      return
     case 'member': {
       const { id, name, joined } = delta.data
       if (lobby.battles[id]) {

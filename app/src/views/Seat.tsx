@@ -62,6 +62,17 @@ export function Seat() {
   const seat = () => me()?.battleStatus
   const seated = () => seat()?.player ?? false
   const running = () => room.running() !== null
+  /**
+   * Our place in the join queue, from one, or null while not in it. A full
+   * room answers Join by keeping us a spectator and queueing us itself, so
+   * this is what the button has to read to say what happened.
+   */
+  const queued = createMemo((): number | null => {
+    const name = room.me()
+    const queue = battleOf()?.queue ?? []
+    const index = name === null ? -1 : queue.indexOf(name)
+    return index < 0 || seated() ? null : index + 1
+  })
 
   /**
    * Ally teams already in use, plus the next free one — you can join a side or
@@ -281,18 +292,43 @@ export function Seat() {
           allyTeams={allyTeams}
         />
 
-        {/* One button, in one place: onto the emptiest side, or back out of
-            the seat. The picker beside it is for choosing which side. */}
+        {/* One button, in one place: onto the emptiest side, out of the
+            queue for one, or back out of the seat. The picker beside it is
+            for choosing which side. */}
         <Show
           when={seated()}
           fallback={
-            <button
-              disabled={busy()}
-              title='Take a seat on the emptiest team'
-              onClick={() => act('take a seat', () => sitOn(room, freeAlly()))}
+            <Show
+              when={queued()}
+              fallback={
+                <button
+                  disabled={busy()}
+                  title='Take a seat on the emptiest team'
+                  onClick={() =>
+                    act('take a seat', () => sitOn(room, freeAlly()))
+                  }
+                >
+                  Join
+                </button>
+              }
             >
-              Join
-            </button>
+              {(place) => (
+                <>
+                  <span class='muted'>
+                    queued {place()} of {battleOf()?.queue.length ?? 0}
+                  </span>
+                  <button
+                    disabled={busy()}
+                    title='Stay a spectator when a seat frees up'
+                    onClick={() =>
+                      act('leave the queue', () => room.io.sayBattle('$leaveq'))
+                    }
+                  >
+                    Leave queue
+                  </button>
+                </>
+              )}
+            </Show>
           }
         >
           <button disabled={busy()} title='Give the seat up' onClick={spectate}>

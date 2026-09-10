@@ -111,6 +111,10 @@ impl Projector {
                     },
                 }))
             }
+            E::BattleQueue { id, names } => out.push(Delta::BattleQueue {
+                id: *id,
+                names: names.clone(),
+            }),
             E::JoinedBattle { id, name, .. } => out.push(Delta::Member {
                 id: *id,
                 name: name.clone(),

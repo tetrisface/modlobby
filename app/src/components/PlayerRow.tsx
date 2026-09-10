@@ -213,7 +213,9 @@ export function GuessedRow(props: {
 /**
  * No status and no faction: Chobby hides both for spectators, and so do we.
  * `pending` is a member the server has not placed yet, listed here until it
- * does — most of them are about to move to a seat.
+ * does — most of them are about to move to a seat. `place` is a position in
+ * the join queue, counted from one, drawn as Chobby draws it: `1.` before
+ * the flag.
  */
 export function SpectatorRow(props: {
   user: UserView
@@ -221,9 +223,16 @@ export function SpectatorRow(props: {
   friend?: boolean
   boss?: boolean
   pending?: boolean
+  place?: number
 }) {
   return (
-    <div class='spectator' classList={{ pending: props.pending }}>
+    <div
+      class='spectator'
+      classList={{ pending: props.pending, queued: props.place !== undefined }}
+    >
+      <Show when={props.place}>
+        {(place) => <span class='place'>{place()}.</span>}
+      </Show>
       <Flag country={props.user.country} />
       <RankIcon status={props.user.status} />
       <span

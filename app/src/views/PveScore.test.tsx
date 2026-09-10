@@ -81,6 +81,7 @@ function room(bots: BotView[]): BattleView {
     layout: null,
     bots,
     startRects: [],
+    queue: [],
   }
 }
 
