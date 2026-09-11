@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render } from '@solidjs/testing-library'
 import { invoke } from '@tauri-apps/api/core'
 import { createSignal } from 'solid-js'
-import { afterEach, describe, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { VoteView } from '../ipc/bindings/VoteView'
 import { fakeRoom, myBattle } from './room/fixture'
 import { RoomProvider } from './room/model'
@@ -104,5 +104,28 @@ describe('VoteBar', () => {
     expect(container.querySelector('.vote-left')?.textContent).toBe('24s')
     const bar = container.querySelector<HTMLElement>('.vote-bar')
     expect(bar?.style.getPropertyValue('--left')).toBe('1')
+  })
+})
+
+describe('the clock line', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  const left = (container: HTMLElement) =>
+    container
+      .querySelector<HTMLElement>('.vote-bar')
+      ?.style.getPropertyValue('--left')
+
+  test('steps once a second, and at once when the host says otherwise', () => {
+    const { container, setVote } = open(vote({ remainingSecs: 24 }))
+    expect(left(container)).toBe('1')
+    vi.advanceTimersByTime(999)
+    expect(left(container)).toBe('1')
+    vi.advanceTimersByTime(1)
+    expect(left(container)).toBe(String(23 / 24))
+
+    // More left than we had counted: the line is moved, not run.
+    setVote(vote({ yes: 2, remainingSecs: 30 }))
+    expect(left(container)).toBe('1')
   })
 })

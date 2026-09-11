@@ -1892,8 +1892,9 @@ body.resizing-y {
 }
 
 /* What is left of the vote's time, along the bar's foot. Stepped down once
-   a second by the countdown and eased between steps, so it runs rather than
-   jumps. */
+   a second by the countdown, and moved at once when the host says otherwise.
+   Nothing between the steps: eased, it ran from the left as the bar lit up,
+   and a line that is always moving is a line nobody reads. */
 .vote-clock {
   position: absolute;
   left: 0;
@@ -1901,7 +1902,6 @@ body.resizing-y {
   height: 2px;
   width: calc(var(--left, 0) * 100%);
   background: var(--warn);
-  transition: width 1s linear;
 }
 
 /* What a start-box vote would do, under the row rather than squeezed into it. */
@@ -1912,10 +1912,6 @@ body.resizing-y {
 @media (prefers-reduced-motion: reduce) {
   .vote-bar {
     animation: none;
-  }
-
-  .vote-clock {
-    transition: none;
   }
 }
 
