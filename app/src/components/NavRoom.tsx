@@ -14,9 +14,18 @@ export function glance(b: BattleView): string {
  * The count is the battle list's, since that is where you came from. `+0`
  * stays so the line keeps its width when the first spectator arrives.
  */
-export function NavRoom(props: { battle: BattleView }) {
+export function NavRoom(props: {
+  battle: BattleView
+  /** The card's own element, for a row that measures what it holds. */
+  ref?: HTMLAnchorElement | ((el: HTMLAnchorElement) => void)
+}) {
   return (
-    <A href='/room' class='nav-room' title={glance(props.battle)}>
+    <A
+      href='/room'
+      class='nav-room'
+      title={glance(props.battle)}
+      ref={props.ref}
+    >
       <MapPicture
         class='nav-room-pic'
         mapName={props.battle.mapName}

@@ -290,6 +290,15 @@ export function IconSprite() {
             stroke-linejoin='round'
           />
         </symbol>
+        {/* The nav's fold: where the pages went that the row had no room for. */}
+        <symbol id='act-menu' viewBox='0 0 20 20'>
+          <path
+            d='M3.5 5.5 h13 M3.5 10 h13 M3.5 14.5 h13'
+            stroke='currentColor'
+            stroke-width='1.7'
+            stroke-linecap='round'
+          />
+        </symbol>
         <symbol id='side-random' viewBox='0 0 20 20'>
           <path
             d='M10 2.6 L17.4 10 L10 17.4 L2.6 10 Z'

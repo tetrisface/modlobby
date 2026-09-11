@@ -1,4 +1,4 @@
-import { A, HashRouter, Route, useLocation, useNavigate } from '@solidjs/router'
+import { HashRouter, Route, useLocation, useNavigate } from '@solidjs/router'
 import { listen } from '@tauri-apps/api/event'
 import {
   For,
@@ -14,7 +14,7 @@ import {
 import { GameActions } from './components/GameActions'
 import { Glyph, IconSprite } from './components/icons'
 import { Thinking } from './components/Thinking'
-import { NavRoom } from './components/NavRoom'
+import { NavTabs } from './components/NavTabs'
 import { PlayerMenu } from './components/PlayerMenu'
 import { connectChannel } from './ipc/channel'
 import { ACTIVITY_EVENTS, activityReporter } from './lib/activity'
@@ -367,44 +367,20 @@ function Layout(props: ParentProps) {
             alpha
           </span>
         </span>
-        {/* Battles and chat are the two things that need a session, but the
-            links stay: a row that loses half its tabs when the server drops
-            reads as an app that has broken, and each view says for itself
-            what it is waiting for. */}
-        <A href='/battles'>Battles</A>
-        <A href='/skirmish'>Skirmish</A>
-        <A href='/chat'>
-          Chat
-          <Show when={unread() > 0}>
-            <span class='badge' classList={{ named: named() }}>
-              {unread()}
-            </span>
-          </Show>
-        </A>
-        {/* Replays and presets are files on this machine, so they are here
-            whether or not anyone is logged in. */}
-        <A href='/news'>
-          News
-          <Show when={unreadNews() > 0}>
-            <span class='badge'>{unreadNews()}</span>
-          </Show>
-        </A>
-        <A href='/replays'>Replays</A>
-        <A href='/settings'>Settings</A>
-        {/* The way in, while there is no session. The corner's reconnect
-            button resumes one that dropped; this is for not having one. */}
-        <Show when={lobby.phase === null}>
-          <A href='/login'>Log in</A>
-        </Show>
-        {/* The room you are in, at the end of the tabs. The spacer takes up
-            its coming and going, so nothing else in the row moves. Gated on
-            the phase like the lobby links: a reconnect keeps myBattle. */}
-        <Show when={lobby.phase === 'ready' && myRoom()}>
-          {(b) => <NavRoom battle={b()} />}
-        </Show>
-        <span
-          class='spacer'
-          data-tauri-drag-region={!fullscreen() && !over() ? true : undefined}
+        {/* The pages, folding into a menu as the window narrows. The row
+            takes whatever is between the brand and the account, so the room
+            card's coming and going moves nothing else. The way in is among
+            them while there is no session: the corner's reconnect button
+            resumes one that dropped; that link is for not having one. The
+            room is gated on the phase like the lobby views are: a reconnect
+            keeps myBattle. */}
+        <NavTabs
+          room={lobby.phase === 'ready' ? myRoom() : undefined}
+          loggedOut={lobby.phase === null}
+          unread={unread()}
+          named={named()}
+          news={unreadNews()}
+          drag={!fullscreen() && !over()}
         />
         {/* Small and out of the way, level with the account: the
             build is worth a glance, not a place in the row. */}
