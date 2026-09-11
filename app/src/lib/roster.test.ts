@@ -191,6 +191,42 @@ describe('arrange', () => {
     ])
   })
 
+  test('players read strongest first, the host among them, whatever order they joined in', () => {
+    const skills: Record<string, Skill> = {
+      alice: { value: 18, origin: 'exact', sigma: 1 },
+      bob: { value: 45, origin: 'exact', sigma: 1 },
+      host: { value: 25, origin: 'exact', sigma: 1 },
+      zed: { value: 31.4, origin: 'exact', sigma: 1 },
+      // Too uncertain to show, so it reads `??` and sorts after every number.
+      carol: { value: 40, origin: 'exact', sigma: 7 },
+    }
+    const roster = arrange(
+      room({
+        members: ['Host', 'Zed', 'alice', 'bob', 'carol', 'dave', 'me'],
+        playerCount: 6,
+      }),
+      byName(
+        user('Host', seat(0)),
+        user('Zed', seat(0)),
+        user('alice', seat(0)),
+        user('bob', seat(0)),
+        user('carol', seat(0)),
+        user('dave', seat(0)),
+        user('me', seat(0, false)),
+      ),
+      'me',
+      (name) => skills[name.toLowerCase()] ?? null,
+    )
+    expect(names(roster.teams[0]!.users)).toEqual([
+      'bob',
+      'Zed',
+      'Host',
+      'alice',
+      'carol',
+      'dave',
+    ])
+  })
+
   test('the queue is its own list, in the order the server gave', () => {
     const roster = arrange(
       room({

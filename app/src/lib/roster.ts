@@ -19,7 +19,7 @@ export type SkillOf = (name: string) => Skill | null
 
 export type Team = {
   allyTeam: number
-  /** Placed by the server. */
+  /** Placed by the server; the strongest first, then by name. */
   users: UserView[]
   bots: BotView[]
   /** Seated here as a guess, until the server says where they really sit. */
@@ -88,12 +88,14 @@ export function arrange(
   for (const bot of room.bots) team(bot.status.allyTeam).bots.push(bot)
   for (let allyTeam = 0; allyTeam < DEFAULT_TEAMS; allyTeam++) team(allyTeam)
 
-  // The queue is the server's order and nothing else. The watchers read by
-  // strength, which a skill tag landing late can move -- one row, once,
-  // since the tags come in the join's own burst.
+  // The queue is the server's order and nothing else. The players and the
+  // watchers read by strength, which a skill tag landing late can move --
+  // one row, once, since the tags come in the join's own burst. A host that
+  // plays is ranked like anyone else on its team.
   queue.sort((a, b) => place.get(a.name)! - place.get(b.name)!)
-  spectators.sort(watching(room.founder, skillOf))
-  pending.sort(watching(room.founder, skillOf))
+  for (const t of teams.values()) t.users.sort(bySkill(skillOf))
+  spectators.sort(bySkill(skillOf, room.founder))
+  pending.sort(bySkill(skillOf, room.founder))
   const watchers = queue.length + spectators.length
 
   if (pending.length === 0) {
@@ -154,16 +156,16 @@ function sorted(teams: Map<number, Team>): Team[] {
 }
 
 /**
- * The watchers' order: the host on top, then the strongest first, then by
- * name. A skill too uncertain to show (`??`) comes after every number, and
- * no skill at all after that. `localeCompare` folds case, as the chat
- * roster's sort does, so `Zed` does not lead `alice` the way the wire's
- * byte order has it.
+ * The roster's order: `first` on top (the host, for the watchers), then the
+ * strongest first, then by name. A skill too uncertain to show (`??`) comes
+ * after every number, and no skill at all after that. `localeCompare` folds
+ * case, as the chat roster's sort does, so `Zed` does not lead `alice` the
+ * way the wire's byte order has it.
  */
-function watching(founder: string, skillOf: SkillOf) {
+function bySkill(skillOf: SkillOf, first: string | null = null) {
   type Key = [tier: number, strength: number]
   const key = (user: UserView): Key => {
-    if (user.name === founder) return [0, 0]
+    if (user.name === first) return [0, 0]
     const skill = skillOf(user.name)
     if (skill === null) return [3, 0]
     return [isUnrated(skill) ? 2 : 1, -skill.value]
