@@ -1,9 +1,13 @@
-# One button. Blank input bumps the patch version; a typed version is used as
-# given. The bump is committed and tagged before the build, so the tag names a
-# commit whose Cargo.toml already states its own version, and
-# `git checkout v<x> && cargo build` reproduces the shipped version string.
+# Two ways in. The button: blank input bumps the patch version, a typed version
+# is used as given. Or a push to main whose commit subject carries `[release]`
+# (or `[release 1.2.3]`): ci runs first and this workflow starts when it
+# finishes, releasing only if it was green. The bump is committed and tagged
+# before the build, so the tag names a commit whose Cargo.toml already states
+# its own version, and `git checkout v<x> && cargo build` reproduces the
+# shipped version string.
 #
-# Three jobs: `tag` bumps, tags and opens the GitHub release; `build` runs once
+# Four jobs: `gate` decides whether this run releases and which version;
+# `tag` bumps, tags and opens the GitHub release; `build` runs once
 # per platform (Windows NSIS; Linux AppImage, .deb and .rpm; mac waits for a
 # Recoil build) and each attaches its bundles, .sig files and latest.json to
 # that release as soon as it finishes. tauri-action merges the `platforms` map of an existing
@@ -20,17 +24,55 @@ on:
         description: "Version to release (blank: patch + 1)"
         required: false
         default: ""
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: write
 
-# Two releases racing on main would both bump and both tag.
+# Two releases racing on main would both bump and both tag. Every ci run on
+# main also lands here, so a non-release push queues behind a running release
+# for a few seconds before `gate` lets it out.
 concurrency:
   group: release
   cancel-in-progress: false
 
 jobs:
+  gate:
+    runs-on: ubuntu-24.04
+    outputs:
+      release: ${{ steps.decide.outputs.release }}
+      version: ${{ steps.decide.outputs.version }}
+    steps:
+      - id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          CI_EVENT: ${{ github.event.workflow_run.event }}
+          CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          CI_MESSAGE: ${{ github.event.workflow_run.head_commit.message }}
+        run: |
+          if [ "$EVENT" = workflow_dispatch ]; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "version=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Only the subject line counts, and only for a push: a pull request
+          # from a branch named main must not release.
+          subject=$(head -n1 <<<"$CI_MESSAGE")
+          if ! [[ "$CI_EVENT" = push && "$subject" =~ \[release( ([0-9]+\.[0-9]+\.[0-9]+))?\] ]]; then
+            echo "not a release commit: $subject"
+            exit 0
+          fi
+          [ "$CI_CONCLUSION" = success ] || { echo "ci was $CI_CONCLUSION, not releasing"; exit 1; }
+          echo "release=true" >> "$GITHUB_OUTPUT"
+          echo "version=${BASH_REMATCH[2]}" >> "$GITHUB_OUTPUT"
+
   tag:
+    needs: gate
+    if: needs.gate.outputs.release == 'true'
     runs-on: ubuntu-24.04
     outputs:
       next: ${{ steps.version.outputs.next }}
@@ -42,12 +84,23 @@ jobs:
         with:
           ref: main
 
+      # ci verified one commit; release that one, not whatever main is now.
+      - name: main is still the commit ci passed
+        if: github.event_name == 'workflow_run'
+        env:
+          CI_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          [ "$(git rev-parse HEAD)" = "$CI_SHA" ] ||
+            { echo "main moved past $CI_SHA since ci ran; push [release] again or use the button"; exit 1; }
+
       - name: Next version
         id: version
+        env:
+          VERSION: ${{ needs.gate.outputs.version }}
         run: |
           id=$(cargo pkgid -p modlobby-app)
           current=${id##*@}
-          next='${{ inputs.version }}'
+          next=$VERSION
           if [ -z "$next" ]; then
             IFS=. read -r major minor patch <<<"$current"
             next="$major.$minor.$((patch + 1))"

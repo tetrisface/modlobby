@@ -1,5 +1,6 @@
 # Every push and pull request: format, tests, generated bindings, front end.
-# No artifacts and no release — release.yml is a deliberate act.
+# No artifacts and no release here: release.yml runs after a green push whose
+# commit subject carries `[release]`, or from its button.
 name: ci
 
 on:
