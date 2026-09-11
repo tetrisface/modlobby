@@ -261,7 +261,9 @@ pub fn run() {
                 }
             });
             let check_updates = app.settings.get().updates.automatic && update::enabled();
-            tauri_app.manage(update::Staged::default());
+            // Picks up a download an earlier run left waiting; the front end
+            // asks for it to be installed before it logs in.
+            tauri_app.manage(update::Staged::open(app.settings.dir()));
             tauri_app.manage(app);
             // A look, not a download: one small request when it is due, and
             // the corner of the nav says what it found.
@@ -327,6 +329,7 @@ pub fn run() {
             update::app_version,
             update::check_update,
             update::install_update,
+            update::resume_update,
             commands::flash_engine,
             commands::remember_played,
             commands::game_modoptions,

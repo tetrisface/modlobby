@@ -134,7 +134,9 @@ pub enum Limit {
 pub struct LoginBackoff {
     /// teiserver errors on a reconnect right after a disconnect; Chobby waits 3 s.
     pub after_disconnect_secs: f64,
-    /// A flood disconnect sets the server-side login counter above its limit for a 10 s TTL.
+    /// A flood disconnect sets the server-side login counter above its
+    /// limit, in a cache whose 10 s TTL is swept every 10 s: the entry lives
+    /// up to 20 s (`settings::login_guard` has the arithmetic).
     pub after_flood_secs: f64,
 }
 
@@ -285,7 +287,7 @@ impl Default for ThrottlePolicy {
             areas,
             login: LoginBackoff {
                 after_disconnect_secs: 3.0,
-                after_flood_secs: 10.0,
+                after_flood_secs: 21.0,
             },
             heartbeat_idle_secs: 30.0,
             max_line_bytes: 60 * 1024,

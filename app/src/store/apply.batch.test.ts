@@ -39,6 +39,7 @@ describe('applyMessage', () => {
       type: 'snapshot',
       data: {
         phase: 'ready',
+        retryIn: null,
         me: 'me',
         users: names.map(user),
         battles: [],

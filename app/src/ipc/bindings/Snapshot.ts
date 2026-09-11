@@ -15,7 +15,14 @@ import type { UserView } from "./UserView";
  * `Default` is "nothing has happened yet", which is what a test that cares
  * about one field wants and what a fresh session is.
  */
-export type Snapshot = { phase: Phase | null, me: string | null, users: Array<UserView>, battles: Array<BattleView>, myBattle: MyBattleView | null, gameRunning: GameRunningView | null, engine: EngineStatus, 
+export type Snapshot = { phase: Phase | null, 
+/**
+ * Seconds until the runtime tries the last credentials again on its
+ * own, while it means to; `None` when it does not — connected, logged
+ * out, or never logged in. A count, not a moment: the runtime's clock
+ * is not the window's.
+ */
+retryIn: number | null, me: string | null, users: Array<UserView>, battles: Array<BattleView>, myBattle: MyBattleView | null, gameRunning: GameRunningView | null, engine: EngineStatus, 
 /**
  * Channels we are in. Chat lines are not replayed — a reload keeps
  * whichever backlog the front end still holds — but membership is, so the

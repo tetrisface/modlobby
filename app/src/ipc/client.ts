@@ -103,6 +103,8 @@ export const api = {
   appVersion: () => invoke<VersionView>('app_version'),
   checkUpdate: () => invoke<UpdateProgress>('check_update'),
   installUpdate: () => invoke<UpdateProgress>('install_update'),
+  /** Installs a download an earlier run kept; `null` when there is none. */
+  resumeUpdate: () => invoke<UpdateProgress | null>('resume_update'),
   ring: (user: string) => invoke<void>('ring', { user }),
   addBot: (
     name: string,

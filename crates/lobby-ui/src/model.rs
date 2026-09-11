@@ -539,6 +539,12 @@ pub enum PasteStatus {
 #[ts(export)]
 pub struct Snapshot {
     pub phase: Option<Phase>,
+    /// Seconds until the runtime tries the last credentials again on its
+    /// own, while it means to; `None` when it does not — connected, logged
+    /// out, or never logged in. A count, not a moment: the runtime's clock
+    /// is not the window's.
+    #[ts(type = "number | null")]
+    pub retry_in: Option<u64>,
     pub me: Option<String>,
     pub users: Vec<UserView>,
     pub battles: Vec<BattleView>,
@@ -573,6 +579,7 @@ impl Snapshot {
     pub fn disconnected() -> Self {
         Self {
             phase: None,
+            retry_in: None,
             me: None,
             users: Vec::new(),
             battles: Vec::new(),
@@ -605,6 +612,8 @@ impl Snapshot {
         battles.sort_by_key(|b| b.id);
         Self {
             phase: state.phase.map(Into::into),
+            // Only the runtime knows; it fills this in beside the download.
+            retry_in: None,
             me: state.me.clone(),
             users,
             battles,
@@ -730,6 +739,9 @@ pub enum NoticeLevel {
 #[ts(export)]
 pub enum Delta {
     Phase(Option<Phase>),
+    /// The runtime's next attempt at the last credentials moved: armed after
+    /// a drop or a refusal, or called off. See `Snapshot::retry_in`.
+    RetryIn(#[ts(type = "number | null")] Option<u64>),
     UserAdded(UserView),
     UserRemoved {
         name: String,

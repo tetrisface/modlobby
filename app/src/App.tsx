@@ -31,7 +31,7 @@ import { chat, holdNotices, pushNotice } from './store/chat'
 import { lobby, myRoom } from './store/lobby'
 import { loadNews, unreadNews } from './store/news'
 import { over, setOver } from './store/overlay'
-import { autoLogin } from './store/session'
+import { autoLogin, loginHold } from './store/session'
 import {
   applySettings,
   nudgeScale,
@@ -44,7 +44,9 @@ import {
   checkUpdate,
   downloading,
   failure,
+  heldBy,
   installUpdate,
+  resumeUpdate,
   waiting,
   watchUpdates,
 } from './store/update'
@@ -72,6 +74,23 @@ function Reconnect() {
   const connecting = () => lobby.phase !== null
   /** Learned from the runtime: there is nothing to reconnect with. */
   const [needsLogin, setNeedsLogin] = createSignal(false)
+  /**
+   * Seconds until the next attempt that is going to happen without a click:
+   * the runtime's own retry after a drop or a refusal, or the auto-login the
+   * throttle is holding back. `null` when nothing is coming.
+   */
+  const [left, setLeft] = createSignal<number | null>(null)
+  createEffect(() => {
+    const at = soonest(lobby.retryAt, loginHold())
+    if (at === null) {
+      setLeft(null)
+      return
+    }
+    const tick = () => setLeft(Math.max(0, Math.ceil((at - Date.now()) / 1000)))
+    tick()
+    const timer = setInterval(tick, 1000)
+    onCleanup(() => clearInterval(timer))
+  })
 
   async function reconnect() {
     try {
@@ -89,7 +108,14 @@ function Reconnect() {
 
   const label = () => {
     if (connecting()) return 'connecting'
-    return needsLogin() ? 'log in' : 'not logged in'
+    if (needsLogin()) return 'log in'
+    const seconds = left()
+    return seconds ? `retrying in ${seconds}s` : 'not logged in'
+  }
+  const title = () => {
+    if (connecting()) return 'Connecting'
+    if (left()) return 'Logging in again when the count ends. Click to try now.'
+    return 'Reconnect'
   }
 
   return (
@@ -97,13 +123,20 @@ function Reconnect() {
       type='button'
       class='reconnect'
       disabled={connecting()}
-      title={connecting() ? 'Connecting' : 'Reconnect'}
+      title={title()}
       onClick={() => void reconnect()}
     >
       <Glyph id='act-reconnect' />
       {label()}
     </button>
   )
+}
+
+/** The earlier of two moments, either of which may be missing. */
+function soonest(a: number | null, b: number | null): number | null {
+  if (a === null) return b
+  if (b === null) return a
+  return Math.min(a, b)
 }
 
 function Layout(props: ParentProps) {
@@ -283,6 +316,10 @@ function Layout(props: ParentProps) {
       const saved = await api.getSettings()
       applySettings(saved)
       await connectChannel()
+      // A download an earlier run kept installs now, before the login: the
+      // restart it ends in would only spend another login on the server's
+      // count. Comes back only when there is nothing to install.
+      await resumeUpdate()
       // The one place that already holds the settings, so auto-login neither
       // reads them again nor races the signal that carries them.
       void autoLogin(saved.account)
@@ -395,7 +432,11 @@ function Layout(props: ParentProps) {
                     <button
                       type='button'
                       class='version waiting'
-                      title={`Version ${next()} is downloaded. Restart into it.`}
+                      title={
+                        heldBy()
+                          ? `Version ${next()} is downloaded and installs on the next start. Restarting now would lose ${heldBy()}.`
+                          : `Version ${next()} is downloaded. Restart into it.`
+                      }
                       onClick={() => void installUpdate()}
                     >
                       {build().version} → {next()} ⟳

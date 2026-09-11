@@ -1532,12 +1532,14 @@ impl Runtime {
                 self.credentials = None;
                 self.reconnect.stop();
                 self.disconnect().await;
+                self.announce_retry();
             }
             // Asked for, so it goes out now: the timer's wait is for a server
             // that dropped everyone at once, not for a person watching.
             Command::Reconnect { reply } => match self.credentials.clone() {
                 Some((endpoint, request)) => {
                     self.reconnect.attempted(Instant::now());
+                    self.announce_retry();
                     tracing::info!("reconnecting on request");
                     self.connect(endpoint, request, reply).await;
                 }
@@ -2083,6 +2085,7 @@ impl Runtime {
                 Effect::Ready => {
                     self.reconnect.stop();
                     self.reply_login(Ok(()));
+                    // The snapshot carries `retry_in: None` for the corner.
                     self.send_snapshot();
                     // The server volunteers nothing about friendships, so the
                     // list is asked for once the login flood has settled.
@@ -2276,7 +2279,7 @@ impl Runtime {
         let transient = reason.to_ascii_lowercase().contains("flood protection");
         if transient && self.credentials.is_some() {
             self.reconnect
-                .disconnected(Instant::now(), false, rand::random::<f64>());
+                .flooded(Instant::now(), rand::random::<f64>());
             tracing::info!(reason, "login refused as flooding; will wait and retry");
         }
         self.reply_login(Err(ClientError::Refused(reason.clone())));
@@ -2287,6 +2290,7 @@ impl Runtime {
         self.game = None;
         self.auto_launch = None;
         self.batcher.push(Delta::Phase(None));
+        self.announce_retry();
     }
 
     fn connection_lost(&mut self, reason: String) {
@@ -2317,6 +2321,7 @@ impl Runtime {
             text,
         });
         self.batcher.push(Delta::Phase(None));
+        self.announce_retry();
     }
 
     /// The window has gone untouched for the limit. A running game is not
@@ -2339,6 +2344,7 @@ impl Runtime {
         self.credentials = None;
         self.reconnect.stop();
         self.disconnect().await;
+        self.announce_retry();
         self.batcher.push(Delta::Notice {
             level: lobby_ui::NoticeLevel::Info,
             text: "disconnected: nobody has touched the lobby for a while".into(),
@@ -2357,6 +2363,7 @@ impl Runtime {
             return;
         }
         self.reconnect.attempted(Instant::now());
+        self.announce_retry();
         tracing::info!("reconnecting");
         let (tx, _rx) = oneshot::channel();
         self.connect(endpoint, request, tx).await;
@@ -2489,6 +2496,19 @@ impl Runtime {
         if let Some(reply) = self.login_reply.take() {
             let _ = reply.send(result);
         }
+    }
+
+    /// Seconds until the policy's next attempt, for the corner to count down.
+    fn retry_in(&self) -> Option<u64> {
+        self.reconnect
+            .until_due(Instant::now())
+            .map(|wait| wait.as_secs())
+    }
+
+    /// Tells the front end when the next attempt is due, after anything that
+    /// moved it: armed, attempted, or called off.
+    fn announce_retry(&mut self) {
+        self.batcher.push(Delta::RetryIn(self.retry_in()));
     }
 
     /// The room's deltas go out before the answer: the front end walks into
@@ -2695,6 +2715,7 @@ impl Runtime {
             .paste
             .as_ref()
             .map_or(PasteStatus::Idle, PasteProgress::status);
+        snapshot.retry_in = self.retry_in();
         // Joined on here rather than built into either constructor, because a
         // skirmish belongs to the machine and a snapshot describes a session.
         snapshot.skirmish = self.skirmish.as_ref().map(|room| {

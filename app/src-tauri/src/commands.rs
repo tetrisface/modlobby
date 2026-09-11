@@ -207,7 +207,7 @@ fn throttled(wait: Duration) -> ApiError {
     ApiError::new(
         "throttled",
         format!(
-            "teiserver allows 3 logins per 10 seconds; waiting {}s",
+            "teiserver refuses a login within 20 seconds of the last; waiting {}s",
             wait.as_secs()
         ),
     )
@@ -284,7 +284,7 @@ pub async fn confirm_agreement(
 /// Why a username would be refused, answered without asking the server.
 ///
 /// The rules are teiserver's own and purely mechanical, so a typo costs
-/// neither a round trip nor one of the three logins it allows per ten seconds.
+/// neither a round trip nor the one login it allows per twenty seconds.
 /// Whether the name is taken only the server can say, and it does.
 #[tauri::command]
 pub fn name_problem(username: String) -> Option<String> {

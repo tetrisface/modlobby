@@ -1,14 +1,23 @@
 //! Not hammering the server's login limit.
 //!
-//! teiserver counts logins per account in a cache with a 10 s TTL and a limit
-//! of 3 (`application.ex:108`, `teiserver_configs.ex:392`). Every *allowed*
-//! login refreshes that TTL, so the count only clears after 10 s of silence;
-//! the fourth is refused with
-//! `Flood protection - Please wait 20 seconds and try again`.
+//! teiserver keeps a per-account login counter in a ConCache with a 10 s TTL
+//! (`application.ex:108`) and refuses a login once it reaches
+//! `system.Login limit count` with `Flood protection - Please wait 20 seconds
+//! and try again` (`cache_user.ex:690-700`). Two things about that cache make
+//! the wait longer than the TTL says (`cache_helper.ex:140-153`):
 //!
-//! Restarting the app is a login, so a few rebuilds in a row hit this. The
-//! same counter is kept here, on disk so it survives a restart, and a login
-//! that would be refused is held back instead of being sent.
+//! - it is swept every 10 s, and an entry is dropped at the second sweep after
+//!   it was written, so it lives 10-20 s;
+//! - it is `touch_on_read`, and the check that refuses a login reads it — so a
+//!   refused attempt renews the entry for another 10-20 s.
+//!
+//! The counter's limit on the live server is not the default three: on
+//! 2026-09-10 a login 13 s after the previous one was refused, and again one
+//! 9 s after, both with nothing else on the account (`logs/modlobby.jsonl`).
+//! So the rule kept here is the one that fits: **one login per entry life**,
+//! 20 s after the last attempt, and 20 s more after a refusal. That is the
+//! wait a restart has to respect, and it is kept on disk so a restart can —
+//! the app relaunching after an update is exactly the case.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -17,17 +26,9 @@ use serde::{Deserialize, Serialize};
 
 const FILE_NAME: &str = "login-state.json";
 
-/// teiserver's `system.Login limit count`.
-const LIMIT: u32 = 3;
-/// The TTL on its login-count cache, refreshed by each allowed login.
-const WINDOW: Duration = Duration::from_secs(10);
-/// What the server *says* to wait after refusing.
-///
-/// A ceiling, not the answer. `login_flood_check` blocks without touching its
-/// cache (`cache_user.ex:690-700`), so the block really clears when that
-/// cache entry expires — `WINDOW` after the last login it *allowed*, which is
-/// usually sooner than this.
-const THROTTLED_WAIT: Duration = Duration::from_secs(20);
+/// How long the server's counter entry can outlive the attempt that touched
+/// it: the 10 s TTL, rounded up to the next 10 s sweep.
+const ENTRY_LIFE: Duration = Duration::from_secs(20);
 
 /// A second's grace on every computed wait.
 ///
@@ -35,88 +36,47 @@ const THROTTLED_WAIT: Duration = Duration::from_secs(20);
 /// costs a refusal that puts us back where we started.
 const MARGIN: Duration = Duration::from_secs(1);
 
-/// The counter as the server keeps it, plus any refusal it has handed us.
+/// The server's counter as far as this machine has touched it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct LoginState {
-    /// Logins counted in the current window.
-    pub count: u32,
-    /// When that count lapses, as a unix timestamp.
-    pub window_ends: u64,
-    /// When a refusal expires, as a unix timestamp.
+    /// When the last login went out, as a unix timestamp; `0` for never.
+    pub last_attempt: u64,
+    /// When the last refusal's renewal of the entry lapses, as a unix
+    /// timestamp; `0` for none.
     pub blocked_until: u64,
-    /// The window as it stood before the attempt in flight.
-    ///
-    /// A refused login is the one case the server does not count, so the
-    /// optimistic extension has to be undoable.
-    #[serde(default)]
-    pub window_before: u64,
 }
 
 impl LoginState {
     /// How long a login must wait, or `None` when it may go now.
     pub fn wait(&self, now: SystemTime) -> Option<Duration> {
         let now = unix(now);
-        let blocked = self.blocked_until.saturating_sub(now);
-        if blocked > 0 {
-            return Some(Duration::from_secs(blocked));
-        }
-        // A lapsed window means the server has forgotten the count too.
-        if now >= self.window_ends {
-            return None;
-        }
-        (self.count >= LIMIT).then(|| Duration::from_secs(self.window_ends - now))
+        let after_attempt = match self.last_attempt {
+            0 => 0,
+            at => at + ENTRY_LIFE.as_secs() + MARGIN.as_secs(),
+        };
+        let wait = after_attempt.max(self.blocked_until).saturating_sub(now);
+        (wait > 0).then(|| Duration::from_secs(wait))
     }
 
     /// Counts a login we are about to send, the way the server will count it.
     ///
-    /// Optimistically: `login_flood_check` runs before the password is even
-    /// looked at (`cache_user.ex:749`), so anything it lets through has both
-    /// counted and refreshed the cache — a wrong password included. Only a
-    /// refusal is not counted, and [`Self::record_refusal`] undoes this.
+    /// Before the answer, because the server counts before it looks at the
+    /// password (`cache_user.ex:840`): a wrong password counts too.
     pub fn record_attempt(&mut self, now: SystemTime) {
-        let now = unix(now);
-        if now >= self.window_ends {
-            self.count = 0;
-        }
-        self.count += 1;
-        self.window_before = self.window_ends;
-        self.window_ends = now + WINDOW.as_secs() + MARGIN.as_secs();
+        self.last_attempt = unix(now);
     }
 
-    /// The server refused us.
-    ///
-    /// It refused because its count was already at the limit, and refusing did
-    /// not refresh anything — so the block lifts when the entry from the last
-    /// allowed login expires. Taking the "20 seconds" literally instead means
-    /// waiting from the moment we were told off, which restarts the clock every
-    /// time we ask.
+    /// The server refused us: the check that refused read the entry, and
+    /// reading renews it, so the wait starts again from now.
     pub fn record_refusal(&mut self, now: SystemTime) {
-        let now = unix(now);
-        // Blocking touches nothing, so this attempt neither counted nor
-        // refreshed: put the window back where the last counted login left it.
-        self.window_ends = self.window_before;
-        self.count = LIMIT;
-        // The block lifts when that entry expires, which is what the window
-        // already records — not twenty seconds from being told off, which
-        // restarts the clock every time we ask and is why quitting the app
-        // never seemed to make the wait any shorter.
-        let ceiling = now + THROTTLED_WAIT.as_secs();
-        // With no live window we have nothing better than what it said. That
-        // is the case on a first run, or after a session whose bookkeeping
-        // never reached the disk.
-        let expected = if self.window_ends > now {
-            self.window_ends + MARGIN.as_secs()
-        } else {
-            ceiling
-        };
-        self.blocked_until = expected.clamp(now + MARGIN.as_secs(), ceiling);
+        self.blocked_until = unix(now) + ENTRY_LIFE.as_secs() + MARGIN.as_secs();
     }
 
-    /// A login went through, so the refusal (if any) is stale.
+    /// A login went through, so the refusal (if any) is stale. The attempt
+    /// itself still stands: the server counted it.
     pub fn record_success(&mut self, now: SystemTime) {
         self.blocked_until = 0;
-        // The count and the window stand: the server counted this one.
         let _ = now;
     }
 }
@@ -195,84 +155,66 @@ mod tests {
     }
 
     #[test]
-    fn the_fourth_login_in_a_window_is_held_back() {
+    fn a_second_login_waits_out_the_entry_the_first_one_wrote() {
         let mut state = LoginState::default();
-        assert_eq!(state.wait(at(1_000)), None);
-        for second in [1_000, 1_003, 1_006] {
-            assert_eq!(state.wait(at(second)), None, "three are allowed");
-            state.record_attempt(at(second));
-        }
-        // The window was refreshed by the third, so it runs to 1_016 plus a
-        // second of grace against the two clocks disagreeing.
-        assert_eq!(state.wait(at(1_007)), Some(Duration::from_secs(10)));
-        assert_eq!(state.wait(at(1_016)), Some(Duration::from_secs(1)));
-        assert_eq!(state.wait(at(1_017)), None, "the server has forgotten too");
-
-        // And the count starts over.
-        state.record_attempt(at(1_017));
-        assert_eq!(state.wait(at(1_018)), None);
+        assert_eq!(state.wait(at(1_000)), None, "nothing counted yet");
+        state.record_attempt(at(1_000));
+        // The entry can live twenty seconds, plus a second of grace against
+        // the two clocks disagreeing.
+        assert_eq!(state.wait(at(1_000)), Some(Duration::from_secs(21)));
+        assert_eq!(state.wait(at(1_013)), Some(Duration::from_secs(8)));
+        assert_eq!(state.wait(at(1_020)), Some(Duration::from_secs(1)));
+        assert_eq!(state.wait(at(1_021)), None, "the server has forgotten too");
     }
 
     #[test]
-    fn a_refusal_with_nothing_to_go_on_believes_the_twenty_seconds() {
+    fn a_refusal_starts_the_wait_again_from_the_refusal() {
+        // What the log showed: a login, and one thirteen seconds later refused.
         let mut state = LoginState::default();
-        state.record_refusal(at(2_000));
-        assert_eq!(state.wait(at(2_000)), Some(Duration::from_secs(20)));
-        assert_eq!(state.wait(at(2_019)), Some(Duration::from_secs(1)));
-        assert_eq!(state.wait(at(2_020)), None);
+        state.record_attempt(at(2_000));
+        state.record_attempt(at(2_013));
+        state.record_refusal(at(2_013));
+        // Reading the entry renewed it, so the wait is not what was left of
+        // the first login's twenty seconds but a fresh twenty from now.
+        assert_eq!(state.wait(at(2_013)), Some(Duration::from_secs(21)));
+        assert_eq!(state.wait(at(2_033)), Some(Duration::from_secs(1)));
+        assert_eq!(state.wait(at(2_034)), None);
+    }
 
-        // Logging in successfully clears a stale refusal.
+    #[test]
+    fn a_success_clears_a_stale_refusal_but_not_the_attempt() {
+        let mut state = LoginState::default();
         state.record_refusal(at(3_000));
-        state.record_success(at(3_005));
-        assert_eq!(state.wait(at(3_005)), None);
-    }
-
-    #[test]
-    fn a_refusal_waits_for_the_window_rather_than_the_stated_twenty() {
-        // Three logins get through, so the server's entry expires at 1_011.
-        let mut state = LoginState::default();
-        for second in [1_000, 1_001, 1_002] {
-            state.record_attempt(at(second));
-        }
-        // A fourth we sent anyway — another client, a clock that disagreed.
-        state.record_attempt(at(1_003));
-        state.record_refusal(at(1_003));
-
-        // The refusal did not refresh anything, so the wait runs to where the
-        // third login left the window, not twenty seconds from now.
-        // The third login left the window at 1_013; the refused fourth moved
-        // it and was rolled back. Eleven seconds, not the twenty it was told.
-        assert_eq!(state.wait(at(1_003)), Some(Duration::from_secs(11)));
-        assert_eq!(state.wait(at(1_013)), Some(Duration::from_secs(1)));
-        assert_eq!(state.wait(at(1_014)), None);
+        state.record_attempt(at(3_030));
+        state.record_success(at(3_030));
+        // The refusal is over; the login that succeeded still counts.
+        assert_eq!(state.wait(at(3_030)), Some(Duration::from_secs(21)));
+        assert_eq!(state.wait(at(3_051)), None);
     }
 
     #[test]
     fn quitting_between_attempts_counts_towards_the_wait() {
         // The complaint this models: the clock should not restart because the
-        // app did. Three logins, then the app is gone for eight seconds.
+        // app did. One login, then the app is gone for eight seconds.
         let dir = tempfile::tempdir().unwrap();
         let guard = LoginGuard::new(dir.path());
-        for second in [2_000, 2_001, 2_002] {
-            guard.record_attempt(at(second));
-        }
+        guard.record_attempt(at(2_000));
         let restarted = LoginGuard::new(dir.path());
-        assert_eq!(restarted.wait(at(2_010)), Some(Duration::from_secs(3)));
-        assert_eq!(restarted.wait(at(2_013)), None, "waited out while quit");
+        assert_eq!(restarted.wait(at(2_008)), Some(Duration::from_secs(13)));
+        assert_eq!(restarted.wait(at(2_021)), None, "waited out while quit");
     }
 
     #[test]
-    fn the_count_survives_a_restart() {
+    fn the_file_a_previous_build_wrote_is_read_as_clear() {
+        // The old shape had a count and a window; neither field is known now,
+        // and an unknown file must never hold a login back.
         let dir = tempfile::tempdir().unwrap();
-        let guard = LoginGuard::new(dir.path());
-        for second in [500, 501, 502] {
-            assert_eq!(guard.wait(at(second)), None);
-            guard.record_attempt(at(second));
-        }
-        // A fresh guard reads the same file, which is the whole point.
-        let restarted = LoginGuard::new(dir.path());
-        assert_eq!(restarted.wait(at(503)), Some(Duration::from_secs(10)));
-        assert_eq!(restarted.wait(at(513)), None);
+        std::fs::write(
+            dir.path().join(FILE_NAME),
+            r#"{"count": 3, "windowEnds": 1789074336, "blockedUntil": 0}"#,
+        )
+        .unwrap();
+        assert_eq!(LoginGuard::new(dir.path()).wait(at(1_789_074_000)), None);
     }
 
     #[test]

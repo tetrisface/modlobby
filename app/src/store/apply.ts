@@ -37,6 +37,7 @@ export function applySnapshot(snapshot: Snapshot): void {
   const next: LobbyState = {
     ...emptyLobby(),
     phase: snapshot.phase,
+    retryAt: retryAt(snapshot.retryIn),
     me: snapshot.me,
     myBattle: snapshot.myBattle,
     gameRunning: snapshot.gameRunning,
@@ -61,8 +62,16 @@ function playerCount(battle: BattleView): number {
   return Math.max(0, battle.members.length - battle.spectatorCount)
 }
 
+/** The runtime's "in N seconds" as a moment on this clock. */
+function retryAt(seconds: number | null): number | null {
+  return seconds === null ? null : Date.now() + seconds * 1000
+}
+
 export function applyDelta(delta: Delta): void {
   switch (delta.type) {
+    case 'retryIn':
+      setLobby('retryAt', retryAt(delta.data))
+      return
     case 'phase':
       setLobby('phase', delta.data)
       if (delta.data === null) {

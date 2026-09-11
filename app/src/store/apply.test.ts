@@ -61,6 +61,7 @@ const room: SkirmishView = {
 
 const snapshot: Snapshot = {
   phase: 'ready',
+  retryIn: null,
   me: 'me',
   users: [user('me'), user('host', 5), user('alice')],
   battles: [battle(5, ['host'])],

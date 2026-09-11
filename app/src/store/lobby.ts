@@ -13,6 +13,12 @@ import type { UserView } from '../ipc/bindings/UserView'
 /** A dumb mirror of the runtime's state; only `apply.ts` writes to it. */
 export type LobbyState = {
   phase: Phase | null
+  /**
+   * When the runtime next tries the last credentials on its own, as a
+   * `Date.now()` moment, while it means to. Made here from the seconds the
+   * runtime sends, so the corner can count down without another round trip.
+   */
+  retryAt: number | null
   me: string | null
   users: Record<string, UserView>
   battles: Record<number, BattleView>
@@ -38,6 +44,7 @@ export type LobbyState = {
 export function emptyLobby(): LobbyState {
   return {
     phase: null,
+    retryAt: null,
     me: null,
     users: {},
     battles: {},

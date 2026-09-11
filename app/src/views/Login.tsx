@@ -48,9 +48,9 @@ export function Login() {
   /** Seconds teiserver's login limit still needs; 0 when clear. */
   const [wait, setWait] = createSignal(0)
 
-  // The limit is three logins per ten seconds, counted per account and kept
-  // across restarts — a rebuild loop reaches it easily, so rather than failing
-  // the login we count down and go when it lapses.
+  // The server refuses a login within twenty seconds of the account's last,
+  // and the clock is kept across restarts — a rebuild loop reaches it easily,
+  // so rather than failing the login we count down and go when it lapses.
   createEffect(() => {
     void api
       .loginWait()

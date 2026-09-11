@@ -19,6 +19,12 @@ const GAME_FLOOR: Duration = Duration::from_secs(60);
 const GAME_SPREAD: Duration = Duration::from_secs(240);
 /// Between attempts once the first one has been made.
 const RETRY_EVERY: Duration = Duration::from_secs(30);
+/// After a login the server refused as flooding. Its counter entry lives up
+/// to 20 s after the attempt that was refused (`settings::login_guard` has
+/// the arithmetic), so this is that plus a second of grace, and a small
+/// spread so two clients refused together do not knock again together.
+const FLOOD_FLOOR: Duration = Duration::from_secs(21);
+const FLOOD_SPREAD: Duration = Duration::from_secs(4);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Waiting {
@@ -44,6 +50,17 @@ impl Reconnect {
         } else {
             (LOBBY_FLOOR, LOBBY_SPREAD)
         };
+        self.arm(now, floor, spread, jitter);
+    }
+
+    /// Arms the policy after a login the server refused as flooding: a short
+    /// wait, sized to the server's counter rather than to a server that
+    /// dropped everyone at once.
+    pub fn flooded(&mut self, now: Instant, jitter: f64) {
+        self.arm(now, FLOOD_FLOOR, FLOOD_SPREAD, jitter);
+    }
+
+    fn arm(&mut self, now: Instant, floor: Duration, spread: Duration, jitter: f64) {
         let jitter = jitter.clamp(0.0, 1.0);
         self.waiting = Some(Waiting {
             first_allowed: now + floor + spread.mul_f64(jitter),
@@ -114,6 +131,20 @@ mod tests {
         // In game the window is 60-300s, so the longest wait is five minutes.
         assert!(!latest.due(at(now, 299)));
         assert!(latest.due(at(now, 300)));
+    }
+
+    #[test]
+    fn a_flood_refusal_waits_for_the_counter_not_for_a_storm() {
+        let now = Instant::now();
+        let mut soonest = Reconnect::default();
+        soonest.flooded(now, 0.0);
+        assert!(!soonest.due(at(now, 20)));
+        assert!(soonest.due(at(now, 21)));
+
+        let mut latest = Reconnect::default();
+        latest.flooded(now, 1.0);
+        assert!(!latest.due(at(now, 24)));
+        assert!(latest.due(at(now, 25)));
     }
 
     #[test]
