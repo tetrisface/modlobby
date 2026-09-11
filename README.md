@@ -30,7 +30,7 @@ so nothing is downloaded twice, and it writes almost nothing back. The one rule
 behind all of it is that a half-finished download of ours can never appear in
 their view of the world, and theirs can at worst be missing from ours.
 
-## Where things are
+## Where things are stored
 
 | Directory              | Windows                                          | Linux                                                            | modlobby         |
 | ---------------------- | ------------------------------------------------ | ---------------------------------------------------------------- | ---------------- |
