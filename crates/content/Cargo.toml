@@ -20,6 +20,10 @@ tokio = { workspace = true }
 tokio-rustls = { workspace = true }
 tracing = { workspace = true }
 ts-rs = { workspace = true }
+# The Apple Silicon engine ships as a zip of an .app; every other engine
+# arrives as the 7z BAR's index publishes, which `sevenz-rust2` unpacks in the
+# shell. Already in the tree by way of `tauri-plugin-updater`.
+zip = { workspace = true }
 
 [dev-dependencies]
 # Only for the example that reads a real install.

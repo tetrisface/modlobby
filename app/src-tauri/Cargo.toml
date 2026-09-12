@@ -24,6 +24,9 @@ news = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 sevenz-rust2 = { workspace = true }
+# GitHub publishes a sha256 beside every release asset; BAR's index publishes
+# an md5. Both engine downloads are checked against what published them.
+sha2 = { workspace = true }
 tokio = { workspace = true }
 lobby-ui = { workspace = true }
 serde = { workspace = true }

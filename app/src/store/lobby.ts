@@ -5,6 +5,7 @@ import type { GameRunningView } from '../ipc/bindings/GameRunningView'
 import type { MyBattleView } from '../ipc/bindings/MyBattleView'
 import type { Phase } from '../ipc/bindings/Phase'
 import type { SkirmishView } from '../ipc/bindings/SkirmishView'
+import type { LanView } from '../ipc/bindings/LanView'
 import type { DownloadStatus } from '../ipc/bindings/DownloadStatus'
 import type { PasteStatus } from '../ipc/bindings/PasteStatus'
 import type { FriendsView } from '../ipc/bindings/FriendsView'
@@ -39,6 +40,16 @@ export type LobbyState = {
    * reconnect, all of which clear everything above.
    */
   skirmish: SkirmishView | null
+  /**
+   * The games being hosted on this network, and who else is on it.
+   *
+   * Its own branch for the same reason `skirmish` is: a LAN game needs no
+   * server, so it is there whether or not anyone is logged in and survives
+   * everything a dropped session clears. On macOS, where the only engine
+   * available may not reach the community servers, it is the whole of
+   * multiplayer.
+   */
+  lan: LanView
 }
 
 export function emptyLobby(): LobbyState {
@@ -56,6 +67,7 @@ export function emptyLobby(): LobbyState {
     download: { state: 'idle' },
     paste: { state: 'idle' },
     skirmish: null,
+    lan: { games: [], people: [], listening: false },
   }
 }
 

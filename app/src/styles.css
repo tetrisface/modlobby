@@ -3669,6 +3669,63 @@ button.link:hover {
   align-self: center;
 }
 
+/* ---- playing with the people in the building ---- */
+
+/* One strip above the skirmish room. Quiet by design: the switch is the only
+   thing always here, and everything under it appears only when the network has
+   something on it. */
+.lan {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.78125rem;
+}
+
+.lan-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.lan-say {
+  line-height: 1.4;
+}
+
+.lan-games {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.lan-game {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  border-radius: 3px;
+  background: var(--raised);
+}
+
+.lan-title {
+  font-weight: 500;
+}
+
+/* The address takes whatever is left and gives it back first, so a long room
+   title and a long map name are not squeezed by it. */
+.lan-where {
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---- fetching the first engine ---- */
 
 .get-engine {
@@ -3682,6 +3739,27 @@ button.link:hover {
   border-radius: 3px;
   font-size: 0.78125rem;
   align-items: flex-start;
+}
+
+/* Whose engine this is, where it is about to be installed. Only drawn on
+   macOS, where the archive is a third party's. */
+.get-engine-provenance {
+  line-height: 1.45;
+  max-width: 62ch;
+}
+
+/* A button that reads as a link: it opens a page rather than acting on the
+   room, and the surrounding sentence is where it belongs. A `button` and not
+   an `a` because the webview does not navigate — the shell opens the URL. */
+.linklike {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 0.125rem;
+  cursor: pointer;
 }
 
 .get-engine-progress {

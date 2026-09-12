@@ -2,8 +2,12 @@ import { listen } from '@tauri-apps/api/event'
 import { Show, createEffect, createSignal, onCleanup, onMount } from 'solid-js'
 import type { EngineProgress } from '../ipc/bindings/EngineProgress'
 import { api, describeError, errorCode } from '../ipc/client'
-import { build } from '../store/build'
+import { build, thirdPartyEngine } from '../store/build'
 import { pushNotice } from '../store/chat'
+
+/** Where the unofficial Apple Silicon build is published, for its own notes. */
+const APPLE_ENGINE =
+  'https://github.com/Vandomas/RecoilEngine-AppleSilicon/releases'
 
 /** Bytes as something a person reads, which for this is always whole MB. */
 function mb(bytes: number): string {
@@ -81,6 +85,14 @@ export function forgetAskedEngines() {
  * a request for that engine, as bar-lobby and the launcher both treat it.
  * Without `auto` it says the size and waits for the click.
  *
+ * On macOS the archive is a third party's, so this says whose before it starts
+ * and links to their notes — the same words Rust carries, in the one place a
+ * person is watching an unfamiliar binary arrive. What it does *not* do is put
+ * a confirmation in front of them: somebody who opened a room and has no
+ * engine has already asked for exactly this, and a dialog would only be a
+ * second click on the way to the same place. The sentence is the honesty; the
+ * click is not.
+ *
  * Whether this machine has an engine to fetch at all is one local round trip
  * behind the window, so `auto` waits for that answer rather than asking on
  * mount: a reload straight into a room used to ask before it knew, and on a
@@ -154,7 +166,14 @@ export function GetEngine(props: {
       case 'extracting':
         return 'unpacking…'
       case 'done':
-        return `engine ${at.version} installed`
+        // The version that arrived, which need not be the one asked for: the
+        // Apple Silicon build carries whichever engine its author built
+        // against, and a room wanting a newer one is still unsynced. Saying so
+        // here is the difference between a person seeing why and a person
+        // watching a download succeed into a room that still says "engine".
+        return at.version === props.version || !props.version
+          ? `engine ${at.version} installed`
+          : `engine ${at.version} installed — this room wants ${props.version}`
       case 'failed':
         return at.reason
     }
@@ -172,9 +191,31 @@ export function GetEngine(props: {
       <div class='get-engine-say'>
         <strong>{heading()}</strong>{' '}
         <span class='muted'>
-          It is a few hundred megabytes and only needs fetching once.
+          {thirdPartyEngine()
+            ? 'It only needs fetching once; after that modlobby checks for a newer build rather than downloading this one again.'
+            : 'It is a few hundred megabytes and only needs fetching once.'}
         </span>
       </div>
+      {/* Whose binary this is, said where it is about to be installed. Only
+          where the engine is not Beyond All Reason's own, so it is a notice
+          about something rather than a disclaimer on every platform. */}
+      <Show when={thirdPartyEngine()}>
+        {(why) => (
+          <div class='get-engine-provenance muted'>
+            {why()}{' '}
+            <button
+              class='linklike'
+              onClick={() =>
+                void api
+                  .openUrl(APPLE_ENGINE)
+                  .catch((error) => pushNotice('warning', describeError(error)))
+              }
+            >
+              Release notes
+            </button>
+          </div>
+        )}
+      </Show>
       <Show when={said()}>
         {(text) => (
           <div class='get-engine-progress'>

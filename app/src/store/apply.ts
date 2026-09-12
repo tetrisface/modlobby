@@ -46,6 +46,7 @@ export function applySnapshot(snapshot: Snapshot): void {
     download: snapshot.download,
     paste: snapshot.paste,
     skirmish: snapshot.skirmish,
+    lan: snapshot.lan,
   }
   for (const user of snapshot.users) next.users[user.name] = user
   for (const battle of snapshot.battles) next.battles[battle.id] = battle
@@ -89,6 +90,10 @@ export function applyDelta(delta: Delta): void {
             engine: kept.engine,
             download: kept.download,
             skirmish: kept.skirmish,
+            // The network is not the session's to lose either: the machines
+            // in the building are still there, and on macOS they are the only
+            // people this build can play with.
+            lan: kept.lan,
           }),
         )
       }
@@ -255,6 +260,9 @@ export function applyDelta(delta: Delta): void {
       return
     case 'skirmish':
       setLobby('skirmish', delta.data)
+      return
+    case 'lan':
+      setLobby('lan', reconcile(delta.data))
       return
     case 'gameRunning':
       setLobby('gameRunning', delta.data)

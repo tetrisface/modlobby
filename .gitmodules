@@ -58,3 +58,7 @@
 	path = external/widgets-extra
 	url = https://github.com/tetrisface/widgets-extra.git
 	branch = main
+[submodule "external/coilbox"]
+	path = external/coilbox
+	url = https://github.com/tomjn/coilbox.git
+	branch = main

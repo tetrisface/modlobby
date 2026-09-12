@@ -5,6 +5,7 @@ import type { DownloadStatus } from "./DownloadStatus";
 import type { EngineStatus } from "./EngineStatus";
 import type { FriendsView } from "./FriendsView";
 import type { GameRunningView } from "./GameRunningView";
+import type { LanView } from "./LanView";
 import type { MyBattleView } from "./MyBattleView";
 import type { PasteStatus } from "./PasteStatus";
 import type { Phase } from "./Phase";
@@ -34,4 +35,10 @@ channels: Array<ChannelView>, friends: FriendsView, download: DownloadStatus, pa
  * one: it is still there after a logout, a dropped connection or a
  * reloaded window.
  */
-skirmish: SkirmishView | null, };
+skirmish: SkirmishView | null, 
+/**
+ * What is on this network. Nothing to do with the session either: a LAN
+ * game needs no server and is there whether or not anyone is logged in,
+ * which on macOS is the whole of multiplayer.
+ */
+lan: LanView, };

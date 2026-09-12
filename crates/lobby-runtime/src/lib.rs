@@ -4,6 +4,7 @@
 
 pub mod client;
 pub mod idle;
+pub mod lan;
 pub mod latency;
 pub mod launch;
 pub mod platform;

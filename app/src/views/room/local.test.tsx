@@ -70,11 +70,15 @@ function sent(command: string) {
 }
 
 /** What the shell says about this machine. */
-const BUILD = (why: string | null = null): VersionView => ({
+const BUILD = (
+  why: string | null = null,
+  thirdParty: string | null = null,
+): VersionView => ({
   version: '0.0.0',
   commit: 'abc1234',
   playsOnline: true,
   noPublishedEngine: why,
+  thirdPartyEngine: thirdParty,
 })
 
 beforeEach(() => {
@@ -292,16 +296,18 @@ describe('a room whose content is not all here', () => {
 })
 
 /**
- * What the room offers a machine Beyond All Reason publishes no engine for.
+ * What the room offers a machine no engine exists for at all.
  *
- * The only one that will ever be here is a bundle somebody dropped into the
- * data directory, so every offer to fetch one, choose between them or try
- * again is an offer that ends in a 404. What is left is saying where an engine
- * comes from, and the three steps of doing it.
+ * Since the Apple Silicon build became something modlobby fetches by itself,
+ * the only machine that reaches here is one with no build published for it
+ * anywhere — an Intel Mac. Every offer to fetch one, choose between them or
+ * try again is an offer that ends in nothing, so what is left is saying so,
+ * and the two steps that are still true: an engine somebody assembled by hand
+ * goes in that folder, and is found by being asked for.
  */
 describe('a room on a machine no engine is published for', () => {
   const WHY =
-    'Beyond All Reason publishes no engine for this machine, so modlobby cannot fetch one. An Apple Silicon build goes into the engine folder by hand.'
+    'Beyond All Reason publishes no macOS engine, and the unofficial Apple Silicon build is the only one that exists -- there is no Intel build of it. An Intel Mac cannot run Beyond All Reason natively.'
 
   beforeEach(() => setBuild(BUILD(WHY)))
 
@@ -316,11 +322,10 @@ describe('a room on a machine no engine is published for', () => {
     // The older sentence is the wrong answer here: it blames the room for a
     // fact about the machine.
     expect(queryByText('This room names no engine to fetch')).toBeNull()
-    expect(getByText('Get one')).toBeTruthy()
+    // And neither is a link to releases that hold nothing for this machine.
+    expect(queryByText('Get one')).toBeNull()
     expect(getByText('Engine folder')).toBeTruthy()
-    expect(container.textContent).toContain(
-      'publishes no engine for this machine',
-    )
+    expect(container.textContent).toContain('no Intel build of it')
   })
 
   test('and no Download either, since pr-downloader is inside the engine', async () => {
@@ -360,6 +365,33 @@ describe('a room on a machine no engine is published for', () => {
     // Nothing about the room changes when a bundle is dropped in by hand, so
     // being asked is the only way it is found.
     expect(sent('recheck_content').length).toBe(1)
+  })
+})
+
+/**
+ * The machine the whole Apple Silicon path exists for.
+ *
+ * Nothing is refused here: BAR publishes no engine, and modlobby fetches the
+ * port's instead, so the room behaves like a room on any other machine and
+ * says whose binary is arriving while it arrives. The pair of assertions is
+ * the point — an offer without the sentence would be an unannounced install,
+ * and the sentence without the offer would be the old dead end.
+ */
+describe('a room on an Apple Silicon Mac', () => {
+  const WHOSE =
+    'Beyond All Reason publishes no macOS engine. This is the unofficial Apple Silicon build by Vandomas, which is not affiliated with Beyond All Reason or Recoil and has online play turned off at the build level: skirmish against AI, replays and LAN games work, the community servers do not.'
+
+  beforeEach(() => setBuild(BUILD(null, WHOSE)))
+
+  test('fetches the engine like anywhere else, and says whose it is', async () => {
+    setLobby('skirmish', 'content', { engine: false, game: false, map: false })
+    const { container } = await open()
+    await settle()
+
+    expect(sent('download_engine')).toEqual([{ version: '2026.07.04' }])
+    expect(container.textContent).toContain('not affiliated with Beyond All')
+    // The dead end this replaced.
+    expect(container.textContent).not.toContain('by hand')
   })
 })
 

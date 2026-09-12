@@ -188,6 +188,15 @@ export const api = {
   /** One change to it. Every way it can change goes through here. */
   skirmishAct: (act: Act) => invoke<void>('skirmish_act', { act }),
   skirmishLaunch: () => invoke<void>('skirmish_launch'),
+  /**
+   * Joins a game somebody on this network is hosting.
+   *
+   * By the announcement's id rather than by address: a game that stopped
+   * being announced between the list being drawn and the click is refused,
+   * rather than joined at an address that may since be somebody else's.
+   */
+  joinLanGame: (id: string, asName?: string) =>
+    invoke<void>('join_lan_game', { id, asName: asName ?? null }),
   skirmishDownloadMissing: () => invoke<void>('skirmish_download_missing'),
   skirmishStartBoxes: (teams: number) =>
     invoke<BoxesView | null>('skirmish_start_boxes', { teams }),

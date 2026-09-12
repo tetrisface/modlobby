@@ -78,10 +78,6 @@ const START_POS = [
   { id: 1, label: 'Random' },
 ]
 
-/** Where the only Beyond All Reason engine for Apple Silicon is published. */
-const APPLE_ENGINE =
-  'https://github.com/Vandomas/RecoilEngine-AppleSilicon/releases'
-
 /** Where the roster's dragged height is remembered. */
 const CAP_KEY = 'modlobby.rosterHeight'
 /** The least a dragged roster keeps: its headers and a row or two. */
@@ -1002,28 +998,22 @@ function Missing(props: { parts: readonly string[]; engineVersion: string }) {
           <Switch
             fallback={<GetEngine version={props.engineVersion} auto={auto()} />}
           >
-            {/* An index with no build for this machine is not a failure to
+            {/* No engine anywhere for this machine is not a failure to
                 retry: it is the answer, and the way past it is not in this
                 app. Ahead of the empty-version arm because a first run here
                 has neither a version nor an engine, and "this room names no
                 engine" would blame the room for a fact about the machine.
-                Three buttons because the instruction has three steps and each
-                of them is a thing this app can do. */}
+                This used to offer the Apple Silicon releases as well, and
+                stopped when they became something modlobby fetches by itself:
+                the only machine that still reaches here is one with no build
+                published for it at all, and sending somebody to a page with
+                nothing on it for them is worse than saying so. What is left
+                is the two things that are still true — an engine somebody
+                assembled by hand goes in that folder, and is found by being
+                asked for. */}
             <Match when={noPublishedEngine()}>
               {(why) => (
                 <>
-                  <button
-                    class='chip-choice'
-                    onClick={() =>
-                      void api
-                        .openUrl(APPLE_ENGINE)
-                        .catch((error) =>
-                          pushNotice('warning', describeError(error)),
-                        )
-                    }
-                  >
-                    Get one
-                  </button>
                   <button
                     class='chip-choice'
                     onClick={() =>

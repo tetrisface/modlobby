@@ -13,6 +13,7 @@
 //!   how BAR names the archives (`Supreme Isthmus v2.1` →
 //!   `supreme_isthmus_v2.1.sd7`).
 
+pub mod apple;
 pub mod archive;
 pub mod demo;
 pub mod game_cache;
@@ -146,6 +147,14 @@ impl Library {
         self.dirs
             .all()
             .find_map(|dir| recoil::find_engine(dir, version))
+    }
+
+    /// The installed engine that the Apple Silicon port release `port_version`
+    /// built, wherever it is. What the download asks before fetching anything.
+    pub fn find_port(&self, port_version: &str) -> Option<recoil::EngineLayout> {
+        self.dirs
+            .all()
+            .find_map(|dir| recoil::find_port(dir, port_version))
     }
 
     /// Where an engine AI declares its own options, in any installed engine.

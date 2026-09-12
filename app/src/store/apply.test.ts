@@ -73,6 +73,7 @@ const snapshot: Snapshot = {
   download: { state: 'idle' },
   paste: { state: 'idle' },
   skirmish: null,
+  lan: { games: [], people: [], listening: false },
 }
 
 describe('apply', () => {

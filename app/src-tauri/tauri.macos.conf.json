@@ -3,7 +3,8 @@
   "bundle": {
     "targets": ["app", "dmg"],
     "macOS": {
-      "minimumSystemVersion": "13.3"
+      "minimumSystemVersion": "13.3",
+      "infoPlist": "Info.plist"
     }
   }
 }

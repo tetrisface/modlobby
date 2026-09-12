@@ -19,6 +19,16 @@
 //! - Both start-box mechanisms are written. The engine's own rectangles are
 //!   the baseline, and the modoption blob is what BAR's gadget reads; a game
 //!   build without the decoder still gets sensible boxes.
+//!
+//! # The same script hosts a LAN game
+//!
+//! A skirmish is already a game the engine hosts: `ishost = 1` and a server
+//! listening on loopback, with one client — this one — connected to it. A LAN
+//! game is that script with the listener bound somewhere reachable and the
+//! other people written in as players, which is [`Host`]. Nothing else about
+//! it changes, and that is the point: the room, the modoptions, the boxes and
+//! the AIs are the same ones, so a LAN game cannot drift from the skirmish it
+//! was set up as.
 
 use std::fmt::Write as _;
 
@@ -89,11 +99,76 @@ impl Team {
 }
 
 /// A person. `team` is `None` for someone who is only watching.
+///
+/// Everyone the game expects is written down, whether or not they are at the
+/// keyboard yet: the engine's server matches a joining client to the entry
+/// with its name and rejects a name it does not find
+/// (`GameServer.cpp:3017-3026`, which admits an unlisted name only as a
+/// tilde-prefixed spectator and only when `AllowSpectatorJoin` is on in the
+/// engine's own configuration — which modlobby does not write). So on a LAN
+/// the host names the guests, and they are here from the moment the script is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Player {
     pub name: String,
     pub team: Option<u8>,
 }
+
+/// Where the engine's server listens, and therefore who can reach the game.
+///
+/// No passwords either way. The engine takes a joining client's password to be
+/// right when the script gives that player none at all
+/// (`GameServer.cpp:CheckPlayerPassword`), so `spring://name:@host:port` is
+/// all a guest needs — which is what makes joining one click rather than a
+/// secret to read out. What keeps a LAN game private is the network it is on,
+/// which is the same thing that makes it a LAN game.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Host {
+    /// Loopback, on whichever port the operating system hands out. Nothing off
+    /// this machine can reach it, which is what a game against AI wants — and
+    /// what every skirmish has always done.
+    #[default]
+    Alone,
+    /// Every interface, on `port`. Chosen deliberately and one room at a time:
+    /// a lobby that quietly listened on the network would be a different
+    /// program from the one somebody installed.
+    Lan(u16),
+}
+
+impl Host {
+    /// The address the engine binds its server to.
+    ///
+    /// Chobby writes `127.0.0.1` for a skirmish and the engine wants somewhere
+    /// to bind even when nobody is joining
+    /// (`interface_skirmish.lua:333-334`); `0.0.0.0` is the same key meaning
+    /// every interface, so a guest reaches it at whichever address their side
+    /// of the network knows this machine by.
+    const fn ip(self) -> &'static str {
+        match self {
+            Self::Alone => "127.0.0.1",
+            Self::Lan(_) => "0.0.0.0",
+        }
+    }
+
+    /// The port, where `0` is the engine's spelling of "pick one".
+    const fn port(self) -> u16 {
+        match self {
+            Self::Alone => 0,
+            Self::Lan(port) => port,
+        }
+    }
+
+    /// Whether anyone off this machine could join.
+    pub const fn open(self) -> bool {
+        matches!(self, Self::Lan(_))
+    }
+}
+
+/// The port a LAN game listens on unless something else has it.
+///
+/// The engine's own default (`ClientSetup.cpp`, and what `spring://host` with
+/// no port means), so a guest joining from anything but modlobby — another
+/// lobby, a command line — reaches the game by typing the least.
+pub const DEFAULT_PORT: u16 = 8452;
 
 /// One AI opponent.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -136,6 +211,9 @@ pub struct Skirmish {
     pub start_pos: StartPos,
     /// `key = value` pairs written into `[modoptions]`.
     pub modoptions: Vec<(String, String)>,
+    /// Where the engine's server listens. [`Host::Alone`] is a game nobody
+    /// else can reach, which is every skirmish.
+    pub host: Host,
     pub ally_teams: Vec<AllyTeam>,
     pub teams: Vec<Team>,
     pub players: Vec<Player>,
@@ -160,6 +238,7 @@ impl Skirmish {
             map: map.into(),
             start_pos,
             modoptions: Vec::new(),
+            host: Host::Alone,
             ally_teams: vec![AllyTeam::default(); sides],
             teams: (0..sides).map(|ally| Team::new(ally as u8)).collect(),
             players: vec![Player {
@@ -183,9 +262,10 @@ impl Skirmish {
         let _ = writeln!(out, "\tishost = 1;");
         let _ = writeln!(out, "\tmyplayername = {};", self.player);
         // Chobby writes both, and the engine wants somewhere to bind even when
-        // nobody is joining (`interface_skirmish.lua:333-334`).
-        let _ = writeln!(out, "\thostip = 127.0.0.1;");
-        let _ = writeln!(out, "\thostport = 0;");
+        // nobody is joining (`interface_skirmish.lua:333-334`). A LAN game is
+        // the same two keys pointed outward.
+        let _ = writeln!(out, "\thostip = {};", self.host.ip());
+        let _ = writeln!(out, "\thostport = {};", self.host.port());
         let _ = writeln!(out, "\tnohelperais = 0;");
         let _ = writeln!(out, "\tstartpostype = {};", self.start_pos as u8);
         let _ = writeln!(out, "\tnumplayers = {};", self.players.len());
@@ -284,6 +364,47 @@ mod tests {
         )
     }
 
+    /// A skirmish listens where nothing can reach it; a LAN game listens where
+    /// the people on this network can. The pair is the assertion — a room that
+    /// bound the network by default would be a different program.
+    #[test]
+    fn a_lan_game_is_the_same_script_bound_outward() {
+        let alone = one_opponent().script();
+        assert!(alone.contains("hostip = 127.0.0.1;"));
+        assert!(alone.contains("hostport = 0;"), "the engine picks one");
+        assert!(!Host::Alone.open());
+
+        let mut open = one_opponent();
+        open.host = Host::Lan(DEFAULT_PORT);
+        open.players.push(Player {
+            name: "friend".into(),
+            team: Some(2),
+        });
+        let script = open.script();
+        assert!(script.contains("hostip = 0.0.0.0;"), "every interface");
+        assert!(script.contains("hostport = 8452;"));
+        assert!(Host::Lan(DEFAULT_PORT).open());
+
+        // The guest is in the script, because the engine's server rejects a
+        // name it cannot find. No password, because a script that sets none
+        // accepts whatever a joining client sends.
+        assert!(script.contains("[player1] {\n\t\tname = friend;"));
+        assert!(!script.contains("password"));
+        assert!(script.contains("numplayers = 2;"));
+
+        // And nothing else about the game moved.
+        assert!(script.contains("gametype = Beyond All Reason test-31134;"));
+        assert!(script.contains("shortname = BARb;"));
+    }
+
+    /// The default is the one that cannot surprise anybody.
+    #[test]
+    fn a_room_is_private_unless_it_was_opened() {
+        assert_eq!(Host::default(), Host::Alone);
+        assert!(!Host::default().open());
+        assert_eq!(one_opponent().host, Host::Alone);
+    }
+
     #[test]
     fn a_one_on_one_names_both_sides_and_who_owns_the_ai() {
         let script = one_opponent().script();
@@ -354,6 +475,7 @@ mod tests {
             player: "me".into(),
             start_pos: StartPos::InGame,
             modoptions: Vec::new(),
+            host: Host::Alone,
             ally_teams: vec![AllyTeam::default(); 2],
             teams: vec![Team::new(0), Team::new(0), Team::new(1)],
             players: vec![

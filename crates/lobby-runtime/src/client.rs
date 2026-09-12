@@ -108,6 +108,15 @@ enum Command {
     LaunchSkirmish {
         reply: Reply<()>,
     },
+    /// Starts the engine against a game somebody on this network is hosting.
+    JoinLan {
+        /// The announcement's own id, as the list drew it.
+        id: String,
+        /// The name to join under. `None` takes our own, which is what a click
+        /// on a row means.
+        as_name: Option<String>,
+        reply: Reply<()>,
+    },
     SkirmishDownload {
         reply: Reply<()>,
     },
@@ -602,6 +611,16 @@ impl Client {
         self.ask(|reply| Command::LaunchSkirmish { reply }).await
     }
 
+    /// Starts the engine against a game somebody on this network is hosting.
+    ///
+    /// The id is the announcement's, so a game that stopped being announced
+    /// between the list being drawn and the click is refused rather than
+    /// joined at an address that has since become somebody else's.
+    pub async fn join_lan(&self, id: String, as_name: Option<String>) -> Result<(), ClientError> {
+        self.ask(|reply| Command::JoinLan { id, as_name, reply })
+            .await
+    }
+
     /// Fetches whatever of that room's content this machine lacks.
     pub async fn skirmish_download(&self) -> Result<(), ClientError> {
         self.ask(|reply| Command::SkirmishDownload { reply }).await
@@ -755,6 +774,8 @@ enum Next {
     EngineExited(std::io::Result<ExitStatus>),
     Download(DownloadEvent),
     Probe(Probe),
+    /// The LAN listener's list changed.
+    Lan(crate::lan::Heard),
     Reconnect,
     Idle,
     /// A paste's answers have dried up.
@@ -866,6 +887,16 @@ struct Runtime {
     /// Where that room is kept between runs. `None` keeps it nowhere, which is
     /// what the CLI and the tests want.
     skirmish_path: Option<PathBuf>,
+    /// The socket that says what this machine is hosting and hears what
+    /// everyone else is. Running from startup whether or not anything is being
+    /// hosted -- listening is what makes a game appear without anyone
+    /// configuring anything.
+    lan: crate::lan::Lan,
+    lan_rx: tokio::sync::mpsc::Receiver<crate::lan::Heard>,
+    lan_known: crate::lan::Known,
+    /// The id this machine's own announcement is going out under, while one
+    /// is. New every time a room is opened -- see `lan::fresh_id`.
+    lan_id: Option<String>,
 }
 
 /// What a pr-downloader child reports back to the runtime.
@@ -994,6 +1025,10 @@ impl Runtime {
         // needs them, and the batcher coalesces what gets through anyway.
         let (download_tx, download_rx) = mpsc::channel(16);
         let (probe_tx, probe_rx) = mpsc::channel(1);
+        // Started with the runtime rather than when a room is opened: a
+        // machine only sees the games on its network if it was listening
+        // before they appeared, and the cost of listening is one socket.
+        let (lan, lan_rx) = crate::lan::start();
         let cache = cache_path
             .as_deref()
             .map_or_else(latency::Cache::default, latency::Cache::load);
@@ -1039,6 +1074,10 @@ impl Runtime {
             skirmish: None,
             skirmish_checked: None,
             skirmish_path: None,
+            lan,
+            lan_rx,
+            lan_known: crate::lan::Known::default(),
+            lan_id: None,
             projector: Projector::new(),
             batcher: Batcher::default(),
         }
@@ -1479,6 +1518,7 @@ impl Runtime {
                 status = wait_engine(&mut self.engine) => Next::EngineExited(status),
                 Some(event) = self.download_rx.recv() => Next::Download(event),
                 Some(probe) = self.probe_rx.recv() => Next::Probe(probe),
+                Some(heard) = self.lan_rx.recv() => Next::Lan(heard),
                 () = sleep_until_due(&self.reconnect) => Next::Reconnect,
                 () = sleep_until_idle(&self.idle, connected) => Next::Idle,
                 () = sleep_until_paste_quiet(&self.paste) => Next::PasteQuiet,
@@ -1492,6 +1532,7 @@ impl Runtime {
                 Next::Command(command) => self.handle_command(command).await,
                 Next::Download(event) => self.on_download(event).await,
                 Next::Probe(probe) => self.on_probe(probe).await,
+                Next::Lan(heard) => self.on_lan(heard),
                 Next::Reconnect => self.try_reconnect().await,
                 Next::Idle => self.on_idle().await,
                 Next::PasteQuiet => self.paste_quiet(),
@@ -1659,6 +1700,10 @@ impl Runtime {
             }
             Command::LaunchSkirmish { reply } => {
                 let result = self.launch_skirmish();
+                let _ = reply.send(result);
+            }
+            Command::JoinLan { id, as_name, reply } => {
+                let result = self.join_lan(&id, as_name);
                 let _ = reply.send(result);
             }
             Command::SkirmishDownload { reply } => {
@@ -2490,6 +2535,10 @@ impl Runtime {
     fn set_engine(&mut self, status: EngineStatus) {
         self.engine_status = status;
         self.batcher.push(Delta::Engine(status));
+        // A LAN game that has started cannot be joined, and one that has
+        // finished can be again -- both of which the announcement has to say,
+        // and both of which are this.
+        self.announce_lan();
     }
 
     fn reply_login(&mut self, result: Result<(), ClientError>) {
@@ -2560,6 +2609,9 @@ impl Runtime {
         self.skirmish_checked = None;
         self.batcher.push(Delta::Skirmish(None));
         self.remember_skirmish();
+        // A room that is gone stops being announced at once rather than
+        // fading out of everyone's list seven seconds later.
+        self.announce_lan();
     }
 
     /// Does one thing to the skirmish room and tells the front end what the
@@ -2665,6 +2717,171 @@ impl Runtime {
         let view = room.view(content);
         self.batcher.push(Delta::Skirmish(Some(Box::new(view))));
         self.remember_skirmish();
+        // Whatever changed may have been the thing being announced -- the map,
+        // the title, a guest added -- so the announcement is rebuilt from the
+        // room rather than kept in step by hand.
+        self.announce_lan();
+    }
+
+    /// Says on the network what this machine is doing, or stops saying it.
+    ///
+    /// Built from the room every time rather than maintained alongside it:
+    /// there is then no state that can be half-updated, and "what is announced"
+    /// is by construction "what the room is". A room that is not open to the
+    /// LAN announces nothing about itself, and this machine says only who is
+    /// at it, so a host elsewhere can pick the name off a list.
+    fn announce_lan(&mut self) {
+        let open = self
+            .skirmish
+            .as_ref()
+            .and_then(|room| room.lan().map(|port| (room, port)));
+        let Some((room, port)) = open else {
+            self.lan_id = None;
+            let me = self.me().map(str::to_owned);
+            self.lan.announce(crate::lan::Announcing { game: None, me });
+            return;
+        };
+        // One id per opening, so a host that closes a game and opens another
+        // is a second entry rather than the first changing under somebody who
+        // was about to join it.
+        let id = self.lan_id.get_or_insert_with(crate::lan::fresh_id).clone();
+        let mut game = lobby_core::lan::Game::new(
+            &id,
+            &room.title,
+            &room.player,
+            port,
+            &room.engine,
+            &room.game,
+            &room.map,
+        );
+        game.seats = room
+            .guests()
+            .iter()
+            .map(|guest| lobby_core::lan::clamp(&guest.name))
+            .collect();
+        // A game that has started cannot be joined. Said rather than hidden:
+        // "you are late" is worth more than a row that vanishes as somebody
+        // reaches for it.
+        game.running = self.engine.is_some();
+        self.lan.announce(crate::lan::Announcing {
+            game: Some(game),
+            me: None,
+        });
+    }
+
+    /// What the LAN listener heard, on its way to the window.
+    fn on_lan(&mut self, heard: crate::lan::Heard) {
+        self.lan_known.update(heard);
+        let view = self.lan_view();
+        self.batcher.push(Delta::Lan(view));
+    }
+
+    /// The network as the window draws it.
+    ///
+    /// The description of each game is its host's; whether this machine could
+    /// play it is ours, and the two are answered in the same row so nobody has
+    /// to click a game to find out they are missing the map.
+    fn lan_view(&self) -> lobby_ui::LanView {
+        let library = self.data_dirs().map(content::Library::new);
+        let games = self
+            .lan_known
+            .games()
+            .into_iter()
+            .map(|found| {
+                let have = library
+                    .as_ref()
+                    .map(|library| {
+                        library.check(&found.game.engine, &found.game.game, &found.game.map)
+                    })
+                    // A machine with no data directory has none of it, which
+                    // is the same row as a machine that is simply missing the
+                    // map: the join is refused with the same words either way.
+                    .unwrap_or(content::Availability {
+                        engine: false,
+                        game: false,
+                        map: false,
+                    });
+                lobby_ui::LanGameView {
+                    id: found.game.id.clone(),
+                    title: found.game.title.clone(),
+                    host: found.game.host.clone(),
+                    address: found.from.to_string(),
+                    engine: found.game.engine.clone(),
+                    game: found.game.game.clone(),
+                    map: found.game.map.clone(),
+                    seats: found.game.seats.clone(),
+                    running: found.game.running,
+                    content: ContentView {
+                        engine: have.engine,
+                        game: have.game,
+                        map: have.map,
+                    },
+                }
+            })
+            .collect();
+        lobby_ui::LanView {
+            games,
+            people: self.lan_known.people().to_vec(),
+            listening: self.lan_known.listening(),
+        }
+    }
+
+    /// Starts the engine against a game somebody on this network is hosting.
+    ///
+    /// The address is the one the announcement came from, never one its sender
+    /// chose, and the name is ours -- so joining is a click rather than an
+    /// address and a nickname to agree on beforehand. The engine refuses us if
+    /// the host has not written that name into its script, which is the check
+    /// that matters and is the host's to make.
+    fn join_lan(&mut self, id: &str, as_name: Option<String>) -> Result<(), ClientError> {
+        if self.engine.is_some() {
+            return Err(ClientError::Engine("the engine is already running".into()));
+        }
+        let Some(found) = self.lan_known.game(id) else {
+            return Err(ClientError::Refused(
+                "that game is not being announced any more".into(),
+            ));
+        };
+        let name = as_name
+            .or_else(|| self.me().map(str::to_owned))
+            .unwrap_or_else(|| found.game.host.clone());
+        let Some(dirs) = self.data_dirs() else {
+            return Err(ClientError::Engine("no data directory".into()));
+        };
+        // The same refusal a room gives, for the same reason: an engine
+        // started without the content quits with a sync error, and a message
+        // naming what is missing is worth more than that.
+        let available = content::Library::new(dirs.clone()).check(
+            &found.game.engine,
+            &found.game.game,
+            &found.game.map,
+        );
+        if !available.complete() {
+            return Err(ClientError::Engine(format!(
+                "this game needs content you do not have: {}",
+                available.missing().join(", ")
+            )));
+        }
+        let (target, engine) = (found.join_url(&name), found.game.engine.clone());
+        let launched = launch::spawn(
+            &dirs,
+            &engine,
+            target,
+            self.overlay_config_dir.as_deref(),
+            self.menu_archive.clone(),
+        )
+        .map_err(ClientError::Engine)?;
+        self.started(launched, dirs.write);
+        Ok(())
+    }
+
+    /// Our own name, as far as anything knows it: the account when logged in,
+    /// else whatever the skirmish room calls us.
+    fn me(&self) -> Option<&str> {
+        self.conn
+            .as_ref()
+            .and_then(|conn| conn.session.state.me.as_deref())
+            .or_else(|| self.skirmish.as_ref().map(|room| room.player.as_str()))
     }
 
     /// Whether this machine has the skirmish room's engine, game and map.
@@ -2729,6 +2946,9 @@ impl Runtime {
             );
             Box::new(room.view(content))
         });
+        // As is the network, which belongs to the machine rather than to the
+        // session: a LAN game is there whether or not anyone is logged in.
+        snapshot.lan = self.lan_view();
         snapshot
     }
 

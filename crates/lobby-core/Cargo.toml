@@ -8,6 +8,8 @@ license.workspace = true
 
 [dependencies]
 spring-protocol = { workspace = true }
+# The LAN announcement is the one thing this crate puts on a wire of its own.
+serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }

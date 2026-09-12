@@ -12,6 +12,10 @@
 //! which answers with a JSON array whose first entry carries the mirrors. This
 //! module is the part that can be decided without a network: which URL to ask,
 //! and what the answer means.
+//!
+//! Except on macOS, where there is nothing in that index to ask for and the
+//! engine comes from [`crate::apple`] instead. Which of the two a machine uses
+//! is [`Source`], and it is the thing to branch on rather than the category.
 
 use serde::Deserialize;
 
@@ -19,29 +23,86 @@ use serde::Deserialize;
 /// `PRD_HTTP_SEARCH_URL`, for the same reason.
 pub const FIND_URL: &str = recoil::HTTP_SEARCH_URL;
 
-/// The engine build for this machine, as BAR's index categorises them.
+/// Where an engine for this machine comes from.
 ///
-/// `None` on macOS, and that is the point: BAR publishes no Apple build, and
-/// answering `engine_linux64` there would fetch an ELF, unpack it, mark it
-/// executable and report an engine installed -- a failure that only shows
-/// itself as an exec error at the moment somebody tries to play. A missing
-/// category is a refusal the caller can explain.
-pub const fn category() -> Option<&'static str> {
-    if cfg!(windows) {
-        Some("engine_windows64")
-    } else if cfg!(target_os = "macos") {
-        None
-    } else {
-        Some("engine_linux64")
+/// Two answers rather than one, because macOS is a different kind of problem
+/// from the others. Everywhere Beyond All Reason publishes a build, the file
+/// index is asked for a named version and answers with mirrors. Beyond All
+/// Reason publishes no Apple build and will not: the only one that exists is
+/// [`crate::apple`]'s, a third party's, fetched from its own releases and
+/// carrying whichever engine its author built against.
+///
+/// One value rather than a category and a flag beside it, so there is no way
+/// to write a caller that handles a category it does not have.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Source {
+    /// BAR's file index, under this category.
+    Index(&'static str),
+    /// The unofficial Apple Silicon build's own releases.
+    AppleSilicon,
+    /// Nowhere, for the reason given.
+    Nowhere(&'static str),
+}
+
+impl Source {
+    /// The index category, for the one source that is an index.
+    pub const fn category(self) -> Option<&'static str> {
+        match self {
+            Self::Index(category) => Some(category),
+            _ => None,
+        }
+    }
+
+    /// Why nothing can be fetched here, when nothing can.
+    ///
+    /// The sentence rather than a `bool`, so nothing can draw the refusal
+    /// without the words that explain it.
+    pub const fn unavailable(self) -> Option<&'static str> {
+        match self {
+            Self::Nowhere(why) => Some(why),
+            _ => None,
+        }
+    }
+
+    /// The provenance a person should be told before it is fetched, for a
+    /// source that is not Beyond All Reason's own.
+    ///
+    /// `None` for the index: an engine from BAR's own CDN needs no
+    /// introduction, and a notice on every platform is a notice nobody reads
+    /// on the one where it matters.
+    pub const fn third_party(self) -> Option<&'static str> {
+        match self {
+            Self::AppleSilicon => Some(crate::apple::PROVENANCE),
+            _ => None,
+        }
     }
 }
 
-/// Why there is no engine to download here, in words for a person.
+/// This machine's source.
+pub const fn source() -> Source {
+    if cfg!(windows) {
+        Source::Index("engine_windows64")
+    } else if cfg!(target_os = "macos") {
+        // Apple Silicon only. There is no Intel build of the port, and
+        // `engine_linux64` would fetch an ELF, unpack it, mark it executable
+        // and report an engine installed -- a failure that only shows itself
+        // as an exec error at the moment somebody tries to play.
+        if crate::apple::supported() {
+            Source::AppleSilicon
+        } else {
+            Source::Nowhere(crate::apple::NO_INTEL_BUILD)
+        }
+    } else {
+        Source::Index("engine_linux64")
+    }
+}
+
+/// The engine build for this machine, as BAR's index categorises them.
 ///
-/// The whole instruction, because this answers a request somebody actually
-/// made: an error has no buttons beside it, so it has to carry both where the
-/// engine comes from and where it goes.
-pub const NO_CATEGORY: &str = "Beyond All Reason publishes no macOS engine, so modlobby cannot fetch one. Install an Apple Silicon build by hand -- the BAR Launcher app from github.com/Vandomas/RecoilEngine-AppleSilicon -- into the engine folder of the data directory, and modlobby will find the engine inside it.";
+/// `None` on macOS, where the engine does not come from the index at all.
+pub const fn category() -> Option<&'static str> {
+    source().category()
+}
 
 /// Why a blank version is not a question worth asking.
 ///
@@ -52,37 +113,29 @@ pub const NO_CATEGORY: &str = "Beyond All Reason publishes no macOS engine, so m
 /// actually knows, which is not which engine to fetch.
 pub const NO_VERSION: &str = "modlobby does not know which engine version to fetch, so there is nothing to ask BAR's index for. Open a battle or pick an engine version and try again.";
 
-/// The same fact for a room, which has the buttons this sentence would
-/// otherwise have to describe.
+/// Why there is no index query to make on this machine.
 ///
-/// Two spellings of one refusal is how a room and a runtime come to disagree
-/// about what a machine can do, so both live here and both come from
-/// [`category`]. What differs is only who is being told: [`NO_CATEGORY`]
-/// answers a request that was made, this one is said before anyone makes it.
-pub const NOT_PUBLISHED_HERE: &str = "Beyond All Reason publishes no engine for this machine, so modlobby cannot fetch one. An Apple Silicon build goes into the engine folder by hand.";
+/// Reached only by a caller that asked the index on a platform whose engine
+/// does not come from it, which on Apple Silicon is a defect rather than a
+/// fact about the machine -- [`source`] is what a caller is meant to branch
+/// on. It still has to be a sentence, because an error with no words is one
+/// nobody can report.
+pub const NOT_IN_THE_INDEX: &str = "Beyond All Reason's file index publishes no engine for this machine, so there is nothing to ask it for.";
 
-/// Why no engine can be fetched for `category`, when none can.
+/// Why no engine can be fetched here, when none can.
 ///
-/// The absence [`category`] returns, in words. Both callers that have to
-/// explain themselves to a person -- the download that refuses, and the room
-/// that would otherwise offer it -- would each have to work out for themselves
-/// that a missing category is what "no Apple build" looks like from here, and
-/// a fact spelled out twice is how the room comes to offer what the runtime
-/// refuses.
-///
-/// Takes the category rather than reading it, the way `recoil::refuse_target`
-/// takes the platform answer: an invariant only ever tested on the platform it
-/// fires on is one nobody notices breaking.
-pub const fn no_published_engine_for(category: Option<&str>) -> Option<&'static str> {
-    match category {
-        Some(_) => None,
-        None => Some(NOT_PUBLISHED_HERE),
-    }
+/// `None` wherever there is a source, which since the Apple Silicon build is
+/// fetched rather than installed by hand is everywhere but an Intel Mac. The
+/// room reads this to decide whether to offer the download at all, and
+/// `download_engine` refuses with the same words, so the two cannot disagree
+/// about what this machine can do.
+pub const fn no_published_engine() -> Option<&'static str> {
+    source().unavailable()
 }
 
-/// This machine's own answer, for a caller with no category in hand.
-pub const fn no_published_engine() -> Option<&'static str> {
-    no_published_engine_for(category())
+/// The provenance to show beside the offer, when the engine is not BAR's own.
+pub const fn third_party_engine() -> Option<&'static str> {
+    source().third_party()
 }
 
 /// One entry from the index. Only the fields worth acting on are read; the
@@ -130,7 +183,13 @@ impl NoQuery {
     pub const fn reason(self) -> &'static str {
         match self {
             Self::Version => NO_VERSION,
-            Self::Platform => NO_CATEGORY,
+            // The index's own refusal, which is not the same sentence as "this
+            // machine can have no engine": on Apple Silicon the index has
+            // nothing and the machine still gets one.
+            Self::Platform => match source().unavailable() {
+                Some(why) => why,
+                None => NOT_IN_THE_INDEX,
+            },
         }
     }
 }
@@ -188,37 +247,62 @@ mod tests {
 
     /// Written against a room that offers a download the runtime refuses.
     ///
-    /// Both arms go through `_for`, so the uncommon one is exercised from
-    /// every machine rather than only from the one it fires on. The last line
-    /// is the invariant rather than a restatement of the first: a named version
-    /// is refused only by way of `category()`, so the reason the room reads and
-    /// the URL the downloader builds have to agree or one of them is lying.
+    /// Every arm goes through [`Source`], so the uncommon ones are exercised
+    /// from every machine rather than only from the one they fire on. The
+    /// invariant is that one value decides all three questions -- whether a
+    /// download is offered, which URL it builds, and what a person is told
+    /// about where the engine comes from -- because a room that works them out
+    /// separately is a room that offers what the runtime refuses.
     #[test]
-    fn the_reason_and_the_category_are_one_answer() {
-        assert_eq!(no_published_engine_for(Some("engine_linux64")), None);
-        assert_eq!(no_published_engine_for(None), Some(NOT_PUBLISHED_HERE));
-        assert_eq!(no_published_engine().is_none(), category().is_some());
+    fn one_source_answers_the_offer_the_url_and_the_provenance() {
+        let index = Source::Index("engine_linux64");
+        assert_eq!(index.category(), Some("engine_linux64"));
+        assert_eq!(index.unavailable(), None);
+        assert_eq!(index.third_party(), None, "BAR's own CDN needs no notice");
+
+        // Fetchable, and from somewhere that is not Beyond All Reason.
+        assert_eq!(Source::AppleSilicon.category(), None);
+        assert_eq!(Source::AppleSilicon.unavailable(), None);
         assert_eq!(
-            find_url("2026.07.04").err(),
-            no_published_engine().map(|_| NoQuery::Platform)
+            Source::AppleSilicon.third_party(),
+            Some(crate::apple::PROVENANCE)
         );
+
+        // The only machine with nothing to fetch carries its own reason.
+        let nowhere = Source::Nowhere(crate::apple::NO_INTEL_BUILD);
+        assert_eq!(nowhere.category(), None);
+        assert_eq!(nowhere.unavailable(), Some(crate::apple::NO_INTEL_BUILD));
+        assert_eq!(nowhere.third_party(), None);
+
+        // And this machine's answers all come from the one value.
+        assert_eq!(no_published_engine(), source().unavailable());
+        assert_eq!(third_party_engine(), source().third_party());
+        assert_eq!(category(), source().category());
     }
 
-    /// The bug in the report: a blank version reached BAR's index as
-    /// `springname=` and came back a 404 nobody could act on.
+    /// macOS gained a source; it must not have gained an index query with it.
     ///
-    /// Asserted on every platform, because the version is blank for reasons
-    /// that have nothing to do with which machine is asking -- and on macOS the
-    /// platform refusal must not be what answers it, or the defect is invisible
-    /// exactly where it was reported.
+    /// Asserted on every platform through [`Source`] rather than only where it
+    /// fires: `find_url` builds the query for BAR's CDN, and Apple Silicon is
+    /// the case where an engine *is* fetchable and that query still must not
+    /// be sent. A caller reaching it anyway gets a sentence about the index,
+    /// not the "no engine for this machine" that would be a lie there.
     #[test]
-    fn a_blank_version_is_never_asked_about() {
-        for blank in ["", " ", "\t\n"] {
-            assert_eq!(find_url(blank), Err(NoQuery::Version));
-        }
-        assert_eq!(NoQuery::Version.code(), "version");
-        assert_eq!(NoQuery::Version.reason(), NO_VERSION);
-        assert_eq!(NoQuery::Platform.reason(), NO_CATEGORY);
+    fn the_apple_build_is_fetchable_without_being_in_bars_index() {
+        assert!(Source::AppleSilicon.unavailable().is_none());
+        assert!(Source::AppleSilicon.category().is_none());
+        assert_eq!(
+            find_url("2026.07.04").err(),
+            source()
+                .category()
+                .map_or(Some(NoQuery::Platform), |_| None)
+        );
+        // The Intel Mac's reason is about the machine; every other platform
+        // reaching `Platform` is a defect, and says so about the index.
+        assert_eq!(
+            NoQuery::Platform.reason(),
+            source().unavailable().unwrap_or(NOT_IN_THE_INDEX)
+        );
     }
 
     #[test]

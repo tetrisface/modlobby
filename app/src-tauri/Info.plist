@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    Merged into the bundle's own Info.plist by the Tauri bundler.
+
+    macOS 15 gates the local network behind a permission prompt, and the prompt
+    shows this sentence. Without it a person is asked to allow something with
+    no explanation of what, which is a reasonable thing to say no to — and a
+    refusal here is silent: the broadcast simply goes nowhere, and LAN games
+    never appear.
+
+    It is asked for at the first broadcast, which is the moment somebody opens
+    a room to the network or a game on it is announced. Opening the app asks
+    for nothing, and neither do skirmish, replays or a room on the server.
+  -->
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>modlobby uses the local network to find and host LAN games with other people on it. Nothing leaves this network, and nothing is sent until you open a game to it.</string>
+</dict>
+</plist>

@@ -16,6 +16,9 @@ serde_json = { workspace = true }
 presets = { workspace = true }
 recoil = { workspace = true }
 skirmish = { workspace = true }
+# Only for the LAN discovery socket: reuse-address before the bind, broadcast
+# after it.
+socket2 = { workspace = true }
 spring-protocol = { workspace = true }
 sysinfo = { workspace = true }
 thiserror = { workspace = true }

@@ -100,8 +100,30 @@ impl EngineLayout {
     /// `recoil_<version>` the launcher happens to use. A flat install has
     /// nothing to read and keeps being named by its directory.
     pub fn declared_version(&self) -> Option<String> {
+        self.plist_key("EngineVersion")
+    }
+
+    /// The *port* release a bundle was built by (`PortVersion`), when it says.
+    ///
+    /// Not the engine version and not interchangeable with it: one port
+    /// release carries one engine, but several ports can carry the same engine
+    /// -- a driver-only release changes nothing the engine version would show.
+    /// So this is the question "is the current Apple Silicon release already
+    /// installed", which the engine version cannot answer and which is the
+    /// difference between checking for an update and fetching seventy-five
+    /// megabytes to find out there was none.
+    ///
+    /// Without the `v` a release tag carries, so a tag and a plist compare.
+    pub fn declared_port(&self) -> Option<String> {
+        self.plist_key("PortVersion")
+            .map(|port| port.trim_start_matches('v').to_owned())
+    }
+
+    /// One string out of the bundle's `Info.plist`. `None` for a flat install,
+    /// which has no plist and nothing to say about itself.
+    fn plist_key(&self, key: &str) -> Option<String> {
         let plist = self.frameworks.as_ref()?.parent()?.join("Info.plist");
-        plist_string(&std::fs::read_to_string(plist).ok()?, "EngineVersion")
+        plist_string(&std::fs::read_to_string(plist).ok()?, key)
     }
 
     /// Whether the engine and its content are in different places, which is
@@ -176,15 +198,21 @@ fn plist_string(plist: &str, key: &str) -> Option<String> {
 /// a start script or a replay of its own.
 pub const JOIN_SCHEME: &str = "spring://";
 
-/// Whether the engine on this platform may be run against a hosted game.
+/// Whether the engine on this platform may be run against a hosted game out on
+/// the internet.
 ///
 /// False on macOS. Beyond All Reason publishes no Apple engine, so the only
 /// one that exists is a third-party build whose author asks that it not reach
-/// the community servers until they approve it — and enforces that by
-/// neutering Chobby's server address, which modlobby never reads. Chatting in
-/// a room costs the servers nothing and is left alone; *playing* is what this
-/// stops, and it stops it at the one place the engine is started rather than
-/// by hiding buttons, so no path can arrive at it by another route.
+/// the community servers until they approve it — and enforces that by turning
+/// online play off at the build level. Chatting in a room costs the servers
+/// nothing and is left alone; *playing* is what this stops, and it stops it at
+/// the one place the engine is started rather than by hiding buttons, so no
+/// path can arrive at it by another route.
+///
+/// It is about the servers, not about the network card, so it says nothing
+/// about a game on this LAN — see [`is_lan_game`]. The same author's answer to
+/// "what does not work" is "online play", and the same sentence says skirmish,
+/// replays and LAN games do.
 pub const fn may_join_hosted_games() -> bool {
     cfg!(not(target_os = "macos"))
 }
@@ -194,17 +222,72 @@ pub fn is_hosted_game(target: &str) -> bool {
     target.starts_with(JOIN_SCHEME)
 }
 
+/// The host part of a `spring://user:password@host:port`, when there is one.
+///
+/// Split from the last `@` rather than the first, because the script password
+/// is arbitrary text and the host cannot contain one. An IPv6 literal is in
+/// brackets, which is also what keeps its colons out of the port split.
+pub fn target_host(target: &str) -> Option<&str> {
+    let rest = target.strip_prefix(JOIN_SCHEME)?;
+    let rest = rest.rsplit_once('@').map_or(rest, |(_, host)| host);
+    let rest = rest.split(['/', '?', '#']).next().unwrap_or(rest);
+    if let Some(closed) = rest.strip_prefix('[') {
+        return closed.split_once(']').map(|(host, _)| host);
+    }
+    Some(rest.split_once(':').map_or(rest, |(host, _)| host))
+}
+
+/// Whether a hosted game is one on this network rather than out on the
+/// internet.
+///
+/// The question [`refuse_target`] needs and the one macOS turns on. The
+/// refusal there is about Beyond All Reason's *community servers*, and a game
+/// at a private address is definitionally not one of those: nothing routes
+/// `192.168.0.4` to BAR, and the Apple Silicon build's own author says LAN
+/// games work and are meant to. So the line is drawn at the address rather
+/// than at the scheme, and a Mac can play with the people in the room.
+///
+/// Only an address literal counts. A host*name* is not resolved here — that
+/// would make a refusal depend on a DNS answer that can change between the
+/// check and the launch, and "we could not tell" has to fall on the side of
+/// not playing. Nor is the shared-address range (`100.64/10`, which carrier
+/// NAT and some overlay networks use) treated as local: a machine there can
+/// be anywhere, and this is a question about reach rather than about privacy.
+pub fn is_lan_game(target: &str) -> bool {
+    let Some(host) = target_host(target) else {
+        return false;
+    };
+    match host.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(ip)) => ip.is_private() || ip.is_loopback() || ip.is_link_local(),
+        // The v6 spellings of the same three: `fc00::/7` unique-local, `::1`,
+        // and `fe80::/10` link-local.
+        Ok(std::net::IpAddr::V6(ip)) => {
+            ip.is_loopback()
+                || (ip.segments()[0] & 0xfe00) == 0xfc00
+                || (ip.segments()[0] & 0xffc0) == 0xfe80
+        }
+        Err(_) => false,
+    }
+}
+
 /// Why the engine must not be started on `target`, when it must not.
 ///
 /// Split from the platform answer so it can be exercised both ways from any
 /// machine: an invariant only ever tested on the platform it fires on is one
 /// nobody notices breaking.
+///
+/// Three kinds of target reach here and only one of them is ever refused. A
+/// start script and a replay are this machine's own business. A game at a
+/// private address is on this network, which is not where Beyond All Reason's
+/// servers are and is what the Apple build's author means by "LAN games work".
+/// What is left — a `spring://` to an address that could be anywhere — is the
+/// one the refusal is for.
 pub fn refuse_target(target: &str, may_join: bool) -> Option<String> {
-    if !is_hosted_game(target) || may_join {
+    if !is_hosted_game(target) || may_join || is_lan_game(target) {
         return None;
     }
     Some(
-        "this build cannot join hosted games: the only Beyond All Reason engine for macOS is a          third-party build its author asks not be used on the community servers. Skirmish          against AI and replays still run."
+        "this build cannot join hosted games out on the internet: the only Beyond All Reason          engine for macOS is a third-party build its author asks not be used on the community          servers. Skirmish against AI, LAN games and replays still run."
             .to_owned(),
     )
 }
@@ -231,6 +314,24 @@ pub fn find_engine(data_dir: &Path, version: &str) -> Option<EngineLayout> {
         })
         .find(|(named, layout)| *named || layout.declared_version().as_deref() == Some(version))
         .map(|(_, layout)| layout)
+}
+
+/// The engine under `<data>/engine` that the port release `port_version` built.
+///
+/// The question the Apple Silicon download asks before it fetches anything:
+/// the releases API names the current port in one small request, and a bundle
+/// on disk says which port built it, so "already up to date" is answered
+/// without downloading the archive to compare. Trimmed of the `v` a release
+/// tag carries at both ends, so a tag and a plist are the same string.
+pub fn find_port(data_dir: &Path, port_version: &str) -> Option<EngineLayout> {
+    let wanted = port_version.trim().trim_start_matches('v');
+    if wanted.is_empty() {
+        return None;
+    }
+    engine_layouts(data_dir)
+        .into_iter()
+        .map(|(_, layout)| layout)
+        .find(|layout| layout.declared_port().as_deref() == Some(wanted))
 }
 
 /// Every engine installed under `<data>/engine`, in directory order.
@@ -386,6 +487,10 @@ mod tests {
             Some("0.15.0")
         );
         assert_eq!(plist_string(BUNDLE_PLIST, "Nothing"), None);
+        assert_eq!(
+            plist_string(BUNDLE_PLIST, "PortVersion").as_deref(),
+            Some("0.15.0")
+        );
         // A key whose value is missing must not borrow the next key's.
         assert_eq!(
             plist_string(
@@ -419,6 +524,48 @@ mod tests {
             "found by what it says it is"
         );
         assert!(find_engine(&root, "2020.01.01").is_none());
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// One port release carries one engine, but a driver-only release carries
+    /// the engine before it -- so "do we have 2026.07.04" and "do we have the
+    /// current build" are two questions, and only the second one saves the
+    /// download.
+    #[test]
+    fn a_bundle_also_says_which_port_release_built_it() {
+        let root = scratch("port");
+        let app = bundled_engine(&root);
+        std::fs::write(app.join("Contents").join("Info.plist"), BUNDLE_PLIST).unwrap();
+
+        let layout = find_engine(&root, "2026.07.04").expect("an engine");
+        assert_eq!(layout.declared_port().as_deref(), Some("0.15.0"));
+
+        // A release tag and a plist are the same string once the tag's `v` is
+        // off, which is the comparison the download actually makes.
+        assert!(find_port(&root, "v0.15.0").is_some());
+        assert!(find_port(&root, "0.15.0").is_some());
+        // The next port release carries the same engine and is still missing.
+        assert!(find_port(&root, "v0.15.1").is_none());
+        assert!(find_port(&root, "").is_none());
+        assert!(find_engine(&root, "2026.07.04").is_some());
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// A flat install has no plist, so it answers neither question rather than
+    /// guessing -- and must not be mistaken for a port release.
+    #[test]
+    fn a_flat_engine_declares_nothing_about_itself() {
+        let root = scratch("flat-port");
+        let engine = root.join("engine").join("recoil_2026.07.04");
+        std::fs::create_dir_all(&engine).unwrap();
+        std::fs::write(engine.join(ENGINE_BINARY), b"").unwrap();
+
+        let layout = find_engine(&root, "2026.07.04").expect("an engine");
+        assert_eq!(layout.declared_port(), None);
+        assert_eq!(layout.declared_version(), None);
+        assert!(find_port(&root, "0.15.0").is_none());
 
         std::fs::remove_dir_all(&root).unwrap();
     }
@@ -557,6 +704,73 @@ mod tests {
             refuse_target(&url, true).is_none(),
             "allowed everywhere else"
         );
+    }
+
+    /// The refusal is about Beyond All Reason's servers, and a game on this
+    /// network is not one of them. Asserted from every machine, because the
+    /// one it fires on is the one nobody develops on.
+    #[test]
+    fn a_game_on_this_network_is_not_a_community_server() {
+        for address in [
+            "192.168.1.20",
+            "10.0.0.5",
+            "172.16.4.4",
+            "172.31.255.254",
+            "127.0.0.1",
+            "169.254.3.9",
+        ] {
+            let url = spring_url("me", "", address, 8452);
+            assert!(is_lan_game(&url), "{address}");
+            assert!(refuse_target(&url, false).is_none(), "{address}");
+        }
+    }
+
+    /// Everything that is not demonstrably on this network stays refused,
+    /// including the cases somebody would reach for to get around it.
+    #[test]
+    fn anything_that_could_be_anywhere_is_still_refused() {
+        for address in [
+            // The public internet, and the edges of the private ranges.
+            "1.2.3.4",
+            "172.15.0.1",
+            "172.32.0.1",
+            "192.167.1.1",
+            // Carrier NAT and overlay networks: private-looking, not local.
+            "100.64.0.1",
+            // A name is not resolved here: an answer that can change between
+            // the check and the launch is not one to decide this on.
+            "lan.local",
+            "server4.beyondallreason.info",
+            "localhost",
+        ] {
+            let url = spring_url("me", "", address, 8452);
+            assert!(!is_lan_game(&url), "{address}");
+            assert!(refuse_target(&url, false).is_some(), "{address}");
+        }
+    }
+
+    /// The host is read off the right side of the `@`, because a script
+    /// password is arbitrary text and could hold one.
+    #[test]
+    fn the_address_is_read_past_whatever_the_password_holds() {
+        assert_eq!(
+            target_host("spring://me:p@ss@192.168.0.4:8452"),
+            Some("192.168.0.4")
+        );
+        assert_eq!(
+            target_host("spring://192.168.0.4:8452"),
+            Some("192.168.0.4")
+        );
+        assert_eq!(target_host("spring://192.168.0.4"), Some("192.168.0.4"));
+        // An IPv6 literal keeps its colons inside the brackets.
+        assert_eq!(target_host("spring://me:x@[fe80::1]:8452"), Some("fe80::1"));
+        assert!(is_lan_game("spring://me:x@[fe80::1]:8452"));
+        assert!(is_lan_game("spring://me:x@[fd00::7]:8452"));
+        assert!(is_lan_game("spring://me:x@[::1]:8452"));
+        assert!(!is_lan_game("spring://me:x@[2001:db8::1]:8452"));
+        // Not a join target at all.
+        assert_eq!(target_host("C:/data/skirmish.txt"), None);
+        assert!(!is_lan_game("C:/data/skirmish.txt"));
     }
 
     #[test]

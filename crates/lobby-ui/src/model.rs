@@ -400,6 +400,61 @@ pub struct ContentView {
     pub map: bool,
 }
 
+/// A game somebody on this network is hosting, as the window draws it.
+///
+/// Everything in it came off the wire from an unauthenticated stranger — see
+/// `lobby_core::lan` — except [`content`](Self::content), which is this
+/// machine's own answer about whether it could play the thing being offered.
+/// That pairing is the point of the type: the description is theirs, the
+/// judgement is ours, and a row says both.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct LanGameView {
+    /// The announcement's own id, which is what a join names. New each time a
+    /// room is opened, so it cannot mean a different game than the one clicked.
+    pub id: String,
+    pub title: String,
+    pub host: String,
+    /// Where it is, for somebody deciding whether they recognise the machine.
+    /// The address the announcement came *from*, never one its sender chose.
+    pub address: String,
+    pub engine: String,
+    pub game: String,
+    pub map: String,
+    /// The names the host has written into the start script. Joining under one
+    /// of these is the only way the engine's server will let anybody in, so
+    /// this is also the list of people who can come.
+    pub seats: Vec<String>,
+    /// Already started, and so too late to join. Listed anyway: "you are late"
+    /// is worth more than a row that vanishes as you reach for it.
+    pub running: bool,
+    /// Whether this machine has what it would take to play.
+    pub content: ContentView,
+}
+
+/// What is on this network.
+///
+/// Empty and `listening: false` is the ordinary state of a machine with no
+/// LAN game anywhere near it, which is most of them — so the front end draws
+/// nothing at all rather than an empty section, and there is no setting to
+/// turn off something that is already nothing.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct LanView {
+    pub games: Vec<LanGameView>,
+    /// Who else has modlobby open here and no game of their own, so a host
+    /// picks a guest's name off a list rather than spelling it — a name spelled
+    /// wrong is a guest the engine will not let in.
+    pub people: Vec<String>,
+    /// Whether modlobby has a socket to hear any of this on. False where the
+    /// port was taken or the network refused it, which is worth saying: an
+    /// empty list means two different things and only one of them is "nobody
+    /// is playing".
+    pub listening: bool,
+}
+
 /// A room with nobody else in it.
 ///
 /// The same shapes the online room draws, so the front end cannot tell them
@@ -562,6 +617,11 @@ pub struct Snapshot {
     /// one: it is still there after a logout, a dropped connection or a
     /// reloaded window.
     pub skirmish: Option<Box<SkirmishView>>,
+    /// What is on this network. Nothing to do with the session either: a LAN
+    /// game needs no server and is there whether or not anyone is logged in,
+    /// which on macOS is the whole of multiplayer.
+    #[serde(default)]
+    pub lan: LanView,
 }
 
 /// Who we are friends with, and who is waiting on an answer.
@@ -590,9 +650,11 @@ impl Snapshot {
             friends: FriendsView::default(),
             download: DownloadStatus::Idle,
             paste: PasteStatus::Idle,
-            // Not the session's to lose. The runtime owns both and fills this
-            // in, because a skirmish outlives whatever happened to the socket.
+            // Not the session's to lose. The runtime owns these and fills them
+            // in, because a skirmish and the machines on this network both
+            // outlive whatever happened to the socket.
             skirmish: None,
+            lan: LanView::default(),
         }
     }
 
@@ -634,8 +696,10 @@ impl Snapshot {
             // snapshot says nothing about one that may be in flight.
             download: DownloadStatus::Idle,
             paste: PasteStatus::Idle,
-            // Likewise the skirmish room, which is not the session's at all.
+            // Likewise the skirmish room and this network, neither of which is
+            // the session's at all.
             skirmish: None,
+            lan: LanView::default(),
         }
     }
 }
@@ -815,6 +879,9 @@ pub enum Delta {
     MyBattle(Option<MyBattleView>),
     /// The room with no server behind it, whole. `None` when there is none.
     Skirmish(Option<Box<SkirmishView>>),
+    /// What is on this network, whole. Sent only when it changes, which for
+    /// most machines is never.
+    Lan(LanView),
     GameRunning(Option<GameRunningView>),
     /// How long a room's game had already been going when we walked into it.
     /// The only statement of a game's age this protocol carries.

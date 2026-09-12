@@ -60,6 +60,30 @@ impl Room {
             team: mine,
         });
 
+        // The guests come before the AIs, so a room's teams are numbered in
+        // the order the roster shows them: the player, the people, the bots.
+        // Every one of them is written down whether or not they have connected
+        // -- the engine's server admits a name only if the script lists it.
+        for guest in self.guests() {
+            let team = guest.seat.map(|seat| {
+                teams.push(Team {
+                    ally_team: side_of(seat.ally_team),
+                    // A guest leads their own team: the engine takes this as
+                    // the player in charge of it, and the host owning somebody
+                    // else's units is not what a LAN game means.
+                    leader: players.len() as u8,
+                    side: faction(seat.side, legion, false),
+                    colour: Some(guest.colour),
+                    handicap: seat.handicap,
+                });
+                teams.len() as u8 - 1
+            });
+            players.push(Player {
+                name: guest.name.clone(),
+                team,
+            });
+        }
+
         for ai in self.ais() {
             teams.push(Team {
                 ally_team: side_of(ai.seat.ally_team),
@@ -89,6 +113,7 @@ impl Room {
             player: self.player.clone(),
             start_pos,
             modoptions: self.script_modoptions(),
+            host: self.host(),
             ally_teams: ally_teams(boxes.as_ref(), sides.len()),
             teams,
             players,
@@ -179,6 +204,69 @@ mod tests {
         startbox::Box {
             poly: vec![at(left, top), at(right, bottom)],
         }
+    }
+
+    /// A LAN game is the room it was set up as, bound outward with the people
+    /// written in. Everything about the game is asserted alongside the two
+    /// keys that changed, because the point of doing it this way is that
+    /// nothing else could have.
+    #[test]
+    fn an_opened_room_becomes_a_lan_game_and_nothing_else_moves() {
+        let mut room = room();
+        room.set_option("experimentallegionfaction", "1");
+        room.add_ai("BARb", "BARb", 2, 2, COLOURS[2]);
+        let private = room.to_script().script();
+
+        room.set_lan(Some(8452));
+        room.add_guest("ann", 1, 1, COLOURS[1]);
+        let script = room.to_script().script();
+
+        // The two keys that are the whole difference in the binding.
+        assert!(private.contains("hostip = 127.0.0.1;"));
+        assert!(script.contains("hostip = 0.0.0.0;"));
+        assert!(script.contains("hostport = 8452;"));
+
+        // The guest is written down, so the engine's server will let them in.
+        assert!(script.contains("[player1] {\n\t\tname = ann;"));
+        assert!(script.contains("numplayers = 2;"));
+        assert!(script.contains("numusers = 3;"));
+        // On their own team, leading it: their units are theirs to command.
+        assert!(script.contains("[team1] {\n\t\tallyteam = 1;\n\t\tteamleader = 1;"));
+        // The host still leads its own and owns the AI it added.
+        assert!(script.contains("[team0] {\n\t\tallyteam = 0;\n\t\tteamleader = 0;"));
+        assert!(script.contains("[team2] {\n\t\tallyteam = 2;\n\t\tteamleader = 0;"));
+        assert!(script.contains("host = 0;"));
+        // Nothing agreed beforehand, so nothing to type: the engine takes any
+        // password when the script sets none.
+        assert!(!script.contains("password"));
+
+        // And the game is the one that was set up.
+        assert!(script.contains("gametype = BAR test-1;"));
+        assert!(script.contains("mapname = Comet Catcher;"));
+        assert!(script.contains("experimentallegionfaction = 1;"));
+        assert!(script.contains("shortname = BARb;"));
+        assert!(script.contains("myplayername = me;"));
+    }
+
+    /// A guest watching is a player with no team, which is exactly what the
+    /// script already says about the host when they are watching -- so
+    /// somebody on this network can watch a LAN game rather than only play it.
+    #[test]
+    fn a_guest_who_is_only_watching_holds_no_team() {
+        let mut room = room();
+        room.set_lan(Some(8452));
+        room.add_guest("ann", 1, 1, COLOURS[1]);
+        room.add_ai("BARb", "BARb", 2, 2, COLOURS[2]);
+        assert!(room.seat_guest("ann", None));
+
+        let script = room.to_script().script();
+        assert!(script.contains("[player1] {\n\t\tname = ann;"));
+        assert!(script.contains("\t\tspectator = 1;"));
+        // Still let in, still not holding units: two teams, not three.
+        assert!(script.contains("numplayers = 2;"));
+        assert!(script.contains("numusers = 3;"));
+        assert!(script.contains("[team1]"));
+        assert!(!script.contains("[team2]"));
     }
 
     #[test]

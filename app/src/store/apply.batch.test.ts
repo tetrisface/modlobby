@@ -51,6 +51,7 @@ describe('applyMessage', () => {
         download: { state: 'idle' },
         paste: { state: 'idle' },
         skirmish: null,
+        lan: { games: [], people: [], listening: false },
       },
     })
     const runs: number[] = []

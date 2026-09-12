@@ -31,11 +31,15 @@ function sent(command: string) {
 }
 
 /** What the shell says about this machine, which is what `auto` waits for. */
-const BUILD = (why: string | null = null): VersionView => ({
+const BUILD = (
+  why: string | null = null,
+  thirdParty: string | null = null,
+): VersionView => ({
   version: '0.0.0',
   commit: 'abc1234',
   playsOnline: true,
   noPublishedEngine: why,
+  thirdPartyEngine: thirdParty,
 })
 
 beforeEach(() => {

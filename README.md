@@ -7,7 +7,14 @@ A Beyond All Reason lobby focused on modding, experiments and performance that u
 ## Packages
 
 Packages are available at [releases](https://github.com/tetrisface/modlobby/releases) as .exe,
-.AppImage, .deb and .rpm, all of which update themselves from the next release. MacOS is not supported for skirmish yet.
+.AppImage, .deb and .rpm, all of which update themselves from the next release.
+
+Apple Silicon Macs play skirmish, replays and LAN games. Beyond All Reason publishes no macOS
+engine, so modlobby fetches the unofficial
+[Apple Silicon build](https://github.com/Vandomas/RecoilEngine-AppleSilicon) by itself — the
+same one-click download every other platform gets, verified against the checksum GitHub
+publishes beside it. That build has online play turned off at the build level, so the community
+servers stay out of reach; see [Macs](#macs) below. There is no Intel build of it.
 
 ## From source
 
@@ -134,6 +141,12 @@ pings, the same as any client's, and is not what this section is about.
 | Map and news pictures                        | Once per picture that exists, at most six at a time; one that answers 5xx or drops is asked again on the next paint | On disk for good; the URL changes when the picture does. A 404 is remembered for the run          |
 | `beyondallreason.info/news/rss.xml`          | Once a run, then hourly                                                                                        | On disk                                                                                          |
 
+One request is not to BAR at all: on an Apple Silicon Mac, where BAR's index has no engine to
+offer, `api.github.com/repos/Vandomas/RecoilEngine-AppleSilicon/releases/latest` is asked in
+its place — once, when an engine is wanted, and only then. The answer names the current build
+and the sha256 of its archive. A build already installed says so from inside its own
+`Info.plist`, so the usual answer costs that one small request and no download.
+
 Nothing is on a timer and nothing polls: each of those is a consequence of
 somebody opening a window, a room or a list. There is no "does BAR have this
 map" probing — the map index is fetched whole, once, and every such question
@@ -210,12 +223,63 @@ that decide which unit definitions exist (`forceallunits`, the Legion faction, a
 unit packs). `section` is a lobby display hint by BAR's own description, so regrouping changes
 nothing on the wire, and Cheats keeps its name and every balance setting.
 
-## Extras
+## Macs
 
-Beyond All Reason publishes no engine for MacOS, and the Apple Silicon build that exists —
-[RecoilEngine-AppleSilicon](https://github.com/Vandomas/RecoilEngine-AppleSilicon) — has online
-play turned off, because unofficial builds are not permitted on the official servers until their
-author has approval and lobby integration is done.
+Beyond All Reason publishes no engine for macOS. The Apple Silicon build that exists —
+[RecoilEngine-AppleSilicon](https://github.com/Vandomas/RecoilEngine-AppleSilicon), one
+person's, unaffiliated with either project — has online play turned off at the build level,
+because unofficial builds are not permitted on the official servers until their author has
+approval and lobby integration is done.
+
+modlobby installs it for you. The room offers the download the way it does on any other
+platform, says whose build it is while it arrives, checks the archive against the sha256 GitHub
+publishes beside it, and unpacks the `.app` into the engine folder. Nothing has to be dragged
+anywhere and the right-click-and-Open dance does not apply: `com.apple.quarantine` is put on by
+whatever *browser* saved a file, and modlobby is not one — the engine is spawned directly rather
+than through LaunchServices. A bundle records which port release built it, so the check for a
+newer one costs a single request and no download.
+
+What that build cannot do is reach the community servers, and modlobby does not let it try:
+`recoil::refuse_target` stops the engine at the one place it is ever started, so no button,
+route or future caller can arrive at it by another path. Rooms, chat and the battle list cost
+those servers nothing and are left alone. What is left to play is skirmish, replays — and LAN.
+
+## LAN
+
+A LAN game is the skirmish room you already set up, opened on a port. Same teams, same
+modoptions, same start boxes, same AIs; the engine hosts it, and the people on your network
+join. No account, no server, and nothing that touches Beyond All Reason's infrastructure — which
+is why it is the one kind of multiplayer an Apple Silicon Mac can play.
+
+**Play over the network**, above the skirmish room, opens it on the engine's own port 8452.
+modlobby then says so on UDP 8453 every two seconds, and every other modlobby on the network
+lists it. Guests are picked off that same list rather than typed: the engine's server admits a
+joining client only under a name the start script knows, so a name spelled wrong is a guest who
+cannot get in and finds out as a refused connection with nothing on screen to explain it.
+
+Almost nothing in the window knows any of this exists. A guest projects into the room as a
+player like any other, so the roster, the seat bar, the team cards and the drag-to-a-team
+gesture draw and move them having never been taught what a guest is — dragging one sends the
+same `!force <name> team <n>` it sends in a room on the server, and the console answers it here.
+The strip above the room is the whole of the new interface, and with no LAN game near you it is
+one line.
+
+Everything that leaves this machine is deliberate and momentary. The room is private unless you
+open it, the setting is not remembered across a restart, and a game that stops being announced
+stops being listed seven seconds later — which is also what closing a laptop looks like. Your
+own name goes out only while somebody else here is announcing a game, which is the one moment
+it is any use; on a network with no game on it modlobby says nothing at all, and opening the
+app asks macOS for nothing.
+
+The announcement is the one thing modlobby reads from an unauthenticated stranger, so it is a
+datagram capped at 512 bytes with every string clamped on the way in as well as out, and
+nothing in it is acted on without somebody clicking it. The address a join goes to is the one
+the datagram arrived from, never one its sender chose.
+
+`!lan [port]`, `!lan off`, `!addPlayer <name>`, `!removePlayer <name>` and `!spec <name>` are in
+the room's console for anything the strip does not cover.
+
+## Extras
 
 `scripts/webview.ts` drives the running window over the DevTools protocol so those checks can be
 made without a pair of hands:

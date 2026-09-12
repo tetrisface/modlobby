@@ -52,23 +52,32 @@ pub struct VersionView {
     pub plays_online: bool,
     /// Why no engine can be fetched onto this machine, when none can.
     ///
-    /// `None` everywhere Beyond All Reason publishes a build. Where it does
-    /// not, it is `content::release::NOT_PUBLISHED_HERE` — the same fact
+    /// `None` wherever there is an engine to fetch, which since the Apple
+    /// Silicon build is downloaded rather than installed by hand is everywhere
+    /// but an Intel Mac. Where it is a sentence, it is the same fact
     /// `download_engine` refuses with, carried here so the room can decline to
-    /// offer the download rather than offer it and be told. The engine that
-    /// runs there arrived by hand, so it is named rather than chosen: a picker
-    /// over it could only list what somebody had already put on the disk.
+    /// offer the download rather than offer it and be told.
     ///
     /// The reason rather than a `bool`, so nothing can draw the refusal
     /// without the words that explain it, and so the sentence is written once
     /// instead of once per language.
     ///
-    /// Not derived from `plays_online`: they are two facts with one cause
-    /// today, and they come apart the moment the Apple Silicon build's author
-    /// is approved — the servers would open while BAR's index still published
-    /// no Apple build, and a room deriving one from the other would go back to
-    /// offering a 404.
+    /// Not derived from `plays_online`: they are two facts with different
+    /// causes, and macOS is where they come apart — the engine is fetchable
+    /// there and the community servers are still closed to it.
     pub no_published_engine: Option<&'static str>,
+    /// Where the engine comes from, when it is not Beyond All Reason's own.
+    ///
+    /// `None` everywhere BAR publishes a build, and on macOS the one sentence
+    /// somebody should read before a third party's binary is downloaded onto
+    /// their machine and made executable: whose it is, that it is unaffiliated,
+    /// and that the community servers are not part of what it can do.
+    ///
+    /// Shown beside the offer rather than behind it. An automatic install is
+    /// the point — that is what this whole path is for — and the honest way to
+    /// have both is to say what is being installed while it installs, not to
+    /// put a dialog in front of a person who has already asked for a game.
+    pub third_party_engine: Option<&'static str>,
 }
 
 #[tauri::command]
@@ -78,6 +87,7 @@ pub fn app_version() -> VersionView {
         commit: env!("MODLOBBY_COMMIT"),
         plays_online: recoil::may_join_hosted_games(),
         no_published_engine: content::release::no_published_engine(),
+        third_party_engine: content::release::third_party_engine(),
     }
 }
 
@@ -588,14 +598,22 @@ fn install(
 mod tests {
     use super::{Staged, allows};
 
-    /// The two answers cannot drift on the one platform where either of them
-    /// is the uncommon one, which is the only platform nobody develops on.
+    /// The window's copy of where the engine comes from cannot drift from the
+    /// runtime's, on the one platform where either answer is the uncommon one
+    /// — which is the only platform nobody develops on.
+    ///
+    /// The pairing is the thing being asserted, not the values: a build that
+    /// can fetch an engine must not also carry a sentence saying it cannot,
+    /// and one that fetches a third party's must carry the sentence saying so.
     #[test]
-    fn the_refusal_is_carried_exactly_where_there_is_no_category() {
+    fn the_window_is_told_the_same_source_the_runtime_would_use() {
         let view = super::app_version();
-        assert_eq!(
-            view.no_published_engine.is_some(),
-            content::release::category().is_none()
+        let source = content::release::source();
+        assert_eq!(view.no_published_engine, source.unavailable());
+        assert_eq!(view.third_party_engine, source.third_party());
+        assert!(
+            view.no_published_engine.is_none() || view.third_party_engine.is_none(),
+            "a machine with nothing to fetch has no provenance to show for it"
         );
     }
 

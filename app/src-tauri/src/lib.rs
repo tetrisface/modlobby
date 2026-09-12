@@ -352,6 +352,7 @@ pub fn run() {
             commands::skirmish_close,
             commands::skirmish_act,
             commands::skirmish_launch,
+            commands::join_lan_game,
             commands::ai_options,
             commands::skirmish_download_missing,
             commands::skirmish_tweak_send,

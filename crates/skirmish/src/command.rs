@@ -8,6 +8,13 @@
 //!
 //! What is not here is what needs somebody else: `!balance`, `!lock`, `!vote`,
 //! `!kick`. Those are answered with a line saying so rather than ignored.
+//!
+//! `!force` is here, and is the reason dragging a LAN guest onto a team works
+//! without the room knowing there is such a thing. Online, moving somebody who
+//! is not you and is not your AI is a request to the host in battle chat
+//! (`views/room/move.ts`); here the console *is* the host, so the same gesture
+//! sends the same line and it lands on the same room. A feature that needed no
+//! new path through the window is a feature that cannot have broken one.
 
 use crate::Room;
 
@@ -37,6 +44,11 @@ const HELP: &[(&str, &str)] = &[
     ("!rename <title>", "name the room"),
     ("!addBot <name> <ai>", "add an AI on the next free team"),
     ("!removeBot <name>", "take one out"),
+    ("!lan [port]", "open the room to this network, or !lan off"),
+    ("!addPlayer <name>", "expect somebody to join over the LAN"),
+    ("!removePlayer <name>", "stop expecting them"),
+    ("!force <name> team <n>", "move somebody to a team"),
+    ("!spec <name>", "a guest watches instead of playing"),
     ("!fixColors", "one colour per side"),
     ("!set teamSize <n>", "how many per team"),
     ("!nbTeams <n>", "how many teams"),
@@ -83,6 +95,16 @@ pub fn command(room: &mut Room, line: &str) -> Outcome {
                 Outcome::Said(format!("no AI here is called {name}"))
             }
         }),
+        "lan" => lan(room, tail),
+        "addplayer" | "addguest" => add_guest(room, tail),
+        "removeplayer" | "removeguest" => named(tail, "!removePlayer <name>", |name| {
+            if room.remove_guest(name) {
+                Outcome::Did(format!("{name} is not expected any more"))
+            } else {
+                Outcome::Said(format!("nobody here is called {name}"))
+            }
+        }),
+        "force" => force(room, tail),
         "fixcolors" | "fixcolours" => {
             room.fix_colours();
             Outcome::Did("every side has its own colour".to_owned())
@@ -95,7 +117,19 @@ pub fn command(room: &mut Room, line: &str) -> Outcome {
         }),
         // Worth saying why rather than answering "unknown": these are the
         // commands whose absence is the point of a room with nobody in it.
-        "balance" | "lock" | "unlock" | "vote" | "kick" | "spec" | "boss" | "preset" => {
+        // Of the host-only commands, this one has a meaning here: a guest with
+        // no seat is still in the script and still let in, which is how
+        // somebody on this network watches a LAN game rather than plays one.
+        "spec" => named(tail, "!spec <name>", |name| {
+            if room.seat_guest(name, None) {
+                Outcome::Did(format!("{name} is watching"))
+            } else if room.guests().iter().any(|guest| guest.name == name) {
+                Outcome::Said(format!("{name} is already watching"))
+            } else {
+                Outcome::Said(format!("nobody here is called {name}"))
+            }
+        }),
+        "balance" | "lock" | "unlock" | "vote" | "kick" | "boss" | "preset" => {
             Outcome::Said(format!("!{name} needs a host. This room has none."))
         }
         _ => Outcome::Said(format!("!{name} means nothing here. Try !help.")),
@@ -151,6 +185,120 @@ fn add_bot(room: &mut Room, tail: &str) -> Outcome {
         Outcome::Did(format!("{name} ({ai}) on team {}", ally + 1))
     } else {
         Outcome::Said(format!("{name} is already here"))
+    }
+}
+
+/// `!lan`, `!lan <port>`, `!lan off`.
+///
+/// Bare, it opens on the engine's own default port, which is the number a
+/// guest joining from anything but modlobby would have to type the least of.
+fn lan(room: &mut Room, tail: &str) -> Outcome {
+    let tail = tail.trim();
+    let port = match tail.to_ascii_lowercase().as_str() {
+        "" | "on" => Some(recoil::script::DEFAULT_PORT),
+        "off" | "close" | "private" => None,
+        _ => match tail.parse::<u16>() {
+            // Port 0 is the engine's "pick one for me", which cannot be
+            // announced and cannot be joined.
+            Ok(port) if port != 0 => Some(port),
+            _ => return Outcome::Said("!lan [port], or !lan off".to_owned()),
+        },
+    };
+    if !room.set_lan(port) {
+        return Outcome::Said(match port {
+            Some(port) => format!("the room is already open on port {port}"),
+            None => "the room is already private".to_owned(),
+        });
+    }
+    Outcome::Did(match port {
+        Some(port) => {
+            format!("the room is open to this network on port {port}; add the people who will join")
+        }
+        None => "the room is private again".to_owned(),
+    })
+}
+
+/// `!addPlayer <name>`, on the next free team.
+fn add_guest(room: &mut Room, tail: &str) -> Outcome {
+    let Some(name) = tail.split_whitespace().next() else {
+        return Outcome::Said("!addPlayer <name>".to_owned());
+    };
+    let team = room.free_team();
+    let ally = room.free_ally();
+    let colour = crate::COLOURS[usize::from(ally) % crate::COLOURS.len()];
+    if room.add_guest(name, team, ally, colour) {
+        Outcome::Did(format!("{name} is expected on team {}", ally + 1))
+    } else {
+        Outcome::Said(format!("{name} is already here"))
+    }
+}
+
+/// `!force <name> team <n>` and `!force <name> bonus <n>`, as SPADS spells
+/// them and as the room's drag gesture sends them.
+///
+/// SPADS counts teams from one and prefixes a bot's name with `%` so it is not
+/// looked for among the players (`spads.pl:8917-8996`); both are honoured here
+/// so one gesture produces one line whichever kind of room it is in.
+fn force(room: &mut Room, tail: &str) -> Outcome {
+    let mut words = tail.split_whitespace();
+    let (Some(who), Some(what), Some(value)) = (words.next(), words.next(), words.next()) else {
+        return Outcome::Said("!force <name> team <n>".to_owned());
+    };
+    let Ok(value) = value.parse::<u32>() else {
+        return Outcome::Said(format!("!force <name> {what} <n>"));
+    };
+    let bot = who.strip_prefix('%');
+    let name = bot.unwrap_or(who);
+
+    match what.to_ascii_lowercase().as_str() {
+        "team" => {
+            let Some(ally) = value.checked_sub(1).filter(|ally| *ally < 256) else {
+                return Outcome::Said("!force <name> team <n>, counting from 1".to_owned());
+            };
+            let ally = ally as u8;
+            moved(room, name, bot.is_some(), ally, None)
+        }
+        "bonus" => {
+            let bonus = value.min(100) as u8;
+            moved(room, name, bot.is_some(), u8::MAX, Some(bonus))
+        }
+        _ => Outcome::Said(format!(
+            "!force <name> {what} is not something this room does"
+        )),
+    }
+}
+
+/// The move itself, against whichever kind of participant has that name.
+///
+/// `ally == u8::MAX` means "wherever they already are", which is what a bonus
+/// change wants: the message replaces a whole status, so the parts not being
+/// changed have to be sent again.
+fn moved(room: &mut Room, name: &str, bot: bool, ally: u8, bonus: Option<u8>) -> Outcome {
+    if !bot && let Some(guest) = room.guests().iter().find(|guest| guest.name == name) {
+        if bonus.is_some() {
+            return Outcome::Said("a bonus is something a host gives an AI.".to_owned());
+        }
+        let (team, colour) = (
+            guest.seat.map_or_else(|| room.free_team(), |s| s.team),
+            guest.colour,
+        );
+        room.update_guest(name, team, ally, colour);
+        return Outcome::Did(format!("{name} is on team {}", ally + 1));
+    }
+    let Some(ai) = room.ais().iter().find(|ai| ai.name == name) else {
+        return Outcome::Said(format!("nobody here is called {name}"));
+    };
+    let (team, colour, held) = (ai.seat.team, ai.colour, ai.seat);
+    let ally = if ally == u8::MAX {
+        held.ally_team
+    } else {
+        ally
+    };
+    let handicap = bonus.unwrap_or(held.handicap);
+    room.update_ai(name, team, ally, handicap, colour);
+    match bonus {
+        Some(bonus) => Outcome::Did(format!("{name} has a {bonus}% bonus")),
+        None => Outcome::Did(format!("{name} is on team {}", ally + 1)),
     }
 }
 
@@ -219,6 +367,90 @@ mod tests {
             Outcome::Said(said) => said,
             other => panic!("expected an answer to {line:?}, got {other:?}"),
         }
+    }
+
+    /// The console is the host here, so the line the room's drag gesture sends
+    /// online lands on the room itself.
+    ///
+    /// This is the whole reason a LAN guest can be dragged onto a team without
+    /// anything in the window having been taught what a guest is: `move.ts`
+    /// sends `!force <name> team <n>` for anybody who is not you and not your
+    /// own AI, and here that arrives as a command rather than as chat.
+    #[test]
+    fn force_is_what_makes_the_drag_gesture_work_on_a_guest() {
+        let mut room = room();
+        room.set_lan(Some(8452));
+        room.add_guest("ann", 1, 1, crate::COLOURS[1]);
+
+        // SPADS counts teams from one and takes the one back off, so the
+        // number on the wire is one more than the index everything else uses.
+        assert_eq!(did(&mut room, "!force ann team 3"), "ann is on team 3");
+        assert_eq!(room.guests()[0].seat.unwrap().ally_team, 2);
+
+        // A bot's name arrives prefixed, so it is not looked for among the
+        // players -- and the same line moves it.
+        room.add_ai("BARb", "BARb", 2, 0, crate::COLOURS[2]);
+        assert_eq!(did(&mut room, "!force %BARb team 2"), "BARb is on team 2");
+        assert_eq!(room.ais()[0].seat.ally_team, 1);
+        assert_eq!(
+            did(&mut room, "!force %BARb bonus 40"),
+            "BARb has a 40% bonus"
+        );
+        assert_eq!(room.ais()[0].seat.handicap, 40);
+        // The bonus did not move it.
+        assert_eq!(room.ais()[0].seat.ally_team, 1);
+
+        assert!(said(&mut room, "!force nobody team 2").contains("nobody here"));
+        assert!(said(&mut room, "!force ann team").contains("!force"));
+        assert!(said(&mut room, "!force ann team 0").contains("counting from 1"));
+        assert!(said(&mut room, "!force ann rank 2").contains("not something"));
+    }
+
+    /// Opening a room is a deliberate act with a word for it, and the console
+    /// is where the port that is not the default gets said.
+    #[test]
+    fn lan_opens_the_room_and_closes_it_again() {
+        let mut room = room();
+        assert!(did(&mut room, "!lan").contains("port 8452"));
+        assert_eq!(room.lan(), Some(8452));
+        assert!(said(&mut room, "!lan").contains("already open"));
+
+        assert!(did(&mut room, "!lan 9000").contains("port 9000"));
+        assert_eq!(room.lan(), Some(9000));
+
+        assert!(did(&mut room, "!lan off").contains("private again"));
+        assert_eq!(room.lan(), None);
+        assert!(said(&mut room, "!lan off").contains("already private"));
+
+        // The engine's "pick one for me" cannot be announced or joined.
+        assert!(said(&mut room, "!lan 0").contains("!lan [port]"));
+        assert!(said(&mut room, "!lan soon").contains("!lan [port]"));
+        assert_eq!(room.lan(), None);
+    }
+
+    #[test]
+    fn a_guest_is_added_by_name_and_taken_out_by_name() {
+        let mut room = room();
+        room.set_lan(Some(8452));
+        assert!(did(&mut room, "!addPlayer ann").contains("ann is expected"));
+        assert_eq!(room.guests().len(), 1);
+        // On a side of their own, which is what makes the first one an
+        // opponent rather than a team-mate.
+        assert_eq!(room.guests()[0].seat.unwrap().ally_team, 1);
+
+        assert!(said(&mut room, "!addPlayer ann").contains("already here"));
+        assert!(said(&mut room, "!addPlayer me").contains("already here"));
+        assert!(said(&mut room, "!addPlayer").contains("!addPlayer <name>"));
+
+        // Watching rather than playing is still somebody the engine lets in.
+        assert_eq!(did(&mut room, "!spec ann"), "ann is watching");
+        assert!(room.guests()[0].seat.is_none());
+        assert!(said(&mut room, "!spec ann").contains("already watching"));
+        assert!(said(&mut room, "!spec nobody").contains("nobody here"));
+
+        assert!(did(&mut room, "!removePlayer ann").contains("not expected"));
+        assert!(room.guests().is_empty());
+        assert!(said(&mut room, "!removePlayer ann").contains("nobody here"));
     }
 
     #[test]

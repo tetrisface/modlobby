@@ -522,6 +522,18 @@ pub async fn skirmish_launch(app: State<'_, App>) -> Result<()> {
     Ok(())
 }
 
+/// Starts the engine against a game somebody on this network is hosting.
+///
+/// `id` is the announcement's own, as the list drew it, rather than an
+/// address: a game that stopped being announced between the row being drawn
+/// and the click is refused rather than joined at an address that may since
+/// have become somebody else's machine.
+#[tauri::command]
+pub async fn join_lan_game(app: State<'_, App>, id: String, as_name: Option<String>) -> Result<()> {
+    app.client.join_lan(id, as_name).await?;
+    Ok(())
+}
+
 /// Fetches whatever of the skirmish room's engine, game and map is missing.
 #[tauri::command]
 pub async fn skirmish_download_missing(app: State<'_, App>) -> Result<()> {

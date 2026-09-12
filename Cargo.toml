@@ -76,6 +76,10 @@ notify = "=8.2.0"
 rand = "=0.10.2"
 schemars = "=1.2.2"
 sha2 = "=0.11.0"
+# The LAN discovery socket needs SO_REUSEADDR set before the bind and
+# SO_BROADCAST after it, neither of which std or tokio exposes. Already in the
+# tree by way of tokio, so it costs nothing new.
+socket2 = "=0.6.5"
 similar = "=3.2.0"
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
@@ -121,5 +125,10 @@ tracing-appender = "=0.2.5"
 tracing-subscriber = { version = "=0.3.23", features = ["env-filter", "json"] }
 ts-rs = "=12.0.1"
 webpki-roots = "=1.0.9"
+# The macOS engine bundle ships as a zip; `tauri-plugin-updater` already pulls
+# this exact version in, so it costs no new tree. `deflate` alone -- a release
+# zip of an .app uses nothing else, and the other backends are megabytes of
+# decompressors for formats that never turn up here.
+zip = { version = "=4.6.1", default-features = false, features = ["deflate"] }
 # HTTP mocking for the download and index tests; never touches the network.
 wiremock = "=0.6.5"

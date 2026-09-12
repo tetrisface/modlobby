@@ -9,6 +9,16 @@
 //! Pure: no I/O, no clock, no engine. What the runtime does with a launched
 //! game, and what content is on this machine, are its business; this decides
 //! only what the room *is*.
+//!
+//! # The same room, with people in it
+//!
+//! A LAN game is this room [opened](Room::set_lan) on a port, with the guests
+//! written down. It is deliberately not a second kind of room: the teams, the
+//! modoptions, the boxes and the AIs are the ones already set up, and a guest
+//! projects into [`SkirmishView`] as another `UserView` — which is what the
+//! roster, the seat bar and the drag-to-a-team gesture already draw and
+//! already move. So the room gains people and the window gains a switch, and
+//! nothing in between had to learn a new shape.
 
 use std::collections::BTreeMap;
 
@@ -80,6 +90,22 @@ pub struct Ai {
     pub options: BTreeMap<String, String>,
 }
 
+/// Somebody else at the keyboard, on this network.
+///
+/// Written into the start script from the moment they are added rather than
+/// when they connect: the engine's own server admits a joining client only
+/// under a name the script lists (`GameServer.cpp:3017`), so a guest who is
+/// not here yet still has to be here in the script. That is also why a guest
+/// has no "connected" flag — this room cannot know, the engine can, and a
+/// second opinion about who has arrived is worth less than none.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Guest {
+    pub name: String,
+    /// Where they sit, or `None` if they are only watching.
+    pub seat: Option<Seat>,
+    pub colour: u32,
+}
+
 /// One thing to do to the room.
 ///
 /// Carried across the actor boundary and over the wire to the front end, so
@@ -146,6 +172,27 @@ pub enum Act {
         key: String,
         value: String,
     },
+    /// Opens the room to the network on `port`, or closes it (`None`).
+    ///
+    /// Deliberate and one room at a time. A lobby that listened on the network
+    /// because it was running would be a different program from the one
+    /// somebody installed, so there is no setting for this and no memory of
+    /// it: the room is private again the moment it is closed or reopened.
+    SetLan {
+        port: Option<u16>,
+    },
+    /// Expects somebody on this network to join under `name`.
+    ///
+    /// Only the name. Where they sit is the room's to decide -- a side of
+    /// their own, which is what makes the first guest an opponent rather than
+    /// a team-mate -- and moving them afterwards is the drag gesture the
+    /// roster already has, which arrives as `!force` through [`Act::Say`].
+    AddGuest {
+        name: String,
+    },
+    RemoveGuest {
+        name: String,
+    },
     /// A line from the console under the roster.
     Say {
         text: String,
@@ -168,6 +215,17 @@ pub struct Room {
     /// Where the player sits, or `None` while watching.
     seat: Option<Seat>,
     ais: Vec<Ai>,
+    /// The people expected to join over the LAN. Empty in a game against AI,
+    /// which is every room until somebody opens one.
+    #[serde(default)]
+    guests: Vec<Guest>,
+    /// The port the engine's server will listen on for the network, or `None`
+    /// for a game nobody outside this machine can reach.
+    ///
+    /// Not kept across a restart -- see [`Act::SetLan`] -- so it is skipped
+    /// rather than serialised, and a room read back off disk is private.
+    #[serde(default, skip)]
+    lan: Option<u16>,
     /// What has been changed in this room, oldest first — the same record the
     /// tweak pane and the start-box history read online.
     history: Vec<OptionChangeView>,
@@ -199,6 +257,8 @@ impl Room {
             script_tags: BTreeMap::new(),
             seat: Some(Seat::new(0, 0)),
             ais: Vec::new(),
+            guests: Vec::new(),
+            lan: None,
             history: Vec::new(),
             next_seq: 0,
             layout: None,
@@ -214,6 +274,21 @@ impl Room {
 
     pub fn ais(&self) -> &[Ai] {
         &self.ais
+    }
+
+    pub fn guests(&self) -> &[Guest] {
+        &self.guests
+    }
+
+    /// The port the room is open on, or `None` while it is private.
+    pub fn lan(&self) -> Option<u16> {
+        self.lan
+    }
+
+    /// How the engine should bind its server for this room.
+    pub fn host(&self) -> recoil::script::Host {
+        self.lan
+            .map_or(recoil::script::Host::Alone, recoil::script::Host::Lan)
     }
 
     /// `game/modoptions/<key>` values, keyed without the prefix.
@@ -235,6 +310,12 @@ impl Room {
             .seat
             .iter()
             .map(|seat| seat.ally_team)
+            .chain(
+                self.guests
+                    .iter()
+                    .filter_map(|g| g.seat)
+                    .map(|s| s.ally_team),
+            )
             .chain(self.ais.iter().map(|ai| ai.seat.ally_team))
             .collect();
         used.sort_unstable();
@@ -291,27 +372,37 @@ impl Room {
             .seat
             .iter()
             .map(|seat| seat.team)
+            .chain(self.guests.iter().filter_map(|g| g.seat).map(|s| s.team))
             .chain(self.ais.iter().map(|ai| ai.seat.team))
             .collect();
+        let seated = held.len();
         held.sort_unstable();
         held.into_iter()
             .enumerate()
             .find(|(want, held)| *held != *want as u8)
-            .map_or_else(
-                || (self.ais.len() + usize::from(self.seat.is_some())) as u8,
-                |(want, _)| want as u8,
-            )
+            .map_or(seated as u8, |(want, _)| want as u8)
     }
 
-    /// A name no AI in the room already has: `BARb`, then `BARb2`.
+    /// A name nobody in the room already has: `BARb`, then `BARb2`.
+    ///
+    /// Everybody, not just the AIs: the engine numbers players and AIs into
+    /// the same script, and two participants under one name is a game it will
+    /// not start. A guest called `BARb` is unlikely and is still a way in.
     pub fn unused_name(&self, base: &str) -> String {
-        if !self.ais.iter().any(|ai| ai.name == base) {
+        if !self.named(base) {
             return base.to_owned();
         }
         (2..)
             .map(|n| format!("{base}{n}"))
-            .find(|name| !self.ais.iter().any(|ai| &ai.name == name))
+            .find(|name| !self.named(name))
             .unwrap_or_else(|| base.to_owned())
+    }
+
+    /// Whether anybody here -- the player, a guest or an AI -- is called this.
+    pub fn named(&self, name: &str) -> bool {
+        self.player == name
+            || self.guests.iter().any(|guest| guest.name == name)
+            || self.ais.iter().any(|ai| ai.name == name)
     }
 
     // --- changing it ------------------------------------------------------
@@ -410,10 +501,14 @@ impl Room {
     }
 
     /// Adds an AI. A name already in the room is refused rather than silently
-    /// renamed: the caller picked it, and two AIs with one name is a script
-    /// the engine will not run.
+    /// renamed: the caller picked it, and two participants with one name is a
+    /// script the engine will not run.
+    ///
+    /// Everybody, not only the other AIs -- the player and the LAN guests are
+    /// written into the same numbered list, so a collision with any of them is
+    /// the same broken script.
     pub fn add_ai(&mut self, name: &str, ai: &str, team: u8, ally_team: u8, colour: u32) -> bool {
-        if name.is_empty() || self.ais.iter().any(|held| held.name == name) {
+        if name.is_empty() || self.named(name) {
             return false;
         }
         self.ais.push(Ai {
@@ -464,7 +559,9 @@ impl Room {
     /// one thing a colour is for.
     fn free_colour(&self, wanted: u32) -> u32 {
         let taken = |colour: u32| {
-            colour == self.player_colour || self.ais.iter().any(|ai| ai.colour == colour)
+            colour == self.player_colour
+                || self.guests.iter().any(|guest| guest.colour == colour)
+                || self.ais.iter().any(|ai| ai.colour == colour)
         };
         if !taken(wanted) {
             return wanted;
@@ -473,6 +570,80 @@ impl Room {
             .into_iter()
             .find(|colour| !taken(*colour))
             .unwrap_or(wanted)
+    }
+
+    /// Opens the room to the network, or closes it. Answers whether it moved.
+    pub fn set_lan(&mut self, port: Option<u16>) -> bool {
+        // Port 0 is the engine's "pick one", which is no use to announce and
+        // no use to join: a guest needs a number to connect to.
+        let port = port.filter(|port| *port != 0);
+        if self.lan == port {
+            return false;
+        }
+        self.lan = port;
+        true
+    }
+
+    /// Expects somebody to join under `name`.
+    ///
+    /// A name already in the room is refused rather than silently renamed, for
+    /// the same reason an AI's is: the engine will not start a script with two
+    /// participants under one name, and the caller chose it.
+    pub fn add_guest(&mut self, name: &str, team: u8, ally_team: u8, colour: u32) -> bool {
+        let name = name.trim();
+        if name.is_empty() || self.named(name) {
+            return false;
+        }
+        self.guests.push(Guest {
+            name: name.to_owned(),
+            seat: Some(Seat::new(team, ally_team)),
+            colour: self.free_colour(colour),
+        });
+        true
+    }
+
+    /// Moves a guest already expected, or recolours them.
+    pub fn update_guest(&mut self, name: &str, team: u8, ally_team: u8, colour: u32) -> bool {
+        // Their own colour is not a collision with themselves, so the search
+        // for a free one runs before the guest is touched.
+        let settled = if self
+            .guests
+            .iter()
+            .any(|guest| guest.name == name && guest.colour == colour)
+        {
+            colour
+        } else {
+            self.free_colour(colour)
+        };
+        let Some(guest) = self.guests.iter_mut().find(|guest| guest.name == name) else {
+            return false;
+        };
+        guest.seat = Some(Seat::new(team, ally_team));
+        guest.colour = settled;
+        true
+    }
+
+    /// Sits a guest down or stands them up. `None` is watching.
+    ///
+    /// The half of a guest's life the drag gesture cannot express: a person
+    /// with no seat is still in the script and still let in, which is what
+    /// lets somebody on this network watch a LAN game rather than only play
+    /// one.
+    pub fn seat_guest(&mut self, name: &str, seat: Option<Seat>) -> bool {
+        let Some(guest) = self.guests.iter_mut().find(|guest| guest.name == name) else {
+            return false;
+        };
+        if guest.seat == seat {
+            return false;
+        }
+        guest.seat = seat;
+        true
+    }
+
+    pub fn remove_guest(&mut self, name: &str) -> bool {
+        let before = self.guests.len();
+        self.guests.retain(|guest| guest.name != name);
+        self.guests.len() != before
     }
 
     pub fn remove_ai(&mut self, name: &str) -> bool {
@@ -491,9 +662,14 @@ impl Room {
         self.player_colour = COLOURS[0];
         // The player takes the first when they are playing, so the AIs start
         // after them rather than on top of them.
-        let after = usize::from(self.seat.is_some());
-        for (place, ai) in self.ais.iter_mut().enumerate() {
-            ai.colour = COLOURS[(place + after) % COLOURS.len()];
+        let mut place = usize::from(self.seat.is_some());
+        for guest in &mut self.guests {
+            guest.colour = COLOURS[place % COLOURS.len()];
+            place += 1;
+        }
+        for ai in &mut self.ais {
+            ai.colour = COLOURS[place % COLOURS.len()];
+            place += 1;
         }
     }
 
@@ -559,6 +735,34 @@ impl Room {
                     Outcome::Nothing
                 }
             }
+            Act::SetLan { port } => {
+                if !self.set_lan(port) {
+                    return Outcome::Nothing;
+                }
+                Outcome::Did(match port {
+                    Some(port) => format!(
+                        "the room is open to this network on port {port}; \
+                         add the people who will join"
+                    ),
+                    None => "the room is private again".to_owned(),
+                })
+            }
+            Act::AddGuest { name } => {
+                let (team, ally) = (self.free_team(), self.free_ally());
+                let colour = COLOURS[usize::from(ally) % COLOURS.len()];
+                if self.add_guest(&name, team, ally, colour) {
+                    Outcome::Did(format!("{name} is expected on team {}", ally + 1))
+                } else {
+                    Outcome::Said(format!("{name} is already here"))
+                }
+            }
+            Act::RemoveGuest { name } => {
+                if self.remove_guest(&name) {
+                    Outcome::Did(format!("{name} is not expected any more"))
+                } else {
+                    Outcome::Nothing
+                }
+            }
             Act::AddBot {
                 name,
                 ai,
@@ -611,7 +815,11 @@ impl Room {
         SkirmishView {
             battle: self.battle(),
             my: self.my_battle(),
-            users: vec![self.user()],
+            // The guests are people in the roster, which is the whole trick:
+            // everything that draws a room draws them without being told.
+            users: std::iter::once(self.user())
+                .chain(self.guests.iter().map(guest_view))
+                .collect(),
             me: self.player.clone(),
             content,
         }
@@ -619,11 +827,19 @@ impl Room {
 
     fn battle(&self) -> BattleView {
         let seated = self.seat.is_some();
+        let playing = self
+            .guests
+            .iter()
+            .filter(|guest| guest.seat.is_some())
+            .count();
         BattleView {
             id: ROOM_ID,
             founder: self.player.clone(),
+            // Where the engine would listen, through the two fields that
+            // already mean exactly that online. Zero and empty is a room
+            // nobody else can reach, which is every room until one is opened.
             ip: String::new(),
-            port: 0,
+            port: self.lan.unwrap_or(0),
             max_players: 16,
             passworded: false,
             locked: false,
@@ -633,9 +849,11 @@ impl Room {
             engine_version: self.engine.clone(),
             title: self.title.clone(),
             game_name: self.game.clone(),
-            members: vec![self.player.clone()],
-            spectator_count: u32::from(!seated),
-            player_count: u32::from(seated),
+            members: std::iter::once(self.player.clone())
+                .chain(self.guests.iter().map(|guest| guest.name.clone()))
+                .collect(),
+            spectator_count: u32::from(!seated) + (self.guests.len() - playing) as u32,
+            player_count: u32::from(seated) + playing as u32,
             layout: self.layout,
             bots: self.ais.iter().map(bot_view).collect(),
             // The engine's own rectangles are not how this room carries its
@@ -679,6 +897,27 @@ impl Room {
             battle_status: Some(status_view(self.seat, true)),
             battle_id: Some(ROOM_ID),
         }
+    }
+}
+
+/// A guest as the roster draws one: a player like any other, and synced,
+/// because whether *their* machine has the content is theirs to answer and the
+/// engine will say so the moment they connect.
+fn guest_view(guest: &Guest) -> UserView {
+    UserView {
+        name: guest.name.clone(),
+        country: String::new(),
+        user_id: None,
+        lobby_client: String::new(),
+        status: UserStatusView {
+            in_game: false,
+            away: false,
+            rank: 0,
+            moderator: false,
+            bot: false,
+        },
+        battle_status: Some(status_view(guest.seat, true)),
+        battle_id: Some(ROOM_ID),
     }
 }
 
@@ -741,6 +980,104 @@ mod tests {
             game: true,
             map: true,
         }
+    }
+
+    /// The whole LAN design in one test: a guest is a person in the roster.
+    ///
+    /// Nothing in the window was taught about guests -- the roster draws
+    /// `users`, the seat bar reads `battle_status`, the counts come off the
+    /// battle -- so if a guest projects like a player then every one of those
+    /// already works. That is what is asserted here, rather than the fields
+    /// for their own sake.
+    #[test]
+    fn a_guest_is_a_person_in_the_roster_like_anybody_else() {
+        let mut room = room();
+        assert!(room.add_guest("ann", 1, 1, COLOURS[1]));
+        let view = room.view(content());
+
+        assert_eq!(view.battle.members, ["tetrisface", "ann"]);
+        assert_eq!(view.users.len(), 2);
+        let ann = view.users.iter().find(|user| user.name == "ann").unwrap();
+        let seat = ann.battle_status.as_ref().unwrap();
+        assert!(seat.player, "expected on a team, not watching");
+        assert_eq!(seat.ally_team, 1);
+        assert_eq!(seat.sync, SyncView::Synced);
+        assert!(
+            !ann.status.bot,
+            "a person, so the roster does not draw a bot"
+        );
+        assert_eq!(view.battle.player_count, 2);
+        assert_eq!(view.battle.spectator_count, 0);
+
+        // And they count for everything that has to leave room for them.
+        assert_eq!(room.ally_teams(), [0, 1]);
+        assert_eq!(room.free_team(), 2);
+        assert!(room.named("ann"));
+
+        assert!(room.remove_guest("ann"));
+        assert_eq!(room.view(content()).battle.members, ["tetrisface"]);
+        assert!(!room.remove_guest("ann"));
+    }
+
+    /// A name is a name: the engine numbers players and AIs into one script
+    /// and will not start one with two participants under the same one.
+    #[test]
+    fn a_guest_cannot_take_a_name_somebody_here_already_has() {
+        let mut room = room();
+        assert!(room.add_guest("ann", 1, 1, COLOURS[1]));
+        assert!(!room.add_guest("ann", 2, 2, COLOURS[2]), "twice");
+        assert!(!room.add_guest("tetrisface", 2, 2, COLOURS[2]), "the host");
+        assert!(!room.add_guest("  ", 2, 2, COLOURS[2]), "nobody");
+        assert!(!room.add_ai("ann", "BARb", 2, 2, COLOURS[2]), "an AI too");
+        assert_eq!(room.unused_name("ann"), "ann2");
+        assert_eq!(room.guests().len(), 1);
+    }
+
+    /// Two participants in one colour is the one thing a colour is for, and a
+    /// guest is in the same pool as everybody else.
+    #[test]
+    fn a_guest_gets_a_colour_nobody_else_is_using() {
+        let mut room = room();
+        room.add_guest("ann", 1, 1, COLOURS[0]);
+        assert_ne!(room.guests()[0].colour, room.player_colour());
+
+        room.add_ai("BARb", "BARb", 2, 2, COLOURS[0]);
+        let used: Vec<u32> = std::iter::once(room.player_colour())
+            .chain(room.guests().iter().map(|g| g.colour))
+            .chain(room.ais().iter().map(|ai| ai.colour))
+            .collect();
+        let mut unique = used.clone();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(used.len(), unique.len(), "{used:?}");
+
+        // And the evening-up walks the player, the guests and the AIs in the
+        // order the roster shows them.
+        room.fix_colours();
+        assert_eq!(room.player_colour(), COLOURS[0]);
+        assert_eq!(room.guests()[0].colour, COLOURS[1]);
+        assert_eq!(room.ais()[0].colour, COLOURS[2]);
+    }
+
+    /// Private unless somebody said otherwise, and private again after a
+    /// restart: there is no setting for this and nothing remembers it.
+    #[test]
+    fn a_room_is_private_until_it_is_opened_and_forgets_that_it_was() {
+        let mut room = room();
+        assert_eq!(room.lan(), None);
+        assert_eq!(room.host(), recoil::script::Host::Alone);
+
+        assert!(room.set_lan(Some(8452)));
+        assert_eq!(room.host(), recoil::script::Host::Lan(8452));
+        assert!(!room.set_lan(Some(8452)), "already open there");
+        // The engine's "pick a port for me" cannot be announced or joined.
+        assert!(room.set_lan(Some(0)));
+        assert_eq!(room.lan(), None);
+
+        room.set_lan(Some(8452));
+        let kept: Room = serde_json::from_str(&serde_json::to_string(&room).unwrap()).unwrap();
+        assert_eq!(kept.lan(), None, "a room read back off disk is private");
+        assert_eq!(kept.guests(), room.guests());
     }
 
     #[test]

@@ -45,3 +45,19 @@ export const playsOnline = (): boolean => build()?.playsOnline ?? true
  */
 export const noPublishedEngine = (): string | null | undefined =>
   build()?.noPublishedEngine
+
+/**
+ * Whose engine this machine would fetch, when it is not Beyond All Reason's.
+ *
+ * `null` everywhere BAR publishes a build; on Apple Silicon the sentence that
+ * names the port, says it is unaffiliated, and says the community servers are
+ * not part of what it can do. Drawn beside the download rather than in front
+ * of it — see `GetEngine`.
+ *
+ * `?? null` rather than gating on `build()` the way `noPublishedEngine` does,
+ * because the two want opposite things from not-knowing: this only decides
+ * what a notice *says*, and a notice one frame late is nothing, while a
+ * download started one frame early is a request nobody can act on.
+ */
+export const thirdPartyEngine = (): string | null =>
+  build()?.thirdPartyEngine ?? null
