@@ -15,6 +15,7 @@ mod state;
 mod thumbs;
 mod transport;
 mod update;
+mod widgets;
 mod win;
 
 use tauri::{Emitter, Manager};
@@ -275,6 +276,7 @@ pub fn run() {
         })
         .register_asynchronous_uri_scheme_protocol(thumbs::SCHEME, thumbs::serve)
         .invoke_handler(tauri::generate_handler![
+            widgets::widget_usage,
             commands::subscribe,
             commands::login,
             commands::logout,

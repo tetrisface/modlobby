@@ -1,0 +1,734 @@
+{
+ "generated_at": "2026-09-16T06:29:01.559992+00:00",
+ "policy_version": "pve_widget_harvest_v1_prefix_262144",
+ "windows": [
+  "7d",
+  "30d",
+  "90d",
+  "365d",
+  "all"
+ ],
+ "widget_count": 12,
+ "widgets": [
+  {
+   "key": "widget:gui_energy_conversion_meter",
+   "resolved": true,
+   "id": "gui_energy_conversion_meter",
+   "name": "Energy Conversion Meter",
+   "author": "Egzothicki",
+   "description": "9-bar meter next to the top bar showing your energy<->converter balance: green center = balanced, ba...",
+   "windows": {
+    "7d": {
+     "rank": 1,
+     "players": 549,
+     "players_active": 524,
+     "retention": 0.9544626593806922,
+     "sightings": 8906,
+     "replays": 5600,
+     "days_covered": 7,
+     "coverage": 1.0
+    },
+    "30d": {
+     "rank": 1,
+     "players": 696,
+     "players_active": 667,
+     "retention": 0.9583333333333334,
+     "sightings": 18262,
+     "replays": 11636,
+     "days_covered": 14,
+     "coverage": 0.4666666666666667
+    },
+    "90d": {
+     "rank": 1,
+     "players": 696,
+     "players_active": 667,
+     "retention": 0.9583333333333334,
+     "sightings": 18262,
+     "replays": 11636,
+     "days_covered": 14,
+     "coverage": 0.15555555555555556
+    },
+    "365d": {
+     "rank": 1,
+     "players": 696,
+     "players_active": 667,
+     "retention": 0.9583333333333334,
+     "sightings": 18262,
+     "replays": 11636,
+     "days_covered": 14,
+     "coverage": 0.038356164383561646
+    },
+    "all": {
+     "rank": 1,
+     "players": 696,
+     "players_active": 667,
+     "retention": 0.9583333333333334,
+     "sightings": 18262,
+     "replays": 11636,
+     "days_covered": 14,
+     "coverage": 1.0
+    }
+   }
+  },
+  {
+   "key": "widget:0_1789512522822_1",
+   "resolved": true,
+   "id": "0_1789512522822_1",
+   "name": "BuildWatch",
+   "author": "2Bit",
+   "description": "Displays organized icons for all units under construction, showing build progress and estimated comp...",
+   "windows": {
+    "7d": {
+     "rank": 2,
+     "players": 523,
+     "players_active": 479,
+     "retention": 0.9158699808795411,
+     "sightings": 8188,
+     "replays": 5486,
+     "days_covered": 7,
+     "coverage": 1.0
+    },
+    "30d": {
+     "rank": 2,
+     "players": 688,
+     "players_active": 633,
+     "retention": 0.9200581395348837,
+     "sightings": 17137,
+     "replays": 11440,
+     "days_covered": 14,
+     "coverage": 0.4666666666666667
+    },
+    "90d": {
+     "rank": 2,
+     "players": 688,
+     "players_active": 633,
+     "retention": 0.9200581395348837,
+     "sightings": 17137,
+     "replays": 11440,
+     "days_covered": 14,
+     "coverage": 0.15555555555555556
+    },
+    "365d": {
+     "rank": 2,
+     "players": 688,
+     "players_active": 633,
+     "retention": 0.9200581395348837,
+     "sightings": 17137,
+     "replays": 11440,
+     "days_covered": 14,
+     "coverage": 0.038356164383561646
+    },
+    "all": {
+     "rank": 2,
+     "players": 688,
+     "players_active": 633,
+     "retention": 0.9200581395348837,
+     "sightings": 17137,
+     "replays": 11440,
+     "days_covered": 14,
+     "coverage": 1.0
+    }
+   }
+  },
+  {
+   "key": "widget:gui_factory_queue",
+   "resolved": true,
+   "id": "gui_factory_queue",
+   "name": "Factory Queue",
+   "author": "Codex and GammaPath",
+   "description": "Shows and lets you reorder the selected factory's production queue",
+   "windows": {
+    "7d": {
+     "rank": 3,
+     "players": 492,
+     "players_active": 470,
+     "retention": 0.9552845528455285,
+     "sightings": 8086,
+     "replays": 5441,
+     "days_covered": 7,
+     "coverage": 1.0
+    },
+    "30d": {
+     "rank": 3,
+     "players": 654,
+     "players_active": 628,
+     "retention": 0.9602446483180428,
+     "sightings": 17079,
+     "replays": 11369,
+     "days_covered": 14,
+     "coverage": 0.4666666666666667
+    },
+    "90d": {
+     "rank": 3,
+     "players": 654,
+     "players_active": 628,
+     "retention": 0.9602446483180428,
+     "sightings": 17079,
+     "replays": 11369,
+     "days_covered": 14,
+     "coverage": 0.15555555555555556
+    },
+    "365d": {
+     "rank": 3,
+     "players": 654,
+     "players_active": 628,
+     "retention": 0.9602446483180428,
+     "sightings": 17079,
+     "replays": 11369,
+     "days_covered": 14,
+     "coverage": 0.038356164383561646
+    },
+    "all": {
+     "rank": 3,
+     "players": 654,
+     "players_active": 628,
+     "retention": 0.9602446483180428,
+     "sightings": 17079,
+     "replays": 11369,
+     "days_covered": 14,
+     "coverage": 1.0
+    }
+   }
+  },
+  {
+   "key": "widget:gui_build_placement_cost",
+   "resolved": true,
+   "id": "gui_build_placement_cost",
+   "name": "Build Placement Cost",
+   "author": "lov",
+   "description": "Shows effective build cost rate near cursor",
+   "windows": {
+    "7d": {
+     "rank": 4,
+     "players": 395,
+     "players_active": 356,
+     "retention": 0.9012658227848102,
+     "sightings": 5968,
+     "replays": 4409,
+     "days_covered": 7,
+     "coverage": 1.0
+    },
+    "30d": {
+     "rank": 4,
+     "players": 526,
+     "players_active": 474,
+     "retention": 0.9011406844106464,
+     "sightings": 12585,
+     "replays": 9261,
+     "days_covered": 14,
+     "coverage": 0.4666666666666667
+    },
+    "90d": {
+     "rank": 4,
+     "players": 526,
+     "players_active": 474,
+     "retention": 0.9011406844106464,
+     "sightings": 12585,
+     "replays": 9261,
+     "days_covered": 14,
+     "coverage": 0.15555555555555556
+    },
+    "365d": {
+     "rank": 4,
+     "players": 526,
+     "players_active": 474,
+     "retention": 0.9011406844106464,
+     "sightings": 12585,
+     "replays": 9261,
+     "days_covered": 14,
+     "coverage": 0.038356164383561646
+    },
+    "all": {
+     "rank": 4,
+     "players": 526,
+     "players_active": 474,
+     "retention": 0.9011406844106464,
+     "sightings": 12585,
+     "replays": 9261,
+     "days_covered": 14,
+     "coverage": 1.0
+    }
+   }
+  },
+  {
+   "key": "widget:gui_extended_eta_info",
+   "resolved": true,
+   "id": "gui_extended_eta_info",
+   "name": "Extended ETA Info",
+   "author": "uBdead",
+   "description": "Shows remaining resource cost below the build ETA",
+   "windows": {
+    "7d": {
+     "rank": 5,
+     "players": 364,
+     "players_active": 335,
+     "retention": 0.9203296703296703,
+     "sightings": 5982,
+     "replays": 4317,
+     "days_covered": 7,
+     "coverage": 1.0
+    },
+    "30d": {
+     "rank": 5,
+     "players": 488,
+     "players_active": 454,
+     "retention": 0.930327868852459,
+     "sightings": 12380,
+     "replays": 9004,
+     "days_covered": 14,
+     "coverage": 0.4666666666666667
+    },
+    "90d": {
+     "rank": 5,
+     "players": 488,
+     "players_active": 454,
+     "retention": 0.930327868852459,
+     "sightings": 12380,
+     "replays": 9004,
+     "days_covered": 14,
+     "coverage": 0.15555555555555556
+    },
+    "365d": {
+     "rank": 5,
+     "players": 488,
+     "players_active": 454,
+     "retention": 0.930327868852459,
+     "sightings": 12380,
+     "replays": 9004,
+     "days_covered": 14,
+     "coverage": 0.038356164383561646
+    },
+    "all": {
+     "rank": 5,
+     "players": 488,
+     "players_active": 454,
+     "retention": 0.930327868852459,
+     "sightings": 12380,
+     "replays": 9004,
+     "days_covered": 14,
+     "coverage": 1.0
+    }
+   }
+  },
+  {
+   "key": "widget:gui_metal_tracker",
+   "resolved": true,
+   "id": "gui_metal_tracker",
+   "name": "Metal Tracker",
+   "author": "Mr_Chinny",
+   "description": "Tracks and displays resources sent to you",
+   "windows": {
+    "7d": {
+     "rank": 6,
+     "players": 331,
+     "players_active": 214,
+     "retention": 0.6465256797583081,
+     "sightings": 5324,
+     "replays": 3742,
+     "days_covered": 7,
+     "coverage": 1.0
+    },
+    "30d": {
+     "rank": 6,
+     "players": 417,
+     "players_active": 214,
+     "retention": 0.513189448441247,
+     "sightings": 11304,
+     "replays": 8057,
+     "days_covered": 14,
+     "coverage": 0.4666666666666667
+    },
+    "90d": {
+     "rank": 6,
+     "players": 417,
+     "players_active": 214,
+     "retention": 0.513189448441247,
+     "sightings": 11304,
+     "replays": 8057,
+     "days_covered": 14,
+     "coverage": 0.15555555555555556
+    },
+    "365d": {
+     "rank": 6,
+     "players": 417,
+     "players_active": 214,
+     "retention": 0.513189448441247,
+     "sightings": 11304,
+     "replays": 8057,
+     "days_covered": 14,
+     "coverage": 0.038356164383561646
+    },
+    "all": {
+     "rank": 6,
+     "players": 417,
+     "players_active": 214,
+     "retention": 0.513189448441247,
+     "sightings": 11304,
+     "replays": 8057,
+     "days_covered": 14,
+     "coverage": 1.0
+    }
+   }
+  },
+  {
+   "key": "widget:cmd_build_snap",
+   "resolved": true,
+   "id": "cmd_build_snap",
+   "name": "Build Snap (all buildings)",
+   "author": "uBdead (based on Extractor Snap patterns) by Hobo Joe, based on work by Niobium and Floris",
+   "description": "Snaps building placement to the nearest valid build grid point (within a small search radius). Hold ...",
+   "windows": {
+    "7d": {
+     "rank": 8,
+     "players": 304,
+     "players_active": 259,
+     "retention": 0.8519736842105263,
+     "sightings": 4445,
+     "replays": 3513,
+     "days_covered": 7,
+     "coverage": 1.0
+    },
+    "30d": {
+     "rank": 7,
+     "players": 393,
+     "players_active": 350,
+     "retention": 0.8905852417302799,
+     "sightings": 9041,
+     "replays": 7231,
+     "days_covered": 14,
+     "coverage": 0.4666666666666667
+    },
+    "90d": {
+     "rank": 7,
+     "players": 393,
+     "players_active": 350,
+     "retention": 0.8905852417302799,
+     "sightings": 9041,
+     "replays": 7231,
+     "days_covered": 14,
+     "coverage": 0.15555555555555556
+    },
+    "365d": {
+     "rank": 7,
+     "players": 393,
+     "players_active": 350,
+     "retention": 0.8905852417302799,
+     "sightings": 9041,
+     "replays": 7231,
+     "days_covered": 14,
+     "coverage": 0.038356164383561646
+    },
+    "all": {
+     "rank": 7,
+     "players": 393,
+     "players_active": 350,
+     "retention": 0.8905852417302799,
+     "sightings": 9041,
+     "replays": 7231,
+     "days_covered": 14,
+     "coverage": 1.0
+    }
+   }
+  },
+  {
+   "key": "widget:gui_zombie_wreck_timers",
+   "resolved": true,
+   "id": "gui_zombie_wreck_timers",
+   "name": "Zombie Wreck Timers",
+   "author": "SethDGamre + Egzothicki",
+   "description": "When the Zombies modoption is on, shows a countdown over each wreck until it reanimates. Reacts inst...",
+   "windows": {
+    "7d": {
+     "rank": 7,
+     "players": 313,
+     "players_active": 160,
+     "retention": 0.5111821086261981,
+     "sightings": 5503,
+     "replays": 3597,
+     "days_covered": 7,
+     "coverage": 1.0
+    },
+    "30d": {
+     "rank": 8,
+     "players": 360,
+     "players_active": 213,
+     "retention": 0.5916666666666667,
+     "sightings": 9600,
+     "replays": 6465,
+     "days_covered": 14,
+     "coverage": 0.4666666666666667
+    },
+    "90d": {
+     "rank": 8,
+     "players": 360,
+     "players_active": 213,
+     "retention": 0.5916666666666667,
+     "sightings": 9600,
+     "replays": 6465,
+     "days_covered": 14,
+     "coverage": 0.15555555555555556
+    },
+    "365d": {
+     "rank": 8,
+     "players": 360,
+     "players_active": 213,
+     "retention": 0.5916666666666667,
+     "sightings": 9600,
+     "replays": 6465,
+     "days_covered": 14,
+     "coverage": 0.038356164383561646
+    },
+    "all": {
+     "rank": 8,
+     "players": 360,
+     "players_active": 213,
+     "retention": 0.5916666666666667,
+     "sightings": 9600,
+     "replays": 6465,
+     "days_covered": 14,
+     "coverage": 1.0
+    }
+   }
+  },
+  {
+   "key": "widget:gui_ping_wheel",
+   "resolved": true,
+   "id": "gui_ping_wheel",
+   "name": "Ping Wheel",
+   "author": "Errrrrrr",
+   "description": "Displays a ping wheel when a keybind is held down. Default keybind is 'alt-f', rebindable. Left clic...",
+   "windows": {
+    "7d": {
+     "rank": 9,
+     "players": 264,
+     "players_active": 245,
+     "retention": 0.928030303030303,
+     "sightings": 4738,
+     "replays": 3703,
+     "days_covered": 7,
+     "coverage": 1.0
+    },
+    "30d": {
+     "rank": 9,
+     "players": 342,
+     "players_active": 318,
+     "retention": 0.9298245614035088,
+     "sightings": 10098,
+     "replays": 7785,
+     "days_covered": 14,
+     "coverage": 0.4666666666666667
+    },
+    "90d": {
+     "rank": 9,
+     "players": 342,
+     "players_active": 318,
+     "retention": 0.9298245614035088,
+     "sightings": 10098,
+     "replays": 7785,
+     "days_covered": 14,
+     "coverage": 0.15555555555555556
+    },
+    "365d": {
+     "rank": 9,
+     "players": 342,
+     "players_active": 318,
+     "retention": 0.9298245614035088,
+     "sightings": 10098,
+     "replays": 7785,
+     "days_covered": 14,
+     "coverage": 0.038356164383561646
+    },
+    "all": {
+     "rank": 9,
+     "players": 342,
+     "players_active": 318,
+     "retention": 0.9298245614035088,
+     "sightings": 10098,
+     "replays": 7785,
+     "days_covered": 14,
+     "coverage": 1.0
+    }
+   }
+  },
+  {
+   "key": "widget:gui_juno_impact_range",
+   "resolved": true,
+   "id": "gui_juno_impact_range",
+   "name": "Juno Shot Ranges",
+   "author": "Rysica",
+   "description": "Draws an AOE circle while targeting Juno, and after impact",
+   "windows": {
+    "7d": {
+     "rank": 11,
+     "players": 258,
+     "players_active": 254,
+     "retention": 0.9844961240310077,
+     "sightings": 4791,
+     "replays": 3471,
+     "days_covered": 7,
+     "coverage": 1.0
+    },
+    "30d": {
+     "rank": 10,
+     "players": 325,
+     "players_active": 318,
+     "retention": 0.9784615384615385,
+     "sightings": 9480,
+     "replays": 7020,
+     "days_covered": 14,
+     "coverage": 0.4666666666666667
+    },
+    "90d": {
+     "rank": 10,
+     "players": 325,
+     "players_active": 318,
+     "retention": 0.9784615384615385,
+     "sightings": 9480,
+     "replays": 7020,
+     "days_covered": 14,
+     "coverage": 0.15555555555555556
+    },
+    "365d": {
+     "rank": 10,
+     "players": 325,
+     "players_active": 318,
+     "retention": 0.9784615384615385,
+     "sightings": 9480,
+     "replays": 7020,
+     "days_covered": 14,
+     "coverage": 0.038356164383561646
+    },
+    "all": {
+     "rank": 10,
+     "players": 325,
+     "players_active": 318,
+     "retention": 0.9784615384615385,
+     "sightings": 9480,
+     "replays": 7020,
+     "days_covered": 14,
+     "coverage": 1.0
+    }
+   }
+  },
+  {
+   "key": "widget:gui_top_bar_extra",
+   "resolved": true,
+   "id": "gui_top_bar_extra",
+   "name": "Top Bar Extra",
+   "author": "uBdead",
+   "description": "Adds a more detailed resource display.",
+   "windows": {
+    "7d": {
+     "rank": 12,
+     "players": 248,
+     "players_active": 223,
+     "retention": 0.8991935483870968,
+     "sightings": 4229,
+     "replays": 3386,
+     "days_covered": 7,
+     "coverage": 1.0
+    },
+    "30d": {
+     "rank": 11,
+     "players": 322,
+     "players_active": 293,
+     "retention": 0.9099378881987578,
+     "sightings": 8824,
+     "replays": 7013,
+     "days_covered": 14,
+     "coverage": 0.4666666666666667
+    },
+    "90d": {
+     "rank": 11,
+     "players": 322,
+     "players_active": 293,
+     "retention": 0.9099378881987578,
+     "sightings": 8824,
+     "replays": 7013,
+     "days_covered": 14,
+     "coverage": 0.15555555555555556
+    },
+    "365d": {
+     "rank": 11,
+     "players": 322,
+     "players_active": 293,
+     "retention": 0.9099378881987578,
+     "sightings": 8824,
+     "replays": 7013,
+     "days_covered": 14,
+     "coverage": 0.038356164383561646
+    },
+    "all": {
+     "rank": 11,
+     "players": 322,
+     "players_active": 293,
+     "retention": 0.9099378881987578,
+     "sightings": 8824,
+     "replays": 7013,
+     "days_covered": 14,
+     "coverage": 1.0
+    }
+   }
+  },
+  {
+   "key": "widget:unit_lazy_reclaimers",
+   "resolved": true,
+   "id": "unit_lazy_reclaimers",
+   "name": "Lazy Reclaimers",
+   "author": "uBdead",
+   "description": "Reclaimers will stop reclaiming when the metal/energy storage is full.",
+   "windows": {
+    "7d": {
+     "rank": 10,
+     "players": 259,
+     "players_active": 234,
+     "retention": 0.9034749034749034,
+     "sightings": 4084,
+     "replays": 3181,
+     "days_covered": 7,
+     "coverage": 1.0
+    },
+    "30d": {
+     "rank": 12,
+     "players": 320,
+     "players_active": 288,
+     "retention": 0.9,
+     "sightings": 7964,
+     "replays": 6300,
+     "days_covered": 14,
+     "coverage": 0.4666666666666667
+    },
+    "90d": {
+     "rank": 12,
+     "players": 320,
+     "players_active": 288,
+     "retention": 0.9,
+     "sightings": 7964,
+     "replays": 6300,
+     "days_covered": 14,
+     "coverage": 0.15555555555555556
+    },
+    "365d": {
+     "rank": 12,
+     "players": 320,
+     "players_active": 288,
+     "retention": 0.9,
+     "sightings": 7964,
+     "replays": 6300,
+     "days_covered": 14,
+     "coverage": 0.038356164383561646
+    },
+    "all": {
+     "rank": 12,
+     "players": 320,
+     "players_active": 288,
+     "retention": 0.9,
+     "sightings": 7964,
+     "replays": 6300,
+     "days_covered": 14,
+     "coverage": 1.0
+    }
+   }
+  }
+ ]
+}

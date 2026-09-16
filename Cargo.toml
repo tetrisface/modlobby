@@ -13,6 +13,7 @@ members = [
     "crates/startbox",
     "crates/skirmish",
     "crates/pve",
+    "crates/widgets",
     "crates/news",
     "crates/recoil",
     "crates/modlobby-cli",
@@ -48,6 +49,7 @@ presets = { path = "crates/presets" }
 startbox = { path = "crates/startbox" }
 skirmish = { path = "crates/skirmish" }
 pve = { path = "crates/pve" }
+widgets = { path = "crates/widgets" }
 news = { path = "crates/news" }
 tweaks = { path = "crates/tweaks" }
 modoptions = { path = "crates/modoptions" }

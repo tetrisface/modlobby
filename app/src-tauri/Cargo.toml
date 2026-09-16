@@ -36,6 +36,7 @@ tauri = { workspace = true }
 modoptions = { workspace = true }
 presets = { workspace = true }
 pve = { workspace = true }
+widgets = { workspace = true }
 tauri-plugin-global-shortcut = { workspace = true }
 tauri-plugin-notification = { workspace = true }
 tauri-plugin-opener = { workspace = true }

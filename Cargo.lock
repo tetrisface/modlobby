@@ -3105,6 +3105,7 @@ dependencies = [
  "tracing-subscriber",
  "ts-rs",
  "tweaks",
+ "widgets",
  "windows-sys 0.61.2",
  "wiremock",
 ]
@@ -6459,6 +6460,21 @@ dependencies = [
  "thiserror 2.0.20",
  "windows 0.61.3",
  "windows-core 0.61.2",
+]
+
+[[package]]
+name = "widgets"
+version = "0.1.14"
+dependencies = [
+ "content",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+ "tracing",
+ "ts-rs",
+ "wiremock",
 ]
 
 [[package]]

@@ -43,6 +43,9 @@ pub struct App {
     pub news_read: news::Memory,
     /// The news for this run, loaded the first time anything asks.
     news: tokio::sync::Mutex<Option<Vec<news::NewsItem>>>,
+    /// What BAR players actually run, loaded the first time anything asks.
+    /// The document is rebuilt weekly, so once a run is plenty.
+    widget_usage: tokio::sync::Mutex<Option<widgets::Usage>>,
     /// The map pictures at tile size, made here and kept under `cache/`.
     pub thumbs: content::map_thumb::Service,
     /// Files read out of installed games — `modoptions.lua`, `luaai.lua` —
@@ -85,6 +88,7 @@ impl App {
             http,
             map_index: tokio::sync::Mutex::new(MapIndexHeld::default()),
             news: tokio::sync::Mutex::new(None),
+            widget_usage: tokio::sync::Mutex::new(None),
             game_files: Arc::new(content::game_cache::GameFileCache::new()),
             engine_downloads: tokio::sync::Mutex::new(()),
         })
@@ -131,6 +135,28 @@ impl App {
     /// it is trusted for. An empty answer — offline, or a first run with no
     /// network — is not kept, so the next ask tries again rather than leaving
     /// the whole session with an empty page.
+    /// The published widget-usage document, fetched once per run.
+    ///
+    /// A failure returns `None` rather than an error: usage is decoration on a
+    /// widget list, and a page that renders without the numbers is a better
+    /// outcome than one that refuses to render. The next run tries again.
+    pub async fn widget_usage(&self) -> Option<widgets::Usage> {
+        let mut held = self.widget_usage.lock().await;
+        if let Some(usage) = held.as_ref() {
+            return Some(usage.clone());
+        }
+        match widgets::Service::published(self.http.clone()).fetch().await {
+            Ok(usage) => {
+                *held = Some(usage.clone());
+                Some(usage)
+            }
+            Err(error) => {
+                tracing::warn!(%error, "widget usage unavailable");
+                None
+            }
+        }
+    }
+
     pub async fn news(&self) -> Vec<news::NewsItem> {
         let mut held = self.news.lock().await;
         if let Some(items) = held.as_ref() {

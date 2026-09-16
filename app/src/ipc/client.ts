@@ -22,6 +22,7 @@ import type { Score } from './bindings/Score'
 import type { Sections } from './bindings/Sections'
 import type { Settings } from './bindings/Settings'
 import type { Tile } from './bindings/Tile'
+import type { Usage } from './bindings/Usage'
 import type { Slot } from './bindings/Slot'
 import type { TweakView } from './bindings/TweakView'
 import type { UiMessage } from './bindings/UiMessage'
@@ -147,6 +148,7 @@ export const api = {
     invoke<void>('request_game_status', { founder }),
 
   pveScore: () => invoke<Score | null>('pve_score'),
+  widgetUsage: () => invoke<Usage | null>('widget_usage'),
 
   // ---- saved room setups ----
   gameModOptions: (game: string) =>
