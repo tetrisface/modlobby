@@ -66,7 +66,23 @@ for key in $(git config -f .gitmodules --name-only --get-regexp '^submodule\..*\
   # merge commit the fork would then carry forever.
   git -C "$path" config pull.ff only
   if [ -f "$sparse" ]; then git -C "$path" sparse-checkout set --no-cone --stdin < "$sparse"; fi
-  git -C "$path" fetch --quiet ${filter:+--filter=$filter} "$fork_user" || echo "  warn: cannot fetch $fork_user fork of $path"
+  # Not every upstream has been forked. A fork remote that does not resolve must not be left
+  # behind: editors fetch every remote they find, so one missing repo turns into a failed Sync
+  # and an error dialog on every pull. Tell the two failures apart -- a repo that is not there is
+  # permanent, a network or key problem is not -- and only drop the remote for the permanent one.
+  if ! fork_error=$(git -C "$path" fetch --quiet ${filter:+--filter=$filter} "$fork_user" 2>&1); then
+    case $fork_error in
+      *"not found"* | *"Not Found"* | *"does not exist"*)
+        git -C "$path" remote remove "$fork_user" 2>/dev/null || true
+        git -C "$path" config --unset remote.pushdefault 2>/dev/null || true
+        echo "  note: no $fork_user fork of $path, so it has no fork remote. To make one:"
+        echo "        gh repo fork $(echo "$url" | sed -E 's#^https?://[^/]+/##; s#\.git$##') --remote=false"
+        ;;
+      *)
+        echo "  warn: cannot fetch $fork_user fork of $path"
+        ;;
+    esac
+  fi
   if git -C "$path" show-ref --quiet --verify "refs/heads/$branch"; then
     git -C "$path" checkout --quiet "$branch"
   else
