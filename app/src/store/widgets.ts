@@ -19,10 +19,28 @@ const [loaded, setLoaded] = createSignal(false)
 
 export { usage, loaded }
 
+/** One request, however many callers arrive together. */
+let pending: Promise<Usage | null> | null = null
+
 export async function loadWidgetUsage(): Promise<void> {
   if (loaded()) return
-  setUsage(await api.widgetUsage())
-  setLoaded(true)
+  try {
+    pending ??= api.widgetUsage()
+    const document = await pending
+    setUsage(document)
+    if (document) {
+      setLoaded(true)
+      return
+    }
+    // A document is latched; a failure is not. Rust holds its own failure for
+    // as long as the service asked to be left alone, so opening the page again
+    // costs a call into Rust and no request at all — and once the service is
+    // back, the numbers turn up without the app being restarted.
+    pending = null
+  } catch {
+    // Rust could not be reached at all; the next caller asks again.
+    pending = null
+  }
 }
 
 /**

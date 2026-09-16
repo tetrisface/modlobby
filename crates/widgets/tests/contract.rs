@@ -8,7 +8,7 @@
 //!
 //! Regenerate with the resolve stage and trim; do not hand-edit.
 
-use widgets::{Usage, DEFAULT_WINDOW, WINDOWS};
+use widgets::{DEFAULT_WINDOW, Usage, WINDOWS};
 
 fn published() -> Usage {
     let raw = include_str!("usage.sample.json");
@@ -26,7 +26,10 @@ fn the_real_document_parses() {
 #[test]
 fn every_window_the_pipeline_publishes_is_one_this_crate_knows() {
     for window in &published().windows {
-        assert!(WINDOWS.contains(&window.as_str()), "unknown window {window}");
+        assert!(
+            WINDOWS.contains(&window.as_str()),
+            "unknown window {window}"
+        );
     }
 }
 
@@ -41,7 +44,9 @@ fn ranking_is_dense_and_starts_at_one() {
     let ranked = usage.ranked(DEFAULT_WINDOW);
     assert!(!ranked.is_empty());
     for (index, widget) in ranked.iter().enumerate() {
-        let stats = widget.window(DEFAULT_WINDOW).expect("a ranked widget has the window");
+        let stats = widget
+            .window(DEFAULT_WINDOW)
+            .expect("a ranked widget has the window");
         assert_eq!(stats.rank as usize, index + 1);
     }
 }
@@ -104,6 +109,10 @@ fn a_partial_window_reports_partial_coverage() {
 #[test]
 fn every_widget_has_at_least_one_window_to_show() {
     for widget in &published().widgets {
-        assert!(widget.window_or_fallback(DEFAULT_WINDOW).is_some(), "{}", widget.key);
+        assert!(
+            widget.window_or_fallback(DEFAULT_WINDOW).is_some(),
+            "{}",
+            widget.key
+        );
     }
 }

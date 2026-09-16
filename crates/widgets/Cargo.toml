@@ -7,6 +7,9 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+# The cached document is gzipped: it is JSON published for a browser, and it
+# compresses to about a seventh of itself.
+flate2 = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -16,5 +19,6 @@ ts-rs = { workspace = true }
 
 [dev-dependencies]
 content = { workspace = true }
+tempfile = { workspace = true }
 tokio = { workspace = true }
 wiremock = { workspace = true }

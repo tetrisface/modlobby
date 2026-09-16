@@ -6467,9 +6467,11 @@ name = "widgets"
 version = "0.1.15"
 dependencies = [
  "content",
+ "flate2",
  "reqwest",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.20",
  "tokio",
  "tracing",

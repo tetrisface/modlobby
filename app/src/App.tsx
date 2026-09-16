@@ -60,6 +60,7 @@ import { Replays } from './views/Replays'
 import { OnlineRoom } from './views/room/OnlineRoom'
 import { SkirmishRoom } from './views/room/SkirmishRoom'
 import { SettingsView } from './views/Settings'
+import { Widgets } from './views/Widgets'
 
 type SettingsEvent = { changed: Settings } | { invalid: string }
 
@@ -561,6 +562,7 @@ export function App() {
       <Route path='/battles' component={BattleList} />
       <Route path='/chat' component={Chat} />
       <Route path='/news' component={News} />
+      <Route path='/widgets' component={Widgets} />
       <Route path='/replays' component={Replays} />
       <Route path='/presets' component={PresetsPage} />
       <Route path='/skirmish' component={SkirmishRoom} />

@@ -4280,3 +4280,126 @@ button.link:hover {
   line-height: 1.45;
   color: var(--muted);
 }
+
+/* ---- What people actually run ---- */
+
+.widgets {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1.25rem 1.5rem 2rem;
+}
+
+.widgets h1 {
+  margin: 0 0 0.75rem;
+}
+
+/* The row of windows is the question being asked, so it sits directly under
+   the heading and above the sentence that qualifies the answer. */
+.widgets .tabs {
+  max-width: 45rem;
+}
+
+.widgets-about {
+  margin: 0.625rem 0 1rem;
+  max-width: 45rem;
+  font-family: var(--body);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--faint);
+}
+
+.widget-list {
+  display: grid;
+  gap: 0.5rem;
+  max-width: 45rem;
+}
+
+/* Rank, the widget, and its numbers: three columns because the numbers are
+   read down the list rather than across one card, and a ragged right edge
+   would make that a hunt. */
+.widget-card {
+  display: grid;
+  grid-template-columns: 2rem 1fr auto;
+  gap: 0.875rem;
+  align-items: start;
+  padding: 0.625rem 0.75rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.widget-rank {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  color: var(--faint);
+  text-align: right;
+  padding-top: 0.0625rem;
+}
+
+.widget-text {
+  min-width: 0;
+}
+
+.widget-text h2 {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.3;
+}
+
+.widget-by {
+  margin: 0.125rem 0 0;
+  font-family: var(--mono);
+  font-size: 0.65625rem;
+  color: var(--faint);
+}
+
+.widget-about {
+  margin: 0.375rem 0 0;
+  font-family: var(--body);
+  font-size: 0.78125rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.widget-text .chips {
+  margin-top: 0.4375rem;
+}
+
+/* Label above figure, so the column reads as a stack of numbers rather than a
+   paragraph of labels with numbers in it. */
+.widget-stats {
+  display: flex;
+  gap: 1rem;
+  margin: 0;
+  text-align: right;
+}
+
+.widget-stats dt {
+  font-family: var(--display);
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
+  color: var(--faint);
+}
+
+.widget-stats dd {
+  margin: 0.125rem 0 0;
+  font-family: var(--mono);
+  font-size: 0.875rem;
+  color: var(--text);
+}
+
+/* The numbers go under the widget rather than beside it once the card is
+   narrower than the two will sit in. */
+@media (max-width: 34rem) {
+  .widget-card {
+    grid-template-columns: 2rem 1fr;
+  }
+
+  .widget-stats {
+    grid-column: 2;
+    justify-content: start;
+    text-align: left;
+    margin-top: 0.5rem;
+  }
+}

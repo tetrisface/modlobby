@@ -1,12 +1,18 @@
-import { describe, expect, test } from 'vitest'
+import { invoke } from '@tauri-apps/api/core'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { WidgetUsage } from '../ipc/bindings/WidgetUsage'
 import type { WindowStats } from '../ipc/bindings/WindowStats'
+import type { Usage } from '../ipc/bindings/Usage'
 import {
   WINDOW_ORDER,
   disabledOnly,
   isRepresentative,
   statsFor,
 } from './widgets'
+
+vi.mock('@tauri-apps/api/core', async () => ({ invoke: vi.fn() }))
+
+const asked = vi.mocked(invoke)
 
 function stats(over: Partial<WindowStats> = {}): WindowStats {
   return {
@@ -77,5 +83,69 @@ describe('widget usage store', () => {
 
   test('the window order matches what the pipeline publishes', () => {
     expect([...WINDOW_ORDER]).toEqual(['7d', '30d', '90d', '365d', 'all'])
+  })
+})
+
+function published(over: Partial<Usage> = {}): Usage {
+  return {
+    generated_at: '2026-09-16T04:00:00+00:00',
+    policy_version: 'pve_widget_harvest_v1',
+    windows: ['30d'],
+    widgets: [widget({ '30d': stats() })],
+    ...over,
+  }
+}
+
+/**
+ * The store holds the document in module state, so each test imports its own
+ * copy rather than inheriting the last one's.
+ */
+async function fresh() {
+  vi.resetModules()
+  return await import('./widgets')
+}
+
+describe('asking for the document', () => {
+  beforeEach(() => {
+    asked.mockReset()
+  })
+
+  test('one request, however many callers arrive together', async () => {
+    asked.mockResolvedValue(published())
+    const store = await fresh()
+
+    await Promise.all([store.loadWidgetUsage(), store.loadWidgetUsage()])
+    await store.loadWidgetUsage()
+
+    expect(asked.mock.calls.length).toBe(1)
+    expect(store.usage()?.widgets.length).toBe(1)
+  })
+
+  test('a failure is not kept, so opening the page again tries again', async () => {
+    // Rust holds its own failure for as long as the service asked to be left
+    // alone, so asking again costs a call into Rust and no request at all --
+    // and the numbers turn up without the app being restarted.
+    asked.mockResolvedValueOnce(null)
+    const store = await fresh()
+
+    await store.loadWidgetUsage()
+    expect(store.usage()).toBeNull()
+    expect(store.loaded()).toBe(false)
+
+    asked.mockResolvedValueOnce(published())
+    await store.loadWidgetUsage()
+
+    expect(store.usage()?.widgets.length).toBe(1)
+    expect(store.loaded()).toBe(true)
+  })
+
+  test('a document that did arrive is not asked for twice', async () => {
+    asked.mockResolvedValue(published())
+    const store = await fresh()
+
+    await store.loadWidgetUsage()
+    await store.loadWidgetUsage()
+
+    expect(asked.mock.calls.length).toBe(1)
   })
 })

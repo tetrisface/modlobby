@@ -13,11 +13,26 @@ use spring_protocol::ThrottlePolicy;
 /// thirty times, short enough that the pictures come back in the same sitting.
 const MAP_INDEX_RETRY_AFTER: std::time::Duration = std::time::Duration::from_secs(5 * 60);
 
+/// How long a widget-usage document that could not be fetched is not asked
+/// for again, when the service did not name a wait of its own.
+///
+/// The page is a tab somebody can click back onto; without this, a service
+/// that is down is asked once per visit.
+const WIDGET_USAGE_RETRY_AFTER: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+
 /// The map index for this run: what was loaded, or when loading last failed.
 #[derive(Default)]
 struct MapIndexHeld {
     index: Option<content::map_index::MapIndex>,
     failed_at: Option<std::time::Instant>,
+}
+
+/// The widget usage for this run: what was loaded, or when loading last failed
+/// and how long it earned before being asked again.
+#[derive(Default)]
+struct WidgetUsageHeld {
+    usage: Option<widgets::Usage>,
+    failed: Option<(std::time::Instant, std::time::Duration)>,
 }
 
 pub struct App {
@@ -44,8 +59,9 @@ pub struct App {
     /// The news for this run, loaded the first time anything asks.
     news: tokio::sync::Mutex<Option<Vec<news::NewsItem>>>,
     /// What BAR players actually run, loaded the first time anything asks.
-    /// The document is rebuilt weekly, so once a run is plenty.
-    widget_usage: tokio::sync::Mutex<Option<widgets::Usage>>,
+    /// The document is rebuilt weekly and cached on disk between runs, so once
+    /// a run is plenty.
+    widget_usage: tokio::sync::Mutex<WidgetUsageHeld>,
     /// The map pictures at tile size, made here and kept under `cache/`.
     pub thumbs: content::map_thumb::Service,
     /// Files read out of installed games — `modoptions.lua`, `luaai.lua` —
@@ -88,7 +104,7 @@ impl App {
             http,
             map_index: tokio::sync::Mutex::new(MapIndexHeld::default()),
             news: tokio::sync::Mutex::new(None),
-            widget_usage: tokio::sync::Mutex::new(None),
+            widget_usage: tokio::sync::Mutex::new(WidgetUsageHeld::default()),
             game_files: Arc::new(content::game_cache::GameFileCache::new()),
             engine_downloads: tokio::sync::Mutex::new(()),
         })
@@ -129,34 +145,57 @@ impl App {
         index
     }
 
+    /// The published widget-usage document, held for the run.
+    ///
+    /// The fetch itself is the cheap part — [`widgets::load`] answers from
+    /// disk while its copy is fresh and asks the server with `If-None-Match`
+    /// when it is not — so this holds the parsed document rather than the
+    /// bytes, and remembers a failure so a service that is down is not asked
+    /// again on every visit to the page.
+    ///
+    /// A failure returns `None` rather than an error: usage is decoration on a
+    /// widget list, and a page that renders without the numbers is a better
+    /// outcome than one that refuses to render.
+    pub async fn widget_usage(&self) -> Option<widgets::Usage> {
+        let mut held = self.widget_usage.lock().await;
+        if let Some(usage) = held.usage.as_ref() {
+            return Some(usage.clone());
+        }
+        // The wait the service named is the one kept; ours only stands in when
+        // it named none.
+        if let Some((failed_at, hold)) = held.failed
+            && failed_at.elapsed() < hold
+        {
+            return None;
+        }
+        let loaded = widgets::load(
+            &self.http,
+            widgets::ENDPOINT,
+            &self.settings.dir().join("cache"),
+            std::time::SystemTime::now(),
+        )
+        .await;
+        match loaded.usage {
+            Some(usage) => {
+                held.usage = Some(usage.clone());
+                held.failed = None;
+                Some(usage)
+            }
+            None => {
+                let hold = loaded.retry_after.unwrap_or(WIDGET_USAGE_RETRY_AFTER);
+                tracing::warn!(?hold, "widget usage unavailable");
+                held.failed = Some((std::time::Instant::now(), hold));
+                None
+            }
+        }
+    }
+
     /// BAR's news, newest first.
     ///
     /// Loaded once per run, from the disk cache while that is inside the hour
     /// it is trusted for. An empty answer — offline, or a first run with no
     /// network — is not kept, so the next ask tries again rather than leaving
     /// the whole session with an empty page.
-    /// The published widget-usage document, fetched once per run.
-    ///
-    /// A failure returns `None` rather than an error: usage is decoration on a
-    /// widget list, and a page that renders without the numbers is a better
-    /// outcome than one that refuses to render. The next run tries again.
-    pub async fn widget_usage(&self) -> Option<widgets::Usage> {
-        let mut held = self.widget_usage.lock().await;
-        if let Some(usage) = held.as_ref() {
-            return Some(usage.clone());
-        }
-        match widgets::Service::published(self.http.clone()).fetch().await {
-            Ok(usage) => {
-                *held = Some(usage.clone());
-                Some(usage)
-            }
-            Err(error) => {
-                tracing::warn!(%error, "widget usage unavailable");
-                None
-            }
-        }
-    }
-
     pub async fn news(&self) -> Vec<news::NewsItem> {
         let mut held = self.news.lock().await;
         if let Some(items) = held.as_ref() {
