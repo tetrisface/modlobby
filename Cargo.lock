@@ -6464,7 +6464,7 @@ dependencies = [
 
 [[package]]
 name = "widgets"
-version = "0.1.14"
+version = "0.1.15"
 dependencies = [
  "content",
  "reqwest",
