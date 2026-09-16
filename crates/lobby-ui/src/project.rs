@@ -279,6 +279,13 @@ impl Projector {
                 text,
                 ChatKind::System,
             ))),
+            Effect::Motd { text } => out.push(Delta::Chat(self.line(
+                state,
+                SERVER_ROOM,
+                "server",
+                text,
+                ChatKind::Motd,
+            ))),
             Effect::Rung { by } => out.push(Delta::Alert {
                 kind: AlertKind::Ring,
                 text: format!("{by} is asking for you"),

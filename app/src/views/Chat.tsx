@@ -607,6 +607,7 @@ function Line(props: { line: ChatLine; me: string | null }) {
           // A system line's "from" names the app or the server, not a person
           // there is anything to be done about.
           props.line.kind !== 'system' &&
+          props.line.kind !== 'motd' &&
           props.line.from &&
           showPlayerMenu(props.line.from, event)
         }

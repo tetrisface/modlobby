@@ -2640,12 +2640,14 @@ input[type='checkbox'].v-edit {
 }
 
 .line.emote .text,
-.line.system .text {
+.line.system .text,
+.line.motd .text {
   color: var(--warn);
   font-style: italic;
 }
 
-.line.system .text {
+.line.system .text,
+.line.motd .text {
   color: var(--faint);
 }
 
@@ -2884,7 +2886,9 @@ input[type='checkbox'].v-edit {
 }
 
 .line.system .from,
-.line.system .at {
+.line.system .at,
+.line.motd .from,
+.line.motd .at {
   cursor: default;
 }
 

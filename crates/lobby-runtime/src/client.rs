@@ -2249,6 +2249,7 @@ impl Runtime {
                 | Effect::FriendsChanged
                 | Effect::BossChanged
                 | Effect::ServerSaid { .. }
+                | Effect::Motd { .. }
                 | Effect::Rung { .. }
                 | Effect::ModOptionsChanged { .. }
                 | Effect::VoteChanged => {}

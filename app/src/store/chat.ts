@@ -79,7 +79,8 @@ export function pushLine(line: ChatLine): void {
       if (lines.length > state.maxLines)
         lines.splice(0, lines.length - state.maxLines)
       state.rooms[line.room] = lines
-      if (line.room !== watching) {
+      // The message of the day is the same greeting on every connect.
+      if (line.room !== watching && line.kind !== 'motd') {
         state.unread[line.room] = (state.unread[line.room] ?? 0) + 1
         if (line.mention) state.named[line.room] = true
       }

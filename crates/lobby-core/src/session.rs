@@ -97,9 +97,13 @@ pub enum Effect {
     FriendsChanged,
     /// Who is bossing our room changed.
     BossChanged,
-    /// The server said something to everyone: the message of the day, or a
-    /// broadcast.
+    /// The server broadcast something to everyone.
     ServerSaid {
+        text: String,
+    },
+    /// A line of the message of the day: the same greeting on every connect,
+    /// so kept for reading but nothing to be told about.
+    Motd {
         text: String,
     },
     /// Someone is summoning us; Chobby alerts on this unconditionally, because
@@ -793,7 +797,7 @@ impl Session {
                     state
                         .motd
                         .iter()
-                        .map(|line| Effect::ServerSaid { text: line.clone() }),
+                        .map(|line| Effect::Motd { text: line.clone() }),
                 );
                 effects.push(Effect::Ready);
                 effects
@@ -2384,6 +2388,9 @@ mod tests {
         assert_eq!(s.state.user_battle["bot"], 5);
         assert!(sent_lines(&effects).iter().any(|line| {
             line.starts_with("c.telemetry.update_client_property hardware:cpuinfo ")
+        }));
+        assert!(effects.contains(&Effect::Motd {
+            text: "hi".to_owned()
         }));
         assert_eq!(effects.last(), Some(&Effect::Ready));
     }

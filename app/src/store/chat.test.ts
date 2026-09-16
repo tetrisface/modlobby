@@ -67,6 +67,24 @@ describe('closing a private conversation', () => {
   })
 })
 
+describe('unread counts', () => {
+  beforeEach(() => {
+    clearChat()
+    watchRoom('#battle')
+  })
+
+  it('leaves the message of the day out: it comes on every connect', () => {
+    pushLine({ ...said('#server', 'Welcome to Teiserver'), kind: 'motd' })
+    expect(chat.rooms['#server']).toHaveLength(1)
+    expect(chat.unread['#server']).toBeUndefined()
+  })
+
+  it('still counts a broadcast', () => {
+    pushLine({ ...said('#server', 'Restarting soon'), kind: 'system' })
+    expect(chat.unread['#server']).toBe(1)
+  })
+})
+
 describe('the corner notices', () => {
   beforeEach(() => {
     vi.useFakeTimers()
