@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, waitFor } from '@solidjs/testing-library'
 import { invoke } from '@tauri-apps/api/core'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import type { Fork } from '../ipc/bindings/Fork'
 import type { Install } from '../ipc/bindings/Install'
 import type { InstalledWidget } from '../ipc/bindings/InstalledWidget'
 import type { LocalWidget } from '../ipc/bindings/LocalWidget'
@@ -22,7 +23,10 @@ function stats(over: Partial<WindowStats> = {}): WindowStats {
     rank: 1,
     players: 100,
     players_active: 80,
+    players_still_using: 70,
     retention: 0.8,
+    still_using: 0.7,
+    withheld: false,
     sightings: 300,
     replays: 200,
     days_covered: 30,
@@ -47,6 +51,8 @@ function widget(over: Partial<WidgetUsage> = {}): WidgetUsage {
     windows: combined({ '30d': stats() }),
     install: noSource(),
     image: '',
+    main: '',
+    forks: [],
     ...over,
   }
 }
@@ -78,6 +84,7 @@ function fromGithub(): Install {
         path: 'gui.lua',
         content_hash: 'aGFzaA==',
         url: 'https://raw.githubusercontent.com/o/r/c6fd104/gui.lua',
+        install_path: 'gui.lua',
       },
     ],
   }
@@ -85,6 +92,7 @@ function fromGithub(): Install {
 
 function published(widgets: WidgetUsage[], audiences = ['all']): Usage {
   return {
+    document_version: 4,
     generated_at: '2026-09-16T04:00:00+00:00',
     policy_version: 'pve_widget_harvest_v2_prefix_262144_audience',
     audiences,
@@ -479,21 +487,36 @@ describe('sorting', () => {
         key: 'a',
         name: 'Alpha',
         windows: combined({
-          '30d': stats({ rank: 1, players: 50, retention: 0.2 }),
+          '30d': stats({
+            rank: 1,
+            players: 50,
+            retention: 0.2,
+            still_using: 0.2,
+          }),
         }),
       }),
       widget({
         key: 'b',
         name: 'Bravo',
         windows: combined({
-          '30d': stats({ rank: 2, players: 90, retention: 0.9 }),
+          '30d': stats({
+            rank: 2,
+            players: 90,
+            retention: 0.9,
+            still_using: 0.9,
+          }),
         }),
       }),
       widget({
         key: 'c',
         name: 'Charlie',
         windows: combined({
-          '30d': stats({ rank: 3, players: 70, retention: 0.5 }),
+          '30d': stats({
+            rank: 3,
+            players: 70,
+            retention: 0.5,
+            still_using: 0.5,
+          }),
         }),
       }),
     ])
@@ -528,11 +551,11 @@ describe('sorting', () => {
     const { container, getByRole } = render(() => <Widgets />)
     await drawn(container)
 
-    fireEvent.click(getByRole('button', { name: /Kept on/ }))
+    fireEvent.click(getByRole('button', { name: /Still using/ }))
     const sorted = [...container.querySelectorAll('thead th')].find(
       (th) => th.getAttribute('aria-sort') !== 'none',
     )
-    expect(sorted?.textContent).toContain('Kept on')
+    expect(sorted?.textContent).toContain('Still using')
     expect(sorted?.getAttribute('aria-sort')).toBe('descending')
     expect(names(container)).toEqual(['Bravo', 'Charlie', 'Alpha'])
   })
@@ -602,7 +625,7 @@ describe('what is on this machine', () => {
     await drawn(container)
     const line = container.querySelector('.widget-local li')
     expect(line?.classList.contains('exact')).toBe(true)
-    expect(line?.textContent).toContain('This version')
+    expect(line?.textContent).toContain('Main version')
     expect(line?.textContent).toContain('gui_ping_wheel.lua')
     expect(line?.textContent).toContain("BAR's folder")
   })
@@ -700,5 +723,272 @@ describe('pictures', () => {
       container.querySelector('.widget-thumb img') as HTMLImageElement,
     )
     expect(container.querySelector('.widget-thumb.placeholder')).not.toBeNull()
+  })
+})
+
+function fork(over: Partial<Fork> = {}): Fork {
+  return {
+    key: 'github:o/r:Ping Wheel',
+    kind: 'lineage',
+    main: false,
+    id: 'gui_ping_wheel',
+    author: 'Errrrrrr',
+    description: '',
+    install: fromGithub(),
+    image: '',
+    windows: combined({ '30d': stats() }),
+    ...over,
+  }
+}
+
+/** A name published by two repositories, plus players nobody could trace. */
+function family(): WidgetUsage {
+  return widget({
+    main: 'github:o/r:Ping Wheel',
+    install: fromGithub(),
+    forks: [
+      fork({ main: true }),
+      fork({
+        key: 'github:bob/w:Ping Wheel',
+        author: 'Bob',
+        install: {
+          ...fromGithub(),
+          page: 'https://github.com/bob/w',
+          files: [{ ...fromGithub().files[0]!, content_hash: 'Ym9i' }],
+        },
+        windows: combined({ '30d': stats({ players: 12 }) }),
+      }),
+      fork({
+        key: 'other',
+        kind: 'other',
+        author: '',
+        install: noSource(),
+        windows: combined({
+          '30d': stats({
+            withheld: true,
+            players: 0,
+            players_active: 0,
+            players_still_using: 0,
+          }),
+        }),
+      }),
+    ],
+  })
+}
+
+const forkRows = (container: HTMLElement) => [
+  ...container.querySelectorAll('tbody tr.widget-fork'),
+]
+
+describe('still using or used once', () => {
+  test('the page counts "still using" until asked otherwise', async () => {
+    serve(published([widget()]))
+    const Widgets = await fresh()
+    const { container, getByRole } = render(() => <Widgets />)
+    await drawn(container)
+
+    const toggle = getByRole('button', { name: 'Include used once' })
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+    expect(container.querySelector('thead')?.textContent).toContain(
+      'Still using',
+    )
+    // 70 of 100 still using: 70%, and 30 off.
+    expect(cell(container, 0, 4)).toBe('70%')
+    expect(cell(container, 0, 5)).toBe('30')
+  })
+
+  test('including used once switches the header, the share and the off count', async () => {
+    serve(published([widget()]))
+    const Widgets = await fresh()
+    const { container, getByRole } = render(() => <Widgets />)
+    await drawn(container)
+
+    fireEvent.click(getByRole('button', { name: 'Include used once' }))
+    expect(
+      getByRole('button', { name: 'Include used once' }).getAttribute(
+        'aria-pressed',
+      ),
+    ).toBe('true')
+    const head = container.querySelector('thead')?.textContent ?? ''
+    expect(head).toContain('Used once')
+    expect(head).not.toContain('Still using')
+    expect(cell(container, 0, 4)).toBe('80%')
+    expect(cell(container, 0, 5)).toBe('20')
+  })
+
+  test('sorting follows the counting the page is showing', async () => {
+    serve(
+      published([
+        widget({
+          key: 'a',
+          name: 'Tried',
+          windows: combined({
+            '30d': stats({ rank: 1, retention: 0.9, still_using: 0.1 }),
+          }),
+        }),
+        widget({
+          key: 'b',
+          name: 'Kept',
+          windows: combined({
+            '30d': stats({ rank: 2, retention: 0.5, still_using: 0.5 }),
+          }),
+        }),
+      ]),
+    )
+    const Widgets = await fresh()
+    const { container, getByRole } = render(() => <Widgets />)
+    await drawn(container)
+
+    fireEvent.click(getByRole('button', { name: /Still using/ }))
+    expect(names(container)).toEqual(['Kept', 'Tried'])
+    fireEvent.click(getByRole('button', { name: 'Include used once' }))
+    expect(names(container)).toEqual(['Tried', 'Kept'])
+  })
+})
+
+describe('versions under a name', () => {
+  test('a row with several versions opens to them, one level deep', async () => {
+    serve(published([family()]))
+    const Widgets = await fresh()
+    const { container, getByLabelText } = render(() => <Widgets />)
+    await drawn(container)
+
+    expect(forkRows(container)).toHaveLength(0)
+    fireEvent.click(getByLabelText(/Show the 3 versions of Ping Wheel/))
+    const kinds = forkRows(container).map(
+      (row) => row.querySelector('.widget-fork-kind')?.textContent,
+    )
+    expect(kinds).toEqual(['Main version', 'Fork', 'Other versions'])
+    // Nothing inside a version opens further.
+    expect(
+      container.querySelectorAll('tr.widget-fork .widget-expand'),
+    ).toHaveLength(0)
+  })
+
+  test('a row with one version has nothing to open', async () => {
+    serve(published([widget()]))
+    const Widgets = await fresh()
+    const { container } = render(() => <Widgets />)
+    await drawn(container)
+    expect(container.querySelector('.widget-expand')).toBeNull()
+  })
+
+  test('a withheld version reads "few", not zero', async () => {
+    serve(published([family()]))
+    const Widgets = await fresh()
+    const { container, getByLabelText } = render(() => <Widgets />)
+    await drawn(container)
+    fireEvent.click(getByLabelText(/Show the 3 versions/))
+    const other = forkRows(container)[2]!
+    expect(other.querySelector('td.num')?.textContent).toBe('few')
+  })
+
+  test('switching on and off lives on the name, never on a version', async () => {
+    // BAR has one config entry per name, so a second Disable on a version
+    // would be a second button for the same switch.
+    serve(
+      published([family()]),
+      installedStatus({
+        configured: [{ name: 'Ping Wheel', order: 5n, has_settings: true }],
+      }),
+    )
+    const Widgets = await fresh()
+    const { container, getByLabelText } = render(() => <Widgets />)
+    await drawn(container)
+    fireEvent.click(getByLabelText(/Show the 3 versions/))
+
+    const rowButtons = [
+      ...container.querySelectorAll('tr.widget-row .widget-buttons button'),
+    ].map((button) => button.textContent)
+    expect(rowButtons).toContain('Disable')
+    const versionButtons = forkRows(container).flatMap((row) =>
+      [...row.querySelectorAll('.widget-buttons button')].map(
+        (button) => button.textContent,
+      ),
+    )
+    expect(versionButtons).not.toContain('Disable')
+    expect(versionButtons).not.toContain('Enable')
+    // Each published version installs on its own.
+    expect(versionButtons.filter((label) => label === 'Install')).toHaveLength(
+      2,
+    )
+  })
+
+  test('a homebrew under the same name shows as your version', async () => {
+    serve(
+      published([family()]),
+      installedStatus({
+        local: [onDisk({ hash: 'bWluZQ==', hash_text: 'bWluZQ==' })],
+      }),
+    )
+    const Widgets = await fresh()
+    const { container, getByLabelText } = render(() => <Widgets />)
+    await drawn(container)
+    fireEvent.click(getByLabelText(/Show the 4 versions/))
+    const yours = container.querySelector('tr.widget-fork.yours')
+    expect(yours?.textContent).toContain('Your version')
+    expect(yours?.textContent).toContain('gui_ping_wheel.lua')
+    // Not modlobby's to remove.
+    expect(yours?.querySelectorAll('button')).toHaveLength(0)
+  })
+
+  test('installing a version installs that version, by its own key', async () => {
+    const calls: Array<{ command: string; args: unknown }> = []
+    asked.mockImplementation(async (command: string, args?: unknown) => {
+      calls.push({ command, args })
+      if (command === 'widget_usage') return published([family()])
+      if (command === 'widget_installed') return installedStatus()
+      if (command === 'widget_install') return {}
+      throw new Error(`unexpected ${command}`)
+    })
+    const Widgets = await fresh()
+    const { container, getByLabelText } = render(() => <Widgets />)
+    await drawn(container)
+    fireEvent.click(getByLabelText(/Show the 3 versions/))
+
+    const bob = forkRows(container)[1]!
+    fireEvent.click(
+      bob.querySelector('.widget-buttons button') as HTMLButtonElement,
+    )
+    await waitFor(() =>
+      expect(calls.some((call) => call.command === 'widget_install')).toBe(
+        true,
+      ),
+    )
+    const install = calls.find((call) => call.command === 'widget_install')!
+    expect((install.args as { key: string }).key).toBe(
+      'github:bob/w:Ping Wheel',
+    )
+  })
+})
+
+describe('source links', () => {
+  test('a source is a button that opens the system browser', async () => {
+    const opened: string[] = []
+    asked.mockImplementation(async (command: string, args?: unknown) => {
+      if (command === 'widget_usage')
+        return published([widget({ install: fromGithub() })])
+      if (command === 'widget_installed') return installedStatus()
+      if (command === 'open_url') {
+        opened.push((args as { url: string }).url)
+        return undefined
+      }
+      throw new Error(`unexpected ${command}`)
+    })
+    const Widgets = await fresh()
+    const { container } = render(() => <Widgets />)
+    await drawn(container)
+
+    const button = container.querySelector(
+      'tr.widget-row .link-button',
+    ) as HTMLButtonElement
+    expect(button.tagName).toBe('BUTTON')
+    expect(button.textContent).toContain('GitHub')
+    expect(button.querySelector('use')?.getAttribute('href')).toBe(
+      '#act-external',
+    )
+    expect(container.querySelector('tr.widget-row a[href]')).toBeNull()
+    fireEvent.click(button)
+    await waitFor(() => expect(opened).toEqual(['https://github.com/o/r']))
   })
 })

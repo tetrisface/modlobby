@@ -67,6 +67,8 @@ pub enum ManageError {
     Corrupt(String),
     #[error("{0} is {1} bytes, over the limit")]
     TooLarge(String, usize),
+    #[error("{0} names a place outside the widget folder and was not installed")]
+    UnsafePath(String),
     #[error("the archive could not be read: {0}")]
     Archive(String),
     #[error("nothing in the archive looked like a widget")]
@@ -225,17 +227,20 @@ pub async fn install(
         return Err(ManageError::EmptyArchive);
     }
 
+    // Every file is downloaded and verified before any is written, so a
+    // failure part-way leaves nothing half-installed behind.
     let dir = write_dir.join(WIDGETS_DIR);
-    std::fs::create_dir_all(&dir)
-        .map_err(|err| ManageError::Io(dir.display().to_string(), err.to_string()))?;
-
     let mut files = Vec::new();
     let mut hashes = Vec::new();
-    for (file_name, data, hash) in fetched {
-        let path = dir.join(&file_name);
+    for (relative, data, hash) in fetched {
+        let path = dir.join(&relative);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|err| ManageError::Io(parent.display().to_string(), err.to_string()))?;
+        }
         std::fs::write(&path, &data)
             .map_err(|err| ManageError::Io(path.display().to_string(), err.to_string()))?;
-        files.push(format!("{WIDGETS_DIR}/{file_name}"));
+        files.push(format!("{WIDGETS_DIR}/{relative}"));
         hashes.push(hash);
     }
     Ok(InstalledWidget {
@@ -307,6 +312,7 @@ pub fn delete(
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
             Err(err) => return Err(ManageError::Io(path.display().to_string(), err.to_string())),
         }
+        remove_empty_parents(&path, &write_dir.join(WIDGETS_DIR));
     }
     let config_removed = config.remove(&entry.name)?;
     Ok(Deleted {
@@ -316,17 +322,37 @@ pub fn delete(
     })
 }
 
+/// Folders an install created and a delete emptied, up to but not including
+/// the widget folder itself. A folder holding anything else is left alone —
+/// `remove_dir` refuses a non-empty one, which is the whole safety here.
+fn remove_empty_parents(file: &Path, stop_at: &Path) {
+    let mut current = file.parent();
+    while let Some(folder) = current {
+        if folder == stop_at || !folder.starts_with(stop_at) {
+            break;
+        }
+        if std::fs::remove_dir(folder).is_err() {
+            break;
+        }
+        current = folder.parent();
+    }
+}
+
 type Fetched = Vec<(String, Vec<u8>, String)>;
 
+/// Download every file, refusing the whole install if any one cannot be placed.
+///
+/// All or nothing: a widget written without a helper it loads by path fails as
+/// soon as BAR starts it, which is worse than not installing it.
 async fn from_files(http: &reqwest::Client, install: &Install) -> Result<Fetched, ManageError> {
     let mut fetched = Vec::new();
     for file in install.downloadable_files() {
-        let Some(name) = file.file_name() else {
-            continue;
+        let Some(relative) = file.install_path() else {
+            return Err(ManageError::UnsafePath(file.path.clone()));
         };
         let data = get(http, &file.url, FILE_LIMIT).await?;
-        verify(name, &data, &file.content_hash)?;
-        fetched.push((name.to_owned(), data, file.content_hash.clone()));
+        verify(&relative, &data, &file.content_hash)?;
+        fetched.push((relative, data, file.content_hash.clone()));
     }
     Ok(fetched)
 }
@@ -347,7 +373,7 @@ async fn from_archive(
         .map_err(|err| ManageError::Archive(err.to_string()))?;
     let wanted: BTreeMap<&str, &InstallFile> = files
         .iter()
-        .filter_map(|file| file.file_name().map(|_| (file.content_hash.as_str(), file)))
+        .map(|file| (file.content_hash.as_str(), file))
         .collect();
 
     let mut fetched = Vec::new();
@@ -366,10 +392,10 @@ async fn from_archive(
         let Some(file) = wanted.get(hash.as_str()) else {
             continue;
         };
-        let Some(name) = file.file_name() else {
-            continue;
+        let Some(relative) = file.install_path() else {
+            return Err(ManageError::UnsafePath(file.path.clone()));
         };
-        fetched.push((name.to_owned(), bytes, hash));
+        fetched.push((relative, bytes, hash));
     }
     Ok(fetched)
 }

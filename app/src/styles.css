@@ -4440,6 +4440,117 @@ button.link:hover {
   min-width: 0;
 }
 
+/* The chevron that opens a row to its versions, and the gap that keeps rows
+   without one aligned with rows that have one. */
+.widget-expand,
+.widget-expand-space {
+  flex: 0 0 auto;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 0.5rem;
+}
+
+.widget-expand {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.widget-expand:hover {
+  color: var(--text);
+  background: var(--panel);
+}
+
+.widget-expand .icon {
+  width: 0.875rem;
+  height: 0.875rem;
+  transition: transform 120ms ease;
+}
+
+.widget-expand[aria-expanded='true'] .icon {
+  transform: rotate(90deg);
+}
+
+/* An open row and its versions read as one block. */
+.widget-table tbody tr.widget-row.open td {
+  border-bottom-color: transparent;
+}
+
+/* One level down, never a tree: indented once, on a quieter ground, and with
+   nothing that could open further. */
+.widget-table tbody tr.widget-fork td {
+  padding-top: 0.3125rem;
+  padding-bottom: 0.3125rem;
+  font-size: 0.75rem;
+  background: color-mix(in srgb, var(--panel) 55%, transparent);
+}
+
+.widget-table tbody tr.widget-fork .widget-identity {
+  padding-left: 1.25rem;
+}
+
+.widget-fork-kind {
+  font-family: var(--display);
+  font-size: 0.65625rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.widget-fork.main .widget-fork-kind {
+  color: var(--accent);
+}
+
+.widget-fork.yours .widget-fork-kind {
+  color: var(--warn);
+}
+
+.widget-fork .chips {
+  margin-top: 0.25rem;
+}
+
+/* Where a fork would show a picture but has none to show: a quiet box, so the
+   text lines up down the list. */
+.widget-fork-tile {
+  flex: 0 0 auto;
+  width: 3rem;
+  height: 1.875rem;
+  border: 1px dashed var(--line);
+  border-radius: 3px;
+}
+
+/* Leaves the app, so it is a button that says so rather than a link that
+   might not. */
+.link-button {
+  display: inline-flex;
+  gap: 0.3125rem;
+  align-items: center;
+  padding: 0.1875rem 0.5rem;
+  font-size: 0.71875rem;
+  color: var(--text);
+  white-space: nowrap;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.link-button:hover {
+  border-color: var(--muted);
+}
+
+.link-button .icon {
+  width: 0.8125rem;
+  height: 0.8125rem;
+  color: var(--muted);
+}
+
 /* The picture's anchor, so the enlarged view opens beside its own row. */
 .widget-thumb-anchor {
   position: relative;
@@ -4544,7 +4655,7 @@ button.link:hover {
 
 .widget-by {
   font-family: var(--mono);
-  font-size: 0.65625rem;
+  font-size: 0.7875rem;
   color: var(--faint);
 }
 

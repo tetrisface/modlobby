@@ -24,7 +24,10 @@ function stats(over: Partial<WindowStats> = {}): WindowStats {
     rank: 1,
     players: 100,
     players_active: 80,
+    players_still_using: 70,
     retention: 0.8,
+    still_using: 0.7,
+    withheld: false,
     sightings: 300,
     replays: 200,
     days_covered: 30,
@@ -48,6 +51,8 @@ function widget(
     windows: { all: windows },
     install: withheld(),
     image: '',
+    main: '',
+    forks: [],
     ...over,
   }
 }
@@ -79,6 +84,7 @@ function downloadable(): Install {
         path: 'gui.lua',
         content_hash: 'aGFzaA==',
         url: 'https://raw.githubusercontent.com/o/r/c6fd104/gui.lua',
+        install_path: 'gui.lua',
       },
     ],
   }
@@ -181,6 +187,7 @@ describe('widget usage store', () => {
 
 function published(over: Partial<Usage> = {}): Usage {
   return {
+    document_version: 4,
     generated_at: '2026-09-16T04:00:00+00:00',
     policy_version: 'pve_widget_harvest_v2_prefix_262144_audience',
     audiences: ['all'],
@@ -241,5 +248,59 @@ describe('asking for the document', () => {
     await store.loadWidgetUsage()
 
     expect(asked.mock.calls.length).toBe(1)
+  })
+})
+
+describe('forks and counting', () => {
+  test('a document without forks treats the row as its only version', async () => {
+    const { forksOf, mainFork } = await import('./widgets')
+    const row = widget({ all: stats() }, { main: '', key: 'name:abc' })
+    const forks = forksOf(row)
+    expect(forks).toHaveLength(1)
+    expect(mainFork(row).key).toBe('name:abc')
+    expect(mainFork(row).main).toBe(true)
+  })
+
+  test('still using and used once count differently, and off follows', async () => {
+    const { usingCount, usingShare, notUsing } = await import('./widgets')
+    const seen = stats({
+      players: 100,
+      players_active: 80,
+      players_still_using: 60,
+      retention: 0.8,
+      still_using: 0.6,
+    })
+    expect([
+      usingCount(seen, 'still'),
+      usingShare(seen, 'still'),
+      notUsing(seen, 'still'),
+    ]).toEqual([60, 0.6, 40])
+    expect([
+      usingCount(seen, 'once'),
+      usingShare(seen, 'once'),
+      notUsing(seen, 'once'),
+    ]).toEqual([80, 0.8, 20])
+  })
+
+  test('a fork author is searchable, so a forker finds the row their version sits under', async () => {
+    const row = widget(
+      { all: stats() },
+      {
+        forks: [
+          {
+            key: 'discord:.mlov:Dont Stand in Fire',
+            kind: 'lineage',
+            main: false,
+            id: '',
+            author: '.mlov',
+            description: '',
+            install: withheld(),
+            image: '',
+            windows: {},
+          },
+        ],
+      },
+    )
+    expect(matches(row, 'mlov')).toBe(true)
   })
 })

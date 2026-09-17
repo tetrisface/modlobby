@@ -235,6 +235,7 @@ fn manage_error(err: widgets::manage::ManageError) -> ApiError {
         E::Corrupt(_) => "corrupt",
         E::TooLarge(..) => "tooLarge",
         E::Archive(_) | E::EmptyArchive => "archive",
+        E::UnsafePath(_) => "unsafePath",
         E::Config(_) => "widgetConfig",
         E::Io(..) => "io",
     };

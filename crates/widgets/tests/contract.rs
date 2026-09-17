@@ -177,7 +177,12 @@ fn a_download_is_always_accompanied_by_something_to_check_it_against() {
                 widget.key,
                 file.path
             );
-            assert!(file.file_name().is_some(), "{} {}", widget.key, file.path);
+            assert!(
+                file.install_path().is_some(),
+                "{} {}",
+                widget.key,
+                file.path
+            );
         }
     }
 }
@@ -268,6 +273,143 @@ fn a_discord_link_is_built_from_ids_not_a_thread_title() {
             "{}: {}",
             widget.key,
             widget.install.page
+        );
+    }
+}
+
+#[test]
+fn the_published_shape_is_the_one_this_crate_reads() {
+    // A client that quietly parses an older document shows numbers whose
+    // meaning has changed underneath it, which is worse than refusing.
+    assert_eq!(published().document_version, widgets::DOCUMENT_VERSION);
+}
+
+#[test]
+fn every_widget_has_forks_and_names_one_of_them_as_its_main() {
+    // The collapsed row's author, picture and install all come from the main
+    // fork, so a row whose main names nothing would render blank. A family
+    // nobody's file could be traced to is the exception: it has no publisher to
+    // be main, only the "other versions" line, and the row falls back to it.
+    for widget in &published().widgets {
+        assert!(!widget.forks.is_empty(), "{} has no forks", widget.key);
+        if widget.main.is_empty() {
+            assert!(!widget.resolved, "{} resolved but names no main", widget.key);
+            assert!(
+                widget.forks.iter().all(|fork| fork.kind == widgets::ForkKind::Other),
+                "{} has a publisher but names no main",
+                widget.key
+            );
+            continue;
+        }
+        assert!(
+            widget.forks.iter().any(|fork| fork.key == widget.main),
+            "{}: main {} is not among its forks",
+            widget.key,
+            widget.main
+        );
+        assert_eq!(
+            widget.forks.iter().filter(|fork| fork.main).count(),
+            1,
+            "{} does not have exactly one main fork",
+            widget.key
+        );
+    }
+}
+
+#[test]
+fn still_using_is_never_more_than_used_once() {
+    // The two metrics the page switches between. A player counted as still
+    // using must have been counted as having used it, in every slice, for rows
+    // and forks alike -- the toggle would otherwise show a number going up
+    // when the reader asks for the looser measure.
+    let usage = published();
+    for widget in &usage.widgets {
+        for (audience, windows) in &widget.windows {
+            for (window, stats) in windows {
+                assert!(
+                    stats.players_still_using <= stats.players_active,
+                    "{} {audience}/{window}: {} still using of {} active",
+                    widget.name,
+                    stats.players_still_using,
+                    stats.players_active
+                );
+            }
+        }
+        for fork in &widget.forks {
+            for (audience, windows) in &fork.windows {
+                for (window, stats) in windows {
+                    assert!(
+                        stats.players_still_using <= stats.players_active
+                            && stats.players_active <= stats.players,
+                        "{} fork {} {audience}/{window}",
+                        widget.name,
+                        fork.key
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn a_withheld_fork_carries_no_numbers() {
+    // Below the anonymity floor the fork is still listed, because its source is
+    // public -- but nothing about the players on it may be.
+    for widget in &published().widgets {
+        for fork in &widget.forks {
+            for stats in fork.windows.values().flat_map(|windows| windows.values()) {
+                if !stats.withheld {
+                    continue;
+                }
+                assert_eq!(stats.players, 0, "{} {}", widget.name, fork.key);
+                assert_eq!(stats.players_active, 0, "{} {}", widget.name, fork.key);
+                assert_eq!(stats.players_still_using, 0, "{} {}", widget.name, fork.key);
+                assert_eq!(stats.sightings, 0, "{} {}", widget.name, fork.key);
+            }
+        }
+    }
+}
+
+#[test]
+fn an_other_versions_fork_never_offers_a_download() {
+    // "Other versions" is whatever players ran that matches no known source,
+    // including their own edits. There is nothing to install and nobody to name.
+    for widget in &published().widgets {
+        for fork in widget.forks.iter().filter(|f| f.kind == widgets::ForkKind::Other) {
+            assert!(!fork.install.is_installable(), "{}", widget.key);
+            assert!(!fork.main, "{}: other versions cannot be the main fork", widget.key);
+        }
+    }
+}
+
+#[test]
+fn every_fork_file_lands_somewhere_safe() {
+    // The install path comes from another repository and is joined onto the
+    // player's data directory, so the crate validates it rather than trusting it.
+    for widget in &published().widgets {
+        for fork in &widget.forks {
+            for file in &fork.install.files {
+                assert!(
+                    file.install_path().is_some(),
+                    "{} {} refuses {}",
+                    widget.key,
+                    fork.key,
+                    file.path
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_helper_file_is_never_published_as_a_widget() {
+    // BAR registers a GetInfo-less .lua under its own file name with no author.
+    // Those are parts of widgets, not widgets, and the pipeline drops them.
+    for widget in &published().widgets {
+        assert!(
+            !(widget.name.to_lowercase().ends_with(".lua") && widget.author == "unknown"),
+            "{} is a helper file",
+            widget.name
         );
     }
 }

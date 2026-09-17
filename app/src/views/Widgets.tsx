@@ -7,7 +7,11 @@ import {
   onCleanup,
   onMount,
 } from 'solid-js'
+import { Glyph } from '../components/icons'
+import { openExternal } from '../components/Linkify'
 import { api } from '../ipc/client'
+import type { Fork } from '../ipc/bindings/Fork'
+import type { LocalWidget } from '../ipc/bindings/LocalWidget'
 import type { WidgetUsage } from '../ipc/bindings/WidgetUsage'
 import type { WindowStats } from '../ipc/bindings/WindowStats'
 import { devicePixels, thumbSrc } from '../lib/thumb'
@@ -16,21 +20,30 @@ import {
   type Audience,
   AUDIENCE_ORDER,
   DEFAULT_AUDIENCE,
+  DEFAULT_USING_MODE,
   DEFAULT_WINDOW,
   SORT_STARTS_DESCENDING,
   type SortKey,
+  USING_LABEL,
+  type UsingMode,
   WINDOW_ORDER,
   actionsFor,
   audiences,
   configuredState,
-  disabledOnly,
+  forkActions,
+  forkStatsFor,
+  forksOf,
+  installedEntry,
   isEnabled,
   isInstalled,
   isRepresentative,
   loadWidgetUsage,
   localFor,
+  localForFork,
   locationOf,
+  mainFork,
   matches,
+  notUsing,
   ranked,
   refreshInstalled,
   sortWidgets,
@@ -38,7 +51,9 @@ import {
   status,
   unavailableBecause,
   usage,
+  usingShare,
   windows,
+  yourVersions,
 } from '../store/widgets'
 
 /**
@@ -49,14 +64,15 @@ import {
  * distinct players rather than sightings, so one enthusiast playing all
  * evening does not read as a crowd. Nobody is named, here or upstream.
  *
- * **A row, not a card.** Every field the card carried is still here; a table
- * fits four times as many widgets on a screen, and every column sorts, because
- * "which of these do people keep switched on" is a question about a column.
+ * **A row is a widget name; a fork is a version of it.** BAR knows a widget by
+ * its name alone — one config entry, one switch — so that is what a row is,
+ * with the name's combined numbers. Opening it lists each publisher's version,
+ * the players nobody could trace, and any file on this machine that matches
+ * none of them. One level deep, never a tree.
  *
- * **Your files, not just BAR's config.** BAR knows a widget by its name alone,
- * so a homebrewed copy and the published one look identical to it. Each row
- * says which file on disk answers to its name and whether that file *is* the
- * published revision, byte for byte, or only shares the name.
+ * **Still using, unless asked otherwise.** A player counts as still using a
+ * widget when their latest replay had it on; "Include used once" counts anyone
+ * who had it on at all.
  */
 
 /** What each window is called, rather than what it is keyed by. */
@@ -75,6 +91,14 @@ const AUDIENCE_LABEL: Record<string, string> = {
   pvp: 'PvP',
 }
 
+/** A source in words, for the button that opens it. */
+const SOURCE_LABEL: Record<string, string> = {
+  hub: 'Widget Hub',
+  github: 'GitHub',
+  gist: 'Gist',
+  discord: 'Discord',
+}
+
 const label = (window: string) => WINDOW_LABEL[window] ?? window
 
 const ACTION_LABEL: Record<Action, string> = {
@@ -87,6 +111,8 @@ const ACTION_LABEL: Record<Action, string> = {
 
 /** The tile in a row, in CSS pixels. 16:10, the hub's own cover shape. */
 const TILE = { width: 64, height: 40 }
+/** A fork's tile: the same shape, smaller, so the version lines read as lesser. */
+const FORK_TILE = { width: 48, height: 30 }
 /**
  * The enlarged picture: about four rows tall. Cut from the same download as
  * the tile, so opening it costs a local resize and no request.
@@ -96,19 +122,19 @@ const PREVIEW = { width: 480, height: 300 }
 /** Headers in column order. Every one sorts. */
 const COLUMNS: ReadonlyArray<{
   key: SortKey
-  label: string
+  label: (mode: UsingMode) => string
   numeric?: boolean
 }> = [
-  { key: 'rank', label: '#', numeric: true },
-  { key: 'name', label: 'Widget' },
-  { key: 'players', label: 'Players', numeric: true },
-  { key: 'retention', label: 'Kept on', numeric: true },
-  { key: 'off', label: 'Off', numeric: true },
-  { key: 'replays', label: 'Replays', numeric: true },
-  { key: 'sightings', label: 'Sightings', numeric: true },
-  { key: 'window', label: 'Window' },
-  { key: 'source', label: 'Source' },
-  { key: 'status', label: 'Actions' },
+  { key: 'rank', label: () => '#', numeric: true },
+  { key: 'name', label: () => 'Widget' },
+  { key: 'players', label: () => 'Players', numeric: true },
+  { key: 'using', label: (mode) => USING_LABEL[mode], numeric: true },
+  { key: 'off', label: () => 'Off', numeric: true },
+  { key: 'replays', label: () => 'Replays', numeric: true },
+  { key: 'sightings', label: () => 'Sightings', numeric: true },
+  { key: 'window', label: () => 'Window' },
+  { key: 'source', label: () => 'Source' },
+  { key: 'status', label: () => 'Actions' },
 ]
 
 export function Widgets() {
@@ -156,6 +182,9 @@ export function Widgets() {
 
   const [query, setQuery] = createSignal('')
   const [installedOnly, setInstalledOnly] = createSignal(false)
+  const [includeUsedOnce, setIncludeUsedOnce] = createSignal(false)
+  const mode = (): UsingMode =>
+    includeUsedOnce() ? 'once' : DEFAULT_USING_MODE
   const [sort, setSort] = createSignal<SortKey>('rank')
   const [descending, setDescending] = createSignal(false)
 
@@ -183,6 +212,7 @@ export function Widgets() {
       descending(),
       shownAudience(),
       shown(),
+      mode(),
     ),
   )
 
@@ -197,6 +227,16 @@ export function Widgets() {
   const [busy, setBusy] = createSignal<string | null>(null)
   const [note, setNote] = createSignal<string | null>(null)
   const [enlarged, setEnlarged] = createSignal<string | null>(null)
+  const [expanded, setExpanded] = createSignal<ReadonlySet<string>>(new Set())
+
+  const toggleExpanded = (key: string) => {
+    const next = new Set(expanded())
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    setExpanded(next)
+  }
+  const toggleEnlarged = (key: string) =>
+    setEnlarged(enlarged() === key ? null : key)
 
   onMount(() => {
     const close = (event: KeyboardEvent) => {
@@ -209,24 +249,31 @@ export function Widgets() {
   /**
    * Run one action, then ask the disk what actually happened.
    *
-   * The state is refetched rather than patched: `BYAR.lua` is a file the game
-   * also writes, so what this thinks it did and what is on disk can disagree.
+   * Install, update and delete act on one version; enable and disable act on
+   * the name, because that is all BAR's config knows. The state is refetched
+   * rather than patched: `BYAR.lua` is a file the game also writes, so what
+   * this thinks it did and what is on disk can disagree.
    */
-  const act = async (widget: WidgetUsage, action: Action) => {
-    setBusy(`${widget.key}:${action}`)
+  const act = async (widget: WidgetUsage, fork: Fork, action: Action) => {
+    setBusy(`${fork.key}:${action}`)
     setNote(null)
     try {
       if (action === 'install' || action === 'update') {
-        await api.widgetInstall(widget.key, widget.name, widget.install)
+        await api.widgetInstall(fork.key, widget.name, fork.install)
+        const others = localFor(widget).filter(
+          (match) => match.fork?.key !== fork.key,
+        )
         setNote(
-          `${widget.name} installed to modlobby's widget folder. BAR starts a new widget switched off — use Enable to turn it on.`,
+          others.length > 0
+            ? `${widget.name} installed. ${others.length === 1 ? 'Another file' : `${others.length} other files`} on this machine also declare this name — BAR loads the first it finds and skips the rest as duplicates.`
+            : `${widget.name} installed to modlobby's widget folder. BAR starts a new widget switched off — use Enable to turn it on.`,
         )
       } else if (action === 'disable') {
         await api.widgetDisable(widget.name)
       } else if (action === 'enable') {
         await api.widgetEnable(widget.name)
       } else {
-        const deleted = await api.widgetDelete(widget.key)
+        const deleted = await api.widgetDelete(fork.key)
         setNote(
           deleted.residue.length > 0
             ? `${widget.name} removed. Left alone, because nothing records which widget wrote them: ${deleted.residue.join('; ')}.`
@@ -295,6 +342,16 @@ export function Widgets() {
           </div>
         </Show>
 
+        {/* Off by default: "still using" is the count that notices a widget
+            people tried and dropped. */}
+        <div class='filter-group' role='group' aria-label='Counting'>
+          <Choice
+            label='Include used once'
+            on={includeUsedOnce()}
+            onClick={() => setIncludeUsedOnce(!includeUsedOnce())}
+          />
+        </div>
+
         <span class='spacer' />
         <Show when={usage()}>
           <span class='muted count'>
@@ -343,7 +400,7 @@ export function Widgets() {
                       class='sort-head'
                       onClick={() => sortBy(column.key)}
                     >
-                      {column.label}
+                      {column.label(mode())}
                       <span class='sort-mark' aria-hidden='true'>
                         {sort() === column.key
                           ? descending()
@@ -360,17 +417,40 @@ export function Widgets() {
           <tbody>
             <For each={listed()}>
               {(widget) => (
-                <Row
-                  widget={widget}
-                  audience={shownAudience()}
-                  window={shown()}
-                  busy={busy()}
-                  enlarged={enlarged() === widget.key}
-                  onEnlarge={() =>
-                    setEnlarged(enlarged() === widget.key ? null : widget.key)
-                  }
-                  onAct={act}
-                />
+                <>
+                  <Row
+                    widget={widget}
+                    audience={shownAudience()}
+                    window={shown()}
+                    mode={mode()}
+                    busy={busy()}
+                    expanded={expanded().has(widget.key)}
+                    onExpand={() => toggleExpanded(widget.key)}
+                    enlarged={enlarged()}
+                    onEnlarge={toggleEnlarged}
+                    onAct={act}
+                  />
+                  <Show when={expanded().has(widget.key)}>
+                    <For each={forksOf(widget)}>
+                      {(fork) => (
+                        <ForkRow
+                          widget={widget}
+                          fork={fork}
+                          audience={shownAudience()}
+                          window={shown()}
+                          mode={mode()}
+                          busy={busy()}
+                          enlarged={enlarged()}
+                          onEnlarge={toggleEnlarged}
+                          onAct={act}
+                        />
+                      )}
+                    </For>
+                    <For each={yourVersions(widget)}>
+                      {(file) => <YourVersionRow file={file} />}
+                    </For>
+                  </Show>
+                </>
               )}
             </For>
           </tbody>
@@ -423,33 +503,67 @@ function Empty(props: {
   )
 }
 
+/** How many versions a row opens to, counting the player's own files. */
+function versionCount(widget: WidgetUsage): number {
+  return forksOf(widget).length + yourVersions(widget).length
+}
+
 /**
- * One widget: its picture, who made it, how it did, what is on this machine,
- * and what can be done about it.
+ * One widget name: its picture, who made its main version, how the name did,
+ * what is on this machine, and what can be done about it.
  */
 function Row(props: {
   widget: WidgetUsage
   audience: string
   window: string
+  mode: UsingMode
   busy: string | null
-  enlarged: boolean
-  onEnlarge: () => void
-  onAct: (widget: WidgetUsage, action: Action) => void
+  expanded: boolean
+  onExpand: () => void
+  enlarged: string | null
+  onEnlarge: (key: string) => void
+  onAct: (widget: WidgetUsage, fork: Fork, action: Action) => void
 }) {
   const found = () => statsFor(props.widget, props.audience, props.window)
   const stats = () => found()?.stats
   const shownWindow = () => found()?.window ?? props.window
   const configured = () => configuredState(props.widget)
+  const main = () => mainFork(props.widget)
+  const versions = () => versionCount(props.widget)
 
   return (
-    <tr classList={{ off: !!configured() && !isEnabled(configured()!) }}>
+    <tr
+      class='widget-row'
+      classList={{
+        off: !!configured() && !isEnabled(configured()!),
+        open: props.expanded,
+      }}
+    >
       <td class='num'>{stats()?.rank ?? '—'}</td>
       <td class='widget-name'>
         <div class='widget-identity'>
+          <Show
+            when={versions() > 1}
+            fallback={<span class='widget-expand-space' />}
+          >
+            <button
+              type='button'
+              class='widget-expand'
+              aria-expanded={props.expanded}
+              aria-label={`${props.expanded ? 'Hide' : 'Show'} the ${versions()} versions of ${props.widget.name}`}
+              title={`${versions()} versions`}
+              onClick={props.onExpand}
+            >
+              <Glyph id='act-expand' />
+            </button>
+          </Show>
           <Thumb
-            widget={props.widget}
-            enlarged={props.enlarged}
-            onEnlarge={props.onEnlarge}
+            pictureKey={props.widget.key}
+            name={props.widget.name}
+            image={props.widget.image}
+            tile={TILE}
+            enlarged={props.enlarged === props.widget.key}
+            onEnlarge={() => props.onEnlarge(props.widget.key)}
           />
           <div class='widget-text'>
             <strong>{props.widget.name}</strong>
@@ -464,22 +578,7 @@ function Row(props: {
           </div>
         </div>
       </td>
-      <td class='num'>{stats()?.players.toLocaleString() ?? '—'}</td>
-      {/* Install-and-keep. A widget people install and then switch off scores
-          low here and nowhere else, which is the one thing a download count
-          cannot tell you. */}
-      <td class='num'>
-        <Show when={stats()} fallback='—'>
-          {(found) => <>{Math.round(found().retention * 100)}%</>}
-        </Show>
-      </td>
-      <td class='num'>
-        <Show when={stats()} fallback='—'>
-          {(found) => <>{disabledOnly(found()).toLocaleString()}</>}
-        </Show>
-      </td>
-      <td class='num'>{stats()?.replays.toLocaleString() ?? '—'}</td>
-      <td class='num'>{stats()?.sightings.toLocaleString() ?? '—'}</td>
+      <Numbers stats={stats()} mode={props.mode} />
       <td>
         {label(shownWindow())}
         <Show when={stats() && !isRepresentative(stats()!)}>
@@ -487,12 +586,196 @@ function Row(props: {
         </Show>
       </td>
       <td class='widget-source'>
-        <Source widget={props.widget} />
+        <Source fork={main()} />
       </td>
       <td class='widget-actions'>
-        <Actions widget={props.widget} busy={props.busy} onAct={props.onAct} />
+        <Actions
+          actions={actionsFor(props.widget)}
+          busyKey={main().key}
+          busy={props.busy}
+          onAct={(action) => props.onAct(props.widget, main(), action)}
+        />
       </td>
     </tr>
+  )
+}
+
+/**
+ * One version under a widget name: a publisher's lineage, or the players no
+ * source accounts for.
+ *
+ * It gets install, update and delete of its own, since each is one
+ * publisher's files. It never gets enable or disable: those belong to the
+ * name, and live on the row above.
+ */
+function ForkRow(props: {
+  widget: WidgetUsage
+  fork: Fork
+  audience: string
+  window: string
+  mode: UsingMode
+  busy: string | null
+  enlarged: string | null
+  onEnlarge: (key: string) => void
+  onAct: (widget: WidgetUsage, fork: Fork, action: Action) => void
+}) {
+  const stats = () =>
+    forkStatsFor(props.fork, props.audience, props.window) ?? undefined
+  const here = () =>
+    localForFork(props.widget, props.fork).length > 0 ||
+    installedEntry(props.fork.key) !== null
+  const other = () => props.fork.kind === 'other'
+
+  return (
+    <tr
+      class='widget-fork'
+      classList={{ main: props.fork.main, other: other() }}
+    >
+      <td />
+      <td class='widget-name'>
+        <div class='widget-identity fork'>
+          <span class='widget-expand-space' />
+          <Show
+            when={!other()}
+            fallback={<span class='widget-fork-tile' aria-hidden='true' />}
+          >
+            <Thumb
+              pictureKey={props.fork.key}
+              name={props.fork.author || props.widget.name}
+              image={props.fork.image}
+              tile={FORK_TILE}
+              enlarged={props.enlarged === props.fork.key}
+              onEnlarge={() => props.onEnlarge(props.fork.key)}
+            />
+          </Show>
+          <div class='widget-text'>
+            <span class='widget-fork-kind'>
+              {other()
+                ? 'Other versions'
+                : props.fork.main
+                  ? 'Main version'
+                  : 'Fork'}
+            </span>
+            <Show when={!other() && props.fork.author}>
+              <span class='widget-by'> by {props.fork.author}</span>
+            </Show>
+            <Show when={other()}>
+              <p class='widget-about'>
+                Players whose file matches no version anyone has published.
+              </p>
+            </Show>
+            <Show when={!other() && props.fork.install.license}>
+              {(licence) => (
+                <div class='chips'>
+                  <span class='chip'>{licence()}</span>
+                  <Show when={here()}>
+                    <span class='chip ok'>On this machine</span>
+                  </Show>
+                </div>
+              )}
+            </Show>
+            <Show when={!props.fork.install.license && here()}>
+              <div class='chips'>
+                <span class='chip ok'>On this machine</span>
+              </div>
+            </Show>
+          </div>
+        </div>
+      </td>
+      <Numbers stats={stats()} mode={props.mode} />
+      <td />
+      <td class='widget-source'>
+        <Show when={!other()} fallback={<span class='muted'>—</span>}>
+          <Source fork={props.fork} />
+        </Show>
+      </td>
+      <td class='widget-actions'>
+        <Actions
+          actions={forkActions(props.fork)}
+          busyKey={props.fork.key}
+          busy={props.busy}
+          onAct={(action) => props.onAct(props.widget, props.fork, action)}
+        />
+      </td>
+    </tr>
+  )
+}
+
+/**
+ * A file on this machine that declares the name but matches no published
+ * version — a private homebrew, or an edited copy.
+ *
+ * No numbers and no actions: nobody else runs it, and modlobby did not put it
+ * there, so it is not modlobby's to remove.
+ */
+function YourVersionRow(props: { file: LocalWidget }) {
+  return (
+    <tr class='widget-fork yours'>
+      <td />
+      <td class='widget-name'>
+        <div class='widget-identity fork'>
+          <span class='widget-expand-space' />
+          <span class='widget-fork-tile' aria-hidden='true' />
+          <div class='widget-text'>
+            <span class='widget-fork-kind'>Your version</span>
+            <p
+              class='widget-about'
+              title={`${props.file.dir}/${props.file.file}`}
+            >
+              <code>{props.file.file.replace(/^LuaUI\/Widgets\//, '')}</code> in{' '}
+              {locationOf(props.file)}
+            </p>
+          </div>
+        </div>
+      </td>
+      <td class='num muted'>—</td>
+      <td class='num muted'>—</td>
+      <td class='num muted'>—</td>
+      <td class='num muted'>—</td>
+      <td class='num muted'>—</td>
+      <td />
+      <td class='widget-source'>
+        <span class='muted'>local</span>
+      </td>
+      <td class='widget-actions'>
+        <span class='muted'>—</span>
+      </td>
+    </tr>
+  )
+}
+
+/**
+ * The five number cells, counted the way the page is counting.
+ *
+ * A fork the anonymity floor withheld has its numbers zeroed in the document;
+ * it reads "few" here rather than a zero, which would be a false statement.
+ */
+function Numbers(props: { stats: WindowStats | undefined; mode: UsingMode }) {
+  const withheld = () => props.stats?.withheld ?? false
+  const cell = (value: () => string) => (
+    <td class='num' classList={{ muted: withheld() }}>
+      <Show
+        when={props.stats && !withheld()}
+        fallback={
+          <Show when={withheld()} fallback='—'>
+            <span title='Too few players to show without identifying them'>
+              few
+            </span>
+          </Show>
+        }
+      >
+        {value()}
+      </Show>
+    </td>
+  )
+  return (
+    <>
+      {cell(() => props.stats!.players.toLocaleString())}
+      {cell(() => `${Math.round(usingShare(props.stats!, props.mode) * 100)}%`)}
+      {cell(() => notUsing(props.stats!, props.mode).toLocaleString())}
+      {cell(() => props.stats!.replays.toLocaleString())}
+      {cell(() => props.stats!.sightings.toLocaleString())}
+    </>
   )
 }
 
@@ -504,16 +787,23 @@ function Row(props: {
  * picture will not load, gets its initials instead of a broken image.
  */
 function Thumb(props: {
-  widget: WidgetUsage
+  pictureKey: string
+  name: string
+  image: string
+  tile: { width: number; height: number }
   enlarged: boolean
   onEnlarge: () => void
 }) {
   const [failed, setFailed] = createSignal(false)
   const src = (box: { width: number; height: number }) => {
     const tile = devicePixels(box)
-    return thumbSrc(`widget/${tile.width}x${tile.height}/${props.widget.key}`)
+    return thumbSrc(`widget/${tile.width}x${tile.height}/${props.pictureKey}`)
   }
-  const pictured = () => !!props.widget.image && !failed()
+  const pictured = () => !!props.image && !failed()
+  const size = () => ({
+    width: `${props.tile.width / 16}rem`,
+    height: `${props.tile.height / 16}rem`,
+  })
 
   return (
     <Show
@@ -521,10 +811,10 @@ function Thumb(props: {
       fallback={
         <span
           class='widget-thumb placeholder'
-          style={{ '--hue': String(hue(props.widget.name)) }}
+          style={{ '--hue': String(hue(props.name)), ...size() }}
           aria-hidden='true'
         >
-          {initials(props.widget.name)}
+          {initials(props.name)}
         </span>
       }
     >
@@ -532,14 +822,15 @@ function Thumb(props: {
         <button
           type='button'
           class='widget-thumb'
-          aria-label={`Show a larger picture of ${props.widget.name}`}
+          style={size()}
+          aria-label={`Show a larger picture of ${props.name}`}
           aria-expanded={props.enlarged}
-          onClick={props.onEnlarge}
+          onClick={() => props.onEnlarge()}
         >
           <img
-            src={src(TILE)}
-            width={TILE.width}
-            height={TILE.height}
+            src={src(props.tile)}
+            width={props.tile.width}
+            height={props.tile.height}
             loading='lazy'
             alt=''
             onError={() => setFailed(true)}
@@ -550,13 +841,13 @@ function Thumb(props: {
             type='button'
             class='widget-preview'
             aria-label='Close the larger picture'
-            onClick={props.onEnlarge}
+            onClick={() => props.onEnlarge()}
           >
             <img
               src={src(PREVIEW)}
               width={PREVIEW.width}
               height={PREVIEW.height}
-              alt={props.widget.name}
+              alt={props.name}
             />
           </button>
         </Show>
@@ -566,7 +857,7 @@ function Thumb(props: {
 }
 
 /**
- * Which file on disk answers to this widget's name, and whether it *is* it.
+ * Which file on disk answers to this widget's name, and which version it is.
  *
  * The distinction BAR's config cannot make: a name there covers every file
  * that declares it. Two such files means BAR loads one and rejects the other
@@ -575,17 +866,23 @@ function Thumb(props: {
  */
 function OnThisMachine(props: { widget: WidgetUsage }) {
   const found = createMemo(() => localFor(props.widget))
+  const whose = (fork: Fork) =>
+    fork.main
+      ? 'Main version'
+      : fork.author
+        ? `${fork.author}'s version`
+        : 'A fork'
   return (
     <Show when={found().length > 0}>
       <ul class='widget-local'>
         <For each={found()}>
           {(match) => (
             <li
-              classList={{ exact: match.exact }}
+              classList={{ exact: match.fork !== null }}
               title={`${match.file.dir}/${match.file.file}`}
             >
               <span class='widget-local-kind'>
-                {match.exact ? 'This version' : 'Your own version'}
+                {match.fork ? whose(match.fork) : 'Your own version'}
               </span>{' '}
               <code>{match.file.file.replace(/^LuaUI\/Widgets\//, '')}</code>{' '}
               <span class='muted'>in {locationOf(match.file)}</span>
@@ -604,21 +901,29 @@ function OnThisMachine(props: { widget: WidgetUsage }) {
 }
 
 /**
- * Where the widget comes from — a link whenever there is one to give.
+ * Where a version comes from — a button whenever there is somewhere to go.
  *
  * "A link for all of them" is the rule: a widget we may not redistribute, and
- * even one we cannot install at all, still points at wherever it lives.
+ * even one we cannot install at all, still points at wherever it lives. A
+ * button rather than a link because it leaves the app: the system browser
+ * opens it, and the icon says so before the click.
  */
-function Source(props: { widget: WidgetUsage }) {
-  const install = () => props.widget.install
+function Source(props: { fork: Fork }) {
+  const install = () => props.fork.install
   const why = () => unavailableBecause(install())
   return (
     <>
       <Show when={install().page} fallback={<span class='muted'>unknown</span>}>
         {(page) => (
-          <a href={page()} target='_blank' rel='noreferrer'>
-            {install().kind}
-          </a>
+          <button
+            type='button'
+            class='link-button'
+            title={page()}
+            onClick={() => void openExternal(page())}
+          >
+            <span>{SOURCE_LABEL[install().kind] ?? install().kind}</span>
+            <Glyph id='act-external' />
+          </button>
         )}
       </Show>
       <Show when={why()}>
@@ -629,26 +934,29 @@ function Source(props: { widget: WidgetUsage }) {
 }
 
 function Actions(props: {
-  widget: WidgetUsage
+  actions: Action[]
+  busyKey: string
   busy: string | null
-  onAct: (widget: WidgetUsage, action: Action) => void
+  onAct: (action: Action) => void
 }) {
-  const offered = () => actionsFor(props.widget)
   const locked = () => status()?.locked ?? false
   /** Disable, enable and delete all write the config, which BAR would clobber. */
   const writesConfig = (action: Action) => action !== 'install'
 
   return (
-    <Show when={offered().length > 0} fallback={<span class='muted'>—</span>}>
+    <Show
+      when={props.actions.length > 0}
+      fallback={<span class='muted'>—</span>}
+    >
       <div class='widget-buttons'>
-        <For each={offered()}>
+        <For each={props.actions}>
           {(action) => (
             <button
               type='button'
               class='small'
               classList={{ danger: action === 'delete' }}
               disabled={
-                props.busy === `${props.widget.key}:${action}` ||
+                props.busy === `${props.busyKey}:${action}` ||
                 (locked() && writesConfig(action))
               }
               title={
@@ -656,7 +964,7 @@ function Actions(props: {
                   ? 'A game is running. BAR rewrites its widget config on exit and would discard this.'
                   : undefined
               }
-              onClick={() => props.onAct(props.widget, action)}
+              onClick={() => props.onAct(action)}
             >
               {ACTION_LABEL[action]}
             </button>
@@ -670,15 +978,16 @@ function Actions(props: {
 /** What is worth saying about a widget besides its numbers. */
 function Marks(props: { widget: WidgetUsage; stats: WindowStats | undefined }) {
   const configured = () => configuredState(props.widget)
+  const main = () => mainFork(props.widget)
   return (
     <div class='chips'>
-      <Show when={props.widget.install.kind === 'hub'}>
+      <Show when={main().install.kind === 'hub'}>
         <span class='chip ok'>On the Widget Hub</span>
       </Show>
       <Show when={configured() && !isEnabled(configured()!)}>
         <span class='chip'>Switched off</span>
       </Show>
-      <Show when={props.widget.install.license}>
+      <Show when={main().install.license}>
         {(licence) => <span class='chip'>{licence()}</span>}
       </Show>
       {/* The pipeline backfills history a slice at a time, so a year window

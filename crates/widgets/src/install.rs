@@ -47,7 +47,7 @@ pub enum InstallKind {
 #[ts(export)]
 pub struct InstallFile {
     /// Path as published, which may carry the directories it sat under
-    /// upstream. [`Self::file_name`] is what it installs as.
+    /// upstream. [`Self::install_path`] is where it goes.
     pub path: String,
     /// Base64 MD5 — `VFS.CalculateHash(data, 0)`, the game's own value.
     pub content_hash: String,
@@ -55,23 +55,47 @@ pub struct InstallFile {
     /// and for anything the licence withheld.
     #[serde(default)]
     pub url: String,
+    /// Where it goes, relative to `LuaUI/Widgets/`, as the pipeline worked out
+    /// from what the widget's own code loads. Empty in an older document.
+    #[serde(default)]
+    pub install_path: String,
 }
 
+/// How deep an install path may go. BAR loads widgets from `LuaUI/Widgets/`
+/// and one folder below; a helper can sit deeper, but not arbitrarily so.
+pub const MAX_INSTALL_DEPTH: usize = 4;
+
 impl InstallFile {
-    /// What this installs as, with any upstream directories dropped.
+    /// Where this installs, relative to `LuaUI/Widgets/`, or `None` if the
+    /// document names somewhere it must not.
     ///
-    /// A repository keeps its widgets at `Widgets/community/<id>/<id>.lua`;
-    /// BAR wants `<id>.lua` in `LuaUI/Widgets`. Path separators are stripped
-    /// rather than sanitised, so nothing a published document says can write
-    /// outside the directory it was pointed at.
-    pub fn file_name(&self) -> Option<&str> {
-        let name = self.path.rsplit(['/', '\\']).next()?.trim();
-        let safe = !name.is_empty()
-            && name != "."
-            && name != ".."
-            && name.ends_with(".lua")
-            && !name.contains(':');
-        safe.then_some(name)
+    /// Relative folders are kept, because a widget loads its helpers by path —
+    /// Keybind Editor reads `LuaUI/Widgets/keyCodes/keyCodeNamePairs1.lua` and
+    /// breaks if that file lands anywhere else. So this is a validation, not a
+    /// flattening: every component must be an ordinary name. Anything that
+    /// could climb out of the widget folder, name a drive, or hide in a dotted
+    /// directory is refused, and the file is not written at all.
+    ///
+    /// An older document has no `install_path`; the file name is used then,
+    /// which is what installs looked like before.
+    pub fn install_path(&self) -> Option<String> {
+        let wanted = if self.install_path.trim().is_empty() {
+            self.path.rsplit(['/', '\\']).next()?.trim().to_owned()
+        } else {
+            self.install_path.trim().to_owned()
+        };
+        let parts: Vec<&str> = wanted.split(['/', '\\']).collect();
+        let ordinary = |part: &&str| {
+            !part.is_empty()
+                && !part.starts_with('.')
+                && !part.contains(':')
+                && part.chars().all(|c| !c.is_control())
+        };
+        let safe = !parts.is_empty()
+            && parts.len() <= MAX_INSTALL_DEPTH
+            && parts.iter().all(ordinary)
+            && wanted.to_ascii_lowercase().ends_with(".lua");
+        safe.then(|| parts.join("/"))
     }
 }
 

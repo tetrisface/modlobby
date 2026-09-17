@@ -6,7 +6,7 @@
 export type InstallFile = { 
 /**
  * Path as published, which may carry the directories it sat under
- * upstream. [`Self::file_name`] is what it installs as.
+ * upstream. [`Self::install_path`] is where it goes.
  */
 path: string, 
 /**
@@ -17,4 +17,9 @@ content_hash: string,
  * Empty for a hub archive member, which is not separately addressable,
  * and for anything the licence withheld.
  */
-url: string, };
+url: string, 
+/**
+ * Where it goes, relative to `LuaUI/Widgets/`, as the pipeline worked out
+ * from what the widget's own code loads. Empty in an older document.
+ */
+install_path: string, };

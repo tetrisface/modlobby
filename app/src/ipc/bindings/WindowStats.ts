@@ -13,14 +13,28 @@ rank: number,
  */
 players: number, 
 /**
- * Distinct players who had it *enabled* at least once.
+ * Distinct players who had it *enabled* at least once — "used once".
  */
 players_active: number, 
 /**
- * `players_active / players`: install-and-keep rate. A widget people
- * install and then switch off scores low here and nowhere else.
+ * Distinct players whose *latest* replay had it enabled — "still using".
+ * Switching it off for one game and back on still counts; switching it
+ * off for good does not.
  */
-retention: number, sightings: number, replays: number, 
+players_still_using: number, 
+/**
+ * `players_active / players`: the used-once share.
+ */
+retention: number, 
+/**
+ * `players_still_using / players`: the still-using share.
+ */
+still_using: number, 
+/**
+ * A fork below the anonymity floor: listed, with every number zeroed.
+ * Always false for a row's own numbers.
+ */
+withheld: boolean, sightings: number, replays: number, 
 /**
  * Days in this window that have actually been harvested.
  */

@@ -59,16 +59,26 @@ pub use install::{Install, InstallFile, InstallKind};
 /// Where the weekly pipeline publishes the usage document.
 pub const ENDPOINT: &str = "https://d29i3oohxql6zz.cloudfront.net/widget_registry/usage.json";
 
-/// Generous next to the ~40 KiB the document compresses to, and small enough
-/// that a misrouted response cannot be read into memory unbounded.
-pub const BODY_LIMIT: usize = 4 * 1024 * 1024;
+/// Generous next to the ~250 KiB the document compresses to, and small enough
+/// that a misrouted response cannot be read into memory unbounded. Forks took
+/// the uncompressed document from 1 MB to 2.7 MB in one release, so the limit
+/// leaves room for that to happen again before anyone has to touch it.
+pub const BODY_LIMIT: usize = 16 * 1024 * 1024;
 
 /// How long a fetched document is trusted before the server is asked again.
 ///
-/// The pipeline rebuilds weekly, so a day is already far tighter than the
-/// thing it is watching; what it buys is that a lobby left open over a weekend
-/// notices the new document without being restarted.
-pub const FRESH_FOR: Duration = Duration::from_secs(24 * 60 * 60);
+/// An hour, matching CloudFront's own `max-age` for the document. This was a
+/// day, and a day meant a fix published in the morning stayed invisible until
+/// the next morning: the pipeline had shipped pictures and working links while
+/// the lobby went on showing the copy it fetched before them. Asking again is
+/// cheap -- the request carries `If-None-Match`, so an unchanged document comes
+/// back as a bodiless `304`.
+pub const FRESH_FOR: Duration = Duration::from_secs(60 * 60);
+
+/// The document shape this client reads. A cached document of an older shape
+/// is refetched in full however fresh it is: the fields that make the page work
+/// would simply be absent from it.
+pub const DOCUMENT_VERSION: u32 = 4;
 
 /// Under the config directory's `cache/`.
 ///
@@ -109,11 +119,22 @@ pub struct WindowStats {
     pub rank: u32,
     /// Distinct players who reported it at all.
     pub players: u32,
-    /// Distinct players who had it *enabled* at least once.
+    /// Distinct players who had it *enabled* at least once — "used once".
     pub players_active: u32,
-    /// `players_active / players`: install-and-keep rate. A widget people
-    /// install and then switch off scores low here and nowhere else.
+    /// Distinct players whose *latest* replay had it enabled — "still using".
+    /// Switching it off for one game and back on still counts; switching it
+    /// off for good does not.
+    #[serde(default)]
+    pub players_still_using: u32,
+    /// `players_active / players`: the used-once share.
     pub retention: f64,
+    /// `players_still_using / players`: the still-using share.
+    #[serde(default)]
+    pub still_using: f64,
+    /// A fork below the anonymity floor: listed, with every number zeroed.
+    /// Always false for a row's own numbers.
+    #[serde(default)]
+    pub withheld: bool,
     pub sightings: u32,
     pub replays: u32,
     /// Days in this window that have actually been harvested.
@@ -130,6 +151,11 @@ impl WindowStats {
         self.players.saturating_sub(self.players_active)
     }
 
+    /// Players whose latest replay had it switched off, or never on.
+    pub fn players_not_still_using(&self) -> u32 {
+        self.players.saturating_sub(self.players_still_using)
+    }
+
     /// Whether this window has enough of its days to be worth showing as one.
     ///
     /// A 365-day window holding two weeks is not wrong, but presenting it as a
@@ -139,12 +165,63 @@ impl WindowStats {
     }
 }
 
-/// One widget, with its numbers per window.
+/// Whether a fork is one publisher's widget or the players nobody could trace.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(export)]
+pub enum ForkKind {
+    /// One publisher: a repository, a gist, a Discord poster, a hub entry.
+    #[default]
+    Lineage,
+    /// Players whose file matches no known source, all authors together.
+    Other,
+}
+
+/// One version of a widget name: a publisher's lineage, or "other versions".
+///
+/// A lineage is strict on purpose — only ever one publisher — because it is
+/// what a future "keep updated" follows. Somebody's modified copy of a widget
+/// is a fork of it, never an update to it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct Fork {
+    /// `github:<owner>/<repo>:<name>`, `gist:<id>:<name>`,
+    /// `discord:<poster>:<name>`, `hub:<id>`, or `other`.
+    pub key: String,
+    #[serde(default)]
+    pub kind: ForkKind,
+    /// The lineage the row itself speaks for.
+    #[serde(default)]
+    pub main: bool,
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub author: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub install: Install,
+    #[serde(default)]
+    pub image: String,
+    #[serde(default)]
+    pub windows: BTreeMap<String, BTreeMap<String, WindowStats>>,
+}
+
+impl Fork {
+    pub fn window(&self, audience: &str, window: &str) -> Option<&WindowStats> {
+        self.windows.get(audience)?.get(window)
+    }
+}
+
+/// One widget name, with its numbers per window and its forks.
+///
+/// BAR knows a widget by `GetInfo().name` alone — one config entry, one switch
+/// — so that is what a row is. Its numbers are the whole name's; its author,
+/// picture and install are its main lineage's.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct WidgetUsage {
-    /// Stable key. Resolved widgets are `widget:<id>`; the rest get a key
-    /// derived from the name and author their own client reported.
+    /// Stable key for the name: `name:<hash>`.
     pub key: String,
     /// Whether the reported hash was traced back to a distributable source.
     ///
@@ -172,6 +249,12 @@ pub struct WidgetUsage {
     /// the webview directly — see `thumbs.rs`.
     #[serde(default)]
     pub image: String,
+    /// The lineage key the row speaks for; empty when nothing was traced.
+    #[serde(default)]
+    pub main: String,
+    /// Every version under this name, main first and "other versions" last.
+    #[serde(default)]
+    pub forks: Vec<Fork>,
 }
 
 impl WidgetUsage {
@@ -237,6 +320,9 @@ impl WidgetUsage {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Usage {
+    /// The shape of this document; see [`DOCUMENT_VERSION`].
+    #[serde(default)]
+    pub document_version: u32,
     pub generated_at: String,
     pub policy_version: String,
     #[serde(default)]
@@ -264,6 +350,26 @@ impl Usage {
 
     pub fn find(&self, key: &str) -> Option<&WidgetUsage> {
         self.widgets.iter().find(|widget| widget.key == key)
+    }
+
+    /// The picture a row or a fork publishes, by either key.
+    ///
+    /// One lookup for both, so the thumbnail scheme serves a fork's picture as
+    /// readily as a row's — and still only a URL this document named.
+    pub fn image(&self, key: &str) -> Option<&str> {
+        self.widgets
+            .iter()
+            .find_map(|widget| {
+                if widget.key == key {
+                    return Some(widget.image.as_str());
+                }
+                widget
+                    .forks
+                    .iter()
+                    .find(|fork| fork.key == key)
+                    .map(|fork| fork.image.as_str())
+            })
+            .filter(|image| !image.is_empty())
     }
 
     /// Usage for a Widget Hub id, so a hub card can show what it is worth.
@@ -326,7 +432,11 @@ struct Cached {
 
 impl Cached {
     fn fresh(&self, now: SystemTime) -> bool {
-        seconds(now).saturating_sub(self.fetched_at) < FRESH_FOR.as_secs()
+        self.current_shape() && seconds(now).saturating_sub(self.fetched_at) < FRESH_FOR.as_secs()
+    }
+
+    fn current_shape(&self) -> bool {
+        self.usage.document_version >= DOCUMENT_VERSION
     }
 }
 
@@ -374,7 +484,11 @@ pub async fn load(
         };
     }
 
-    let etag = cached.as_ref().and_then(|held| held.etag.as_deref());
+    // An old-shaped copy is not worth confirming: a `304` would keep it.
+    let etag = cached
+        .as_ref()
+        .filter(|held| held.current_shape())
+        .and_then(|held| held.etag.as_deref());
     match fetch(client, url, etag).await {
         Ok(Fetched::Unchanged) => {
             let Some(mut held) = cached else {
@@ -552,6 +666,7 @@ mod tests {
 
     fn document(widgets: serde_json::Value) -> serde_json::Value {
         serde_json::json!({
+            "document_version": DOCUMENT_VERSION,
             "generated_at": "2026-09-16T04:00:00+00:00",
             "policy_version": "pve_widget_harvest_v2_prefix_262144_audience",
             "audiences": ["all", "pve", "pvp"],
@@ -811,6 +926,64 @@ mod tests {
         let held = read(&dir.path().join(CACHE_FILE)).expect("a cache");
         assert_eq!(held.fetched_at, NOW);
         assert_eq!(held.etag.as_deref(), Some("\"week-38\""));
+    }
+
+    #[tokio::test]
+    async fn an_old_shaped_cache_is_downloaded_again_however_fresh() {
+        // The case that hid a day of fixes: pictures and working links were
+        // published while the lobby went on showing its earlier copy. An older
+        // shape is fetched in full, with no tag to be answered `304` against.
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(wiremock::matchers::path("/usage.json"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(document(serde_json::json!([ping_wheel()]))),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let dir = tempfile::tempdir().expect("a cache directory");
+        let mut old = document(serde_json::json!([ping_wheel()]));
+        old["document_version"] = 3.into();
+        seed(dir.path(), Some("\"old\""), NOW, parse(old));
+
+        let loaded = load(
+            &client(),
+            &format!("{}/usage.json", server.uri()),
+            dir.path(),
+            at(NOW),
+        )
+        .await;
+
+        assert_eq!(
+            loaded.usage.expect("a document").document_version,
+            DOCUMENT_VERSION
+        );
+        let requests = server.received_requests().await.expect("recorded");
+        assert!(requests[0].headers.get("If-None-Match").is_none());
+    }
+
+    #[test]
+    fn a_fresh_window_is_an_hour() {
+        // Matches CloudFront's own max-age for the document.
+        assert_eq!(FRESH_FOR, Duration::from_secs(3600));
+    }
+
+    #[test]
+    fn a_forks_picture_is_found_by_its_own_key() {
+        let mut widget = ping_wheel();
+        widget["forks"] = serde_json::json!([
+            { "key": "github:bob/w:Ping Wheel", "image": "https://example.test/bob.png" },
+            { "key": "other", "kind": "other" }
+        ]);
+        let usage = parse(document(serde_json::json!([widget])));
+        assert_eq!(
+            usage.image("github:bob/w:Ping Wheel"),
+            Some("https://example.test/bob.png")
+        );
+        assert_eq!(usage.image("other"), None);
+        assert_eq!(usage.image("nothing"), None);
     }
 
     #[tokio::test]

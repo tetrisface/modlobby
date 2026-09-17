@@ -4,4 +4,8 @@ import type { WidgetUsage } from "./WidgetUsage";
 /**
  * The published document.
  */
-export type Usage = { generated_at: string, policy_version: string, audiences: Array<string>, windows: Array<string>, widgets: Array<WidgetUsage>, };
+export type Usage = { 
+/**
+ * The shape of this document; see [`DOCUMENT_VERSION`].
+ */
+document_version: number, generated_at: string, policy_version: string, audiences: Array<string>, windows: Array<string>, widgets: Array<WidgetUsage>, };

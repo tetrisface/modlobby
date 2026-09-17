@@ -37,7 +37,7 @@ enum Source {
     Map,
     /// A news item, by the permalink that identifies it.
     News,
-    /// A widget, by its key in the usage document.
+    /// A widget or one of its forks, by its key in the usage document.
     Widget,
 }
 
@@ -70,8 +70,7 @@ async fn respond<R: Runtime>(app: &tauri::AppHandle<R>, path: &str) -> Response<
         Source::Widget => state
             .widget_usage()
             .await
-            .and_then(|usage| usage.find(&key).map(|widget| widget.image.clone()))
-            .filter(|image| !image.is_empty()),
+            .and_then(|usage| usage.image(&key).map(str::to_owned)),
     };
     let Some(url) = url else {
         return status(StatusCode::NOT_FOUND);

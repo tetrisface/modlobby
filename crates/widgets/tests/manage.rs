@@ -62,6 +62,7 @@ async fn a_widget_is_downloaded_verified_and_written() {
                 path: "Widgets/community/gui_ping_wheel/gui_ping_wheel.lua".into(),
                 content_hash: hash_of(WIDGET),
                 url,
+                install_path: String::new(),
             }],
         ),
         dir.path(),
@@ -94,6 +95,7 @@ async fn the_upstream_directories_are_not_recreated_locally() {
                 path: "a/b/c/deep.lua".into(),
                 content_hash: hash_of(WIDGET),
                 url,
+                install_path: String::new(),
             }],
         ),
         dir.path(),
@@ -122,6 +124,7 @@ async fn a_path_that_tries_to_escape_is_not_written() {
                 path: "../../../../etc/evil.lua".into(),
                 content_hash: hash_of(WIDGET),
                 url,
+                install_path: String::new(),
             }],
         ),
         dir.path(),
@@ -153,6 +156,7 @@ async fn bytes_that_do_not_match_their_hash_are_not_written() {
                 path: "gui.lua".into(),
                 content_hash: hash_of(b"something else entirely"),
                 url,
+                install_path: String::new(),
             }],
         ),
         dir.path(),
@@ -188,6 +192,7 @@ async fn a_windows_hashed_widget_still_verifies() {
                 path: "crlf.lua".into(),
                 content_hash: hash_of(&unix),
                 url: format!("{}/crlf.lua", server.uri()),
+                install_path: String::new(),
             }],
         ),
         dir.path(),
@@ -222,11 +227,13 @@ async fn a_widget_travels_with_its_includes() {
                     path: "gui_a.lua".into(),
                     content_hash: hash_of(WIDGET),
                     url: main,
+                    install_path: String::new(),
                 },
                 InstallFile {
                     path: "util.lua".into(),
                     content_hash: hash_of(INCLUDE),
                     url: helper,
+                    install_path: String::new(),
                 },
             ],
         ),
@@ -251,6 +258,7 @@ async fn a_widget_without_a_download_is_refused_with_its_reason() {
             path: "gui.lua".into(),
             content_hash: "abc".into(),
             url: String::new(),
+            install_path: String::new(),
         }],
         ..Install::default()
     };
@@ -273,6 +281,7 @@ async fn an_update_is_only_needed_when_the_published_files_change() {
             path: "gui.lua".into(),
             content_hash: hash_of(WIDGET),
             url,
+            install_path: String::new(),
         }],
     );
 
@@ -301,6 +310,7 @@ async fn deleting_removes_the_files_and_the_config_entries() {
                 path: "gui.lua".into(),
                 content_hash: hash_of(WIDGET),
                 url,
+                install_path: String::new(),
             }],
         ),
         dir.path(),
@@ -388,6 +398,7 @@ async fn an_install_records_the_settings_that_were_there_first() {
                 path: "gui.lua".into(),
                 content_hash: hash_of(WIDGET),
                 url,
+                install_path: String::new(),
             }],
         ),
         dir.path(),
@@ -475,3 +486,174 @@ fn config_with(name: &str) -> String {
 
 #[allow(dead_code)]
 fn unused(_: &Path) {}
+
+#[tokio::test]
+async fn helpers_install_where_the_widget_loads_them_and_delete_tidies_up() {
+    // Keybind Editor loads `LuaUI/Widgets/keyCodes/keyCodeNamePairs1.lua` by
+    // that exact path; flattening it next to the widget breaks it.
+    let server = MockServer::start().await;
+    let main = serve(&server, "/gui_keybind_editor.lua", WIDGET).await;
+    let helper = serve(&server, "/keyCodeNamePairs1.lua", INCLUDE).await;
+    let dir = tempfile::tempdir().unwrap();
+
+    let entry = install(
+        &client(),
+        "github:MasterBel2/Keybind-Editor:Keybind Editor",
+        "Keybind Editor",
+        &descriptor(
+            &server.uri(),
+            vec![
+                InstallFile {
+                    path: "LuaUI/Widgets/gui_keybind_editor.lua".into(),
+                    content_hash: hash_of(WIDGET),
+                    url: main,
+                    install_path: "gui_keybind_editor.lua".into(),
+                },
+                InstallFile {
+                    path: "LuaUI/Widgets/keyCodes/keyCodeNamePairs1.lua".into(),
+                    content_hash: hash_of(INCLUDE),
+                    url: helper,
+                    install_path: "keyCodes/keyCodeNamePairs1.lua".into(),
+                },
+            ],
+        ),
+        dir.path(),
+        1,
+    )
+    .await
+    .unwrap();
+
+    assert!(
+        dir.path()
+            .join("LuaUI/Widgets/keyCodes/keyCodeNamePairs1.lua")
+            .exists()
+    );
+    assert_eq!(
+        entry.files[1],
+        "LuaUI/Widgets/keyCodes/keyCodeNamePairs1.lua"
+    );
+
+    let mut config = WidgetConfig::parse(config_with("Keybind Editor"));
+    delete(&entry, dir.path(), &mut config, Vec::new()).unwrap();
+    assert!(
+        !dir.path().join("LuaUI/Widgets/keyCodes").exists(),
+        "the emptied folder goes too"
+    );
+    assert!(
+        dir.path().join("LuaUI/Widgets").exists(),
+        "the widget folder itself stays"
+    );
+}
+
+#[tokio::test]
+async fn a_folder_with_other_files_is_left_alone_on_delete() {
+    let server = MockServer::start().await;
+    let helper = serve(&server, "/k.lua", INCLUDE).await;
+    let dir = tempfile::tempdir().unwrap();
+    let entry = install(
+        &client(),
+        "k",
+        "W",
+        &descriptor(
+            &server.uri(),
+            vec![InstallFile {
+                path: "LuaUI/Widgets/shared/k.lua".into(),
+                content_hash: hash_of(INCLUDE),
+                url: helper,
+                install_path: "shared/k.lua".into(),
+            }],
+        ),
+        dir.path(),
+        1,
+    )
+    .await
+    .unwrap();
+    std::fs::write(
+        dir.path().join("LuaUI/Widgets/shared/someone_elses.lua"),
+        "-- theirs",
+    )
+    .unwrap();
+
+    let mut config = WidgetConfig::parse(config_with("W"));
+    delete(&entry, dir.path(), &mut config, Vec::new()).unwrap();
+    assert!(
+        dir.path()
+            .join("LuaUI/Widgets/shared/someone_elses.lua")
+            .exists()
+    );
+}
+
+#[tokio::test]
+async fn one_unplaceable_file_refuses_the_whole_install() {
+    // All or nothing: a widget written without the helper it loads fails the
+    // moment BAR starts it.
+    let server = MockServer::start().await;
+    let main = serve(&server, "/gui.lua", WIDGET).await;
+    let helper = serve(&server, "/h.lua", INCLUDE).await;
+    let dir = tempfile::tempdir().unwrap();
+    let outcome = install(
+        &client(),
+        "k",
+        "W",
+        &descriptor(
+            &server.uri(),
+            vec![
+                InstallFile {
+                    path: "gui.lua".into(),
+                    content_hash: hash_of(WIDGET),
+                    url: main,
+                    install_path: "gui.lua".into(),
+                },
+                InstallFile {
+                    path: "h.lua".into(),
+                    content_hash: hash_of(INCLUDE),
+                    url: helper,
+                    install_path: "../../outside/h.lua".into(),
+                },
+            ],
+        ),
+        dir.path(),
+        1,
+    )
+    .await;
+    assert!(matches!(outcome, Err(ManageError::UnsafePath(_))));
+    assert!(
+        !dir.path().join("LuaUI/Widgets/gui.lua").exists(),
+        "nothing half-installed"
+    );
+}
+
+#[test]
+fn install_paths_are_validated_not_flattened() {
+    let file = |install_path: &str| InstallFile {
+        path: "x/y.lua".into(),
+        content_hash: String::new(),
+        url: String::new(),
+        install_path: install_path.into(),
+    };
+    assert_eq!(
+        file("keyCodes/pairs.lua").install_path().as_deref(),
+        Some("keyCodes/pairs.lua")
+    );
+    assert_eq!(
+        file("gui_a.lua").install_path().as_deref(),
+        Some("gui_a.lua")
+    );
+    assert_eq!(
+        file("").install_path().as_deref(),
+        Some("y.lua"),
+        "an older document falls back to the file name"
+    );
+    for refused in [
+        "../escape.lua",
+        "a/../b.lua",
+        "/etc/abs.lua",
+        "C:/drive.lua",
+        ".hidden/x.lua",
+        "a//b.lua",
+        "not_lua.txt",
+        "a/b/c/d/e.lua",
+    ] {
+        assert_eq!(file(refused).install_path(), None, "{refused}");
+    }
+}
