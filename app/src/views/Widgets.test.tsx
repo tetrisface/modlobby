@@ -1,7 +1,10 @@
 import { cleanup, fireEvent, render, waitFor } from '@solidjs/testing-library'
 import { invoke } from '@tauri-apps/api/core'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import type { Install } from '../ipc/bindings/Install'
+import type { InstalledWidget } from '../ipc/bindings/InstalledWidget'
 import type { Usage } from '../ipc/bindings/Usage'
+import type { WidgetStatus } from '../ipc/bindings/WidgetStatus'
 import type { WidgetUsage } from '../ipc/bindings/WidgetUsage'
 import type { WindowStats } from '../ipc/bindings/WindowStats'
 
@@ -27,6 +30,11 @@ function stats(over: Partial<WindowStats> = {}): WindowStats {
   }
 }
 
+/** Windows nest under an audience; `all` is what most tests mean. */
+function combined(windows: Record<string, WindowStats>) {
+  return { all: windows }
+}
+
 function widget(over: Partial<WidgetUsage> = {}): WidgetUsage {
   return {
     key: 'widget:gui_ping_wheel',
@@ -35,23 +43,68 @@ function widget(over: Partial<WidgetUsage> = {}): WidgetUsage {
     name: 'Ping Wheel',
     author: 'Errrrrrr',
     description: 'A radial ping menu',
-    windows: { '30d': stats() },
+    windows: combined({ '30d': stats() }),
+    install: noSource(),
     ...over,
   }
 }
 
-function published(widgets: WidgetUsage[]): Usage {
+function noSource(): Install {
+  return {
+    kind: 'none',
+    url: '',
+    archive: false,
+    page: '',
+    license: '',
+    permissive: false,
+    reason: 'no known source',
+    files: [],
+  }
+}
+
+function fromGithub(): Install {
+  return {
+    kind: 'github',
+    url: 'https://raw.githubusercontent.com/o/r/c6fd104/gui.lua',
+    archive: false,
+    page: 'https://github.com/o/r',
+    license: 'MIT',
+    permissive: true,
+    reason: '',
+    files: [
+      {
+        path: 'gui.lua',
+        content_hash: 'aGFzaA==',
+        url: 'https://raw.githubusercontent.com/o/r/c6fd104/gui.lua',
+      },
+    ],
+  }
+}
+
+function published(widgets: WidgetUsage[], audiences = ['all']): Usage {
   return {
     generated_at: '2026-09-16T04:00:00+00:00',
-    policy_version: 'pve_widget_harvest_v1',
+    policy_version: 'pve_widget_harvest_v2_prefix_262144_audience',
+    audiences,
     windows: ['7d', '30d', '90d', '365d', 'all'],
     widgets,
   }
 }
 
-function serve(usage: Usage | null) {
+function installedStatus(over: Partial<WidgetStatus> = {}): WidgetStatus {
+  return {
+    installed: [],
+    configured: [],
+    locked: false,
+    writeDir: '/home/someone/.local/share/modlobby/data',
+    ...over,
+  }
+}
+
+function serve(usage: Usage | null, installed = installedStatus()) {
   asked.mockImplementation(async (command: string) => {
     if (command === 'widget_usage') return usage
+    if (command === 'widget_installed') return installed
     throw new Error(`unexpected ${command}`)
   })
 }
@@ -67,15 +120,20 @@ async function fresh() {
 }
 
 const names = (container: HTMLElement) =>
-  [...container.querySelectorAll('.widget-text h2')].map(
+  [...container.querySelectorAll('.widget-name strong')].map(
     (name) => name.textContent ?? '',
   )
 
-const cards = (container: HTMLElement) =>
-  container.querySelectorAll('.widget-card')
+const rows = (container: HTMLElement) =>
+  container.querySelectorAll('.widget-table tbody tr')
+
+const buttons = (container: HTMLElement) =>
+  [...container.querySelectorAll('.widget-buttons button')].map(
+    (button) => button.textContent ?? '',
+  )
 
 async function drawn(container: HTMLElement) {
-  await waitFor(() => expect(cards(container).length).toBeGreaterThan(0))
+  await waitFor(() => expect(rows(container).length).toBeGreaterThan(0))
 }
 
 beforeEach(() => {
@@ -94,12 +152,12 @@ describe('the widgets page', () => {
         widget({
           key: 'b',
           name: 'Second',
-          windows: { '30d': stats({ rank: 2 }) },
+          windows: combined({ '30d': stats({ rank: 2 }) }),
         }),
         widget({
           key: 'a',
           name: 'First',
-          windows: { '30d': stats({ rank: 1 }) },
+          windows: combined({ '30d': stats({ rank: 1 }) }),
         }),
       ]),
     )
@@ -111,7 +169,7 @@ describe('the widgets page', () => {
     // The place shown is the position on the page, so the list reads 1, 2
     // whichever window is on.
     expect(
-      [...container.querySelectorAll('.widget-rank')].map(
+      [...container.querySelectorAll('tbody td.num:first-child')].map(
         (at) => at.textContent,
       ),
     ).toEqual(['1', '2'])
@@ -122,10 +180,10 @@ describe('the widgets page', () => {
       published([
         widget({
           name: 'Ping Wheel',
-          windows: {
+          windows: combined({
             '30d': stats({ rank: 1, players: 120 }),
             all: stats({ rank: 1, players: 400 }),
-          },
+          }),
         }),
       ]),
     )
@@ -133,9 +191,11 @@ describe('the widgets page', () => {
     const { container, getByText } = render(() => <Widgets />)
 
     await drawn(container)
-    expect(container.querySelector('.widget-stats dd')?.textContent).toBe('120')
+    const players = () =>
+      container.querySelector('tbody td.num:nth-child(3)')?.textContent
+    expect(players()).toBe('120')
     fireEvent.click(getByText('All time'))
-    expect(container.querySelector('.widget-stats dd')?.textContent).toBe('400')
+    expect(players()).toBe('400')
   })
 
   test('a widget the window withheld is not listed in it', async () => {
@@ -147,12 +207,12 @@ describe('the widgets page', () => {
         widget({
           key: 'a',
           name: 'Everyday',
-          windows: { '30d': stats(), all: stats() },
+          windows: combined({ '30d': stats(), all: stats() }),
         }),
         widget({
           key: 'b',
           name: 'Rare',
-          windows: { all: stats({ rank: 2 }) },
+          windows: combined({ all: stats({ rank: 2 }) }),
         }),
       ]),
     )
@@ -169,7 +229,9 @@ describe('the widgets page', () => {
     serve(
       published([
         widget({
-          windows: { '30d': stats({ days_covered: 2, coverage: 0.06 }) },
+          windows: combined({
+            '30d': stats({ days_covered: 2, coverage: 0.06 }),
+          }),
         }),
       ]),
     )
@@ -202,6 +264,179 @@ describe('the widgets page', () => {
     expect(names(container)).toEqual(['Flea Transport'])
     // Nothing to point an install at, so no hub mark.
     expect(container.querySelector('.chip.ok')).toBeNull()
+    // And no button that would do nothing: it says why instead.
+    expect(buttons(container)).toEqual([])
+    expect(container.querySelector('.widget-why')?.textContent).toBe(
+      'no known source',
+    )
+  })
+
+  test('a widget with a download offers to install it', async () => {
+    serve(published([widget({ install: fromGithub() })]))
+    const Widgets = await fresh()
+    const { container } = render(() => <Widgets />)
+
+    await drawn(container)
+    expect(buttons(container)).toEqual(['Install'])
+  })
+
+  test('an installed widget offers to remove it, not to install it again', async () => {
+    const entry: InstalledWidget = {
+      key: 'widget:gui_ping_wheel',
+      name: 'Ping Wheel',
+      files: ['LuaUI/Widgets/gui.lua'],
+      hashes: ['aGFzaA=='],
+      source: 'https://example.test/gui.lua',
+      installed_at: 1n,
+      settings_before: [],
+    }
+    serve(
+      published([widget({ install: fromGithub() })]),
+      installedStatus({ installed: [entry] }),
+    )
+    const Widgets = await fresh()
+    const { container } = render(() => <Widgets />)
+
+    await drawn(container)
+    expect(buttons(container)).toEqual(['Delete'])
+  })
+
+  test('an installed widget whose published files moved on offers an update', async () => {
+    const entry: InstalledWidget = {
+      key: 'widget:gui_ping_wheel',
+      name: 'Ping Wheel',
+      files: ['LuaUI/Widgets/gui.lua'],
+      hashes: ['an older revision'],
+      source: 'https://example.test/gui.lua',
+      installed_at: 1n,
+      settings_before: [],
+    }
+    serve(
+      published([widget({ install: fromGithub() })]),
+      installedStatus({ installed: [entry] }),
+    )
+    const Widgets = await fresh()
+    const { container } = render(() => <Widgets />)
+
+    await drawn(container)
+    expect(buttons(container)).toEqual(['Update', 'Delete'])
+  })
+
+  test('a widget BAR knows about can be switched off from here', async () => {
+    serve(
+      published([widget()]),
+      installedStatus({
+        configured: [{ name: 'Ping Wheel', order: 5n, has_settings: true }],
+      }),
+    )
+    const Widgets = await fresh()
+    const { container } = render(() => <Widgets />)
+
+    await drawn(container)
+    expect(buttons(container)).toEqual(['Disable'])
+  })
+
+  test('a widget already switched off offers to switch it back on', async () => {
+    serve(
+      published([widget()]),
+      installedStatus({
+        configured: [{ name: 'Ping Wheel', order: 0n, has_settings: true }],
+      }),
+    )
+    const Widgets = await fresh()
+    const { container } = render(() => <Widgets />)
+
+    await drawn(container)
+    expect(buttons(container)).toEqual(['Enable'])
+  })
+
+  test('while a game is running the config buttons are held', async () => {
+    // BAR rewrites its widget config wholesale on exit, so an edit made now
+    // would be discarded without a word.
+    serve(
+      published([widget()]),
+      installedStatus({
+        locked: true,
+        configured: [{ name: 'Ping Wheel', order: 5n, has_settings: true }],
+      }),
+    )
+    const Widgets = await fresh()
+    const { container } = render(() => <Widgets />)
+
+    await drawn(container)
+    const disable = container.querySelector(
+      '.widget-buttons button',
+    ) as HTMLButtonElement
+    expect(disable.disabled).toBe(true)
+    expect(disable.title).toContain('game is running')
+  })
+
+  test('search narrows the list to what the reader asked for', async () => {
+    serve(
+      published([
+        widget({ key: 'a', name: 'Ping Wheel', author: 'Errrrrrr' }),
+        widget({
+          key: 'b',
+          name: 'Raptor Grid',
+          author: 'Lu5ck',
+          windows: combined({ '30d': stats({ rank: 2 }) }),
+        }),
+      ]),
+    )
+    const Widgets = await fresh()
+    const { container, getByPlaceholderText } = render(() => <Widgets />)
+
+    await drawn(container)
+    expect(names(container)).toEqual(['Ping Wheel', 'Raptor Grid'])
+    fireEvent.input(getByPlaceholderText(/Search/), {
+      target: { value: 'lu5ck' },
+    })
+    expect(names(container)).toEqual(['Raptor Grid'])
+  })
+
+  test('the pve and pvp filter appears only when the split is published', async () => {
+    serve(published([widget()]))
+    const Widgets = await fresh()
+    const { container, queryByText } = render(() => <Widgets />)
+
+    await drawn(container)
+    // A lone "All" button is a control that does nothing.
+    expect(queryByText('PvE')).toBeNull()
+  })
+
+  test('picking pve shows only what was seen against ai', async () => {
+    serve(
+      published(
+        [
+          widget({
+            key: 'a',
+            name: 'Raptor Grid',
+            windows: {
+              all: { '30d': stats({ rank: 1 }) },
+              pve: { '30d': stats({ rank: 1 }) },
+            },
+          }),
+          widget({
+            key: 'b',
+            name: 'Build Order',
+            windows: {
+              all: { '30d': stats({ rank: 2 }) },
+              pvp: { '30d': stats({ rank: 1 }) },
+            },
+          }),
+        ],
+        ['all', 'pve', 'pvp'],
+      ),
+    )
+    const Widgets = await fresh()
+    const { container, getByText } = render(() => <Widgets />)
+
+    await drawn(container)
+    expect(names(container)).toEqual(['Raptor Grid', 'Build Order'])
+    fireEvent.click(getByText('PvE'))
+    expect(names(container)).toEqual(['Raptor Grid'])
+    fireEvent.click(getByText('PvP'))
+    expect(names(container)).toEqual(['Build Order'])
   })
 
   test('a document that could not be fetched leaves a page that still reads', async () => {
@@ -214,6 +449,6 @@ describe('the widgets page', () => {
         'could not be fetched',
       ),
     )
-    expect(cards(container).length).toBe(0)
+    expect(rows(container).length).toBe(0)
   })
 })

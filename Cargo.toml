@@ -78,6 +78,9 @@ notify = "=8.2.0"
 rand = "=0.10.2"
 schemars = "=1.2.2"
 sha2 = "=0.11.0"
+# Widget Hub distributions are zips. Deflate only: flate2 is already here, and
+# the other backends would each pull in a compressor of their own.
+zip = { version = "=6.0.0", default-features = false, features = ["deflate-flate2"] }
 similar = "=3.2.0"
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"

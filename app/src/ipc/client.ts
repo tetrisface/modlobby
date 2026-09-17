@@ -22,7 +22,11 @@ import type { Score } from './bindings/Score'
 import type { Sections } from './bindings/Sections'
 import type { Settings } from './bindings/Settings'
 import type { Tile } from './bindings/Tile'
+import type { Deleted } from './bindings/Deleted'
+import type { Install } from './bindings/Install'
+import type { InstalledWidget } from './bindings/InstalledWidget'
 import type { Usage } from './bindings/Usage'
+import type { WidgetStatus } from './bindings/WidgetStatus'
 import type { Slot } from './bindings/Slot'
 import type { TweakView } from './bindings/TweakView'
 import type { UiMessage } from './bindings/UiMessage'
@@ -149,6 +153,16 @@ export const api = {
 
   pveScore: () => invoke<Score | null>('pve_score'),
   widgetUsage: () => invoke<Usage | null>('widget_usage'),
+  /** What modlobby installed, and what BAR's own config says about it. */
+  widgetInstalled: () => invoke<WidgetStatus>('widget_installed'),
+  widgetInstall: (key: string, name: string, install: Install) =>
+    invoke<InstalledWidget>('widget_install', { key, name, install }),
+  widgetUpdate: (key: string, name: string, install: Install) =>
+    invoke<InstalledWidget>('widget_update', { key, name, install }),
+  widgetDisable: (name: string) => invoke<boolean>('widget_disable', { name }),
+  widgetEnable: (name: string) => invoke<boolean>('widget_enable', { name }),
+  /** Removes what modlobby installed and reports what it deliberately left. */
+  widgetDelete: (key: string) => invoke<Deleted>('widget_delete', { key }),
 
   // ---- saved room setups ----
   gameModOptions: (game: string) =>

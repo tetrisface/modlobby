@@ -1,6 +1,11 @@
 {
- "generated_at": "2026-09-16T06:29:01.559992+00:00",
- "policy_version": "pve_widget_harvest_v1_prefix_262144",
+ "generated_at": "2026-09-16T23:50:28.571769+00:00",
+ "policy_version": "pve_widget_harvest_v2_prefix_262144_audience",
+ "audiences": [
+  "all",
+  "pve",
+  "pvp"
+ ],
  "windows": [
   "7d",
   "30d",
@@ -8,248 +13,8 @@
   "365d",
   "all"
  ],
- "widget_count": 12,
+ "widget_count": 13,
  "widgets": [
-  {
-   "key": "widget:gui_energy_conversion_meter",
-   "resolved": true,
-   "id": "gui_energy_conversion_meter",
-   "name": "Energy Conversion Meter",
-   "author": "Egzothicki",
-   "description": "9-bar meter next to the top bar showing your energy<->converter balance: green center = balanced, ba...",
-   "windows": {
-    "7d": {
-     "rank": 1,
-     "players": 549,
-     "players_active": 524,
-     "retention": 0.9544626593806922,
-     "sightings": 8906,
-     "replays": 5600,
-     "days_covered": 7,
-     "coverage": 1.0
-    },
-    "30d": {
-     "rank": 1,
-     "players": 696,
-     "players_active": 667,
-     "retention": 0.9583333333333334,
-     "sightings": 18262,
-     "replays": 11636,
-     "days_covered": 14,
-     "coverage": 0.4666666666666667
-    },
-    "90d": {
-     "rank": 1,
-     "players": 696,
-     "players_active": 667,
-     "retention": 0.9583333333333334,
-     "sightings": 18262,
-     "replays": 11636,
-     "days_covered": 14,
-     "coverage": 0.15555555555555556
-    },
-    "365d": {
-     "rank": 1,
-     "players": 696,
-     "players_active": 667,
-     "retention": 0.9583333333333334,
-     "sightings": 18262,
-     "replays": 11636,
-     "days_covered": 14,
-     "coverage": 0.038356164383561646
-    },
-    "all": {
-     "rank": 1,
-     "players": 696,
-     "players_active": 667,
-     "retention": 0.9583333333333334,
-     "sightings": 18262,
-     "replays": 11636,
-     "days_covered": 14,
-     "coverage": 1.0
-    }
-   }
-  },
-  {
-   "key": "widget:0_1789512522822_1",
-   "resolved": true,
-   "id": "0_1789512522822_1",
-   "name": "BuildWatch",
-   "author": "2Bit",
-   "description": "Displays organized icons for all units under construction, showing build progress and estimated comp...",
-   "windows": {
-    "7d": {
-     "rank": 2,
-     "players": 523,
-     "players_active": 479,
-     "retention": 0.9158699808795411,
-     "sightings": 8188,
-     "replays": 5486,
-     "days_covered": 7,
-     "coverage": 1.0
-    },
-    "30d": {
-     "rank": 2,
-     "players": 688,
-     "players_active": 633,
-     "retention": 0.9200581395348837,
-     "sightings": 17137,
-     "replays": 11440,
-     "days_covered": 14,
-     "coverage": 0.4666666666666667
-    },
-    "90d": {
-     "rank": 2,
-     "players": 688,
-     "players_active": 633,
-     "retention": 0.9200581395348837,
-     "sightings": 17137,
-     "replays": 11440,
-     "days_covered": 14,
-     "coverage": 0.15555555555555556
-    },
-    "365d": {
-     "rank": 2,
-     "players": 688,
-     "players_active": 633,
-     "retention": 0.9200581395348837,
-     "sightings": 17137,
-     "replays": 11440,
-     "days_covered": 14,
-     "coverage": 0.038356164383561646
-    },
-    "all": {
-     "rank": 2,
-     "players": 688,
-     "players_active": 633,
-     "retention": 0.9200581395348837,
-     "sightings": 17137,
-     "replays": 11440,
-     "days_covered": 14,
-     "coverage": 1.0
-    }
-   }
-  },
-  {
-   "key": "widget:gui_factory_queue",
-   "resolved": true,
-   "id": "gui_factory_queue",
-   "name": "Factory Queue",
-   "author": "Codex and GammaPath",
-   "description": "Shows and lets you reorder the selected factory's production queue",
-   "windows": {
-    "7d": {
-     "rank": 3,
-     "players": 492,
-     "players_active": 470,
-     "retention": 0.9552845528455285,
-     "sightings": 8086,
-     "replays": 5441,
-     "days_covered": 7,
-     "coverage": 1.0
-    },
-    "30d": {
-     "rank": 3,
-     "players": 654,
-     "players_active": 628,
-     "retention": 0.9602446483180428,
-     "sightings": 17079,
-     "replays": 11369,
-     "days_covered": 14,
-     "coverage": 0.4666666666666667
-    },
-    "90d": {
-     "rank": 3,
-     "players": 654,
-     "players_active": 628,
-     "retention": 0.9602446483180428,
-     "sightings": 17079,
-     "replays": 11369,
-     "days_covered": 14,
-     "coverage": 0.15555555555555556
-    },
-    "365d": {
-     "rank": 3,
-     "players": 654,
-     "players_active": 628,
-     "retention": 0.9602446483180428,
-     "sightings": 17079,
-     "replays": 11369,
-     "days_covered": 14,
-     "coverage": 0.038356164383561646
-    },
-    "all": {
-     "rank": 3,
-     "players": 654,
-     "players_active": 628,
-     "retention": 0.9602446483180428,
-     "sightings": 17079,
-     "replays": 11369,
-     "days_covered": 14,
-     "coverage": 1.0
-    }
-   }
-  },
-  {
-   "key": "widget:gui_build_placement_cost",
-   "resolved": true,
-   "id": "gui_build_placement_cost",
-   "name": "Build Placement Cost",
-   "author": "lov",
-   "description": "Shows effective build cost rate near cursor",
-   "windows": {
-    "7d": {
-     "rank": 4,
-     "players": 395,
-     "players_active": 356,
-     "retention": 0.9012658227848102,
-     "sightings": 5968,
-     "replays": 4409,
-     "days_covered": 7,
-     "coverage": 1.0
-    },
-    "30d": {
-     "rank": 4,
-     "players": 526,
-     "players_active": 474,
-     "retention": 0.9011406844106464,
-     "sightings": 12585,
-     "replays": 9261,
-     "days_covered": 14,
-     "coverage": 0.4666666666666667
-    },
-    "90d": {
-     "rank": 4,
-     "players": 526,
-     "players_active": 474,
-     "retention": 0.9011406844106464,
-     "sightings": 12585,
-     "replays": 9261,
-     "days_covered": 14,
-     "coverage": 0.15555555555555556
-    },
-    "365d": {
-     "rank": 4,
-     "players": 526,
-     "players_active": 474,
-     "retention": 0.9011406844106464,
-     "sightings": 12585,
-     "replays": 9261,
-     "days_covered": 14,
-     "coverage": 0.038356164383561646
-    },
-    "all": {
-     "rank": 4,
-     "players": 526,
-     "players_active": 474,
-     "retention": 0.9011406844106464,
-     "sightings": 12585,
-     "replays": 9261,
-     "days_covered": 14,
-     "coverage": 1.0
-    }
-   }
-  },
   {
    "key": "widget:gui_extended_eta_info",
    "resolved": true,
@@ -257,116 +22,178 @@
    "name": "Extended ETA Info",
    "author": "uBdead",
    "description": "Shows remaining resource cost below the build ETA",
+   "install": {
+    "kind": "hub",
+    "url": "https://widget-hub.beyondallreason.dev/distributions/gui_extended_eta_info.zip",
+    "archive": true,
+    "page": "https://github.com/beyond-all-reason/BAR-Widgets",
+    "license": "GNU GPL, v2 or later",
+    "permissive": true,
+    "reason": "",
+    "files": [
+     {
+      "path": "gui_extended_eta_info.lua",
+      "content_hash": "lkstJu3mfFwXX96zK2vrGg==",
+      "url": ""
+     }
+    ]
+   },
    "windows": {
-    "7d": {
-     "rank": 5,
-     "players": 364,
-     "players_active": 335,
-     "retention": 0.9203296703296703,
-     "sightings": 5982,
-     "replays": 4317,
-     "days_covered": 7,
-     "coverage": 1.0
-    },
-    "30d": {
-     "rank": 5,
-     "players": 488,
-     "players_active": 454,
-     "retention": 0.930327868852459,
-     "sightings": 12380,
-     "replays": 9004,
-     "days_covered": 14,
-     "coverage": 0.4666666666666667
-    },
-    "90d": {
-     "rank": 5,
-     "players": 488,
-     "players_active": 454,
-     "retention": 0.930327868852459,
-     "sightings": 12380,
-     "replays": 9004,
-     "days_covered": 14,
-     "coverage": 0.15555555555555556
-    },
-    "365d": {
-     "rank": 5,
-     "players": 488,
-     "players_active": 454,
-     "retention": 0.930327868852459,
-     "sightings": 12380,
-     "replays": 9004,
-     "days_covered": 14,
-     "coverage": 0.038356164383561646
-    },
     "all": {
-     "rank": 5,
-     "players": 488,
-     "players_active": 454,
-     "retention": 0.930327868852459,
-     "sightings": 12380,
-     "replays": 9004,
-     "days_covered": 14,
-     "coverage": 1.0
-    }
-   }
-  },
-  {
-   "key": "widget:gui_metal_tracker",
-   "resolved": true,
-   "id": "gui_metal_tracker",
-   "name": "Metal Tracker",
-   "author": "Mr_Chinny",
-   "description": "Tracks and displays resources sent to you",
-   "windows": {
-    "7d": {
-     "rank": 6,
-     "players": 331,
-     "players_active": 214,
-     "retention": 0.6465256797583081,
-     "sightings": 5324,
-     "replays": 3742,
-     "days_covered": 7,
-     "coverage": 1.0
+     "7d": {
+      "rank": 5,
+      "players": 364,
+      "players_active": 335,
+      "retention": 0.9203296703296703,
+      "sightings": 5982,
+      "replays": 4317,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 5,
+      "players": 634,
+      "players_active": 604,
+      "retention": 0.9526813880126183,
+      "sightings": 25930,
+      "replays": 19002,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 5,
+      "players": 686,
+      "players_active": 652,
+      "retention": 0.9504373177842566,
+      "sightings": 30473,
+      "replays": 22499,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 5,
+      "players": 686,
+      "players_active": 652,
+      "retention": 0.9504373177842566,
+      "sightings": 30473,
+      "replays": 22499,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 5,
+      "players": 686,
+      "players_active": 652,
+      "retention": 0.9504373177842566,
+      "sightings": 30473,
+      "replays": 22499,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
     },
-    "30d": {
-     "rank": 6,
-     "players": 417,
-     "players_active": 214,
-     "retention": 0.513189448441247,
-     "sightings": 11304,
-     "replays": 8057,
-     "days_covered": 14,
-     "coverage": 0.4666666666666667
+    "pve": {
+     "7d": {
+      "rank": 6,
+      "players": 135,
+      "players_active": 126,
+      "retention": 0.9333333333333333,
+      "sightings": 865,
+      "replays": 733,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 5,
+      "players": 310,
+      "players_active": 295,
+      "retention": 0.9516129032258065,
+      "sightings": 3350,
+      "replays": 2910,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 5,
+      "players": 345,
+      "players_active": 328,
+      "retention": 0.9507246376811594,
+      "sightings": 3916,
+      "replays": 3428,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 5,
+      "players": 345,
+      "players_active": 328,
+      "retention": 0.9507246376811594,
+      "sightings": 3916,
+      "replays": 3428,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 5,
+      "players": 345,
+      "players_active": 328,
+      "retention": 0.9507246376811594,
+      "sightings": 3916,
+      "replays": 3428,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
     },
-    "90d": {
-     "rank": 6,
-     "players": 417,
-     "players_active": 214,
-     "retention": 0.513189448441247,
-     "sightings": 11304,
-     "replays": 8057,
-     "days_covered": 14,
-     "coverage": 0.15555555555555556
-    },
-    "365d": {
-     "rank": 6,
-     "players": 417,
-     "players_active": 214,
-     "retention": 0.513189448441247,
-     "sightings": 11304,
-     "replays": 8057,
-     "days_covered": 14,
-     "coverage": 0.038356164383561646
-    },
-    "all": {
-     "rank": 6,
-     "players": 417,
-     "players_active": 214,
-     "retention": 0.513189448441247,
-     "sightings": 11304,
-     "replays": 8057,
-     "days_covered": 14,
-     "coverage": 1.0
+    "pvp": {
+     "7d": {
+      "rank": 5,
+      "players": 309,
+      "players_active": 284,
+      "retention": 0.919093851132686,
+      "sightings": 5117,
+      "replays": 3584,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 5,
+      "players": 544,
+      "players_active": 516,
+      "retention": 0.9485294117647058,
+      "sightings": 22580,
+      "replays": 16092,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 5,
+      "players": 591,
+      "players_active": 560,
+      "retention": 0.9475465313028765,
+      "sightings": 26557,
+      "replays": 19071,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 5,
+      "players": 591,
+      "players_active": 560,
+      "retention": 0.9475465313028765,
+      "sightings": 26557,
+      "replays": 19071,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 5,
+      "players": 591,
+      "players_active": 560,
+      "retention": 0.9475465313028765,
+      "sightings": 26557,
+      "replays": 19071,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
     }
    }
   },
@@ -377,356 +204,2018 @@
    "name": "Build Snap (all buildings)",
    "author": "uBdead (based on Extractor Snap patterns) by Hobo Joe, based on work by Niobium and Floris",
    "description": "Snaps building placement to the nearest valid build grid point (within a small search radius). Hold ...",
+   "install": {
+    "kind": "hub",
+    "url": "https://widget-hub.beyondallreason.dev/distributions/cmd_build_snap.zip",
+    "archive": true,
+    "page": "https://github.com/beyond-all-reason/BAR-Widgets",
+    "license": "GNU GPL, v2 or later",
+    "permissive": true,
+    "reason": "",
+    "files": [
+     {
+      "path": "cmd_build_snap.lua",
+      "content_hash": "UE8UsKFr77PQBg4/bmNjNQ==",
+      "url": ""
+     }
+    ]
+   },
    "windows": {
-    "7d": {
-     "rank": 8,
-     "players": 304,
-     "players_active": 259,
-     "retention": 0.8519736842105263,
-     "sightings": 4445,
-     "replays": 3513,
-     "days_covered": 7,
-     "coverage": 1.0
-    },
-    "30d": {
-     "rank": 7,
-     "players": 393,
-     "players_active": 350,
-     "retention": 0.8905852417302799,
-     "sightings": 9041,
-     "replays": 7231,
-     "days_covered": 14,
-     "coverage": 0.4666666666666667
-    },
-    "90d": {
-     "rank": 7,
-     "players": 393,
-     "players_active": 350,
-     "retention": 0.8905852417302799,
-     "sightings": 9041,
-     "replays": 7231,
-     "days_covered": 14,
-     "coverage": 0.15555555555555556
-    },
-    "365d": {
-     "rank": 7,
-     "players": 393,
-     "players_active": 350,
-     "retention": 0.8905852417302799,
-     "sightings": 9041,
-     "replays": 7231,
-     "days_covered": 14,
-     "coverage": 0.038356164383561646
-    },
     "all": {
-     "rank": 7,
-     "players": 393,
-     "players_active": 350,
-     "retention": 0.8905852417302799,
-     "sightings": 9041,
-     "replays": 7231,
-     "days_covered": 14,
-     "coverage": 1.0
+     "7d": {
+      "rank": 8,
+      "players": 304,
+      "players_active": 259,
+      "retention": 0.8519736842105263,
+      "sightings": 4445,
+      "replays": 3513,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 6,
+      "players": 552,
+      "players_active": 516,
+      "retention": 0.9347826086956522,
+      "sightings": 19289,
+      "replays": 15693,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 6,
+      "players": 599,
+      "players_active": 565,
+      "retention": 0.9432387312186978,
+      "sightings": 22150,
+      "replays": 18234,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 6,
+      "players": 599,
+      "players_active": 565,
+      "retention": 0.9432387312186978,
+      "sightings": 22150,
+      "replays": 18234,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 6,
+      "players": 599,
+      "players_active": 565,
+      "retention": 0.9432387312186978,
+      "sightings": 22150,
+      "replays": 18234,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
+    },
+    "pve": {
+     "7d": {
+      "rank": 7,
+      "players": 133,
+      "players_active": 113,
+      "retention": 0.849624060150376,
+      "sightings": 727,
+      "replays": 646,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 6,
+      "players": 294,
+      "players_active": 267,
+      "retention": 0.9081632653061225,
+      "sightings": 3135,
+      "replays": 2815,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 6,
+      "players": 329,
+      "players_active": 302,
+      "retention": 0.9179331306990881,
+      "sightings": 3559,
+      "replays": 3207,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 6,
+      "players": 329,
+      "players_active": 302,
+      "retention": 0.9179331306990881,
+      "sightings": 3559,
+      "replays": 3207,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 6,
+      "players": 329,
+      "players_active": 302,
+      "retention": 0.9179331306990881,
+      "sightings": 3559,
+      "replays": 3207,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
+    },
+    "pvp": {
+     "7d": {
+      "rank": 8,
+      "players": 263,
+      "players_active": 222,
+      "retention": 0.844106463878327,
+      "sightings": 3718,
+      "replays": 2867,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 7,
+      "players": 463,
+      "players_active": 427,
+      "retention": 0.9222462203023758,
+      "sightings": 16154,
+      "replays": 12878,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 7,
+      "players": 501,
+      "players_active": 466,
+      "retention": 0.9301397205588823,
+      "sightings": 18591,
+      "replays": 15027,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 7,
+      "players": 501,
+      "players_active": 466,
+      "retention": 0.9301397205588823,
+      "sightings": 18591,
+      "replays": 15027,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 7,
+      "players": 501,
+      "players_active": 466,
+      "retention": 0.9301397205588823,
+      "sightings": 18591,
+      "replays": 15027,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
     }
    }
   },
   {
-   "key": "widget:gui_zombie_wreck_timers",
+   "key": "widget:gui_buildwatch",
    "resolved": true,
-   "id": "gui_zombie_wreck_timers",
-   "name": "Zombie Wreck Timers",
-   "author": "SethDGamre + Egzothicki",
-   "description": "When the Zombies modoption is on, shows a countdown over each wreck until it reanimates. Reacts inst...",
+   "id": "gui_buildwatch",
+   "name": "BuildWatch",
+   "author": "2Bit",
+   "description": "Displays organized icons for all units under construction, showing build progress and estimated comp...",
+   "install": {
+    "kind": "github",
+    "url": "https://raw.githubusercontent.com/Arginou57/BAR-widgets/38208d3/Widgets/community/gui_build_watch/gui_buildwatch.lua",
+    "archive": false,
+    "page": "https://github.com/Arginou57/BAR-widgets",
+    "license": "GNU GPL, v2 or later",
+    "permissive": true,
+    "reason": "",
+    "files": [
+     {
+      "path": "Widgets/community/gui_build_watch/gui_buildwatch.lua",
+      "content_hash": "6w4OQSGYZi1Q6YNVzjDWUg==",
+      "url": "https://raw.githubusercontent.com/Arginou57/BAR-widgets/38208d3/Widgets/community/gui_build_watch/gui_buildwatch.lua"
+     }
+    ]
+   },
    "windows": {
-    "7d": {
-     "rank": 7,
-     "players": 313,
-     "players_active": 160,
-     "retention": 0.5111821086261981,
-     "sightings": 5503,
-     "replays": 3597,
-     "days_covered": 7,
-     "coverage": 1.0
-    },
-    "30d": {
-     "rank": 8,
-     "players": 360,
-     "players_active": 213,
-     "retention": 0.5916666666666667,
-     "sightings": 9600,
-     "replays": 6465,
-     "days_covered": 14,
-     "coverage": 0.4666666666666667
-    },
-    "90d": {
-     "rank": 8,
-     "players": 360,
-     "players_active": 213,
-     "retention": 0.5916666666666667,
-     "sightings": 9600,
-     "replays": 6465,
-     "days_covered": 14,
-     "coverage": 0.15555555555555556
-    },
-    "365d": {
-     "rank": 8,
-     "players": 360,
-     "players_active": 213,
-     "retention": 0.5916666666666667,
-     "sightings": 9600,
-     "replays": 6465,
-     "days_covered": 14,
-     "coverage": 0.038356164383561646
-    },
     "all": {
-     "rank": 8,
-     "players": 360,
-     "players_active": 213,
-     "retention": 0.5916666666666667,
-     "sightings": 9600,
-     "replays": 6465,
-     "days_covered": 14,
-     "coverage": 1.0
+     "7d": {
+      "rank": 2,
+      "players": 523,
+      "players_active": 479,
+      "retention": 0.9158699808795411,
+      "sightings": 8200,
+      "replays": 5490,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 1,
+      "players": 938,
+      "players_active": 879,
+      "retention": 0.9371002132196162,
+      "sightings": 36698,
+      "replays": 24782,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 1,
+      "players": 1033,
+      "players_active": 971,
+      "retention": 0.9399806389157793,
+      "sightings": 42801,
+      "replays": 29293,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 1,
+      "players": 1033,
+      "players_active": 971,
+      "retention": 0.9399806389157793,
+      "sightings": 42801,
+      "replays": 29293,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 1,
+      "players": 1033,
+      "players_active": 971,
+      "retention": 0.9399806389157793,
+      "sightings": 42801,
+      "replays": 29293,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
+    },
+    "pve": {
+     "7d": {
+      "rank": 2,
+      "players": 219,
+      "players_active": 205,
+      "retention": 0.9360730593607306,
+      "sightings": 1113,
+      "replays": 924,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 2,
+      "players": 514,
+      "players_active": 484,
+      "retention": 0.9416342412451362,
+      "sightings": 5555,
+      "replays": 4547,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 1,
+      "players": 576,
+      "players_active": 542,
+      "retention": 0.9409722222222222,
+      "sightings": 6666,
+      "replays": 5490,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 1,
+      "players": 576,
+      "players_active": 542,
+      "retention": 0.9409722222222222,
+      "sightings": 6666,
+      "replays": 5490,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 1,
+      "players": 576,
+      "players_active": 542,
+      "retention": 0.9409722222222222,
+      "sightings": 6666,
+      "replays": 5490,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
+    },
+    "pvp": {
+     "7d": {
+      "rank": 2,
+      "players": 446,
+      "players_active": 404,
+      "retention": 0.905829596412556,
+      "sightings": 7087,
+      "replays": 4566,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 1,
+      "players": 786,
+      "players_active": 731,
+      "retention": 0.9300254452926209,
+      "sightings": 31143,
+      "replays": 20235,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 1,
+      "players": 865,
+      "players_active": 808,
+      "retention": 0.9341040462427745,
+      "sightings": 36135,
+      "replays": 23803,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 1,
+      "players": 865,
+      "players_active": 808,
+      "retention": 0.9341040462427745,
+      "sightings": 36135,
+      "replays": 23803,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 1,
+      "players": 865,
+      "players_active": 808,
+      "retention": 0.9341040462427745,
+      "sightings": 36135,
+      "replays": 23803,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
     }
    }
   },
   {
-   "key": "widget:gui_ping_wheel",
+   "key": "widget:gui_factory_queue",
    "resolved": true,
-   "id": "gui_ping_wheel",
+   "id": "gui_factory_queue",
+   "name": "Factory Queue",
+   "author": "Codex and GammaPath",
+   "description": "Shows and lets you reorder the selected factory's production queue",
+   "install": {
+    "kind": "github",
+    "url": "https://raw.githubusercontent.com/Arginou57/BAR-widgets/38208d3/Widgets/community/gui_factory_queue/gui_factory_queue.lua",
+    "archive": false,
+    "page": "https://github.com/Arginou57/BAR-widgets",
+    "license": "Do whatever you want",
+    "permissive": true,
+    "reason": "",
+    "files": [
+     {
+      "path": "Widgets/community/gui_factory_queue/gui_factory_queue.lua",
+      "content_hash": "SqCscUwkshfEXvUBT4CDwg==",
+      "url": "https://raw.githubusercontent.com/Arginou57/BAR-widgets/38208d3/Widgets/community/gui_factory_queue/gui_factory_queue.lua"
+     }
+    ]
+   },
+   "windows": {
+    "all": {
+     "7d": {
+      "rank": 3,
+      "players": 492,
+      "players_active": 470,
+      "retention": 0.9552845528455285,
+      "sightings": 8086,
+      "replays": 5441,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 3,
+      "players": 899,
+      "players_active": 867,
+      "retention": 0.96440489432703,
+      "sightings": 36620,
+      "replays": 24909,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 2,
+      "players": 990,
+      "players_active": 947,
+      "retention": 0.9565656565656566,
+      "sightings": 43259,
+      "replays": 29656,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 2,
+      "players": 990,
+      "players_active": 947,
+      "retention": 0.9565656565656566,
+      "sightings": 43259,
+      "replays": 29656,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 2,
+      "players": 990,
+      "players_active": 947,
+      "retention": 0.9565656565656566,
+      "sightings": 43259,
+      "replays": 29656,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
+    },
+    "pve": {
+     "7d": {
+      "rank": 3,
+      "players": 203,
+      "players_active": 191,
+      "retention": 0.9408866995073891,
+      "sightings": 1204,
+      "replays": 967,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 3,
+      "players": 475,
+      "players_active": 457,
+      "retention": 0.9621052631578947,
+      "sightings": 5591,
+      "replays": 4541,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 3,
+      "players": 535,
+      "players_active": 513,
+      "retention": 0.9588785046728971,
+      "sightings": 6672,
+      "replays": 5470,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 3,
+      "players": 535,
+      "players_active": 513,
+      "retention": 0.9588785046728971,
+      "sightings": 6672,
+      "replays": 5470,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 3,
+      "players": 535,
+      "players_active": 513,
+      "retention": 0.9588785046728971,
+      "sightings": 6672,
+      "replays": 5470,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
+    },
+    "pvp": {
+     "7d": {
+      "rank": 3,
+      "players": 420,
+      "players_active": 403,
+      "retention": 0.9595238095238096,
+      "sightings": 6882,
+      "replays": 4474,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 2,
+      "players": 771,
+      "players_active": 741,
+      "retention": 0.9610894941634242,
+      "sightings": 31029,
+      "replays": 20368,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 2,
+      "players": 844,
+      "players_active": 803,
+      "retention": 0.9514218009478673,
+      "sightings": 36587,
+      "replays": 24186,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 2,
+      "players": 844,
+      "players_active": 803,
+      "retention": 0.9514218009478673,
+      "sightings": 36587,
+      "replays": 24186,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 2,
+      "players": 844,
+      "players_active": 803,
+      "retention": 0.9514218009478673,
+      "sightings": 36587,
+      "replays": 24186,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
+    }
+   }
+  },
+  {
+   "key": "widget:gui_battle_resource_tracker",
+   "resolved": true,
+   "id": "gui_battle_resource_tracker",
+   "name": "Battle Resource Tracker",
+   "author": "citrine",
+   "description": "Shows the resource gains/losses in battles",
+   "install": {
+    "kind": "gist",
+    "url": "https://gist.githubusercontent.com/raw/7f6e21ed304eeaba9ad4a122019c0d82/92155b1c999979efd2acd762e5f9b503aaab9fb6/gui_battle_resource_tracker.lua",
+    "archive": false,
+    "page": "https://gist.github.com/7f6e21ed304eeaba9ad4a122019c0d82",
+    "license": "GNU GPL, v2 or later",
+    "permissive": true,
+    "reason": "",
+    "files": [
+     {
+      "path": "gui_battle_resource_tracker.lua",
+      "content_hash": "ByHIKjUQbPlhIR/EXF3MBA==",
+      "url": "https://gist.githubusercontent.com/raw/7f6e21ed304eeaba9ad4a122019c0d82/92155b1c999979efd2acd762e5f9b503aaab9fb6/gui_battle_resource_tracker.lua"
+     }
+    ]
+   },
+   "windows": {
+    "all": {
+     "7d": {
+      "rank": 51,
+      "players": 27,
+      "players_active": 21,
+      "retention": 0.7777777777777778,
+      "sightings": 728,
+      "replays": 660,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 52,
+      "players": 42,
+      "players_active": 34,
+      "retention": 0.8095238095238095,
+      "sightings": 3976,
+      "replays": 3468,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 56,
+      "players": 43,
+      "players_active": 35,
+      "retention": 0.813953488372093,
+      "sightings": 4865,
+      "replays": 4259,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 56,
+      "players": 43,
+      "players_active": 35,
+      "retention": 0.813953488372093,
+      "sightings": 4865,
+      "replays": 4259,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 56,
+      "players": 43,
+      "players_active": 35,
+      "retention": 0.813953488372093,
+      "sightings": 4865,
+      "replays": 4259,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
+    },
+    "pve": {
+     "7d": {
+      "rank": 72,
+      "players": 7,
+      "players_active": 6,
+      "retention": 0.8571428571428571,
+      "sightings": 40,
+      "replays": 40,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 80,
+      "players": 12,
+      "players_active": 11,
+      "retention": 0.9166666666666666,
+      "sightings": 152,
+      "replays": 147,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 75,
+      "players": 15,
+      "players_active": 14,
+      "retention": 0.9333333333333333,
+      "sightings": 189,
+      "replays": 184,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 75,
+      "players": 15,
+      "players_active": 14,
+      "retention": 0.9333333333333333,
+      "sightings": 189,
+      "replays": 184,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 75,
+      "players": 15,
+      "players_active": 14,
+      "retention": 0.9333333333333333,
+      "sightings": 189,
+      "replays": 184,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
+    },
+    "pvp": {
+     "7d": {
+      "rank": 47,
+      "players": 25,
+      "players_active": 19,
+      "retention": 0.76,
+      "sightings": 688,
+      "replays": 620,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 50,
+      "players": 40,
+      "players_active": 32,
+      "retention": 0.8,
+      "sightings": 3824,
+      "replays": 3321,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 55,
+      "players": 41,
+      "players_active": 33,
+      "retention": 0.8048780487804879,
+      "sightings": 4676,
+      "replays": 4075,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 55,
+      "players": 41,
+      "players_active": 33,
+      "retention": 0.8048780487804879,
+      "sightings": 4676,
+      "replays": 4075,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 55,
+      "players": 41,
+      "players_active": 33,
+      "retention": 0.8048780487804879,
+      "sightings": 4676,
+      "replays": 4075,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
+    }
+   }
+  },
+  {
+   "key": "widget:2_1789510202366_0",
+   "resolved": true,
+   "id": "2_1789510202366_0",
+   "name": "Tweakdefs Bridge",
+   "author": "Ambo",
+   "description": "A helper Widget to rename unit names and descriptions with prefixes or full names from infolog. Alt+...",
+   "install": {
+    "kind": "discord",
+    "url": "https://d29i3oohxql6zz.cloudfront.net/widget_lua/60778b3faa6533b7391b6750f3500f6e.lua",
+    "archive": false,
+    "page": "https://discord.com/channels/549281623154229250/widgets_setting_up_a_rarity_widget",
+    "license": "GNU GPL, v3 or later",
+    "permissive": true,
+    "reason": "",
+    "files": [
+     {
+      "path": "2_1789510202366_0.lua",
+      "content_hash": "YHeLP6plM7c5G2dQ81APbg==",
+      "url": "https://d29i3oohxql6zz.cloudfront.net/widget_lua/60778b3faa6533b7391b6750f3500f6e.lua"
+     }
+    ]
+   },
+   "windows": {
+    "all": {
+     "7d": {
+      "rank": 26,
+      "players": 93,
+      "players_active": 72,
+      "retention": 0.7741935483870968,
+      "sightings": 1366,
+      "replays": 1223,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 27,
+      "players": 158,
+      "players_active": 121,
+      "retention": 0.7658227848101266,
+      "sightings": 6963,
+      "replays": 6157,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 27,
+      "players": 164,
+      "players_active": 125,
+      "retention": 0.7621951219512195,
+      "sightings": 8618,
+      "replays": 7561,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 27,
+      "players": 164,
+      "players_active": 125,
+      "retention": 0.7621951219512195,
+      "sightings": 8618,
+      "replays": 7561,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 27,
+      "players": 164,
+      "players_active": 125,
+      "retention": 0.7621951219512195,
+      "sightings": 8618,
+      "replays": 7561,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
+    },
+    "pve": {
+     "7d": {
+      "rank": 26,
+      "players": 44,
+      "players_active": 37,
+      "retention": 0.8409090909090909,
+      "sightings": 342,
+      "replays": 321,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 20,
+      "players": 114,
+      "players_active": 89,
+      "retention": 0.7807017543859649,
+      "sightings": 1660,
+      "replays": 1519,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 22,
+      "players": 119,
+      "players_active": 93,
+      "retention": 0.7815126050420168,
+      "sightings": 1948,
+      "replays": 1783,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 22,
+      "players": 119,
+      "players_active": 93,
+      "retention": 0.7815126050420168,
+      "sightings": 1948,
+      "replays": 1783,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 22,
+      "players": 119,
+      "players_active": 93,
+      "retention": 0.7815126050420168,
+      "sightings": 1948,
+      "replays": 1783,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
+    },
+    "pvp": {
+     "7d": {
+      "rank": 27,
+      "players": 73,
+      "players_active": 52,
+      "retention": 0.7123287671232876,
+      "sightings": 1024,
+      "replays": 902,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 28,
+      "players": 123,
+      "players_active": 94,
+      "retention": 0.7642276422764228,
+      "sightings": 5303,
+      "replays": 4638,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 30,
+      "players": 130,
+      "players_active": 99,
+      "retention": 0.7615384615384615,
+      "sightings": 6670,
+      "replays": 5778,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 30,
+      "players": 130,
+      "players_active": 99,
+      "retention": 0.7615384615384615,
+      "sightings": 6670,
+      "replays": 5778,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 30,
+      "players": 130,
+      "players_active": 99,
+      "retention": 0.7615384615384615,
+      "sightings": 6670,
+      "replays": 5778,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
+    }
+   }
+  },
+  {
+   "key": "widget:unit_builders_are_lazy",
+   "resolved": true,
+   "id": "unit_builders_are_lazy",
+   "name": "Builders Are Lazy",
+   "author": "uBdead (using code from other widgets)",
+   "description": "Builders will idle instead of guarding after building (to become available from the idle mechanic)",
+   "install": {
+    "kind": "discord",
+    "url": "https://d29i3oohxql6zz.cloudfront.net/widget_lua/bebcc57494ecf714c211a316598e11e3.lua",
+    "archive": false,
+    "page": "https://discord.com/channels/549281623154229250/widgets_builders_are_lazy_avoid_losing_constructors_due_to_idle_guarding",
+    "license": "GNU GPL, v2 or later",
+    "permissive": true,
+    "reason": "",
+    "files": [
+     {
+      "path": "unit_builders_are_lazy.lua",
+      "content_hash": "vrzFdJTs9xTCEaMWWY4R4w==",
+      "url": "https://d29i3oohxql6zz.cloudfront.net/widget_lua/bebcc57494ecf714c211a316598e11e3.lua"
+     }
+    ]
+   },
+   "windows": {
+    "all": {
+     "7d": {
+      "rank": 41,
+      "players": 57,
+      "players_active": 34,
+      "retention": 0.5964912280701754,
+      "sightings": 695,
+      "replays": 656,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 34,
+      "players": 124,
+      "players_active": 93,
+      "retention": 0.75,
+      "sightings": 3183,
+      "replays": 3013,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 36,
+      "players": 133,
+      "players_active": 97,
+      "retention": 0.7293233082706767,
+      "sightings": 3862,
+      "replays": 3665,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 36,
+      "players": 133,
+      "players_active": 97,
+      "retention": 0.7293233082706767,
+      "sightings": 3862,
+      "replays": 3665,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 36,
+      "players": 133,
+      "players_active": 97,
+      "retention": 0.7293233082706767,
+      "sightings": 3862,
+      "replays": 3665,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
+    },
+    "pve": {
+     "7d": {
+      "rank": 37,
+      "players": 28,
+      "players_active": 15,
+      "retention": 0.5357142857142857,
+      "sightings": 183,
+      "replays": 164,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 33,
+      "players": 67,
+      "players_active": 47,
+      "retention": 0.7014925373134329,
+      "sightings": 826,
+      "replays": 756,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 35,
+      "players": 71,
+      "players_active": 51,
+      "retention": 0.7183098591549296,
+      "sightings": 945,
+      "replays": 865,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 35,
+      "players": 71,
+      "players_active": 51,
+      "retention": 0.7183098591549296,
+      "sightings": 945,
+      "replays": 865,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 35,
+      "players": 71,
+      "players_active": 51,
+      "retention": 0.7183098591549296,
+      "sightings": 945,
+      "replays": 865,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
+    },
+    "pvp": {
+     "7d": {
+      "rank": 40,
+      "players": 46,
+      "players_active": 25,
+      "retention": 0.5434782608695652,
+      "sightings": 512,
+      "replays": 492,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 35,
+      "players": 99,
+      "players_active": 70,
+      "retention": 0.7070707070707071,
+      "sightings": 2357,
+      "replays": 2257,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 36,
+      "players": 106,
+      "players_active": 72,
+      "retention": 0.6792452830188679,
+      "sightings": 2917,
+      "replays": 2800,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 36,
+      "players": 106,
+      "players_active": 72,
+      "retention": 0.6792452830188679,
+      "sightings": 2917,
+      "replays": 2800,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 36,
+      "players": 106,
+      "players_active": 72,
+      "retention": 0.6792452830188679,
+      "sightings": 2917,
+      "replays": 2800,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
+    }
+   }
+  },
+  {
+   "key": "widget:map_nuttyb_raptor_grid_draw",
+   "resolved": true,
+   "id": "map_nuttyb_raptor_grid_draw",
+   "name": "Raptor Grid Draw 12 players (Full Metal Plate 1.7)",
+   "author": "Lu5ck",
+   "description": "Draws fairly distributed build border for 12 players raptor mode on Full Metal Plate 1.7 map",
+   "install": {
+    "kind": "discord",
+    "url": "",
+    "archive": false,
+    "page": "https://discord.com/channels/549281623154229250/widgets_raptor_grid_draw_12_players_full_metal_plate_1_7",
+    "license": "",
+    "permissive": false,
+    "reason": "licence does not grant redistribution",
+    "files": [
+     {
+      "path": "map_nuttyb_raptor_grid_draw.lua",
+      "content_hash": "Acb1kSIckWSiHgpZBhNWBg==",
+      "url": ""
+     }
+    ]
+   },
+   "windows": {
+    "all": {
+     "7d": {
+      "rank": 39,
+      "players": 59,
+      "players_active": 0,
+      "retention": 0.0,
+      "sightings": 758,
+      "replays": 673,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 36,
+      "players": 117,
+      "players_active": 0,
+      "retention": 0.0,
+      "sightings": 3474,
+      "replays": 3048,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 39,
+      "players": 120,
+      "players_active": 1,
+      "retention": 0.008333333333333333,
+      "sightings": 4243,
+      "replays": 3738,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 39,
+      "players": 120,
+      "players_active": 1,
+      "retention": 0.008333333333333333,
+      "sightings": 4243,
+      "replays": 3738,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 39,
+      "players": 120,
+      "players_active": 1,
+      "retention": 0.008333333333333333,
+      "sightings": 4243,
+      "replays": 3738,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
+    },
+    "pve": {
+     "7d": {
+      "rank": 23,
+      "players": 48,
+      "players_active": 0,
+      "retention": 0.0,
+      "sightings": 512,
+      "replays": 435,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 23,
+      "players": 105,
+      "players_active": 0,
+      "retention": 0.0,
+      "sightings": 2227,
+      "replays": 1841,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 24,
+      "players": 109,
+      "players_active": 1,
+      "retention": 0.009174311926605505,
+      "sightings": 2761,
+      "replays": 2309,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 24,
+      "players": 109,
+      "players_active": 1,
+      "retention": 0.009174311926605505,
+      "sightings": 2761,
+      "replays": 2309,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 24,
+      "players": 109,
+      "players_active": 1,
+      "retention": 0.009174311926605505,
+      "sightings": 2761,
+      "replays": 2309,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
+    },
+    "pvp": {
+     "7d": {
+      "rank": 44,
+      "players": 30,
+      "players_active": 0,
+      "retention": 0.0,
+      "sightings": 246,
+      "replays": 238,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 41,
+      "players": 58,
+      "players_active": 0,
+      "retention": 0.0,
+      "sightings": 1247,
+      "replays": 1207,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 42,
+      "players": 63,
+      "players_active": 0,
+      "retention": 0.0,
+      "sightings": 1482,
+      "replays": 1429,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 42,
+      "players": 63,
+      "players_active": 0,
+      "retention": 0.0,
+      "sightings": 1482,
+      "replays": 1429,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 42,
+      "players": 63,
+      "players_active": 0,
+      "retention": 0.0,
+      "sightings": 1482,
+      "replays": 1429,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
+    }
+   }
+  },
+  {
+   "key": "widget:cmd_reclaim_selected",
+   "resolved": true,
+   "id": "cmd_reclaim_selected",
+   "name": "Reclaim Selected",
+   "author": "manshanko",
+   "description": "Reclaim selected units with nearby nano turrets",
+   "install": {
+    "kind": "github",
+    "url": "",
+    "archive": false,
+    "page": "https://github.com/manshanko/bar-widgets",
+    "license": "",
+    "permissive": false,
+    "reason": "licence does not grant redistribution",
+    "files": [
+     {
+      "path": "cmd_reclaim_selected.lua",
+      "content_hash": "1w2hZ45qMdQWkygKuzQsxA==",
+      "url": ""
+     }
+    ]
+   },
+   "windows": {
+    "all": {
+     "7d": {
+      "rank": 117,
+      "players": 8,
+      "players_active": 5,
+      "retention": 0.625,
+      "sightings": 18,
+      "replays": 18,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 72,
+      "players": 24,
+      "players_active": 18,
+      "retention": 0.75,
+      "sightings": 263,
+      "replays": 260,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 63,
+      "players": 37,
+      "players_active": 30,
+      "retention": 0.8108108108108109,
+      "sightings": 452,
+      "replays": 437,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 63,
+      "players": 37,
+      "players_active": 30,
+      "retention": 0.8108108108108109,
+      "sightings": 452,
+      "replays": 437,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 63,
+      "players": 37,
+      "players_active": 30,
+      "retention": 0.8108108108108109,
+      "sightings": 452,
+      "replays": 437,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
+    },
+    "pve": {
+     "30d": {
+      "rank": 63,
+      "players": 17,
+      "players_active": 13,
+      "retention": 0.7647058823529411,
+      "sightings": 86,
+      "replays": 83,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 50,
+      "players": 32,
+      "players_active": 26,
+      "retention": 0.8125,
+      "sightings": 225,
+      "replays": 210,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 50,
+      "players": 32,
+      "players_active": 26,
+      "retention": 0.8125,
+      "sightings": 225,
+      "replays": 210,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 50,
+      "players": 32,
+      "players_active": 26,
+      "retention": 0.8125,
+      "sightings": 225,
+      "replays": 210,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
+    },
+    "pvp": {
+     "7d": {
+      "rank": 169,
+      "players": 5,
+      "players_active": 3,
+      "retention": 0.6,
+      "sightings": 12,
+      "replays": 12,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 121,
+      "players": 10,
+      "players_active": 7,
+      "retention": 0.7,
+      "sightings": 177,
+      "replays": 177,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 93,
+      "players": 16,
+      "players_active": 12,
+      "retention": 0.75,
+      "sightings": 227,
+      "replays": 227,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 93,
+      "players": 16,
+      "players_active": 12,
+      "retention": 0.75,
+      "sightings": 227,
+      "replays": 227,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 93,
+      "players": 16,
+      "players_active": 12,
+      "retention": 0.75,
+      "sightings": 227,
+      "replays": 227,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
+    }
+   }
+  },
+  {
+   "key": "unresolved:bed0e544624412f3",
+   "resolved": false,
+   "id": "",
+   "name": "Time Weighted Team Stats",
+   "author": "tetrisface",
+   "description": "Time-weighted team statistics with inflation adjustment",
+   "install": {
+    "kind": "none",
+    "url": "",
+    "archive": false,
+    "page": "",
+    "license": "",
+    "permissive": false,
+    "reason": "no known source",
+    "files": []
+   },
+   "windows": {
+    "all": {
+     "7d": {
+      "rank": 123,
+      "players": 7,
+      "players_active": 6,
+      "retention": 0.8571428571428571,
+      "sightings": 112,
+      "replays": 111,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 149,
+      "players": 10,
+      "players_active": 8,
+      "retention": 0.8,
+      "sightings": 263,
+      "replays": 261,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 26,
+      "players": 170,
+      "players_active": 52,
+      "retention": 0.3058823529411765,
+      "sightings": 2642,
+      "replays": 2280,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 26,
+      "players": 170,
+      "players_active": 52,
+      "retention": 0.3058823529411765,
+      "sightings": 2642,
+      "replays": 2280,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 26,
+      "players": 170,
+      "players_active": 52,
+      "retention": 0.3058823529411765,
+      "sightings": 2642,
+      "replays": 2280,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
+    },
+    "pve": {
+     "30d": {
+      "rank": 149,
+      "players": 5,
+      "players_active": 4,
+      "retention": 0.8,
+      "sightings": 146,
+      "replays": 144,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 38,
+      "players": 67,
+      "players_active": 25,
+      "retention": 0.373134328358209,
+      "sightings": 536,
+      "replays": 478,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 38,
+      "players": 67,
+      "players_active": 25,
+      "retention": 0.373134328358209,
+      "sightings": 536,
+      "replays": 478,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 38,
+      "players": 67,
+      "players_active": 25,
+      "retention": 0.373134328358209,
+      "sightings": 536,
+      "replays": 478,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
+    },
+    "pvp": {
+     "7d": {
+      "rank": 157,
+      "players": 5,
+      "players_active": 5,
+      "retention": 1.0,
+      "sightings": 46,
+      "replays": 46,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 193,
+      "players": 6,
+      "players_active": 5,
+      "retention": 0.8333333333333334,
+      "sightings": 117,
+      "replays": 117,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 26,
+      "players": 145,
+      "players_active": 37,
+      "retention": 0.25517241379310346,
+      "sightings": 2106,
+      "replays": 1802,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 26,
+      "players": 145,
+      "players_active": 37,
+      "retention": 0.25517241379310346,
+      "sightings": 2106,
+      "replays": 1802,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 26,
+      "players": 145,
+      "players_active": 37,
+      "retention": 0.25517241379310346,
+      "sightings": 2106,
+      "replays": 1802,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
+    }
+   }
+  },
+  {
+   "key": "unresolved:a6078f575d0c56fd",
+   "resolved": false,
+   "id": "",
    "name": "Ping Wheel",
    "author": "Errrrrrr",
    "description": "Displays a ping wheel when a keybind is held down. Default keybind is 'alt-f', rebindable. Left clic...",
+   "install": {
+    "kind": "none",
+    "url": "",
+    "archive": false,
+    "page": "",
+    "license": "",
+    "permissive": false,
+    "reason": "no known source",
+    "files": []
+   },
    "windows": {
-    "7d": {
-     "rank": 9,
-     "players": 264,
-     "players_active": 245,
-     "retention": 0.928030303030303,
-     "sightings": 4738,
-     "replays": 3703,
-     "days_covered": 7,
-     "coverage": 1.0
-    },
-    "30d": {
-     "rank": 9,
-     "players": 342,
-     "players_active": 318,
-     "retention": 0.9298245614035088,
-     "sightings": 10098,
-     "replays": 7785,
-     "days_covered": 14,
-     "coverage": 0.4666666666666667
-    },
-    "90d": {
-     "rank": 9,
-     "players": 342,
-     "players_active": 318,
-     "retention": 0.9298245614035088,
-     "sightings": 10098,
-     "replays": 7785,
-     "days_covered": 14,
-     "coverage": 0.15555555555555556
-    },
-    "365d": {
-     "rank": 9,
-     "players": 342,
-     "players_active": 318,
-     "retention": 0.9298245614035088,
-     "sightings": 10098,
-     "replays": 7785,
-     "days_covered": 14,
-     "coverage": 0.038356164383561646
-    },
     "all": {
-     "rank": 9,
-     "players": 342,
-     "players_active": 318,
-     "retention": 0.9298245614035088,
-     "sightings": 10098,
-     "replays": 7785,
-     "days_covered": 14,
-     "coverage": 1.0
+     "7d": {
+      "rank": 28,
+      "players": 79,
+      "players_active": 66,
+      "retention": 0.8354430379746836,
+      "sightings": 1220,
+      "replays": 1070,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 28,
+      "players": 148,
+      "players_active": 127,
+      "retention": 0.8581081081081081,
+      "sightings": 7147,
+      "replays": 6067,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 31,
+      "players": 153,
+      "players_active": 131,
+      "retention": 0.8562091503267973,
+      "sightings": 8726,
+      "replays": 7385,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 31,
+      "players": 153,
+      "players_active": 131,
+      "retention": 0.8562091503267973,
+      "sightings": 8726,
+      "replays": 7385,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 31,
+      "players": 153,
+      "players_active": 131,
+      "retention": 0.8562091503267973,
+      "sightings": 8726,
+      "replays": 7385,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
+    },
+    "pve": {
+     "7d": {
+      "rank": 43,
+      "players": 22,
+      "players_active": 19,
+      "retention": 0.8636363636363636,
+      "sightings": 100,
+      "replays": 90,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 39,
+      "players": 58,
+      "players_active": 51,
+      "retention": 0.8793103448275862,
+      "sightings": 602,
+      "replays": 565,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 36,
+      "players": 70,
+      "players_active": 62,
+      "retention": 0.8857142857142857,
+      "sightings": 764,
+      "replays": 721,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 36,
+      "players": 70,
+      "players_active": 62,
+      "retention": 0.8857142857142857,
+      "sightings": 764,
+      "replays": 721,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 36,
+      "players": 70,
+      "players_active": 62,
+      "retention": 0.8857142857142857,
+      "sightings": 764,
+      "replays": 721,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
+    },
+    "pvp": {
+     "7d": {
+      "rank": 28,
+      "players": 72,
+      "players_active": 60,
+      "retention": 0.8333333333333334,
+      "sightings": 1120,
+      "replays": 980,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 27,
+      "players": 129,
+      "players_active": 111,
+      "retention": 0.8604651162790697,
+      "sightings": 6545,
+      "replays": 5502,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 28,
+      "players": 132,
+      "players_active": 114,
+      "retention": 0.8636363636363636,
+      "sightings": 7962,
+      "replays": 6664,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 28,
+      "players": 132,
+      "players_active": 114,
+      "retention": 0.8636363636363636,
+      "sightings": 7962,
+      "replays": 6664,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 28,
+      "players": 132,
+      "players_active": 114,
+      "retention": 0.8636363636363636,
+      "sightings": 7962,
+      "replays": 6664,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
     }
    }
   },
   {
-   "key": "widget:gui_juno_impact_range",
-   "resolved": true,
-   "id": "gui_juno_impact_range",
-   "name": "Juno Shot Ranges",
-   "author": "Rysica",
-   "description": "Draws an AOE circle while targeting Juno, and after impact",
+   "key": "unresolved:946daacf44f1c7e4",
+   "resolved": false,
+   "id": "",
+   "name": "Raptor Stats Panel With Eco Attraction",
+   "author": "quantum, tetrisface",
+   "description": "Shows statistics and progress when fighting vs Raptors",
+   "install": {
+    "kind": "none",
+    "url": "",
+    "archive": false,
+    "page": "",
+    "license": "",
+    "permissive": false,
+    "reason": "no known source",
+    "files": []
+   },
    "windows": {
-    "7d": {
-     "rank": 11,
-     "players": 258,
-     "players_active": 254,
-     "retention": 0.9844961240310077,
-     "sightings": 4791,
-     "replays": 3471,
-     "days_covered": 7,
-     "coverage": 1.0
-    },
-    "30d": {
-     "rank": 10,
-     "players": 325,
-     "players_active": 318,
-     "retention": 0.9784615384615385,
-     "sightings": 9480,
-     "replays": 7020,
-     "days_covered": 14,
-     "coverage": 0.4666666666666667
-    },
-    "90d": {
-     "rank": 10,
-     "players": 325,
-     "players_active": 318,
-     "retention": 0.9784615384615385,
-     "sightings": 9480,
-     "replays": 7020,
-     "days_covered": 14,
-     "coverage": 0.15555555555555556
-    },
-    "365d": {
-     "rank": 10,
-     "players": 325,
-     "players_active": 318,
-     "retention": 0.9784615384615385,
-     "sightings": 9480,
-     "replays": 7020,
-     "days_covered": 14,
-     "coverage": 0.038356164383561646
-    },
     "all": {
-     "rank": 10,
-     "players": 325,
-     "players_active": 318,
-     "retention": 0.9784615384615385,
-     "sightings": 9480,
-     "replays": 7020,
-     "days_covered": 14,
-     "coverage": 1.0
+     "30d": {
+      "rank": 114,
+      "players": 13,
+      "players_active": 11,
+      "retention": 0.8461538461538461,
+      "sightings": 204,
+      "replays": 179,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 80,
+      "players": 24,
+      "players_active": 22,
+      "retention": 0.9166666666666666,
+      "sightings": 235,
+      "replays": 208,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 80,
+      "players": 24,
+      "players_active": 22,
+      "retention": 0.9166666666666666,
+      "sightings": 235,
+      "replays": 208,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 80,
+      "players": 24,
+      "players_active": 22,
+      "retention": 0.9166666666666666,
+      "sightings": 235,
+      "replays": 208,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
+    },
+    "pve": {
+     "30d": {
+      "rank": 74,
+      "players": 13,
+      "players_active": 11,
+      "retention": 0.8461538461538461,
+      "sightings": 204,
+      "replays": 179,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 58,
+      "players": 24,
+      "players_active": 22,
+      "retention": 0.9166666666666666,
+      "sightings": 235,
+      "replays": 208,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 58,
+      "players": 24,
+      "players_active": 22,
+      "retention": 0.9166666666666666,
+      "sightings": 235,
+      "replays": 208,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 58,
+      "players": 24,
+      "players_active": 22,
+      "retention": 0.9166666666666666,
+      "sightings": 235,
+      "replays": 208,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
     }
    }
   },
   {
-   "key": "widget:gui_top_bar_extra",
+   "key": "widget:con_turret_ghosts",
    "resolved": true,
-   "id": "gui_top_bar_extra",
-   "name": "Top Bar Extra",
-   "author": "uBdead",
-   "description": "Adds a more detailed resource display.",
+   "id": "con_turret_ghosts",
+   "name": "Con Turret Ghosts",
+   "author": "sneyed",
+   "description": "Keep showing construction turret positions when they disappear from LoS",
+   "install": {
+    "kind": "github",
+    "url": "https://raw.githubusercontent.com/lokimckay/bar-widgets/a61f671/src/con_turret_ghosts.lua",
+    "archive": false,
+    "page": "https://github.com/lokimckay/bar-widgets",
+    "license": "GNU GPL v2",
+    "permissive": true,
+    "reason": "",
+    "files": [
+     {
+      "path": "src/con_turret_ghosts.lua",
+      "content_hash": "XSHZ+R8b2DtxfFJQAjnOag==",
+      "url": "https://raw.githubusercontent.com/lokimckay/bar-widgets/a61f671/src/con_turret_ghosts.lua"
+     }
+    ]
+   },
    "windows": {
-    "7d": {
-     "rank": 12,
-     "players": 248,
-     "players_active": 223,
-     "retention": 0.8991935483870968,
-     "sightings": 4229,
-     "replays": 3386,
-     "days_covered": 7,
-     "coverage": 1.0
-    },
-    "30d": {
-     "rank": 11,
-     "players": 322,
-     "players_active": 293,
-     "retention": 0.9099378881987578,
-     "sightings": 8824,
-     "replays": 7013,
-     "days_covered": 14,
-     "coverage": 0.4666666666666667
-    },
-    "90d": {
-     "rank": 11,
-     "players": 322,
-     "players_active": 293,
-     "retention": 0.9099378881987578,
-     "sightings": 8824,
-     "replays": 7013,
-     "days_covered": 14,
-     "coverage": 0.15555555555555556
-    },
-    "365d": {
-     "rank": 11,
-     "players": 322,
-     "players_active": 293,
-     "retention": 0.9099378881987578,
-     "sightings": 8824,
-     "replays": 7013,
-     "days_covered": 14,
-     "coverage": 0.038356164383561646
-    },
     "all": {
-     "rank": 11,
-     "players": 322,
-     "players_active": 293,
-     "retention": 0.9099378881987578,
-     "sightings": 8824,
-     "replays": 7013,
-     "days_covered": 14,
-     "coverage": 1.0
-    }
-   }
-  },
-  {
-   "key": "widget:unit_lazy_reclaimers",
-   "resolved": true,
-   "id": "unit_lazy_reclaimers",
-   "name": "Lazy Reclaimers",
-   "author": "uBdead",
-   "description": "Reclaimers will stop reclaiming when the metal/energy storage is full.",
-   "windows": {
-    "7d": {
-     "rank": 10,
-     "players": 259,
-     "players_active": 234,
-     "retention": 0.9034749034749034,
-     "sightings": 4084,
-     "replays": 3181,
-     "days_covered": 7,
-     "coverage": 1.0
+     "7d": {
+      "rank": 118,
+      "players": 8,
+      "players_active": 5,
+      "retention": 0.625,
+      "sightings": 74,
+      "replays": 72,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 106,
+      "players": 14,
+      "players_active": 10,
+      "retention": 0.7142857142857143,
+      "sightings": 658,
+      "replays": 651,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 109,
+      "players": 16,
+      "players_active": 12,
+      "retention": 0.75,
+      "sightings": 903,
+      "replays": 886,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 109,
+      "players": 16,
+      "players_active": 12,
+      "retention": 0.75,
+      "sightings": 903,
+      "replays": 886,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 109,
+      "players": 16,
+      "players_active": 12,
+      "retention": 0.75,
+      "sightings": 903,
+      "replays": 886,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
     },
-    "30d": {
-     "rank": 12,
-     "players": 320,
-     "players_active": 288,
-     "retention": 0.9,
-     "sightings": 7964,
-     "replays": 6300,
-     "days_covered": 14,
-     "coverage": 0.4666666666666667
-    },
-    "90d": {
-     "rank": 12,
-     "players": 320,
-     "players_active": 288,
-     "retention": 0.9,
-     "sightings": 7964,
-     "replays": 6300,
-     "days_covered": 14,
-     "coverage": 0.15555555555555556
-    },
-    "365d": {
-     "rank": 12,
-     "players": 320,
-     "players_active": 288,
-     "retention": 0.9,
-     "sightings": 7964,
-     "replays": 6300,
-     "days_covered": 14,
-     "coverage": 0.038356164383561646
-    },
-    "all": {
-     "rank": 12,
-     "players": 320,
-     "players_active": 288,
-     "retention": 0.9,
-     "sightings": 7964,
-     "replays": 6300,
-     "days_covered": 14,
-     "coverage": 1.0
+    "pvp": {
+     "7d": {
+      "rank": 104,
+      "players": 8,
+      "players_active": 5,
+      "retention": 0.625,
+      "sightings": 64,
+      "replays": 63,
+      "days_covered": 7,
+      "coverage": 1.0
+     },
+     "30d": {
+      "rank": 91,
+      "players": 14,
+      "players_active": 10,
+      "retention": 0.7142857142857143,
+      "sightings": 631,
+      "replays": 625,
+      "days_covered": 30,
+      "coverage": 1.0
+     },
+     "90d": {
+      "rank": 94,
+      "players": 16,
+      "players_active": 12,
+      "retention": 0.75,
+      "sightings": 873,
+      "replays": 857,
+      "days_covered": 36,
+      "coverage": 0.4
+     },
+     "365d": {
+      "rank": 94,
+      "players": 16,
+      "players_active": 12,
+      "retention": 0.75,
+      "sightings": 873,
+      "replays": 857,
+      "days_covered": 36,
+      "coverage": 0.09863013698630137
+     },
+     "all": {
+      "rank": 94,
+      "players": 16,
+      "players_active": 12,
+      "retention": 0.75,
+      "sightings": 873,
+      "replays": 857,
+      "days_covered": 36,
+      "coverage": 1.0
+     }
     }
    }
   }

@@ -4301,7 +4301,7 @@ button.link:hover {
 /* The row of windows is the question being asked, so it sits directly under
    the heading and above the sentence that qualifies the answer. */
 .widgets .tabs {
-  max-width: 45rem;
+  flex: 0 0 auto;
 }
 
 .widgets-about {
@@ -4313,97 +4313,168 @@ button.link:hover {
   color: var(--faint);
 }
 
-.widget-list {
-  display: grid;
-  gap: 0.5rem;
-  max-width: 45rem;
+/* The controls read as one line: what to search for, who was playing, and
+   over what period. Wrapping rather than scrolling, so a narrow window stacks
+   them instead of hiding the window picker off the right edge. */
+.widget-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
 }
 
-/* Rank, the widget, and its numbers: three columns because the numbers are
-   read down the list rather than across one card, and a ragged right edge
-   would make that a hunt. */
-.widget-card {
-  display: grid;
-  grid-template-columns: 2rem 1fr auto;
-  gap: 0.875rem;
-  align-items: start;
-  padding: 0.625rem 0.75rem;
+.widget-search {
+  flex: 1 1 16rem;
+  min-width: 10rem;
+  max-width: 24rem;
+  padding: 0.3125rem 0.5rem;
+  font-family: var(--body);
+  font-size: 0.8125rem;
+  color: var(--text);
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 4px;
 }
 
-.widget-rank {
-  font-family: var(--mono);
+.widget-note {
+  margin: 0 0 0.75rem;
+  padding: 0.5rem 0.75rem;
+  font-family: var(--body);
+  font-size: 0.78125rem;
+  line-height: 1.45;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: 4px;
+}
+
+/* A table rather than cards: four times as many widgets fit on a screen, and
+   comparing two widgets' retention is what the list is for. Every field the
+   card carried is still here. */
+.widget-table {
+  width: 100%;
+  border-collapse: collapse;
   font-size: 0.8125rem;
+}
+
+.widget-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.375rem 0.5rem;
+  font-family: var(--display);
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
+  text-align: left;
   color: var(--faint);
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+
+.widget-table td {
+  padding: 0.5rem;
+  vertical-align: top;
+  border-bottom: 1px solid var(--line);
+}
+
+/* Figures are read down the column, so they are aligned right and monospaced;
+   a ragged edge would make comparing two rows a hunt. */
+.widget-table .num {
+  font-family: var(--mono);
   text-align: right;
-  padding-top: 0.0625rem;
+  white-space: nowrap;
 }
 
-.widget-text {
-  min-width: 0;
+.widget-table thead .num {
+  text-align: right;
 }
 
-.widget-text h2 {
-  margin: 0;
-  font-size: 0.9375rem;
-  line-height: 1.3;
+/* A switched-off widget is still worth listing — that it is installed and off
+   is the point — but it should not read as active. */
+.widget-table tbody tr.off .widget-name strong {
+  color: var(--muted);
+}
+
+.widget-name {
+  min-width: 12rem;
+  max-width: 26rem;
+}
+
+.widget-name strong {
+  font-size: 0.875rem;
 }
 
 .widget-by {
-  margin: 0.125rem 0 0;
   font-family: var(--mono);
   font-size: 0.65625rem;
   color: var(--faint);
 }
 
 .widget-about {
-  margin: 0.375rem 0 0;
+  margin: 0.25rem 0 0;
   font-family: var(--body);
-  font-size: 0.78125rem;
-  line-height: 1.45;
+  font-size: 0.75rem;
+  line-height: 1.4;
   color: var(--muted);
 }
 
-.widget-text .chips {
-  margin-top: 0.4375rem;
+.widget-name .chips {
+  margin-top: 0.375rem;
 }
 
-/* Label above figure, so the column reads as a stack of numbers rather than a
-   paragraph of labels with numbers in it. */
-.widget-stats {
-  display: flex;
-  gap: 1rem;
-  margin: 0;
+.widget-source {
+  max-width: 10rem;
+  font-size: 0.75rem;
+}
+
+/* Why there is no download, where the button would have been. A button that
+   does nothing would be worse than no button. */
+.widget-why {
+  margin: 0.25rem 0 0;
+  font-family: var(--body);
+  font-size: 0.6875rem;
+  line-height: 1.35;
+}
+
+.widget-actions-head {
   text-align: right;
 }
 
-.widget-stats dt {
-  font-family: var(--display);
-  font-size: 0.625rem;
-  letter-spacing: 0.04em;
-  color: var(--faint);
+.widget-actions {
+  text-align: right;
 }
 
-.widget-stats dd {
-  margin: 0.125rem 0 0;
-  font-family: var(--mono);
-  font-size: 0.875rem;
-  color: var(--text);
+.widget-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  justify-content: flex-end;
 }
 
-/* The numbers go under the widget rather than beside it once the card is
-   narrower than the two will sit in. */
-@media (max-width: 34rem) {
-  .widget-card {
-    grid-template-columns: 2rem 1fr;
+.widget-buttons button {
+  white-space: nowrap;
+}
+
+/* Narrow: the columns a reader can reconstruct from the widget itself go
+   first, so what is left is the name, the headline number and the buttons. */
+@media (max-width: 62rem) {
+  .widget-table th:nth-child(6),
+  .widget-table td:nth-child(6),
+  .widget-table th:nth-child(7),
+  .widget-table td:nth-child(7),
+  .widget-table th:nth-child(8),
+  .widget-table td:nth-child(8) {
+    display: none;
   }
+}
 
-  .widget-stats {
-    grid-column: 2;
-    justify-content: start;
-    text-align: left;
-    margin-top: 0.5rem;
+@media (max-width: 46rem) {
+  .widget-table th:nth-child(5),
+  .widget-table td:nth-child(5),
+  .widget-table th:nth-child(9),
+  .widget-table td:nth-child(9) {
+    display: none;
   }
 }

@@ -277,6 +277,12 @@ pub fn run() {
         .register_asynchronous_uri_scheme_protocol(thumbs::SCHEME, thumbs::serve)
         .invoke_handler(tauri::generate_handler![
             widgets::widget_usage,
+            widgets::widget_installed,
+            widgets::widget_install,
+            widgets::widget_update,
+            widgets::widget_disable,
+            widgets::widget_enable,
+            widgets::widget_delete,
             commands::subscribe,
             commands::login,
             commands::logout,

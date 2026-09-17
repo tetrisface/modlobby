@@ -49,6 +49,12 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+pub mod config;
+pub mod install;
+pub mod manage;
+
+pub use install::{Install, InstallFile, InstallKind};
+
 /// Where the weekly pipeline publishes the usage document.
 pub const ENDPOINT: &str = "https://d29i3oohxql6zz.cloudfront.net/widget_registry/usage.json";
 
@@ -79,8 +85,20 @@ pub const RETRY_AFTER_CAP: Duration = Duration::from_secs(30);
 /// so the same input always produces the same answer.
 pub const WINDOWS: [&str; 5] = ["7d", "30d", "90d", "365d", "all"];
 
-/// The window a card shows until the reader picks another.
+/// The window a row shows until the reader picks another.
 pub const DEFAULT_WINDOW: &str = "30d";
+
+/// Player-versus-what, matching the battles list's own filter.
+///
+/// BAR's PvE is AI opponents, which the pipeline reads off each replay's start
+/// script. The two populations want different widgets — a Raptors grid overlay
+/// and a competitive build-order helper are not competing for the same people —
+/// and the split is published rather than derived here because the k-anonymity
+/// floor has to be re-applied inside it.
+pub const AUDIENCES: [&str; 3] = ["all", "pve", "pvp"];
+
+/// The audience shown until the reader picks another: everyone.
+pub const DEFAULT_AUDIENCE: &str = "all";
 
 /// How a widget did over one window.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -138,13 +156,33 @@ pub struct WidgetUsage {
     pub name: String,
     pub author: String,
     pub description: String,
+    /// Audience, then window. A document published before the split carries
+    /// only `all`, which is why lookups fall back to it rather than blanking.
     #[serde(default)]
-    pub windows: BTreeMap<String, WindowStats>,
+    pub windows: BTreeMap<String, BTreeMap<String, WindowStats>>,
+    /// Where to get it, or why it cannot be offered. Always present: a widget
+    /// with no known source still says so, which is more use than a dead
+    /// button.
+    #[serde(default)]
+    pub install: Install,
 }
 
 impl WidgetUsage {
-    pub fn window(&self, window: &str) -> Option<&WindowStats> {
-        self.windows.get(window)
+    pub fn window(&self, audience: &str, window: &str) -> Option<&WindowStats> {
+        self.windows.get(audience)?.get(window)
+    }
+
+    /// Whether this widget was seen at all in an audience.
+    ///
+    /// What the PvE/PvP filter tests. Absent means the floor withheld it there,
+    /// not that it scored zero — so a widget missing from `pve` is one no PvE
+    /// row can honestly be drawn for.
+    pub fn in_audience(&self, audience: &str) -> bool {
+        audience == DEFAULT_AUDIENCE
+            || self
+                .windows
+                .get(audience)
+                .is_some_and(|windows| !windows.is_empty())
     }
 
     /// The best window to show for this widget, preferring `want`.
@@ -156,22 +194,35 @@ impl WidgetUsage {
     /// The returned name is always one of [`WINDOWS`], never the caller's
     /// string: an unknown window falls back rather than being echoed back as
     /// though it existed.
-    pub fn window_or_fallback(&self, want: &str) -> Option<(&'static str, &WindowStats)> {
+    pub fn window_or_fallback(
+        &self,
+        audience: &str,
+        want: &str,
+    ) -> Option<(&'static str, &WindowStats)> {
+        let windows = self
+            .windows
+            .get(audience)
+            .filter(|windows| !windows.is_empty())
+            .or_else(|| self.windows.get(DEFAULT_AUDIENCE))?;
         let known = WINDOWS.iter().copied().find(|name| *name == want);
-        if let Some(name) = known {
-            if let Some(stats) = self.windows.get(name) {
-                return Some((name, stats));
-            }
+        if let Some(name) = known
+            && let Some(stats) = windows.get(name)
+        {
+            return Some((name, stats));
         }
         WINDOWS
             .iter()
             .rev()
-            .find_map(|name| self.windows.get(*name).map(|stats| (*name, stats)))
+            .find_map(|name| windows.get(*name).map(|stats| (*name, stats)))
     }
 
     /// Whether this widget can be offered for install.
+    ///
+    /// Not the same question as `resolved`: a widget can be traced to a real
+    /// source and still have no download, because its licence does not grant
+    /// one. That case keeps its link and says why.
     pub fn is_installable(&self) -> bool {
-        self.resolved && !self.id.is_empty()
+        self.install.is_installable()
     }
 }
 
@@ -181,6 +232,8 @@ impl WidgetUsage {
 pub struct Usage {
     pub generated_at: String,
     pub policy_version: String,
+    #[serde(default)]
+    pub audiences: Vec<String>,
     #[serde(default)]
     pub windows: Vec<String>,
     #[serde(default)]
@@ -192,14 +245,14 @@ impl Usage {
     ///
     /// Only widgets that actually have a row in that window: a missing row
     /// means the window withheld it, not that it scored zero.
-    pub fn ranked(&self, window: &str) -> Vec<&WidgetUsage> {
-        let mut ranked: Vec<&WidgetUsage> = self
+    pub fn ranked(&self, audience: &str, window: &str) -> Vec<&WidgetUsage> {
+        let mut ranked: Vec<(u32, &WidgetUsage)> = self
             .widgets
             .iter()
-            .filter(|widget| widget.windows.contains_key(window))
+            .filter_map(|widget| Some((widget.window(audience, window)?.rank, widget)))
             .collect();
-        ranked.sort_by_key(|widget| widget.windows[window].rank);
-        ranked
+        ranked.sort_by_key(|(rank, _)| *rank);
+        ranked.into_iter().map(|(_, widget)| widget).collect()
     }
 
     pub fn find(&self, key: &str) -> Option<&WidgetUsage> {
@@ -493,7 +546,8 @@ mod tests {
     fn document(widgets: serde_json::Value) -> serde_json::Value {
         serde_json::json!({
             "generated_at": "2026-09-16T04:00:00+00:00",
-            "policy_version": "pve_widget_harvest_v1_prefix_262144",
+            "policy_version": "pve_widget_harvest_v2_prefix_262144_audience",
+            "audiences": ["all", "pve", "pvp"],
             "windows": ["7d", "30d", "90d", "365d", "all"],
             "widgets": widgets,
         })
@@ -507,7 +561,24 @@ mod tests {
             "name": "Ping Wheel",
             "author": "Errrrrrr",
             "description": "A radial ping menu",
-            "windows": { "30d": stats(1, 120, 100, 1.0), "all": stats(1, 400, 320, 1.0) },
+            "install": {
+                "kind": "github",
+                "url": "https://raw.githubusercontent.com/o/r/c6fd104/gui_ping_wheel.lua",
+                "archive": false,
+                "page": "https://github.com/o/r",
+                "license": "GNU GPL, v2 or later",
+                "permissive": true,
+                "reason": "",
+                "files": [{
+                    "path": "gui_ping_wheel.lua",
+                    "content_hash": "9CQgFicemu9VEw8LN59kmw==",
+                    "url": "https://raw.githubusercontent.com/o/r/c6fd104/gui_ping_wheel.lua",
+                }],
+            },
+            "windows": {
+                "all": { "30d": stats(1, 120, 100, 1.0), "all": stats(1, 400, 320, 1.0) },
+                "pve": { "30d": stats(1, 90, 80, 1.0) },
+            },
         })
     }
 
@@ -519,7 +590,8 @@ mod tests {
             "name": "Flea Transport",
             "author": "[teh]Teddy",
             "description": "",
-            "windows": { "all": stats(2, 40, 30, 1.0) },
+            "install": { "kind": "none", "reason": "no known source" },
+            "windows": { "all": { "all": stats(2, 40, 30, 1.0) } },
         })
     }
 
@@ -532,7 +604,7 @@ mod tests {
         let usage = parse(document(serde_json::json!([ping_wheel()])));
         assert_eq!(usage.widgets.len(), 1);
         assert_eq!(usage.widgets[0].name, "Ping Wheel");
-        assert_eq!(usage.widgets[0].window("30d").unwrap().players, 120);
+        assert_eq!(usage.widgets[0].window("all", "30d").unwrap().players, 120);
     }
 
     #[test]
@@ -541,9 +613,9 @@ mod tests {
         second["key"] = "widget:gui_other".into();
         second["id"] = "gui_other".into();
         second["name"] = "Other".into();
-        second["windows"]["30d"] = stats(2, 90, 80, 1.0);
+        second["windows"]["all"]["30d"] = stats(2, 90, 80, 1.0);
         let usage = parse(document(serde_json::json!([second, ping_wheel()])));
-        let ranked = usage.ranked("30d");
+        let ranked = usage.ranked("all", "30d");
         assert_eq!(ranked[0].name, "Ping Wheel");
         assert_eq!(ranked[1].name, "Other");
     }
@@ -553,15 +625,15 @@ mod tests {
         // The k-anonymity floor is applied inside each window, so a missing row
         // means "withheld here", not "used by nobody".
         let usage = parse(document(serde_json::json!([unresolved()])));
-        assert!(usage.ranked("30d").is_empty());
-        assert_eq!(usage.ranked("all").len(), 1);
+        assert!(usage.ranked("all", "30d").is_empty());
+        assert_eq!(usage.ranked("all", "all").len(), 1);
     }
 
     #[test]
     fn a_widget_missing_the_wanted_window_falls_back_rather_than_blanking() {
         let usage = parse(document(serde_json::json!([unresolved()])));
         let (window, stats) = usage.widgets[0]
-            .window_or_fallback("7d")
+            .window_or_fallback("all", "7d")
             .expect("a fallback");
         assert_eq!(window, "all");
         assert_eq!(stats.players, 40);
@@ -571,7 +643,7 @@ mod tests {
     fn an_unknown_window_name_is_not_echoed_back() {
         let usage = parse(document(serde_json::json!([ping_wheel()])));
         let (window, _) = usage.widgets[0]
-            .window_or_fallback("since_tuesday")
+            .window_or_fallback("all", "since_tuesday")
             .expect("a fallback");
         assert!(WINDOWS.contains(&window));
     }
@@ -579,7 +651,7 @@ mod tests {
     #[test]
     fn retention_separates_kept_from_switched_off() {
         let usage = parse(document(serde_json::json!([ping_wheel()])));
-        let stats = usage.widgets[0].window("30d").unwrap();
+        let stats = usage.widgets[0].window("all", "30d").unwrap();
         assert_eq!(stats.players_disabled_only(), 20);
         assert!((stats.retention - 100.0 / 120.0).abs() < 1e-9);
     }
@@ -589,10 +661,20 @@ mod tests {
         // A year window holding a fortnight is honest data, but presenting it
         // as a year would invite conclusions it cannot carry.
         let mut widget = ping_wheel();
-        widget["windows"]["365d"] = stats(1, 400, 300, 0.04);
+        widget["windows"]["all"]["365d"] = stats(1, 400, 300, 0.04);
         let usage = parse(document(serde_json::json!([widget])));
-        assert!(!usage.widgets[0].window("365d").unwrap().is_representative());
-        assert!(usage.widgets[0].window("30d").unwrap().is_representative());
+        assert!(
+            !usage.widgets[0]
+                .window("all", "365d")
+                .unwrap()
+                .is_representative()
+        );
+        assert!(
+            usage.widgets[0]
+                .window("all", "30d")
+                .unwrap()
+                .is_representative()
+        );
     }
 
     #[test]

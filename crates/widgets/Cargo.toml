@@ -7,6 +7,11 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+# A download is checked with base64 MD5 -- `VFS.CalculateHash(data, 0)` -- which
+# is the value the game itself broadcasts, so a widget that verifies is the one
+# those players were measured running.
+base64 = { workspace = true }
+md-5 = { workspace = true }
 # The cached document is gzipped: it is JSON published for a browser, and it
 # compresses to about a seventh of itself.
 flate2 = { workspace = true }
@@ -14,8 +19,13 @@ reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+tokio = { workspace = true }
 tracing = { workspace = true }
 ts-rs = { workspace = true }
+# The Widget Hub publishes a widget as a zip; every other source is single
+# files. Deflate only, reusing the flate2 above rather than adding a second
+# compressor.
+zip = { workspace = true }
 
 [dev-dependencies]
 content = { workspace = true }

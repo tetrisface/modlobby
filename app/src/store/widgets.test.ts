@@ -2,12 +2,17 @@ import { invoke } from '@tauri-apps/api/core'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { WidgetUsage } from '../ipc/bindings/WidgetUsage'
 import type { WindowStats } from '../ipc/bindings/WindowStats'
+import type { Install } from '../ipc/bindings/Install'
 import type { Usage } from '../ipc/bindings/Usage'
 import {
+  AUDIENCE_ORDER,
+  DEFAULT_AUDIENCE,
   WINDOW_ORDER,
   disabledOnly,
   isRepresentative,
+  matches,
   statsFor,
+  unavailableBecause,
 } from './widgets'
 
 vi.mock('@tauri-apps/api/core', async () => ({ invoke: vi.fn() }))
@@ -28,7 +33,11 @@ function stats(over: Partial<WindowStats> = {}): WindowStats {
   }
 }
 
-function widget(windows: Record<string, WindowStats>): WidgetUsage {
+/** Windows under the combined audience, which is what most tests mean. */
+function widget(
+  windows: Record<string, WindowStats>,
+  over: Partial<WidgetUsage> = {},
+): WidgetUsage {
   return {
     key: 'widget:gui_ping_wheel',
     resolved: true,
@@ -36,13 +45,51 @@ function widget(windows: Record<string, WindowStats>): WidgetUsage {
     name: 'Ping Wheel',
     author: 'Errrrrrr',
     description: '',
-    windows,
+    windows: { all: windows },
+    install: withheld(),
+    ...over,
+  }
+}
+
+function withheld(): Install {
+  return {
+    kind: 'none',
+    url: '',
+    archive: false,
+    page: '',
+    license: '',
+    permissive: false,
+    reason: 'no known source',
+    files: [],
+  }
+}
+
+function downloadable(): Install {
+  return {
+    kind: 'github',
+    url: 'https://raw.githubusercontent.com/o/r/c6fd104/gui.lua',
+    archive: false,
+    page: 'https://github.com/o/r',
+    license: 'MIT',
+    permissive: true,
+    reason: '',
+    files: [
+      {
+        path: 'gui.lua',
+        content_hash: 'aGFzaA==',
+        url: 'https://raw.githubusercontent.com/o/r/c6fd104/gui.lua',
+      },
+    ],
   }
 }
 
 describe('widget usage store', () => {
   test('the wanted window is used when present', () => {
-    const found = statsFor(widget({ '30d': stats({ players: 42 }) }), '30d')
+    const found = statsFor(
+      widget({ '30d': stats({ players: 42 }) }),
+      'all',
+      '30d',
+    )
     expect(found?.window).toBe('30d')
     expect(found?.stats.players).toBe(42)
   })
@@ -53,6 +100,7 @@ describe('widget usage store', () => {
     // read as "unused" rather than "withheld here".
     const found = statsFor(
       widget({ '90d': stats(), all: stats({ players: 9 }) }),
+      'all',
       '7d',
     )
     expect(found?.window).toBe('all')
@@ -64,11 +112,11 @@ describe('widget usage store', () => {
       all: stats({ players: 1 }),
       '7d': stats({ players: 2 }),
     })
-    expect(statsFor(insertedNarrowLast, '365d')?.window).toBe('all')
+    expect(statsFor(insertedNarrowLast, 'all', '365d')?.window).toBe('all')
   })
 
   test('a widget with no windows at all has nothing to show', () => {
-    expect(statsFor(widget({}), '30d')).toBeNull()
+    expect(statsFor(widget({}), 'all', '30d')).toBeNull()
   })
 
   test('a partly harvested window is not presented as representative', () => {
@@ -84,12 +132,57 @@ describe('widget usage store', () => {
   test('the window order matches what the pipeline publishes', () => {
     expect([...WINDOW_ORDER]).toEqual(['7d', '30d', '90d', '365d', 'all'])
   })
+
+  test('the audience order matches the battles filter', () => {
+    expect([...AUDIENCE_ORDER]).toEqual(['all', 'pve', 'pvp'])
+    expect(DEFAULT_AUDIENCE).toBe('all')
+  })
+
+  test('an audience the document withheld falls back to the combined view', () => {
+    // The split is absent while the pipeline re-reads history under new rules.
+    // Blanking every row would read as "nobody plays PvE".
+    const found = statsFor(
+      widget({ '30d': stats({ players: 7 }) }),
+      'pve',
+      '30d',
+    )
+    expect(found?.stats.players).toBe(7)
+  })
+
+  test('search matches any field and any order of words', () => {
+    const found = widget({ all: stats() })
+    expect(matches(found, 'ping errrr')).toBe(true)
+    expect(matches(found, 'errrrrrr wheel')).toBe(true)
+    expect(matches(found, '')).toBe(true)
+    expect(matches(found, 'raptor')).toBe(false)
+  })
+
+  test('search does not match on keys the reader never sees', () => {
+    // `widget:gui_ping_wheel` is ours, not theirs.
+    expect(matches(widget({ all: stats() }), 'gui_ping_wheel')).toBe(false)
+  })
+
+  test('a widget with no download always says why', () => {
+    expect(unavailableBecause(withheld())).toBe('no known source')
+    expect(
+      unavailableBecause({
+        ...withheld(),
+        kind: 'github',
+        reason: 'licence does not grant redistribution',
+      }),
+    ).toBe('licence does not grant redistribution')
+  })
+
+  test('a widget with a download has nothing to explain', () => {
+    expect(unavailableBecause(downloadable())).toBeNull()
+  })
 })
 
 function published(over: Partial<Usage> = {}): Usage {
   return {
     generated_at: '2026-09-16T04:00:00+00:00',
-    policy_version: 'pve_widget_harvest_v1',
+    policy_version: 'pve_widget_harvest_v2_prefix_262144_audience',
+    audiences: ['all'],
     windows: ['30d'],
     widgets: [widget({ '30d': stats() })],
     ...over,
