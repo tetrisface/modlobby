@@ -58,17 +58,31 @@ async fn game_running(app: &App) -> bool {
 }
 
 /// What modlobby has installed and what the game's config says.
+///
+/// The file scan covers every data directory the engine is given, not only
+/// modlobby's: a player's own widgets usually live in BAR's directory — often a
+/// symlink into a git checkout — and those are exactly the files a same-named
+/// published widget collides with.
 #[tauri::command]
 pub async fn widget_installed(app: State<'_, App>) -> Result<WidgetStatus> {
-    let write_dir = write_dir(&app)?;
+    let dirs = data_dirs(&app)?;
+    let write_dir = content::Library::new(dirs.clone()).write_dir().to_owned();
     let configured = read_config(&write_dir)
         .and_then(|config| config.states().ok())
+        .unwrap_or_default();
+    let scanned: Vec<(PathBuf, bool)> = std::iter::once((dirs.write.clone(), true))
+        .chain(dirs.read.iter().map(|dir| (dir.clone(), false)))
+        .collect();
+    // Reading a few dozen widget files is disk work, kept off the async runtime.
+    let local = tokio::task::spawn_blocking(move || widgets::local::scan(&scanned))
+        .await
         .unwrap_or_default();
     Ok(WidgetStatus {
         installed: Ledger::read(&write_dir).widgets.into_values().collect(),
         configured,
         locked: game_running(&app).await,
         write_dir: write_dir.display().to_string(),
+        local,
     })
 }
 

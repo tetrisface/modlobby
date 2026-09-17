@@ -47,6 +47,7 @@ function widget(
     description: '',
     windows: { all: windows },
     install: withheld(),
+    image: '',
     ...over,
   }
 }

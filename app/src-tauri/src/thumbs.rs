@@ -3,7 +3,13 @@
 //! `thumb://localhost/full/<spring name>`, the picture as published, for a
 //! box to show while its size is cut; and
 //! `thumb://localhost/news/<width>x<height>/<guid>`, the banner a news item
-//! published, which the webview cannot fetch itself.
+//! published, which the webview cannot fetch itself; and
+//! `thumb://localhost/widget/<width>x<height>/<usage key>`, a widget's picture
+//! from the usage document.
+//!
+//! A widget's small tile and its enlarged view are two sizes cut from one
+//! download: the published picture is fetched once and kept, so opening the
+//! larger one costs a resize and no request.
 //!
 //! A URI scheme rather than a command, so the picture stays an `<img src>`:
 //! the webview loads it when the row scrolls into view, keeps it, and reports
@@ -31,6 +37,8 @@ enum Source {
     Map,
     /// A news item, by the permalink that identifies it.
     News,
+    /// A widget, by its key in the usage document.
+    Widget,
 }
 
 /// The handler Tauri calls per request; the work is on the async runtime so
@@ -59,6 +67,11 @@ async fn respond<R: Runtime>(app: &tauri::AppHandle<R>, path: &str) -> Response<
             .into_iter()
             .find(|item| item.id == key)
             .and_then(|item| item.image),
+        Source::Widget => state
+            .widget_usage()
+            .await
+            .and_then(|usage| usage.find(&key).map(|widget| widget.image.clone()))
+            .filter(|image| !image.is_empty()),
     };
     let Some(url) = url else {
         return status(StatusCode::NOT_FOUND);
@@ -112,10 +125,15 @@ fn parse(path: &str) -> Option<(Source, Option<Tile>, String)> {
         .decode_utf8()
         .ok()?;
     let (head, rest) = decoded.split_once('/')?;
-    if head == "news" {
+    if head == "news" || head == "widget" {
         let (size, id) = rest.split_once('/')?;
         let tile = tile(size)?;
-        return (!id.is_empty()).then(|| (Source::News, Some(tile), id.to_owned()));
+        let source = if head == "news" {
+            Source::News
+        } else {
+            Source::Widget
+        };
+        return (!id.is_empty()).then(|| (source, Some(tile), id.to_owned()));
     }
     let tile = match head {
         "full" => None,
@@ -172,6 +190,21 @@ mod tests {
         assert_eq!((tile.width, tile.height), (320, 180));
         // The whole permalink, slashes and all: it is the id, not a path.
         assert_eq!(id, "https://www.beyondallreason.info/news/the-lore");
+    }
+
+    #[test]
+    fn a_widget_path_names_a_tile_and_the_usage_key() {
+        let (source, tile, key) = parse("/widget/96x60/widget%3Agui_fire").unwrap();
+        assert_eq!(source, Source::Widget);
+        assert_eq!(tile, Tile::new(96, 60));
+        assert_eq!(key, "widget:gui_fire");
+    }
+
+    #[test]
+    fn a_widget_path_without_a_size_is_refused() {
+        // No "full" form: a widget picture is only ever served cut to a box,
+        // so a caller cannot ask the lobby to relay an original of any size.
+        assert!(parse("/widget/full/widget:gui_fire").is_none());
     }
 
     #[test]

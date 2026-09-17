@@ -1,6 +1,7 @@
 import { createSignal } from 'solid-js'
 import { api } from '../ipc/client'
 import type { Install } from '../ipc/bindings/Install'
+import type { LocalWidget } from '../ipc/bindings/LocalWidget'
 import type { Usage } from '../ipc/bindings/Usage'
 import type { WidgetState } from '../ipc/bindings/WidgetState'
 import type { WidgetStatus } from '../ipc/bindings/WidgetStatus'
@@ -224,7 +225,9 @@ export function actionsFor(widget: WidgetUsage): Action[] {
   if (!entry && widget.install.url) actions.push('install')
   if (entry && isOutdated(widget)) actions.push('update')
   if (configured && isEnabled(configured)) actions.push('disable')
-  if (configured && !isEnabled(configured)) actions.push('enable')
+  // A widget BAR has never loaded has no config entry and starts switched off,
+  // so something just installed has to be offered Enable without one.
+  else if (configured || isInstalled(widget)) actions.push('enable')
   if (entry) actions.push('delete')
   return actions
 }
@@ -234,4 +237,142 @@ export function unavailableBecause(install: Install): string | null {
   if (install.url && install.files.length > 0) return null
   if (install.reason) return install.reason
   return install.kind === 'none' ? 'no known source' : 'no download available'
+}
+
+/**
+ * A widget file on disk that answers to this row's name.
+ *
+ * BAR's config knows widgets by name alone, so a player's homebrewed "Dont
+ * Stand in Fire" and the published one are the same entry to it. The files are
+ * not: each is hashed the way the game hashes it, so a file either *is* one of
+ * this widget's published revisions or merely shares the name.
+ */
+export interface LocalMatch {
+  file: LocalWidget
+  /** Byte-for-byte a revision this row publishes. */
+  exact: boolean
+}
+
+/** Every file on disk declaring this widget's name, exact revisions first. */
+export function localFor(widget: WidgetUsage): LocalMatch[] {
+  const published = new Set(
+    widget.install.files.map((file) => file.content_hash).filter(Boolean),
+  )
+  return (status()?.local ?? [])
+    .filter((file) => file.name === widget.name)
+    .map((file) => ({
+      file,
+      exact: published.has(file.hash) || published.has(file.hash_text),
+    }))
+    .sort((a, b) => Number(b.exact) - Number(a.exact))
+}
+
+/**
+ * Whether a widget is on this machine, by file or by modlobby's own record.
+ *
+ * Not by BAR's config: it keeps entries for widgets long since deleted, so a
+ * name there says the game once saw it, not that it is here now.
+ */
+export function isInstalled(widget: WidgetUsage): boolean {
+  return installedEntry(widget) !== null || localFor(widget).length > 0
+}
+
+/** Where a file sits, in words a player recognises. */
+export function locationOf(file: LocalWidget): string {
+  return file.writable ? "modlobby's folder" : "BAR's folder"
+}
+
+/** What a header sorts by. */
+export type SortKey =
+  | 'rank'
+  | 'name'
+  | 'players'
+  | 'retention'
+  | 'off'
+  | 'replays'
+  | 'sightings'
+  | 'window'
+  | 'source'
+  | 'status'
+
+/** Which way a header starts when first clicked: most first for numbers, A to Z for text. */
+export const SORT_STARTS_DESCENDING: Record<SortKey, boolean> = {
+  rank: false,
+  name: false,
+  players: true,
+  retention: true,
+  off: true,
+  replays: true,
+  sightings: true,
+  window: true,
+  source: false,
+  status: true,
+}
+
+/**
+ * Where a widget stands on this machine, as a number to sort by.
+ *
+ * Installed and on, then installed and off, then installable, then the rest --
+ * the order a player managing their widgets reads down.
+ */
+function standing(widget: WidgetUsage): number {
+  const configured = configuredState(widget)
+  if (isInstalled(widget)) {
+    return configured && !isEnabled(configured) ? 2 : 3
+  }
+  return widget.install.url ? 1 : 0
+}
+
+/**
+ * Widgets in the order a header asks for.
+ *
+ * Ties fall back to rank, so a column of equal values still reads as the
+ * popularity list it came from rather than in document order.
+ */
+export function sortWidgets(
+  widgets: WidgetUsage[],
+  key: SortKey,
+  descending: boolean,
+  audience: string,
+  window: string,
+): WidgetUsage[] {
+  const stats = (widget: WidgetUsage) =>
+    statsFor(widget, audience, window)?.stats
+  const value = (widget: WidgetUsage): number | string => {
+    const found = stats(widget)
+    switch (key) {
+      case 'rank':
+        return found?.rank ?? Number.MAX_SAFE_INTEGER
+      case 'name':
+        return widget.name.toLowerCase()
+      case 'players':
+        return found?.players ?? -1
+      case 'retention':
+        return found?.retention ?? -1
+      case 'off':
+        return found ? disabledOnly(found) : -1
+      case 'replays':
+        return found?.replays ?? -1
+      case 'sightings':
+        return found?.sightings ?? -1
+      case 'window':
+        return found?.coverage ?? -1
+      case 'source':
+        return widget.install.kind
+      case 'status':
+        return standing(widget)
+    }
+  }
+  const rank = (widget: WidgetUsage) =>
+    stats(widget)?.rank ?? Number.MAX_SAFE_INTEGER
+  return [...widgets].sort((a, b) => {
+    const left = value(a)
+    const right = value(b)
+    const order =
+      typeof left === 'string' && typeof right === 'string'
+        ? left.localeCompare(right)
+        : (left as number) - (right as number)
+    if (order !== 0) return descending ? -order : order
+    return rank(a) - rank(b)
+  })
 }

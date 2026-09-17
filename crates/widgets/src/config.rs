@@ -137,23 +137,42 @@ impl WidgetConfig {
         self.set_order(name, DISABLED)
     }
 
-    /// Switch a widget back on.
+    /// Switch a widget on, adding its entry if BAR has never recorded one.
     ///
     /// Restored to the end of the load order rather than to wherever it used to
     /// sit: `0` erased that, and inventing a position it never had would reorder
     /// somebody else's widgets to hide the fact.
+    ///
+    /// **A freshly installed widget has no entry, and is off.** `barwidgets.lua`
+    /// only gives a default order to widgets loaded from the game archive; a
+    /// user widget with no `order` entry is recorded as `0` the first time it
+    /// loads. So "Enable" on something just installed has to write the entry
+    /// itself, or the player installs a widget and then finds it doing nothing.
     pub fn enable(&mut self, name: &str) -> Result<bool, ConfigError> {
-        if self.order_of(name).is_some_and(|order| order != DISABLED) {
+        let order = self.entries("order")?;
+        if order.get(name).is_some_and(|order| *order != DISABLED) {
             return Ok(false);
         }
-        let next = self
-            .entries("order")?
-            .values()
-            .copied()
-            .max()
-            .unwrap_or(0)
-            .saturating_add(1);
-        self.set_order(name, next)
+        let next = order.values().copied().max().unwrap_or(0).saturating_add(1);
+        if order.contains_key(name) {
+            return self.set_order(name, next);
+        }
+        self.insert_order(name, next)?;
+        Ok(true)
+    }
+
+    /// Add a new `order` entry at the end of the table.
+    fn insert_order(&mut self, name: &str, value: i64) -> Result<(), ConfigError> {
+        let span = self.table("order")?;
+        let body = &self.text[span.start..span.end];
+        // Placed before the closing brace's own line, indented like its
+        // neighbours, so the file reads as if BAR had written it.
+        let close_line = body
+            .rfind('\n')
+            .map_or(span.start, |at| span.start + at + 1);
+        let entry = format!("\t\t[{}] = {value},\n", quote(name));
+        self.text.insert_str(close_line, &entry);
+        Ok(())
     }
 
     /// Remove a widget from the config entirely: order *and* settings.
@@ -230,6 +249,12 @@ impl WidgetConfig {
         let end = match_brace(&self.text, start).ok_or(ConfigError::Unbalanced(name))?;
         Ok(Span { start, end })
     }
+}
+
+/// A Lua string literal for a table key, escaped.
+fn quote(name: &str) -> String {
+    let escaped = name.replace('\\', "\\\\").replace('"', "\\\"");
+    format!("\"{escaped}\"")
 }
 
 /// What a delete actually took out.

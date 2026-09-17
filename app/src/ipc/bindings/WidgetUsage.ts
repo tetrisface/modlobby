@@ -33,4 +33,11 @@ windows: { [key in string]: { [key in string]: WindowStats } },
  * with no known source still says so, which is more use than a dead
  * button.
  */
-install: Install, };
+install: Install, 
+/**
+ * A picture of the widget, empty when none is known. Hub covers and
+ * repository pictures are their own hosts' URLs; Discord screenshots are
+ * served by pve.bar, for widgets whose licence lets it. Never fetched by
+ * the webview directly — see `thumbs.rs`.
+ */
+image: string, };

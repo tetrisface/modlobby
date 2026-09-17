@@ -1,24 +1,39 @@
-import { For, Show, createMemo, createResource, createSignal } from 'solid-js'
+import {
+  For,
+  Show,
+  createMemo,
+  createResource,
+  createSignal,
+  onCleanup,
+  onMount,
+} from 'solid-js'
 import { api } from '../ipc/client'
 import type { WidgetUsage } from '../ipc/bindings/WidgetUsage'
 import type { WindowStats } from '../ipc/bindings/WindowStats'
+import { devicePixels, thumbSrc } from '../lib/thumb'
 import {
   type Action,
   type Audience,
   AUDIENCE_ORDER,
   DEFAULT_AUDIENCE,
   DEFAULT_WINDOW,
+  SORT_STARTS_DESCENDING,
+  type SortKey,
   WINDOW_ORDER,
   actionsFor,
   audiences,
   configuredState,
   disabledOnly,
   isEnabled,
+  isInstalled,
   isRepresentative,
   loadWidgetUsage,
+  localFor,
+  locationOf,
   matches,
   ranked,
   refreshInstalled,
+  sortWidgets,
   statsFor,
   status,
   unavailableBecause,
@@ -27,7 +42,7 @@ import {
 } from '../store/widgets'
 
 /**
- * What BAR players actually run, ranked — and manageable.
+ * What BAR players actually run, and what is on this machine — in one list.
  *
  * BAR's own Widget Hub says what is offered; this says what is used. The
  * numbers are pve.bar's weekly projection over public replays, counted in
@@ -35,13 +50,13 @@ import {
  * evening does not read as a crowd. Nobody is named, here or upstream.
  *
  * **A row, not a card.** Every field the card carried is still here; a table
- * simply fits four times as many widgets on a screen, and comparing two
- * widgets' retention is what the list is for.
+ * fits four times as many widgets on a screen, and every column sorts, because
+ * "which of these do people keep switched on" is a question about a column.
  *
- * **Half of these cannot be installed, and the row says so.** Roughly half the
- * published widgets have no traceable source, and of the rest not all may be
- * redistributed. Those keep their numbers and, where there is one, a link. A
- * button that does nothing would be worse than no button.
+ * **Your files, not just BAR's config.** BAR knows a widget by its name alone,
+ * so a homebrewed copy and the published one look identical to it. Each row
+ * says which file on disk answers to its name and whether that file *is* the
+ * published revision, byte for byte, or only shares the name.
  */
 
 /** What each window is called, rather than what it is keyed by. */
@@ -69,6 +84,32 @@ const ACTION_LABEL: Record<Action, string> = {
   enable: 'Enable',
   delete: 'Delete',
 }
+
+/** The tile in a row, in CSS pixels. 16:10, the hub's own cover shape. */
+const TILE = { width: 64, height: 40 }
+/**
+ * The enlarged picture: about four rows tall. Cut from the same download as
+ * the tile, so opening it costs a local resize and no request.
+ */
+const PREVIEW = { width: 480, height: 300 }
+
+/** Headers in column order. Every one sorts. */
+const COLUMNS: ReadonlyArray<{
+  key: SortKey
+  label: string
+  numeric?: boolean
+}> = [
+  { key: 'rank', label: '#', numeric: true },
+  { key: 'name', label: 'Widget' },
+  { key: 'players', label: 'Players', numeric: true },
+  { key: 'retention', label: 'Kept on', numeric: true },
+  { key: 'off', label: 'Off', numeric: true },
+  { key: 'replays', label: 'Replays', numeric: true },
+  { key: 'sightings', label: 'Sightings', numeric: true },
+  { key: 'window', label: 'Window' },
+  { key: 'source', label: 'Source' },
+  { key: 'status', label: 'Actions' },
+]
 
 export function Widgets() {
   const [fetched] = createResource(async () => {
@@ -101,26 +142,47 @@ export function Widgets() {
   })
 
   /**
-   * The audiences this document carries.
-   *
-   * Only shown when there is a choice: while the pipeline is re-reading history
-   * under new decoding rules it publishes the combined view alone, and a lone
-   * "All" button is a control that does nothing.
+   * PvE and PvP are offered only when the document carries the split. The
+   * pipeline withholds it while it is still re-reading history under new
+   * rules, and a button that changes nothing is worse than no button.
    */
   const splits = createMemo<Audience[]>(() =>
     AUDIENCE_ORDER.filter((name) => audiences().includes(name)),
   )
   const [audience, setAudience] = createSignal<Audience>(DEFAULT_AUDIENCE)
-  const shownAudience = createMemo<Audience>(() => {
-    const there = splits()
-    const chosen = audience()
-    return there.includes(chosen) ? chosen : DEFAULT_AUDIENCE
-  })
+  const shownAudience = createMemo<Audience>(() =>
+    splits().includes(audience()) ? audience() : DEFAULT_AUDIENCE,
+  )
 
   const [query, setQuery] = createSignal('')
+  const [installedOnly, setInstalledOnly] = createSignal(false)
+  const [sort, setSort] = createSignal<SortKey>('rank')
+  const [descending, setDescending] = createSignal(false)
+
+  /** Clicking the header already sorted by flips it, as any table does. */
+  const sortBy = (key: SortKey) => {
+    if (sort() === key) {
+      setDescending(!descending())
+      return
+    }
+    setSort(key)
+    setDescending(SORT_STARTS_DESCENDING[key])
+  }
+
+  const inWindow = createMemo(() => ranked(shownAudience(), shown()))
+  const installedCount = createMemo(
+    () => inWindow().filter((widget) => isInstalled(widget)).length,
+  )
   const listed = createMemo(() =>
-    ranked(shownAudience(), shown()).filter((widget) =>
-      matches(widget, query()),
+    sortWidgets(
+      inWindow().filter(
+        (widget) =>
+          matches(widget, query()) && (!installedOnly() || isInstalled(widget)),
+      ),
+      sort(),
+      descending(),
+      shownAudience(),
+      shown(),
     ),
   )
 
@@ -134,6 +196,15 @@ export function Widgets() {
 
   const [busy, setBusy] = createSignal<string | null>(null)
   const [note, setNote] = createSignal<string | null>(null)
+  const [enlarged, setEnlarged] = createSignal<string | null>(null)
+
+  onMount(() => {
+    const close = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setEnlarged(null)
+    }
+    window.addEventListener('keydown', close)
+    onCleanup(() => window.removeEventListener('keydown', close))
+  })
 
   /**
    * Run one action, then ask the disk what actually happened.
@@ -147,7 +218,9 @@ export function Widgets() {
     try {
       if (action === 'install' || action === 'update') {
         await api.widgetInstall(widget.key, widget.name, widget.install)
-        setNote(`${widget.name} installed to modlobby's own widget folder.`)
+        setNote(
+          `${widget.name} installed to modlobby's widget folder. BAR starts a new widget switched off — use Enable to turn it on.`,
+        )
       } else if (action === 'disable') {
         await api.widgetDisable(widget.name)
       } else if (action === 'enable') {
@@ -156,7 +229,7 @@ export function Widgets() {
         const deleted = await api.widgetDelete(widget.key)
         setNote(
           deleted.residue.length > 0
-            ? `${widget.name} removed. Left alone, because nothing records which widget wrote them: ${deleted.residue.join(', ')}.`
+            ? `${widget.name} removed. Left alone, because nothing records which widget wrote them: ${deleted.residue.join('; ')}.`
             : `${widget.name} removed, settings included.`,
         )
       }
@@ -172,89 +245,130 @@ export function Widgets() {
     <section class='widgets'>
       <h1>Widgets</h1>
 
-      <div class='widget-controls'>
+      <header class='toolbar widget-toolbar'>
         <input
           type='search'
-          class='widget-search'
+          class='search'
           placeholder='Search name, author or description'
           value={query()}
           onInput={(event) => setQuery(event.currentTarget.value)}
         />
+
+        <div class='filter-group' role='group' aria-label='Show'>
+          <Choice
+            label='All'
+            on={!installedOnly()}
+            onClick={() => setInstalledOnly(false)}
+          />
+          <Choice
+            label='Installed'
+            on={installedOnly()}
+            onClick={() => setInstalledOnly(true)}
+          />
+        </div>
+
         <Show when={splits().length > 1}>
-          <div class='tabs'>
+          <div class='filter-group' role='group' aria-label='Mode'>
             <For each={splits()}>
               {(name) => (
-                <button
-                  type='button'
-                  class='tab'
-                  classList={{ on: shownAudience() === name }}
+                <Choice
+                  label={AUDIENCE_LABEL[name] ?? name}
+                  on={shownAudience() === name}
                   onClick={() => setAudience(name)}
-                >
-                  {AUDIENCE_LABEL[name] ?? name}
-                </button>
+                />
               )}
             </For>
           </div>
         </Show>
+
         <Show when={offered().length > 0}>
-          <div class='tabs'>
+          <div class='filter-group' role='group' aria-label='Window'>
             <For each={offered()}>
               {(name) => (
-                <button
-                  type='button'
-                  class='tab'
-                  classList={{ on: shown() === name }}
+                <Choice
+                  label={label(name)}
+                  on={shown() === name}
                   onClick={() => setPicked(name)}
-                >
-                  {label(name)}
-                </button>
+                />
               )}
             </For>
           </div>
         </Show>
-      </div>
+
+        <span class='spacer' />
+        <Show when={usage()}>
+          <span class='muted count'>
+            {listed().length} widgets · {installedCount()} installed
+          </span>
+        </Show>
+      </header>
 
       <Show when={note()}>{(said) => <p class='widget-note'>{said()}</p>}</Show>
 
       <Show
         when={listed().length > 0}
-        fallback={<Empty loading={fetched.loading} searching={!!query()} />}
+        fallback={
+          <Empty
+            loading={fetched.loading && !usage()}
+            searching={!!query()}
+            installedOnly={installedOnly()}
+          />
+        }
       >
         <p class='widgets-about'>
           What players actually run, from pve.bar's weekly read of public
           replays. Counted in distinct players
           <Show when={built()}>{(day) => <>, built {day()}</>}</Show>. A widget
-          too few people run to be counted anonymously is left out.
-          <Show when={status()?.writeDir}>
-            {' '}
-            Installs go to modlobby's own widget folder, so they apply to games
-            launched from here and not to Chobby's.
-          </Show>
+          too few people run to be counted anonymously is left out. Installs go
+          to modlobby's own widget folder, so they apply to games launched from
+          here and not to Chobby's.
         </p>
         <table class='widget-table'>
           <thead>
             <tr>
-              <th class='num'>#</th>
-              <th>Widget</th>
-              <th class='num'>Players</th>
-              <th class='num'>Kept on</th>
-              <th class='num'>Off</th>
-              <th class='num'>Replays</th>
-              <th class='num'>Sightings</th>
-              <th>Window</th>
-              <th>Source</th>
-              <th class='widget-actions-head'>Actions</th>
+              <For each={COLUMNS}>
+                {(column) => (
+                  <th
+                    classList={{ num: !!column.numeric }}
+                    aria-sort={
+                      sort() === column.key
+                        ? descending()
+                          ? 'descending'
+                          : 'ascending'
+                        : 'none'
+                    }
+                  >
+                    <button
+                      type='button'
+                      class='sort-head'
+                      onClick={() => sortBy(column.key)}
+                    >
+                      {column.label}
+                      <span class='sort-mark' aria-hidden='true'>
+                        {sort() === column.key
+                          ? descending()
+                            ? '↓'
+                            : '↑'
+                          : ''}
+                      </span>
+                    </button>
+                  </th>
+                )}
+              </For>
             </tr>
           </thead>
           <tbody>
             <For each={listed()}>
-              {(widget, at) => (
+              {(widget) => (
                 <Row
                   widget={widget}
                   audience={shownAudience()}
                   window={shown()}
-                  place={at() + 1}
                   busy={busy()}
+                  enlarged={enlarged() === widget.key}
+                  onEnlarge={() =>
+                    setEnlarged(enlarged() === widget.key ? null : widget.key)
+                  }
                   onAct={act}
                 />
               )}
@@ -266,16 +380,43 @@ export function Widgets() {
   )
 }
 
-function Empty(props: { loading: boolean; searching: boolean }) {
+function Choice(props: { label: string; on: boolean; onClick: () => void }) {
+  return (
+    <button
+      type='button'
+      class='chip-choice'
+      classList={{ on: props.on }}
+      aria-pressed={props.on}
+      onClick={props.onClick}
+    >
+      {props.label}
+    </button>
+  )
+}
+
+function Empty(props: {
+  loading: boolean
+  searching: boolean
+  installedOnly: boolean
+}) {
   return (
     <p class='muted'>
       <Show when={!props.loading} fallback='Fetching what people run…'>
         <Show
-          when={!props.searching}
-          fallback='No widget matches that search in this window.'
+          when={props.searching || props.installedOnly}
+          fallback={
+            <>
+              Widget usage could not be fetched. It comes from pve.bar, so this
+              is what an offline launch looks like too.
+            </>
+          }
         >
-          Widget usage could not be fetched. It comes from pve.bar, so this is
-          what an offline launch looks like too.
+          <Show
+            when={props.installedOnly}
+            fallback='No widget matches that search in this window.'
+          >
+            None of the widgets in this window are installed here.
+          </Show>
         </Show>
       </Show>
     </p>
@@ -283,21 +424,16 @@ function Empty(props: { loading: boolean; searching: boolean }) {
 }
 
 /**
- * One widget: who made it, what it is, how it did, and what can be done to it.
- *
- * The stats are read through the store's accessor rather than off the widget,
- * but its fallback never fires here: a widget is on this list because the
- * window carries a row for it. One that the window withheld is simply not
- * listed — the anonymity floor is applied inside each window, and a widget
- * with six players this year and two this week is absent from the week rather
- * than shown with a two.
+ * One widget: its picture, who made it, how it did, what is on this machine,
+ * and what can be done about it.
  */
 function Row(props: {
   widget: WidgetUsage
   audience: string
   window: string
-  place: number
   busy: string | null
+  enlarged: boolean
+  onEnlarge: () => void
   onAct: (widget: WidgetUsage, action: Action) => void
 }) {
   const found = () => statsFor(props.widget, props.audience, props.window)
@@ -307,16 +443,26 @@ function Row(props: {
 
   return (
     <tr classList={{ off: !!configured() && !isEnabled(configured()!) }}>
-      <td class='num'>{props.place}</td>
+      <td class='num'>{stats()?.rank ?? '—'}</td>
       <td class='widget-name'>
-        <strong>{props.widget.name}</strong>
-        <Show when={props.widget.author}>
-          <span class='widget-by'> by {props.widget.author}</span>
-        </Show>
-        <Show when={props.widget.description}>
-          <p class='widget-about'>{props.widget.description}</p>
-        </Show>
-        <Marks widget={props.widget} stats={stats()} />
+        <div class='widget-identity'>
+          <Thumb
+            widget={props.widget}
+            enlarged={props.enlarged}
+            onEnlarge={props.onEnlarge}
+          />
+          <div class='widget-text'>
+            <strong>{props.widget.name}</strong>
+            <Show when={props.widget.author}>
+              <span class='widget-by'> by {props.widget.author}</span>
+            </Show>
+            <Show when={props.widget.description}>
+              <p class='widget-about'>{props.widget.description}</p>
+            </Show>
+            <Marks widget={props.widget} stats={stats()} />
+            <OnThisMachine widget={props.widget} />
+          </div>
+        </div>
       </td>
       <td class='num'>{stats()?.players.toLocaleString() ?? '—'}</td>
       {/* Install-and-keep. A widget people install and then switch off scores
@@ -347,6 +493,113 @@ function Row(props: {
         <Actions widget={props.widget} busy={props.busy} onAct={props.onAct} />
       </td>
     </tr>
+  )
+}
+
+/**
+ * A widget's picture, which opens to about four rows tall.
+ *
+ * Both sizes are cut from one download — the picture is fetched once and kept
+ * — so opening it is a local resize. A widget with no picture, or one whose
+ * picture will not load, gets its initials instead of a broken image.
+ */
+function Thumb(props: {
+  widget: WidgetUsage
+  enlarged: boolean
+  onEnlarge: () => void
+}) {
+  const [failed, setFailed] = createSignal(false)
+  const src = (box: { width: number; height: number }) => {
+    const tile = devicePixels(box)
+    return thumbSrc(`widget/${tile.width}x${tile.height}/${props.widget.key}`)
+  }
+  const pictured = () => !!props.widget.image && !failed()
+
+  return (
+    <Show
+      when={pictured()}
+      fallback={
+        <span
+          class='widget-thumb placeholder'
+          style={{ '--hue': String(hue(props.widget.name)) }}
+          aria-hidden='true'
+        >
+          {initials(props.widget.name)}
+        </span>
+      }
+    >
+      <span class='widget-thumb-anchor'>
+        <button
+          type='button'
+          class='widget-thumb'
+          aria-label={`Show a larger picture of ${props.widget.name}`}
+          aria-expanded={props.enlarged}
+          onClick={props.onEnlarge}
+        >
+          <img
+            src={src(TILE)}
+            width={TILE.width}
+            height={TILE.height}
+            loading='lazy'
+            alt=''
+            onError={() => setFailed(true)}
+          />
+        </button>
+        <Show when={props.enlarged}>
+          <button
+            type='button'
+            class='widget-preview'
+            aria-label='Close the larger picture'
+            onClick={props.onEnlarge}
+          >
+            <img
+              src={src(PREVIEW)}
+              width={PREVIEW.width}
+              height={PREVIEW.height}
+              alt={props.widget.name}
+            />
+          </button>
+        </Show>
+      </span>
+    </Show>
+  )
+}
+
+/**
+ * Which file on disk answers to this widget's name, and whether it *is* it.
+ *
+ * The distinction BAR's config cannot make: a name there covers every file
+ * that declares it. Two such files means BAR loads one and rejects the other
+ * as a duplicate, which is worth saying before somebody wonders which one is
+ * running.
+ */
+function OnThisMachine(props: { widget: WidgetUsage }) {
+  const found = createMemo(() => localFor(props.widget))
+  return (
+    <Show when={found().length > 0}>
+      <ul class='widget-local'>
+        <For each={found()}>
+          {(match) => (
+            <li
+              classList={{ exact: match.exact }}
+              title={`${match.file.dir}/${match.file.file}`}
+            >
+              <span class='widget-local-kind'>
+                {match.exact ? 'This version' : 'Your own version'}
+              </span>{' '}
+              <code>{match.file.file.replace(/^LuaUI\/Widgets\//, '')}</code>{' '}
+              <span class='muted'>in {locationOf(match.file)}</span>
+            </li>
+          )}
+        </For>
+        <Show when={found().length > 1}>
+          <li class='muted'>
+            {found().length} files declare this name. BAR loads the first and
+            skips the rest as duplicates.
+          </li>
+        </Show>
+      </ul>
+    </Show>
   )
 }
 
@@ -438,6 +691,23 @@ function Marks(props: { widget: WidgetUsage; stats: WindowStats | undefined }) {
       </Show>
     </div>
   )
+}
+
+/** Up to two letters, from the words of a name. */
+export function initials(name: string): string {
+  const words = name.match(/[A-Za-z0-9]+/g) ?? []
+  const [first = '?', second] = words
+  const letters = second
+    ? `${first.charAt(0)}${second.charAt(0)}`
+    : first.slice(0, 2)
+  return letters.toUpperCase()
+}
+
+/** A stable hue per name, so a placeholder tile is recognisable next time. */
+export function hue(name: string): number {
+  let hash = 0
+  for (const char of name) hash = (hash * 31 + char.charCodeAt(0)) % 360
+  return hash
 }
 
 function message(err: unknown): string {

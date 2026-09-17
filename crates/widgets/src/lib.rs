@@ -51,6 +51,7 @@ use ts_rs::TS;
 
 pub mod config;
 pub mod install;
+pub mod local;
 pub mod manage;
 
 pub use install::{Install, InstallFile, InstallKind};
@@ -165,6 +166,12 @@ pub struct WidgetUsage {
     /// button.
     #[serde(default)]
     pub install: Install,
+    /// A picture of the widget, empty when none is known. Hub covers and
+    /// repository pictures are their own hosts' URLs; Discord screenshots are
+    /// served by pve.bar, for widgets whose licence lets it. Never fetched by
+    /// the webview directly — see `thumbs.rs`.
+    #[serde(default)]
+    pub image: String,
 }
 
 impl WidgetUsage {

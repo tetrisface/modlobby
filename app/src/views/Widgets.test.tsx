@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { Install } from '../ipc/bindings/Install'
 import type { InstalledWidget } from '../ipc/bindings/InstalledWidget'
+import type { LocalWidget } from '../ipc/bindings/LocalWidget'
 import type { Usage } from '../ipc/bindings/Usage'
 import type { WidgetStatus } from '../ipc/bindings/WidgetStatus'
 import type { WidgetUsage } from '../ipc/bindings/WidgetUsage'
@@ -45,6 +46,7 @@ function widget(over: Partial<WidgetUsage> = {}): WidgetUsage {
     description: 'A radial ping menu',
     windows: combined({ '30d': stats() }),
     install: noSource(),
+    image: '',
     ...over,
   }
 }
@@ -97,6 +99,7 @@ function installedStatus(over: Partial<WidgetStatus> = {}): WidgetStatus {
     configured: [],
     locked: false,
     writeDir: '/home/someone/.local/share/modlobby/data',
+    local: [],
     ...over,
   }
 }
@@ -280,7 +283,7 @@ describe('the widgets page', () => {
     expect(buttons(container)).toEqual(['Install'])
   })
 
-  test('an installed widget offers to remove it, not to install it again', async () => {
+  test('an installed widget offers to switch it on and to remove it, not to install it again', async () => {
     const entry: InstalledWidget = {
       key: 'widget:gui_ping_wheel',
       name: 'Ping Wheel',
@@ -298,7 +301,8 @@ describe('the widgets page', () => {
     const { container } = render(() => <Widgets />)
 
     await drawn(container)
-    expect(buttons(container)).toEqual(['Delete'])
+    // BAR starts a new user widget switched off, and has no entry for it yet.
+    expect(buttons(container)).toEqual(['Enable', 'Delete'])
   })
 
   test('an installed widget whose published files moved on offers an update', async () => {
@@ -319,7 +323,7 @@ describe('the widgets page', () => {
     const { container } = render(() => <Widgets />)
 
     await drawn(container)
-    expect(buttons(container)).toEqual(['Update', 'Delete'])
+    expect(buttons(container)).toEqual(['Update', 'Enable', 'Delete'])
   })
 
   test('a widget BAR knows about can be switched off from here', async () => {
@@ -445,10 +449,256 @@ describe('the widgets page', () => {
     const { container } = render(() => <Widgets />)
 
     await waitFor(() =>
-      expect(container.querySelector('.muted')?.textContent).toContain(
+      expect(container.querySelector('p.muted')?.textContent).toContain(
         'could not be fetched',
       ),
     )
     expect(rows(container).length).toBe(0)
+  })
+})
+
+function onDisk(over: Partial<LocalWidget> = {}): LocalWidget {
+  return {
+    name: 'Ping Wheel',
+    file: 'LuaUI/Widgets/gui_ping_wheel.lua',
+    dir: 'C:/Users/someone/AppData/Local/Programs/Beyond-All-Reason/data',
+    writable: false,
+    hash: 'aGFzaA==',
+    hash_text: 'aGFzaA==',
+    ...over,
+  }
+}
+
+const cell = (container: HTMLElement, row: number, column: number) =>
+  rows(container)[row]?.querySelector(`td:nth-child(${column})`)?.textContent
+
+describe('sorting', () => {
+  const three = () =>
+    published([
+      widget({
+        key: 'a',
+        name: 'Alpha',
+        windows: combined({
+          '30d': stats({ rank: 1, players: 50, retention: 0.2 }),
+        }),
+      }),
+      widget({
+        key: 'b',
+        name: 'Bravo',
+        windows: combined({
+          '30d': stats({ rank: 2, players: 90, retention: 0.9 }),
+        }),
+      }),
+      widget({
+        key: 'c',
+        name: 'Charlie',
+        windows: combined({
+          '30d': stats({ rank: 3, players: 70, retention: 0.5 }),
+        }),
+      }),
+    ])
+
+  test('every header sorts', async () => {
+    serve(three())
+    const Widgets = await fresh()
+    const { container } = render(() => <Widgets />)
+    await drawn(container)
+    const headers = [...container.querySelectorAll('thead th')]
+    expect(headers.length).toBeGreaterThan(5)
+    expect(headers.every((th) => th.querySelector('button.sort-head'))).toBe(
+      true,
+    )
+  })
+
+  test('a number column sorts most first, and a second click flips it', async () => {
+    serve(three())
+    const Widgets = await fresh()
+    const { container, getByRole } = render(() => <Widgets />)
+    await drawn(container)
+
+    fireEvent.click(getByRole('button', { name: /Players/ }))
+    expect(names(container)).toEqual(['Bravo', 'Charlie', 'Alpha'])
+    fireEvent.click(getByRole('button', { name: /Players/ }))
+    expect(names(container)).toEqual(['Alpha', 'Charlie', 'Bravo'])
+  })
+
+  test('the sorted header says which way it sorts', async () => {
+    serve(three())
+    const Widgets = await fresh()
+    const { container, getByRole } = render(() => <Widgets />)
+    await drawn(container)
+
+    fireEvent.click(getByRole('button', { name: /Kept on/ }))
+    const sorted = [...container.querySelectorAll('thead th')].find(
+      (th) => th.getAttribute('aria-sort') !== 'none',
+    )
+    expect(sorted?.textContent).toContain('Kept on')
+    expect(sorted?.getAttribute('aria-sort')).toBe('descending')
+    expect(names(container)).toEqual(['Bravo', 'Charlie', 'Alpha'])
+  })
+
+  test('a text column sorts A to Z first', async () => {
+    serve(three())
+    const Widgets = await fresh()
+    const { container, getByRole } = render(() => <Widgets />)
+    await drawn(container)
+    fireEvent.click(getByRole('button', { name: /Players/ }))
+    fireEvent.click(getByRole('button', { name: /^Widget/ }))
+    expect(names(container)).toEqual(['Alpha', 'Bravo', 'Charlie'])
+  })
+})
+
+describe('the installed filter', () => {
+  test('shows only widgets with a file on this machine', async () => {
+    serve(
+      published([
+        widget({ key: 'a', name: 'Ping Wheel' }),
+        widget({
+          key: 'b',
+          name: 'Raptor Grid',
+          windows: combined({ '30d': stats({ rank: 2 }) }),
+        }),
+      ]),
+      installedStatus({ local: [onDisk()] }),
+    )
+    const Widgets = await fresh()
+    const { container, getByRole } = render(() => <Widgets />)
+    await drawn(container)
+
+    expect(container.querySelector('.count')?.textContent).toContain(
+      '1 installed',
+    )
+    fireEvent.click(getByRole('button', { name: 'Installed' }))
+    expect(names(container)).toEqual(['Ping Wheel'])
+  })
+
+  test('a name in BAR config alone does not count as installed', async () => {
+    // The config keeps entries for widgets deleted long ago.
+    serve(
+      published([widget()]),
+      installedStatus({
+        configured: [{ name: 'Ping Wheel', order: 5n, has_settings: true }],
+      }),
+    )
+    const Widgets = await fresh()
+    const { container, getByRole } = render(() => <Widgets />)
+    await drawn(container)
+    fireEvent.click(getByRole('button', { name: 'Installed' }))
+    expect(rows(container).length).toBe(0)
+    expect(container.querySelector('p.muted')?.textContent).toContain(
+      'None of the widgets',
+    )
+  })
+})
+
+describe('what is on this machine', () => {
+  test('a file that is the published revision says so', async () => {
+    serve(
+      published([widget({ install: fromGithub() })]),
+      installedStatus({ local: [onDisk({ hash: 'aGFzaA==' })] }),
+    )
+    const Widgets = await fresh()
+    const { container } = render(() => <Widgets />)
+    await drawn(container)
+    const line = container.querySelector('.widget-local li')
+    expect(line?.classList.contains('exact')).toBe(true)
+    expect(line?.textContent).toContain('This version')
+    expect(line?.textContent).toContain('gui_ping_wheel.lua')
+    expect(line?.textContent).toContain("BAR's folder")
+  })
+
+  test('a homebrewed file under the same name is told apart', async () => {
+    // The case that prompted this: a local "Dont Stand in Fire" matching no
+    // published revision, which BAR's config cannot distinguish.
+    serve(
+      published([widget({ install: fromGithub() })]),
+      installedStatus({
+        local: [onDisk({ hash: 'bWluZQ==', hash_text: 'bWluZQ==' })],
+      }),
+    )
+    const Widgets = await fresh()
+    const { container } = render(() => <Widgets />)
+    await drawn(container)
+    const line = container.querySelector('.widget-local li')
+    expect(line?.classList.contains('exact')).toBe(false)
+    expect(line?.textContent).toContain('Your own version')
+  })
+
+  test('two files with one name are explained', async () => {
+    serve(
+      published([widget()]),
+      installedStatus({
+        local: [
+          onDisk(),
+          onDisk({
+            file: 'LuaUI/Widgets/copy/gui_ping_wheel.lua',
+            hash: 'b3RoZXI=',
+          }),
+        ],
+      }),
+    )
+    const Widgets = await fresh()
+    const { container } = render(() => <Widgets />)
+    await drawn(container)
+    expect(container.querySelector('.widget-local')?.textContent).toContain(
+      '2 files declare this name',
+    )
+  })
+})
+
+describe('pictures', () => {
+  test('a widget with a picture asks the thumbnail scheme for it by key', async () => {
+    serve(
+      published([widget({ image: 'https://widget-hub.example/cover.png' })]),
+    )
+    const Widgets = await fresh()
+    const { container } = render(() => <Widgets />)
+    await drawn(container)
+    const img = container.querySelector('.widget-thumb img') as HTMLImageElement
+    // A key, never the URL: the scheme only serves what the document names.
+    expect(decodeURIComponent(img.src)).toContain('widget:gui_ping_wheel')
+    expect(decodeURIComponent(img.src)).not.toContain('widget-hub.example')
+  })
+
+  test('the picture opens about four rows tall and closes again', async () => {
+    serve(
+      published([widget({ image: 'https://widget-hub.example/cover.png' })]),
+    )
+    const Widgets = await fresh()
+    const { container, getByLabelText } = render(() => <Widgets />)
+    await drawn(container)
+
+    fireEvent.click(getByLabelText(/Show a larger picture/))
+    const preview = container.querySelector(
+      '.widget-preview img',
+    ) as HTMLImageElement
+    expect(preview).not.toBeNull()
+    expect(decodeURIComponent(preview.src)).toMatch(
+      /widget\/\d+x\d+\/widget:gui_ping_wheel/,
+    )
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(container.querySelector('.widget-preview')).toBeNull()
+  })
+
+  test('a widget with no picture gets its initials rather than a broken image', async () => {
+    serve(published([widget({ name: 'Dont Stand in Fire', image: '' })]))
+    const Widgets = await fresh()
+    const { container } = render(() => <Widgets />)
+    await drawn(container)
+    expect(
+      container.querySelector('.widget-thumb.placeholder')?.textContent,
+    ).toBe('DS')
+    expect(container.querySelector('.widget-thumb img')).toBeNull()
+  })
+
+  test('a picture that fails to load falls back to initials', async () => {
+    serve(published([widget({ image: 'https://widget-hub.example/gone.png' })]))
+    const Widgets = await fresh()
+    const { container } = render(() => <Widgets />)
+    await drawn(container)
+    fireEvent.error(
+      container.querySelector('.widget-thumb img') as HTMLImageElement,
+    )
+    expect(container.querySelector('.widget-thumb.placeholder')).not.toBeNull()
   })
 })

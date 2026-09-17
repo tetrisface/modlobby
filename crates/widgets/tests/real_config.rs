@@ -253,3 +253,34 @@ fn braces(text: &str) -> i64 {
     }
     depth
 }
+
+#[test]
+fn enabling_a_widget_bar_has_never_seen_adds_its_entry() {
+    for text in configs() {
+        let mut config = WidgetConfig::parse(text);
+        let before = config.states().unwrap().len();
+        assert!(config.enable("Brand New \"Quoted\" Widget").unwrap());
+
+        let reparsed = WidgetConfig::parse(config.as_str().to_owned());
+        let states = reparsed.states().unwrap();
+        assert_eq!(states.len(), before + 1);
+        let added = states
+            .iter()
+            .find(|state| state.name == "Brand New \"Quoted\" Widget")
+            .expect("the new entry reads back under its own name");
+        assert!(added.enabled());
+        assert_eq!(braces(config.as_str()), 0);
+    }
+}
+
+#[test]
+fn enabling_twice_does_not_add_a_second_entry() {
+    let text = real().expect("fixture");
+    let mut config = WidgetConfig::parse(text);
+    assert!(config.enable("Brand New Widget").unwrap());
+    assert!(!config.enable("Brand New Widget").unwrap());
+    assert!(
+        config.states().is_ok(),
+        "a duplicate entry would be refused here"
+    );
+}

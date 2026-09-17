@@ -235,3 +235,39 @@ fn every_widget_has_at_least_one_window_to_show() {
         );
     }
 }
+
+#[test]
+fn a_picture_is_an_absolute_https_url_or_nothing() {
+    // The thumbnail scheme fetches whatever this names, so it has to be a
+    // real address -- and a widget without one is drawn with initials instead.
+    let usage = published();
+    assert!(usage.widgets.iter().any(|widget| !widget.image.is_empty()));
+    for widget in &usage.widgets {
+        assert!(
+            widget.image.is_empty() || widget.image.starts_with("https://"),
+            "{}: {}",
+            widget.key,
+            widget.image
+        );
+    }
+}
+
+#[test]
+fn a_discord_link_is_built_from_ids_not_a_thread_title() {
+    for widget in &published().widgets {
+        if widget.install.kind != InstallKind::Discord {
+            continue;
+        }
+        let tail = widget
+            .install
+            .page
+            .trim_start_matches("https://discord.com/channels/");
+        assert!(
+            tail.split('/')
+                .all(|part| part.chars().all(|c| c.is_ascii_digit())),
+            "{}: {}",
+            widget.key,
+            widget.install.page
+        );
+    }
+}

@@ -138,6 +138,9 @@ pub struct WidgetStatus {
     pub locked: bool,
     /// Where installs land, so the interface can say it rather than imply it.
     pub write_dir: String,
+    /// Every widget file BAR would load, whoever put it there.
+    #[serde(default)]
+    pub local: Vec<crate::local::LocalWidget>,
 }
 
 /// Everything modlobby has installed, keyed by usage key.
@@ -420,7 +423,7 @@ fn verify(name: &str, data: &[u8], expected: &str) -> Result<(), ManageError> {
     Err(ManageError::Corrupt(name.to_owned()))
 }
 
-fn collapse_crlf(data: &[u8]) -> Vec<u8> {
+pub(crate) fn collapse_crlf(data: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(data.len());
     let mut at = 0;
     while at < data.len() {
