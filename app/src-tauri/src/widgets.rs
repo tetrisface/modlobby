@@ -125,6 +125,7 @@ pub async fn widget_disable(app: State<'_, App>, name: String) -> Result<bool> {
             )
         })
     })
+    .await
 }
 
 /// Switch a widget back on, at the end of the load order.
