@@ -703,6 +703,28 @@ describe('pictures', () => {
     expect(container.querySelector('.widget-preview')).toBeNull()
   })
 
+  test('a press anywhere outside an open picture closes it', async () => {
+    serve(
+      published([widget({ image: 'https://widget-hub.example/cover.png' })]),
+    )
+    const Widgets = await fresh()
+    const { container, getByLabelText } = render(() => <Widgets />)
+    await drawn(container)
+
+    fireEvent.click(getByLabelText(/Show a larger picture/))
+    expect(container.querySelector('.widget-preview')).not.toBeNull()
+    // Inside the picture's own corner of the row, it stays open.
+    fireEvent.pointerDown(
+      container.querySelector('.widget-preview') as HTMLElement,
+    )
+    expect(container.querySelector('.widget-preview')).not.toBeNull()
+
+    fireEvent.pointerDown(
+      container.querySelector('.widget-text') as HTMLElement,
+    )
+    expect(container.querySelector('.widget-preview')).toBeNull()
+  })
+
   test('a widget with no picture gets its initials rather than a broken image', async () => {
     serve(published([widget({ name: 'Dont Stand in Fire', image: '' })]))
     const Widgets = await fresh()
@@ -863,6 +885,24 @@ describe('versions under a name', () => {
     expect(
       container.querySelectorAll('tr.widget-fork .widget-expand'),
     ).toHaveLength(0)
+  })
+
+  test('clicking the row itself opens it, but clicking what it holds does not', async () => {
+    serve(published([family()]))
+    const Widgets = await fresh()
+    const { container } = render(() => <Widgets />)
+    await drawn(container)
+
+    const row = container.querySelector('tr.widget-row') as HTMLElement
+    fireEvent.click(row.querySelector('.widget-text strong') as HTMLElement)
+    expect(forkRows(container)).toHaveLength(3)
+
+    // The chevron acts once, not twice: the row ignores clicks on a button.
+    fireEvent.click(row.querySelector('.widget-expand') as HTMLElement)
+    expect(forkRows(container)).toHaveLength(0)
+
+    fireEvent.click(row.querySelector('.widget-text strong') as HTMLElement)
+    expect(forkRows(container)).toHaveLength(3)
   })
 
   test('a row with one version has nothing to open', async () => {

@@ -109,10 +109,18 @@ const ACTION_LABEL: Record<Action, string> = {
   delete: 'Delete',
 }
 
-/** The tile in a row, in CSS pixels. 16:10, the hub's own cover shape. */
-const TILE = { width: 64, height: 40 }
-/** A fork's tile: the same shape, smaller, so the version lines read as lesser. */
-const FORK_TILE = { width: 48, height: 30 }
+/**
+ * The tile in a row, in CSS pixels.
+ *
+ * The width is fixed for every row -- a column of pictures that each started
+ * at a different place would be noise -- and the height is the row's, so a
+ * tile is as tall as what the row says. The size asked for here is what the
+ * picture is cut to: a shape near the middle of the heights rows actually
+ * take, so that neither a short row nor a tall one is showing an upscale.
+ */
+const TILE = { width: 96, height: 72 }
+/** A fork's tile: narrower, so the version lines under a row read as lesser. */
+const FORK_TILE = { width: 64, height: 48 }
 /**
  * The enlarged picture: about four rows tall. Cut from the same download as
  * the tile, so opening it costs a local resize and no request.
@@ -242,8 +250,23 @@ export function Widgets() {
     const close = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setEnlarged(null)
     }
+    /**
+     * An enlarged picture stays open until you look elsewhere, so a press
+     * anywhere outside one closes it. On `pointerdown` rather than `click`:
+     * the press that opens another row's picture then closes this one on its
+     * way down, and the two never disagree about which is open.
+     */
+    const away = (event: PointerEvent) => {
+      const on = event.target as HTMLElement | null
+      if (on?.closest('.widget-thumb-anchor')) return
+      setEnlarged(null)
+    }
     window.addEventListener('keydown', close)
-    onCleanup(() => window.removeEventListener('keydown', close))
+    window.addEventListener('pointerdown', away)
+    onCleanup(() => {
+      window.removeEventListener('keydown', close)
+      window.removeEventListener('pointerdown', away)
+    })
   })
 
   /**
@@ -386,7 +409,13 @@ export function Widgets() {
               <For each={COLUMNS}>
                 {(column) => (
                   <th
-                    classList={{ num: !!column.numeric }}
+                    classList={{
+                      num: !!column.numeric,
+                      'widget-rank': column.key === 'rank',
+                      // A column's width is the whole column's, header
+                      // included, so the header carries the same class.
+                      'widget-name': column.key === 'name',
+                    }}
                     aria-sort={
                       sort() === column.key
                         ? descending()
@@ -531,32 +560,47 @@ function Row(props: {
   const main = () => mainFork(props.widget)
   const versions = () => versionCount(props.widget)
 
+  /**
+   * A click anywhere in the row opens it, except on the things that already do
+   * something of their own -- the chevron, the picture, the action buttons and
+   * the source link -- which is why this asks what was clicked rather than
+   * stopping their events: a button that has to remember to stop its own event
+   * is a button that will one day forget.
+   */
+  const openOnClick = (event: MouseEvent) => {
+    if (versions() <= 1) return
+    const on = event.target as HTMLElement | null
+    if (on?.closest('button, a, input, select, label')) return
+    props.onExpand()
+  }
+
   return (
     <tr
       class='widget-row'
       classList={{
         off: !!configured() && !isEnabled(configured()!),
         open: props.expanded,
+        openable: versions() > 1,
       }}
+      onClick={openOnClick}
     >
-      <td class='num'>{stats()?.rank ?? '—'}</td>
+      <td class='num widget-rank'>
+        <span>{stats()?.rank ?? '—'}</span>
+        <Show when={versions() > 1}>
+          <button
+            type='button'
+            class='widget-expand'
+            aria-expanded={props.expanded}
+            aria-label={`${props.expanded ? 'Hide' : 'Show'} the ${versions()} versions of ${props.widget.name}`}
+            title={`${versions()} versions`}
+            onClick={props.onExpand}
+          >
+            <Glyph id='act-expand' />
+          </button>
+        </Show>
+      </td>
       <td class='widget-name'>
         <div class='widget-identity'>
-          <Show
-            when={versions() > 1}
-            fallback={<span class='widget-expand-space' />}
-          >
-            <button
-              type='button'
-              class='widget-expand'
-              aria-expanded={props.expanded}
-              aria-label={`${props.expanded ? 'Hide' : 'Show'} the ${versions()} versions of ${props.widget.name}`}
-              title={`${versions()} versions`}
-              onClick={props.onExpand}
-            >
-              <Glyph id='act-expand' />
-            </button>
-          </Show>
           <Thumb
             pictureKey={props.widget.key}
             name={props.widget.name}
@@ -800,10 +844,9 @@ function Thumb(props: {
     return thumbSrc(`widget/${tile.width}x${tile.height}/${props.pictureKey}`)
   }
   const pictured = () => !!props.image && !failed()
-  const size = () => ({
-    width: `${props.tile.width / 16}rem`,
-    height: `${props.tile.height / 16}rem`,
-  })
+  // Only the width: the height comes from the row the tile stands in, which
+  // the stylesheet stretches it to.
+  const size = () => ({ width: `${props.tile.width / 16}rem` })
 
   return (
     <Show

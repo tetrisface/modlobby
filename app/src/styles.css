@@ -4425,29 +4425,83 @@ button.link:hover {
   color: var(--muted);
 }
 
+/* One width, open or closed. The versions under a row carry file names with
+   nothing in them a line can break at, and a table sizes its columns from
+   every row it holds -- so without a width of its own, opening a row moved
+   this column and rewrapped every description in the table. */
 .widget-name {
+  width: 40%;
   min-width: 16rem;
-  max-width: 32rem;
 }
 
+/* The same reason: a path is allowed to break anywhere rather than demand a
+   column as wide as itself. */
+.widget-local code,
+.widget-fork .widget-text {
+  overflow-wrap: anywhere;
+}
+
+/* The picture is as tall as the row it stands in, so the identity's items
+   stretch rather than sit at the top. */
 .widget-identity {
   display: flex;
   gap: 0.625rem;
-  align-items: flex-start;
+  align-items: stretch;
 }
 
 .widget-text {
   min-width: 0;
 }
 
-/* The chevron that opens a row to its versions, and the gap that keeps rows
-   without one aligned with rows that have one. */
+/* The rank reads down the far left edge, with the chevron that opens the row
+   under it: one column answering "which row is this" and "open it". As narrow
+   as the figures in it, because the space a wide rank column used to hold
+   between the chevron and the picture was doing nothing. */
+.widget-table .widget-rank {
+  width: 2rem;
+  padding-right: 0.25rem;
+  padding-left: 0;
+  text-align: left;
+}
+
+.widget-table .widget-name {
+  padding-left: 0;
+}
+
+.widget-table thead .num.widget-rank {
+  padding-left: 0;
+  text-align: left;
+}
+
+.widget-table thead .num.widget-rank .sort-head {
+  flex-direction: row;
+}
+
+/* A row that has versions to show says so by the cursor; the whole row opens
+   it, so the chevron is the affordance rather than the only target. */
+.widget-table tbody tr.openable {
+  cursor: pointer;
+}
+
+.widget-table tbody tr.openable:hover td {
+  background: color-mix(in srgb, var(--panel) 35%, transparent);
+}
+
+/* The chevron that opens a row to its versions, and the gap that keeps fork
+   rows aligned with the rows that have one. */
 .widget-expand,
 .widget-expand-space {
   flex: 0 0 auto;
   width: 1.25rem;
   height: 1.25rem;
+}
+
+.widget-expand-space {
   margin-top: 0.5rem;
+}
+
+.widget-rank .widget-expand {
+  margin-top: 0.25rem;
 }
 
 .widget-expand {
@@ -4551,17 +4605,22 @@ button.link:hover {
   color: var(--muted);
 }
 
-/* The picture's anchor, so the enlarged view opens beside its own row. */
+/* The picture's anchor, so the enlarged view opens beside its own row. A
+   column, so that the tile inside it fills whatever height the row has. */
 .widget-thumb-anchor {
   position: relative;
+  display: flex;
   flex: 0 0 auto;
+  flex-direction: column;
 }
 
+/* One width down the column, whatever the row holds; the height is the row's.
+   The picture is cut to fill rather than squeezed, so a tall row shows more of
+   the middle of it and never a stretched one. */
 .widget-thumb {
   display: grid;
+  flex: 1;
   place-items: center;
-  width: 4rem;
-  height: 2.5rem;
   padding: 0;
   overflow: hidden;
   background: var(--panel);
