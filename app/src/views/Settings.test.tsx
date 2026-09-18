@@ -16,7 +16,12 @@ vi.mock('@tauri-apps/api/core', () => ({
 function loaded(): Settings {
   return {
     $schema: null,
-    server: { host: 'server4', port: 8201, tls: true },
+    server: {
+      host: 'server4',
+      encryption: 'stls',
+      plainPort: 8200,
+      tlsPort: 8201,
+    },
     account: { username: 'me', rememberPassword: false, autoLogin: false },
     connection: { idleDisconnectMinutes: 60 },
     paths: { dataDir: null },

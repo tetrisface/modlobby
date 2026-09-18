@@ -1,8 +1,9 @@
 //! Tokio transport actor: one task reads lines into [`ServerEvent`]s, one task
 //! drains the [`Scheduler`] onto the socket and keeps the heartbeat alive.
 //!
-//! teiserver listens plain on 8200 (what Chobby uses) and TLS on 8201; both
-//! carry the same line protocol, so the actor is generic over the stream.
+//! teiserver listens plain on 8200 (what Chobby uses; `STLS` upgrades it to
+//! TLS) and TLS on 8201; all carry the same line protocol, so the actor is
+//! generic over the stream.
 //!
 //! Correlation: a request tagged `#<id>` resolves on the first reply line
 //! carrying that id; every line, tagged or not, is also delivered as an event,
@@ -18,6 +19,7 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, oneshot};
 use tokio_rustls::TlsConnector;
+use tokio_rustls::client::TlsStream;
 use tokio_rustls::rustls::pki_types::ServerName;
 use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 
@@ -29,8 +31,6 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 const CHANNEL_CAPACITY: usize = 1024;
 /// How long a fresh connection gets to say its first word before it counts as silent.
 const GREETING_WAIT: Duration = Duration::from_secs(5);
-/// teiserver's plain port, where `STLS` upgrades the connection to TLS.
-const STLS_PORT: u16 = 8200;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TransportError {
@@ -44,25 +44,54 @@ pub enum TransportError {
     Timeout(Duration),
     #[error("server did not agree to STLS: {0:?}")]
     Stls(String),
+    #[error("the server did not greet")]
+    Silent,
 }
 
-/// Where to connect.
+/// Where to connect, and how.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Endpoint {
     pub host: String,
-    pub port: u16,
-    pub tls: bool,
+    pub plain_port: u16,
+    pub tls_port: u16,
+    pub security: Security,
 }
 
 impl Endpoint {
-    /// Splits `host:port`.
-    pub fn parse(addr: &str, tls: bool) -> Option<Self> {
-        let (host, port) = addr.rsplit_once(':')?;
-        Some(Self {
-            host: host.to_owned(),
-            port: port.parse().ok()?,
-            tls,
-        })
+    /// teiserver's own ports: plain on 8200, TLS on 8201.
+    pub fn new(host: impl Into<String>, security: Security) -> Self {
+        Self {
+            host: host.into(),
+            plain_port: 8200,
+            tls_port: 8201,
+            security,
+        }
+    }
+}
+
+/// How the connection is encrypted. Each encrypted way falls back to the
+/// other: on 2026-09-18 teiserver's TLS port hung up before greeting while
+/// `STLS` on the plain port worked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Security {
+    /// The plain port, upgraded to TLS by `STLS`, like SMTP's STARTTLS.
+    Stls,
+    /// The TLS port, encrypted from the first byte.
+    Tls,
+    /// Unencrypted on the plain port; no fallback.
+    None,
+}
+
+impl std::str::FromStr for Security {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "stls" => Ok(Self::Stls),
+            "tls" => Ok(Self::Tls),
+            "none" => Ok(Self::None),
+            other => Err(format!("expected stls, tls or none, got {other}")),
+        }
     }
 }
 
@@ -107,35 +136,31 @@ pub struct Transport {
 }
 
 impl Transport {
-    /// Connects, wraps the socket in TLS when the endpoint asks for it, and spawns the reader and writer tasks.
+    /// Connects the way the endpoint asks, and spawns the reader and writer tasks.
     ///
-    /// A TLS port that hangs up before greeting is retried as `STLS` on the
-    /// plain port. On 2026-09-18 teiserver's 8201 did exactly that while 8200
-    /// upgraded fine: the same certificate and TLS 1.3, one round trip more.
+    /// An encrypted way that fails, or that the server does not greet on, is
+    /// retried the other encrypted way, and the user is told. Never unencrypted:
+    /// that is only ever asked for.
     pub async fn connect(
         endpoint: &Endpoint,
         policy: ThrottlePolicy,
     ) -> Result<(Self, mpsc::Receiver<Inbound>), TransportError> {
-        let stream = tcp(&endpoint.host, endpoint.port).await?;
-        if !endpoint.tls {
-            return Ok(Self::from_stream(stream, policy));
-        }
-        let name = ServerName::try_from(endpoint.host.clone())
-            .map_err(|_| TransportError::ServerName(endpoint.host.clone()))?;
-        let mut stream = BufReader::new(tls_connector().connect(name.clone(), stream).await?);
-        if greets(&mut stream).await {
-            return Ok(Self::from_stream(stream, policy));
-        }
-        tracing::warn!(
-            port = endpoint.port,
-            "TLS port closed before greeting; upgrading via STLS on {STLS_PORT}"
-        );
-        let plain = stls_upgrade(tcp(&endpoint.host, STLS_PORT).await?).await?;
-        let stream = tls_connector().connect(name, plain).await?;
-        let note = format!(
-            "the TLS port {} is not answering; connected encrypted via STLS on {STLS_PORT} instead",
-            endpoint.port
-        );
+        let (first, second) = match endpoint.security {
+            Security::None => {
+                let stream = tcp(&endpoint.host, endpoint.plain_port).await?;
+                return Ok(Self::from_stream(stream, policy));
+            }
+            Security::Stls => (Security::Stls, Security::Tls),
+            Security::Tls => (Security::Tls, Security::Stls),
+        };
+        let err = match encrypted(endpoint, first).await {
+            Ok(stream) => return Ok(Self::from_stream(stream, policy)),
+            Err(err) => err,
+        };
+        let (tried, instead) = (way(endpoint, first), way(endpoint, second));
+        tracing::warn!(%err, "{tried} failed; trying {instead}");
+        let stream = encrypted(endpoint, second).await?;
+        let note = format!("{tried} is not working ({err}); connected encrypted via {instead}");
         Ok(Self::spawn(stream, policy, Some(note)))
     }
 
@@ -235,6 +260,35 @@ impl Transport {
 pub fn install_crypto() {
     // Err means someone installed one already, which is the state we want.
     let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
+}
+
+/// A TLS session the server has greeted on, its greeting still unread.
+/// `Security::Stls` upgrades the plain port; anything else is the TLS port.
+async fn encrypted(
+    endpoint: &Endpoint,
+    security: Security,
+) -> Result<BufReader<TlsStream<TcpStream>>, TransportError> {
+    let name = ServerName::try_from(endpoint.host.clone())
+        .map_err(|_| TransportError::ServerName(endpoint.host.clone()))?;
+    let socket = if security == Security::Stls {
+        stls_upgrade(tcp(&endpoint.host, endpoint.plain_port).await?).await?
+    } else {
+        tcp(&endpoint.host, endpoint.tls_port).await?
+    };
+    let mut stream = BufReader::new(tls_connector().connect(name, socket).await?);
+    if !greets(&mut stream).await {
+        return Err(TransportError::Silent);
+    }
+    Ok(stream)
+}
+
+/// How a way of connecting reads in a notice.
+fn way(endpoint: &Endpoint, security: Security) -> String {
+    match security {
+        Security::Stls => format!("STLS on port {}", endpoint.plain_port),
+        Security::Tls => format!("TLS on port {}", endpoint.tls_port),
+        Security::None => format!("unencrypted on port {}", endpoint.plain_port),
+    }
 }
 
 async fn tcp(host: &str, port: u16) -> Result<TcpStream, TransportError> {
@@ -408,17 +462,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn endpoint_splits_host_and_port() {
-        assert_eq!(
-            Endpoint::parse("server4.beyondallreason.info:8201", true),
-            Some(Endpoint {
-                host: "server4.beyondallreason.info".into(),
-                port: 8201,
-                tls: true
-            })
-        );
-        assert_eq!(Endpoint::parse("nope", true), None);
-        assert_eq!(Endpoint::parse("host:notaport", true), None);
+    fn security_reads_the_names_the_cli_takes() {
+        assert_eq!("stls".parse(), Ok(Security::Stls));
+        assert_eq!("tls".parse(), Ok(Security::Tls));
+        assert_eq!("none".parse(), Ok(Security::None));
+        assert!("plain".parse::<Security>().is_err());
     }
 
     #[test]

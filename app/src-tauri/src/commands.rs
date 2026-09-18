@@ -9,7 +9,7 @@ use lobby_runtime::{ClientError, launch, player_files};
 use lobby_ui::UiMessage;
 use serde::Serialize;
 use settings::{CredentialError, Settings};
-use spring_protocol::{Endpoint, LoginRequest};
+use spring_protocol::{Endpoint, LoginRequest, Security};
 use tauri::ipc::Channel;
 use tauri::{Manager, State};
 use tweaks::{DiffView, Kind, Prepared, Slot, TweakView};
@@ -117,12 +117,7 @@ pub async fn login(
             .get(&username)?
             .ok_or_else(|| ApiError::new("input", "no password given or remembered"))?,
     };
-    let server = app.settings.get().server;
-    let endpoint = Endpoint {
-        host: server.host,
-        port: server.port,
-        tls: server.tls,
-    };
+    let endpoint = endpoint(app.settings.get().server);
     let request = LoginRequest::new(
         &username,
         &password,
@@ -133,6 +128,20 @@ pub async fn login(
     guarded_login(&app, app.client.login(endpoint, request)).await?;
 
     remember_account(&app, username, &password, remember, auto_login)
+}
+
+/// Where and how the settings say to reach the server.
+fn endpoint(server: settings::model::Server) -> Endpoint {
+    Endpoint {
+        host: server.host,
+        plain_port: server.plain_port,
+        tls_port: server.tls_port,
+        security: match server.encryption {
+            settings::model::Encryption::Stls => Security::Stls,
+            settings::model::Encryption::Tls => Security::Tls,
+            settings::model::Encryption::None => Security::None,
+        },
+    }
 }
 
 /// Keeps the account a session was just opened as: the password in the OS
@@ -235,12 +244,7 @@ pub async fn register(
         return Err(ApiError::new("input", "an email address is required"));
     }
 
-    let server = app.settings.get().server;
-    let endpoint = Endpoint {
-        host: server.host,
-        port: server.port,
-        tls: server.tls,
-    };
+    let endpoint = endpoint(app.settings.get().server);
     let request = LoginRequest::new(
         &username,
         &password,

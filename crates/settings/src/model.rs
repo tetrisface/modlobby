@@ -46,21 +46,41 @@ impl Settings {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(default, rename_all = "camelCase")]
 #[ts(export)]
+///
+/// These keys replaced `port` and `tls`, so a file that still carries those
+/// is read as the defaults below.
 pub struct Server {
     pub host: String,
-    pub port: u16,
-    /// teiserver speaks TLS on 8201 and plain TCP on 8200.
-    pub tls: bool,
+    /// How the connection is encrypted, and what it falls back to.
+    pub encryption: Encryption,
+    /// Where `STLS` upgrades to TLS, and where `none` stays unencrypted.
+    pub plain_port: u16,
+    /// Where TLS starts from the first byte.
+    pub tls_port: u16,
 }
 
 impl Default for Server {
     fn default() -> Self {
         Self {
             host: "server4.beyondallreason.info".into(),
-            port: 8201,
-            tls: true,
+            encryption: Encryption::Stls,
+            plain_port: 8200,
+            tls_port: 8201,
         }
     }
+}
+
+/// Both encrypted ways fall back to the other when the server does not greet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum Encryption {
+    /// The plain port, upgraded with `STLS`; falls back to the TLS port.
+    Stls,
+    /// The TLS port; falls back to `STLS` on the plain port.
+    Tls,
+    /// Unencrypted on the plain port, e.g. a local server without certificates.
+    None,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS, Default)]

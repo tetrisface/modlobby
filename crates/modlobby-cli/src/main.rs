@@ -9,7 +9,7 @@ use anyhow::{Context, bail};
 use clap::{Args, Parser, Subcommand};
 use lobby_runtime::{Client, launch, platform};
 use lobby_ui::{ChatKind, Delta, EngineStatus, Snapshot, UiClosed, UiMessage, UiTransport};
-use spring_protocol::{Endpoint, LoginRequest, ThrottlePolicy};
+use spring_protocol::{Endpoint, LoginRequest, Security, ThrottlePolicy};
 use tracing_subscriber::EnvFilter;
 
 const PASSWORD_ENV: &str = "MODLOBBY_PASSWORD";
@@ -58,12 +58,12 @@ struct Connection {
     /// The password is read from `MODLOBBY_PASSWORD`; a `.env` in the working directory is loaded first.
     #[arg(long, env = "MODLOBBY_USERNAME")]
     username: String,
-    /// `host:port`; teiserver speaks TLS on 8201 and plain TCP on 8200.
-    #[arg(long, default_value = "server4.beyondallreason.info:8201")]
+    /// Host; teiserver speaks plain TCP (and `STLS`) on 8200 and TLS on 8201.
+    #[arg(long, default_value = "server4.beyondallreason.info")]
     server: String,
-    /// Plain TCP instead of TLS (what Chobby does on 8200).
-    #[arg(long)]
-    plain: bool,
+    /// `stls`, `tls` (each falls back to the other) or `none` (what Chobby does).
+    #[arg(long, default_value = "stls")]
+    encryption: Security,
     /// Announced client. teiserver stores the leading `[a-zA-Z ]+` of
     /// `<name>:<version>` and gives unlisted names the filtered `:full` feed,
     /// where other rooms' rosters read empty.
@@ -192,8 +192,7 @@ fn load_policy(path: Option<&Path>) -> anyhow::Result<ThrottlePolicy> {
 async fn connect(conn: &Connection) -> anyhow::Result<Client> {
     let password = std::env::var(PASSWORD_ENV).with_context(|| format!("set {PASSWORD_ENV}"))?;
     let policy = load_policy(conn.policy.as_deref())?;
-    let endpoint = Endpoint::parse(&conn.server, !conn.plain)
-        .with_context(|| format!("--server must be host:port, got {}", conn.server))?;
+    let endpoint = Endpoint::new(&conn.server, conn.encryption);
     let hardware = platform::detect();
     tracing::info!(lobby_hash = hardware.lobby_hash, "machine identity");
     let request = LoginRequest::new(
@@ -212,16 +211,12 @@ async fn connect(conn: &Connection) -> anyhow::Result<Client> {
         .await
         .with_context(|| format!("logging in to {}", conn.server))?;
     println!(
-        "logged in to {} ({}) in {:.1?}",
+        "logged in to {} ({:?}) in {:.1?}",
         conn.server,
-        if endpoint_tls(conn) { "tls" } else { "plain" },
+        conn.encryption,
         started.elapsed()
     );
     Ok(client)
-}
-
-fn endpoint_tls(conn: &Connection) -> bool {
-    !conn.plain
 }
 
 async fn watch(client: &Client, conn: &Connection, report_secs: u64) -> anyhow::Result<()> {

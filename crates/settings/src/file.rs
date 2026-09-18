@@ -246,10 +246,10 @@ mod tests {
     fn user_comments_and_order_survive_app_writes() {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(dir.path()).unwrap();
-        let hand_edited = "// my notes\n{\n  // trailing commas are fine,\n  \"chat\": { \"maxLines\": 9 }, // keep me\n  \"server\": { \"port\": 8200, \"tls\": false },\n}\n";
+        let hand_edited = "// my notes\n{\n  // trailing commas are fine,\n  \"chat\": { \"maxLines\": 9 }, // keep me\n  \"server\": { \"plainPort\": 8200, \"encryption\": \"none\" },\n}\n";
         std::fs::write(store.path(), hand_edited).unwrap();
         let reloaded = store.reload().unwrap().unwrap();
-        assert_eq!(reloaded.server.port, 8200);
+        assert_eq!(reloaded.server.plain_port, 8200);
 
         store
             .update(|s| {
@@ -262,10 +262,23 @@ mod tests {
         assert!(text.contains("// keep me"));
         assert!(text.contains("\"maxLines\": 10"));
         assert!(text.contains("\"username\": \"alice\""));
-        assert!(text.contains("\"port\": 8200"));
+        assert!(text.contains("\"plainPort\": 8200"));
         let parsed = load(&store.path()).unwrap();
         assert_eq!(parsed.account.username, "alice");
-        assert!(!parsed.server.tls);
+        assert_eq!(parsed.server.encryption, crate::model::Encryption::None);
+    }
+
+    #[test]
+    fn the_old_port_and_tls_keys_fall_back_to_the_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        std::fs::write(
+            store.path(),
+            "{ \"server\": { \"port\": 8201, \"tls\": true } }",
+        )
+        .unwrap();
+        let reloaded = store.reload().unwrap().unwrap();
+        assert_eq!(reloaded.server, crate::model::Server::default());
     }
 
     #[test]

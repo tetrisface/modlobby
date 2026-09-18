@@ -553,14 +553,62 @@ export function SettingsView() {
               onInput={(e) => setDraft('server', 'host', e.currentTarget.value)}
             />
           </label>
+          <div class='choice-row'>
+            <span>Encryption</span>
+            <div class='choice'>
+              <For
+                each={
+                  [
+                    [
+                      'stls',
+                      'STLS',
+                      'Plain port upgraded to TLS; falls back to the TLS port',
+                    ],
+                    [
+                      'tls',
+                      'TLS',
+                      'TLS port; falls back to STLS on the plain port',
+                    ],
+                    [
+                      'none',
+                      'None',
+                      'Unencrypted, no fallback: a local server without certificates',
+                    ],
+                  ] as const
+                }
+              >
+                {([how, label, title]) => (
+                  <button
+                    type='button'
+                    title={title}
+                    classList={{ on: draft.server.encryption === how }}
+                    onClick={() => setDraft('server', 'encryption', how)}
+                  >
+                    {label}
+                  </button>
+                )}
+              </For>
+            </div>
+          </div>
           <label>
-            Port
+            Plain port (STLS and none)
             <input
               type='number'
-              value={draft.server.port}
+              value={draft.server.plainPort}
               onInput={(e) => {
                 const port = counted(e.currentTarget.value)
-                if (port !== null) setDraft('server', 'port', port)
+                if (port !== null) setDraft('server', 'plainPort', port)
+              }}
+            />
+          </label>
+          <label>
+            TLS port
+            <input
+              type='number'
+              value={draft.server.tlsPort}
+              onInput={(e) => {
+                const port = counted(e.currentTarget.value)
+                if (port !== null) setDraft('server', 'tlsPort', port)
               }}
             />
           </label>
@@ -661,7 +709,7 @@ export function SettingsView() {
 export function blankSettings(): Settings {
   return {
     $schema: null,
-    server: { host: '', port: 8201, tls: true },
+    server: { host: '', encryption: 'stls', plainPort: 8200, tlsPort: 8201 },
     account: { username: '', rememberPassword: false, autoLogin: false },
     connection: { idleDisconnectMinutes: 60 },
     paths: { dataDir: null },

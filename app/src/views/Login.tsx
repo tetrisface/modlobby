@@ -354,7 +354,7 @@ export function Login() {
         </p>
       </Show>
       <p class='muted'>
-        Server: {settings()?.server.host}:{settings()?.server.port}
+        Server: {settings()?.server.host} ({settings()?.server.encryption})
       </p>
     </form>
   )

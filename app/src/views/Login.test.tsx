@@ -66,7 +66,12 @@ beforeEach(() => {
   asked.mockReset()
   serve()
   setSettingsSignal({
-    server: { host: 'server4', port: 8201, tls: true },
+    server: {
+      host: 'server4',
+      encryption: 'stls',
+      plainPort: 8200,
+      tlsPort: 8201,
+    },
     account: { username: '', rememberPassword: false, autoLogin: false },
   } as unknown as Settings)
 })

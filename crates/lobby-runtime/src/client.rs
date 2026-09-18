@@ -2914,6 +2914,7 @@ mod tests {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream};
 
     use super::*;
+    use spring_protocol::Security;
 
     #[test]
     fn a_failure_repeats_the_last_lines_pr_downloader_printed() {
@@ -3000,7 +3001,7 @@ mod tests {
         let ui = Collector::default();
         client.subscribe(ui.clone()).await.unwrap();
 
-        let endpoint = Endpoint::parse("test:8200", false).unwrap();
+        let endpoint = Endpoint::new("test", Security::None);
         let login = tokio::spawn({
             let client = client.clone();
             async move {
@@ -3061,7 +3062,7 @@ mod tests {
 
     fn registering(client: &Client) -> tokio::task::JoinHandle<Result<Vec<String>, ClientError>> {
         let client = client.clone();
-        let endpoint = Endpoint::parse("test:8200", false).unwrap();
+        let endpoint = Endpoint::new("test", Security::None);
         tokio::spawn(async move {
             client
                 .register(
@@ -3194,7 +3195,7 @@ mod tests {
         let ui = Collector::default();
         client.subscribe(ui.clone()).await.unwrap();
 
-        let endpoint = Endpoint::parse("test:8200", false).unwrap();
+        let endpoint = Endpoint::new("test", Security::None);
         let login = tokio::spawn({
             let client = client.clone();
             async move {
@@ -3272,7 +3273,7 @@ mod tests {
             .await
             .unwrap();
 
-        let endpoint = Endpoint::parse("test:8200", false).unwrap();
+        let endpoint = Endpoint::new("test", Security::None);
         let login = tokio::spawn({
             let client = client.clone();
             async move {
@@ -3364,7 +3365,7 @@ mod tests {
             Arc::new(latency::Unmeasured),
             None,
         );
-        let endpoint = Endpoint::parse("test:8200", false).unwrap();
+        let endpoint = Endpoint::new("test", Security::None);
         let login = tokio::spawn({
             let client = client.clone();
             async move {

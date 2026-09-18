@@ -25,4 +25,4 @@ pub use event::{BattleOpened, ServerEvent, TeamLayout, UserStatus};
 pub use login::LoginRequest;
 pub use policy::{Area, Envelope, Mode, ThrottlePolicy};
 pub use status::my_status;
-pub use transport::{Endpoint, Inbound, Transport, TransportError};
+pub use transport::{Endpoint, Inbound, Security, Transport, TransportError};

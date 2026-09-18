@@ -94,9 +94,10 @@
     "server": {
       "$ref": "#/$defs/Server",
       "default": {
+        "encryption": "stls",
         "host": "server4.beyondallreason.info",
-        "port": 8201,
-        "tls": true
+        "plainPort": 8200,
+        "tlsPort": 8201
       }
     },
     "tweaks": {
@@ -258,6 +259,26 @@
         }
       }
     },
+    "Encryption": {
+      "description": "Both encrypted ways fall back to the other when the server does not greet.",
+      "oneOf": [
+        {
+          "description": "The plain port, upgraded with `STLS`; falls back to the TLS port.",
+          "type": "string",
+          "const": "stls"
+        },
+        {
+          "description": "The TLS port; falls back to `STLS` on the plain port.",
+          "type": "string",
+          "const": "tls"
+        },
+        {
+          "description": "Unencrypted on the plain port, e.g. a local server without certificates.",
+          "type": "string",
+          "const": "none"
+        }
+      ]
+    },
     "JoinAs": {
       "description": "What sitting down in a room you just joined should mean.\n\nChobby's three, under the same names it gives them\n(`gui_settings_window.lua:906`): remember what you did last time, or always\none or the other.",
       "type": "string",
@@ -414,24 +435,33 @@
       }
     },
     "Server": {
-      "description": "Which teiserver to talk to.",
+      "description": "Which teiserver to talk to.\n\nThese keys replaced `port` and `tls`, so a file that still carries those\nis read as the defaults below.",
       "type": "object",
       "properties": {
+        "encryption": {
+          "description": "How the connection is encrypted, and what it falls back to.",
+          "$ref": "#/$defs/Encryption",
+          "default": "stls"
+        },
         "host": {
           "type": "string",
           "default": "server4.beyondallreason.info"
         },
-        "port": {
+        "plainPort": {
+          "description": "Where `STLS` upgrades to TLS, and where `none` stays unencrypted.",
+          "type": "integer",
+          "format": "uint16",
+          "default": 8200,
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "tlsPort": {
+          "description": "Where TLS starts from the first byte.",
           "type": "integer",
           "format": "uint16",
           "default": 8201,
           "maximum": 65535,
           "minimum": 0
-        },
-        "tls": {
-          "description": "teiserver speaks TLS on 8201 and plain TCP on 8200.",
-          "type": "boolean",
-          "default": true
         }
       }
     },
