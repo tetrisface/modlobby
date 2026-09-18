@@ -27,6 +27,10 @@ use crate::policy::{Area, Envelope, PolicyEvent, Scheduler, ThrottlePolicy};
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 const CHANNEL_CAPACITY: usize = 1024;
+/// How long a fresh connection gets to say its first word before it counts as silent.
+const GREETING_WAIT: Duration = Duration::from_secs(5);
+/// teiserver's plain port, where `STLS` upgrades the connection to TLS.
+const STLS_PORT: u16 = 8200;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TransportError {
@@ -38,6 +42,8 @@ pub enum TransportError {
     Closed,
     #[error("no reply within {0:?}")]
     Timeout(Duration),
+    #[error("server did not agree to STLS: {0:?}")]
+    Stls(String),
 }
 
 /// Where to connect.
@@ -66,6 +72,8 @@ pub enum Inbound {
     Message(ServerEvent),
     /// Scheduler decisions worth surfacing (delays, coalescing, trips, drops).
     Policy(PolicyEvent),
+    /// Something the transport decided on its own that the user should hear about.
+    Note(String),
     Closed {
         reason: String,
     },
@@ -100,19 +108,35 @@ pub struct Transport {
 
 impl Transport {
     /// Connects, wraps the socket in TLS when the endpoint asks for it, and spawns the reader and writer tasks.
+    ///
+    /// A TLS port that hangs up before greeting is retried as `STLS` on the
+    /// plain port. On 2026-09-18 teiserver's 8201 did exactly that while 8200
+    /// upgraded fine: the same certificate and TLS 1.3, one round trip more.
     pub async fn connect(
         endpoint: &Endpoint,
         policy: ThrottlePolicy,
     ) -> Result<(Self, mpsc::Receiver<Inbound>), TransportError> {
-        let stream = TcpStream::connect((endpoint.host.as_str(), endpoint.port)).await?;
-        stream.set_nodelay(true)?;
+        let stream = tcp(&endpoint.host, endpoint.port).await?;
         if !endpoint.tls {
             return Ok(Self::from_stream(stream, policy));
         }
         let name = ServerName::try_from(endpoint.host.clone())
             .map_err(|_| TransportError::ServerName(endpoint.host.clone()))?;
-        let stream = tls_connector().connect(name, stream).await?;
-        Ok(Self::from_stream(stream, policy))
+        let mut stream = BufReader::new(tls_connector().connect(name.clone(), stream).await?);
+        if greets(&mut stream).await {
+            return Ok(Self::from_stream(stream, policy));
+        }
+        tracing::warn!(
+            port = endpoint.port,
+            "TLS port closed before greeting; upgrading via STLS on {STLS_PORT}"
+        );
+        let plain = stls_upgrade(tcp(&endpoint.host, STLS_PORT).await?).await?;
+        let stream = tls_connector().connect(name, plain).await?;
+        let note = format!(
+            "the TLS port {} is not answering; connected encrypted via STLS on {STLS_PORT} instead",
+            endpoint.port
+        );
+        Ok(Self::spawn(stream, policy, Some(note)))
     }
 
     /// Runs the protocol over any stream: the socket in production, an in-memory duplex in tests.
@@ -120,8 +144,23 @@ impl Transport {
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
+        Self::spawn(stream, policy, None)
+    }
+
+    fn spawn<S>(
+        stream: S,
+        policy: ThrottlePolicy,
+        note: Option<String>,
+    ) -> (Self, mpsc::Receiver<Inbound>)
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    {
         let (read_half, write_half) = tokio::io::split(stream);
         let (in_tx, in_rx) = mpsc::channel(CHANNEL_CAPACITY);
+        if let Some(note) = note {
+            // The channel is new and empty, so this cannot be full.
+            let _ = in_tx.try_send(Inbound::Note(note));
+        }
         let (out_tx, out_rx) = mpsc::channel(CHANNEL_CAPACITY);
         let pending = Pending::default();
 
@@ -196,6 +235,52 @@ impl Transport {
 pub fn install_crypto() {
     // Err means someone installed one already, which is the state we want.
     let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
+}
+
+async fn tcp(host: &str, port: u16) -> Result<TcpStream, TransportError> {
+    let stream = TcpStream::connect((host, port)).await?;
+    stream.set_nodelay(true)?;
+    Ok(stream)
+}
+
+/// Whether the server says anything before it hangs up. The first bytes are
+/// waited for but left in the buffer, so the greeting still reaches the session.
+async fn greets<S: AsyncRead + Unpin>(stream: &mut BufReader<S>) -> bool {
+    matches!(
+        tokio::time::timeout(GREETING_WAIT, stream.fill_buf()).await,
+        Ok(Ok(buf)) if !buf.is_empty()
+    )
+}
+
+/// Asks a plain connection to switch to TLS and hands it back ready for the
+/// handshake. Anything but `OK cmd=STLS` is an error: carrying on unencrypted
+/// is exactly what an attacker stripping the upgrade hopes for.
+async fn stls_upgrade<S>(stream: S) -> Result<S, TransportError>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    let mut stream = BufReader::new(stream);
+    let mut line = String::new();
+    // The plaintext TASSERVER; the server greets again once encrypted.
+    read_line_within(&mut stream, &mut line).await?;
+    stream.write_all(b"STLS\n").await?;
+    line.clear();
+    read_line_within(&mut stream, &mut line).await?;
+    // Bytes behind the OK would be plaintext mistaken for the TLS handshake.
+    if line.trim_end() != "OK cmd=STLS" || !stream.buffer().is_empty() {
+        return Err(TransportError::Stls(line.trim_end().to_owned()));
+    }
+    Ok(stream.into_inner())
+}
+
+async fn read_line_within<S: AsyncRead + Unpin>(
+    stream: &mut BufReader<S>,
+    line: &mut String,
+) -> Result<(), TransportError> {
+    tokio::time::timeout(GREETING_WAIT, stream.read_line(line))
+        .await
+        .map_err(|_| TransportError::Timeout(GREETING_WAIT))??;
+    Ok(())
 }
 
 /// Verifies the server against the Mozilla root store bundled by `webpki-roots`.
@@ -351,5 +436,45 @@ mod tests {
             "JOINBATTLE 5 empty 4242"
         );
         assert_eq!(redacted("PING"), "PING");
+    }
+
+    #[tokio::test]
+    async fn a_port_that_hangs_up_does_not_greet_and_one_that_speaks_keeps_its_words() {
+        let (client, server) = tokio::io::duplex(64);
+        drop(server);
+        assert!(!greets(&mut BufReader::new(client)).await);
+
+        let (client, mut server) = tokio::io::duplex(64);
+        server.write_all(b"TASSERVER 0.38\n").await.unwrap();
+        let mut client = BufReader::new(client);
+        assert!(greets(&mut client).await);
+        let mut line = String::new();
+        client.read_line(&mut line).await.unwrap();
+        assert_eq!(line, "TASSERVER 0.38\n");
+    }
+
+    #[tokio::test]
+    async fn stls_asks_for_the_upgrade_and_takes_nothing_but_ok() {
+        let (client, server) = tokio::io::duplex(256);
+        let serve = tokio::spawn(async move {
+            let mut server = BufReader::new(server);
+            server.write_all(b"TASSERVER 0.38\n").await.unwrap();
+            let mut asked = String::new();
+            server.read_line(&mut asked).await.unwrap();
+            server.write_all(b"OK cmd=STLS\n").await.unwrap();
+            asked
+        });
+        stls_upgrade(client).await.unwrap();
+        assert_eq!(serve.await.unwrap(), "STLS\n");
+
+        let (client, mut server) = tokio::io::duplex(256);
+        server
+            .write_all(b"TASSERVER 0.38\nNO cmd=STLS\n")
+            .await
+            .unwrap();
+        assert!(matches!(
+            stls_upgrade(client).await,
+            Err(TransportError::Stls(reply)) if reply == "NO cmd=STLS"
+        ));
     }
 }

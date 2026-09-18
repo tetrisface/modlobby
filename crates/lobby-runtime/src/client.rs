@@ -1996,6 +1996,10 @@ impl Runtime {
                 PolicyEvent::Sent { area, lines, .. } => self.paste_sent(area, lines),
                 other => tracing::info!(?other, "policy"),
             },
+            Inbound::Note(text) => self.batcher.push(Delta::Notice {
+                level: lobby_ui::NoticeLevel::Warning,
+                text,
+            }),
             Inbound::Closed { reason } => self.connection_lost(reason),
         }
     }
