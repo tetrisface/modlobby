@@ -193,16 +193,51 @@ describe('finding a setting', () => {
     expect(scrolledTo).toEqual(['settings-notifications'])
   })
 
-  test('the index jumps to the section it names', () => {
+  test('the overview jumps to the section it names, and marks it', () => {
     const { container } = openAt('/')
-    const index = container.querySelector('.settings-index')
-    const chat = [...(index?.querySelectorAll('button') ?? [])].find(
+    const overview = container.querySelector('.settings-overview')
+    const chat = [...(overview?.querySelectorAll('button') ?? [])].find(
       (button) => button.textContent === 'Chat',
     )
     if (!chat) throw new Error('no Chat entry')
     fireEvent.click(chat)
     expect(scrolledTo).toEqual(['settings-chat'])
     expect(chat.classList.contains('on')).toBe(true)
+    expect(chat.getAttribute('aria-current')).toBe('location')
+  })
+
+  test('the overview marks the section under the pointer, then the scroll again', () => {
+    const { container } = openAt('/')
+    const marked = () =>
+      container.querySelector('.settings-overview .on')?.textContent
+    expect(marked()).toBe('Servers')
+
+    const chatRow = container.querySelector('#settings-chat .set-row')!
+    fireEvent.mouseOver(chatRow)
+    expect(marked()).toBe('Chat')
+
+    // Crossing the space between two sections is not leaving them.
+    fireEvent.mouseOver(container.querySelector('.settings-body')!)
+    expect(marked()).toBe('Chat')
+
+    fireEvent.mouseLeave(container.querySelector('.settings-body')!)
+    expect(marked()).toBe('Servers')
+  })
+
+  test('while searching, the page itself is the overview', () => {
+    const { container } = openAt('/')
+    search(container, 'metered')
+    expect(container.querySelector('.settings-overview')).toBeNull()
+  })
+
+  test('every section is headed by its name, with its rows beneath', () => {
+    const { container } = openAt('/')
+    const chat = container.querySelector('#settings-chat')
+    expect(chat?.querySelector(':scope > h2')?.textContent).toBe('Chat')
+    expect(
+      chat?.querySelectorAll(':scope > .set-rows > .set-row').length,
+    ).toBeGreaterThan(0)
+    expect(container.querySelector('fieldset')).toBeNull()
   })
 })
 
