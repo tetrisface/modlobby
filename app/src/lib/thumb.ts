@@ -11,6 +11,7 @@
 
 import { convertFileSrc } from '@tauri-apps/api/core'
 import type { Tile } from '../ipc/bindings/Tile'
+import { uiScale } from '../store/settings'
 
 /**
  * A URL for `path` under the scheme. On Windows the webview spells it
@@ -27,11 +28,28 @@ export function thumbSrc(path: string): string {
  *
  * Shared by every kind of picture the scheme serves: two of these would be two
  * answers to how the app scales, and one of them would eventually be wrong.
+ *
+ * Sizing the interface counts as well as the screen does: every box is drawn
+ * in `rem`, so ctrl+wheel makes each one bigger without making its picture
+ * bigger, and the tile is stretched. Asking for the larger size costs a local
+ * decode and resize — Rust keeps the published picture and cuts every size
+ * from that copy (`content::map_thumb`), so nothing is fetched again.
  */
 export function devicePixels(tile: Tile): Tile {
-  const scale = window.devicePixelRatio || 1
+  const scale = (window.devicePixelRatio || 1) * zoom()
   return {
     width: Math.round(tile.width * scale),
     height: Math.round(tile.height * scale),
   }
+}
+
+/**
+ * The interface size as a factor, in quarters.
+ *
+ * Each distinct size is a picture of its own on disk, and the wheel moves in
+ * tens of a percent — so the steps between are rounded together, and a tile
+ * up to an eighth off is drawn by the box that already scales it anyway.
+ */
+function zoom(): number {
+  return Math.round(uiScale() / 25) / 4 || 1
 }

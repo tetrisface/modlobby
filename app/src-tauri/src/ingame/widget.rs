@@ -127,6 +127,21 @@ function widget:Shutdown()
 	end
 end
 
+-- The menu says the Lobby button found nobody home.
+--
+-- BAR replaces its quit screen with that button for as long as a menu is
+-- loaded, so a crashed modlobby leaves a running game with no way out but
+-- Alt+F4. The engine's own quit box is drawn by the engine rather than by
+-- LuaUI, is always available, and offers Quit To Menu and Quit To System.
+function widget:RecvLuaMsg(msg)
+	if msg ~= "modlobbyGone" then
+		return false
+	end
+	Spring.Echo("modlobby is not running; opening the engine quit menu")
+	Spring.SendCommands("QuitMenu")
+	return true
+end
+
 function widget:KeyPress(key, mods, isRepeat)
 	if key ~= KEY_ESCAPE or isRepeat then
 		return false
@@ -180,5 +195,15 @@ mod tests {
         assert!(source.contains("GetSelectedUnitsCount() > 0"));
         assert!(source.contains("isRepeat"));
         assert!(source.contains("return ask(\"raise\")"));
+    }
+
+    /// The way out of a game whose lobby died: BAR hides its own quit screen
+    /// while a menu is loaded, so the engine's quit box is all that is left.
+    #[test]
+    fn a_dead_lobby_still_leaves_a_way_out_of_the_game() {
+        let source = source(1, "x");
+        assert!(source.contains("function widget:RecvLuaMsg"));
+        assert!(source.contains(r#"msg ~= "modlobbyGone""#));
+        assert!(source.contains(r#"Spring.SendCommands("QuitMenu")"#));
     }
 }

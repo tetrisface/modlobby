@@ -121,7 +121,18 @@ end
 -- the whole point: the lobby comes up over it rather than instead of it.
 function RecvLuaMsg(msg)
 	if msg == "showLobby" then
-		return ask("raise")
+		if ask("raise") then
+			return true
+		end
+		-- modlobby is not answering, and BAR hides its own quit screen for as
+		-- long as a menu is loaded (`gui_top_bar_buttons.lua:984`) -- so this
+		-- button is the only way out of the game, and it just failed. Hand the
+		-- player to the engine's own quit box, which the engine draws itself
+		-- and which offers Quit To Menu and Quit To System.
+		if Spring.SendLuaUIMsg then
+			Spring.SendLuaUIMsg("modlobbyGone")
+		end
+		return false
 	end
 	-- "disableLobbyButton" is BAR telling a real lobby to hide its own button.
 	-- There is no button here to hide.
@@ -200,6 +211,9 @@ mod tests {
         assert!(lua.contains(r#"local TOKEN = "secret""#));
         assert!(lua.contains("function RecvLuaMsg"));
         assert!(lua.contains("function ActivateMenu"));
+        // The dead-lobby way out: nobody is listening, so the player is told
+        // through LuaUI, which can open the engine's quit box.
+        assert!(lua.contains(r#"Spring.SendLuaUIMsg("modlobbyGone")"#));
         // The one quit call a LuaMenu has. `SendCommands` is not in its
         // environment, and the engine sat black on the error.
         assert!(lua.contains("Spring.Quit()"));
