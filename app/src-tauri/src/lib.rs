@@ -262,12 +262,25 @@ pub fn run() {
                 }
             });
             let check_updates = app.settings.get().updates.automatic && update::enabled();
+            // Whether the last session went wrong decides how soon the look
+            // is due. A panic counts as going wrong too: one in a spawned task
+            // unwinds without taking the process, which would then end
+            // cleanly and look like a session that did not.
+            if app.update_memory.began() {
+                tracing::info!("the last session went wrong; the next look comes sooner");
+            }
+            let memory = app.update_memory.clone();
+            let previous = std::panic::take_hook();
+            std::panic::set_hook(Box::new(move |info| {
+                memory.note_trouble();
+                previous(info);
+            }));
             // Picks up a download an earlier run left waiting; the front end
             // asks for it to be installed before it logs in.
             tauri_app.manage(update::Staged::open(app.settings.dir()));
             tauri_app.manage(app);
-            // A look, not a download: one small request when it is due, and
-            // the corner of the nav says what it found.
+            // One small request when it is due, and the nav says what it
+            // found -- fetching it too when `updates.download` says so.
             if check_updates {
                 tauri::async_runtime::spawn(update::daily(tauri_app.handle().clone()));
             }
@@ -338,6 +351,7 @@ pub fn run() {
             update::check_update,
             update::install_update,
             update::resume_update,
+            update::note_trouble,
             commands::flash_engine,
             commands::remember_played,
             commands::game_modoptions,
@@ -421,6 +435,9 @@ pub fn run() {
             }
             let game_running = engine_running(handle);
             tracing::info!(game_running, "exiting");
+            if let Some(app) = handle.try_state::<state::App>() {
+                app.update_memory.ended();
+            }
             let Some(held) = handle.try_state::<InGameHandle>() else {
                 return;
             };

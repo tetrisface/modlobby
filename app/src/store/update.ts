@@ -46,6 +46,11 @@ export function downloading(): number | null {
   return at.total > 0 ? Math.floor((at.got / at.total) * 100) : 0
 }
 
+/** A look is out. */
+export function checking(): boolean {
+  return update()?.phase === 'checking'
+}
+
 /** A look or a download is out. */
 export function busy(): boolean {
   const phase = update()?.phase
@@ -57,12 +62,17 @@ export function failure(): string | null {
   return at?.phase === 'failed' ? at.reason : null
 }
 
-/** Looks for a newer release; downloads nothing. */
+/**
+ * Looks for a newer release, which `updates.download` may follow with a
+ * fetch. Failing to look is a warning, never an error: an error makes the
+ * next look come sooner, and an offline client must not talk itself into
+ * looking harder for a server it cannot reach.
+ */
 export async function checkUpdate(): Promise<void> {
   try {
     setUpdate(await api.checkUpdate())
   } catch (error) {
-    pushNotice('error', describeError(error))
+    pushNotice('warning', describeError(error))
   }
 }
 

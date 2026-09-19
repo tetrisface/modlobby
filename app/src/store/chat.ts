@@ -3,6 +3,7 @@ import type { ChannelView } from '../ipc/bindings/ChannelView'
 import type { ChannelSummaryView } from '../ipc/bindings/ChannelSummaryView'
 import type { ChatLine } from '../ipc/bindings/ChatLine'
 import type { NoticeLevel } from '../ipc/bindings/NoticeLevel'
+import { api } from '../ipc/client'
 
 export type Notice = {
   seq: number
@@ -202,6 +203,9 @@ export function pushNotice(level: NoticeLevel, text: string): void {
   }
   setChat('notices', (notices) => [...notices.slice(-19), notice])
   sweeping ??= setInterval(sweep, SWEEP_EVERY)
+  // An error is the app's own failing, so the next look for a fix comes
+  // sooner. Losable bookkeeping, like the rest of the update memory.
+  if (level === 'error') api.noteTrouble().catch(() => {})
 }
 
 /**

@@ -1375,6 +1375,18 @@ body.resizing-y {
   max-width: 35rem;
 }
 
+/* Under every tab, quiet: the build is what a bug report is missing, not
+   something to read on the way past. Pushed to the bottom of a short tab. */
+.build-stamp {
+  margin-top: auto;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+  font-family: var(--mono, monospace);
+  font-size: 0.75rem;
+  color: var(--faint, var(--muted));
+  user-select: text;
+}
+
 .settings fieldset {
   border: 1px solid var(--line);
   border-radius: 4px;
@@ -3872,11 +3884,13 @@ button.link:hover {
 }
 
 /* The version, in the corner where the brand is. Small because it is a fact,
-   not a feature; a button only while a downloaded update is waiting. */
+   not a feature; an update is a separate button to its left. */
 .version-slot {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   align-self: center;
+  gap: 0.5rem;
   /* The build must not fold into the account name before the room card
      gives way. */
   flex-shrink: 0;
@@ -3906,20 +3920,11 @@ button.link:hover {
   cursor: default;
 }
 
-/* A newer version is out and a click fetches it: the one state the corner
-   is allowed to catch the eye in, and only by colour. */
-.version.available {
-  color: var(--accent);
-}
-
-.version.waiting {
-  font-size: 0.5625rem;
-  padding: 0.125rem 0.5rem;
-  color: var(--text);
-  background: transparent;
-  border: 1px solid var(--accent);
-  border-radius: 2px;
-  cursor: pointer;
+/* Inert while an update downloads -- a look then would start the fetch over
+   -- but not faded: the version does not change with the update, the button
+   beside it does. */
+.version.steady:disabled {
+  opacity: 1;
 }
 
 /* ---- the map, large, with the start-box editor ---- */

@@ -344,26 +344,29 @@ impl Projector {
                 NoticeLevel::Warning,
                 format!("join failed: {reason}"),
             )),
+            // Warnings, all of these: `Error` is kept for the app's own
+            // failing, and makes the next look for a fix come sooner. The
+            // account, the server and the network are not ours to fix.
             Effect::LoginDenied { reason } => out.push(notice(
-                NoticeLevel::Error,
+                NoticeLevel::Warning,
                 format!("login denied: {reason}"),
             )),
             Effect::AgreementRequired { .. } => out.push(notice(
-                NoticeLevel::Error,
+                NoticeLevel::Warning,
                 "the account must accept the user agreement first".into(),
             )),
             // Registration is reported to whoever asked for it, through the
             // command's own reply; a notice as well would say it twice.
             Effect::Registered | Effect::RegistrationDenied { .. } => {}
             Effect::Redirect { host, port } => out.push(notice(
-                NoticeLevel::Error,
+                NoticeLevel::Warning,
                 format!(
                     "server redirects to {host}:{}",
                     port.map_or("?".into(), |p| p.to_string())
                 ),
             )),
             Effect::Disconnected { reason, .. } => out.push(notice(
-                NoticeLevel::Error,
+                NoticeLevel::Warning,
                 format!("disconnected: {reason}"),
             )),
             Effect::Send(_) | Effect::LoggedIn { .. } | Effect::Ready => {}

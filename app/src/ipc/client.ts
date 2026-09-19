@@ -110,6 +110,8 @@ export const api = {
   installUpdate: () => invoke<UpdateProgress>('install_update'),
   /** Installs a download an earlier run kept; `null` when there is none. */
   resumeUpdate: () => invoke<UpdateProgress | null>('resume_update'),
+  /** Something went wrong this session: the next look for a fix comes sooner. */
+  noteTrouble: () => invoke<void>('note_trouble'),
   ring: (user: string) => invoke<void>('ring', { user }),
   addBot: (
     name: string,
