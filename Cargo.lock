@@ -6464,7 +6464,7 @@ dependencies = [
 
 [[package]]
 name = "widgets"
-version = "0.1.14"
+version = "0.1.16"
 dependencies = [
  "base64 0.23.1",
  "content",
