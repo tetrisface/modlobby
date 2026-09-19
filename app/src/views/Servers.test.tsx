@@ -83,14 +83,14 @@ describe('the servers section', () => {
 
   test('adds a server by its host, and only once', () => {
     const { container } = open()
-    typeHost(container, 'randomguyrapid.duckdns.org')
+    typeHost(container, 'server.example.com')
     fireEvent.click(button(container, 'Add'))
     expect(cards(container)).toHaveLength(2)
     expect(cards(container)[1]?.textContent).toContain(
-      'randomguyrapid.duckdns.org',
+      'server.example.com',
     )
 
-    typeHost(container, 'RandomGuyRapid.duckdns.org')
+    typeHost(container, 'server.example.com')
     expect(button(container, 'Add').disabled).toBe(true)
     expect(container.querySelector('.server-add + .error')?.textContent).toBe(
       'that server is already listed',
@@ -195,7 +195,7 @@ describe('the servers section', () => {
       expect(found).not.toBeNull()
       return found
     })
-    expect(sheet?.textContent).toContain('Server: BAR')
+    expect(sheet?.textContent).toContain('Forgot the password?')
     await vi.waitFor(() =>
       expect(asked).toHaveBeenCalledWith('login_wait', { server: BAR }),
     )

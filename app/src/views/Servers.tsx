@@ -297,7 +297,7 @@ function AddServer(props: { listed: string[]; add: (host: string) => void }) {
           Add a server
           <input
             value={host()}
-            placeholder='its host, e.g. randomguyrapid.duckdns.org'
+            placeholder='its host, e.g. server.example.com'
             onInput={(event) => setHost(event.currentTarget.value)}
             onKeyDown={(event) => {
               if (event.key !== 'Enter') return

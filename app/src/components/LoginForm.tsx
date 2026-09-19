@@ -1,5 +1,6 @@
 import { For, Show, createEffect, createSignal, onCleanup } from 'solid-js'
 import { Portal } from 'solid-js/web'
+import { Glyph } from './icons'
 import { Linkify, openExternal } from './Linkify'
 import { api, describeError, errorCode } from '../ipc/client'
 import {
@@ -71,12 +72,11 @@ export function LoginForm(props: {
   /** Whether the password is being read back, rather than a confirm field. */
   const [reveal, setReveal] = createSignal(false)
   /**
-   * Whether passwords are kept, and used at startup: one answer for every
-   * server, so it is Settings' to change and this form's only to follow. A
-   * checkbox here would set it for all of them from whichever login ran last.
+   * Whether passwords are kept, and used at startup. One answer for every
+   * server: a login here sets it for all of them, as the one in Settings does.
    */
-  const remember = () => settings()?.account.rememberPassword ?? false
-  const autoLogin = () => settings()?.account.autoLogin ?? false
+  const [remember, setRemember] = createSignal(false)
+  const [autoLogin, setAutoLogin] = createSignal(false)
   const [hasStored, setHasStored] = createSignal(false)
   /** Why this username cannot be had, answered without asking the server. */
   const [nameProblem, setNameProblem] = createSignal<string | null>(null)
@@ -105,6 +105,8 @@ export function LoginForm(props: {
     if (!s || username()) return
     const known = entry()?.username ?? ''
     setUsername(known)
+    setRemember(s.account.rememberPassword)
+    setAutoLogin(s.account.autoLogin)
     if (s.account.rememberPassword && known) {
       void api
         .hasPassword(props.server, known)
@@ -273,28 +275,33 @@ export function LoginForm(props: {
       </Show>
       <label>
         Password
-        <input
-          // Read back rather than typed twice: the login that follows sends
-          // whatever was typed and succeeds either way, so a confirm field
-          // would not catch the typo it exists to catch — it would only be
-          // found on the next launch, out of the keyring.
-          type={reveal() ? 'text' : 'password'}
-          value={password()}
-          onInput={(e) => setPassword(e.currentTarget.value)}
-          placeholder={hasStored() && mode() === 'login' ? MASKED : ''}
-          disabled={awaitingCode()}
-          autocomplete={
-            mode() === 'register' ? 'new-password' : 'current-password'
-          }
-        />
+        <span class='password-field'>
+          <input
+            // Read back rather than typed twice: the login that follows sends
+            // whatever was typed and succeeds either way, so a confirm field
+            // would not catch the typo it exists to catch — it would only be
+            // found on the next launch, out of the keyring.
+            type={reveal() ? 'text' : 'password'}
+            value={password()}
+            onInput={(e) => setPassword(e.currentTarget.value)}
+            placeholder={hasStored() && mode() === 'login' ? MASKED : ''}
+            disabled={awaitingCode()}
+            autocomplete={
+              mode() === 'register' ? 'new-password' : 'current-password'
+            }
+          />
+          <button
+            type='button'
+            class='password-reveal'
+            aria-pressed={reveal()}
+            aria-label={reveal() ? 'Hide password' : 'Show password'}
+            title={reveal() ? 'Hide password' : 'Show password'}
+            onClick={() => setReveal(!reveal())}
+          >
+            <Glyph id={reveal() ? 'act-eye-off' : 'act-eye'} />
+          </button>
+        </span>
       </label>
-      <button
-        type='button'
-        class='link login-reveal'
-        onClick={() => setReveal(!reveal())}
-      >
-        {reveal() ? 'Hide password' : 'Show password'}
-      </button>
       <Show when={mode() === 'register'}>
         <label>
           Email
@@ -328,14 +335,26 @@ export function LoginForm(props: {
           />
         </label>
       </Show>
-      <p class='muted'>
-        {remember()
-          ? 'The password is remembered, in the OS keyring. '
-          : 'The password is not remembered. '}
-        <a href='#/settings?section=account'>
-          Settings → Account decides that, for every server.
-        </a>
-      </p>
+      <label class='row'>
+        <input
+          type='checkbox'
+          checked={remember()}
+          onChange={(e) => {
+            setRemember(e.currentTarget.checked)
+            if (!e.currentTarget.checked) setAutoLogin(false)
+          }}
+        />
+        Remember the password (OS keyring)
+      </label>
+      <label class='row'>
+        <input
+          type='checkbox'
+          checked={autoLogin()}
+          disabled={!remember()}
+          onChange={(e) => setAutoLogin(e.currentTarget.checked)}
+        />
+        Log in automatically on startup
+      </label>
       <Show
         when={
           mode() === 'register' && !awaitingCode() && props.server === BAR_HOST
@@ -401,13 +420,14 @@ export function LoginForm(props: {
           </button>
         </p>
       </Show>
-      <p class='muted'>
-        Server: {entry() ? serverName(entry()!) : props.server}
-        <Show when={lobby.ways[props.server]}>{(way) => <> ({way()})</>}</Show>
+      <p class='muted login-forgot'>
+        <Show when={props.server !== BAR_HOST}>
+          Server: {entry() ? serverName(entry()!) : props.server}
+          <Show when={entry()}>{' · '}</Show>
+        </Show>
         <Show when={entry()}>
           {(known) => (
             <>
-              {' · '}
               <a
                 href={forgotPasswordUrl(known())}
                 onClick={(event) => {
@@ -440,11 +460,6 @@ export function LoginSheet(props: {
         <div
           class='sheet-card login-sheet'
           onMouseDown={(event) => event.stopPropagation()}
-          // A link to another page takes the reader there, not under a sheet.
-          onClick={(event) => {
-            if ((event.target as Element).closest('a[href^="#/"]'))
-              props.close()
-          }}
           onKeyDown={(event) => {
             if (event.key === 'Escape') props.close()
           }}

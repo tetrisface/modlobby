@@ -663,7 +663,7 @@ mod tests {
         (port, accepted)
     }
 
-    /// randomguyrapid.duckdns.org on 2026-09-19: greets in plaintext, agrees
+    /// server.example.com on 2026-09-19: greets in plaintext, agrees
     /// to `STLS`, then hangs up where the handshake should be.
     async fn agrees_then_hangs_up(mut socket: TcpStream) {
         let _ = socket.write_all(b"TASSERVER 0.38 * 8201 0\n").await;

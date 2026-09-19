@@ -84,13 +84,29 @@ afterEach(() => {
 })
 
 describe('the login form', () => {
-  test('follows the one answer to whether passwords are kept, and says which', async () => {
+  test("names the server only when it is not BAR's", () => {
+    const { container } = render(() => <Login />)
+    expect(container.textContent).not.toContain('Server:')
+    expect(container.textContent).toContain('Forgot the password?')
+    cleanup()
+
+    setSettingsSignal({
+      ...settingsWith(),
+      servers: [{ ...newServer('rapid.example'), name: 'Rapid' }],
+    } as Settings)
+    const other = render(() => <LoginForm server='rapid.example' />)
+    expect(other.container.textContent).toContain('Server: Rapid')
+  })
+
+  test('starts from the one answer to whether passwords are kept, and sends it', async () => {
     const kept = settingsWith()
     kept.account = { rememberPassword: true, autoLogin: true }
     setSettingsSignal(kept)
     const { container } = render(() => <Login />)
-    expect(container.querySelector('input[type=checkbox]')).toBeNull()
-    expect(container.textContent).toContain('The password is remembered')
+    const boxes = [
+      ...container.querySelectorAll<HTMLInputElement>('input[type=checkbox]'),
+    ]
+    expect(boxes.map((box) => box.checked)).toEqual([true, true])
 
     fill(container, 'input[autocomplete="username"]', 'me')
     fill(container, 'input[autocomplete="current-password"]', 'pw')
@@ -141,11 +157,14 @@ describe('the login form', () => {
       container.querySelector<HTMLInputElement>(
         'input[autocomplete$="-password"]',
       )
-    const toggle = () => container.querySelector('.login-reveal')!
+    const toggle = () =>
+      container.querySelector('.password-field .password-reveal')!
     expect(field()?.type).toBe('password')
+    expect(toggle().getAttribute('aria-label')).toBe('Show password')
 
     fireEvent.click(toggle())
     expect(field()?.type).toBe('text')
+    expect(toggle().getAttribute('aria-label')).toBe('Hide password')
 
     fireEvent.click(toggle())
     expect(field()?.type).toBe('password')
