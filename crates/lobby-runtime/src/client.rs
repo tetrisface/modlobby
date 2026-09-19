@@ -70,6 +70,27 @@ type ConnectFuture = Pin<Box<dyn Future<Output = Result<Connected, TransportErro
 /// How the runtime reaches a server; tests hand it an in-memory stream.
 pub type Connector = Arc<dyn Fn(Endpoint, ThrottlePolicy) -> ConnectFuture + Send + Sync>;
 
+/// Whether games may be fetched through a rapid master index, by its URL; the
+/// refusal is for a person to read. The reading of somebody else's rapid
+/// server is handed in (`content::rapid::Vetter`), so the runtime needs no
+/// HTTP client and a test needs no network.
+pub type Vet =
+    Arc<dyn Fn(String) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> + Send + Sync>;
+
+/// With nobody to read another rapid server, only BAR's is fetched from.
+fn vet_bars_only() -> Vet {
+    Arc::new(|master| {
+        Box::pin(async move {
+            if master == recoil::RAPID_REPO_MASTER {
+                return Ok(());
+            }
+            Err(format!(
+                "nothing here can check the rapid server at {master}"
+            ))
+        })
+    })
+}
+
 enum Command {
     Subscribe(Box<dyn UiTransport>),
     Login {
@@ -273,6 +294,9 @@ enum Command {
     },
     ReleaseSeat,
     SetDataDir(Option<PathBuf>),
+    /// Each server's rapid master index, by server id; one without is BAR's.
+    SetRapidMasters(BTreeMap<String, String>),
+    SetVet(Vet),
     /// The disk changed under us — an engine was installed — so the room's
     /// content is worth asking about again.
     RecheckContent,
@@ -783,6 +807,21 @@ impl Client {
         self.send(Command::ReleaseSeat).await
     }
 
+    /// Where each server's games come from: its rapid master index, by
+    /// server id. A server not named here gets BAR's.
+    pub async fn set_rapid_masters(
+        &self,
+        masters: BTreeMap<String, String>,
+    ) -> Result<(), ClientError> {
+        self.send(Command::SetRapidMasters(masters)).await
+    }
+
+    /// Who reads a rapid server that is not BAR's before games are fetched
+    /// from it. Until one is set, no such server is fetched from.
+    pub async fn set_vet(&self, vet: Vet) -> Result<(), ClientError> {
+        self.send(Command::SetVet(vet)).await
+    }
+
     /// Points the content check at a data directory; `None` uses the launcher's.
     pub async fn set_data_dir(&self, data_dir: Option<PathBuf>) -> Result<(), ClientError> {
         self.send(Command::SetDataDir(data_dir)).await
@@ -925,6 +964,9 @@ struct Runtime {
     join_asked: Option<Instant>,
     /// Where BAR's content lives; `None` falls back to the launcher's directory.
     data_dir: Option<PathBuf>,
+    /// Each server's rapid master index, by server id; see [`Self::rapid_master`].
+    rapid_masters: BTreeMap<String, String>,
+    vet: Vet,
     /// Where to put a config that gets the game borderless, when the user's
     /// own would not let the overlay cover it. `None` leaves their settings
     /// entirely alone, which is also what happens when they already work.
@@ -984,12 +1026,11 @@ struct Runtime {
 #[derive(Debug)]
 enum DownloadEvent {
     Progress(recoil::Progress),
-    /// `tail` is the last of what pr-downloader printed: on failure, the
-    /// only account of why there is.
+    /// `failure` is why it did not finish, for a person to read; `None` is
+    /// done. Empty for a download that was stopped, which nobody is told.
     Finished {
         what: String,
-        ok: bool,
-        tail: Vec<String>,
+        failure: Option<String>,
     },
 }
 
@@ -1085,6 +1126,64 @@ fn remember_tail(tail: &mut Vec<String>, line: &str) {
     tail.push(line.to_owned());
 }
 
+/// Where `server`'s games are looked for: its own rapid master index if it
+/// has one, else BAR's — which is also where a room with no server behind it
+/// looks. A mod is never looked for on another server's.
+fn master_for(masters: &BTreeMap<String, String>, server: Option<&str>) -> String {
+    server
+        .and_then(|server| masters.get(server))
+        .map_or(recoil::RAPID_REPO_MASTER, String::as_str)
+        .to_owned()
+}
+
+/// One pr-downloader run to its end, reporting progress on the way; the
+/// failure is for a person to read.
+async fn run_download(
+    run: &recoil::Download,
+    progress: &mpsc::Sender<DownloadEvent>,
+) -> Result<(), String> {
+    let mut child = crate::launch::spawn_download(run)?;
+    let mut tail = Vec::new();
+    if let Some(mut stdout) = child.stdout.take() {
+        // Read raw rather than by line: pr-downloader redraws progress with
+        // carriage returns, so a line reader would see one enormous line at
+        // the end and no progress at all.
+        let mut buffer = String::new();
+        let mut chunk = [0_u8; 4096];
+        while let Ok(read) = stdout.read(&mut chunk).await {
+            if read == 0 {
+                break;
+            }
+            buffer.push_str(&String::from_utf8_lossy(&chunk[..read]));
+            for line in recoil::split_output(&mut buffer) {
+                remember_tail(&mut tail, &line);
+                if let Some(step) = recoil::Progress::parse(&line) {
+                    let _ = progress.send(DownloadEvent::Progress(step)).await;
+                }
+            }
+        }
+    }
+    if matches!(child.wait().await, Ok(status) if status.success()) {
+        return Ok(());
+    }
+    Err(unpublished(run, &tail).unwrap_or_else(|| failure_reason(&tail)))
+}
+
+/// A game run that ended at the search nobody answers: rapid did not know
+/// the game, which is an answer about the server and not a broken download.
+fn unpublished(run: &recoil::Download, tail: &[String]) -> Option<String> {
+    let dead_end = run.search_url == recoil::NO_SEARCH_URL
+        && tail.iter().any(|line| line.contains(recoil::NO_SEARCH_URL));
+    dead_end.then(|| {
+        let names: Vec<&str> = run.wants.iter().map(|(_, name)| name.as_str()).collect();
+        format!(
+            "{} is not published by this server's rapid server ({})",
+            names.join(", "),
+            run.rapid_master
+        )
+    })
+}
+
 /// The failure as a user can report it.
 fn failure_reason(tail: &[String]) -> String {
     if tail.is_empty() {
@@ -1137,6 +1236,8 @@ impl Runtime {
             in_game_on: None,
             join_asked: None,
             data_dir: None,
+            rapid_masters: BTreeMap::new(),
+            vet: vet_bars_only(),
             engine_run: None,
             overlay_config_dir: None,
             menu_archive: None,
@@ -1265,7 +1366,12 @@ impl Runtime {
             room.game_name.clone(),
             room.map_name.clone(),
         );
-        self.fetch(wanted).await
+        let master = self.rapid_master(self.room().as_deref());
+        self.fetch(wanted, master).await
+    }
+
+    fn rapid_master(&self, server: Option<&str>) -> String {
+        master_for(&self.rapid_masters, server)
     }
 
     /// The same, for the room with no server behind it.
@@ -1275,17 +1381,19 @@ impl Runtime {
             .as_ref()
             .ok_or_else(|| ClientError::Refused("there is no skirmish room".into()))?;
         let wanted = (room.engine.clone(), room.game.clone(), room.map.clone());
-        self.fetch(wanted).await
+        let master = self.rapid_master(None);
+        self.fetch(wanted, master).await
     }
 
-    /// Fetches whatever of an (engine, game, map) this machine lacks.
+    /// Fetches whatever of an (engine, game, map) this machine lacks, the
+    /// game through `rapid_master`.
     ///
-    /// One invocation for the whole set, and one at a time: pr-downloader
-    /// rewrites rapid's repo index on every run, so two at once corrupt each
-    /// other's view of it.
+    /// One run at a time: pr-downloader rewrites rapid's repo index on every
+    /// run, so two at once corrupt each other's view of it.
     async fn fetch(
         &mut self,
         (engine_version, game, map): (String, String, String),
+        rapid_master: String,
     ) -> Result<(), ClientError> {
         if self.downloading.is_some() {
             return Err(ClientError::Refused("a download is already running".into()));
@@ -1310,9 +1418,9 @@ impl Runtime {
             .map(|(_, name)| name.as_str())
             .collect::<Vec<_>>()
             .join(", ");
-        let mut child = crate::launch::spawn_download(&dirs, &engine_version, wants)
+        let runs = crate::launch::plan_download(&dirs, &engine_version, wants, &rapid_master)
             .map_err(ClientError::Refused)?;
-        let stdout = child.stdout.take();
+        let vet = Arc::clone(&self.vet);
 
         let (stop_tx, stop_rx) = oneshot::channel();
         self.downloading = Some(what.clone());
@@ -1327,49 +1435,27 @@ impl Runtime {
         let events = self.download_tx.clone();
         tokio::spawn(async move {
             let progress = events.clone();
-            let pump = async move {
-                let mut tail = Vec::new();
-                if let Some(mut stdout) = stdout {
-                    // Read raw rather than by line: pr-downloader redraws progress
-                    // with carriage returns, so a line reader would see one
-                    // enormous line at the end and no progress at all.
-                    let mut buffer = String::new();
-                    let mut chunk = [0_u8; 4096];
-                    while let Ok(read) = stdout.read(&mut chunk).await {
-                        if read == 0 {
-                            break;
-                        }
-                        buffer.push_str(&String::from_utf8_lossy(&chunk[..read]));
-                        for line in recoil::split_output(&mut buffer) {
-                            remember_tail(&mut tail, &line);
-                            if let Some(step) = recoil::Progress::parse(&line) {
-                                let _ = progress.send(DownloadEvent::Progress(step)).await;
-                            }
-                        }
+            // The runs, one after the other, until one fails.
+            let work = async move {
+                for run in runs {
+                    // Somebody else's rapid server is read before anything is
+                    // fetched through it; BAR's own passes unread.
+                    if run.has_games() {
+                        vet(run.rapid_master.clone()).await?;
                     }
+                    run_download(&run, &progress).await?;
                 }
-                tail
+                Ok(())
             };
-            // The stop side owns a sender the runtime drops; either the pump
-            // finishing or that drop ends the wait, and only then is the child
-            // asked to stop — pr-downloader leaves a partial file behind, which
-            // its own resume handles on the next attempt.
-            tokio::pin!(pump);
-            let tail = tokio::select! {
-                tail = &mut pump => tail,
-                _ = stop_rx => {
-                    let _ = child.start_kill();
-                    Vec::new()
-                }
+            // The stop side owns a sender the runtime drops; either the work
+            // finishing or that drop ends the wait. Letting the work go is
+            // what stops the child — pr-downloader leaves a partial file
+            // behind, which its own resume handles on the next attempt.
+            let failure = tokio::select! {
+                outcome = work => outcome.err(),
+                _ = stop_rx => Some(String::new()),
             };
-            let status = child.wait().await;
-            let _ = events
-                .send(DownloadEvent::Finished {
-                    what,
-                    ok: matches!(status, Ok(status) if status.success()),
-                    tail,
-                })
-                .await;
+            let _ = events.send(DownloadEvent::Finished { what, failure }).await;
         });
 
         Ok(())
@@ -1483,22 +1569,21 @@ impl Runtime {
                     total: progress.total,
                 }));
             }
-            DownloadEvent::Finished { what, ok, tail } => {
+            DownloadEvent::Finished { what, failure } => {
                 self.downloading = None;
                 self.download_stop = None;
                 let stopped = std::mem::take(&mut self.download_stopping);
                 let status = if stopped {
                     DownloadStatus::Idle
-                } else if ok {
-                    DownloadStatus::Done { what }
-                } else {
-                    let reason = failure_reason(&tail);
+                } else if let Some(reason) = failure {
                     tracing::warn!(%what, %reason, "download failed");
                     self.batcher.push(Delta::Notice {
                         level: lobby_ui::NoticeLevel::Warning,
                         text: format!("downloading {what}: {reason}"),
                     });
                     DownloadStatus::Failed { what, reason }
+                } else {
+                    DownloadStatus::Done { what }
                 };
                 self.batcher.push(Delta::Download(status));
                 // Whatever arrived changes the answer, so ask the disk again.
@@ -2002,6 +2087,8 @@ impl Runtime {
             Command::SetOverlayConfigDir(dir) => self.overlay_config_dir = dir,
             Command::SetMenuArchive(menu) => self.menu_archive = menu,
             Command::SetSkirmishPath(path) => self.skirmish_path = path,
+            Command::SetRapidMasters(masters) => self.rapid_masters = masters,
+            Command::SetVet(vet) => self.vet = vet,
             Command::SetDataDir(data_dir) => {
                 // Told on every save of the settings, of which most change
                 // something else: the scan below is too slow to repeat for
@@ -3048,6 +3135,52 @@ mod tests {
             failure_reason(&tail),
             "pr-downloader did not finish: two | three | [Error] no such map"
         );
+    }
+
+    #[test]
+    fn a_servers_games_come_from_its_own_rapid_and_everyone_elses_from_bars() {
+        let masters = BTreeMap::from([(
+            "mods.example".to_owned(),
+            "https://mods.example/repos.gz".to_owned(),
+        )]);
+        assert_eq!(
+            master_for(&masters, Some("mods.example")),
+            "https://mods.example/repos.gz"
+        );
+        assert_eq!(
+            master_for(&masters, Some("server4.beyondallreason.info")),
+            recoil::RAPID_REPO_MASTER
+        );
+        assert_eq!(master_for(&masters, None), recoil::RAPID_REPO_MASTER);
+    }
+
+    #[tokio::test]
+    async fn with_nobody_to_read_another_rapid_server_only_bars_is_used() {
+        let vet = vet_bars_only();
+        assert_eq!(vet(recoil::RAPID_REPO_MASTER.into()).await, Ok(()));
+        assert!(vet("https://mods.example/repos.gz".into()).await.is_err());
+    }
+
+    #[test]
+    fn a_game_rapid_does_not_know_is_said_to_be_unpublished() {
+        let theirs = "https://mods.example/repos.gz";
+        let runs = recoil::Download::runs(
+            std::path::Path::new("prd"),
+            std::path::Path::new("data"),
+            vec![(recoil::Want::Game, "Somebody's Mod v1".into())],
+            theirs,
+        );
+        let asked_nobody = format!(
+            "[Error] search():Error downloading {}?category=game&springname=x",
+            recoil::NO_SEARCH_URL
+        );
+        assert_eq!(
+            unpublished(&runs[0], &[asked_nobody]).as_deref(),
+            Some(
+                "Somebody's Mod v1 is not published by this server's rapid server (https://mods.example/repos.gz)"
+            )
+        );
+        assert_eq!(unpublished(&runs[0], &["disk full".into()]), None);
     }
 
     #[test]

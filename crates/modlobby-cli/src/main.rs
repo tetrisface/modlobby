@@ -57,6 +57,12 @@ enum Command {
         #[command(flatten)]
         server: Server,
     },
+    /// Read somebody's rapid server: whether games may be fetched through
+    /// it, and what its own repos publish. Nothing is downloaded or logged in to.
+    Rapid {
+        /// Its master index, e.g. https://mods.example/repos.gz
+        url: String,
+    },
     /// Print the default throttle policy as TOML, as a starting point for `--policy`.
     Policy,
 }
@@ -123,6 +129,19 @@ async fn main() -> anyhow::Result<()> {
     match Cli::parse().command {
         Command::Policy => {
             print!("{}", toml::to_string_pretty(&ThrottlePolicy::default())?);
+            Ok(())
+        }
+        Command::Rapid { url } => {
+            let vetter =
+                content::rapid::Vetter::new(content::http::client(env!("CARGO_PKG_VERSION")));
+            for (repo, versions) in vetter.published(&url).await? {
+                println!("{} ({})", repo.name, repo.url);
+                for version in versions {
+                    println!("  {}  {}", version.md5, version.name);
+                }
+            }
+            vetter.vet(&url).await?;
+            println!("none of it carries one of BAR's names: games may be fetched through it");
             Ok(())
         }
         Command::Probe { server } => {

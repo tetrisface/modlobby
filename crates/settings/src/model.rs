@@ -67,6 +67,7 @@ impl Settings {
             ports: vec![server.plain_port, server.tls_port],
             allow_unencrypted: server.encryption == Encryption::None,
             website: None,
+            rapid: None,
             username: self.account.username.clone(),
             channels: self.chat.channels.clone(),
         }];
@@ -93,6 +94,12 @@ pub struct ServerEntry {
     /// Where the server's web pages are — a forgotten password is reset
     /// there — when that is not `https://<host>`.
     pub website: Option<String>,
+    /// The server's own rapid master index (`https://…/repos.gz`), where the
+    /// games its rooms run are published. Without one its games are looked
+    /// for in BAR's, which is right for a server running stock BAR. A game is
+    /// only ever looked for in its own server's index: a mod's name is never
+    /// sent to BAR's servers, nor to any other server's.
+    pub rapid: Option<String>,
     /// The account on this server.
     pub username: String,
     /// Channels to rejoin at login. The server forgets you were in them the
@@ -121,6 +128,7 @@ impl Default for ServerEntry {
             ports: vec![8200, 8201],
             allow_unencrypted: false,
             website: None,
+            rapid: None,
             username: String::new(),
             // Where the server puts everyone, and where the announcements are.
             channels: vec!["main".into()],

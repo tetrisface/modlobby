@@ -52,6 +52,9 @@ pub struct App {
     pub presets: presets::Store,
     /// The one client every HTTP request leaves through: pooled, and named.
     pub http: reqwest::Client,
+    /// Reads a rapid server that is not BAR's before anything is fetched
+    /// from it; shared with the runtime, so BAR's names are read once.
+    pub rapid: std::sync::Arc<content::rapid::Vetter>,
     /// The pve.bar stats service, with what it has already answered this run.
     pub pve: pve::Service,
     /// BAR's map index for this run, loaded the first time anything asks.
@@ -103,6 +106,7 @@ impl App {
             hardware,
             pve: pve::Service::new(http.clone(), pve::ENDPOINT),
             thumbs: content::map_thumb::Service::new(http.clone(), &cache_dir),
+            rapid: std::sync::Arc::new(content::rapid::Vetter::new(http.clone())),
             http,
             map_index: tokio::sync::Mutex::new(MapIndexHeld::default()),
             news: tokio::sync::Mutex::new(None),

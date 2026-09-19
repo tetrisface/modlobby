@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest'
 import {
   clashes,
   forgotPasswordUrl,
+  guessedRapid,
   hostProblem,
   labelOf,
   newServer,
@@ -80,6 +81,10 @@ describe('ports as typed', () => {
       { server: null, name: 'Battle room' },
     ])
     expect([...clashing]).toEqual(['main'])
+  })
+
+  test('guess their rapid index beside the lobby, over https', () => {
+    expect(guessedRapid(' mods.example ')).toBe('https://mods.example/repos.gz')
   })
 
   test('tag nothing while there is one server', () => {

@@ -30,6 +30,14 @@ allowUnencrypted: boolean,
  */
 website: string | null, 
 /**
+ * The server's own rapid master index (`https://…/repos.gz`), where the
+ * games its rooms run are published. Without one its games are looked
+ * for in BAR's, which is right for a server running stock BAR. A game is
+ * only ever looked for in its own server's index: a mod's name is never
+ * sent to BAR's servers, nor to any other server's.
+ */
+rapid: string | null, 
+/**
  * The account on this server.
  */
 username: string, 

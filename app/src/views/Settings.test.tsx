@@ -23,6 +23,7 @@ function loaded(): Settings {
         ports: [8200, 8201],
         allowUnencrypted: false,
         website: null,
+        rapid: null,
         username: 'me',
         channels: ['main'],
       },

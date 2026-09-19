@@ -58,6 +58,14 @@ export function parsePorts(text: string): number[] | null {
   return [...new Set(ports)]
 }
 
+/**
+ * Where a server's rapid master index is, if it keeps one where most do:
+ * beside the lobby, under its own name. A guess to be checked, not a fact.
+ */
+export function guessedRapid(host: string): string {
+  return `https://${host.trim()}/repos.gz`
+}
+
 /** A server just added by its host: teiserver's ports, encrypted only, no account yet. */
 export function newServer(host: string): ServerEntry {
   return {
@@ -66,6 +74,7 @@ export function newServer(host: string): ServerEntry {
     ports: [8200, 8201],
     allowUnencrypted: false,
     website: null,
+    rapid: null,
     username: '',
     channels: ['main'],
   }
