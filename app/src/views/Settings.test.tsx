@@ -42,10 +42,10 @@ function loaded(): Settings {
       privateMessage: 'desktop',
       mention: 'desktop',
       ring: 'desktop',
-      friendOnline: 'lobby',
+      friendOnline: 'off',
       vote: 'lobby',
       gameStarting: 'desktop',
-      gameEnded: 'lobby',
+      gameEnded: 'desktop',
       doNotDisturb: false,
     },
     battleList: {
@@ -210,7 +210,7 @@ describe('finding a setting', () => {
     const { container } = openAt('/')
     const marked = () =>
       container.querySelector('.settings-overview .on')?.textContent
-    expect(marked()).toBe('Servers')
+    expect(marked()).toBe('Account')
 
     const chatRow = container.querySelector('#settings-chat .set-row')!
     fireEvent.mouseOver(chatRow)
@@ -221,7 +221,7 @@ describe('finding a setting', () => {
     expect(marked()).toBe('Chat')
 
     fireEvent.mouseLeave(container.querySelector('.settings-body')!)
-    expect(marked()).toBe('Servers')
+    expect(marked()).toBe('Account')
   })
 
   test('while searching, the page itself is the overview', () => {
@@ -243,6 +243,23 @@ describe('finding a setting', () => {
 
 describe('choosing where a notification goes', () => {
   beforeEach(() => applySettings(loaded()))
+
+  test('do not disturb greys the rows it silences, and they stay changeable', () => {
+    const { container } = openNotifications()
+    const section = container.querySelector('#settings-notifications')!
+    const silenced = () => section.querySelectorAll('.set-row.silenced').length
+    expect(silenced()).toBe(0)
+
+    const dnd = [...section.querySelectorAll('label')].find((label) =>
+      label.textContent?.includes('Do not disturb'),
+    )!
+    fireEvent.click(dnd.querySelector('input')!)
+    // The seven kinds and the line saying what their places mean; not the
+    // switch itself.
+    expect(silenced()).toBe(8)
+    expect(dnd.closest('.set-row')?.classList.contains('silenced')).toBe(false)
+    expect(section.querySelector('.silenced button:disabled')).toBeNull()
+  })
 
   test('exactly one of the three is ever chosen', () => {
     const { container } = openNotifications()

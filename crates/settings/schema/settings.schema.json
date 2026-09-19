@@ -56,8 +56,8 @@
       "$ref": "#/$defs/Notifications",
       "default": {
         "doNotDisturb": false,
-        "friendOnline": "lobby",
-        "gameEnded": "lobby",
+        "friendOnline": "off",
+        "gameEnded": "desktop",
         "gameStarting": "desktop",
         "mention": "desktop",
         "privateMessage": "desktop",
@@ -306,12 +306,12 @@
         "friendOnline": {
           "description": "A friend logged in.",
           "$ref": "#/$defs/Alert",
-          "default": "lobby"
+          "default": "off"
         },
         "gameEnded": {
           "description": "Your room's game finished.",
           "$ref": "#/$defs/Alert",
-          "default": "lobby"
+          "default": "desktop"
         },
         "gameStarting": {
           "description": "Your room's game started.",

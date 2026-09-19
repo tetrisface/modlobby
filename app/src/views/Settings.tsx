@@ -31,20 +31,20 @@ const SAVE_AFTER = 600
 
 /**
  * Every section, in the order the page shows them, by the name its heading,
- * the overview and a `?section=` link know it by. Most-reached-for first,
- * the switches behind the defaults last.
+ * the overview and a `?section=` link know it by; the overview is drawn
+ * in this order, so it has to match the page's.
  */
 const SECTIONS = {
-  servers: 'Servers',
-	account: 'Account',
+  account: 'Account',
   notifications: 'Notifications',
   playing: 'Playing',
-  chat: 'Chat',
   interface: 'Interface',
   overlay: 'Overlay',
   updates: 'Updates',
+  servers: 'Servers',
   connection: 'Connection',
   files: 'Files and logs',
+  chat: 'Chat',
 } as const
 
 type SectionId = keyof typeof SECTIONS
@@ -52,7 +52,7 @@ type SectionId = keyof typeof SECTIONS
 const SECTION_IDS = Object.keys(SECTIONS) as SectionId[]
 
 /** Where the page opens, and what the overview marks until you scroll. */
-const TOP: SectionId = 'servers'
+const TOP: SectionId = 'account'
 
 /** A section's element id, which is also what `?section=` names. */
 const anchor = (id: SectionId) => `settings-${id}`
@@ -130,6 +130,13 @@ export function SettingsView() {
   const searching = () => query().trim() !== ''
   const [reading, setReading] = createSignal<SectionId>(TOP)
   let page: HTMLFormElement | undefined
+  /**
+   * The notification rows while Do not disturb is on: shown as off, since
+   * nothing they say happens, yet still set as they were and still theirs to
+   * change for when it is switched back.
+   */
+  const silenced = () =>
+    draft.notifications.doNotDisturb ? 'silenced' : undefined
 
   const sectionOf = (id: SectionId) =>
     page?.querySelector<HTMLElement>(`#${anchor(id)}`)
@@ -321,10 +328,6 @@ export function SettingsView() {
           </header>
           <p class='muted settings-none'>Nothing here matches that.</p>
 
-          <Section id='servers'>
-            <ServerRows draft={draft} setDraft={setDraft} settle={settle} />
-          </Section>
-
           <Section id='account'>
             <Row>
               <label class='row'>
@@ -358,7 +361,7 @@ export function SettingsView() {
                 For every server at once: each keeps its own account and
                 password, and these decide whether any of them are kept and used
                 at startup. A password never goes in the settings file.
-                Forgetting one is on its server, above.
+                Forgettable on the server's setting.
               </p>
             </Row>
           </Section>
@@ -386,7 +389,7 @@ export function SettingsView() {
                 download — since that is an answer to something you did.
               </p>
             </Row>
-            <Row>
+            <Row class={silenced()}>
               <p class='muted'>
                 <b>In lobby</b> puts a line in the corner of this window.{' '}
                 <b>Desktop</b> raises a notification from your operating system
@@ -437,7 +440,7 @@ export function SettingsView() {
               }
             >
               {([key, label, hint]) => (
-                <Row>
+                <Row class={silenced()}>
                   <div class='choice-row'>
                     <span>{label}</span>
                     <div class='choice'>
@@ -557,44 +560,6 @@ export function SettingsView() {
                 size; never a name or an account. Off hides the panel and sends
                 nothing.
               </p>
-            </Row>
-          </Section>
-
-          <Section id='chat'>
-            <Row>
-              <label class='row'>
-                <input
-                  type='checkbox'
-                  checked={draft.chat.filterHostChatter}
-                  onChange={(e) =>
-                    setDraft(
-                      'chat',
-                      'filterHostChatter',
-                      e.currentTarget.checked,
-                    )
-                  }
-                />
-                Filter bot chatter
-              </label>
-              <p class='muted'>
-                SPADS rides the room's state on battle chat as
-                <code> BarManager|&#123;…&#125;</code>, which this reads and
-                turns into the room you see. Off, those lines are shown as they
-                arrive.
-              </p>
-            </Row>
-            <Row>
-              <label>
-                Lines kept in each chat log
-                <input
-                  type='number'
-                  value={draft.chat.maxLines}
-                  onInput={(e) => {
-                    const lines = counted(e.currentTarget.value)
-                    if (lines !== null) setDraft('chat', 'maxLines', lines)
-                  }}
-                />
-              </label>
             </Row>
           </Section>
 
@@ -749,6 +714,10 @@ export function SettingsView() {
             </Row>
           </Section>
 
+          <Section id='servers'>
+            <ServerRows draft={draft} setDraft={setDraft} settle={settle} />
+          </Section>
+
           <Section id='connection'>
             <Row>
               <label>
@@ -806,6 +775,44 @@ export function SettingsView() {
             </Row>
           </Section>
 
+          <Section id='chat'>
+            <Row>
+              <label class='row'>
+                <input
+                  type='checkbox'
+                  checked={draft.chat.filterHostChatter}
+                  onChange={(e) =>
+                    setDraft(
+                      'chat',
+                      'filterHostChatter',
+                      e.currentTarget.checked,
+                    )
+                  }
+                />
+                Filter bot chatter
+              </label>
+              <p class='muted'>
+                SPADS rides the room's state on battle chat as
+                <code> BarManager|&#123;…&#125;</code>, which this reads and
+                turns into the room you see. Off, those lines are shown as they
+                arrive.
+              </p>
+            </Row>
+            <Row>
+              <label>
+                Lines kept in each chat log
+                <input
+                  type='number'
+                  value={draft.chat.maxLines}
+                  onInput={(e) => {
+                    const lines = counted(e.currentTarget.value)
+                    if (lines !== null) setDraft('chat', 'maxLines', lines)
+                  }}
+                />
+              </label>
+            </Row>
+          </Section>
+
           {/* The build, at the foot of the page: the one fact a bug report needs. */}
           <Show when={build()}>
             {(found) => (
@@ -845,10 +852,10 @@ export function blankSettings(): Settings {
       privateMessage: 'desktop',
       mention: 'desktop',
       ring: 'desktop',
-      friendOnline: 'lobby',
+      friendOnline: 'off',
       vote: 'lobby',
       gameStarting: 'desktop',
-      gameEnded: 'lobby',
+      gameEnded: 'desktop',
       doNotDisturb: false,
     },
     battleList: {
