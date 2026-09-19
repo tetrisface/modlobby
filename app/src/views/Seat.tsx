@@ -5,6 +5,7 @@ import type { AiChoice } from '../ipc/bindings/AiChoice'
 import { api, describeError } from '../ipc/client'
 import { DEFAULT_TEAMS, freeTeam, unusedBotName } from '../lib/roster'
 import { pushNotice } from '../store/chat'
+import { roomServer } from '../store/lobby'
 import { applySettings, settings } from '../store/settings'
 import { useRoom, type RoomModel } from './room/model'
 import { setBonus as sendBonus } from './room/move'
@@ -351,7 +352,9 @@ export function Seat() {
               // Already standing in a room: the view swaps to the new one as
               // soon as the host lets us in. Said out loud because until then
               // the old room is still on screen and nothing looks to happen.
-              await api.hostPublic()
+              const server = roomServer()
+              if (server === undefined) throw new Error('not in a room')
+              await api.hostPublic(server)
               pushNotice(
                 'info',
                 'took a room; opening it when the host answers',
@@ -365,7 +368,9 @@ export function Seat() {
           disabled={busy()}
           onClick={() =>
             act('host a room', async () => {
-              const manager = await api.requestPrivateHost()
+              const server = roomServer()
+              if (server === undefined) throw new Error('not in a room')
+              const manager = await api.requestPrivateHost(server)
               pushNotice(
                 'info',
                 `asked ${manager} for a private room; joining when it opens`,

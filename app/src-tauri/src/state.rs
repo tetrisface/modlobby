@@ -4,7 +4,9 @@
 use std::sync::Arc;
 
 use lobby_runtime::{Client, Hardware, platform};
-use settings::{CredentialStore, KeyringStore, LoginGuard, RejoinMemory, Store, UpdateMemory};
+use settings::{
+    CredentialStore, KeyringStore, LoginGuard, MemoryStore, RejoinMemory, Store, UpdateMemory,
+};
 use spring_protocol::ThrottlePolicy;
 
 /// How long a map index that could not be fetched is not asked for again.
@@ -86,7 +88,7 @@ impl App {
             Client::spawn(
                 ThrottlePolicy::default(),
                 hardware.clone(),
-                Some(settings.dir().join("latency.json")),
+                Some(settings.dir().to_path_buf()),
             )
         });
         Ok(Self {
@@ -97,7 +99,7 @@ impl App {
             news_read: news::Memory::new(settings.dir()),
             client,
             settings,
-            credentials: Arc::new(KeyringStore),
+            credentials: credential_store(),
             hardware,
             pve: pve::Service::new(http.clone(), pve::ENDPOINT),
             thumbs: content::map_thumb::Service::new(http.clone(), &cache_dir),
@@ -213,4 +215,22 @@ impl App {
         }
         items
     }
+}
+
+/// Set to `memory` to keep passwords for this run only, in memory.
+///
+/// The OS keyring is per user, not per `MODLOBBY_CONFIG_DIR`: a second
+/// instance on a scratch config still reads, overwrites and deletes the real
+/// one's passwords, and a login with "remember" off deletes one. A test run
+/// sets this so it can log in without touching anything that outlives it.
+pub const CREDENTIALS_ENV: &str = "MODLOBBY_CREDENTIALS";
+
+fn credential_store() -> Arc<dyn CredentialStore> {
+    if std::env::var(CREDENTIALS_ENV).is_ok_and(|store| store == "memory") {
+        tracing::warn!(
+            "{CREDENTIALS_ENV}=memory: passwords are kept in memory for this run and forgotten with it"
+        );
+        return Arc::new(MemoryStore::default());
+    }
+    Arc::new(KeyringStore)
 }

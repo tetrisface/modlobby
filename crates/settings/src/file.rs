@@ -138,11 +138,23 @@ pub fn load(path: &Path) -> Result<Settings, Error> {
     parse(path, &text)
 }
 
+/// A file from before there was a server list is read as the list it
+/// meant. Only in memory: the file keeps the old keys until the list itself
+/// is changed, and then gains `servers` beside them.
 fn parse(path: &Path, text: &str) -> Result<Settings, Error> {
-    parse_to_serde_value(text, &ParseOptions::default()).map_err(|err| Error::Invalid {
+    let invalid = |message: String| Error::Invalid {
         path: path.to_path_buf(),
-        message: err.to_string(),
-    })
+        message,
+    };
+    let value: Value = parse_to_serde_value(text, &ParseOptions::default())
+        .map_err(|err| invalid(err.to_string()))?;
+    let listed = value.get("servers").is_some();
+    let mut settings: Settings =
+        serde_json::from_value(value).map_err(|err| invalid(err.to_string()))?;
+    if !listed {
+        settings.migrate();
+    }
+    Ok(settings)
 }
 
 /// The first-run file: a header for humans, then the defaults.
@@ -249,12 +261,12 @@ mod tests {
         let hand_edited = "// my notes\n{\n  // trailing commas are fine,\n  \"chat\": { \"maxLines\": 9 }, // keep me\n  \"server\": { \"plainPort\": 8200, \"encryption\": \"none\" },\n}\n";
         std::fs::write(store.path(), hand_edited).unwrap();
         let reloaded = store.reload().unwrap().unwrap();
-        assert_eq!(reloaded.server.plain_port, 8200);
+        assert!(reloaded.servers[0].allow_unencrypted);
 
         store
             .update(|s| {
                 s.chat.max_lines = 10;
-                s.account.username = "alice".into();
+                s.servers[0].username = "alice".into();
             })
             .unwrap();
         let text = std::fs::read_to_string(store.path()).unwrap();
@@ -262,10 +274,77 @@ mod tests {
         assert!(text.contains("// keep me"));
         assert!(text.contains("\"maxLines\": 10"));
         assert!(text.contains("\"username\": \"alice\""));
+        // The old key is left as it was: nothing writes it any more.
         assert!(text.contains("\"plainPort\": 8200"));
         let parsed = load(&store.path()).unwrap();
-        assert_eq!(parsed.account.username, "alice");
-        assert_eq!(parsed.server.encryption, crate::model::Encryption::None);
+        assert_eq!(parsed.servers[0].username, "alice");
+        assert!(parsed.servers[0].allow_unencrypted);
+    }
+
+    /// The owner's file of 2026-09-19, in the shape it had before servers.
+    const BEFORE_SERVERS: &str = r#"{
+      "server": {
+        "host": "server4.beyondallreason.info",
+        "port": 8201,
+        "tls": true,
+        "encryption": "stls",
+        // "host": "localhost",
+      },
+      "account": { "username": "tetrisface", "rememberPassword": true, "autoLogin": true },
+      "chat": { "channels": ["main", "newbies"] },
+    }"#;
+
+    #[test]
+    fn a_file_from_before_servers_is_read_as_its_one_server() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        std::fs::write(&path, BEFORE_SERVERS).unwrap();
+        let settings = load(&path).unwrap();
+        assert_eq!(
+            settings.servers,
+            vec![crate::model::ServerEntry {
+                username: "tetrisface".into(),
+                channels: vec!["main".into(), "newbies".into()],
+                ..crate::model::ServerEntry::bar()
+            }]
+        );
+        assert!(settings.account.remember_password && settings.account.auto_login);
+    }
+
+    #[test]
+    fn nothing_is_written_until_the_server_list_itself_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        std::fs::write(store.path(), BEFORE_SERVERS).unwrap();
+        store.reload().unwrap().unwrap();
+
+        store.update(|s| s.chat.max_lines = 7).unwrap();
+        let text = std::fs::read_to_string(store.path()).unwrap();
+        assert!(
+            !text.contains("\"servers\""),
+            "an unrelated change leaves the old shape"
+        );
+        assert!(
+            text.contains("// \"host\": \"localhost\""),
+            "and its comments"
+        );
+
+        store.update(|s| s.servers[0].name = "Main".into()).unwrap();
+        let text = std::fs::read_to_string(store.path()).unwrap();
+        assert!(text.contains("\"servers\""));
+        assert!(text.contains("\"tetrisface\""));
+        assert!(text.contains("\"port\": 8201"), "the old keys stay, unread");
+        let reread = load(&store.path()).unwrap();
+        assert_eq!(reread.servers[0].name, "Main");
+        assert_eq!(reread.servers[0].username, "tetrisface");
+    }
+
+    #[test]
+    fn a_list_emptied_on_purpose_stays_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        std::fs::write(&path, r#"{ "servers": [], "server": { "host": "x" } }"#).unwrap();
+        assert!(load(&path).unwrap().servers.is_empty());
     }
 
     #[test]
@@ -278,7 +357,7 @@ mod tests {
         )
         .unwrap();
         let reloaded = store.reload().unwrap().unwrap();
-        assert_eq!(reloaded.server, crate::model::Server::default());
+        assert_eq!(reloaded.servers, vec![crate::model::ServerEntry::bar()]);
     }
 
     #[test]

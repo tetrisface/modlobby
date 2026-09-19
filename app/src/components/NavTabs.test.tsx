@@ -193,7 +193,7 @@ describe('NavTabs', () => {
     await settle()
     fireEvent.click(more(container)!)
     expect(container.querySelector('.nav-menu')).not.toBeNull()
-    fireEvent.keyDown(window, { key: 'Escape' })
+    fireEvent.keyDown(document, { key: 'Escape' })
     expect(container.querySelector('.nav-menu')).toBeNull()
 
     fireEvent.click(more(container)!)

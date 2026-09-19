@@ -56,9 +56,9 @@ import { readSkills, teamSkill, type Skill } from '../lib/skill'
 import { noPublishedEngine } from '../store/build'
 import { chat, pushNotice } from '../store/chat'
 import { joinMilestone } from '../store/join'
-import { lobby } from '../store/lobby'
+import { lobby, roomServer, roomSession, severalServers } from '../store/lobby'
 import { over } from '../store/overlay'
-import { settings } from '../store/settings'
+import { serverLabel, settings } from '../store/settings'
 import { HostBar } from './HostBar'
 import { PveScore } from './PveScore'
 import { RoomTitle } from './RoomTitle'
@@ -96,7 +96,7 @@ export function Room() {
 
   const battle = createMemo(room.battle)
 
-  const friends = createMemo(() => new Set(lobby.friends.friends))
+  const friends = createMemo(() => new Set(roomSession()?.friends.friends))
   const isFriend = (name: string) => friends().has(name)
 
   /** SPADS keys its player tags by lowercased name. */
@@ -433,6 +433,13 @@ export function Room() {
                   <span>
                     Host <b>{b().founder}</b>
                   </span>
+                </Show>
+                <Show when={severalServers() && roomServer()}>
+                  {(server) => (
+                    <span>
+                      Server <b>{serverLabel(server())}</b>
+                    </span>
+                  )}
                 </Show>
                 <span>
                   Engine{' '}

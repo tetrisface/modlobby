@@ -9,6 +9,7 @@ import {
   onMount,
   type ParentProps,
 } from 'solid-js'
+import { AccountMenu } from './components/AccountMenu'
 import { GameActions } from './components/GameActions'
 import { Glyph, IconSprite } from './components/icons'
 import { Thinking } from './components/Thinking'
@@ -16,6 +17,7 @@ import { NavTabs } from './components/NavTabs'
 import { PlayerMenu } from './components/PlayerMenu'
 import { connectChannel } from './ipc/channel'
 import { ACTIVITY_EVENTS, activityReporter } from './lib/activity'
+import { serverId } from './lib/servers'
 import {
   clickLeavesOverlay,
   escapeLeavesOverlay,
@@ -24,8 +26,24 @@ import {
 import { api, describeError, errorCode } from './ipc/client'
 import type { Settings } from './ipc/bindings/Settings'
 import { build, setBuild } from './store/build'
-import { chat, holdNotices, pushNotice, unreadTotal } from './store/chat'
-import { lobby, myRoom } from './store/lobby'
+import {
+  chat,
+  holdNotices,
+  pushNotice,
+  roomKey,
+  unreadTotal,
+} from './store/chat'
+import {
+  allAway,
+  anyConnected,
+  lobby,
+  mainSession,
+  myRoom,
+  roomSession,
+  sessions,
+  severalServers,
+  soonestRetry,
+} from './store/lobby'
 import { loadNews, unreadNews } from './store/news'
 import { over, setOver } from './store/overlay'
 import { autoLogin, loginHold } from './store/session'
@@ -33,6 +51,7 @@ import {
   applySettings,
   nudgeScale,
   resetScale,
+  serverLabel,
   settings,
 } from './store/settings'
 import {
@@ -70,7 +89,7 @@ type SettingsEvent = { changed: Settings } | { invalid: string }
  */
 function Reconnect() {
   const navigate = useNavigate()
-  const connecting = () => lobby.phase !== null
+  const connecting = () => anyConnected()
   /** Learned from the runtime: there is nothing to reconnect with. */
   const [needsLogin, setNeedsLogin] = createSignal(false)
   /**
@@ -80,7 +99,7 @@ function Reconnect() {
    */
   const [left, setLeft] = createSignal<number | null>(null)
   createEffect(() => {
-    const at = soonest(lobby.retryAt, loginHold())
+    const at = soonest(soonestRetry(), loginHold())
     if (at === null) {
       setLeft(null)
       return
@@ -91,18 +110,29 @@ function Reconnect() {
     onCleanup(() => clearInterval(timer))
   })
 
+  /** Every server that is not connected, tried again at once. */
   async function reconnect() {
-    try {
-      await api.reconnect()
-    } catch (error) {
-      // Nothing to try again with: this run never logged in, or logged out.
-      if (errorCode(error) === 'noCredentials') {
-        setNeedsLogin(true)
-        navigate('/login')
-        return
-      }
-      pushNotice('warning', describeError(error))
+    const idle = (settings()?.servers ?? [])
+      .map((entry) => serverId(entry.host))
+      .filter((server) => (lobby.servers[server]?.phase ?? null) === null)
+    const failed = await Promise.all(
+      idle.map((server) =>
+        api.reconnect(server).then(
+          () => null,
+          (error: unknown) => error,
+        ),
+      ),
+    )
+    const errors = failed.filter((error) => error !== null)
+    // Nothing to try again with anywhere: this run never logged in, or
+    // logged out of everything.
+    if (errors.length === idle.length && errors.every(noCredentials)) {
+      setNeedsLogin(true)
+      navigate('/login')
+      return
     }
+    for (const error of errors)
+      if (!noCredentials(error)) pushNotice('warning', describeError(error))
   }
 
   const label = () => {
@@ -130,6 +160,8 @@ function Reconnect() {
     </button>
   )
 }
+
+const noCredentials = (error: unknown) => errorCode(error) === 'noCredentials'
 
 /** The earlier of two moments, either of which may be missing. */
 function soonest(a: number | null, b: number | null): number | null {
@@ -206,8 +238,8 @@ function Layout(props: ParentProps) {
     return `Version ${available()} is out. Fetch it and restart into it.`
   }
 
-  /** What the server says about us, which is what everyone else can see. */
-  const away = () => (lobby.me ? lobby.users[lobby.me]?.status.away : false)
+  /** What the servers say about us, which is what everyone else can see. */
+  const away = allAway
 
   /** Which page is up: a room page carries the game buttons itself. */
   const route = useLocation()
@@ -298,26 +330,32 @@ function Layout(props: ParentProps) {
    * between asking to join and being let in, which is precisely when this
    * effect fires.
    */
-  let restored = false
+  const restored = new Set<string>()
 
   createEffect(() => {
-    // A session that ends takes its channel membership with it. Without this
-    // reset, logging out and back in within one run leaves you in none of
-    // your channels, because the restore had already happened.
-    if (lobby.phase === null) restored = false
-    if (lobby.phase !== 'ready' || restored) return
-    restored = true
-    void (async () => {
-      try {
-        const saved = await api.getSettings()
-        for (const name of saved.chat.channels) {
-          if (!(name in chat.channels)) await api.joinChannel(name, null)
-        }
-      } catch (error) {
-        pushNotice('warning', describeError(error))
-      }
-    })()
+    for (const [server, session] of sessions()) {
+      // A session that ends takes its channel membership with it. Without
+      // this reset, logging out and back in within one run leaves you in
+      // none of your channels, because the restore had already happened.
+      if (session.phase === null) restored.delete(server)
+      if (session.phase !== 'ready' || restored.has(server)) continue
+      restored.add(server)
+      void restoreChannels(server)
+    }
   })
+
+  async function restoreChannels(server: string) {
+    try {
+      const saved = await api.getSettings()
+      const entry = saved.servers.find((held) => serverId(held.host) === server)
+      for (const name of entry?.channels ?? []) {
+        if (!(roomKey(server, name) in chat.channels))
+          await api.joinChannel(server, name, null)
+      }
+    } catch (error) {
+      pushNotice('warning', describeError(error))
+    }
+  }
 
   onMount(async () => {
     try {
@@ -330,7 +368,7 @@ function Layout(props: ParentProps) {
       await resumeUpdate()
       // The one place that already holds the settings, so auto-login neither
       // reads them again nor races the signal that carries them.
-      void autoLogin(saved.account)
+      void autoLogin(saved)
       // The count belongs to the nav, which is here whether or not the News
       // tab ever is, so the feed is asked for from the shell. Rust answers
       // from its own cache for the hour it trusts one, so most launches make
@@ -383,8 +421,8 @@ function Layout(props: ParentProps) {
             room is gated on the phase like the lobby views are: a reconnect
             keeps myBattle. */}
         <NavTabs
-          room={lobby.phase === 'ready' ? myRoom() : undefined}
-          loggedOut={lobby.phase === null}
+          room={roomSession()?.phase === 'ready' ? myRoom() : undefined}
+          loggedOut={!anyConnected()}
           unread={unread()}
           named={named()}
           news={unreadNews()}
@@ -431,23 +469,33 @@ function Layout(props: ParentProps) {
             )}
           </Show>
         </span>
-        <Show when={lobby.me} fallback={<Reconnect />}>
-          <span>{lobby.me}</span>
+        <Show when={mainSession()?.me} fallback={<Reconnect />}>
+          <AccountMenu name={mainSession()?.me ?? ''} />
           {/* The server keeps this bit, so what it says is what everyone else
               sees — no local guess to drift out of step with it. */}
           <button
             class='chip-choice'
             classList={{ on: away() }}
             title={
-              away()
+              (away()
                 ? 'Everyone sees you as away'
-                : 'Tell everyone you have stepped out'
+                : 'Tell everyone you have stepped out') +
+              (severalServers() ? ', on every server' : '')
             }
             onClick={() => void api.setAway(!away())}
           >
             Away
           </button>
-          <button onClick={() => api.logout()}>Log out</button>
+          <button
+            title={
+              severalServers()
+                ? 'Log out of every server. Your name has each one on its own.'
+                : 'Log out'
+            }
+            onClick={() => api.logout(null)}
+          >
+            Log out
+          </button>
         </Show>
         {/* Not over a game. The page is a modal there, and its ways out are
             Back to game and the guarded Quit; a close in this corner would
@@ -528,13 +576,19 @@ function Notices() {
       <For each={chat.notices.slice(-3)}>
         {(notice) => (
           <div class={`notice ${notice.level}`}>
-            <span class='notice-text'>{notice.text}</span>
+            <span class='notice-text'>
+              {/* Which server said it, once there is more than one to have. */}
+              <Show when={severalServers() && notice.server}>
+                {(server) => <b>{serverLabel(server())}: </b>}
+              </Show>
+              {notice.text}
+            </span>
             {/* The way out of the corner: which of these appear, and where. */}
             <button
               class='notice-settings'
               title='Which notifications appear, and where'
               aria-label='Notification settings'
-              onClick={() => navigate('/settings?tab=notifications')}
+              onClick={() => navigate('/settings?section=notifications')}
             >
               <Glyph id='act-gear' />
             </button>

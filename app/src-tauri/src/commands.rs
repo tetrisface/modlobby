@@ -8,8 +8,9 @@ use std::time::{Duration, SystemTime};
 use lobby_runtime::{ClientError, launch, player_files};
 use lobby_ui::UiMessage;
 use serde::Serialize;
-use settings::{CredentialError, Settings};
-use spring_protocol::{Endpoint, LoginRequest, Security};
+use settings::model::ServerEntry;
+use settings::{CredentialError, Settings, credentials};
+use spring_protocol::{Endpoint, LoginRequest, TransportError, server_id};
 use tauri::ipc::Channel;
 use tauri::{Manager, State};
 use tweaks::{DiffView, Kind, Prepared, Slot, TweakView};
@@ -40,6 +41,7 @@ impl From<ClientError> for ApiError {
         let code = match &err {
             ClientError::NotConnected => "notConnected",
             ClientError::AlreadyConnected => "alreadyConnected",
+            ClientError::Transport(TransportError::NoEncryption(_)) => "noEncryption",
             ClientError::Transport(_) => "transport",
             ClientError::Refused(_) => "refused",
             ClientError::TooLong(_) => "tooLong",
@@ -97,27 +99,28 @@ pub async fn subscribe(
     Ok(())
 }
 
-/// Logs in with the given password, or the remembered one. Resolves when the
-/// lobby is ready. `remember` stores the password in the OS keyring, never the file.
+/// Logs in to `server` — an id, the host lowercased — with the given
+/// password or the remembered one. Resolves when the lobby is ready, with the
+/// settings as the login left them. `remember` keeps the password in the OS
+/// keyring, never the file.
 #[tauri::command]
 pub async fn login(
     app: State<'_, App>,
+    server: String,
     username: String,
     password: Option<String>,
     remember: bool,
     auto_login: bool,
-) -> Result<()> {
+) -> Result<Settings> {
     if username.trim().is_empty() {
         return Err(ApiError::new("input", "a username is required"));
     }
+    let entry = entry(&app, &server)?;
     let password = match password.filter(|p| !p.is_empty()) {
         Some(password) => password,
-        None => app
-            .credentials
-            .get(&username)?
+        None => credentials::password(&*app.credentials, &server, &username)?
             .ok_or_else(|| ApiError::new("input", "no password given or remembered"))?,
     };
-    let endpoint = endpoint(app.settings.get().server);
     let request = LoginRequest::new(
         &username,
         &password,
@@ -125,27 +128,37 @@ pub async fn login(
         app.hardware.lobby_hash.clone(),
     );
 
-    guarded_login(&app, app.client.login(endpoint, request)).await?;
+    guarded_login(&app, &server, app.client.login(endpoint(&entry), request)).await?;
 
-    remember_account(&app, username, &password, remember, auto_login)
+    remember_account(&app, &server, username, &password, remember, auto_login)
 }
 
-/// Where and how the settings say to reach the server.
-fn endpoint(server: settings::model::Server) -> Endpoint {
+/// The server the settings list under `server`, by its id.
+fn entry(app: &App, server: &str) -> Result<ServerEntry> {
+    app.settings
+        .get()
+        .servers
+        .into_iter()
+        .find(|entry| server_id(&entry.host) == server)
+        .ok_or_else(|| ApiError::new("input", format!("no server {server} in the settings")))
+}
+
+/// Which server an entry names, and what it may be reached by. The way in
+/// is found by trying.
+fn endpoint(entry: &ServerEntry) -> Endpoint {
     Endpoint {
-        host: server.host,
-        plain_port: server.plain_port,
-        tls_port: server.tls_port,
-        security: match server.encryption {
-            settings::model::Encryption::Stls => Security::Stls,
-            settings::model::Encryption::Tls => Security::Tls,
-            settings::model::Encryption::None => Security::None,
-        },
+        host: entry.host.clone(),
+        ports: entry.ports.clone(),
+        allow_plain: entry.allow_unencrypted,
+        preferred: None,
     }
 }
 
 /// Keeps the account a session was just opened as: the password in the OS
-/// keyring, the rest beside it in the settings file.
+/// keyring, the rest beside it in the settings file. Answers with the
+/// settings as written, which the caller applies: our own write raises no
+/// change event, so this is how the front end learns of it — and a copy
+/// that never learned would save the old account back over the new.
 ///
 /// Shared by logging in and by confirming a new account's code, because both
 /// end in a session and there is one thing worth remembering about either.
@@ -153,62 +166,79 @@ fn endpoint(server: settings::model::Server) -> Endpoint {
 /// nothing behind.
 fn remember_account(
     app: &App,
+    server: &str,
     username: String,
     password: &str,
     remember: bool,
     auto_login: bool,
-) -> Result<()> {
+) -> Result<Settings> {
     if remember {
-        app.credentials.set(&username, password)?;
+        credentials::keep(&*app.credentials, server, &username, password)?;
     } else {
-        app.credentials.delete(&username)?;
+        credentials::forget(&*app.credentials, server, &username)?;
     }
-    app.settings.update(|s| {
-        s.account.username = username;
+    Ok(app.settings.update(|s| {
+        if let Some(entry) = s
+            .servers
+            .iter_mut()
+            .find(|entry| server_id(&entry.host) == server)
+        {
+            entry.username = username;
+        }
         s.account.remember_password = remember;
         // Without a remembered password there is nothing to log in with.
         s.account.auto_login = auto_login && remember;
-    })?;
-    Ok(())
+    })?)
 }
 
 /// Tries the last login again, now rather than when the runtime's own retry
-/// falls due. Fails with `noCredentials` when this run has nothing to try.
+/// falls due, under `server`'s flood guard — over the server as the settings
+/// have it now, so ports changed or plaintext allowed since the login take
+/// hold. Fails with `noCredentials` when this run has nothing to try.
 #[tauri::command]
-pub async fn reconnect(app: State<'_, App>) -> Result<()> {
-    guarded_login(&app, app.client.reconnect()).await
+pub async fn reconnect(app: State<'_, App>, server: String) -> Result<()> {
+    // Gone from the settings: what the login used is all there is.
+    let endpoint = entry(&app, &server).ok().map(|entry| endpoint(&entry));
+    guarded_login(
+        &app,
+        &server,
+        app.client.reconnect(server.clone(), endpoint),
+    )
+    .await
 }
 
-/// One login attempt under the flood guard, whichever command makes it. The
-/// server counts logins whether or not they succeed; sending one it would
-/// refuse only wastes the allowance.
+/// One login attempt under `server`'s flood guard, whichever command makes
+/// it. The server counts logins whether or not they succeed; sending one it
+/// would refuse only wastes the allowance.
 async fn guarded_login(
     app: &App,
+    server: &str,
     attempt: impl Future<Output = std::result::Result<(), ClientError>>,
 ) -> Result<()> {
-    if let Some(wait) = app.login_guard.wait(SystemTime::now()) {
+    let guard = &app.login_guard;
+    if let Some(wait) = guard.wait(server, SystemTime::now()) {
         return Err(throttled(wait));
     }
-    app.login_guard.record_attempt(SystemTime::now());
+    guard.record_attempt(server, SystemTime::now());
     match attempt.await {
         Ok(()) => {
-            app.login_guard.record_success(SystemTime::now());
+            guard.record_success(server, SystemTime::now());
             Ok(())
         }
         Err(err) => {
             if settings::is_flood_refusal(&err.to_string()) {
-                app.login_guard.record_refusal(SystemTime::now());
+                guard.record_refusal(server, SystemTime::now());
             }
             Err(err.into())
         }
     }
 }
 
-/// Seconds a login must wait for teiserver's limit to lapse; 0 when clear.
+/// Seconds a login to `server` must wait for teiserver's limit to lapse; 0 when clear.
 #[tauri::command]
-pub fn login_wait(app: State<'_, App>) -> u64 {
+pub fn login_wait(app: State<'_, App>, server: String) -> u64 {
     app.login_guard
-        .wait(SystemTime::now())
+        .wait(&server, SystemTime::now())
         .map_or(0, |wait| wait.as_secs())
 }
 
@@ -230,6 +260,7 @@ fn throttled(wait: Duration) -> ApiError {
 #[tauri::command]
 pub async fn register(
     app: State<'_, App>,
+    server: String,
     username: String,
     password: String,
     email: String,
@@ -244,7 +275,7 @@ pub async fn register(
         return Err(ApiError::new("input", "an email address is required"));
     }
 
-    let endpoint = endpoint(app.settings.get().server);
+    let entry = entry(&app, &server)?;
     let request = LoginRequest::new(
         &username,
         &password,
@@ -259,7 +290,7 @@ pub async fn register(
     // here throttled nothing but that login.
     Ok(app
         .client
-        .register(endpoint, request, email, password)
+        .register(endpoint(&entry), request, email, password)
         .await?)
 }
 
@@ -272,17 +303,20 @@ pub async fn register(
 #[tauri::command]
 pub async fn confirm_agreement(
     app: State<'_, App>,
+    server: String,
     username: String,
     password: String,
     code: String,
     remember: bool,
     auto_login: bool,
-) -> Result<()> {
+) -> Result<Settings> {
     if code.trim().is_empty() {
         return Err(ApiError::new("input", "the emailed code is required"));
     }
-    app.client.confirm_agreement(code.trim().to_owned()).await?;
-    remember_account(&app, username, &password, remember, auto_login)
+    app.client
+        .confirm_agreement(server.clone(), code.trim().to_owned())
+        .await?;
+    remember_account(&app, &server, username, &password, remember, auto_login)
 }
 
 /// Why a username would be refused, answered without asking the server.
@@ -295,18 +329,31 @@ pub fn name_problem(username: String) -> Option<String> {
     spring_protocol::login::name_problem(&username)
 }
 
+/// Logs out of `server`, or of every server with none named.
 #[tauri::command]
-pub async fn logout(app: State<'_, App>) -> Result<()> {
-    app.client.logout().await?;
+pub async fn logout(app: State<'_, App>, server: Option<String>) -> Result<()> {
+    app.client.logout(server).await?;
+    Ok(())
+}
+
+/// Forgets which way into `host` worked, so the next connect tries every way.
+#[tauri::command]
+pub async fn forget_way(app: State<'_, App>, host: String) -> Result<()> {
+    app.client.forget_way(host).await?;
     Ok(())
 }
 
 #[tauri::command]
-pub async fn join_battle(app: State<'_, App>, id: u32, password: Option<String>) -> Result<()> {
-    app.client.join_battle(id, password).await?;
+pub async fn join_battle(
+    app: State<'_, App>,
+    server: String,
+    id: u32,
+    password: Option<String>,
+) -> Result<()> {
+    app.client.join_battle(server.clone(), id, password).await?;
     // Remembered only once the host has let us in, so a room that refused us
     // is never offered back.
-    app.rejoin.remember(id);
+    app.rejoin.remember(&server, id);
     Ok(())
 }
 
@@ -319,11 +366,22 @@ pub async fn leave_battle(app: State<'_, App>) -> Result<()> {
     Ok(())
 }
 
+/// A room, and the server it is on.
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct BattleOn {
+    pub server: String,
+    pub id: u32,
+}
+
 /// The room we were in when the app last stopped, if it stopped without
 /// leaving. The caller checks it is still open before offering it.
 #[tauri::command]
-pub fn remembered_battle(app: State<'_, App>) -> Option<u32> {
-    app.rejoin.remembered()
+pub fn remembered_battle(app: State<'_, App>) -> Option<BattleOn> {
+    app.rejoin
+        .remembered()
+        .map(|(server, id)| BattleOn { server, id })
 }
 
 /// Drops the offer without joining anything.
@@ -346,33 +404,48 @@ pub async fn say_battle(app: State<'_, App>, text: String) -> Result<()> {
 }
 
 #[tauri::command]
-pub async fn join_channel(app: State<'_, App>, room: String, key: Option<String>) -> Result<()> {
-    app.client.join_channel(room, key).await?;
+pub async fn join_channel(
+    app: State<'_, App>,
+    server: String,
+    room: String,
+    key: Option<String>,
+) -> Result<()> {
+    app.client.join_channel(server, room, key).await?;
     Ok(())
 }
 
 #[tauri::command]
-pub async fn leave_channel(app: State<'_, App>, room: String) -> Result<()> {
-    app.client.leave_channel(room).await?;
+pub async fn leave_channel(app: State<'_, App>, server: String, room: String) -> Result<()> {
+    app.client.leave_channel(server, room).await?;
     Ok(())
 }
 
 #[tauri::command]
-pub async fn say_channel(app: State<'_, App>, room: String, text: String) -> Result<()> {
-    app.client.say_channel(room, text).await?;
+pub async fn say_channel(
+    app: State<'_, App>,
+    server: String,
+    room: String,
+    text: String,
+) -> Result<()> {
+    app.client.say_channel(server, room, text).await?;
     Ok(())
 }
 
 #[tauri::command]
-pub async fn say_private(app: State<'_, App>, user: String, text: String) -> Result<()> {
-    app.client.say_private(user, text).await?;
+pub async fn say_private(
+    app: State<'_, App>,
+    server: String,
+    user: String,
+    text: String,
+) -> Result<()> {
+    app.client.say_private(server, user, text).await?;
     Ok(())
 }
 
 /// Asks for the server's channel directory; it arrives as a `Directory` delta.
 #[tauri::command]
-pub async fn list_channels(app: State<'_, App>) -> Result<()> {
-    app.client.list_channels().await?;
+pub async fn list_channels(app: State<'_, App>, server: String) -> Result<()> {
+    app.client.list_channels(server).await?;
     Ok(())
 }
 
@@ -452,12 +525,13 @@ async fn spring_name(app: &State<'_, App>, map: String) -> String {
 /// A skirmish needs no account, so someone who has never logged in still needs
 /// something to appear as.
 fn player_name(app: &State<'_, App>) -> String {
-    let username = app.settings.get().account.username;
-    if username.trim().is_empty() {
-        "Player".to_owned()
-    } else {
-        username
-    }
+    app.settings
+        .get()
+        .servers
+        .into_iter()
+        .map(|entry| entry.username)
+        .find(|name| !name.trim().is_empty())
+        .unwrap_or_else(|| "Player".to_owned())
 }
 
 /// Opens the room with no server behind it, on whatever this machine has.
@@ -690,8 +764,12 @@ pub async fn warm_map_pictures(
 /// Asks a room's host how long its game has been going. The answer comes back
 /// as a `GameStartedAgo` delta, because SPADS replies by private message.
 #[tauri::command]
-pub async fn request_game_status(app: State<'_, App>, founder: String) -> Result<()> {
-    app.client.request_game_status(founder).await?;
+pub async fn request_game_status(
+    app: State<'_, App>,
+    server: String,
+    founder: String,
+) -> Result<()> {
+    app.client.request_game_status(server, founder).await?;
     Ok(())
 }
 
@@ -981,7 +1059,7 @@ pub async fn cancel_paste(app: State<'_, App>) -> Result<()> {
     Ok(())
 }
 
-/// Asks the server for the friend list and the pending requests.
+/// Asks every server for its friend list and pending requests.
 #[tauri::command]
 pub async fn refresh_friends(app: State<'_, App>) -> Result<()> {
     app.client.refresh_friends().await?;
@@ -991,14 +1069,19 @@ pub async fn refresh_friends(app: State<'_, App>) -> Result<()> {
 /// `request`, `accept`, `decline` or `remove`. The server announces nothing
 /// when a friendship changes, so the runtime asks for the listings afterwards.
 #[tauri::command]
-pub async fn friend_action(app: State<'_, App>, action: String, user: String) -> Result<()> {
+pub async fn friend_action(
+    app: State<'_, App>,
+    server: String,
+    action: String,
+    user: String,
+) -> Result<()> {
     let action: lobby_runtime::FriendAction =
         action
             .parse()
             .map_err(|err: lobby_runtime::UnknownFriendAction| {
                 ApiError::new("input", err.to_string())
             })?;
-    app.client.friend_action(action, user).await?;
+    app.client.friend_action(server, action, user).await?;
     Ok(())
 }
 
@@ -1060,15 +1143,15 @@ pub async fn release_seat(app: State<'_, App>) -> Result<()> {
 /// Asks a cluster manager for a room of our own; the runtime joins it when it
 /// appears. This is the sandbox where taking a seat is allowed.
 #[tauri::command]
-pub async fn request_private_host(app: State<'_, App>) -> Result<String> {
-    Ok(app.client.request_private_host().await?)
+pub async fn request_private_host(app: State<'_, App>, server: String) -> Result<String> {
+    Ok(app.client.request_private_host(server).await?)
 }
 
 /// Joins an empty public autohost, which makes it your room. The runtime
 /// picks one by latency and by which cluster has rooms to spare.
 #[tauri::command]
-pub async fn host_public(app: State<'_, App>) -> Result<u32> {
-    Ok(app.client.host_public().await?)
+pub async fn host_public(app: State<'_, App>, server: String) -> Result<u32> {
+    Ok(app.client.host_public(server).await?)
 }
 
 #[tauri::command]
@@ -1086,25 +1169,30 @@ pub fn update_settings(app: State<'_, App>, settings: Settings) -> Result<Settin
 /// through the whole settings object, so a join never races a setting the user
 /// is editing in the file at the same moment.
 #[tauri::command]
-pub fn remember_channels(app: State<'_, App>, channels: Vec<String>) -> Result<Settings> {
-    Ok(app
-        .settings
-        .update(|current| current.chat.channels = channels)?)
+pub fn remember_channels(
+    app: State<'_, App>,
+    server: String,
+    channels: Vec<String>,
+) -> Result<Settings> {
+    Ok(app.settings.update(|current| {
+        if let Some(entry) = current
+            .servers
+            .iter_mut()
+            .find(|entry| server_id(&entry.host) == server)
+        {
+            entry.channels = channels;
+        }
+    })?)
 }
 
 #[tauri::command]
-pub fn has_password(app: State<'_, App>, username: String) -> Result<bool> {
-    Ok(app.credentials.get(&username)?.is_some())
+pub fn has_password(app: State<'_, App>, server: String, username: String) -> Result<bool> {
+    Ok(credentials::password(&*app.credentials, &server, &username)?.is_some())
 }
 
 #[tauri::command]
-pub fn set_password(app: State<'_, App>, username: String, password: String) -> Result<()> {
-    Ok(app.credentials.set(&username, &password)?)
-}
-
-#[tauri::command]
-pub fn clear_password(app: State<'_, App>, username: String) -> Result<()> {
-    Ok(app.credentials.delete(&username)?)
+pub fn clear_password(app: State<'_, App>, server: String, username: String) -> Result<()> {
+    Ok(credentials::forget(&*app.credentials, &server, &username)?)
 }
 
 /// The webview's console, written into the same file as everything else so a

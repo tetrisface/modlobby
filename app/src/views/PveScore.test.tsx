@@ -8,7 +8,8 @@ import type { Score } from '../ipc/bindings/Score'
 import type { UserView } from '../ipc/bindings/UserView'
 import type { Settings } from '../ipc/bindings/Settings'
 import { STAGGER_STEP } from '../lib/stagger'
-import { emptyLobby, setLobby } from '../store/lobby'
+import { emptyLobby, emptyServer, setLobby } from '../store/lobby'
+import { TEST_SERVER, onlySession } from '../store/testing'
 import { setSettingsSignal } from '../store/settings'
 import { PveScore, QUIET_FOR } from './PveScore'
 import { RoomProvider } from './room/model'
@@ -119,7 +120,7 @@ function user(
  * place, so nothing waits. `others` puts people ahead of us.
  */
 function enter(bots: BotView[], others: UserView[] = []) {
-  const next = emptyLobby()
+  const next = emptyServer()
   next.me = 'me'
   next.battles[7] = room(bots)
   next.battles[7].members = ['host', 'me', ...others.map((held) => held.name)]
@@ -136,7 +137,7 @@ function enter(bots: BotView[], others: UserView[] = []) {
     vote: null,
     history: [],
   }
-  setLobby(reconcile(next))
+  onlySession(next)
 }
 
 const scored: Score = {
@@ -255,9 +256,18 @@ describe('PveScore', () => {
     expect(asked).toHaveBeenCalledTimes(1)
 
     // Two settings change while it is out; each settles on its own.
-    setLobby('myBattle', 'scriptTags', 'game/modoptions/raptor_endless', '1')
+    setLobby(
+      'servers',
+      TEST_SERVER,
+      'myBattle',
+      'scriptTags',
+      'game/modoptions/raptor_endless',
+      '1',
+    )
     vi.advanceTimersByTime(QUIET_FOR)
     setLobby(
+      'servers',
+      TEST_SERVER,
       'myBattle',
       'scriptTags',
       'game/modoptions/raptor_graceperiod',
@@ -282,7 +292,14 @@ describe('PveScore', () => {
     await settle()
     expect(asked).toHaveBeenCalledTimes(1)
 
-    setLobby('myBattle', 'scriptTags', 'game/modoptions/scav_endless', '1')
+    setLobby(
+      'servers',
+      TEST_SERVER,
+      'myBattle',
+      'scriptTags',
+      'game/modoptions/scav_endless',
+      '1',
+    )
     vi.advanceTimersByTime(QUIET_FOR - 1)
     expect(asked).toHaveBeenCalledTimes(1)
     vi.advanceTimersByTime(1)

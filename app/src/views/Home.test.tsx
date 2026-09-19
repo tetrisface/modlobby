@@ -3,6 +3,7 @@ import { reconcile } from 'solid-js/store'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { Settings } from '../ipc/bindings/Settings'
 import { emptyLobby, setLobby } from '../store/lobby'
+import { seedSession } from '../store/testing'
 import { setSettingsSignal } from '../store/settings'
 import { Home } from './Home'
 
@@ -65,7 +66,7 @@ describe('where a launch lands', () => {
   })
 
   test('already logged in goes to the lobby whatever the settings say', () => {
-    setLobby('phase', 'ready')
+    seedSession({ phase: 'ready' })
     const { container } = render(() => <Home />)
     expect(landsOn(container)).toBe('/battles')
   })

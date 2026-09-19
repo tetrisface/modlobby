@@ -15,14 +15,8 @@ filterHostChatter: boolean,
  */
 maxLines: number, 
 /**
- * Channels to rejoin at login. The server forgets you were in them the
- * moment you disconnect, so remembering is the client's job — and keeping
- * it here means you can also just write one in.
- */
-channels: Array<string>, 
-/**
- * Rooms left out of the unread count on the Chat tab, by room key: a
- * channel's name, or `@name` for a person. A line that names you still
- * counts.
+ * Rooms left out of the unread count on the Chat tab, by name: a
+ * channel's name, or `@name` for a person — on every server that has
+ * one. A line that names you still counts.
  */
 muted: Array<string>, };

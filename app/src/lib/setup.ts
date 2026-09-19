@@ -17,6 +17,7 @@
 
 import type { ModOption } from '../ipc/bindings/ModOption'
 import type { OptionValue } from '../ipc/bindings/OptionValue'
+import { hasEveryWord } from './search'
 
 export type Group = { name: string; options: ModOption[] }
 export type Tab = { key: string; name: string; desc: string; groups: Group[] }
@@ -317,15 +318,11 @@ export function searchRows(
   values: Record<string, string>,
   needle: string,
 ): Changed[] {
-  const words = needle.toLowerCase().split(/\s+/).filter(Boolean)
-  if (words.length === 0) return []
+  if (needle.trim() === '') return []
   return rowsByTab(tabs, values, false)
     .map((entry) => ({
       tab: entry.tab,
-      rows: entry.rows.filter((row) => {
-        const haystack = searchText(row).toLowerCase()
-        return words.every((word) => haystack.includes(word))
-      }),
+      rows: entry.rows.filter((row) => hasEveryWord(searchText(row), needle)),
     }))
     .filter((entry) => entry.rows.length > 0)
 }

@@ -31,14 +31,15 @@ export type Running = {
  * running and we would have started counting from zero.
  */
 export function told(
-  previous: Readonly<Record<number, Running>>,
-  id: number,
+  previous: Readonly<Record<string, Running>>,
+  /** The room, as a battle list key. */
+  key: string,
   secondsAgo: number,
   now: number,
-): Record<number, Running> {
+): Record<string, Running> {
   return {
     ...previous,
-    [id]: { since: now - secondsAgo * 1000, exact: true },
+    [key]: { since: now - secondsAgo * 1000, exact: true },
   }
 }
 
@@ -50,21 +51,22 @@ export function told(
  * while its game is running.
  */
 export function track(
-  previous: Readonly<Record<number, Running>>,
-  running: ReadonlySet<number>,
+  previous: Readonly<Record<string, Running>>,
+  /** The rooms whose game is going, as battle list keys. */
+  running: ReadonlySet<string>,
   /** Whether anything has been seen at all yet — false on the first look. */
   settled: boolean,
   now: number,
-): Record<number, Running> {
-  const next: Record<number, Running> = {}
-  for (const id of running) {
-    const held = previous[id]
+): Record<string, Running> {
+  const next: Record<string, Running> = {}
+  for (const key of running) {
+    const held = previous[key]
     // Already timed, and still the same game: keep the start we have.
     if (held) {
-      next[id] = held
+      next[key] = held
       continue
     }
-    next[id] = { since: now, exact: settled }
+    next[key] = { since: now, exact: settled }
   }
   return next
 }

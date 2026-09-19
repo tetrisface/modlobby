@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { Arrangement } from '../ipc/bindings/Arrangement'
 import type { UserView } from '../ipc/bindings/UserView'
 import { emptyLobby, setLobby } from '../store/lobby'
+import { TEST_SERVER, seedSession } from '../store/testing'
 import { RoomProvider } from '../views/room/model'
 import { onlineRoom } from '../views/room/online'
 import { MapEditor } from './MapEditor'
@@ -85,9 +86,8 @@ function rustAnswers(arrangement: Arrangement | null) {
 
 function room(me: string, player: boolean) {
   setLobby(emptyLobby())
-  setLobby('me', me)
-  setLobby('users', { [me]: user(me, player) })
-  setLobby('myBattle', {
+  seedSession({ me, users: { [me]: user(me, player) } })
+  setLobby('servers', TEST_SERVER, 'myBattle', {
     boss: null,
     autoBalance: 'off',
     preset: null,
@@ -298,7 +298,7 @@ describe('MapEditor', () => {
   test('the room moving under a dirty draft is announced, not applied', async () => {
     const { container } = await open()
     fireEvent.click(button(container, 'Add box'))
-    setLobby('myBattle', 'history', [
+    setLobby('servers', TEST_SERVER, 'myBattle', 'history', [
       {
         seq: 1,
         key: 'mapmetadata_startbox_override',
@@ -307,7 +307,9 @@ describe('MapEditor', () => {
         by: 'Bob',
       },
     ])
-    setLobby('myBattle', 'scriptTags', { [OVERRIDE]: 'other' })
+    setLobby('servers', TEST_SERVER, 'myBattle', 'scriptTags', {
+      [OVERRIDE]: 'other',
+    })
     await settle()
     expect(boxes(container)).toHaveLength(3)
     expect(container.querySelector('.ed-banner')?.textContent).toContain(

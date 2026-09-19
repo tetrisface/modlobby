@@ -633,13 +633,18 @@ mod tests {
 
     #[test]
     fn json_shape_is_tag_and_data() {
-        let value = serde_json::to_value(UiMessage::Deltas(vec![Delta::UserStatus {
-            name: "bob".into(),
-            status: spring_protocol::UserStatus::from_bits(1).into(),
-        }]))
+        let value = serde_json::to_value(UiMessage::Deltas {
+            server: Some("server4".into()),
+            deltas: vec![Delta::UserStatus {
+                name: "bob".into(),
+                status: spring_protocol::UserStatus::from_bits(1).into(),
+            }],
+        })
         .unwrap();
         assert_eq!(value["type"], "deltas");
-        assert_eq!(value["data"][0]["type"], "userStatus");
-        assert_eq!(value["data"][0]["data"]["status"]["inGame"], true);
+        assert_eq!(value["data"]["server"], "server4");
+        let delta = &value["data"]["deltas"][0];
+        assert_eq!(delta["type"], "userStatus");
+        assert_eq!(delta["data"]["status"]["inGame"], true);
     }
 }

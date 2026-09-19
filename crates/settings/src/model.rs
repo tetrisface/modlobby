@@ -10,6 +10,9 @@ use ts_rs::TS;
 
 pub const SCHEMA_FILE: &str = "settings.schema.json";
 
+/// BAR's lobby server: the one every install starts with.
+pub const DEFAULT_HOST: &str = "server4.beyondallreason.info";
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS, Default)]
 #[serde(default, rename_all = "camelCase")]
 #[ts(export)]
@@ -17,6 +20,14 @@ pub struct Settings {
     /// Points editors at the schema next to the file.
     #[serde(rename = "$schema", skip_serializing_if = "Option::is_none")]
     pub schema: Option<String>,
+    /// The lobby servers, in the order the app lists them. A fresh install
+    /// has BAR's.
+    pub servers: Vec<ServerEntry>,
+    /// The one server a file from before `servers` named; read to build that
+    /// list, never written.
+    #[serde(skip_serializing)]
+    #[schemars(skip)]
+    #[ts(skip)]
     pub server: Server,
     pub account: Account,
     pub connection: Connection,
@@ -33,22 +44,96 @@ pub struct Settings {
 }
 
 impl Settings {
-    /// What a fresh install gets: the defaults plus the schema pointer.
+    /// What a fresh install gets: the defaults, BAR's server, and the schema pointer.
     pub fn initial() -> Self {
         Self {
             schema: Some(format!("./{SCHEMA_FILE}")),
+            servers: vec![ServerEntry::bar()],
+            ..Self::default()
+        }
+    }
+
+    /// The server list a file from before there was one meant: its one
+    /// server, with the account and the channels that went with it.
+    pub(crate) fn migrate(&mut self) {
+        let server = &self.server;
+        self.servers = vec![ServerEntry {
+            host: server.host.clone(),
+            name: if server.host == DEFAULT_HOST {
+                "BAR".into()
+            } else {
+                String::new()
+            },
+            ports: vec![server.plain_port, server.tls_port],
+            allow_unencrypted: server.encryption == Encryption::None,
+            website: None,
+            username: self.account.username.clone(),
+            channels: self.chat.channels.clone(),
+        }];
+    }
+}
+
+/// A lobby server, and the account on it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(default, rename_all = "camelCase")]
+#[ts(export)]
+pub struct ServerEntry {
+    /// Where it is. The server is known by this, trimmed and lowercased, so
+    /// changing it makes a different server: a new account, a new password.
+    pub host: String,
+    /// What the app calls it; the host when empty.
+    pub name: String,
+    /// Ports to try, each both encrypted ways (`STLS` and TLS) at once; the
+    /// way that answers first is remembered and tried first next time.
+    pub ports: Vec<u16>,
+    /// Whether an unencrypted connection will do once every encrypted way has
+    /// failed. Off unless the server has nothing else: the password and every
+    /// message would cross the network readable.
+    pub allow_unencrypted: bool,
+    /// Where the server's web pages are — a forgotten password is reset
+    /// there — when that is not `https://<host>`.
+    pub website: Option<String>,
+    /// The account on this server.
+    pub username: String,
+    /// Channels to rejoin at login. The server forgets you were in them the
+    /// moment you disconnect, so remembering is the client's job — and keeping
+    /// it here means you can also just write one in.
+    pub channels: Vec<String>,
+}
+
+impl ServerEntry {
+    /// BAR's own.
+    pub fn bar() -> Self {
+        Self {
+            host: DEFAULT_HOST.into(),
+            name: "BAR".into(),
             ..Self::default()
         }
     }
 }
 
-/// Which teiserver to talk to.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
-#[serde(default, rename_all = "camelCase")]
-#[ts(export)]
+impl Default for ServerEntry {
+    fn default() -> Self {
+        Self {
+            host: String::new(),
+            name: String::new(),
+            // teiserver's own: plain (and `STLS`) on 8200, TLS on 8201.
+            ports: vec![8200, 8201],
+            allow_unencrypted: false,
+            website: None,
+            username: String::new(),
+            // Where the server puts everyone, and where the announcements are.
+            channels: vec!["main".into()],
+        }
+    }
+}
+
+/// Which teiserver to talk to, as files from before `servers` said it.
 ///
 /// These keys replaced `port` and `tls`, so a file that still carries those
 /// is read as the defaults below.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
 pub struct Server {
     pub host: String,
     /// How the connection is encrypted, and what it falls back to.
@@ -62,7 +147,7 @@ pub struct Server {
 impl Default for Server {
     fn default() -> Self {
         Self {
-            host: "server4.beyondallreason.info".into(),
+            host: DEFAULT_HOST.into(),
             encryption: Encryption::Stls,
             plain_port: 8200,
             tls_port: 8201,
@@ -71,9 +156,8 @@ impl Default for Server {
 }
 
 /// Both encrypted ways fall back to the other when the server does not greet.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub enum Encryption {
     /// The plain port, upgraded with `STLS`; falls back to the TLS port.
     Stls,
@@ -87,11 +171,17 @@ pub enum Encryption {
 #[serde(default, rename_all = "camelCase")]
 #[ts(export)]
 pub struct Account {
+    /// The one account a file from before `servers` named; read to build that
+    /// list, never written. Each server keeps its own now.
+    #[serde(skip_serializing)]
+    #[schemars(skip)]
+    #[ts(skip)]
     pub username: String,
-    /// Keep the password in the OS keyring between runs; it is never written here.
+    /// Keep passwords in the OS keyring between runs, for every server; they
+    /// are never written here.
     pub remember_password: bool,
-    /// Log in on startup with the remembered password. Without one there is
-    /// nothing to log in with, so this does nothing on its own.
+    /// Log in on startup, to every server with a remembered password. Without
+    /// one there is nothing to log in with, so this does nothing on its own.
     pub auto_login: bool,
 }
 
@@ -412,13 +502,15 @@ pub struct Chat {
     pub filter_host_chatter: bool,
     /// Lines kept per room before the oldest are dropped.
     pub max_lines: u32,
-    /// Channels to rejoin at login. The server forgets you were in them the
-    /// moment you disconnect, so remembering is the client's job — and keeping
-    /// it here means you can also just write one in.
+    /// The channels a file from before `servers` rejoined; read to build that
+    /// list, never written. Each server keeps its own now.
+    #[serde(skip_serializing)]
+    #[schemars(skip)]
+    #[ts(skip)]
     pub channels: Vec<String>,
-    /// Rooms left out of the unread count on the Chat tab, by room key: a
-    /// channel's name, or `@name` for a person. A line that names you still
-    /// counts.
+    /// Rooms left out of the unread count on the Chat tab, by name: a
+    /// channel's name, or `@name` for a person — on every server that has
+    /// one. A line that names you still counts.
     pub muted: Vec<String>,
 }
 

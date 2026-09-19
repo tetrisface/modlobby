@@ -1,6 +1,6 @@
 import { Navigate } from '@solidjs/router'
 import { Show } from 'solid-js'
-import { lobby } from '../store/lobby'
+import { anyReady } from '../store/lobby'
 import { settings } from '../store/settings'
 
 /**
@@ -28,8 +28,7 @@ export function Home() {
       {(loaded) => {
         const account = loaded().account
         const expectSession =
-          lobby.phase === 'ready' ||
-          (account.autoLogin && account.rememberPassword)
+          anyReady() || (account.autoLogin && account.rememberPassword)
         return <Navigate href={expectSession ? '/battles' : '/skirmish'} />
       }}
     </Show>

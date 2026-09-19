@@ -3,8 +3,8 @@
 //! inbound line is reduced, projected into deltas and batched: a burst that is
 //! already queued becomes one `Deltas` message.
 
-use std::collections::HashMap;
 use std::collections::VecDeque;
+use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
@@ -17,12 +17,13 @@ use content::DataDirs;
 use lobby_core::{Effect, Session, hosting};
 use lobby_ui::{
     Batcher, ContentView, Delta, DownloadStatus, EngineStatus, GameRunningView, PasteStatus, Phase,
-    Projector, SKIRMISH_ROOM, Snapshot, UiMessage, UiTransport,
+    Projector, SKIRMISH_ROOM, ServerSnapshot, Snapshot, UiMessage, UiTransport,
 };
 use spring_protocol::battle::TooLong;
 use spring_protocol::policy::PolicyEvent;
 use spring_protocol::{
     Area, Endpoint, Envelope, Inbound, LoginRequest, ThrottlePolicy, Transport, TransportError,
+    Way, server_id,
 };
 use tokio::io::AsyncReadExt;
 use tokio::process::Child;
@@ -34,6 +35,11 @@ use crate::launch;
 use crate::platform::Hardware;
 use crate::player_files;
 use crate::reconnect;
+use crate::ways::{self, Ways};
+
+mod links;
+
+use links::{Opened, Purpose, Server, recv_any};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ClientError {
@@ -58,7 +64,7 @@ pub enum ClientError {
 }
 
 type Reply<T> = oneshot::Sender<Result<T, ClientError>>;
-type Connected = (Transport, mpsc::Receiver<Inbound>);
+type Connected = (Transport, mpsc::Receiver<Inbound>, Way);
 type ConnectFuture = Pin<Box<dyn Future<Output = Result<Connected, TransportError>> + Send>>;
 
 /// How the runtime reaches a server; tests hand it an in-memory stream.
@@ -71,9 +77,20 @@ enum Command {
         request: LoginRequest,
         reply: Reply<()>,
     },
-    Logout,
-    /// Tries the last login again now, ahead of the retry timer.
+    /// `None` logs out of every server.
+    Logout {
+        server: Option<String>,
+    },
+    /// Drops the remembered way into `host`, so the next connect races every way again.
+    ForgetWay {
+        host: String,
+    },
+    /// Tries the server's last login again now, ahead of the retry timer —
+    /// over `endpoint` when one is given, which is how a change to the
+    /// server's ports or to what it may be reached by takes hold.
     Reconnect {
+        server: String,
+        endpoint: Option<Endpoint>,
         reply: Reply<()>,
     },
     /// Creates an account and logs in on it, answering with the agreement the
@@ -87,6 +104,7 @@ enum Command {
     },
     /// Confirms the emailed code for an account that has just been created.
     ConfirmAgreement {
+        server: String,
         code: String,
         reply: Reply<()>,
     },
@@ -120,6 +138,7 @@ enum Command {
         reply: Reply<skirmish::preset::Applied>,
     },
     JoinBattle {
+        server: String,
         id: u32,
         password: Option<String>,
         reply: Reply<()>,
@@ -134,27 +153,33 @@ enum Command {
         reply: Reply<()>,
     },
     JoinChannel {
+        server: String,
         room: String,
         key: Option<String>,
         reply: Reply<()>,
     },
     LeaveChannel {
+        server: String,
         room: String,
         reply: Reply<()>,
     },
     SayChannel {
+        server: String,
         room: String,
         text: String,
         reply: Reply<()>,
     },
     SayPrivate {
+        server: String,
         user: String,
         text: String,
         reply: Reply<()>,
     },
     ListChannels {
+        server: String,
         reply: Reply<()>,
     },
+    /// Every server's friend list, asked for again.
     RefreshFriends {
         reply: Reply<()>,
     },
@@ -218,6 +243,7 @@ enum Command {
         reply: Reply<bool>,
     },
     RequestGameStatus {
+        server: String,
         founder: String,
         reply: Reply<()>,
     },
@@ -227,6 +253,7 @@ enum Command {
         reply: Reply<()>,
     },
     FriendAction {
+        server: String,
         action: lobby_core::FriendAction,
         user: String,
         reply: Reply<()>,
@@ -259,19 +286,27 @@ enum Command {
     /// Asks a cluster manager for a room of our own; the runtime joins it
     /// when it appears. Replies with the manager asked.
     RequestPrivateHost {
+        server: String,
         reply: Reply<String>,
     },
     /// Joins an empty public autohost, making it ours. Replies with its id.
     HostPublic {
+        server: String,
         reply: Reply<u32>,
     },
     Shutdown,
 }
 
-/// Who asked for the latencies, and what they are for.
+/// Who asked for the latencies, and what they are for, on which server.
 enum Wanted {
-    Public(Reply<u32>),
-    Private(Reply<String>),
+    Public {
+        server: String,
+        reply: Reply<u32>,
+    },
+    Private {
+        server: String,
+        reply: Reply<String>,
+    },
 }
 
 /// The latencies a request went out to measure, back from the probe task.
@@ -292,13 +327,9 @@ pub struct Client {
 
 impl Client {
     /// Spawns the runtime on the current tokio runtime, connecting over TCP/TLS.
-    /// `latency_cache` is where host latencies are kept between runs; `None`
-    /// measures afresh each run.
-    pub fn spawn(
-        policy: ThrottlePolicy,
-        hardware: Hardware,
-        latency_cache: Option<PathBuf>,
-    ) -> Self {
+    /// `state_dir` is where what was measured is kept between runs — host
+    /// latencies, the way into each server; `None` measures afresh each run.
+    pub fn spawn(policy: ThrottlePolicy, hardware: Hardware, state_dir: Option<PathBuf>) -> Self {
         let connector: Connector = Arc::new(|endpoint, policy| {
             Box::pin(async move { Transport::connect(&endpoint, policy).await })
         });
@@ -307,7 +338,7 @@ impl Client {
             hardware,
             connector,
             Arc::new(latency::IcmpEcho),
-            latency_cache,
+            state_dir,
         )
     }
 
@@ -316,10 +347,10 @@ impl Client {
         hardware: Hardware,
         connector: Connector,
         latency: Arc<dyn Latency>,
-        latency_cache: Option<PathBuf>,
+        state_dir: Option<PathBuf>,
     ) -> Self {
         let (tx, rx) = mpsc::channel(64);
-        let runtime = Runtime::new(rx, policy, hardware, connector, latency, latency_cache);
+        let runtime = Runtime::new(rx, policy, hardware, connector, latency, state_dir);
         tokio::spawn(runtime.run());
         Self { tx }
     }
@@ -356,14 +387,34 @@ impl Client {
         .await
     }
 
-    pub async fn logout(&self) -> Result<(), ClientError> {
-        self.send(Command::Logout).await
+    /// Logs out of `server`, or of every server with `None`, and stops
+    /// coming back to it.
+    pub async fn logout(&self, server: Option<String>) -> Result<(), ClientError> {
+        self.send(Command::Logout { server }).await
     }
 
-    /// Logs in again with the last credentials, now rather than when the
-    /// runtime's own retry falls due. Resolves like [`Self::login`].
-    pub async fn reconnect(&self) -> Result<(), ClientError> {
-        self.ask(|reply| Command::Reconnect { reply }).await
+    /// Forgets which way into `host` worked, so the next connect tries every way.
+    pub async fn forget_way(&self, host: String) -> Result<(), ClientError> {
+        self.send(Command::ForgetWay { host }).await
+    }
+
+    /// Logs in to `server` again with its last credentials, now rather than
+    /// when the runtime's own retry falls due. Resolves like [`Self::login`].
+    ///
+    /// `endpoint` is the server as it is set up now, where the caller knows:
+    /// the one kept from the last login would go on trying ports that have
+    /// since been changed, or refusing a plaintext that has since been allowed.
+    pub async fn reconnect(
+        &self,
+        server: String,
+        endpoint: Option<Endpoint>,
+    ) -> Result<(), ClientError> {
+        self.ask(|reply| Command::Reconnect {
+            server,
+            endpoint,
+            reply,
+        })
+        .await
     }
 
     /// Creates an account. Resolves when the server has accepted or refused it.
@@ -393,10 +444,14 @@ impl Client {
         .await
     }
 
-    /// Sends the emailed agreement code for the account now logging in.
-    pub async fn confirm_agreement(&self, code: String) -> Result<(), ClientError> {
-        self.ask(|reply| Command::ConfirmAgreement { code, reply })
-            .await
+    /// Sends the emailed agreement code for the account now logging in to `server`.
+    pub async fn confirm_agreement(&self, server: String, code: String) -> Result<(), ClientError> {
+        self.ask(|reply| Command::ConfirmAgreement {
+            server,
+            code,
+            reply,
+        })
+        .await
     }
 
     pub async fn snapshot(&self) -> Result<Snapshot, ClientError> {
@@ -405,9 +460,16 @@ impl Client {
         rx.await.map_err(|_| ClientError::Stopped)
     }
 
+    /// Joins room `id` on `server`, leaving any room we are in on another.
     /// Resolves when the host accepted us as a spectator, or with its refusal.
-    pub async fn join_battle(&self, id: u32, password: Option<String>) -> Result<(), ClientError> {
+    pub async fn join_battle(
+        &self,
+        server: String,
+        id: u32,
+        password: Option<String>,
+    ) -> Result<(), ClientError> {
         self.ask(|reply| Command::JoinBattle {
+            server,
             id,
             password,
             reply,
@@ -428,30 +490,66 @@ impl Client {
         self.ask(|reply| Command::Say { text, reply }).await
     }
 
-    pub async fn join_channel(&self, room: String, key: Option<String>) -> Result<(), ClientError> {
-        self.ask(|reply| Command::JoinChannel { room, key, reply })
+    pub async fn join_channel(
+        &self,
+        server: String,
+        room: String,
+        key: Option<String>,
+    ) -> Result<(), ClientError> {
+        self.ask(|reply| Command::JoinChannel {
+            server,
+            room,
+            key,
+            reply,
+        })
+        .await
+    }
+
+    pub async fn leave_channel(&self, server: String, room: String) -> Result<(), ClientError> {
+        self.ask(|reply| Command::LeaveChannel {
+            server,
+            room,
+            reply,
+        })
+        .await
+    }
+
+    pub async fn say_channel(
+        &self,
+        server: String,
+        room: String,
+        text: String,
+    ) -> Result<(), ClientError> {
+        self.ask(|reply| Command::SayChannel {
+            server,
+            room,
+            text,
+            reply,
+        })
+        .await
+    }
+
+    pub async fn say_private(
+        &self,
+        server: String,
+        user: String,
+        text: String,
+    ) -> Result<(), ClientError> {
+        self.ask(|reply| Command::SayPrivate {
+            server,
+            user,
+            text,
+            reply,
+        })
+        .await
+    }
+
+    pub async fn list_channels(&self, server: String) -> Result<(), ClientError> {
+        self.ask(|reply| Command::ListChannels { server, reply })
             .await
     }
 
-    pub async fn leave_channel(&self, room: String) -> Result<(), ClientError> {
-        self.ask(|reply| Command::LeaveChannel { room, reply })
-            .await
-    }
-
-    pub async fn say_channel(&self, room: String, text: String) -> Result<(), ClientError> {
-        self.ask(|reply| Command::SayChannel { room, text, reply })
-            .await
-    }
-
-    pub async fn say_private(&self, user: String, text: String) -> Result<(), ClientError> {
-        self.ask(|reply| Command::SayPrivate { user, text, reply })
-            .await
-    }
-
-    pub async fn list_channels(&self) -> Result<(), ClientError> {
-        self.ask(|reply| Command::ListChannels { reply }).await
-    }
-
+    /// Asks every server for its friend list again.
     pub async fn refresh_friends(&self) -> Result<(), ClientError> {
         self.ask(|reply| Command::RefreshFriends { reply }).await
     }
@@ -548,16 +646,25 @@ impl Client {
         self.send(Command::Activity).await
     }
 
-    /// Marks us away, so nobody waits on someone who has stepped out.
+    /// Marks us away on every server, so nobody waits on someone who has
+    /// stepped out.
     pub async fn set_away(&self, away: bool) -> Result<(), ClientError> {
         self.ask(|reply| Command::SetAway { away, reply }).await
     }
 
     /// Asks a host how long its game has been going. The answer arrives as a
     /// delta, not as a return value: it comes back as a private message.
-    pub async fn request_game_status(&self, founder: String) -> Result<(), ClientError> {
-        self.ask(|reply| Command::RequestGameStatus { founder, reply })
-            .await
+    pub async fn request_game_status(
+        &self,
+        server: String,
+        founder: String,
+    ) -> Result<(), ClientError> {
+        self.ask(|reply| Command::RequestGameStatus {
+            server,
+            founder,
+            reply,
+        })
+        .await
     }
 
     /// The running engine's process id, for whoever needs to point at its
@@ -638,10 +745,12 @@ impl Client {
 
     pub async fn friend_action(
         &self,
+        server: String,
         action: lobby_core::FriendAction,
         user: String,
     ) -> Result<(), ClientError> {
         self.ask(|reply| Command::FriendAction {
+            server,
             action,
             user,
             reply,
@@ -711,14 +820,15 @@ impl Client {
     /// Joins an empty public autohost; the first person in it becomes its
     /// boss, which is how a public room of your own is made. Which one is
     /// decided by latency and by which cluster has rooms to spare.
-    pub async fn host_public(&self) -> Result<u32, ClientError> {
-        self.ask(|reply| Command::HostPublic { reply }).await
+    pub async fn host_public(&self, server: String) -> Result<u32, ClientError> {
+        self.ask(|reply| Command::HostPublic { server, reply })
+            .await
     }
 
     /// Asks a cluster manager for a room of our own; the runtime joins it
     /// when it appears. Returns the manager it asked.
-    pub async fn request_private_host(&self) -> Result<String, ClientError> {
-        self.ask(|reply| Command::RequestPrivateHost { reply })
+    pub async fn request_private_host(&self, server: String) -> Result<String, ClientError> {
+        self.ask(|reply| Command::RequestPrivateHost { server, reply })
             .await
     }
 
@@ -728,12 +838,6 @@ impl Client {
         let _ = self.send(Command::Shutdown).await;
         self.tx.closed().await;
     }
-}
-
-struct Connection {
-    transport: Transport,
-    inbound: mpsc::Receiver<Inbound>,
-    session: Session,
 }
 
 /// What an engine was started with: the directory it writes and the copy of
@@ -751,7 +855,8 @@ struct Game {
 
 enum Next {
     Command(Command),
-    Inbound(Inbound),
+    Inbound(String, Inbound),
+    Opened(Opened),
     EngineExited(std::io::Result<ExitStatus>),
     Download(DownloadEvent),
     Probe(Probe),
@@ -761,10 +866,13 @@ enum Next {
     PasteQuiet,
 }
 
-/// Completes when a reconnection attempt falls due, and never when none is
-/// wanted — so the arm simply does not fire while we are connected.
-async fn sleep_until_due(policy: &reconnect::Reconnect) {
-    match policy.until_due(Instant::now()) {
+/// The most lines taken from one server before the others are looked at.
+const DRAIN_MOST: usize = 256;
+
+/// Completes when the soonest reconnection attempt falls due, and never when
+/// none is wanted — so the arm simply does not fire while we are connected.
+async fn sleep_until_due(wait: Option<Duration>) {
+    match wait {
         Some(wait) => tokio::time::sleep(wait).await,
         None => std::future::pending().await,
     }
@@ -785,7 +893,15 @@ struct Runtime {
     hardware: Hardware,
     connector: Connector,
     ui: Option<Box<dyn UiTransport>>,
-    conn: Option<Connection>,
+    /// Every server there is, or was this run, a session with, by id.
+    servers: BTreeMap<String, Server>,
+    opened_tx: mpsc::Sender<Opened>,
+    opened_rx: mpsc::Receiver<Opened>,
+    /// Numbers the connects, so one that comes back can be told from the
+    /// one now wanted.
+    attempts: u64,
+    /// Whose turn it is to be listened to first; see [`recv_any`].
+    turn: usize,
     engine: Option<Child>,
     /// What the running engine was started with, to look at when it exits.
     engine_run: Option<EngineRun>,
@@ -800,13 +916,10 @@ struct Runtime {
     /// Whether this machine has everything the room needs. Launching without
     /// it produces an engine that quits with a sync error.
     content_ready: bool,
-    /// Whoever is waiting to be logged in: the login that opened the
-    /// connection, or the code that finishes one the server would not accept.
-    login_reply: Option<Reply<()>>,
-    /// Waiting on `REGISTRATIONDENIED`, or on the agreement that the login
-    /// after `REGISTRATIONACCEPTED` is answered with.
-    register_reply: Option<Reply<Vec<String>>>,
-    join_reply: Option<Reply<()>>,
+    /// The join being answered, and the server it went to.
+    join_reply: Option<(String, Reply<()>)>,
+    /// The server the running game was reported in-game on, to report its end to.
+    in_game_on: Option<String>,
     /// When the room was asked for, until its state has all arrived: the
     /// `join:` milestones in the log are measured from here.
     join_asked: Option<Instant>,
@@ -820,11 +933,7 @@ struct Runtime {
     /// The room's (engine, game, map) the content check last ran against;
     /// scanning the rapid index is too slow to repeat per message.
     checked: Option<(String, String, String)>,
-    /// How to log in again, kept from the last successful attempt so a drop
-    /// can be recovered from without the user typing anything.
-    credentials: Option<(spring_protocol::Endpoint, LoginRequest)>,
-    reconnect: reconnect::Reconnect,
-    /// When to let the server go because nobody has touched the window.
+    /// When to let the servers go because nobody has touched the window.
     /// Off until the app pushes a limit; the CLI has no window to watch.
     idle: idle::Idle,
     /// A multi-line paste on its way out, counted down as its writes leave.
@@ -843,11 +952,14 @@ struct Runtime {
     download_tx: mpsc::Sender<DownloadEvent>,
     download_rx: mpsc::Receiver<DownloadEvent>,
     latency: Arc<dyn Latency>,
-    /// What the host machines answered, kept between runs in `cache_path`
+    /// What the host machines answered, kept between runs in `state_dir`
     /// when there is one, so most requests probe one address rather than
     /// every cluster.
     cache: latency::Cache,
-    cache_path: Option<PathBuf>,
+    /// The way into each server that worked last, kept beside the cache.
+    ways: Ways,
+    /// Where both are kept.
+    state_dir: Option<PathBuf>,
     probe_tx: mpsc::Sender<Probe>,
     probe_rx: mpsc::Receiver<Probe>,
     /// Whether a room request is out measuring; a second one would only
@@ -857,7 +969,7 @@ struct Runtime {
     batcher: Batcher,
     /// The room with no server behind it. Not part of the session: it is still
     /// here after a logout, a dropped connection or a reconnect, which is why
-    /// it lives beside `conn` rather than inside it.
+    /// it lives beside `servers` rather than inside one.
     skirmish: Option<skirmish::Room>,
     /// What the skirmish room's (engine, game, map) last checked out as, and
     /// the answer. Scanning the rapid index is far too slow to repeat on every
@@ -988,22 +1100,32 @@ impl Runtime {
         hardware: Hardware,
         connector: Connector,
         latency: Arc<dyn Latency>,
-        cache_path: Option<PathBuf>,
+        state_dir: Option<PathBuf>,
     ) -> Self {
         // A short queue: progress lines arrive far faster than the front end
         // needs them, and the batcher coalesces what gets through anyway.
         let (download_tx, download_rx) = mpsc::channel(16);
         let (probe_tx, probe_rx) = mpsc::channel(1);
-        let cache = cache_path
+        let (opened_tx, opened_rx) = mpsc::channel(8);
+        let cache = state_dir
             .as_deref()
-            .map_or_else(latency::Cache::default, latency::Cache::load);
+            .map_or_else(latency::Cache::default, |dir| {
+                latency::Cache::load(&dir.join(latency::FILE))
+            });
+        let ways = state_dir
+            .as_deref()
+            .map_or_else(Ways::default, |dir| Ways::load(&dir.join(ways::FILE)));
         Self {
             rx,
             policy,
             hardware,
             connector,
             ui: None,
-            conn: None,
+            servers: BTreeMap::new(),
+            opened_tx,
+            opened_rx,
+            attempts: 0,
+            turn: 0,
             engine: None,
             engine_status: EngineStatus::Idle,
             game: None,
@@ -1011,17 +1133,14 @@ impl Runtime {
             auto_launch_always: true,
             auto_download: true,
             content_ready: false,
-            login_reply: None,
-            register_reply: None,
             join_reply: None,
+            in_game_on: None,
             join_asked: None,
             data_dir: None,
             engine_run: None,
             overlay_config_dir: None,
             menu_archive: None,
             checked: None,
-            credentials: None,
-            reconnect: reconnect::Reconnect::default(),
             idle: idle::Idle::default(),
             paste: None,
             downloading: None,
@@ -1032,7 +1151,8 @@ impl Runtime {
             download_rx,
             latency,
             cache,
-            cache_path,
+            ways,
+            state_dir,
             probe_tx,
             probe_rx,
             probing: false,
@@ -1130,8 +1250,8 @@ impl Runtime {
     /// it arrives, and the content check runs again when it exits, so a room
     /// that was short a map becomes joinable without anyone asking twice.
     async fn start_download(&mut self) -> Result<(), ClientError> {
-        let Some(conn) = self.conn.as_ref() else {
-            return Err(ClientError::NotConnected);
+        let Some(conn) = self.room().and_then(|room| self.link(&room)) else {
+            return Err(ClientError::Refused("not in a room".into()));
         };
         let room = conn
             .session
@@ -1264,10 +1384,10 @@ impl Runtime {
         if self.probing {
             let refused = ClientError::Refused("still looking for a room".into());
             match wanted {
-                Wanted::Public(reply) => {
+                Wanted::Public { reply, .. } => {
                     let _ = reply.send(Err(refused));
                 }
-                Wanted::Private(reply) => {
+                Wanted::Private { reply, .. } => {
                     let _ = reply.send(Err(refused));
                 }
             }
@@ -1302,14 +1422,14 @@ impl Runtime {
             tracing::debug!(%ip, ?rtt, "host latency");
         }
         self.cache.record(probe.measured, latency::unix_now());
-        if let Some(path) = self.cache_path.as_deref() {
-            self.cache.save(path);
+        if let Some(dir) = self.state_dir.as_deref() {
+            self.cache.save(&dir.join(latency::FILE));
         }
         let rtts = self.known_rtts();
         let roll = rand::random::<f64>();
         match probe.wanted {
-            Wanted::Public(reply) => {
-                let Some(conn) = self.conn.as_mut() else {
+            Wanted::Public { server, reply } => {
+                let Some(conn) = self.link_mut(&server) else {
                     let _ = reply.send(Err(ClientError::NotConnected));
                     return;
                 };
@@ -1323,10 +1443,10 @@ impl Runtime {
                 let script_password = format!("{}{}", rand::random::<u16>(), rand::random::<u16>());
                 let effects = conn.session.host_public(id, script_password);
                 let _ = reply.send(Ok(id));
-                self.apply_effects(effects).await;
+                self.apply_effects(&server, effects).await;
             }
-            Wanted::Private(reply) => {
-                let Some(conn) = self.conn.as_mut() else {
+            Wanted::Private { server, reply } => {
+                let Some(conn) = self.link_mut(&server) else {
                     let _ = reply.send(Err(ClientError::NotConnected));
                     return;
                 };
@@ -1340,7 +1460,7 @@ impl Runtime {
                 match conn.session.request_private_host(&manager) {
                     Ok(effects) => {
                         let _ = reply.send(Ok(manager));
-                        self.apply_effects(effects).await;
+                        self.apply_effects(&server, effects).await;
                     }
                     Err(err) => {
                         let _ = reply.send(Err(ClientError::Refused(err.to_string())));
@@ -1391,8 +1511,14 @@ impl Runtime {
     /// Re-checks the room's content when what it asks for changes, and tells
     /// the room whether we are synced. Nothing claims sync without a disk check.
     async fn refresh_content(&mut self) {
-        let Some(conn) = self.conn.as_ref() else {
+        if self.linked().is_empty() {
             self.checked = None;
+            return;
+        }
+        let Some(conn) = self.room().and_then(|room| self.link(&room)) else {
+            if self.checked.take().is_some() {
+                self.set_synced(false).await;
+            }
             return;
         };
         let room = conn
@@ -1453,12 +1579,15 @@ impl Runtime {
         }
     }
 
+    /// Tells every session whether the content is here. Only one in a room
+    /// says so to its server; the others keep it for the room they join next.
     async fn set_synced(&mut self, synced: bool) {
-        let Some(conn) = self.conn.as_mut() else {
-            return;
-        };
-        let effects = conn.session.set_synced(synced);
-        self.apply_effects(effects).await;
+        for server in self.linked() {
+            if let Some(conn) = self.link_mut(&server) {
+                let effects = conn.session.set_synced(synced);
+                self.apply_effects(&server, effects).await;
+            }
+        }
     }
 
     /// Where BAR content is: the setting or our own directory to write, every
@@ -1469,47 +1598,60 @@ impl Runtime {
 
     async fn run(mut self) {
         loop {
-            let connected = self.conn.is_some();
+            let connected = self.servers.values().any(|server| server.link.is_some());
+            let now = Instant::now();
+            let retry = self
+                .servers
+                .values()
+                .filter_map(|server| server.reconnect.until_due(now))
+                .min();
             let next = tokio::select! {
                 command = self.rx.recv() => match command {
                     Some(command) => Next::Command(command),
                     None => return,
                 },
-                inbound = recv_inbound(&mut self.conn) => Next::Inbound(inbound),
+                (server, inbound) = recv_any(&mut self.servers, self.turn) => Next::Inbound(server, inbound),
+                Some(opened) = self.opened_rx.recv() => Next::Opened(opened),
                 status = wait_engine(&mut self.engine) => Next::EngineExited(status),
                 Some(event) = self.download_rx.recv() => Next::Download(event),
                 Some(probe) = self.probe_rx.recv() => Next::Probe(probe),
-                () = sleep_until_due(&self.reconnect) => Next::Reconnect,
+                () = sleep_until_due(retry) => Next::Reconnect,
                 () = sleep_until_idle(&self.idle, connected) => Next::Idle,
                 () = sleep_until_paste_quiet(&self.paste) => Next::PasteQuiet,
             };
             match next {
                 Next::Command(Command::Shutdown) => {
-                    self.disconnect().await;
+                    for server in self.linked() {
+                        self.disconnect(&server).await;
+                    }
                     self.flush();
                     return;
                 }
                 Next::Command(command) => self.handle_command(command).await,
+                Next::Opened(opened) => self.on_opened(opened).await,
                 Next::Download(event) => self.on_download(event).await,
                 Next::Probe(probe) => self.on_probe(probe).await,
                 Next::Reconnect => self.try_reconnect().await,
                 Next::Idle => self.on_idle().await,
                 Next::PasteQuiet => self.paste_quiet(),
-                Next::Inbound(inbound) => {
-                    self.handle_inbound(inbound).await;
-                    while let Some(more) = self.try_recv_inbound() {
-                        self.handle_inbound(more).await;
+                Next::Inbound(server, inbound) => {
+                    self.handle_inbound(&server, inbound).await;
+                    // A run at a time, then the next server gets its turn: a
+                    // login flood is thousands of lines, and another server's
+                    // room should not wait behind all of them.
+                    for _ in 0..DRAIN_MOST {
+                        let Some(more) = self.try_recv_inbound(&server) else {
+                            break;
+                        };
+                        self.handle_inbound(&server, more).await;
                     }
+                    self.turn = self.turn.wrapping_add(1);
                     self.refresh_content().await;
                 }
                 Next::EngineExited(status) => self.engine_exited(status).await,
             }
             self.flush();
         }
-    }
-
-    fn try_recv_inbound(&mut self) -> Option<Inbound> {
-        self.conn.as_mut()?.inbound.try_recv().ok()
     }
 
     async fn handle_command(&mut self, command: Command) {
@@ -1525,37 +1667,50 @@ impl Runtime {
             } => {
                 // Logging in is the one activity that needs no window.
                 self.idle.active(Instant::now());
-                self.connect(endpoint, request, reply).await;
+                self.connect(endpoint, request, Purpose::Login(reply));
             }
-            Command::Logout => {
+            Command::Logout { server } => {
                 // Asked for: stop trying to come back.
-                self.credentials = None;
-                self.reconnect.stop();
-                self.disconnect().await;
-                self.announce_retry();
+                let from = match server {
+                    Some(server) => vec![server],
+                    None => self.servers.keys().cloned().collect(),
+                };
+                for server in from {
+                    self.log_out(&server).await;
+                }
             }
+            Command::ForgetWay { host } => self.forget_way(&host),
             // Asked for, so it goes out now: the timer's wait is for a server
             // that dropped everyone at once, not for a person watching.
-            Command::Reconnect { reply } => match self.credentials.clone() {
-                Some((endpoint, request)) => {
-                    self.reconnect.attempted(Instant::now());
-                    self.announce_retry();
-                    tracing::info!("reconnecting on request");
-                    self.connect(endpoint, request, reply).await;
-                }
-                None => {
+            Command::Reconnect {
+                server,
+                endpoint,
+                reply,
+            } => {
+                let Some(slot) = self.servers.get_mut(&server) else {
                     let _ = reply.send(Err(ClientError::NoCredentials));
-                }
-            },
+                    return;
+                };
+                let Some((kept, request)) = slot.credentials.clone() else {
+                    let _ = reply.send(Err(ClientError::NoCredentials));
+                    return;
+                };
+                let endpoint = endpoint.unwrap_or(kept);
+                slot.reconnect.attempted(Instant::now());
+                self.announce_retry(&server);
+                tracing::info!(server, "reconnecting on request");
+                self.connect(endpoint, request, Purpose::Login(reply));
+            }
             Command::Snapshot(tx) => {
                 let _ = tx.send(self.snapshot());
             }
             Command::JoinBattle {
+                server,
                 id,
                 password,
                 reply,
             } => {
-                let Some(conn) = self.conn.as_mut() else {
+                let Some(conn) = self.link_mut(&server) else {
                     let _ = reply.send(Err(ClientError::NotConnected));
                     return;
                 };
@@ -1563,21 +1718,24 @@ impl Runtime {
                 let effects = conn
                     .session
                     .join_battle(id, password.as_deref(), script_password);
-                self.join_reply = Some(reply);
+                self.join_reply = Some((server.clone(), reply));
                 self.join_asked = Some(Instant::now());
-                tracing::info!(id, "join: asked");
-                self.apply_effects(effects).await;
+                tracing::info!(server, id, "join: asked");
+                self.apply_effects(&server, effects).await;
             }
             Command::LeaveBattle => {
-                let Some(conn) = self.conn.as_mut() else {
+                let Some(server) = self.room() else {
+                    return;
+                };
+                let Some(conn) = self.link_mut(&server) else {
                     return;
                 };
                 let effects = conn.session.leave_battle();
-                self.project_effects(&effects);
-                self.apply_effects(effects).await;
+                self.project_effects(&server, &effects);
+                self.apply_effects(&server, effects).await;
             }
             Command::Launch { dirs, reply } => {
-                let result = if self.conn.is_none() {
+                let result = if self.linked().is_empty() {
                     Err(ClientError::NotConnected)
                 } else if self.engine.is_some() {
                     Err(ClientError::Engine("already running".into()))
@@ -1593,7 +1751,11 @@ impl Runtime {
                 // Not `run_session`: a line past the cap is `TooLong`, its own
                 // error, rather than a refusal.
                 let burst = self.policy.paste.burst;
-                let said = match self.conn.as_mut() {
+                let Some(server) = self.room_or_any() else {
+                    let _ = reply.send(Err(ClientError::NotConnected));
+                    return;
+                };
+                let said = match self.link_mut(&server) {
                     Some(conn) => conn.session.say_battle(&text, burst),
                     None => {
                         let _ = reply.send(Err(ClientError::NotConnected));
@@ -1616,31 +1778,52 @@ impl Runtime {
                                 .collect();
                             self.paste_started(*lines, weights, *skipped);
                         }
-                        self.apply_effects(effects).await;
+                        self.apply_effects(&server, effects).await;
                     }
                     Err(err) => {
                         let _ = reply.send(Err(err.into()));
                     }
                 }
             }
-            Command::JoinChannel { room, key, reply } => {
-                self.run_session(reply, |session| session.join_channel(&room, key.as_deref()))
+            Command::JoinChannel {
+                server,
+                room,
+                key,
+                reply,
+            } => {
+                self.run_session(&server, reply, |session| {
+                    session.join_channel(&room, key.as_deref())
+                })
+                .await;
+            }
+            Command::LeaveChannel {
+                server,
+                room,
+                reply,
+            } => {
+                self.run_session(&server, reply, |session| session.leave_channel(&room))
                     .await;
             }
-            Command::LeaveChannel { room, reply } => {
-                self.run_session(reply, |session| session.leave_channel(&room))
+            Command::SayChannel {
+                server,
+                room,
+                text,
+                reply,
+            } => {
+                self.run_session(&server, reply, |session| session.say_channel(&room, &text))
                     .await;
             }
-            Command::SayChannel { room, text, reply } => {
-                self.run_session(reply, |session| session.say_channel(&room, &text))
+            Command::SayPrivate {
+                server,
+                user,
+                text,
+                reply,
+            } => {
+                self.run_session(&server, reply, |session| session.say_private(&user, &text))
                     .await;
             }
-            Command::SayPrivate { user, text, reply } => {
-                self.run_session(reply, |session| session.say_private(&user, &text))
-                    .await;
-            }
-            Command::ListChannels { reply } => {
-                self.run_session(reply, |session| {
+            Command::ListChannels { server, reply } => {
+                self.run_session(&server, reply, |session| {
                     Ok::<_, std::convert::Infallible>(session.list_channels())
                 })
                 .await;
@@ -1698,9 +1881,15 @@ impl Runtime {
                 };
                 let _ = reply.send(answer);
             }
-            Command::RequestGameStatus { founder, reply } => {
-                self.run_session(reply, |session| session.request_game_status(&founder))
-                    .await;
+            Command::RequestGameStatus {
+                server,
+                founder,
+                reply,
+            } => {
+                self.run_session(&server, reply, |session| {
+                    session.request_game_status(&founder)
+                })
+                .await;
             }
             Command::EnginePid { reply } => {
                 let _ = reply.send(Ok(self.engine.as_ref().and_then(Child::id)));
@@ -1736,13 +1925,11 @@ impl Runtime {
             }
             Command::Activity => self.idle.active(Instant::now()),
             Command::SetAway { away, reply } => {
-                self.run_session(reply, |session| {
-                    Ok::<_, std::convert::Infallible>(session.set_away(away))
-                })
-                .await;
+                self.run_everywhere(reply, |session| session.set_away(away))
+                    .await;
             }
             Command::Ring { user, reply } => {
-                self.run_session(reply, |session| {
+                self.run_room(reply, |session| {
                     Ok::<_, std::convert::Infallible>(session.ring(&user))
                 })
                 .await;
@@ -1755,7 +1942,7 @@ impl Runtime {
                 colour,
                 reply,
             } => {
-                self.run_session(reply, |session| {
+                self.run_room(reply, |session| {
                     Ok::<_, std::convert::Infallible>(
                         session.add_bot(&name, &ai, team, ally_team, colour),
                     )
@@ -1770,7 +1957,7 @@ impl Runtime {
                 colour,
                 reply,
             } => {
-                self.run_session(reply, |session| {
+                self.run_room(reply, |session| {
                     Ok::<_, std::convert::Infallible>(
                         session.update_bot(&name, team, ally_team, handicap, colour),
                     )
@@ -1778,53 +1965,39 @@ impl Runtime {
                 .await;
             }
             Command::RemoveBot { name, reply } => {
-                self.run_session(reply, |session| {
+                self.run_room(reply, |session| {
                     Ok::<_, std::convert::Infallible>(session.remove_bot(&name))
                 })
                 .await;
             }
             Command::RefreshFriends { reply } => {
-                self.run_session(reply, |session| {
-                    Ok::<_, std::convert::Infallible>(session.refresh_friends())
-                })
-                .await;
+                self.run_everywhere(reply, Session::refresh_friends).await;
             }
             Command::FriendAction {
+                server,
                 action,
                 user,
                 reply,
             } => {
-                self.run_session(reply, |session| {
+                self.run_session(&server, reply, |session| {
                     Ok::<_, std::convert::Infallible>(session.friend_action(action, &user))
                 })
                 .await;
             }
             Command::SetReady { ready, reply } => {
-                self.run_session(reply, |session| session.set_ready(ready))
+                self.run_room(reply, |session| session.set_ready(ready))
                     .await;
             }
             Command::SetSide { side, reply } => {
-                self.run_session(reply, |session| session.set_side(side))
-                    .await;
+                self.run_room(reply, |session| session.set_side(side)).await;
             }
             Command::TakeSeat {
                 team,
                 ally_team,
                 reply,
             } => {
-                let Some(conn) = self.conn.as_mut() else {
-                    let _ = reply.send(Err(ClientError::NotConnected));
-                    return;
-                };
-                match conn.session.take_seat(team, ally_team) {
-                    Ok(effects) => {
-                        let _ = reply.send(Ok(()));
-                        self.apply_effects(effects).await;
-                    }
-                    Err(err) => {
-                        let _ = reply.send(Err(ClientError::Refused(err.to_string())));
-                    }
-                }
+                self.run_room(reply, |session| session.take_seat(team, ally_team))
+                    .await;
             }
             Command::SetOverlayConfigDir(dir) => self.overlay_config_dir = dir,
             Command::SetMenuArchive(menu) => self.menu_archive = menu,
@@ -1847,27 +2020,30 @@ impl Runtime {
                 self.push_skirmish();
             }
             Command::ReleaseSeat => {
-                let Some(conn) = self.conn.as_mut() else {
+                let Some(server) = self.room() else {
+                    return;
+                };
+                let Some(conn) = self.link_mut(&server) else {
                     return;
                 };
                 let effects = conn.session.release_seat();
-                self.apply_effects(effects).await;
+                self.apply_effects(&server, effects).await;
             }
-            Command::HostPublic { reply } => {
-                let Some(conn) = self.conn.as_ref() else {
+            Command::HostPublic { server, reply } => {
+                let Some(conn) = self.link(&server) else {
                     let _ = reply.send(Err(ClientError::NotConnected));
                     return;
                 };
                 let ips = conn.session.spare_machines();
-                self.start_probe(ips, Wanted::Public(reply));
+                self.start_probe(ips, Wanted::Public { server, reply });
             }
-            Command::RequestPrivateHost { reply } => {
-                let Some(conn) = self.conn.as_ref() else {
+            Command::RequestPrivateHost { server, reply } => {
+                let Some(conn) = self.link(&server) else {
                     let _ = reply.send(Err(ClientError::NotConnected));
                     return;
                 };
                 let ips = conn.session.spare_machines();
-                self.start_probe(ips, Wanted::Private(reply));
+                self.start_probe(ips, Wanted::Private { server, reply });
             }
             Command::Register {
                 endpoint,
@@ -1875,104 +2051,70 @@ impl Runtime {
                 email,
                 password,
                 reply,
+            } => self.connect(
+                endpoint,
+                request,
+                Purpose::Register {
+                    email,
+                    password,
+                    reply,
+                },
+            ),
+            Command::ConfirmAgreement {
+                server,
+                code,
+                reply,
             } => {
-                self.register(endpoint, request, email, password, reply)
-                    .await
-            }
-            Command::ConfirmAgreement { code, reply } => {
                 // Not `run_session`: that answers as soon as the line is
                 // queued, which for a code would report a wrong one as a
                 // success. The server's reply is the answer — `ACCEPTED` when
                 // the code was right (teiserver runs the whole login on it),
                 // `DENIED Incorrect code` when it was not — so this waits
                 // where a login waits.
-                let Some(conn) = self.conn.as_mut() else {
+                let Some(slot) = self.servers.get_mut(&server) else {
+                    let _ = reply.send(Err(ClientError::NotConnected));
+                    return;
+                };
+                let Some(conn) = slot.link.as_mut() else {
                     let _ = reply.send(Err(ClientError::NotConnected));
                     return;
                 };
                 let effects = conn.session.confirm_agreement(&code);
-                self.login_reply = Some(reply);
-                self.apply_effects(effects).await;
+                slot.login_reply = Some(reply);
+                self.apply_effects(&server, effects).await;
             }
             Command::Shutdown => unreachable!("handled by the run loop"),
         }
     }
 
-    /// Opens the connection an account is created on, and then lives on.
-    ///
-    /// Separate from `connect` because what it sends on `Welcome` is a
-    /// `REGISTER` rather than a `LOGIN`. Everything after that is a login:
-    /// the account exists but is unverified, so the connection stays open for
-    /// the code that verifies it, and the credentials are kept exactly as a
-    /// login keeps them — without them a reconnect later in the session would
-    /// have nothing to reconnect with.
-    async fn register(
-        &mut self,
-        endpoint: Endpoint,
-        request: LoginRequest,
-        email: String,
-        password: String,
-        reply: Reply<Vec<String>>,
-    ) {
-        if self.conn.is_some() {
-            let _ = reply.send(Err(ClientError::AlreadyConnected));
-            return;
-        }
-        self.credentials = Some((endpoint.clone(), request.clone()));
-        match (self.connector)(endpoint, self.policy.clone()).await {
-            Ok((transport, inbound)) => {
-                let session = Session::new(
-                    request,
-                    self.hardware.properties.clone(),
-                    self.hardware.machine_hash.clone(),
-                )
-                .registering(email, password);
-                self.conn = Some(Connection {
-                    transport,
-                    inbound,
-                    session,
-                });
-                self.register_reply = Some(reply);
-            }
-            Err(err) => {
-                let _ = reply.send(Err(err.into()));
-            }
-        }
+    fn forget_way(&mut self, host: &str) {
+        self.ways.forget(host);
+        self.ways_changed();
     }
 
-    async fn connect(&mut self, endpoint: Endpoint, request: LoginRequest, reply: Reply<()>) {
-        if self.conn.is_some() {
-            let _ = reply.send(Err(ClientError::AlreadyConnected));
-            return;
+    fn ways_changed(&mut self) {
+        if let Some(dir) = self.state_dir.as_deref() {
+            self.ways.save(&dir.join(ways::FILE));
         }
-        self.credentials = Some((endpoint.clone(), request.clone()));
-        self.batcher.push(Delta::Phase(Some(Phase::Connecting)));
-        self.flush();
-        match (self.connector)(endpoint, self.policy.clone()).await {
-            Ok((transport, inbound)) => {
-                let session = Session::new(
-                    request,
-                    self.hardware.properties.clone(),
-                    self.hardware.machine_hash.clone(),
-                );
-                self.conn = Some(Connection {
-                    transport,
-                    inbound,
-                    session,
-                });
-                self.login_reply = Some(reply);
-            }
-            Err(err) => {
-                self.batcher.push(Delta::Phase(None));
-                let _ = reply.send(Err(err.into()));
-            }
-        }
+        self.batcher.push(Delta::Ways(self.ways_view()));
     }
 
-    async fn handle_inbound(&mut self, inbound: Inbound) {
+    /// Each remembered way as it reads: "STLS on 8200, 46 ms".
+    fn ways_view(&self) -> BTreeMap<String, String> {
+        self.ways
+            .iter()
+            .map(|(host, way)| (host.clone(), way.to_string()))
+            .collect()
+    }
+
+    async fn handle_inbound(&mut self, server: &str, inbound: Inbound) {
         match inbound {
             Inbound::Message(event) => {
-                let Some(conn) = self.conn.as_mut() else {
+                let Some(conn) = self
+                    .servers
+                    .get_mut(server)
+                    .and_then(|slot| slot.link.as_mut())
+                else {
                     return;
                 };
                 let effects = conn.session.handle(event.clone());
@@ -1980,27 +2122,23 @@ impl Runtime {
                     .projector
                     .project(&event, &effects, &conn.session.state);
                 for delta in deltas {
-                    self.batcher.push(delta);
+                    self.batcher.push_for(server, delta);
                 }
                 if matches!(event, spring_protocol::ServerEvent::RequestBattleStatus) {
                     self.note_room_state_complete();
                 }
-                self.apply_effects(effects).await;
+                self.apply_effects(server, effects).await;
             }
             Inbound::Policy(event) => match event {
                 PolicyEvent::Delayed {
                     area,
                     pending,
                     wait,
-                } => tracing::debug!(?area, pending, ?wait, "throttled"),
+                } => tracing::debug!(server, ?area, pending, ?wait, "throttled"),
                 PolicyEvent::Sent { area, lines, .. } => self.paste_sent(area, lines),
-                other => tracing::info!(?other, "policy"),
+                other => tracing::info!(server, ?other, "policy"),
             },
-            Inbound::Note(text) => self.batcher.push(Delta::Notice {
-                level: lobby_ui::NoticeLevel::Warning,
-                text,
-            }),
-            Inbound::Closed { reason } => self.connection_lost(reason),
+            Inbound::Closed { reason } => self.connection_lost(server, reason),
         }
     }
 
@@ -2008,17 +2146,18 @@ impl Runtime {
     /// own error type only ever needs to reach the caller as text.
     async fn run_session<E: std::fmt::Display>(
         &mut self,
+        server: &str,
         reply: Reply<()>,
         call: impl FnOnce(&mut lobby_core::Session) -> Result<Vec<Effect>, E>,
     ) {
-        let Some(conn) = self.conn.as_mut() else {
+        let Some(conn) = self.link_mut(server) else {
             let _ = reply.send(Err(ClientError::NotConnected));
             return;
         };
         match call(&mut conn.session) {
             Ok(effects) => {
                 let _ = reply.send(Ok(()));
-                self.apply_effects(effects).await;
+                self.apply_effects(server, effects).await;
             }
             Err(err) => {
                 let _ = reply.send(Err(ClientError::Refused(err.to_string())));
@@ -2026,7 +2165,44 @@ impl Runtime {
         }
     }
 
-    async fn apply_effects(&mut self, effects: Vec<Effect>) {
+    /// A room's command, to the room's server — or, with no room, to one whose
+    /// session will say there is none.
+    async fn run_room<E: std::fmt::Display>(
+        &mut self,
+        reply: Reply<()>,
+        call: impl FnOnce(&mut lobby_core::Session) -> Result<Vec<Effect>, E>,
+    ) {
+        match self.room_or_any() {
+            Some(server) => self.run_session(&server, reply, call).await,
+            None => {
+                let _ = reply.send(Err(ClientError::NotConnected));
+            }
+        }
+    }
+
+    /// One call on every server there is a link to — away, the friend list —
+    /// answered once: done if any server took it.
+    async fn run_everywhere(
+        &mut self,
+        reply: Reply<()>,
+        call: impl Fn(&mut lobby_core::Session) -> Vec<Effect>,
+    ) {
+        let linked = self.linked();
+        let _ = reply.send(if linked.is_empty() {
+            Err(ClientError::NotConnected)
+        } else {
+            Ok(())
+        });
+        for server in linked {
+            if let Some(conn) = self.link_mut(&server) {
+                let effects = call(&mut conn.session);
+                self.apply_effects(&server, effects).await;
+            }
+        }
+    }
+
+    /// Applies what `server`'s session produced.
+    async fn apply_effects(&mut self, server: &str, effects: Vec<Effect>) {
         // A queue, not a loop over the argument: joining the private room we
         // asked for produces effects of its own.
         let mut queue: std::collections::VecDeque<Effect> = effects.into();
@@ -2035,7 +2211,7 @@ impl Runtime {
                 // The room a cluster manager made for us; joining it is the
                 // whole point of having asked.
                 Effect::PrivateHostReady { id, password } => {
-                    let Some(conn) = self.conn.as_mut() else {
+                    let Some(conn) = self.link_mut(server) else {
                         continue;
                     };
                     let script_password =
@@ -2046,15 +2222,17 @@ impl Runtime {
                     queue.extend(effects);
                 }
                 Effect::PrivateHostOffered { manager, password } => {
-                    self.batcher.push(Delta::Notice {
-                        level: lobby_ui::NoticeLevel::Info,
-                        text: format!("{manager} is starting a room; password {password}"),
-                    });
+                    self.batcher.push_for(
+                        server,
+                        Delta::Notice {
+                            level: lobby_ui::NoticeLevel::Info,
+                            text: format!("{manager} is starting a room; password {password}"),
+                        },
+                    );
                 }
                 Effect::Hosting { founder, alone } => {
                     let rtt = self
-                        .conn
-                        .as_ref()
+                        .link(server)
                         .and_then(|conn| {
                             conn.session
                                 .state
@@ -2078,33 +2256,36 @@ impl Runtime {
                             ),
                         )
                     };
-                    self.batcher.push(Delta::Notice { level, text });
+                    self.batcher.push_for(server, Delta::Notice { level, text });
                 }
                 Effect::Send(envelope) => {
-                    if let Err(err) = self.send_line(envelope).await {
-                        self.connection_lost(err.to_string());
+                    if let Err(err) = self.send_line(server, envelope).await {
+                        self.connection_lost(server, err.to_string());
                         return;
                     }
                 }
                 Effect::Ready => {
-                    self.reconnect.stop();
-                    self.reply_login(Ok(()));
+                    if let Some(slot) = self.servers.get_mut(server) {
+                        slot.reconnect.stop();
+                    }
+                    self.reply_login(server, Ok(()));
                     // The snapshot carries `retry_in: None` for the corner.
-                    self.send_snapshot();
+                    self.send_session(server);
                     // The server volunteers nothing about friendships, so the
                     // list is asked for once the login flood has settled.
                     // Without this a filter that depends on it would quietly
                     // match nobody.
-                    if let Some(conn) = self.conn.as_mut() {
+                    if let Some(conn) = self.link_mut(server) {
                         let effects = conn.session.refresh_friends();
                         queue.extend(effects);
                     }
                 }
-                Effect::LoginDenied { reason } => self.refuse(reason).await,
+                Effect::LoginDenied { reason } => self.refuse(server, reason).await,
                 Effect::AgreementRequired { text } => {
                     // Not a refusal, and never a reason to hang up: this is
                     // the one connection the emailed code can be sent on.
-                    if let Some(reply) = self.register_reply.take() {
+                    let slot = self.servers.entry(server.to_owned()).or_default();
+                    if let Some(reply) = slot.register_reply.take() {
                         // Registering, so the form is already asking for the
                         // code and a notice would only repeat the screen. The
                         // agreement itself goes back as the answer, because
@@ -2113,12 +2294,16 @@ impl Runtime {
                     } else {
                         // An older account that never confirmed. Nothing is
                         // waiting on an agreement, so this has to be said.
-                        self.batcher.push(Delta::Notice {
-                            level: lobby_ui::NoticeLevel::Warning,
-                            text: "this account must confirm the emailed code before it can log in"
-                                .into(),
-                        });
-                        if let Some(reply) = self.login_reply.take() {
+                        let login_reply = slot.login_reply.take();
+                        self.batcher.push_for(
+                            server,
+                            Delta::Notice {
+                                level: lobby_ui::NoticeLevel::Warning,
+                                text: "this account must confirm the emailed code before it can log in"
+                                    .into(),
+                            },
+                        );
+                        if let Some(reply) = login_reply {
                             let _ = reply.send(Err(ClientError::Refused(
                                 "confirm the code emailed to you".into(),
                             )));
@@ -2132,45 +2317,57 @@ impl Runtime {
                     // agreement it answers with is what the caller is waiting
                     // for. Hanging up here — as this once did — threw away the
                     // connection the code had to be sent on.
-                    if let Some(conn) = self.conn.as_mut() {
+                    if let Some(conn) = self.link_mut(server) {
                         let effects = conn.session.begin_login();
                         queue.extend(effects);
                     }
                 }
                 Effect::RegistrationDenied { reason } => {
-                    if let Some(reply) = self.register_reply.take() {
+                    let slot = self.servers.entry(server.to_owned()).or_default();
+                    if let Some(reply) = slot.register_reply.take() {
                         let _ = reply.send(Err(ClientError::Refused(reason)));
                     }
                     // No account was made, so there is nothing to come back to.
-                    self.credentials = None;
-                    self.disconnect().await;
+                    slot.credentials = None;
+                    self.disconnect(server).await;
                 }
                 Effect::Redirect { host, port } => {
-                    self.refuse(format!(
-                        "server redirects to {host}:{}",
-                        port.map_or("?".into(), |p| p.to_string())
-                    ))
+                    self.refuse(
+                        server,
+                        format!(
+                            "server redirects to {host}:{}",
+                            port.map_or("?".into(), |p| p.to_string())
+                        ),
+                    )
                     .await
                 }
                 Effect::Disconnected { reason, flood } => {
-                    if flood && let Some(conn) = &self.conn {
+                    if flood && let Some(conn) = self.link(server) {
                         let wait = Duration::from_secs_f64(self.policy.login.after_flood_secs);
                         let _ = conn
                             .transport
                             .trip(Area::Login, Instant::now() + wait)
                             .await;
                     }
-                    self.refuse(format!("disconnected: {reason}")).await;
+                    self.refuse(server, format!("disconnected: {reason}")).await;
                 }
-                Effect::Joined { .. } => self.reply_join(Ok(())),
-                Effect::JoinFailed { reason } => self.reply_join(Err(ClientError::Refused(reason))),
+                Effect::Joined { .. } => {
+                    self.leave_rooms_except(server).await;
+                    self.reply_join(server, Ok(()));
+                }
+                Effect::JoinFailed { reason } => {
+                    self.reply_join(server, Err(ClientError::Refused(reason)))
+                }
                 Effect::LeftBattle { .. } => self.game = None,
                 Effect::GameStopped => {
                     if self.game.take().is_some() {
-                        self.batcher.push(Delta::Alert {
-                            kind: lobby_ui::AlertKind::GameEnded,
-                            text: "your room's game has finished".into(),
-                        });
+                        self.batcher.push_for(
+                            server,
+                            Delta::Alert {
+                                kind: lobby_ui::AlertKind::GameEnded,
+                                text: "your room's game has finished".into(),
+                            },
+                        );
                     }
                 }
                 Effect::GameRunning {
@@ -2185,10 +2382,13 @@ impl Runtime {
                     // `self.game` already tracks whether it is news. Walking
                     // into a game already under way is not news of a start.
                     if just_started && self.game.is_none() {
-                        self.batcher.push(Delta::Alert {
-                            kind: lobby_ui::AlertKind::GameStarting,
-                            text: "your room's game has started".into(),
-                        });
+                        self.batcher.push_for(
+                            server,
+                            Delta::Alert {
+                                kind: lobby_ui::AlertKind::GameStarting,
+                                text: "your room's game has started".into(),
+                            },
+                        );
                     }
                     self.game = Some(Game {
                         view: GameRunningView { id, ip, port },
@@ -2257,79 +2457,24 @@ impl Runtime {
         }
     }
 
-    fn project_effects(&mut self, effects: &[Effect]) {
-        let Some(conn) = self.conn.as_ref() else {
+    fn project_effects(&mut self, server: &str, effects: &[Effect]) {
+        let Some(conn) = self.servers.get(server).and_then(|slot| slot.link.as_ref()) else {
             return;
         };
         let mut deltas = Vec::new();
         self.projector
             .project_effects(effects, &conn.session.state, &mut deltas);
         for delta in deltas {
-            self.batcher.push(delta);
+            self.batcher.push_for(server, delta);
         }
     }
 
-    async fn send_line(&mut self, envelope: Envelope) -> Result<(), ClientError> {
-        let Some(conn) = self.conn.as_ref() else {
+    async fn send_line(&mut self, server: &str, envelope: Envelope) -> Result<(), ClientError> {
+        let Some(conn) = self.link(server) else {
             return Err(ClientError::NotConnected);
         };
         conn.transport.send(envelope).await?;
         Ok(())
-    }
-
-    /// The server said no (before or after login): answer whoever waits, then drop the link.
-    /// A refusal we can do nothing about, except when it is the server telling
-    /// us to wait — which is the one refusal worth answering by waiting.
-    async fn refuse(&mut self, reason: String) {
-        let transient = reason.to_ascii_lowercase().contains("flood protection");
-        if transient && self.credentials.is_some() {
-            self.reconnect
-                .flooded(Instant::now(), rand::random::<f64>());
-            tracing::info!(reason, "login refused as flooding; will wait and retry");
-        }
-        self.reply_login(Err(ClientError::Refused(reason.clone())));
-        self.reply_join(Err(ClientError::Refused(reason)));
-        if let Some(conn) = self.conn.take() {
-            conn.transport.shutdown().await;
-        }
-        self.game = None;
-        self.auto_launch = None;
-        self.batcher.push(Delta::Phase(None));
-        self.announce_retry();
-    }
-
-    fn connection_lost(&mut self, reason: String) {
-        tracing::warn!(reason, "connection lost");
-        // A drop while a game is running gets the longer wait: it was probably
-        // the server, and everyone in that game is about to try at once.
-        let in_game = self.game.is_some() || self.engine.is_some();
-        if self.credentials.is_some() {
-            self.reconnect
-                .disconnected(Instant::now(), in_game, rand::random::<f64>());
-        }
-        self.reply_login(Err(ClientError::Refused(reason.clone())));
-        self.reply_join(Err(ClientError::Refused(reason.clone())));
-        self.conn = None;
-        self.game = None;
-        self.auto_launch = None;
-        // The scheduler went with the connection; what it held is not coming.
-        if self.paste.take().is_some() {
-            self.batcher.push(Delta::Paste(PasteStatus::Idle));
-        }
-        let text = if self.reconnect.is_armed() {
-            format!("connection lost: {reason} — trying again shortly")
-        } else {
-            format!("connection lost: {reason}")
-        };
-        // A warning: the network and the server are not the app's to fix, and
-        // `Error` makes the next look for a fix come sooner. A server restart
-        // would otherwise put every client on that ladder at once.
-        self.batcher.push(Delta::Notice {
-            level: lobby_ui::NoticeLevel::Warning,
-            text,
-        });
-        self.batcher.push(Delta::Phase(None));
-        self.announce_retry();
     }
 
     /// The window has gone untouched for the limit. A running game is not
@@ -2344,67 +2489,16 @@ impl Runtime {
         self.idle_disconnect().await;
     }
 
-    /// Lets the server go and stops coming back. The credentials go with it:
-    /// a window nobody is at should not log in again on its own, and the
-    /// login screen has the remembered password anyway.
-    async fn idle_disconnect(&mut self) {
-        tracing::info!("idle past the limit; letting the server go");
-        self.credentials = None;
-        self.reconnect.stop();
-        self.disconnect().await;
-        self.announce_retry();
-        self.batcher.push(Delta::Notice {
-            level: lobby_ui::NoticeLevel::Info,
-            text: "disconnected: nobody has touched the lobby for a while".into(),
-        });
-    }
-
-    /// Tries the last known credentials again.
-    async fn try_reconnect(&mut self) {
-        let Some((endpoint, request)) = self.credentials.clone() else {
-            self.reconnect.stop();
-            return;
-        };
-        // A drop is not worth recovering from for nobody.
-        if self.idle.due(Instant::now()) {
-            self.idle_disconnect().await;
-            return;
-        }
-        self.reconnect.attempted(Instant::now());
-        self.announce_retry();
-        tracing::info!("reconnecting");
-        let (tx, _rx) = oneshot::channel();
-        self.connect(endpoint, request, tx).await;
-    }
-
-    async fn disconnect(&mut self) {
-        let Some(mut conn) = self.conn.take() else {
-            return;
-        };
-        let leaving = conn.session.leave_battle();
-        let in_room = !leaving.is_empty();
-        if in_room {
-            for effect in leaving {
-                if let Effect::Send(envelope) = effect {
-                    let _ = conn.transport.send(envelope).await;
-                }
-            }
-            // Let the writer flush LEAVEBATTLE before the socket goes away.
-            tokio::time::sleep(Duration::from_millis(300)).await;
-        }
-        conn.transport.shutdown().await;
-        self.game = None;
-        self.auto_launch = None;
-        if in_room {
-            self.batcher.push(Delta::MyBattle(None));
-            self.batcher.push(Delta::GameRunning(None));
-        }
-        self.batcher.push(Delta::Phase(None));
-    }
-
     async fn launch_engine(&mut self, dirs: DataDirs) -> Result<(), ClientError> {
+        let Some(server) = self.room() else {
+            return Err(ClientError::NotConnected);
+        };
         let (engine_version, url, in_game) = {
-            let Some(conn) = self.conn.as_mut() else {
+            let Some(conn) = self
+                .servers
+                .get_mut(&server)
+                .and_then(|slot| slot.link.as_mut())
+            else {
                 return Err(ClientError::NotConnected);
             };
             let Some(game) = self.game.as_ref() else {
@@ -2437,9 +2531,10 @@ impl Runtime {
         // game; the engine needs a few seconds to reach the host.
         for effect in in_game {
             if let Effect::Send(envelope) = effect {
-                self.send_line(envelope).await?;
+                self.send_line(&server, envelope).await?;
             }
         }
+        self.in_game_on = Some(server);
         let launched = launch::spawn(
             &dirs,
             &engine_version,
@@ -2458,9 +2553,11 @@ impl Runtime {
         tracing::info!(?code, "engine exited");
         self.set_engine(EngineStatus::Exited { code });
         self.check_player_files();
-        if let Some(conn) = self.conn.as_mut() {
+        if let Some(server) = self.in_game_on.take()
+            && let Some(conn) = self.link_mut(&server)
+        {
             let effects = conn.session.set_in_game(false);
-            self.apply_effects(effects).await;
+            self.apply_effects(&server, effects).await;
         }
     }
 
@@ -2500,29 +2597,14 @@ impl Runtime {
         self.batcher.push(Delta::Engine(status));
     }
 
-    fn reply_login(&mut self, result: Result<(), ClientError>) {
-        if let Some(reply) = self.login_reply.take() {
-            let _ = reply.send(result);
-        }
-    }
-
-    /// Seconds until the policy's next attempt, for the corner to count down.
-    fn retry_in(&self) -> Option<u64> {
-        self.reconnect
-            .until_due(Instant::now())
-            .map(|wait| wait.as_secs())
-    }
-
-    /// Tells the front end when the next attempt is due, after anything that
-    /// moved it: armed, attempted, or called off.
-    fn announce_retry(&mut self) {
-        self.batcher.push(Delta::RetryIn(self.retry_in()));
-    }
-
     /// The room's deltas go out before the answer: the front end walks into
     /// the room on the answer, and a room view without `myBattle` walks
     /// straight back out.
-    fn reply_join(&mut self, result: Result<(), ClientError>) {
+    fn reply_join(&mut self, server: &str, result: Result<(), ClientError>) {
+        // A join on another server is not this one's to answer.
+        if self.join_reply.as_ref().is_some_and(|(on, _)| on != server) {
+            return;
+        }
         if let Some(asked) = self.join_asked {
             tracing::info!(
                 ms = asked.elapsed().as_millis() as u64,
@@ -2533,7 +2615,7 @@ impl Runtime {
         if result.is_err() {
             self.join_asked = None;
         }
-        if let Some(reply) = self.join_reply.take() {
+        if let Some((_, reply)) = self.join_reply.take() {
             self.flush();
             let _ = reply.send(result);
         }
@@ -2708,22 +2790,21 @@ impl Runtime {
     }
 
     fn snapshot(&self) -> Snapshot {
-        let mut snapshot = match &self.conn {
-            Some(conn) => Snapshot::from_state(
-                &conn.session.state,
-                self.game.as_ref().map(|g| g.view.clone()),
-                self.engine_status,
-            ),
-            None => Snapshot {
-                engine: self.engine_status,
-                ..Snapshot::disconnected()
-            },
+        let servers = self
+            .servers
+            .keys()
+            .filter_map(|id| self.session_snapshot(id))
+            .collect();
+        let mut snapshot = Snapshot {
+            servers,
+            engine: self.engine_status,
+            ..Snapshot::default()
         };
         snapshot.paste = self
             .paste
             .as_ref()
             .map_or(PasteStatus::Idle, PasteProgress::status);
-        snapshot.retry_in = self.retry_in();
+        snapshot.ways = self.ways_view();
         // Joined on here rather than built into either constructor, because a
         // skirmish belongs to the machine and a snapshot describes a session.
         snapshot.skirmish = self.skirmish.as_ref().map(|room| {
@@ -2789,8 +2870,8 @@ impl Runtime {
             return;
         }
         let me = self
-            .conn
-            .as_ref()
+            .room()
+            .and_then(|room| self.link(&room))
             .and_then(|conn| conn.session.state.me.clone())
             .unwrap_or_default();
         if !lobby_core::spads::answers_command(text, &me) {
@@ -2821,7 +2902,7 @@ impl Runtime {
         let Some(progress) = self.paste.take() else {
             return Err(ClientError::Refused("nothing is being pasted".into()));
         };
-        if let Some(conn) = self.conn.as_ref() {
+        if let Some(conn) = self.room().and_then(|room| self.link(&room)) {
             for area in [Area::BattlePaste, Area::BattleCommand, Area::BattleChat] {
                 conn.transport.cancel(area).await?;
             }
@@ -2844,14 +2925,16 @@ impl Runtime {
 
     /// Whether `name` hosts the room we are in.
     fn is_founder(&self, name: &str) -> bool {
-        self.conn.as_ref().is_some_and(|conn| {
-            let state = &conn.session.state;
-            state
-                .my_battle
-                .as_ref()
-                .and_then(|my| state.battles.get(&my.id))
-                .is_some_and(|battle| battle.founder == name)
-        })
+        self.room()
+            .and_then(|room| self.link(&room))
+            .is_some_and(|conn| {
+                let state = &conn.session.state;
+                state
+                    .my_battle
+                    .as_ref()
+                    .and_then(|my| state.battles.get(&my.id))
+                    .is_some_and(|battle| battle.founder == name)
+            })
     }
 
     /// A snapshot supersedes whatever deltas were waiting.
@@ -2862,25 +2945,56 @@ impl Runtime {
     /// the moment before it — which is exactly when the message of the day and
     /// the first channel traffic land.
     fn send_snapshot(&mut self) {
-        let kept: Vec<Delta> = self
-            .batcher
-            .take()
-            .into_iter()
-            .filter(|delta| matches!(delta, Delta::Chat(_)))
-            .collect();
+        let kept = self.pending_beside_snapshot(None);
         let snapshot = self.snapshot();
         self.send_ui(UiMessage::Snapshot(Box::new(snapshot)));
-        if !kept.is_empty() {
-            self.send_ui(UiMessage::Deltas(kept));
+        for message in kept {
+            self.send_ui(message);
         }
     }
 
-    fn flush(&mut self) {
-        if self.batcher.is_empty() {
+    /// `server`'s session over again, and nobody else's: what a login ends in.
+    fn send_session(&mut self, server: &str) {
+        let Some(session) = self.session_snapshot(server) else {
             return;
+        };
+        let kept = self.pending_beside_snapshot(Some(server));
+        self.send_ui(UiMessage::Session(Box::new(session)));
+        for message in kept {
+            self.send_ui(message);
         }
-        let deltas = self.batcher.take();
-        self.send_ui(UiMessage::Deltas(deltas));
+    }
+
+    /// What is pending, less what a snapshot is about to say anyway: `of`'s
+    /// changes — or with `None` everybody's, the machine's included — except
+    /// chat lines, the one thing a snapshot does not carry.
+    fn pending_beside_snapshot(&mut self, of: Option<&str>) -> Vec<UiMessage> {
+        self.batcher
+            .take()
+            .into_iter()
+            .filter_map(|message| {
+                let UiMessage::Deltas { server, deltas } = message else {
+                    return None;
+                };
+                if of.is_some() && of != server.as_deref() {
+                    return Some(UiMessage::Deltas { server, deltas });
+                }
+                let chat: Vec<Delta> = deltas
+                    .into_iter()
+                    .filter(|delta| matches!(delta, Delta::Chat(_)))
+                    .collect();
+                (!chat.is_empty()).then_some(UiMessage::Deltas {
+                    server,
+                    deltas: chat,
+                })
+            })
+            .collect()
+    }
+
+    fn flush(&mut self) {
+        for message in self.batcher.take() {
+            self.send_ui(message);
+        }
     }
 
     fn send_ui(&mut self, message: UiMessage) {
@@ -2891,16 +3005,6 @@ impl Runtime {
             tracing::info!("ui transport closed");
             self.ui = None;
         }
-    }
-}
-
-/// Resolves with the next inbound item; never, when there is no connection.
-async fn recv_inbound(conn: &mut Option<Connection>) -> Inbound {
-    match conn {
-        Some(conn) => conn.inbound.recv().await.unwrap_or(Inbound::Closed {
-            reason: "transport task ended".into(),
-        }),
-        None => std::future::pending().await,
     }
 }
 
@@ -2962,10 +3066,25 @@ mod tests {
                 .unwrap()
                 .next()
                 .expect("a connection left");
-            Box::pin(async move { Ok(Transport::from_stream(stream, policy)) })
+            Box::pin(async move {
+                let (transport, inbound) = Transport::from_stream(stream, policy);
+                Ok((transport, inbound, TEST_WAY))
+            })
         });
         (connector, server_sides)
     }
+
+    /// The session's phase, as a caller from before there were several servers asks it.
+    fn phase(snapshot: &Snapshot) -> Option<Phase> {
+        snapshot.session().and_then(|session| session.phase)
+    }
+
+    /// The way every in-memory connection claims to have come in by.
+    const TEST_WAY: Way = Way {
+        port: 8200,
+        security: Security::None,
+        ms: 1,
+    };
 
     type FakeServer = (
         tokio::io::Lines<BufReader<tokio::io::ReadHalf<DuplexStream>>>,
@@ -2974,16 +3093,291 @@ mod tests {
 
     /// Plays the server through one login of `me`: greeting, acceptance, end of the flood.
     async fn accept_login(server: DuplexStream) -> FakeServer {
+        accept_login_with(server, b"").await
+    }
+
+    /// The same, with `more` of the login flood before its end — a room, say.
+    async fn accept_login_with(server: DuplexStream, more: &[u8]) -> FakeServer {
         let (read, mut write) = tokio::io::split(server);
         let mut lines = BufReader::new(read).lines();
         write.write_all(b"TASSERVER 0.38 * 8201 0\n").await.unwrap();
         let sent = lines.next_line().await.unwrap().unwrap();
         assert!(sent.starts_with("LOGIN me "), "{sent}");
         write
-            .write_all(b"ACCEPTED me\nADDUSER me SE 1 LuaLobby Chobby\nLOGININFOEND\n")
+            .write_all(b"ACCEPTED me\nADDUSER me SE 1 LuaLobby Chobby\n")
             .await
             .unwrap();
+        write.write_all(more).await.unwrap();
+        write.write_all(b"LOGININFOEND\n").await.unwrap();
         (lines, write)
+    }
+
+    /// A connector that reaches each host's own fake server, and never
+    /// answers for a host it has none for: a server that hangs.
+    fn in_memory_hosts(hosts: &[&str]) -> (Connector, HashMap<String, DuplexStream>) {
+        let mut clients = HashMap::new();
+        let mut servers = HashMap::new();
+        for host in hosts {
+            let (client, server) = tokio::io::duplex(64 * 1024);
+            clients.insert((*host).to_owned(), client);
+            servers.insert((*host).to_owned(), server);
+        }
+        let clients = std::sync::Mutex::new(clients);
+        let connector: Connector = Arc::new(move |endpoint: Endpoint, policy| {
+            let stream = clients.lock().unwrap().remove(&endpoint.host);
+            Box::pin(async move {
+                let Some(stream) = stream else {
+                    return std::future::pending().await;
+                };
+                let (transport, inbound) = Transport::from_stream(stream, policy);
+                Ok((transport, inbound, TEST_WAY))
+            })
+        });
+        (connector, servers)
+    }
+
+    fn log_in(client: &Client, host: &str) -> tokio::task::JoinHandle<Result<(), ClientError>> {
+        let client = client.clone();
+        let endpoint = Endpoint::new(host);
+        tokio::spawn(async move {
+            client
+                .login(endpoint, LoginRequest::new("me", "pw", "test", "h h"))
+                .await
+        })
+    }
+
+    /// Every server's phase, by id, as the front end would be told it.
+    async fn phases(client: &Client) -> Vec<(String, Option<Phase>)> {
+        client
+            .snapshot()
+            .await
+            .unwrap()
+            .servers
+            .into_iter()
+            .map(|server| (server.server, server.phase))
+            .collect()
+    }
+
+    /// Room 5, hosted by `host`, as a login flood lists it.
+    const ROOM: &[u8] =
+        b"ADDUSER host DE 2 SPADS\nBATTLEOPENED 5 0 0 host 1.2.3.4 8452 16 0 0 h R\tv\tm\tt\tg\n";
+
+    #[tokio::test]
+    async fn two_servers_are_logged_in_side_by_side() {
+        let (connector, mut servers) = in_memory_hosts(&["a", "b"]);
+        let client = spawn(connector);
+        let a = log_in(&client, "a");
+        let b = log_in(&client, "b");
+        let _a = accept_login(servers.remove("a").unwrap()).await;
+        let _b = accept_login(servers.remove("b").unwrap()).await;
+        a.await.unwrap().unwrap();
+        b.await.unwrap().unwrap();
+        assert_eq!(
+            phases(&client).await,
+            [
+                ("a".to_owned(), Some(Phase::Ready)),
+                ("b".to_owned(), Some(Phase::Ready))
+            ]
+        );
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn a_server_that_hangs_holds_nobody_else_up() {
+        let (connector, mut servers) = in_memory_hosts(&["b"]);
+        let client = spawn(connector);
+        let _hanging = log_in(&client, "slow");
+        let b = log_in(&client, "b");
+        let _b = accept_login(servers.remove("b").unwrap()).await;
+        tokio::time::timeout(Duration::from_secs(2), b)
+            .await
+            .expect("b is in without waiting on the other")
+            .unwrap()
+            .unwrap();
+        let known = phases(&client).await;
+        assert!(known.contains(&("b".to_owned(), Some(Phase::Ready))));
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn one_room_at_a_time_and_its_words_go_to_its_server() {
+        let (connector, mut servers) = in_memory_hosts(&["a", "b"]);
+        let client = spawn(connector);
+        let a = log_in(&client, "a");
+        let b = log_in(&client, "b");
+        let (mut a_lines, mut a_write) =
+            accept_login_with(servers.remove("a").unwrap(), ROOM).await;
+        let (mut b_lines, mut b_write) =
+            accept_login_with(servers.remove("b").unwrap(), ROOM).await;
+        a.await.unwrap().unwrap();
+        b.await.unwrap().unwrap();
+
+        let joining = tokio::spawn({
+            let client = client.clone();
+            async move { client.join_battle("a".into(), 5, None).await }
+        });
+        line_starting_with(&mut a_lines, "JOINBATTLE 5").await;
+        a_write
+            .write_all(b"JOINBATTLE 5 h\nJOINEDBATTLE 5 me\n")
+            .await
+            .unwrap();
+        joining.await.unwrap().unwrap();
+
+        // A join the other server refuses costs nothing: the room is kept.
+        let joining = tokio::spawn({
+            let client = client.clone();
+            async move { client.join_battle("b".into(), 5, None).await }
+        });
+        line_starting_with(&mut b_lines, "JOINBATTLE 5").await;
+        b_write
+            .write_all(b"JOINBATTLEFAILED wrong password\n")
+            .await
+            .unwrap();
+        assert!(joining.await.unwrap().is_err());
+        let snapshot = client.snapshot().await.unwrap();
+        let (kept, _) = snapshot.room().expect("still in the first room");
+        assert_eq!(kept.server, "a");
+
+        // The same room number on the other server is another room: once
+        // let in there, the first is left.
+        let joining = tokio::spawn({
+            let client = client.clone();
+            async move { client.join_battle("b".into(), 5, None).await }
+        });
+        line_starting_with(&mut b_lines, "JOINBATTLE 5").await;
+        b_write
+            .write_all(b"JOINBATTLE 5 h\nJOINEDBATTLE 5 me\n")
+            .await
+            .unwrap();
+        joining.await.unwrap().unwrap();
+        line_starting_with(&mut a_lines, "LEAVEBATTLE").await;
+
+        client.say("hello".into()).await.unwrap();
+        assert_eq!(
+            line_starting_with(&mut b_lines, "SAYBATTLE ").await,
+            "SAYBATTLE hello"
+        );
+        let snapshot = client.snapshot().await.unwrap();
+        let (room_server, room) = snapshot.room().expect("a room");
+        assert_eq!((room_server.server.as_str(), room.id), ("b", 5));
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn away_reaches_every_server_and_logout_one_or_all() {
+        let (connector, mut servers) = in_memory_hosts(&["a", "b"]);
+        let client = spawn(connector);
+        let a = log_in(&client, "a");
+        let b = log_in(&client, "b");
+        let (mut a_lines, _a_write) = accept_login(servers.remove("a").unwrap()).await;
+        let (mut b_lines, _b_write) = accept_login(servers.remove("b").unwrap()).await;
+        a.await.unwrap().unwrap();
+        b.await.unwrap().unwrap();
+
+        client.set_away(true).await.unwrap();
+        line_starting_with(&mut a_lines, "MYSTATUS").await;
+        line_starting_with(&mut b_lines, "MYSTATUS").await;
+
+        client.logout(Some("a".into())).await.unwrap();
+        assert_eq!(
+            phases(&client).await,
+            [("b".to_owned(), Some(Phase::Ready))],
+            "logged out of one, the other stays"
+        );
+        client.logout(None).await.unwrap();
+        assert!(phases(&client).await.is_empty(), "and then of every one");
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn a_drop_is_retried_for_that_server_alone() {
+        let (connector, mut servers) = in_memory_hosts(&["a", "b"]);
+        let client = spawn(connector);
+        let a = log_in(&client, "a");
+        let b = log_in(&client, "b");
+        let a_server = accept_login(servers.remove("a").unwrap()).await;
+        let _b = accept_login(servers.remove("b").unwrap()).await;
+        a.await.unwrap().unwrap();
+        b.await.unwrap().unwrap();
+
+        drop(a_server);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let snapshot = client.snapshot().await.unwrap();
+        let by_id: HashMap<_, _> = snapshot
+            .servers
+            .iter()
+            .map(|server| (server.server.as_str(), (server.phase, server.retry_in)))
+            .collect();
+        let (phase, retry_in) = by_id["a"];
+        assert_eq!(phase, None);
+        assert!(retry_in.is_some(), "a comes back on its own");
+        assert_eq!(by_id["b"], (Some(Phase::Ready), None), "b never noticed");
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn a_connect_that_lands_after_the_logout_is_dropped() {
+        let gate = Arc::new(tokio::sync::Notify::new());
+        let (stream, _server) = tokio::io::duplex(1024);
+        let stream = std::sync::Mutex::new(Some(stream));
+        let connector: Connector = Arc::new({
+            let gate = Arc::clone(&gate);
+            move |_endpoint, policy| {
+                let stream = stream.lock().unwrap().take().expect("one connect");
+                let gate = Arc::clone(&gate);
+                Box::pin(async move {
+                    gate.notified().await;
+                    let (transport, inbound) = Transport::from_stream(stream, policy);
+                    Ok((transport, inbound, TEST_WAY))
+                })
+            }
+        });
+        let client = spawn(connector);
+        let login = log_in(&client, "a");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        client.logout(Some("a".into())).await.unwrap();
+        gate.notify_one();
+
+        assert!(matches!(
+            login.await.unwrap(),
+            Err(ClientError::Refused(reason)) if reason.contains("logged out")
+        ));
+        assert!(phases(&client).await.is_empty(), "nothing left of it");
+    }
+
+    #[tokio::test]
+    async fn a_logout_frees_the_server_for_a_new_login_at_once() {
+        // The first connect never comes back; the second is answered.
+        let (stream, server) = tokio::io::duplex(64 * 1024);
+        let streams = std::sync::Mutex::new(vec![Some(stream), None]);
+        let connector: Connector = Arc::new(move |_endpoint, policy| {
+            let stream = streams.lock().unwrap().pop().expect("two connects");
+            Box::pin(async move {
+                let Some(stream) = stream else {
+                    return std::future::pending().await;
+                };
+                let (transport, inbound) = Transport::from_stream(stream, policy);
+                Ok((transport, inbound, TEST_WAY))
+            })
+        });
+        let client = spawn(connector);
+        let _hanging = log_in(&client, "a");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(
+            phases(&client).await,
+            [("a".to_owned(), Some(Phase::Connecting))],
+            "a connect that is out shows as one"
+        );
+        client.logout(Some("a".into())).await.unwrap();
+
+        let again = log_in(&client, "a");
+        let _server = accept_login(server).await;
+        again.await.unwrap().unwrap();
+        assert_eq!(
+            phases(&client).await,
+            [("a".to_owned(), Some(Phase::Ready))]
+        );
+        client.shutdown().await;
     }
 
     fn spawn(connector: Connector) -> Client {
@@ -3005,7 +3399,7 @@ mod tests {
         let ui = Collector::default();
         client.subscribe(ui.clone()).await.unwrap();
 
-        let endpoint = Endpoint::new("test", Security::None);
+        let endpoint = Endpoint::new("test");
         let login = tokio::spawn({
             let client = client.clone();
             async move {
@@ -3020,15 +3414,127 @@ mod tests {
         // The server goes away. The runtime's own retry is armed but waits.
         drop(server);
         tokio::time::sleep(Duration::from_millis(100)).await;
-        assert_eq!(client.snapshot().await.unwrap().phase, None);
+        assert_eq!(phase(&client.snapshot().await.unwrap()), None);
 
         let reconnect = tokio::spawn({
             let client = client.clone();
-            async move { client.reconnect().await }
+            async move { client.reconnect("test".into(), None).await }
         });
         let _server = accept_login(second).await;
         reconnect.await.unwrap().unwrap();
-        assert_eq!(client.snapshot().await.unwrap().phase, Some(Phase::Ready));
+        assert_eq!(phase(&client.snapshot().await.unwrap()), Some(Phase::Ready));
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn a_reconnect_goes_over_the_server_as_it_is_set_up_now() {
+        let (inner, mut servers) = in_memory_many(2);
+        let asked = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let connector: Connector = Arc::new({
+            let asked = Arc::clone(&asked);
+            move |endpoint: Endpoint, policy| {
+                asked.lock().unwrap().push(endpoint.allow_plain);
+                inner(endpoint, policy)
+            }
+        });
+        let second = servers.pop().unwrap();
+        let first = servers.pop().unwrap();
+        let client = spawn(connector);
+        let login = log_in(&client, "test");
+        let server = accept_login(first).await;
+        login.await.unwrap().unwrap();
+
+        // Plaintext allowed since: the reconnect is told, and the login's
+        // own endpoint is not what goes out again.
+        drop(server);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let now = Endpoint {
+            allow_plain: true,
+            ..Endpoint::new("test")
+        };
+        let reconnect = tokio::spawn({
+            let client = client.clone();
+            async move { client.reconnect("test".into(), Some(now)).await }
+        });
+        let _server = accept_login(second).await;
+        reconnect.await.unwrap().unwrap();
+        assert_eq!(*asked.lock().unwrap(), [false, true]);
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn the_way_that_worked_is_tried_first_next_time_until_it_is_forgotten() {
+        let (inner, mut servers) = in_memory_many(2);
+        let asked = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let connector: Connector = Arc::new({
+            let asked = Arc::clone(&asked);
+            move |endpoint: Endpoint, policy| {
+                asked.lock().unwrap().push(endpoint.preferred);
+                inner(endpoint, policy)
+            }
+        });
+        let second = servers.pop().unwrap();
+        let first = servers.pop().unwrap();
+        let client = spawn(connector);
+        client.subscribe(Collector::default()).await.unwrap();
+
+        let login = tokio::spawn({
+            let client = client.clone();
+            async move {
+                let request = LoginRequest::new("me", "pw", "test", "h h");
+                client.login(Endpoint::new("test"), request).await
+            }
+        });
+        let server = accept_login(first).await;
+        login.await.unwrap().unwrap();
+        let remembered = client.snapshot().await.unwrap().ways;
+        assert_eq!(remembered.get("test"), Some(&TEST_WAY.to_string()));
+
+        drop(server);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let reconnect = tokio::spawn({
+            let client = client.clone();
+            async move { client.reconnect("test".into(), None).await }
+        });
+        let _server = accept_login(second).await;
+        reconnect.await.unwrap().unwrap();
+        assert_eq!(*asked.lock().unwrap(), [None, Some(TEST_WAY)]);
+
+        client.forget_way("TEST".into()).await.unwrap();
+        assert!(client.snapshot().await.unwrap().ways.is_empty());
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn a_session_is_filed_under_its_server() {
+        let (connector, server) = in_memory();
+        let client = spawn(connector);
+        let ui = Collector::default();
+        client.subscribe(ui.clone()).await.unwrap();
+        let login = tokio::spawn({
+            let client = client.clone();
+            async move {
+                let request = LoginRequest::new("me", "pw", "test", "h h");
+                client.login(Endpoint::new(" Test "), request).await
+            }
+        });
+        let _server = accept_login(server).await;
+        login.await.unwrap().unwrap();
+
+        let snapshot = client.snapshot().await.unwrap();
+        let servers: Vec<&str> = snapshot.servers.iter().map(|s| s.server.as_str()).collect();
+        assert_eq!(
+            servers,
+            ["test"],
+            "one session, under the trimmed, lowercased host"
+        );
+        for message in ui.take() {
+            if let UiMessage::Deltas { server, deltas } = message
+                && deltas.iter().any(|delta| matches!(delta, Delta::Phase(_)))
+            {
+                assert_eq!(server.as_deref(), Some("test"));
+            }
+        }
         client.shutdown().await;
     }
 
@@ -3037,7 +3543,7 @@ mod tests {
         let (connector, _server) = in_memory();
         let client = spawn(connector);
         assert!(matches!(
-            client.reconnect().await,
+            client.reconnect("test".into(), None).await,
             Err(ClientError::NoCredentials)
         ));
         client.shutdown().await;
@@ -3066,7 +3572,7 @@ mod tests {
 
     fn registering(client: &Client) -> tokio::task::JoinHandle<Result<Vec<String>, ClientError>> {
         let client = client.clone();
-        let endpoint = Endpoint::new("test", Security::None);
+        let endpoint = Endpoint::new("test");
         tokio::spawn(async move {
             client
                 .register(
@@ -3090,7 +3596,7 @@ mod tests {
         assert_eq!(agreement, ["Read the terms at https://example/privacy", ""]);
         // Still connected: the code has nowhere else to go.
         assert_eq!(
-            client.snapshot().await.unwrap().phase,
+            phase(&client.snapshot().await.unwrap()),
             Some(Phase::AwaitingLogin)
         );
         client.shutdown().await;
@@ -3106,7 +3612,11 @@ mod tests {
 
         let confirming = tokio::spawn({
             let client = client.clone();
-            async move { client.confirm_agreement("A1B2C3".into()).await }
+            async move {
+                client
+                    .confirm_agreement("test".into(), "A1B2C3".into())
+                    .await
+            }
         });
         let sent = lines.next_line().await.unwrap().unwrap();
         assert_eq!(sent, "CONFIRMAGREEMENT A1B2C3");
@@ -3117,7 +3627,7 @@ mod tests {
             .unwrap();
 
         confirming.await.unwrap().unwrap();
-        assert_eq!(client.snapshot().await.unwrap().phase, Some(Phase::Ready));
+        assert_eq!(phase(&client.snapshot().await.unwrap()), Some(Phase::Ready));
         client.shutdown().await;
     }
 
@@ -3131,7 +3641,7 @@ mod tests {
 
         let confirming = tokio::spawn({
             let client = client.clone();
-            async move { client.confirm_agreement("nope".into()).await }
+            async move { client.confirm_agreement("test".into(), "nope".into()).await }
         });
         lines.next_line().await.unwrap().unwrap();
         write.write_all(b"DENIED Incorrect code\n").await.unwrap();
@@ -3166,7 +3676,7 @@ mod tests {
         );
         // No account was made, so nothing was left behind to come back to.
         assert!(matches!(
-            client.reconnect().await,
+            client.reconnect("test".into(), None).await,
             Err(ClientError::NoCredentials)
         ));
         client.shutdown().await;
@@ -3177,7 +3687,9 @@ mod tests {
         let (connector, _server) = in_memory();
         let client = spawn(connector);
         assert!(matches!(
-            client.confirm_agreement("A1B2C3".into()).await,
+            client
+                .confirm_agreement("test".into(), "A1B2C3".into())
+                .await,
             Err(ClientError::NotConnected)
         ));
         client.shutdown().await;
@@ -3199,7 +3711,7 @@ mod tests {
         let ui = Collector::default();
         client.subscribe(ui.clone()).await.unwrap();
 
-        let endpoint = Endpoint::new("test", Security::None);
+        let endpoint = Endpoint::new("test");
         let login = tokio::spawn({
             let client = client.clone();
             async move {
@@ -3233,16 +3745,17 @@ mod tests {
         let messages = ui.take();
         let snapshot_at = messages
             .iter()
-            .position(|m| matches!(m, UiMessage::Snapshot(s) if s.phase == Some(Phase::Ready)))
-            .expect("ready snapshot");
-        if let UiMessage::Snapshot(s) = &messages[snapshot_at] {
-            assert_eq!(s.battles.len(), 1);
-            assert_eq!(s.users.len(), 2);
+            .position(|m| matches!(m, UiMessage::Session(s) if s.phase == Some(Phase::Ready)))
+            .expect("the session, once ready");
+        if let UiMessage::Session(session) = &messages[snapshot_at] {
+            assert_eq!(session.server, "test");
+            assert_eq!(session.battles.len(), 1);
+            assert_eq!(session.users.len(), 2);
         }
         let after: Vec<&Delta> = messages[snapshot_at + 1..]
             .iter()
             .filter_map(|m| match m {
-                UiMessage::Deltas(d) => Some(d.iter()),
+                UiMessage::Deltas { deltas, .. } => Some(deltas.iter()),
                 _ => None,
             })
             .flatten()
@@ -3253,7 +3766,17 @@ mod tests {
                 .any(|d| matches!(d, Delta::UserAdded(u) if u.name == "bob"))
         );
 
-        assert_eq!(client.snapshot().await.unwrap().users.len(), 3);
+        assert_eq!(
+            client
+                .snapshot()
+                .await
+                .unwrap()
+                .session()
+                .unwrap()
+                .users
+                .len(),
+            3
+        );
         client.shutdown().await;
     }
 
@@ -3277,7 +3800,7 @@ mod tests {
             .await
             .unwrap();
 
-        let endpoint = Endpoint::new("test", Security::None);
+        let endpoint = Endpoint::new("test");
         let login = tokio::spawn({
             let client = client.clone();
             async move {
@@ -3302,19 +3825,19 @@ mod tests {
         client.activity().await.unwrap();
         tokio::time::sleep(Duration::from_millis(200)).await;
         assert_eq!(
-            client.snapshot().await.unwrap().phase,
+            phase(&client.snapshot().await.unwrap()),
             Some(Phase::Ready),
             "activity resets the limit"
         );
 
         // Left alone past it, the connection goes, with a word about why.
         tokio::time::sleep(Duration::from_millis(400)).await;
-        assert_eq!(client.snapshot().await.unwrap().phase, None);
+        assert_eq!(phase(&client.snapshot().await.unwrap()), None);
         let deltas: Vec<Delta> = ui
             .take()
             .into_iter()
             .filter_map(|m| match m {
-                UiMessage::Deltas(d) => Some(d),
+                UiMessage::Deltas { deltas, .. } => Some(deltas),
                 _ => None,
             })
             .flatten()
@@ -3334,7 +3857,7 @@ mod tests {
             }
         });
         let _ = drained.await;
-        assert_eq!(client.snapshot().await.unwrap().phase, None);
+        assert_eq!(phase(&client.snapshot().await.unwrap()), None);
         client.shutdown().await;
     }
 
@@ -3369,7 +3892,7 @@ mod tests {
             Arc::new(latency::Unmeasured),
             None,
         );
-        let endpoint = Endpoint::new("test", Security::None);
+        let endpoint = Endpoint::new("test");
         let login = tokio::spawn({
             let client = client.clone();
             async move {
@@ -3399,7 +3922,7 @@ mod tests {
 
         let hosting = tokio::spawn({
             let client = client.clone();
-            async move { client.host_public().await }
+            async move { client.host_public("test".into()).await }
         });
         let join = line_starting_with(&mut server_lines, "JOINBATTLE ").await;
         assert!(join.starts_with("JOINBATTLE 6 empty "), "{join}");

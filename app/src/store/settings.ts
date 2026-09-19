@@ -2,10 +2,15 @@ import { createSignal } from 'solid-js'
 import type { Settings } from '../ipc/bindings/Settings'
 import { api } from '../ipc/client'
 import { bucket, clamp, derived, scaleFor, step } from '../lib/scale'
+import { labelOf } from '../lib/servers'
 import { pushNotice, setChat } from './chat'
 
 /** Mirror of the settings file; the runtime pushes changes as `settings` events. */
 export const [settings, setSettingsSignal] = createSignal<Settings | null>(null)
+
+/** What a server is called, by its id: its name in Settings, else its host. */
+export const serverLabel = (id: string): string =>
+  labelOf(settings()?.servers ?? [], id)
 
 /** How long a run of wheel notches settles before the file is written. */
 const SAVE_AFTER = 600

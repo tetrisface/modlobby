@@ -6,9 +6,12 @@
 //! (`gui_battle_rejoin.lua`). This is that memory.
 //!
 //! It lives beside the settings rather than inside them: it is state the app
-//! keeps for itself, not a preference anyone would want to hand-edit.
+//! keeps for itself, not a preference anyone would want to hand-edit. The
+//! room is kept with the server it is on, as `<server> <id>`.
 
 use std::path::{Path, PathBuf};
+
+use crate::model::DEFAULT_HOST;
 
 const FILE_NAME: &str = "rejoin.json";
 
@@ -24,17 +27,20 @@ impl RejoinMemory {
         }
     }
 
-    /// The room we were last in, if we did not leave it deliberately.
-    pub fn remembered(&self) -> Option<u32> {
-        std::fs::read_to_string(&self.path)
-            .ok()?
+    /// The room we were last in, and the server it is on, if we did not
+    /// leave it deliberately. A bare id is from before there were several
+    /// servers, and so is BAR's.
+    pub fn remembered(&self) -> Option<(String, u32)> {
+        let text = std::fs::read_to_string(&self.path).ok()?;
+        let (server, id) = text
             .trim()
-            .parse()
-            .ok()
+            .rsplit_once(' ')
+            .unwrap_or((DEFAULT_HOST, text.trim()));
+        Some((server.to_owned(), id.parse().ok()?))
     }
 
-    pub fn remember(&self, battle: u32) {
-        self.write(&battle.to_string());
+    pub fn remember(&self, server: &str, battle: u32) {
+        self.write(&format!("{server} {battle}"));
     }
 
     pub fn forget(&self) {
@@ -66,12 +72,15 @@ mod tests {
         let memory = RejoinMemory::new(dir.path());
         assert_eq!(memory.remembered(), None);
 
-        memory.remember(4231);
-        assert_eq!(memory.remembered(), Some(4231));
+        memory.remember("rapid", 4231);
+        assert_eq!(memory.remembered(), Some(("rapid".into(), 4231)));
 
         // A fresh handle reads the same file, which is the whole point: the
         // offer has to survive the process going away.
-        assert_eq!(RejoinMemory::new(dir.path()).remembered(), Some(4231));
+        assert_eq!(
+            RejoinMemory::new(dir.path()).remembered(),
+            Some(("rapid".into(), 4231))
+        );
 
         memory.forget();
         assert_eq!(memory.remembered(), None);
@@ -92,5 +101,15 @@ mod tests {
         let memory = RejoinMemory::new(dir.path());
         std::fs::write(dir.path().join(FILE_NAME), "not a number").unwrap();
         assert_eq!(memory.remembered(), None);
+    }
+
+    #[test]
+    fn a_bare_id_from_before_servers_is_bars() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(FILE_NAME), "4231\n").unwrap();
+        assert_eq!(
+            RejoinMemory::new(dir.path()).remembered(),
+            Some((DEFAULT_HOST.into(), 4231))
+        );
     }
 }
