@@ -21,14 +21,14 @@ export const Heading = createContext('')
  * Only the query is watched, so the text is read afresh on each keystroke and
  * never on its own.
  */
-export function Row(props: ParentProps) {
+export function Row(props: ParentProps<{ class?: string }>) {
   const query = useContext(Query)
   const heading = useContext(Heading)
   let row: HTMLDivElement | undefined
   return (
     <div
       ref={row}
-      class='set-row'
+      class={props.class ? `set-row ${props.class}` : 'set-row'}
       hidden={!hasEveryWord(`${heading} ${row?.textContent ?? ''}`, query())}
     >
       {props.children}

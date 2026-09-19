@@ -481,15 +481,17 @@ pub struct Notifications {
 impl Default for Notifications {
     fn default() -> Self {
         Self {
-            // Addressed to you by name: worth pulling you back for.
+            // Addressed to you by name, or your game starting or ending
+            // around you: worth pulling you back for.
             private_message: Alert::Desktop,
             mention: Alert::Desktop,
             ring: Alert::Desktop,
             game_starting: Alert::Desktop,
+            game_ended: Alert::Desktop,
             // True, but not worth taking over the screen for.
-            friend_online: Alert::Lobby,
             vote: Alert::Lobby,
-            game_ended: Alert::Lobby,
+            // A friend's comings and goings are on the friends list already.
+            friend_online: Alert::Off,
             // Off: a lobby that says nothing until it is configured is a
             // lobby that looks broken.
             do_not_disturb: false,
@@ -654,7 +656,7 @@ mod tests {
         assert_eq!(s.notifications.vote, Alert::Off);
         // A field that was never written keeps its default rather than the
         // reading of whatever the file happened to say about its neighbours.
-        assert_eq!(s.notifications.game_ended, Alert::Lobby);
+        assert_eq!(s.notifications.game_ended, Alert::Desktop);
     }
 
     #[test]
