@@ -336,6 +336,20 @@ pub async fn logout(app: State<'_, App>, server: Option<String>) -> Result<()> {
     Ok(())
 }
 
+/// Reads the rapid master index at `url` and says what it lists, or why it
+/// cannot be one: for the person typing a server's rapid address in.
+#[tauri::command]
+pub async fn check_rapid(app: State<'_, App>, url: String) -> Result<content::rapid::RapidSummary> {
+    let url = url.trim();
+    app.rapid.vet(url).await.map_err(rapid_refusal)?;
+    app.rapid.summary(url).await.map_err(rapid_refusal)
+}
+
+/// Wrong input, not the app's failing: the address is the user's.
+fn rapid_refusal(err: content::rapid::Error) -> ApiError {
+    ApiError::new("input", err.to_string())
+}
+
 /// Forgets which way into `host` worked, so the next connect tries every way.
 #[tauri::command]
 pub async fn forget_way(app: State<'_, App>, host: String) -> Result<()> {

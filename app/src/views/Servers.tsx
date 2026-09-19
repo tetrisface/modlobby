@@ -1,4 +1,13 @@
-import { For, Show, createSignal } from 'solid-js'
+import {
+  For,
+  Match,
+  Show,
+  Switch,
+  createEffect,
+  createResource,
+  createSignal,
+  onCleanup,
+} from 'solid-js'
 import type { SetStoreFunction } from 'solid-js/store'
 import { LoginSheet } from '../components/LoginForm'
 import { openExternal } from '../components/Linkify'
@@ -8,6 +17,7 @@ import type { Settings } from '../ipc/bindings/Settings'
 import { api, describeError } from '../ipc/client'
 import {
   forgotPasswordUrl,
+  guessedRapid,
   hostProblem,
   newServer,
   parsePorts,
@@ -35,6 +45,25 @@ export function ServerRows(props: {
   settle: () => Promise<void>
 }) {
   const [asking, setAsking] = createSignal<Asking | null>(null)
+
+  /**
+   * A server just added may publish its own games. Where most keep their
+   * rapid index is looked at once, and written in only if it is one with
+   * something of the server's own in it: a guess that is wrong leaves the
+   * field empty, and the server on BAR's games.
+   */
+  async function add(host: string) {
+    props.setDraft('servers', (servers) => [...servers, newServer(host)])
+    const guess = guessedRapid(host)
+    const found = await api.checkRapid(guess).catch(() => null)
+    if (!found || found.own === 0) return
+    props.setDraft(
+      'servers',
+      (entry) => serverId(entry.host) === serverId(host) && !entry.rapid,
+      'rapid',
+      guess,
+    )
+  }
 
   async function ask(entry: ServerEntry, mode: Asking['mode']) {
     await props.settle()
@@ -64,12 +93,7 @@ export function ServerRows(props: {
       <Row>
         <AddServer
           listed={props.draft.servers.map((entry) => entry.host)}
-          add={(host) =>
-            props.setDraft('servers', (servers) => [
-              ...servers,
-              newServer(host),
-            ])
-          }
+          add={(host) => void add(host)}
         />
       </Row>
       <Show when={asking()} keyed>
@@ -85,6 +109,9 @@ export function ServerRows(props: {
   )
 }
 
+/** How long a rapid address goes unedited before it is read. */
+const CHECK_AFTER = 800
+
 /** How long a Remove waits for its second click before it stands down. */
 const CONFIRM_FOR = 4000
 
@@ -99,6 +126,27 @@ function ServerCard(props: {
   const way = () => lobby.ways[id()]
   const [portsText, setPortsText] = createSignal(props.entry.ports.join(', '))
   const [removing, setRemoving] = createSignal(false)
+  /**
+   * What the rapid address lists, read once typing has stopped — it is a
+   * request to somebody's server, not something to send per keystroke.
+   */
+  const [settled, setSettled] = createSignal(props.entry.rapid)
+  createEffect(() => {
+    const typed = props.entry.rapid
+    const timer = setTimeout(() => setSettled(typed), CHECK_AFTER)
+    onCleanup(() => clearTimeout(timer))
+  })
+  // A refusal is an answer here, not a failure: a resource that rejects
+  // with anything but an `Error` reports "Unknown error", and what Rust
+  // sends is a plain object with the reason in it.
+  const [rapid] = createResource(
+    () => settled() || null,
+    (url) =>
+      api.checkRapid(url).then(
+        (found) => ({ found, refused: null }),
+        (error: unknown) => ({ found: null, refused: describeError(error) }),
+      ),
+  )
   /**
    * Read once: open for a server that has needed it, and after that the
    * reader's to open and close — not shut under the hand that unticks a box.
@@ -210,6 +258,38 @@ function ServerCard(props: {
             cross the network readable. Never raced against encryption.
           </p>
         </Show>
+        <label>
+          Rapid server, where this server's own games are published
+          <input
+            value={props.entry.rapid ?? ''}
+            placeholder={guessedRapid(props.entry.host)}
+            onInput={(event) =>
+              props.change('rapid', event.currentTarget.value.trim() || null)
+            }
+          />
+        </label>
+        <Switch>
+          <Match when={!props.entry.rapid}>
+            <p class='muted'>
+              Without one, this server's games are looked for in BAR's. A game
+              is only ever looked for in its own server's: a mod's name goes
+              nowhere else.
+            </p>
+          </Match>
+          <Match when={rapid.loading}>
+            <p class='muted'>Reading it…</p>
+          </Match>
+          <Match when={rapid()?.refused}>
+            {(why) => <p class='error'>{why()}. Nothing is fetched from it.</p>}
+          </Match>
+          <Match when={rapid()?.found}>
+            {(found) => (
+              <p class='muted'>
+                Lists {found().own} of its own and {found().bars} of BAR's.
+              </p>
+            )}
+          </Match>
+        </Switch>
       </details>
       <div class='server-actions'>
         <Show

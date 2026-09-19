@@ -68,7 +68,21 @@ pub(crate) async fn push_settings(
         .set_overlay_config_dir(overlay_config_dir(settings))
         .await;
     let _ = client.set_idle_timeout(idle_timeout(settings)).await;
+    let _ = client.set_rapid_masters(rapid_masters(settings)).await;
     overlay.settings_changed(overlay_settings(settings));
+}
+
+/// Each server's own rapid master index, by server id. A server without one
+/// is left out, and its games are looked for in BAR's.
+fn rapid_masters(settings: &settings::Settings) -> std::collections::BTreeMap<String, String> {
+    settings
+        .servers
+        .iter()
+        .filter_map(|entry| {
+            let rapid = entry.rapid.as_deref()?.trim();
+            (!rapid.is_empty()).then(|| (spring_protocol::server_id(&entry.host), rapid.to_owned()))
+        })
+        .collect()
 }
 
 /// The live in-game socket, or nothing if it could not be bound.
@@ -251,11 +265,22 @@ pub fn run() {
             let mut watch = app.settings.watch()?;
             let handle = tauri_app.handle().clone();
             let client = app.client.clone();
+            let vetter = std::sync::Arc::clone(&app.rapid);
             let at_start = app.settings.get();
             // Beside the settings and the preset book, because it is the same
             // kind of thing: what this person has set up, kept for next time.
             let skirmish_path = commands::skirmish_path(&app);
             tauri::async_runtime::spawn(async move {
+                // Whoever reads another server's rapid before games come
+                // from it; without one the runtime fetches from BAR's only.
+                let _ = client
+                    .set_vet(std::sync::Arc::new(move |master: String| {
+                        let vetter = std::sync::Arc::clone(&vetter);
+                        Box::pin(
+                            async move { vetter.vet(&master).await.map_err(|err| err.to_string()) },
+                        )
+                    }))
+                    .await;
                 push_settings(&client, &controller, &at_start).await;
                 let _ = client.set_skirmish_path(Some(skirmish_path)).await;
                 while let Some(event) = watch.recv().await {
@@ -304,6 +329,7 @@ pub fn run() {
             commands::login,
             commands::logout,
             commands::forget_way,
+            commands::check_rapid,
             commands::reconnect,
             commands::register,
             commands::confirm_agreement,

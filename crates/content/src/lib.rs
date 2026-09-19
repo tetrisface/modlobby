@@ -19,6 +19,7 @@ pub mod game_cache;
 pub mod http;
 pub mod map_index;
 pub mod map_thumb;
+pub mod rapid;
 pub mod release;
 pub mod replays;
 

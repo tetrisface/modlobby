@@ -166,6 +166,69 @@ describe('the servers section', () => {
     expect(asked).toHaveBeenCalledWith('forget_way', { host: BAR })
   })
 
+  test('a server added is looked at for a rapid server of its own', async () => {
+    asked.mockImplementation(async (command: string, args?: unknown) => {
+      if (command === 'check_rapid') {
+        const { url } = args as { url: string }
+        if (url === 'https://mods.example/repos.gz') return { own: 2, bars: 2 }
+        throw { code: 'input', message: `${url} is not a rapid index` }
+      }
+      return null
+    })
+    const { container } = open()
+    const rapidOf = (card: Element) =>
+      [
+        ...card.querySelectorAll<HTMLInputElement>('.server-connection input'),
+      ].at(-1)!
+
+    typeHost(container, 'mods.example')
+    fireEvent.click(button(container, 'Add'))
+    await vi.waitFor(() =>
+      expect(rapidOf(cards(container)[1]!).value).toBe(
+        'https://mods.example/repos.gz',
+      ),
+    )
+
+    // A guess that is wrong leaves the server on BAR's games.
+    typeHost(container, 'stock.example')
+    fireEvent.click(button(container, 'Add'))
+    await vi.waitFor(() =>
+      expect(asked).toHaveBeenCalledWith('check_rapid', {
+        url: 'https://stock.example/repos.gz',
+      }),
+    )
+    expect(rapidOf(cards(container)[2]!).value).toBe('')
+    expect(cards(container)[2]!.textContent).toContain("looked for in BAR's")
+  })
+
+  test('a rapid address that is refused says why, and that nothing comes from it', async () => {
+    asked.mockImplementation(async (command: string) => {
+      if (command === 'check_rapid')
+        throw {
+          code: 'input',
+          message: 'http://mods.example/repos.gz is not served over https',
+        }
+      return null
+    })
+    const { container } = open()
+    const card = cards(container)[0]!
+    const field = [
+      ...card.querySelectorAll<HTMLInputElement>('.server-connection input'),
+    ].at(-1)!
+    fireEvent.input(field, {
+      target: { value: 'http://mods.example/repos.gz' },
+    })
+    await vi.waitFor(
+      () =>
+        expect(
+          card.querySelector('.server-connection .error')?.textContent,
+        ).toBe(
+          'http://mods.example/repos.gz is not served over https. Nothing is fetched from it.',
+        ),
+      { timeout: 3000 },
+    )
+  })
+
   test('removing takes a second click', () => {
     const { container } = open()
     const card = cards(container)[0]!

@@ -830,16 +830,20 @@ impl Want {
 
 /// One pr-downloader invocation.
 ///
-/// Everything it fetches goes in one invocation rather than one each: it
-/// rewrites rapid's repo index every time it runs, so two at once fight over
-/// the same file, and it parallelises within a single run anyway
-/// (`bar-lobby/src/main/content/pr-downloader.ts:70`).
+/// Never two at a time: it rewrites rapid's repo index every time it runs,
+/// so two at once fight over the same file, and it parallelises within a
+/// single run anyway (`bar-lobby/src/main/content/pr-downloader.ts:70`).
+/// Games and maps are separate runs, one after the other; see [`Download::runs`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Download {
     pub binary: PathBuf,
     /// `--filesystem-writepath`: the BAR data directory.
     pub data_dir: PathBuf,
     pub wants: Vec<(Want, String)>,
+    /// `PRD_RAPID_REPO_MASTER`: the index of indexes games are found in.
+    pub rapid_master: String,
+    /// `PRD_HTTP_SEARCH_URL`: who is asked, by name, for what rapid lacks.
+    pub search_url: String,
 }
 
 /// Where pr-downloader looks for BAR's content.
@@ -850,6 +854,16 @@ pub struct Download {
 /// (`bar-lobby/src/main/json/model/config.ts`).
 pub const RAPID_REPO_MASTER: &str = "https://repos-cdn.beyondallreason.dev/repos.gz";
 pub const HTTP_SEARCH_URL: &str = "https://files-cdn.beyondallreason.dev/find";
+/// A search URL nothing answers on, for a run that must not ask anybody.
+///
+/// pr-downloader asks its search URL, by name, for any game rapid does not
+/// know — `find?category=game&springname=<the name>` — and that cannot be
+/// switched off. A game from somebody else's rapid server is no business of
+/// BAR's servers, which would be asked for a mod they have never heard of
+/// every time such a room was joined. So a game run gets this instead: the
+/// question dies on this machine, refused in a couple of seconds. Games come
+/// from rapid or not at all, which is also true of BAR's own.
+pub const NO_SEARCH_URL: &str = "http://127.0.0.1:1/nobody-is-asked";
 /// pr-downloader prefers rapid's streamer, and BAR's returns an HTTP error:
 /// `streamer.cgi?<md5>` fails with "Couldn't download files for <md5>". BAR
 /// ships `prdRapidUseStreamer` defaulting to `"false"` for this reason.
@@ -895,10 +909,40 @@ pub fn max_reqs_per_sec(existing: Option<&str>) -> u32 {
 }
 
 impl Download {
+    /// The runs that fetch `wants`, in order: the games from `rapid_master`
+    /// with nobody to ask by name, then the maps, which only a search finds.
+    /// Two runs because the search URL is one setting for a whole run, and
+    /// the two kinds need opposite answers to "whom may a name be sent to".
+    pub fn runs(
+        binary: &Path,
+        data_dir: &Path,
+        wants: Vec<(Want, String)>,
+        rapid_master: &str,
+    ) -> Vec<Self> {
+        let (games, maps): (Vec<_>, Vec<_>) =
+            wants.into_iter().partition(|(want, _)| *want == Want::Game);
+        [(games, NO_SEARCH_URL), (maps, HTTP_SEARCH_URL)]
+            .into_iter()
+            .filter(|(wants, _)| !wants.is_empty())
+            .map(|(wants, search_url)| Self {
+                binary: binary.to_path_buf(),
+                data_dir: data_dir.to_path_buf(),
+                wants,
+                rapid_master: rapid_master.to_owned(),
+                search_url: search_url.to_owned(),
+            })
+            .collect()
+    }
+
+    /// Whether this run fetches games, and so reads a rapid index.
+    pub fn has_games(&self) -> bool {
+        self.wants.iter().any(|(want, _)| *want == Want::Game)
+    }
+
     pub fn command(&self) -> Command {
         let mut cmd = Command::new(&self.binary);
-        cmd.env("PRD_RAPID_REPO_MASTER", RAPID_REPO_MASTER)
-            .env("PRD_HTTP_SEARCH_URL", HTTP_SEARCH_URL)
+        cmd.env("PRD_RAPID_REPO_MASTER", &self.rapid_master)
+            .env("PRD_HTTP_SEARCH_URL", &self.search_url)
             .env("PRD_RAPID_USE_STREAMER", RAPID_USE_STREAMER)
             .env(
                 MAX_REQS_ENV,
@@ -966,32 +1010,70 @@ impl Progress {
 mod download_tests {
     use super::*;
 
+    fn env_of(download: &Download, key: &str) -> Option<String> {
+        download
+            .command()
+            .get_envs()
+            .find(|(name, _)| name.to_string_lossy() == key)
+            .and_then(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()))
+    }
+
     #[test]
-    fn one_invocation_carries_every_asset() {
-        let download = Download {
-            binary: "C:/e/pr-downloader.exe".into(),
-            data_dir: "C:/bar".into(),
-            wants: vec![
-                (Want::Game, "Beyond All Reason test-31115".into()),
+    fn a_game_is_never_asked_for_by_name_and_a_map_is_asked_of_bar() {
+        let theirs = "https://rapid.example/repos.gz";
+        let runs = Download::runs(
+            Path::new("C:/e/pr-downloader.exe"),
+            Path::new("C:/bar"),
+            vec![
                 (Want::Map, "Supreme Isthmus v2.1".into()),
+                (Want::Game, "Somebody's Mod v1".into()),
             ],
+            theirs,
+        );
+        let [games, maps] = runs.as_slice() else {
+            panic!("a run for the games, then one for the maps: {runs:?}");
         };
-        let cmd = download.command();
-        let args: Vec<_> = cmd
+        assert!(games.has_games() && !maps.has_games());
+        let args: Vec<_> = games
+            .command()
             .get_args()
             .map(|a| a.to_string_lossy().into_owned())
             .collect();
         assert_eq!(
             args,
-            vec![
+            [
                 "--filesystem-writepath",
                 "C:/bar",
                 "--download-game",
-                "Beyond All Reason test-31115",
-                "--download-map",
-                "Supreme Isthmus v2.1",
+                "Somebody's Mod v1"
             ]
         );
+        // The mod's name goes to its own rapid server's index and nowhere
+        // else: what rapid does not know dies on this machine.
+        assert_eq!(
+            env_of(games, "PRD_RAPID_REPO_MASTER").as_deref(),
+            Some(theirs)
+        );
+        assert_eq!(
+            env_of(games, "PRD_HTTP_SEARCH_URL").as_deref(),
+            Some(NO_SEARCH_URL)
+        );
+        assert_eq!(
+            env_of(maps, "PRD_HTTP_SEARCH_URL").as_deref(),
+            Some(HTTP_SEARCH_URL)
+        );
+    }
+
+    #[test]
+    fn nothing_of_a_kind_is_no_run_for_it() {
+        let runs = Download::runs(
+            Path::new("prd"),
+            Path::new("C:/bar"),
+            vec![(Want::Map, "Pinewood_Derby_V1".into())],
+            RAPID_REPO_MASTER,
+        );
+        assert_eq!(runs.len(), 1);
+        assert!(!runs[0].has_games());
     }
 
     #[test]
@@ -1000,6 +1082,8 @@ mod download_tests {
             binary: "prd".into(),
             data_dir: "C:/bar".into(),
             wants: vec![(Want::Map, "Pinewood_Derby_V1".into())],
+            rapid_master: RAPID_REPO_MASTER.into(),
+            search_url: HTTP_SEARCH_URL.into(),
         };
         let cmd = download.command();
         let env: Vec<_> = cmd

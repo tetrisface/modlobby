@@ -452,6 +452,14 @@
             "minimum": 0
           }
         },
+        "rapid": {
+          "description": "The server's own rapid master index (`https://…/repos.gz`), where the\ngames its rooms run are published. Without one its games are looked\nfor in BAR's, which is right for a server running stock BAR. A game is\nonly ever looked for in its own server's index: a mod's name is never\nsent to BAR's servers, nor to any other server's.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
         "username": {
           "description": "The account on this server.",
           "type": "string",

@@ -220,17 +220,20 @@ pub fn spawn(
     })
 }
 
-/// Starts pr-downloader on everything in `wants`, with its output on a pipe.
+/// The pr-downloader runs that fetch everything in `wants`, to be run one
+/// after the other: it rewrites rapid's repo index on every run, so two at
+/// once corrupt each other's view of it. They write to `dirs.write` only;
+/// what the read directories already hold was left out of `wants` by the
+/// caller.
 ///
-/// One invocation for the whole set: pr-downloader rewrites rapid's repo index
-/// on every run, so two at once corrupt each other's view of it. It writes to
-/// `dirs.write` only; what the read directories already hold was left out of
-/// `wants` by the caller.
-pub fn spawn_download(
+/// Games are looked for in `rapid_master` — the room's server's — and nowhere
+/// else; see [`recoil::Download::runs`].
+pub fn plan_download(
     dirs: &DataDirs,
     engine_version: &str,
     wants: Vec<(recoil::Want, String)>,
-) -> Result<Child, String> {
+    rapid_master: &str,
+) -> Result<Vec<recoil::Download>, String> {
     let binary = content::Library::new(dirs.clone())
         .find_downloader(engine_version)
         .ok_or_else(|| {
@@ -240,15 +243,25 @@ pub fn spawn_download(
                 recoil::DOWNLOADER_BINARY
             )
         })?;
-    let download = recoil::Download {
-        binary,
-        data_dir: dirs.write.clone(),
+    Ok(recoil::Download::runs(
+        &binary,
+        &dirs.write,
         wants,
-    };
-    tracing::info!(binary = %download.binary.display(), "downloading content");
+        rapid_master,
+    ))
+}
+
+/// Starts one run. Killed if dropped: a stopped download is its task let go.
+pub fn spawn_download(download: &recoil::Download) -> Result<Child, String> {
+    tracing::info!(
+        binary = %download.binary.display(),
+        rapid = download.rapid_master,
+        "downloading content"
+    );
     tokio::process::Command::from(download.command())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
         .spawn()
         .map_err(|err| format!("spawning pr-downloader: {err}"))
 }
