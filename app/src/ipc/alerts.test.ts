@@ -13,7 +13,8 @@ vi.mock('@tauri-apps/api/window', () => ({
   getCurrentWindow: () => ({ requestUserAttention: vi.fn(async () => {}) }),
 }))
 
-const { plan, flashTarget, keepTrying, wanted } = await import('./alerts')
+const { plan, flashTarget, keepTrying, onScreen, wanted } =
+  await import('./alerts')
 const { applySettings } = await import('../store/settings')
 const { blankSettings } = await import('../views/Settings')
 
@@ -44,6 +45,24 @@ describe('where an alert goes', () => {
       // never happen is `lobby` and `desktop` landing in the same place.
       expect(done[1]).not.toBe(done[2])
     }
+  })
+})
+
+describe('what is already on screen', () => {
+  test('the game in front shows its own start and end', () => {
+    // The toast that fired over the end screen of a game you had just watched.
+    expect(onScreen('gameEnded', false, true)).toBe(true)
+    expect(onScreen('gameStarting', false, true)).toBe(true)
+  })
+
+  test('but not a message, which the game does not show', () => {
+    expect(onScreen('privateMessage', false, true)).toBe(false)
+    expect(onScreen('ring', false, true)).toBe(false)
+  })
+
+  test('the lobby in front shows everything; neither shows nothing', () => {
+    expect(onScreen('privateMessage', true, false)).toBe(true)
+    expect(onScreen('gameEnded', false, false)).toBe(false)
   })
 })
 

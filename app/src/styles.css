@@ -2684,6 +2684,50 @@ input[type='checkbox'].v-edit {
   color: var(--friend);
 }
 
+/* A header you can fold: a list item again, so it keeps its disclosure mark. */
+.room-group > summary {
+  display: list-item;
+  cursor: pointer;
+}
+
+/* A room in the list, with its mute bell beside it. */
+.room-row {
+  display: flex;
+  align-items: center;
+}
+
+.room-row .room-tab {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The selected row's highlight takes in its bell too. */
+.room-row:has(> .room-tab.on) {
+  background: var(--raised);
+}
+
+/* Faint until the row is pointed at; a muted room keeps it in full. */
+.room-mute {
+  display: flex;
+  margin-right: 0.5rem;
+  padding: 0.125rem;
+  background: transparent;
+  border: none;
+  color: var(--faint);
+  opacity: 0.4;
+}
+
+.room-row:hover .room-mute,
+.room-mute:focus-visible,
+.room-mute.on {
+  opacity: 1;
+}
+
+.room-mute:hover:not(:disabled),
+.room-mute.on {
+  color: var(--text);
+}
+
 .rejoin {
   display: flex;
   flex-shrink: 0;
@@ -3020,6 +3064,12 @@ input[type='checkbox'].v-edit {
   background: var(--accent);
   color: var(--bg);
   font-weight: 600;
+}
+
+/* A muted room: still counted where it is, just not asking for attention. */
+.badge.quiet {
+  background: var(--raised);
+  color: var(--muted);
 }
 
 .player-menu-about {

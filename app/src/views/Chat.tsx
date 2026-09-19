@@ -13,6 +13,7 @@ import { api, describeError } from '../ipc/client'
 import {
   BATTLE_ROOM,
   SERVER_ROOM,
+  byActivity,
   chat,
   ensureRoom,
   closePrivate,
@@ -28,10 +29,12 @@ import {
 import { Composer } from '../components/Composer'
 import { Linkify } from '../components/Linkify'
 import { showPlayerMenu } from '../components/PlayerMenu'
-import { rememberChannel } from '../store/channels'
+import { Glyph } from '../components/icons'
+import { isMuted, rememberChannel, toggleMute } from '../store/channels'
 import { TabStrip, type Tab as StripTab } from '../components/TabStrip'
 import { ordered } from '../lib/reorder'
 import { lobby } from '../store/lobby'
+import { settings } from '../store/settings'
 
 /**
  * Channels and private messages.
@@ -41,6 +44,10 @@ import { lobby } from '../store/lobby'
  * have to leave the players to read what they are saying.
  */
 const ROSTER_ROW = 19
+
+/** A muted room's count, drawn softly — unless it names you. */
+const quiet = (room: string) => isMuted(room) && !chat.named[room]
+const online = (name: string) => name in lobby.users
 
 export function Chat() {
   const [room, setRoom] = createSignal(BATTLE_ROOM)
@@ -65,6 +72,16 @@ export function Chat() {
     chat.rooms
     return openPrivates()
   })
+  /**
+   * The People list, by activity. Sorted apart from `privates`, which also
+   * orders the tab strip: a tab should not move under the pointer because
+   * somebody spoke.
+   */
+  const recentPrivates = createMemo(() => {
+    const order = byActivity(online)
+    return [...privates()].sort((a, b) => order(partner(a), partner(b)))
+  })
+  const mutedPeople = () => (settings()?.chat.muted ?? []).filter(isPrivate)
   /** Online users matching the search, friends first, capped so it stays a list. */
   const people = createMemo(() => {
     const needle = findPerson().trim().toLowerCase()
@@ -79,12 +96,12 @@ export function Chat() {
       .slice(0, 30)
   })
 
-  /** Friends, online ones first: an offline friend is not one you can talk to. */
+  /**
+   * Friends, online ones first — an offline friend is not one you can talk
+   * to — and among those, whoever spoke last.
+   */
   const friends = createMemo(() =>
-    [...lobby.friends.friends].sort((a, b) => {
-      const here = Number(b in lobby.users) - Number(a in lobby.users)
-      return here || a.localeCompare(b)
-    }),
+    [...lobby.friends.friends].sort(byActivity(online)),
   )
 
   const rooms = createMemo(() => [
@@ -115,6 +132,7 @@ export function Chat() {
             : key,
       badge: chat.unread[key],
       urgent: chat.named[key],
+      quiet: quiet(key),
       // The battle room and the server are always there; a channel or a person
       // is something you opened and can close.
       closable: key !== BATTLE_ROOM && key !== SERVER_ROOM,
@@ -399,18 +417,21 @@ export function Chat() {
           </div>
           <For each={friends()}>
             {(name) => (
-              <button
-                class='room-tab friend'
-                onClick={() => {
-                  ensureRoom(privateRoom(name))
-                  setRoom(privateRoom(name))
-                }}
-              >
-                <span class='room-name'>{name}</span>
-                <Show when={lobby.users[name]}>
-                  <span class='room-count'>online</span>
-                </Show>
-              </button>
+              <div class='room-row'>
+                <button
+                  class='room-tab friend'
+                  onClick={() => {
+                    ensureRoom(privateRoom(name))
+                    setRoom(privateRoom(name))
+                  }}
+                >
+                  <span class='room-name'>{name}</span>
+                  <Show when={lobby.users[name]}>
+                    <span class='room-count'>online</span>
+                  </Show>
+                </button>
+                <MuteToggle room={privateRoom(name)} label={name} />
+              </div>
             )}
           </For>
         </Show>
@@ -443,7 +464,7 @@ export function Chat() {
           <div class='room-list-head'>
             <span class='filter-label'>People</span>
           </div>
-          <For each={privates()}>
+          <For each={recentPrivates()}>
             {(key) => (
               <Tab
                 room={key}
@@ -453,6 +474,29 @@ export function Chat() {
               />
             )}
           </For>
+        </Show>
+
+        {/* Where a muted person can still be found once their conversation
+            is closed. Muted channels need no such place: they stay listed. */}
+        <Show when={mutedPeople().length > 0}>
+          <details class='room-group'>
+            <summary class='room-list-head'>
+              <span class='filter-label'>Muted · {mutedPeople().length}</span>
+            </summary>
+            <For each={mutedPeople()}>
+              {(key) => (
+                <Tab
+                  room={key}
+                  label={partner(key)}
+                  on={room() === key}
+                  onClick={() => {
+                    ensureRoom(key)
+                    setRoom(key)
+                  }}
+                />
+              )}
+            </For>
+          </details>
         </Show>
 
         <Show when={showDirectory()}>
@@ -505,6 +549,12 @@ export function Chat() {
             </button>
           </Show>
           <span class='spacer' />
+          <button
+            title='Keep this room out of the count on the Chat tab. A line that names you still counts.'
+            onClick={() => void toggleMute(room())}
+          >
+            {isMuted(room()) ? 'Unmute' : 'Mute'}
+          </button>
           <Show when={!isPrivate(room()) && room() !== BATTLE_ROOM}>
             <button
               onClick={() =>
@@ -576,17 +626,46 @@ function Tab(props: {
   onClick: (room: string) => void
 }) {
   return (
+    <div class='room-row'>
+      <button
+        class='room-tab'
+        classList={{ on: props.on }}
+        onClick={() => props.onClick(props.room)}
+      >
+        <span class='room-name'>{props.label}</span>
+        <Show when={chat.unread[props.room]}>
+          <span
+            class='badge'
+            classList={{
+              named: chat.named[props.room],
+              quiet: quiet(props.room),
+            }}
+          >
+            {chat.unread[props.room]}
+          </span>
+        </Show>
+      </button>
+      <MuteToggle room={props.room} label={props.label} />
+    </div>
+  )
+}
+
+/** The bell beside a room: faint until pointed at, in full while muted. */
+function MuteToggle(props: { room: string; label: string }) {
+  return (
     <button
-      class='room-tab'
-      classList={{ on: props.on }}
-      onClick={() => props.onClick(props.room)}
+      class='room-mute'
+      classList={{ on: isMuted(props.room) }}
+      title={
+        isMuted(props.room)
+          ? `Count ${props.label} on the Chat tab again`
+          : `Keep ${props.label} out of the count on the Chat tab`
+      }
+      aria-label={`Mute ${props.label}`}
+      aria-pressed={isMuted(props.room)}
+      onClick={() => void toggleMute(props.room)}
     >
-      <span class='room-name'>{props.label}</span>
-      <Show when={chat.unread[props.room]}>
-        <span class='badge' classList={{ named: chat.named[props.room] }}>
-          {chat.unread[props.room]}
-        </span>
-      </Show>
+      <Glyph id='act-mute' />
     </button>
   )
 }

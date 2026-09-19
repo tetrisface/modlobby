@@ -416,6 +416,10 @@ pub struct Chat {
     /// moment you disconnect, so remembering is the client's job — and keeping
     /// it here means you can also just write one in.
     pub channels: Vec<String>,
+    /// Rooms left out of the unread count on the Chat tab, by room key: a
+    /// channel's name, or `@name` for a person. A line that names you still
+    /// counts.
+    pub muted: Vec<String>,
 }
 
 impl Default for Chat {
@@ -425,6 +429,8 @@ impl Default for Chat {
             max_lines: 3000,
             // Where the server puts everyone, and where the announcements are.
             channels: vec!["main".into()],
+            // Everyone is in it, so a count that includes it is never zero.
+            muted: vec!["main".into()],
         }
     }
 }

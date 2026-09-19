@@ -353,6 +353,7 @@ pub fn run() {
             update::resume_update,
             update::note_trouble,
             commands::flash_engine,
+            commands::engine_in_front,
             commands::remember_played,
             commands::game_modoptions,
             presets::pve_score,

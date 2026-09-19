@@ -24,7 +24,7 @@ import {
 import { api, describeError, errorCode } from './ipc/client'
 import type { Settings } from './ipc/bindings/Settings'
 import { build, setBuild } from './store/build'
-import { chat, holdNotices, pushNotice } from './store/chat'
+import { chat, holdNotices, pushNotice, unreadTotal } from './store/chat'
 import { lobby, myRoom } from './store/lobby'
 import { loadNews, unreadNews } from './store/news'
 import { over, setOver } from './store/overlay'
@@ -142,10 +142,10 @@ function Layout(props: ParentProps) {
   /**
    * Everything unread, anywhere. A notification is only raised while the
    * window is in the background, so without this a message that arrives while
-   * you are reading the battle list leaves no mark at all.
+   * you are reading the battle list leaves no mark at all. Muted rooms stay
+   * out of it until they name you.
    */
-  const unread = () =>
-    Object.values(chat.unread).reduce((total, count) => total + count, 0)
+  const unread = () => unreadTotal(settings()?.chat.muted ?? [])
   const named = () => Object.values(chat.named).some(Boolean)
 
   /**

@@ -38,7 +38,10 @@
           "main"
         ],
         "filterHostChatter": true,
-        "maxLines": 3000
+        "maxLines": 3000,
+        "muted": [
+          "main"
+        ]
       }
     },
     "connection": {
@@ -244,6 +247,16 @@
           "format": "uint32",
           "default": 3000,
           "minimum": 0
+        },
+        "muted": {
+          "description": "Rooms left out of the unread count on the Chat tab, by room key: a\nchannel's name, or `@name` for a person. A line that names you still\ncounts.",
+          "type": "array",
+          "default": [
+            "main"
+          ],
+          "items": {
+            "type": "string"
+          }
         }
       }
     },

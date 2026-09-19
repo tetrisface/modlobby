@@ -1,4 +1,5 @@
-import { api } from '../ipc/client'
+import { api, describeError } from '../ipc/client'
+import { pushNotice } from './chat'
 import { applySettings, settings } from './settings'
 
 /**
@@ -27,4 +28,29 @@ export async function rememberChannel(
   if (next.length === saved.length && next.every((c, i) => c === saved[i]))
     return
   applySettings(await api.rememberChannels(next))
+}
+
+/** Whether a room is kept out of the Chat tab's unread count. */
+export function isMuted(room: string): boolean {
+  return settings()?.chat.muted.includes(room) ?? false
+}
+
+/** Keeps a room out of the Chat tab's unread count, or lets it back in. */
+export async function toggleMute(room: string): Promise<void> {
+  const current = settings()
+  if (!current) return
+  const saved = current.chat.muted
+  const next = saved.includes(room)
+    ? saved.filter((key) => key !== room)
+    : [...saved, room]
+  try {
+    applySettings(
+      await api.updateSettings({
+        ...current,
+        chat: { ...current.chat, muted: next },
+      }),
+    )
+  } catch (error) {
+    pushNotice('warning', `mute: ${describeError(error)}`)
+  }
 }

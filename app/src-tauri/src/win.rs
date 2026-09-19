@@ -12,7 +12,7 @@ use std::ffi::c_void;
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, TRUE};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetWindowThreadProcessId, IsWindowVisible,
+    EnumWindows, GetForegroundWindow, GetWindowThreadProcessId, IsWindowVisible,
 };
 use windows_sys::core::BOOL;
 
@@ -53,4 +53,13 @@ pub fn visible_windows_of(pid: u32) -> Vec<HWND> {
         EnumWindows(Some(visit), &raw mut hunt as *mut c_void as LPARAM);
     }
     hunt.found
+}
+
+/// Whether the window in front belongs to `pid`.
+pub fn owns_foreground(pid: u32) -> bool {
+    let mut owner = 0_u32;
+    // SAFETY: both calls accept a null window, which leaves `owner` at 0 and
+    // so matches no process we spawned.
+    unsafe { GetWindowThreadProcessId(GetForegroundWindow(), &mut owner) };
+    owner == pid
 }

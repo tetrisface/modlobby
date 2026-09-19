@@ -161,6 +161,32 @@ export function openPrivates(): string[] {
   return Object.keys(chat.rooms).filter(isPrivate).sort()
 }
 
+/**
+ * The unread count on the Chat tab: everything outside the muted rooms, and a
+ * muted room's too once one of its lines names you.
+ */
+export function unreadTotal(muted: readonly string[]): number {
+  return Object.entries(chat.unread)
+    .filter(([room]) => chat.named[room] || !muted.includes(room))
+    .reduce((total, [, count]) => total + count, 0)
+}
+
+/** When a conversation last moved, in seconds; 0 when nothing has been said. */
+export function lastSaid(room: string): number {
+  return chat.rooms[room]?.at(-1)?.at ?? 0
+}
+
+/**
+ * People by who you can talk to now, then who spoke last, then name. Muting
+ * plays no part: a muted person who writes still comes up to the top.
+ */
+export function byActivity(online: (name: string) => boolean) {
+  return (a: string, b: string) =>
+    Number(online(b)) - Number(online(a)) ||
+    lastSaid(privateRoom(b)) - lastSaid(privateRoom(a)) ||
+    a.localeCompare(b)
+}
+
 /** Every room that can be selected, for checking one still exists. */
 export function openRooms(): string[] {
   return [BATTLE_ROOM, SERVER_ROOM, ...openChannels(), ...openPrivates()]

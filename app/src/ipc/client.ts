@@ -150,6 +150,7 @@ export const api = {
   describeMapOption: (key: string, raw: string) =>
     invoke<string>('describe_map_option', { key, raw }),
   flashEngine: () => invoke<boolean>('flash_engine'),
+  engineInFront: () => invoke<boolean>('engine_in_front'),
   requestGameStatus: (founder: string) =>
     invoke<void>('request_game_status', { founder }),
 

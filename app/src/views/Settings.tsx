@@ -770,7 +770,12 @@ export function blankSettings(): Settings {
       sort: 'relevance',
       sortDescending: false,
     },
-    chat: { filterHostChatter: true, maxLines: 3000, channels: ['main'] },
+    chat: {
+      filterHostChatter: true,
+      maxLines: 3000,
+      channels: ['main'],
+      muted: ['main'],
+    },
     overlay: {
       enabled: true,
       hotkey: 'Alt+Shift+L',
