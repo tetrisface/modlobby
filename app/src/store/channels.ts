@@ -1,5 +1,6 @@
 import { api, describeError } from '../ipc/client'
-import { pushNotice } from './chat'
+import { serverId } from '../lib/servers'
+import { muteOf, pushNotice, roomName } from './chat'
 import { applySettings, settings } from './settings'
 
 /**
@@ -16,10 +17,14 @@ import { applySettings, settings } from './settings'
  * front end learns of it.
  */
 export async function rememberChannel(
+  server: string | null | undefined,
   name: string,
   joined: boolean,
 ): Promise<void> {
-  const saved = settings()?.chat.channels ?? []
+  if (!server) return
+  const saved =
+    settings()?.servers.find((entry) => serverId(entry.host) === server)
+      ?.channels ?? []
   const next = joined
     ? saved.includes(name)
       ? saved
@@ -27,21 +32,25 @@ export async function rememberChannel(
     : saved.filter((channel) => channel !== name)
   if (next.length === saved.length && next.every((c, i) => c === saved[i]))
     return
-  applySettings(await api.rememberChannels(next))
+  applySettings(await api.rememberChannels(server, next))
 }
 
 /** Whether a room is kept out of the Chat tab's unread count. */
-export function isMuted(room: string): boolean {
-  return settings()?.chat.muted.includes(room) ?? false
+export function isMuted(key: string): boolean {
+  return muteOf(settings()?.chat.muted ?? [], key)
 }
 
-/** Keeps a room out of the Chat tab's unread count, or lets it back in. */
-export async function toggleMute(room: string): Promise<void> {
+/**
+ * Keeps a room out of the Chat tab's unread count, or lets it back in — by
+ * its name, so on every server that has one.
+ */
+export async function toggleMute(key: string): Promise<void> {
   const current = settings()
   if (!current) return
+  const room = roomName(key)
   const saved = current.chat.muted
   const next = saved.includes(room)
-    ? saved.filter((key) => key !== room)
+    ? saved.filter((name) => name !== room)
     : [...saved, room]
   try {
     applySettings(

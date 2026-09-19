@@ -599,10 +599,10 @@ async fn download(update: &Update, say: &impl Fn(UpdateProgress)) -> Result<Vec<
 /// nothing would be lost. A runtime that cannot answer has nothing to lose.
 async fn busy(app: &App) -> Option<&'static str> {
     if let Ok(snapshot) = app.client.snapshot().await {
-        if snapshot.game_running.is_some() {
+        if snapshot.servers.iter().any(|s| s.game_running.is_some()) {
             return Some("the game that is running");
         }
-        if snapshot.my_battle.is_some() {
+        if snapshot.room().is_some() {
             return Some("the room you are in");
         }
     }

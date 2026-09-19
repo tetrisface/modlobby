@@ -3,7 +3,8 @@
 //!
 //! teiserver listens plain on 8200 (what Chobby uses; `STLS` upgrades it to
 //! TLS) and TLS on 8201; all carry the same line protocol, so the actor is
-//! generic over the stream.
+//! generic over the stream. Which of those ways a given server answers on is
+//! found by trying them ([`Transport::connect`]), not configured.
 //!
 //! Correlation: a request tagged `#<id>` resolves on the first reply line
 //! carrying that id; every line, tagged or not, is also delivered as an event,
@@ -11,13 +12,16 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::fmt;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinSet;
 use tokio_rustls::TlsConnector;
 use tokio_rustls::client::TlsStream;
 use tokio_rustls::rustls::pki_types::ServerName;
@@ -31,6 +35,10 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 const CHANNEL_CAPACITY: usize = 1024;
 /// How long a fresh connection gets to say its first word before it counts as silent.
 const GREETING_WAIT: Duration = Duration::from_secs(5);
+/// The most one way into a server may take, from the first packet to the
+/// greeting. Without it a host that drops packets would hold a connect for
+/// as long as the operating system cares to keep trying.
+const ATTEMPT_WAIT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, thiserror::Error)]
 pub enum TransportError {
@@ -46,52 +54,100 @@ pub enum TransportError {
     Stls(String),
     #[error("the server did not greet")]
     Silent,
+    /// Every way in was tried and none answered — or nothing was there to
+    /// answer: no network, no such host.
+    #[error("could not reach the server ({0})")]
+    Unreachable(String),
+    /// The server is there, every encrypted way into it failed, and it is
+    /// not allowed an unencrypted one. Its own case because the answer is a
+    /// setting — which is why a server that was never reached is not this.
+    #[error("no encrypted way in ({0})")]
+    NoEncryption(String),
 }
 
-/// Where to connect, and how.
+/// How a server is known across the app — in the remembered ways, in what
+/// the front end is told — however its host was typed.
+pub fn server_id(host: &str) -> String {
+    host.trim().to_ascii_lowercase()
+}
+
+/// Which server to reach, and what it may be reached by. Which way actually
+/// works is found by trying ([`Transport::connect`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Endpoint {
     pub host: String,
-    pub plain_port: u16,
-    pub tls_port: u16,
-    pub security: Security,
+    /// Each is tried both encrypted ways.
+    pub ports: Vec<u16>,
+    /// Whether an unencrypted connection will do once every encrypted way
+    /// has failed. Never tried before that.
+    pub allow_plain: bool,
+    /// What worked last time, tried on its own before anything else.
+    pub preferred: Option<Way>,
 }
 
 impl Endpoint {
-    /// teiserver's own ports: plain on 8200, TLS on 8201.
-    pub fn new(host: impl Into<String>, security: Security) -> Self {
+    /// teiserver's own ports, plain on 8200 and TLS on 8201, encrypted only.
+    pub fn new(host: impl Into<String>) -> Self {
         Self {
             host: host.into(),
-            plain_port: 8200,
-            tls_port: 8201,
-            security,
+            ports: vec![8200, 8201],
+            allow_plain: false,
+            preferred: None,
         }
+    }
+
+    /// The way worth trying on its own: the remembered one, while its port
+    /// is still listed and, if it was unencrypted, while that is still allowed.
+    ///
+    /// ponytail: a remembered unencrypted way is kept until it fails or is
+    /// forgotten, so a server that gains TLS later is not noticed; the owner
+    /// opted that server into plaintext, and forgetting the way re-probes it.
+    fn first(&self) -> Option<(u16, Security)> {
+        let way = self.preferred?;
+        let listed = self.ports.contains(&way.port);
+        let allowed = way.security != Security::None || self.allow_plain;
+        (listed && allowed).then_some((way.port, way.security))
+    }
+
+    /// Each listed port with each of `ways`, port by port.
+    fn every(&self, ways: &[Security]) -> Vec<(u16, Security)> {
+        self.ports
+            .iter()
+            .flat_map(|port| ways.iter().map(move |security| (*port, *security)))
+            .collect()
     }
 }
 
-/// How the connection is encrypted. Each encrypted way falls back to the
-/// other: on 2026-09-18 teiserver's TLS port hung up before greeting while
-/// `STLS` on the plain port worked.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// How the connection is encrypted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Security {
-    /// The plain port, upgraded to TLS by `STLS`, like SMTP's STARTTLS.
+    /// A plain port, upgraded to TLS by `STLS`, like SMTP's STARTTLS.
     Stls,
-    /// The TLS port, encrypted from the first byte.
+    /// A TLS port, encrypted from the first byte.
     Tls,
-    /// Unencrypted on the plain port; no fallback.
+    /// Unencrypted.
     None,
 }
 
-impl std::str::FromStr for Security {
-    type Err = String;
+/// A way into a server that worked, and how long it took to greet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Way {
+    pub port: u16,
+    pub security: Security,
+    /// From the first packet to the greeting.
+    pub ms: u32,
+}
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "stls" => Ok(Self::Stls),
-            "tls" => Ok(Self::Tls),
-            "none" => Ok(Self::None),
-            other => Err(format!("expected stls, tls or none, got {other}")),
-        }
+impl fmt::Display for Way {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} on {}, {} ms",
+            name(self.security),
+            self.port,
+            self.ms
+        )
     }
 }
 
@@ -101,12 +157,18 @@ pub enum Inbound {
     Message(ServerEvent),
     /// Scheduler decisions worth surfacing (delays, coalescing, trips, drops).
     Policy(PolicyEvent),
-    /// Something the transport decided on its own that the user should hear about.
-    Note(String),
     Closed {
         reason: String,
     },
 }
+
+/// A connection in either encryption, as one type.
+trait Io: AsyncRead + AsyncWrite + Unpin + Send {}
+
+impl<T: AsyncRead + AsyncWrite + Unpin + Send> Io for T {}
+
+/// A connection the server has greeted on, its greeting still unread.
+type Opened = BufReader<Box<dyn Io>>;
 
 enum Outbound {
     Send(Envelope),
@@ -136,32 +198,20 @@ pub struct Transport {
 }
 
 impl Transport {
-    /// Connects the way the endpoint asks, and spawns the reader and writer tasks.
+    /// Finds a way in, and spawns the reader and writer tasks on it.
     ///
-    /// An encrypted way that fails, or that the server does not greet on, is
-    /// retried the other encrypted way, and the user is told. Never unencrypted:
-    /// that is only ever asked for.
+    /// The remembered way goes first, alone. Failing that, or with none,
+    /// every encrypted way on every port is tried at once and the first to
+    /// greet wins — so a port that hangs costs nothing while another answers.
+    /// Unencrypted comes last, only where allowed, and never raced against
+    /// encryption: it has fewer round trips and would win.
     pub async fn connect(
         endpoint: &Endpoint,
         policy: ThrottlePolicy,
-    ) -> Result<(Self, mpsc::Receiver<Inbound>), TransportError> {
-        let (first, second) = match endpoint.security {
-            Security::None => {
-                let stream = tcp(&endpoint.host, endpoint.plain_port).await?;
-                return Ok(Self::from_stream(stream, policy));
-            }
-            Security::Stls => (Security::Stls, Security::Tls),
-            Security::Tls => (Security::Tls, Security::Stls),
-        };
-        let err = match encrypted(endpoint, first).await {
-            Ok(stream) => return Ok(Self::from_stream(stream, policy)),
-            Err(err) => err,
-        };
-        let (tried, instead) = (way(endpoint, first), way(endpoint, second));
-        tracing::warn!(%err, "{tried} failed; trying {instead}");
-        let stream = encrypted(endpoint, second).await?;
-        let note = format!("{tried} is not working ({err}); connected encrypted via {instead}");
-        Ok(Self::spawn(stream, policy, Some(note)))
+    ) -> Result<(Self, mpsc::Receiver<Inbound>, Way), TransportError> {
+        let (stream, way) = open(endpoint, ATTEMPT_WAIT).await?;
+        let (transport, inbound) = Self::from_stream(stream, policy);
+        Ok((transport, inbound, way))
     }
 
     /// Runs the protocol over any stream: the socket in production, an in-memory duplex in tests.
@@ -169,23 +219,8 @@ impl Transport {
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
-        Self::spawn(stream, policy, None)
-    }
-
-    fn spawn<S>(
-        stream: S,
-        policy: ThrottlePolicy,
-        note: Option<String>,
-    ) -> (Self, mpsc::Receiver<Inbound>)
-    where
-        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
-    {
         let (read_half, write_half) = tokio::io::split(stream);
         let (in_tx, in_rx) = mpsc::channel(CHANNEL_CAPACITY);
-        if let Some(note) = note {
-            // The channel is new and empty, so this cannot be full.
-            let _ = in_tx.try_send(Inbound::Note(note));
-        }
         let (out_tx, out_rx) = mpsc::channel(CHANNEL_CAPACITY);
         let pending = Pending::default();
 
@@ -262,32 +297,146 @@ pub fn install_crypto() {
     let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
 }
 
-/// A TLS session the server has greeted on, its greeting still unread.
-/// `Security::Stls` upgrades the plain port; anything else is the TLS port.
-async fn encrypted(
-    endpoint: &Endpoint,
-    security: Security,
-) -> Result<BufReader<TlsStream<TcpStream>>, TransportError> {
-    let name = ServerName::try_from(endpoint.host.clone())
-        .map_err(|_| TransportError::ServerName(endpoint.host.clone()))?;
-    let socket = if security == Security::Stls {
-        stls_upgrade(tcp(&endpoint.host, endpoint.plain_port).await?).await?
-    } else {
-        tcp(&endpoint.host, endpoint.tls_port).await?
+/// The first way in that greets; see [`Transport::connect`]. `wait` bounds
+/// each attempt, so the whole takes at most three of them.
+async fn open(endpoint: &Endpoint, wait: Duration) -> Result<(Opened, Way), TransportError> {
+    if let Some((port, security)) = endpoint.first() {
+        match attempt(endpoint.host.clone(), port, security, wait).await {
+            Ok(opened) => return Ok(opened),
+            Err(Failed { error, .. }) => {
+                tracing::warn!(port, ?security, %error, "the remembered way failed; trying every way")
+            }
+        }
+    }
+    let encrypted = race(
+        &endpoint.host,
+        endpoint.every(&[Security::Stls, Security::Tls]),
+        wait,
+    )
+    .await;
+    let tried = match encrypted {
+        Ok(opened) => return Ok(opened),
+        Err(tried) => tried,
     };
-    let mut stream = BufReader::new(tls_connector().connect(name, socket).await?);
+    if !endpoint.allow_plain {
+        return Err(if tried.reached {
+            TransportError::NoEncryption(tried.text)
+        } else {
+            TransportError::Unreachable(tried.text)
+        });
+    }
+    race(&endpoint.host, endpoint.every(&[Security::None]), wait)
+        .await
+        .map_err(|plain| TransportError::Unreachable(format!("{}; {}", tried.text, plain.text)))
+}
+
+/// What a race that nobody won ran into, and whether any of it got as far as
+/// a connection: a server that answers but will not encrypt is a different
+/// problem from one that is not there.
+struct Tried {
+    reached: bool,
+    text: String,
+}
+
+/// One way in that failed, and whether the server was at least there.
+struct Failed {
+    reached: bool,
+    error: TransportError,
+}
+
+/// Every way at once; the first to greet wins. Dropping the set aborts the
+/// others mid-attempt, which closes their sockets. When all fail, what each
+/// one ran into, for the message.
+async fn race(
+    host: &str,
+    ways: Vec<(u16, Security)>,
+    wait: Duration,
+) -> Result<(Opened, Way), Tried> {
+    let mut attempts = JoinSet::new();
+    for (port, security) in ways {
+        let host = host.to_owned();
+        attempts.spawn(async move {
+            attempt(host, port, security, wait).await.map_err(|failed| {
+                let text = format!("{} on {port}: {}", name(security), failed.error);
+                (failed.reached, text)
+            })
+        });
+    }
+    let mut reached = false;
+    let mut failures = Vec::new();
+    while let Some(joined) = attempts.join_next().await {
+        match joined {
+            Ok(Ok(opened)) => return Ok(opened),
+            Ok(Err((there, failure))) => {
+                reached |= there;
+                failures.push(failure);
+            }
+            Err(panicked) => failures.push(panicked.to_string()),
+        }
+    }
+    if failures.is_empty() {
+        failures.push("no ports to try".to_owned());
+    }
+    Err(Tried {
+        reached,
+        text: failures.join("; "),
+    })
+}
+
+/// One way in, from the first packet to the greeting, within `wait`.
+async fn attempt(
+    host: String,
+    port: u16,
+    security: Security,
+    wait: Duration,
+) -> Result<(Opened, Way), Failed> {
+    let started = Instant::now();
+    let deadline = tokio::time::Instant::now() + wait;
+    let within = |reached| move |error| Failed { reached, error };
+    let socket = tokio::time::timeout_at(deadline, tcp(&host, port))
+        .await
+        .map_err(|_| TransportError::Timeout(wait))
+        .flatten()
+        .map_err(within(false))?;
+    let stream = tokio::time::timeout_at(deadline, secure(&host, socket, security))
+        .await
+        .map_err(|_| TransportError::Timeout(wait))
+        .flatten()
+        .map_err(within(true))?;
+    let ms = started.elapsed().as_millis().try_into().unwrap_or(u32::MAX);
+    Ok((stream, Way { port, security, ms }))
+}
+
+/// A connected socket made into a stream the server has greeted on.
+async fn secure(
+    host: &str,
+    socket: TcpStream,
+    security: Security,
+) -> Result<Opened, TransportError> {
+    let stream: Box<dyn Io> = match security {
+        Security::None => Box::new(socket),
+        Security::Stls => Box::new(tls(host, stls_upgrade(socket).await?).await?),
+        Security::Tls => Box::new(tls(host, socket).await?),
+    };
+    let mut stream = BufReader::new(stream);
     if !greets(&mut stream).await {
         return Err(TransportError::Silent);
     }
     Ok(stream)
 }
 
-/// How a way of connecting reads in a notice.
-fn way(endpoint: &Endpoint, security: Security) -> String {
+async fn tls(host: &str, socket: TcpStream) -> Result<TlsStream<TcpStream>, TransportError> {
+    let name = ServerName::try_from(host.to_owned())
+        .map_err(|_| TransportError::ServerName(host.to_owned()))?;
+    Ok(tls_connector().connect(name, socket).await?)
+}
+
+/// How a way of connecting reads in a message.
+fn name(security: Security) -> &'static str {
     match security {
-        Security::Stls => format!("STLS on port {}", endpoint.plain_port),
-        Security::Tls => format!("TLS on port {}", endpoint.tls_port),
-        Security::None => format!("unencrypted on port {}", endpoint.plain_port),
+        Security::Stls => "STLS",
+        Security::Tls => "TLS",
+        Security::None => "unencrypted",
     }
 }
 
@@ -297,13 +446,19 @@ async fn tcp(host: &str, port: u16) -> Result<TcpStream, TransportError> {
     Ok(stream)
 }
 
-/// Whether the server says anything before it hangs up. The first bytes are
-/// waited for but left in the buffer, so the greeting still reaches the session.
+/// Whether the server greets as a lobby server before it hangs up: a port
+/// that answers is not enough, since whatever else listens there — a mail
+/// server, a web server — would win a race and be remembered as the way in.
+/// The first bytes are waited for but left in the buffer, so the greeting
+/// still reaches the session.
 async fn greets<S: AsyncRead + Unpin>(stream: &mut BufReader<S>) -> bool {
-    matches!(
-        tokio::time::timeout(GREETING_WAIT, stream.fill_buf()).await,
-        Ok(Ok(buf)) if !buf.is_empty()
-    )
+    const GREETING: &[u8] = b"TASSERVER";
+    let Ok(Ok(buf)) = tokio::time::timeout(GREETING_WAIT, stream.fill_buf()).await else {
+        return false;
+    };
+    // As much of the word as has arrived: a greeting may come in pieces.
+    let arrived = buf.len().min(GREETING.len());
+    arrived > 0 && buf[..arrived] == GREETING[..arrived]
 }
 
 /// Asks a plain connection to switch to TLS and hands it back ready for the
@@ -337,15 +492,22 @@ async fn read_line_within<S: AsyncRead + Unpin>(
     Ok(())
 }
 
-/// Verifies the server against the Mozilla root store bundled by `webpki-roots`.
+/// Verifies the server against the Mozilla root store bundled by
+/// `webpki-roots`. Built once: a race makes a handshake per port per way, and
+/// the root store is the same for all of them.
 fn tls_connector() -> TlsConnector {
-    install_crypto();
-    let mut roots = RootCertStore::empty();
-    roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-    let config = ClientConfig::builder()
-        .with_root_certificates(roots)
-        .with_no_client_auth();
-    TlsConnector::from(Arc::new(config))
+    static CONFIG: std::sync::OnceLock<Arc<ClientConfig>> = std::sync::OnceLock::new();
+    let config = CONFIG.get_or_init(|| {
+        install_crypto();
+        let mut roots = RootCertStore::empty();
+        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        Arc::new(
+            ClientConfig::builder()
+                .with_root_certificates(roots)
+                .with_no_client_auth(),
+        )
+    });
+    TlsConnector::from(Arc::clone(config))
 }
 
 /// Keeps the password hash out of the transmit trace.
@@ -461,12 +623,204 @@ async fn writer<W>(
 mod tests {
     use super::*;
 
+    use std::future::Future;
+    use std::sync::atomic::AtomicUsize;
+
+    fn local(ports: Vec<u16>, allow_plain: bool, preferred: Option<Way>) -> Endpoint {
+        Endpoint {
+            host: "127.0.0.1".into(),
+            ports,
+            allow_plain,
+            preferred,
+        }
+    }
+
+    fn way(port: u16, security: Security) -> Way {
+        Way {
+            port,
+            security,
+            ms: 0,
+        }
+    }
+
+    /// A listener on a free local port serving each connection with `serve`,
+    /// and a count of the connections it took.
+    async fn serving<F, Fut>(serve: F) -> (u16, Arc<AtomicUsize>)
+    where
+        F: Fn(TcpStream) -> Fut + Send + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let accepted = Arc::new(AtomicUsize::new(0));
+        let count = Arc::clone(&accepted);
+        tokio::spawn(async move {
+            while let Ok((socket, _)) = listener.accept().await {
+                count.fetch_add(1, Ordering::Relaxed);
+                tokio::spawn(serve(socket));
+            }
+        });
+        (port, accepted)
+    }
+
+    /// randomguyrapid.duckdns.org on 2026-09-19: greets in plaintext, agrees
+    /// to `STLS`, then hangs up where the handshake should be.
+    async fn agrees_then_hangs_up(mut socket: TcpStream) {
+        let _ = socket.write_all(b"TASSERVER 0.38 * 8201 0\n").await;
+        let mut line = String::new();
+        let _ = BufReader::new(&mut socket).read_line(&mut line).await;
+        if line == "STLS\n" {
+            let _ = socket.write_all(b"OK cmd=STLS\n").await;
+        }
+    }
+
+    async fn hangs_up(_socket: TcpStream) {}
+
+    async fn says_nothing(socket: TcpStream) {
+        tokio::time::sleep(Duration::from_secs(60)).await;
+        drop(socket);
+    }
+
     #[test]
-    fn security_reads_the_names_the_cli_takes() {
-        assert_eq!("stls".parse(), Ok(Security::Stls));
-        assert_eq!("tls".parse(), Ok(Security::Tls));
-        assert_eq!("none".parse(), Ok(Security::None));
-        assert!("plain".parse::<Security>().is_err());
+    fn the_remembered_way_goes_first_only_while_it_is_still_on_offer() {
+        let tls = Some(way(8201, Security::Tls));
+        let plain = Some(way(8200, Security::None));
+        assert_eq!(
+            local(vec![8200, 8201], false, tls).first(),
+            Some((8201, Security::Tls))
+        );
+        assert_eq!(
+            local(vec![8200], false, tls).first(),
+            None,
+            "port no longer listed"
+        );
+        assert_eq!(
+            local(vec![8200], false, plain).first(),
+            None,
+            "plaintext no longer allowed"
+        );
+        assert_eq!(
+            local(vec![8200], true, plain).first(),
+            Some((8200, Security::None))
+        );
+        assert_eq!(local(vec![8200], true, None).first(), None);
+    }
+
+    #[test]
+    fn every_way_is_every_port_each_way() {
+        assert_eq!(
+            local(vec![8200, 8201], false, None).every(&[Security::Stls, Security::Tls]),
+            vec![
+                (8200, Security::Stls),
+                (8200, Security::Tls),
+                (8201, Security::Stls),
+                (8201, Security::Tls),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_way_reads_as_what_it_was() {
+        assert_eq!(
+            Way {
+                port: 8200,
+                security: Security::Stls,
+                ms: 46
+            }
+            .to_string(),
+            "STLS on 8200, 46 ms"
+        );
+        assert_eq!(
+            way(8200, Security::None).to_string(),
+            "unencrypted on 8200, 0 ms"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_server_without_encryption_is_refused_unless_plaintext_is_allowed() {
+        let (agrees, _) = serving(agrees_then_hangs_up).await;
+        let (resets, _) = serving(hangs_up).await;
+        let wait = Duration::from_secs(2);
+
+        let refused = open(&local(vec![agrees, resets], false, None), wait).await;
+        let Err(TransportError::NoEncryption(tried)) = refused else {
+            panic!("expected NoEncryption");
+        };
+        for port in [agrees, resets] {
+            assert!(tried.contains(&format!("STLS on {port}")), "{tried}");
+            assert!(tried.contains(&format!("TLS on {port}")), "{tried}");
+        }
+
+        let (mut stream, way) = open(&local(vec![agrees, resets], true, None), wait)
+            .await
+            .expect("plaintext is allowed");
+        assert_eq!((way.port, way.security), (agrees, Security::None));
+        let mut greeting = String::new();
+        stream.read_line(&mut greeting).await.unwrap();
+        assert_eq!(
+            greeting, "TASSERVER 0.38 * 8201 0\n",
+            "the greeting is kept"
+        );
+    }
+
+    #[tokio::test]
+    async fn every_way_is_tried_at_once_so_a_silent_port_costs_one_wait() {
+        let (silent, _) = serving(says_nothing).await;
+        let (agrees, _) = serving(agrees_then_hangs_up).await;
+        let wait = Duration::from_millis(400);
+
+        let started = Instant::now();
+        let (_, way) = open(&local(vec![silent, agrees], true, None), wait)
+            .await
+            .expect("the plain way answers");
+        assert_eq!(way.port, agrees);
+        // In turn it would be at least the four encrypted attempts' waits.
+        assert!(started.elapsed() < wait * 2, "took {:?}", started.elapsed());
+    }
+
+    #[tokio::test]
+    async fn one_attempt_is_bounded_by_the_wait() {
+        let (silent, _) = serving(says_nothing).await;
+        let started = Instant::now();
+        let attempted = attempt(
+            "127.0.0.1".into(),
+            silent,
+            Security::Stls,
+            Duration::from_millis(200),
+        )
+        .await;
+        assert!(matches!(
+            attempted,
+            Err(Failed {
+                reached: true,
+                error: TransportError::Timeout(_)
+            })
+        ));
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    #[tokio::test]
+    async fn the_remembered_way_is_tried_alone_and_a_failed_one_falls_back_to_every_way() {
+        let (agrees, accepted) = serving(agrees_then_hangs_up).await;
+        let wait = Duration::from_secs(2);
+
+        let remembered = Some(way(agrees, Security::None));
+        let (_, found) = open(&local(vec![agrees], true, remembered), wait)
+            .await
+            .unwrap();
+        assert_eq!(found.security, Security::None);
+        assert_eq!(
+            accepted.load(Ordering::Relaxed),
+            1,
+            "no race when the memory holds"
+        );
+
+        let (resets, _) = serving(hangs_up).await;
+        let stale = Some(way(resets, Security::None));
+        let (_, found) = open(&local(vec![resets, agrees], true, stale), wait)
+            .await
+            .unwrap();
+        assert_eq!((found.port, found.security), (agrees, Security::None));
     }
 
     #[test]
@@ -499,6 +853,28 @@ mod tests {
         let mut line = String::new();
         client.read_line(&mut line).await.unwrap();
         assert_eq!(line, "TASSERVER 0.38\n");
+
+        let (client, mut server) = tokio::io::duplex(64);
+        server.write_all(b"220 mail.example ESMTP\n").await.unwrap();
+        assert!(
+            !greets(&mut BufReader::new(client)).await,
+            "something else lives on that port"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_server_that_is_not_there_is_unreachable_rather_than_unencrypted() {
+        // A port nothing listens on: bound to learn a free one, then let go.
+        let closed = {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            listener.local_addr().unwrap().port()
+        };
+        let refused = open(&local(vec![closed], false, None), Duration::from_secs(2)).await;
+        assert!(
+            matches!(refused, Err(TransportError::Unreachable(_))),
+            "allowing plaintext would not have helped: {:?}",
+            refused.err()
+        );
     }
 
     #[tokio::test]

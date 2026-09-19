@@ -9,30 +9,66 @@ export type Notice = {
   seq: number
   level: NoticeLevel
   text: string
+  /** The server that said it, by id; `null` for the app's own. */
+  server: string | null
   /** When this one leaves, pushed back while the pointer is in the corner. */
   expiresAt: number
 }
 
-/** The room key for the battle we are in; `lobby-ui` writes the same string. */
+/**
+ * The room key for the battle we are in; `lobby-ui` writes the same string.
+ * One across every server, since there is one room at most.
+ */
 export const BATTLE_ROOM = '#battle'
 
-/** Where the server's own words go: the message of the day, and broadcasts. */
 /** A skirmish room's own log: what its console answered, and what changed. */
 export const SKIRMISH_ROOM = '#skirmish'
 
+/**
+ * Where a server's own words go: the message of the day, and broadcasts.
+ * Each server has one.
+ */
 export const SERVER_ROOM = '#server'
 
-export const privateRoom = (user: string) => `@${user}`
-export const isPrivate = (room: string) => room.startsWith('@')
-export const partner = (room: string) => room.slice(1)
+/**
+ * Where a server's conversation is kept: the server, a space, and the room as
+ * the runtime names it — a channel, `@name`, `#server`. Every server has a
+ * `main` and a `@bob` of its own. The battle and skirmish rooms are one each
+ * whatever the server, and keep their bare names.
+ */
+export function roomKey(server: string | null, room: string): string {
+  return server === null || room === BATTLE_ROOM || room === SKIRMISH_ROOM
+    ? room
+    : `${server} ${room}`
+}
+
+/** The server a key is on, `null` for one of its own, and the room itself. */
+export function parseKey(key: string): { server: string | null; room: string } {
+  const space = key.indexOf(' ')
+  return space < 0
+    ? { server: null, room: key }
+    : { server: key.slice(0, space), room: key.slice(space + 1) }
+}
+
+/** A room as it reads, without the server. */
+export const roomName = (key: string) => parseKey(key).room
+export const privateRoom = (server: string, user: string) =>
+  roomKey(server, `@${user}`)
+export const serverRoom = (server: string) => roomKey(server, SERVER_ROOM)
+export const isPrivate = (key: string) => roomName(key).startsWith('@')
+export const partner = (key: string) => roomName(key).slice(1)
+
+/** Rooms by name, and one name's rooms by server. */
+const byName = (a: string, b: string) =>
+  roomName(a).localeCompare(roomName(b)) || a.localeCompare(b)
 
 export type ChatState = {
   /** Backlog per room, oldest first. */
   rooms: Record<string, ChatLine[]>
-  /** Channels we are in, by name. */
+  /** Channels we are in, by key. */
   channels: Record<string, ChannelView>
-  /** The server's channel directory, from the last request. */
-  directory: ChannelSummaryView[]
+  /** Each server's channel directory, from the last request to it. */
+  directory: Record<string, ChannelSummaryView[]>
   /** Whether to drop the host's machine-readable lines. Pushed from settings. */
   filterHostChatter: boolean
   /** Rooms with something unread, by key. */
@@ -45,9 +81,9 @@ export type ChatState = {
 
 function empty(): ChatState {
   return {
-    rooms: { [BATTLE_ROOM]: [], [SERVER_ROOM]: [] },
+    rooms: { [BATTLE_ROOM]: [] },
     channels: {},
-    directory: [],
+    directory: {},
     filterHostChatter: true,
     unread: {},
     named: {},
@@ -132,33 +168,60 @@ export function pushSystem(room: string, text: string): void {
   })
 }
 
-export function applyChannel(name: string, channel: ChannelView | null): void {
+export function applyChannel(key: string, channel: ChannelView | null): void {
   setChat(
     produce((state) => {
       if (channel) {
-        state.channels[name] = channel
-        state.rooms[name] ??= []
+        state.channels[key] = channel
+        state.rooms[key] ??= []
       } else {
-        delete state.channels[name]
-        delete state.unread[name]
-        delete state.named[name]
+        delete state.channels[key]
+        delete state.unread[key]
+        delete state.named[key]
       }
     }),
   )
 }
 
-export function applyDirectory(entries: ChannelSummaryView[]): void {
-  setChat('directory', entries)
+/**
+ * A session ended: the server forgets we were in its channels the moment
+ * the connection goes, so they are no longer ours. The backlog stays, as
+ * does every other server's membership — and the next login rejoins what
+ * the settings remember, which it would skip for a channel still held here.
+ */
+export function leaveChannelsOf(server: string): void {
+  setChat(
+    produce((state) => {
+      for (const key of Object.keys(state.channels))
+        if (parseKey(key).server === server) delete state.channels[key]
+      delete state.directory[server]
+    }),
+  )
 }
 
-/** Channels we are in, sorted. */
+export function applyDirectory(
+  server: string,
+  entries: ChannelSummaryView[],
+): void {
+  setChat('directory', server, entries)
+}
+
+/** Channels we are in, by name. */
 export function openChannels(): string[] {
-  return Object.keys(chat.channels).sort()
+  return Object.keys(chat.channels).sort(byName)
 }
 
 /** Every private conversation that has been opened or spoken in. */
 export function openPrivates(): string[] {
-  return Object.keys(chat.rooms).filter(isPrivate).sort()
+  return Object.keys(chat.rooms).filter(isPrivate).sort(byName)
+}
+
+/**
+ * Whether a room is kept out of the Chat tab's count. Muting is by the room's
+ * name, so muting `main` mutes it on every server.
+ */
+export function muteOf(muted: readonly string[], key: string): boolean {
+  return muted.includes(roomName(key))
 }
 
 /**
@@ -167,7 +230,7 @@ export function openPrivates(): string[] {
  */
 export function unreadTotal(muted: readonly string[]): number {
   return Object.entries(chat.unread)
-    .filter(([room]) => chat.named[room] || !muted.includes(room))
+    .filter(([room]) => chat.named[room] || !muteOf(muted, room))
     .reduce((total, [, count]) => total + count, 0)
 }
 
@@ -177,19 +240,15 @@ export function lastSaid(room: string): number {
 }
 
 /**
- * People by who you can talk to now, then who spoke last, then name. Muting
- * plays no part: a muted person who writes still comes up to the top.
+ * Conversations with people — private room keys — by who you can talk to now,
+ * then who spoke last, then name. Muting plays no part: a muted person who
+ * writes still comes up to the top.
  */
-export function byActivity(online: (name: string) => boolean) {
+export function byActivity(online: (key: string) => boolean) {
   return (a: string, b: string) =>
     Number(online(b)) - Number(online(a)) ||
-    lastSaid(privateRoom(b)) - lastSaid(privateRoom(a)) ||
-    a.localeCompare(b)
-}
-
-/** Every room that can be selected, for checking one still exists. */
-export function openRooms(): string[] {
-  return [BATTLE_ROOM, SERVER_ROOM, ...openChannels(), ...openPrivates()]
+    lastSaid(b) - lastSaid(a) ||
+    byName(a, b)
 }
 
 /** How long a message sits in the corner before it goes. */
@@ -215,7 +274,11 @@ function sweep(): void {
   }
 }
 
-export function pushNotice(level: NoticeLevel, text: string): void {
+export function pushNotice(
+  level: NoticeLevel,
+  text: string,
+  server: string | null = null,
+): void {
   noticeSeq += 1
   // They leave on their own: these are alerts as much as errors now, and a
   // corner that only ever fills up is a log nobody asked for. One sweeper for
@@ -225,6 +288,7 @@ export function pushNotice(level: NoticeLevel, text: string): void {
     seq: noticeSeq,
     level,
     text,
+    server,
     expiresAt: Date.now() + NOTICE_LIFE,
   }
   setChat('notices', (notices) => [...notices.slice(-19), notice])

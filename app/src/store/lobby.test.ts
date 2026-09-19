@@ -2,7 +2,11 @@ import { reconcile } from 'solid-js/store'
 import { afterEach, describe, expect, test } from 'vitest'
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { MyBattleView } from '../ipc/bindings/MyBattleView'
-import { emptyLobby, myRoom, setLobby } from './lobby'
+import type { Settings } from '../ipc/bindings/Settings'
+import { newServer } from '../lib/servers'
+import { emptyLobby, myRoom, sessions, setLobby } from './lobby'
+import { setSettingsSignal } from './settings'
+import { seedSession } from './testing'
 
 const battle = (id: number): BattleView => ({
   id,
@@ -42,18 +46,44 @@ afterEach(() => setLobby(reconcile(emptyLobby())))
 
 describe('myRoom', () => {
   test('nothing while not in a room', () => {
-    setLobby('battles', { 5: battle(5) })
+    seedSession({ battles: { 5: battle(5) } })
     expect(myRoom()).toBeUndefined()
   })
 
   test('nothing when the room is no longer listed', () => {
-    setLobby('myBattle', mine(5))
+    seedSession({ myBattle: mine(5) })
     expect(myRoom()).toBeUndefined()
   })
 
   test('the listed room otherwise', () => {
-    setLobby('battles', { 5: battle(5) })
-    setLobby('myBattle', mine(5))
+    seedSession({ battles: { 5: battle(5) }, myBattle: mine(5) })
     expect(myRoom()?.title).toBe('Room')
+  })
+})
+
+describe('sessions', () => {
+  afterEach(() => {
+    setSettingsSignal(null)
+    setLobby(reconcile(emptyLobby()))
+  })
+
+  test('come in the order the settings list their servers', () => {
+    seedSession({}, 'alpha.example')
+    seedSession({}, 'gone.example')
+    seedSession({}, 'zulu.example')
+    expect(sessions().map(([server]) => server)).toEqual([
+      'alpha.example',
+      'gone.example',
+      'zulu.example',
+    ])
+
+    setSettingsSignal({
+      servers: [newServer('Zulu.example'), newServer('alpha.example')],
+    } as Settings)
+    expect(sessions().map(([server]) => server)).toEqual([
+      'zulu.example',
+      'alpha.example',
+      'gone.example',
+    ])
   })
 })

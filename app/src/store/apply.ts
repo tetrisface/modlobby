@@ -2,6 +2,7 @@ import { batch } from 'solid-js'
 import { produce, reconcile, unwrap } from 'solid-js/store'
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { Delta } from '../ipc/bindings/Delta'
+import type { ServerSnapshot } from '../ipc/bindings/ServerSnapshot'
 import type { Snapshot } from '../ipc/bindings/Snapshot'
 import type { UiMessage } from '../ipc/bindings/UiMessage'
 import { noteToldStart } from './running'
@@ -11,21 +12,55 @@ import {
   applyDirectory,
   clearChat,
   clearRoom,
+  leaveChannelsOf,
   pushLine,
   pushNotice,
+  roomKey,
 } from './chat'
 import { raise } from '../ipc/alerts'
-import { emptyLobby, lobby, setLobby, type LobbyState } from './lobby'
+import {
+  emptyLobby,
+  emptyServer,
+  lobby,
+  setLobby,
+  type LobbyState,
+  type ServerState,
+} from './lobby'
 
 export function applyMessage(message: UiMessage): void {
-  if (message.type === 'snapshot') applySnapshot(message.data)
+  if (message.type === 'snapshot') {
+    applySnapshot(message.data)
+    return
+  }
+  if (message.type === 'session') {
+    applySession(message.data)
+    return
+  }
+  const { server, deltas } = message.data
   // One render pass per message: a room's join burst is thirty status lines,
   // and applied one by one each of them rebuilt every row on screen.
-  else batch(() => message.data.forEach(applyDelta))
+  batch(() => {
+    for (const delta of deltas) applyDelta(delta, server)
+  })
 }
 
 /** Whether the first snapshot has landed: the last startup milestone. */
 let snapshotSeen = false
+
+function serverState(snapshot: ServerSnapshot): ServerState {
+  const state: ServerState = {
+    ...emptyServer(),
+    phase: snapshot.phase,
+    retryAt: retryAt(snapshot.retryIn),
+    me: snapshot.me,
+    myBattle: snapshot.myBattle,
+    gameRunning: snapshot.gameRunning,
+    friends: snapshot.friends,
+  }
+  for (const user of snapshot.users) state.users[user.name] = user
+  for (const battle of snapshot.battles) state.battles[battle.id] = battle
+  return state
+}
 
 export function applySnapshot(snapshot: Snapshot): void {
   if (!snapshotSeen) {
@@ -36,25 +71,34 @@ export function applySnapshot(snapshot: Snapshot): void {
   }
   const next: LobbyState = {
     ...emptyLobby(),
-    phase: snapshot.phase,
-    retryAt: retryAt(snapshot.retryIn),
-    me: snapshot.me,
-    myBattle: snapshot.myBattle,
-    gameRunning: snapshot.gameRunning,
     engine: snapshot.engine,
-    friends: snapshot.friends,
     download: snapshot.download,
     paste: snapshot.paste,
     skirmish: snapshot.skirmish,
+    ways: snapshot.ways,
   }
-  for (const user of snapshot.users) next.users[user.name] = user
-  for (const battle of snapshot.battles) next.battles[battle.id] = battle
+  for (const session of snapshot.servers)
+    next.servers[session.server] = serverState(session)
   setLobby(reconcile(next))
-  if (snapshot.phase === null) clearChat()
+  if (snapshot.servers.every((session) => session.phase === null)) clearChat()
   // Membership is replayed on reconnect; the chat backlog is not, so whatever
   // the front end still holds stays put.
   else
-    for (const channel of snapshot.channels) applyChannel(channel.name, channel)
+    for (const session of snapshot.servers)
+      for (const channel of session.channels)
+        applyChannel(roomKey(session.server, channel.name), channel)
+}
+
+/**
+ * One server's session over again — what its login ends in — in place of
+ * whatever was held of it. Everyone else's is left alone.
+ */
+export function applySession(session: ServerSnapshot): void {
+  batch(() => {
+    setLobby('servers', session.server, reconcile(serverState(session)))
+    for (const channel of session.channels)
+      applyChannel(roomKey(session.server, channel.name), channel)
+  })
 }
 
 /** Mirrors `lobby-core`: members minus spectators, the host bot counting as one. */
@@ -67,37 +111,80 @@ function retryAt(seconds: number | null): number | null {
   return seconds === null ? null : Date.now() + seconds * 1000
 }
 
-export function applyDelta(delta: Delta): void {
+/**
+ * Applies one change. What belongs to this machine — the engine, a download,
+ * a skirmish — lands at the top whatever it is tagged with; everything else
+ * is `server`'s session's, and without a server it has nowhere to go.
+ */
+export function applyDelta(delta: Delta, server: string | null = null): void {
+  switch (delta.type) {
+    case 'engine':
+      setLobby('engine', delta.data)
+      return
+    case 'content':
+      setLobby('content', delta.data)
+      return
+    case 'download':
+      setLobby('download', delta.data)
+      return
+    case 'paste':
+      setLobby('paste', delta.data)
+      return
+    case 'skirmish':
+      setLobby('skirmish', delta.data)
+      return
+    case 'ways':
+      setLobby('ways', reconcile(delta.data))
+      return
+    case 'alert':
+      void raise(delta.data.kind, delta.data.text)
+      return
+    case 'notice':
+      pushNotice(delta.data.level, delta.data.text, server)
+      return
+    case 'chat':
+      pushLine({ ...delta.data, room: roomKey(server, delta.data.room) })
+      return
+  }
+  if (server === null) {
+    console.warn(`a ${delta.type} change with no server to file it under`)
+    return
+  }
+  applySessionDelta(delta, server)
+}
+
+function applySessionDelta(delta: Delta, server: string): void {
+  if (!lobby.servers[server]) setLobby('servers', server, emptyServer())
+  const session = lobby.servers[server]
+  if (!session) return
   switch (delta.type) {
     case 'retryIn':
-      setLobby('retryAt', retryAt(delta.data))
+      setLobby('servers', server, 'retryAt', retryAt(delta.data))
       return
     case 'phase':
-      setLobby('phase', delta.data)
       if (delta.data === null) {
-        // Losing the session drops everything the server told us — but the
-        // engine, a download and the skirmish room belong to this machine and
-        // outlive it. A skirmish started from here keeps running when the
-        // connection goes, and resetting `engine` to idle would re-enable the
-        // button that starts a second one on top of it; a skirmish being set
-        // up is somebody's work, and dropping it because a socket died would
-        // be the one moment they most wanted to keep playing.
-        const kept = unwrap(lobby)
-        setLobby(
-          reconcile({
-            ...emptyLobby(),
-            engine: kept.engine,
-            download: kept.download,
-            skirmish: kept.skirmish,
-          }),
-        )
+        // Losing a session drops everything that server told us — and only
+        // that server's. The engine, a download, the skirmish room and the
+        // remembered ways in belong to this machine and outlive it, as does
+        // every other server's session. A skirmish started from here keeps
+        // running when the connection goes, and resetting `engine` to idle
+        // would re-enable the button that starts a second one on top of it;
+        // a skirmish being set up is somebody's work, and dropping it because
+        // a socket died would be the one moment they most wanted to keep
+        // playing.
+        setLobby('servers', server, reconcile(emptyServer()))
+        leaveChannelsOf(server)
+        return
       }
+      setLobby('servers', server, 'phase', delta.data)
       return
     case 'userAdded':
-      setLobby('users', delta.data.name, delta.data)
+      setLobby('servers', server, 'users', delta.data.name, delta.data)
       return
     case 'userRemoved':
       setLobby(
+        'servers',
+        server,
         'users',
         produce((users) => {
           delete users[delta.data.name]
@@ -105,15 +192,24 @@ export function applyDelta(delta: Delta): void {
       )
       return
     case 'userStatus':
-      if (lobby.users[delta.data.name]) {
-        setLobby('users', delta.data.name, 'status', delta.data.status)
+      if (session.users[delta.data.name]) {
+        setLobby(
+          'servers',
+          server,
+          'users',
+          delta.data.name,
+          'status',
+          delta.data.status,
+        )
       }
       return
     case 'battleOpened':
-      setLobby('battles', delta.data.id, delta.data)
+      setLobby('servers', server, 'battles', delta.data.id, delta.data)
       return
     case 'battleClosed':
       setLobby(
+        'servers',
+        server,
         'battles',
         produce((battles) => {
           delete battles[delta.data.id]
@@ -122,8 +218,10 @@ export function applyDelta(delta: Delta): void {
       return
     case 'battleInfo': {
       const { id, spectatorCount, locked, mapHash, mapName } = delta.data
-      if (!lobby.battles[id]) return
+      if (!session.battles[id]) return
       setLobby(
+        'servers',
+        server,
         'battles',
         id,
         produce((battle) => {
@@ -137,24 +235,47 @@ export function applyDelta(delta: Delta): void {
       return
     }
     case 'battleTitle':
-      if (lobby.battles[delta.data.id]) {
-        setLobby('battles', delta.data.id, 'title', delta.data.title)
+      if (session.battles[delta.data.id]) {
+        setLobby(
+          'servers',
+          server,
+          'battles',
+          delta.data.id,
+          'title',
+          delta.data.title,
+        )
       }
       return
     case 'battleLayout':
-      if (lobby.battles[delta.data.id]) {
-        setLobby('battles', delta.data.id, 'layout', delta.data.layout)
+      if (session.battles[delta.data.id]) {
+        setLobby(
+          'servers',
+          server,
+          'battles',
+          delta.data.id,
+          'layout',
+          delta.data.layout,
+        )
       }
       return
     case 'battleQueue':
-      if (lobby.battles[delta.data.id]) {
-        setLobby('battles', delta.data.id, 'queue', delta.data.names)
+      if (session.battles[delta.data.id]) {
+        setLobby(
+          'servers',
+          server,
+          'battles',
+          delta.data.id,
+          'queue',
+          delta.data.names,
+        )
       }
       return
     case 'member': {
       const { id, name, joined } = delta.data
-      if (lobby.battles[id]) {
+      if (session.battles[id]) {
         setLobby(
+          'servers',
+          server,
           'battles',
           id,
           produce((battle) => {
@@ -165,20 +286,36 @@ export function applyDelta(delta: Delta): void {
           }),
         )
       }
-      if (lobby.users[name]) {
-        setLobby('users', name, 'battleId', joined ? id : null)
+      if (session.users[name]) {
+        setLobby(
+          'servers',
+          server,
+          'users',
+          name,
+          'battleId',
+          joined ? id : null,
+        )
       }
       return
     }
     case 'memberStatus':
-      if (lobby.users[delta.data.name]) {
-        setLobby('users', delta.data.name, 'battleStatus', delta.data.status)
+      if (session.users[delta.data.name]) {
+        setLobby(
+          'servers',
+          server,
+          'users',
+          delta.data.name,
+          'battleStatus',
+          delta.data.status,
+        )
       }
       return
     case 'bot': {
       const { id, name, bot } = delta.data
-      if (!lobby.battles[id]) return
+      if (!session.battles[id]) return
       setLobby(
+        'servers',
+        server,
         'battles',
         id,
         'bots',
@@ -196,10 +333,12 @@ export function applyDelta(delta: Delta): void {
       return
     }
     case 'startRect': {
-      const id = lobby.myBattle?.id
-      if (id === undefined || !lobby.battles[id]) return
+      const id = session.myBattle?.id
+      if (id === undefined || !session.battles[id]) return
       const { allyTeam, rect } = delta.data
       setLobby(
+        'servers',
+        server,
         'battles',
         id,
         'startRects',
@@ -217,20 +356,24 @@ export function applyDelta(delta: Delta): void {
       return
     }
     case 'scriptTags':
-      if (!lobby.myBattle) return
+      if (!session.myBattle) return
       setLobby(
+        'servers',
+        server,
         'myBattle',
-        'scriptTags',
-        produce((tags) => {
-          for (const [key, value] of delta.data.set) tags[key] = value
-          for (const key of delta.data.removed) delete tags[key]
+        produce((my) => {
+          if (!my) return
+          for (const [key, value] of delta.data.set) my.scriptTags[key] = value
+          for (const key of delta.data.removed) delete my.scriptTags[key]
         }),
       )
       return
     case 'modOption': {
-      if (!lobby.myBattle) return
+      if (!session.myBattle) return
       const { key, value, change } = delta.data
       setLobby(
+        'servers',
+        server,
         'myBattle',
         produce((my) => {
           if (!my) return
@@ -244,53 +387,30 @@ export function applyDelta(delta: Delta): void {
       return
     }
     case 'vote':
-      if (lobby.myBattle) setLobby('myBattle', 'vote', delta.data)
+      if (session.myBattle)
+        setLobby('servers', server, 'myBattle', 'vote', delta.data)
       return
     case 'myBattle':
       // Another room is another conversation. Only on a change of room: a
       // reconnect replays the same room through the snapshot and keeps the
       // backlog, as the snapshot's own comment says.
-      if (lobby.myBattle?.id !== delta.data?.id) clearRoom(BATTLE_ROOM)
-      setLobby('myBattle', delta.data)
-      return
-    case 'skirmish':
-      setLobby('skirmish', delta.data)
+      if (session.myBattle?.id !== delta.data?.id) clearRoom(BATTLE_ROOM)
+      setLobby('servers', server, 'myBattle', delta.data)
       return
     case 'gameRunning':
-      setLobby('gameRunning', delta.data)
+      setLobby('servers', server, 'gameRunning', delta.data)
       return
     case 'gameStartedAgo':
-      noteToldStart(delta.data.id, delta.data.seconds)
-      return
-    case 'engine':
-      setLobby('engine', delta.data)
-      return
-    case 'content':
-      setLobby('content', delta.data)
-      return
-    case 'chat':
-      pushLine(delta.data)
+      noteToldStart(server, delta.data.id, delta.data.seconds)
       return
     case 'channel':
-      applyChannel(delta.data.name, delta.data.channel)
+      applyChannel(roomKey(server, delta.data.name), delta.data.channel)
       return
     case 'directory':
-      applyDirectory(delta.data)
+      applyDirectory(server, delta.data)
       return
     case 'friends':
-      setLobby('friends', delta.data)
-      return
-    case 'download':
-      setLobby('download', delta.data)
-      return
-    case 'paste':
-      setLobby('paste', delta.data)
-      return
-    case 'alert':
-      void raise(delta.data.kind, delta.data.text)
-      return
-    case 'notice':
-      pushNotice(delta.data.level, delta.data.text)
+      setLobby('servers', server, 'friends', delta.data)
       return
   }
 }

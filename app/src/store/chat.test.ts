@@ -1,18 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatLine } from '../ipc/bindings/ChatLine'
 import {
+  BATTLE_ROOM,
   byActivity,
   chat,
   clearChat,
   closePrivate,
   openPrivates,
   holdNotices,
+  parseKey,
+  partner,
   privateRoom,
   pushLine,
   pushNotice,
+  roomKey,
   unreadTotal,
   watchRoom,
 } from './chat'
+
+/** A room on the server the tests talk to. */
+const on = (room: string) => roomKey('s', room)
 
 function said(room: string, text: string, mention = false): ChatLine {
   return {
@@ -34,7 +41,7 @@ describe('closing a private conversation', () => {
   })
 
   it('takes the room out of every map it was in', () => {
-    const room = privateRoom('someone')
+    const room = privateRoom('s', 'someone')
     pushLine(said(room, 'hello', true))
     expect(chat.rooms[room]).toHaveLength(1)
     expect(chat.unread[room]).toBe(1)
@@ -50,13 +57,13 @@ describe('closing a private conversation', () => {
   })
 
   it('leaves a channel alone — closing one is a server matter', () => {
-    pushLine(said('#main', 'hello'))
-    closePrivate('#main')
-    expect(chat.rooms['#main']).toHaveLength(1)
+    pushLine(said(on('main'), 'hello'))
+    closePrivate(on('main'))
+    expect(chat.rooms[on('main')]).toHaveLength(1)
   })
 
   it('opens again fresh when that person speaks next', () => {
-    const room = privateRoom('someone')
+    const room = privateRoom('s', 'someone')
     pushLine(said(room, 'first'))
     closePrivate(room)
     pushLine(said(room, 'second'))
@@ -65,7 +72,7 @@ describe('closing a private conversation', () => {
   })
 
   it('is harmless on a conversation that was never open', () => {
-    expect(() => closePrivate(privateRoom('nobody'))).not.toThrow()
+    expect(() => closePrivate(privateRoom('s', 'nobody'))).not.toThrow()
   })
 })
 
@@ -76,14 +83,14 @@ describe('unread counts', () => {
   })
 
   it('leaves the message of the day out: it comes on every connect', () => {
-    pushLine({ ...said('#server', 'Welcome to Teiserver'), kind: 'motd' })
-    expect(chat.rooms['#server']).toHaveLength(1)
-    expect(chat.unread['#server']).toBeUndefined()
+    pushLine({ ...said(on('#server'), 'Welcome to Teiserver'), kind: 'motd' })
+    expect(chat.rooms[on('#server')]).toHaveLength(1)
+    expect(chat.unread[on('#server')]).toBeUndefined()
   })
 
   it('still counts a broadcast', () => {
-    pushLine({ ...said('#server', 'Restarting soon'), kind: 'system' })
-    expect(chat.unread['#server']).toBe(1)
+    pushLine({ ...said(on('#server'), 'Restarting soon'), kind: 'system' })
+    expect(chat.unread[on('#server')]).toBe(1)
   })
 })
 
@@ -94,16 +101,22 @@ describe('the count on the Chat tab', () => {
   })
 
   it('leaves a muted room out and counts the rest', () => {
-    pushLine(said('main', 'hello'))
-    pushLine(said('main', 'anyone?'))
-    pushLine(said(privateRoom('friend'), 'hi'))
+    pushLine(said(on('main'), 'hello'))
+    pushLine(said(on('main'), 'anyone?'))
+    pushLine(said(privateRoom('s', 'friend'), 'hi'))
     expect(unreadTotal(['main'])).toBe(1)
     expect(unreadTotal([])).toBe(3)
   })
 
+  it('mutes a room by its name, on every server', () => {
+    pushLine(said(on('main'), 'hello'))
+    pushLine(said(roomKey('elsewhere', 'main'), 'hello'))
+    expect(unreadTotal(['main'])).toBe(0)
+  })
+
   it('lets a muted room back in once it names you', () => {
-    pushLine(said('main', 'hello'))
-    pushLine(said('main', 'hey you', true))
+    pushLine(said(on('main'), 'hello'))
+    pushLine(said(on('main'), 'hey you', true))
     expect(unreadTotal(['main'])).toBe(2)
   })
 })
@@ -112,13 +125,32 @@ describe('people by activity', () => {
   beforeEach(() => clearChat())
 
   it('puts who you can talk to first, then who spoke last, then names', () => {
-    pushLine({ ...said(privateRoom('offline'), 'late'), at: 300 })
-    pushLine({ ...said(privateRoom('early'), 'first'), at: 100 })
-    pushLine({ ...said(privateRoom('recent'), 'then'), at: 200 })
-    const online = (name: string) => name !== 'offline'
+    const with_ = (name: string) => privateRoom('s', name)
+    pushLine({ ...said(with_('offline'), 'late'), at: 300 })
+    pushLine({ ...said(with_('early'), 'first'), at: 100 })
+    pushLine({ ...said(with_('recent'), 'then'), at: 200 })
+    const online = (key: string) => partner(key) !== 'offline'
     expect(
-      ['offline', 'zed', 'early', 'recent', 'abe'].sort(byActivity(online)),
+      ['offline', 'zed', 'early', 'recent', 'abe']
+        .map(with_)
+        .sort(byActivity(online))
+        .map(partner),
     ).toEqual(['recent', 'early', 'abe', 'zed', 'offline'])
+  })
+})
+
+describe('room keys', () => {
+  it('carry the server, so every server can have its own main', () => {
+    expect(roomKey('server4', 'main')).not.toBe(roomKey('rapid', 'main'))
+    expect(parseKey(roomKey('server4', '@bob'))).toEqual({
+      server: 'server4',
+      room: '@bob',
+    })
+  })
+
+  it('leave the one battle room as it is', () => {
+    expect(roomKey('server4', BATTLE_ROOM)).toBe(BATTLE_ROOM)
+    expect(parseKey(BATTLE_ROOM)).toEqual({ server: null, room: BATTLE_ROOM })
   })
 })
 

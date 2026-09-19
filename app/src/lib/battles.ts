@@ -12,13 +12,21 @@ import type { BattleList } from '../ipc/bindings/BattleList'
 import type { BattleSort } from '../ipc/bindings/BattleSort'
 import type { ModeFilter } from '../ipc/bindings/ModeFilter'
 import { ordered } from './reorder'
+import { hasEveryWord } from './search'
 
 export type Row = {
+  /** Which server the room is on. */
+  server: string
+  /** The room across every server; see `battleKey`. */
+  key: string
   battle: BattleView
   running: boolean
   /** Whether anyone in the room is a friend. */
   hasFriend: boolean
 }
+
+/** A room's name across every server: two servers can each have a battle 12. */
+export const battleKey = (server: string, id: number) => `${server}/${id}`
 
 /**
  * Whether a room looks like it is against AI.
@@ -41,19 +49,10 @@ export function isVsAi(battle: BattleView): boolean {
  * (`battle_list_window.lua:803-845`).
  */
 export function matches(battle: BattleView, query: string): boolean {
-  const words = query.toLowerCase().split(/\s+/).filter(Boolean)
-  if (words.length === 0) return true
-
-  const haystack = [
-    battle.title,
-    battle.mapName,
-    battle.founder,
-    battle.gameName,
-  ]
-    .join(' ')
-    .toLowerCase()
-
-  return words.every((word) => haystack.includes(word))
+  return hasEveryWord(
+    [battle.title, battle.mapName, battle.founder, battle.gameName].join(' '),
+    query,
+  )
 }
 
 export function keep(row: Row, filters: BattleList, query: string): boolean {
@@ -162,16 +161,16 @@ export const MODES: ReadonlyArray<{ key: ModeFilter; label: string }> = [
  * you are reaching for jumps away as you reach. So while the pointer is inside
  * the list the *order* holds still and only the rows' contents update; the
  * fresh order applies the moment the pointer leaves. `held` is the order being
- * preserved, as battle ids:
+ * preserved, as battle keys:
  *
- * - a held id whose room has closed simply drops out — a row cannot outlive
+ * - a held key whose room has closed simply drops out — a row cannot outlive
  *   its room, and the collapse is the one movement that cannot be helped;
  * - a room the held order does not know is appended at the bottom, in its own
  *   sorted order, rather than teleporting into the middle.
  */
-export function stabilize(sorted: Row[], held: readonly number[]): Row[] {
-  const byId = new Map(sorted.map((row) => [row.battle.id, row]))
+export function stabilize(sorted: Row[], held: readonly string[]): Row[] {
+  const byKey = new Map(sorted.map((row) => [row.key, row]))
   // The same "saved order, applied to what is actually there" rule the chat
-  // tabs follow, over battle ids instead of room names.
-  return ordered([...byId.keys()], held).flatMap((id) => byId.get(id) ?? [])
+  // tabs follow, over battle keys instead of room names.
+  return ordered([...byKey.keys()], held).flatMap((key) => byKey.get(key) ?? [])
 }

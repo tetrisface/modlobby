@@ -1,6 +1,7 @@
 //! `modlobby-cli`: a harness for the lobby runtime against a live teiserver.
 //! `login` watches the battle list; `join` enters a room as a spectator, prints
-//! its chat and, with `--launch`, connects the engine once the game is running.
+//! its chat and, with `--launch`, connects the engine once the game is running;
+//! `probe` finds the way into a server without logging in.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -8,8 +9,10 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, bail};
 use clap::{Args, Parser, Subcommand};
 use lobby_runtime::{Client, launch, platform};
-use lobby_ui::{ChatKind, Delta, EngineStatus, Snapshot, UiClosed, UiMessage, UiTransport};
-use spring_protocol::{Endpoint, LoginRequest, Security, ThrottlePolicy};
+use lobby_ui::{
+    ChatKind, Delta, EngineStatus, ServerSnapshot, Snapshot, UiClosed, UiMessage, UiTransport,
+};
+use spring_protocol::{Endpoint, LoginRequest, ThrottlePolicy, Transport};
 use tracing_subscriber::EnvFilter;
 
 const PASSWORD_ENV: &str = "MODLOBBY_PASSWORD";
@@ -49,8 +52,37 @@ enum Command {
         #[arg(long)]
         data_dir: Option<PathBuf>,
     },
+    /// Find the way into a server and print it, without logging in.
+    Probe {
+        #[command(flatten)]
+        server: Server,
+    },
     /// Print the default throttle policy as TOML, as a starting point for `--policy`.
     Policy,
+}
+
+#[derive(Args)]
+struct Server {
+    /// Host; teiserver speaks plain TCP (and `STLS`) on 8200 and TLS on 8201.
+    #[arg(long, default_value = "server4.beyondallreason.info")]
+    server: String,
+    /// A port to try, both with `STLS` and with TLS; repeat for several.
+    #[arg(long = "port", default_values_t = [8200, 8201])]
+    ports: Vec<u16>,
+    /// Settle for an unencrypted connection once every encrypted way failed.
+    #[arg(long)]
+    allow_unencrypted: bool,
+}
+
+impl Server {
+    fn endpoint(&self) -> Endpoint {
+        Endpoint {
+            host: self.server.clone(),
+            ports: self.ports.clone(),
+            allow_plain: self.allow_unencrypted,
+            preferred: None,
+        }
+    }
 }
 
 #[derive(Args)]
@@ -58,12 +90,8 @@ struct Connection {
     /// The password is read from `MODLOBBY_PASSWORD`; a `.env` in the working directory is loaded first.
     #[arg(long, env = "MODLOBBY_USERNAME")]
     username: String,
-    /// Host; teiserver speaks plain TCP (and `STLS`) on 8200 and TLS on 8201.
-    #[arg(long, default_value = "server4.beyondallreason.info")]
-    server: String,
-    /// `stls`, `tls` (each falls back to the other) or `none` (what Chobby does).
-    #[arg(long, default_value = "stls")]
-    encryption: Security,
+    #[command(flatten)]
+    server: Server,
     /// Announced client. teiserver stores the leading `[a-zA-Z ]+` of
     /// `<name>:<version>` and gives unlisted names the filtered `:full` feed,
     /// where other rooms' rosters read empty.
@@ -95,6 +123,15 @@ async fn main() -> anyhow::Result<()> {
     match Cli::parse().command {
         Command::Policy => {
             print!("{}", toml::to_string_pretty(&ThrottlePolicy::default())?);
+            Ok(())
+        }
+        Command::Probe { server } => {
+            let (transport, _inbound, way) =
+                Transport::connect(&server.endpoint(), ThrottlePolicy::default())
+                    .await
+                    .with_context(|| format!("reaching {}", server.server))?;
+            println!("{}: {way}", server.server);
+            transport.shutdown().await;
             Ok(())
         }
         Command::Login {
@@ -131,7 +168,7 @@ struct Print;
 
 impl UiTransport for Print {
     fn send(&self, message: UiMessage) -> Result<(), UiClosed> {
-        let UiMessage::Deltas(deltas) = message else {
+        let UiMessage::Deltas { deltas, .. } = message else {
             return Ok(());
         };
         for delta in deltas {
@@ -192,7 +229,7 @@ fn load_policy(path: Option<&Path>) -> anyhow::Result<ThrottlePolicy> {
 async fn connect(conn: &Connection) -> anyhow::Result<Client> {
     let password = std::env::var(PASSWORD_ENV).with_context(|| format!("set {PASSWORD_ENV}"))?;
     let policy = load_policy(conn.policy.as_deref())?;
-    let endpoint = Endpoint::new(&conn.server, conn.encryption);
+    let endpoint = conn.server.endpoint();
     let hardware = platform::detect();
     tracing::info!(lobby_hash = hardware.lobby_hash, "machine identity");
     let request = LoginRequest::new(
@@ -209,11 +246,13 @@ async fn connect(conn: &Connection) -> anyhow::Result<Client> {
     client
         .login(endpoint, request)
         .await
-        .with_context(|| format!("logging in to {}", conn.server))?;
+        .with_context(|| format!("logging in to {}", conn.server.server))?;
+    let server = spring_protocol::server_id(&conn.server.server);
+    let way = client.snapshot().await?.ways.remove(&server);
     println!(
-        "logged in to {} ({:?}) in {:.1?}",
-        conn.server,
-        conn.encryption,
+        "logged in to {} ({}) in {:.1?}",
+        conn.server.server,
+        way.unwrap_or_else(|| "way unknown".to_owned()),
         started.elapsed()
     );
     Ok(client)
@@ -222,15 +261,12 @@ async fn connect(conn: &Connection) -> anyhow::Result<Client> {
 async fn watch(client: &Client, conn: &Connection, report_secs: u64) -> anyhow::Result<()> {
     let deadline = deadline(conn);
     let mut tick = tokio::time::interval(Duration::from_secs(report_secs.max(1)));
-    print_summary(&client.snapshot().await?);
+    print_summary(connected(&client.snapshot().await?)?);
     loop {
         tokio::select! {
             _ = tick.tick() => {
                 let snapshot = client.snapshot().await?;
-                if snapshot.phase.is_none() {
-                    bail!("disconnected");
-                }
-                print_summary(&snapshot);
+                print_summary(connected(&snapshot)?);
                 if deadline.is_some_and(|d| Instant::now() >= d) {
                     return Ok(());
                 }
@@ -247,9 +283,13 @@ async fn spectate(
     password: Option<String>,
     data_dir: Option<content::DataDirs>,
 ) -> anyhow::Result<()> {
-    print_battle(&client.snapshot().await?, battle)?;
+    print_battle(connected(&client.snapshot().await?)?, battle)?;
     client
-        .join_battle(battle, password)
+        .join_battle(
+            spring_protocol::server_id(&conn.server.server),
+            battle,
+            password,
+        )
         .await
         .context("joining")?;
     if let Some(dirs) = data_dir {
@@ -261,9 +301,7 @@ async fn spectate(
         tokio::select! {
             _ = tick.tick() => {
                 let snapshot = client.snapshot().await?;
-                if snapshot.phase.is_none() {
-                    bail!("disconnected");
-                }
+                connected(&snapshot)?;
                 let engine_running = matches!(snapshot.engine, EngineStatus::Running { .. });
                 if !engine_running && deadline.is_some_and(|d| Instant::now() >= d) {
                     return Ok(());
@@ -278,7 +316,15 @@ fn deadline(conn: &Connection) -> Option<Instant> {
     (conn.watch_secs > 0).then(|| Instant::now() + Duration::from_secs(conn.watch_secs))
 }
 
-fn print_battle(snapshot: &Snapshot, id: u32) -> anyhow::Result<()> {
+/// The one session this harness holds, while it is up.
+fn connected(snapshot: &Snapshot) -> anyhow::Result<&ServerSnapshot> {
+    match snapshot.session() {
+        Some(session) if session.phase.is_some() => Ok(session),
+        _ => bail!("disconnected"),
+    }
+}
+
+fn print_battle(snapshot: &ServerSnapshot, id: u32) -> anyhow::Result<()> {
     let Some(battle) = snapshot.battles.iter().find(|b| b.id == id) else {
         bail!("battle {id} is not on the list");
     };
@@ -304,7 +350,7 @@ fn print_battle(snapshot: &Snapshot, id: u32) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn print_summary(snapshot: &Snapshot) {
+fn print_summary(snapshot: &ServerSnapshot) {
     let in_battle = snapshot
         .users
         .iter()

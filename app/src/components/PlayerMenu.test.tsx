@@ -96,7 +96,7 @@ describe('the bonus, from the row menu', () => {
   test('a person offers it too, where the room lets us', async () => {
     const given: number[] = []
     const { container } = render(() => <PlayerMenu />)
-    showPlayerMenu('alice', press(), moves(given))
+    showPlayerMenu('alice', press(), { moves: moves(given) })
     await settle()
     expect(labels(container)).toContain('Bonus')
   })

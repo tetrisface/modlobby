@@ -12,6 +12,7 @@ import {
 } from 'solid-js'
 import { ActionCell, CellButton } from '../components/ActionCell'
 import { ResizeHandle } from '../components/ResizeHandle'
+import { SearchBox } from '../components/SearchBox'
 import { api, describeError } from '../ipc/client'
 import { BOX_OVERRIDE } from '../lib/boxes'
 import {
@@ -178,7 +179,6 @@ export function Setup() {
   let chosen = width() !== null
   let host: HTMLElement | undefined
   let strip: HTMLDivElement | undefined
-  let search: HTMLInputElement | undefined
   const bounds = () => ({
     min: NARROWEST,
     max: Math.max(NARROWEST, window.innerWidth - ROOM_KEEPS),
@@ -306,32 +306,12 @@ export function Setup() {
             }}
           </For>
           <Show when={!editing()}>
-            <div class='setup-search'>
-              <input
-                ref={search}
-                placeholder='Search settings'
-                aria-label='Search settings'
-                value={needle()}
-                onInput={(event) => setNeedle(event.currentTarget.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Escape') setNeedle('')
-                }}
-              />
-              <Show when={searching()}>
-                <button
-                  type='button'
-                  class='clear'
-                  title='Clear search'
-                  aria-label='Clear search'
-                  onClick={() => {
-                    setNeedle('')
-                    search?.focus()
-                  }}
-                >
-                  ×
-                </button>
-              </Show>
-            </div>
+            <SearchBox
+              class='setup-search'
+              placeholder='Search settings'
+              value={needle()}
+              onInput={setNeedle}
+            />
           </Show>
         </div>
 

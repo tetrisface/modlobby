@@ -46,7 +46,7 @@ pub struct BoxesView {
 #[tauri::command]
 pub async fn start_boxes(app: State<'_, App>, teams: u32) -> Result<Option<BoxesView>> {
     let snapshot = app.client.snapshot().await.map_err(ApiError::from)?;
-    let Some(my) = snapshot.my_battle else {
+    let Some((_, my)) = snapshot.room() else {
         return Ok(None);
     };
     Ok(from_tags(&my.script_tags, teams))
@@ -152,7 +152,7 @@ pub async fn current_arrangement(
     teams: u32,
 ) -> Result<Option<ArrangementView>> {
     let snapshot = app.client.snapshot().await.map_err(ApiError::from)?;
-    let Some(my) = snapshot.my_battle else {
+    let Some((_, my)) = snapshot.room() else {
         return Ok(None);
     };
     Ok(arrangement_from_tags(&my.script_tags, teams))

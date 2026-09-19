@@ -17,9 +17,12 @@
 //! So the rule kept here is the one that fits: **one login per entry life**,
 //! 20 s after the last attempt, and 20 s more after a refusal. That is the
 //! wait a restart has to respect, and it is kept on disk so a restart can —
-//! the app relaunching after an update is exactly the case.
+//! the app relaunching after an update is exactly the case. Each server keeps
+//! its own counter, so each server's is kept apart.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -92,20 +95,28 @@ fn unix(time: SystemTime) -> u64 {
         .as_secs()
 }
 
-/// The counter, kept beside the settings so a restart cannot forget it.
+/// The counters, one per server by its id, kept beside the settings so a
+/// restart cannot forget them.
 #[derive(Debug, Clone)]
 pub struct LoginGuard {
     path: PathBuf,
+    /// Held across each read and each read-change-write of the file: servers
+    /// are logged in to side by side, and two counts written at once would
+    /// lose one of them.
+    file: Arc<Mutex<()>>,
 }
 
 impl LoginGuard {
     pub fn new(config_dir: impl AsRef<Path>) -> Self {
         Self {
             path: config_dir.as_ref().join(FILE_NAME),
+            file: Arc::default(),
         }
     }
 
-    pub fn load(&self) -> LoginState {
+    /// Every server's counter. A file that will not read — one a build from
+    /// before servers wrote, say — counts as clear.
+    fn load(&self) -> BTreeMap<String, LoginState> {
         std::fs::read_to_string(&self.path)
             .ok()
             .and_then(|text| serde_json::from_str(&text).ok())
@@ -114,8 +125,11 @@ impl LoginGuard {
 
     /// A losable counter: if it cannot be written the login still proceeds,
     /// because refusing to log in over a bookkeeping failure helps nobody.
-    fn store(&self, state: &LoginState) {
-        let Ok(text) = serde_json::to_string_pretty(state) else {
+    fn change(&self, server: &str, change: impl FnOnce(&mut LoginState)) {
+        let _held = self.file.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut all = self.load();
+        change(all.entry(server.to_owned()).or_default());
+        let Ok(text) = serde_json::to_string_pretty(&all) else {
             return;
         };
         if let Err(err) = std::fs::write(&self.path, text) {
@@ -123,26 +137,21 @@ impl LoginGuard {
         }
     }
 
-    pub fn wait(&self, now: SystemTime) -> Option<Duration> {
-        self.load().wait(now)
+    pub fn wait(&self, server: &str, now: SystemTime) -> Option<Duration> {
+        let _held = self.file.lock().unwrap_or_else(PoisonError::into_inner);
+        self.load().get(server)?.wait(now)
     }
 
-    pub fn record_attempt(&self, now: SystemTime) {
-        let mut state = self.load();
-        state.record_attempt(now);
-        self.store(&state);
+    pub fn record_attempt(&self, server: &str, now: SystemTime) {
+        self.change(server, |state| state.record_attempt(now));
     }
 
-    pub fn record_refusal(&self, now: SystemTime) {
-        let mut state = self.load();
-        state.record_refusal(now);
-        self.store(&state);
+    pub fn record_refusal(&self, server: &str, now: SystemTime) {
+        self.change(server, |state| state.record_refusal(now));
     }
 
-    pub fn record_success(&self, now: SystemTime) {
-        let mut state = self.load();
-        state.record_success(now);
-        self.store(&state);
+    pub fn record_success(&self, server: &str, now: SystemTime) {
+        self.change(server, |state| state.record_success(now));
     }
 }
 
@@ -198,10 +207,48 @@ mod tests {
         // app did. One login, then the app is gone for eight seconds.
         let dir = tempfile::tempdir().unwrap();
         let guard = LoginGuard::new(dir.path());
-        guard.record_attempt(at(2_000));
+        guard.record_attempt("bar", at(2_000));
         let restarted = LoginGuard::new(dir.path());
-        assert_eq!(restarted.wait(at(2_008)), Some(Duration::from_secs(13)));
-        assert_eq!(restarted.wait(at(2_021)), None, "waited out while quit");
+        assert_eq!(
+            restarted.wait("bar", at(2_008)),
+            Some(Duration::from_secs(13))
+        );
+        assert_eq!(
+            restarted.wait("bar", at(2_021)),
+            None,
+            "waited out while quit"
+        );
+    }
+
+    #[test]
+    fn logins_counted_at_once_are_all_counted() {
+        let dir = tempfile::tempdir().unwrap();
+        let guard = LoginGuard::new(dir.path());
+        std::thread::scope(|scope| {
+            for server in 0..8 {
+                let guard = guard.clone();
+                scope.spawn(move || guard.record_attempt(&format!("s{server}"), at(2_000)));
+            }
+        });
+        for server in 0..8 {
+            assert!(
+                guard.wait(&format!("s{server}"), at(2_001)).is_some(),
+                "s{server} was lost"
+            );
+        }
+    }
+
+    #[test]
+    fn each_server_counts_its_own_logins() {
+        let dir = tempfile::tempdir().unwrap();
+        let guard = LoginGuard::new(dir.path());
+        guard.record_attempt("bar", at(2_000));
+        assert_eq!(
+            guard.wait("rapid", at(2_001)),
+            None,
+            "another server's counter"
+        );
+        assert!(guard.wait("bar", at(2_001)).is_some());
     }
 
     #[test]
@@ -214,7 +261,10 @@ mod tests {
             r#"{"count": 3, "windowEnds": 1789074336, "blockedUntil": 0}"#,
         )
         .unwrap();
-        assert_eq!(LoginGuard::new(dir.path()).wait(at(1_789_074_000)), None);
+        assert_eq!(
+            LoginGuard::new(dir.path()).wait("bar", at(1_789_074_000)),
+            None
+        );
     }
 
     #[test]
@@ -231,8 +281,8 @@ mod tests {
     fn a_missing_or_broken_file_never_blocks_a_login() {
         let dir = tempfile::tempdir().unwrap();
         let guard = LoginGuard::new(dir.path());
-        assert_eq!(guard.wait(at(1)), None, "no file yet");
+        assert_eq!(guard.wait("bar", at(1)), None, "no file yet");
         std::fs::write(dir.path().join(FILE_NAME), "not json").unwrap();
-        assert_eq!(guard.wait(at(1)), None, "unreadable counts as clear");
+        assert_eq!(guard.wait("bar", at(1)), None, "unreadable counts as clear");
     }
 }

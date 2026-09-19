@@ -1,8 +1,9 @@
-import { For, Show, createSignal, onCleanup } from 'solid-js'
+import { For, Show, createSignal } from 'solid-js'
 import type { BotView } from '../ipc/bindings/BotView'
 import { api, describeError } from '../ipc/client'
 import { ensureRoom, privateRoom, pushNotice } from '../store/chat'
-import { lobby } from '../store/lobby'
+import { lobby, mainServer, roomServer, roomSession } from '../store/lobby'
+import { dismiss } from './dismiss'
 import { Flag, RankIcon } from './icons'
 
 /**
@@ -32,7 +33,15 @@ export type Moves = {
 }
 
 type Target =
-  | { kind: 'user'; name: string; moves?: Moves; x: number; y: number }
+  | {
+      kind: 'user'
+      name: string
+      /** The server they were seen on; the room's when not said. */
+      server?: string
+      moves?: Moves
+      x: number
+      y: number
+    }
   /** One of our own AIs; `remove` is the one thing there is to do about it. */
   | {
       kind: 'bot'
@@ -49,11 +58,17 @@ const [openFor, setOpenFor] = createSignal<Target | null>(null)
 export function showPlayerMenu(
   name: string,
   event: MouseEvent,
-  moves?: Moves,
+  where: { moves?: Moves; server?: string } = {},
 ): void {
   event.preventDefault()
   event.stopPropagation()
-  setOpenFor({ kind: 'user', name, moves, x: event.clientX, y: event.clientY })
+  setOpenFor({
+    kind: 'user',
+    name,
+    ...where,
+    x: event.clientX,
+    y: event.clientY,
+  })
 }
 
 /**
@@ -90,23 +105,8 @@ export function PlayerMenu() {
   let root: HTMLDivElement | undefined
 
   // Any press elsewhere, or Escape, dismisses it — the usual bargain for
-  // something that floats above everything. "Elsewhere" is checked here, on
-  // the document, rather than stopped at the menu: Solid delegates
-  // `onMouseDown` to the document too, and stopping propagation there does
-  // not reach a listener on the same node.
-  const onDown = (event: MouseEvent) => {
-    if (root?.contains(event.target as Node)) return
-    close()
-  }
-  const onKey = (event: KeyboardEvent) => {
-    if (event.key === 'Escape') close()
-  }
-  document.addEventListener('mousedown', onDown)
-  document.addEventListener('keydown', onKey)
-  onCleanup(() => {
-    document.removeEventListener('mousedown', onDown)
-    document.removeEventListener('keydown', onKey)
-  })
+  // something that floats above everything.
+  dismiss(() => root, close)
 
   /** A SPADS command, sent the way anyone would type it into the room. */
   const say = (command: string) => api.sayBattle(command)
@@ -131,11 +131,31 @@ export function PlayerMenu() {
           const t = target()
           return t.kind === 'bot' ? t.bot.name : t.name
         }
-        const isFriend = () => lobby.friends.friends.includes(name())
-        const isIgnored = () => lobby.friends.ignored.includes(name())
-        const isMe = () => name() === lobby.me
+        /** Which server's person this is: a name means someone else elsewhere. */
+        const server = () => {
+          const t = target()
+          return (
+            (t.kind === 'user' ? t.server : undefined) ??
+            roomServer() ??
+            mainServer()
+          )
+        }
+        const session = () => {
+          const at = server()
+          return at === undefined ? undefined : lobby.servers[at]
+        }
+        const isFriend = () =>
+          session()?.friends.friends.includes(name()) ?? false
+        const isIgnored = () =>
+          session()?.friends.ignored.includes(name()) ?? false
+        const isMe = () => name() === session()?.me
 
-        const user = () => (bot() ? undefined : lobby.users[name()])
+        const user = () => (bot() ? undefined : session()?.users[name()])
+        /** Whether they are in the room we are in. */
+        const together = () =>
+          server() === roomServer() &&
+          user()?.battleId !== null &&
+          user()?.battleId === roomSession()?.myBattle?.id
         /**
          * The room they are in, when it is one we can see and not the one we
          * are already standing in — where they are is only news if it is
@@ -143,14 +163,15 @@ export function PlayerMenu() {
          */
         const theirRoom = () => {
           const id = user()?.battleId
-          if (id === null || id === undefined || id === lobby.myBattle?.id)
-            return undefined
-          return lobby.battles[id]
+          if (id === null || id === undefined || together()) return undefined
+          return session()?.battles[id]
         }
 
         /** Whether SPADS would take our word for it in this room. */
-        const bossing = () =>
-          lobby.myBattle?.boss !== null && lobby.myBattle?.boss === lobby.me
+        const bossing = () => {
+          const room = roomSession()
+          return !!room?.myBattle?.boss && room.myBattle.boss === room.me
+        }
 
         /** `stay`: the entry opens something in the menu, so it stays. */
         type Entry = [string, () => Promise<void> | void, 'stay'?]
@@ -189,22 +210,20 @@ export function PlayerMenu() {
             [
               'Message',
               () => {
-                ensureRoom(privateRoom(name()))
+                const at = server()
+                if (at !== undefined) ensureRoom(privateRoom(at, name()))
                 location.hash = '#/chat'
               },
             ],
           ]
           // In the same room, and it is ours to run: SPADS takes these as
           // chat, so they need nothing but the words a host would type.
-          const together =
-            user()?.battleId !== null &&
-            user()?.battleId === lobby.myBattle?.id &&
-            !isMe()
-          if (together) {
+          const alongside = together() && !isMe()
+          if (alongside) {
             entries.push(['Ring', () => api.ring(name())])
           }
-          if (together) entries.push(...placings(openFor()?.moves))
-          if (together && bossing()) {
+          if (alongside) entries.push(...placings(openFor()?.moves))
+          if (alongside && bossing()) {
             entries.push(['Move to spectators', () => say(`!spec ${name()}`)])
             entries.push(['Kick from the room', () => say(`!kick ${name()}`)])
           }
@@ -221,21 +240,28 @@ export function PlayerMenu() {
                   location.hash = '#/battles'
                   return
                 }
-                await api.joinBattle(room.id, null)
+                const at = server()
+                if (at === undefined) return
+                await api.joinBattle(at, room.id, null)
                 location.hash = '#/room'
               },
             ])
           }
           if (isMe()) return entries
+          const on = server()
+          if (on === undefined) return entries
           entries.push(
             isFriend()
-              ? ['Remove friend', () => api.friendAction('remove', name())]
-              : ['Add friend', () => api.friendAction('request', name())],
+              ? ['Remove friend', () => api.friendAction(on, 'remove', name())]
+              : ['Add friend', () => api.friendAction(on, 'request', name())],
           )
           entries.push(
             isIgnored()
-              ? ['Stop ignoring', () => api.friendAction('unignore', name())]
-              : ['Ignore', () => api.friendAction('ignore', name())],
+              ? [
+                  'Stop ignoring',
+                  () => api.friendAction(on, 'unignore', name()),
+                ]
+              : ['Ignore', () => api.friendAction(on, 'ignore', name())],
           )
           return entries
         }

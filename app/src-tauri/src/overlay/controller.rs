@@ -123,7 +123,9 @@ impl Controller {
     pub fn observe(&self, message: &UiMessage) {
         match message {
             UiMessage::Snapshot(snapshot) => self.note(&snapshot.engine),
-            UiMessage::Deltas(deltas) => {
+            // A session's: the engine is the machine's.
+            UiMessage::Session(_) => {}
+            UiMessage::Deltas { deltas, .. } => {
                 for delta in deltas {
                     if let Delta::Engine(status) = delta {
                         self.note(status);
@@ -198,9 +200,10 @@ mod tests {
     #[test]
     fn a_running_engine_in_the_stream_arms_the_hotkey() {
         let (spy, controller) = controller();
-        controller.observe(&UiMessage::Deltas(vec![Delta::Engine(
-            EngineStatus::Running { pid: Some(7) },
-        )]));
+        controller.observe(&UiMessage::Deltas {
+            server: None,
+            deltas: vec![Delta::Engine(EngineStatus::Running { pid: Some(7) })],
+        });
         assert!(spy.registered.load(Ordering::SeqCst));
         assert!(!spy.over.load(Ordering::SeqCst), "armed, not imposed");
     }
@@ -212,9 +215,10 @@ mod tests {
         controller.hotkey();
         assert!(spy.over.load(Ordering::SeqCst));
 
-        controller.observe(&UiMessage::Deltas(vec![Delta::Engine(
-            EngineStatus::Exited { code: Some(0) },
-        )]));
+        controller.observe(&UiMessage::Deltas {
+            server: None,
+            deltas: vec![Delta::Engine(EngineStatus::Exited { code: Some(0) })],
+        });
         assert!(!spy.registered.load(Ordering::SeqCst));
         assert!(!spy.over.load(Ordering::SeqCst));
         assert!(spy.shown.load(Ordering::SeqCst), "and it is on screen");

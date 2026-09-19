@@ -13,8 +13,10 @@ import {
 } from 'solid-js'
 import type { BattleList as Filters } from '../ipc/bindings/BattleList'
 import type { BattleSort } from '../ipc/bindings/BattleSort'
+import type { BattleOn } from '../ipc/bindings/BattleOn'
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { ModeFilter } from '../ipc/bindings/ModeFilter'
+import { dismiss } from '../components/dismiss'
 import { RankIcon } from '../components/icons'
 import { MapPicture } from '../components/MapPicture'
 import { Thinking } from '../components/Thinking'
@@ -26,12 +28,27 @@ import {
   noteRunning,
   running as runningGames,
 } from '../store/running'
-import { MODES, SORTS, arrange, stabilize, type Row } from '../lib/battles'
+import {
+  MODES,
+  SORTS,
+  arrange,
+  battleKey,
+  stabilize,
+  type Row,
+} from '../lib/battles'
 import { TILES, warmMapPictures } from '../lib/maps'
 import { pushNotice } from '../store/chat'
 import { joinMilestone, markJoinAsked } from '../store/join'
-import { lobby } from '../store/lobby'
-import { applySettings, settings } from '../store/settings'
+import {
+  anyReady,
+  lobby,
+  readyServers,
+  roomServer,
+  roomSession,
+  sessions,
+  severalServers,
+} from '../store/lobby'
+import { applySettings, serverLabel, settings } from '../store/settings'
 
 const ROW_HEIGHT = 44
 
@@ -44,6 +61,18 @@ const DEFAULTS: Filters = {
   mode: 'all',
   sort: 'relevance',
   sortDescending: false,
+}
+
+/**
+ * Servers whose rooms are kept out of the list, for this run only: which
+ * server to look at is tonight's question, not a setting.
+ */
+const [leftOut, setLeftOut] = createSignal<ReadonlySet<string>>(new Set())
+
+function toggleServer(server: string) {
+  const next = new Set(leftOut())
+  if (!next.delete(server)) next.add(server)
+  setLeftOut(next)
 }
 
 export function BattleList() {
@@ -69,20 +98,29 @@ export function BattleList() {
     }
   }
 
-  const friends = createMemo(() => new Set(lobby.friends.friends))
-
-  const all = createMemo<Row[]>(() => {
-    const known = friends()
-    return Object.values(lobby.battles).map((battle) => ({
-      battle,
-      running: lobby.users[battle.founder]?.status.inGame ?? false,
-      hasFriend: battle.members.some((name) => known.has(name)),
-    }))
-  })
-  const sorted = createMemo(() => arrange(all(), filters(), search()))
+  /** Every server's rooms, each read against its own server's people. */
+  const all = createMemo<Row[]>(() =>
+    sessions().flatMap(([server, session]) => {
+      const known = new Set(session.friends.friends)
+      return Object.values(session.battles).map((battle) => ({
+        server,
+        key: battleKey(server, battle.id),
+        battle,
+        running: session.users[battle.founder]?.status.inGame ?? false,
+        hasFriend: battle.members.some((name) => known.has(name)),
+      }))
+    }),
+  )
+  const sorted = createMemo(() =>
+    arrange(
+      all().filter((row) => !leftOut().has(row.server)),
+      filters(),
+      search(),
+    ),
+  )
 
   /**
-   * The order held still while the pointer is inside the list, as battle ids.
+   * The order held still while the pointer is inside the list, as battle keys.
    *
    * On a busy evening the sort keys change every few seconds, and the room
    * you are reaching for jumps away as you reach. So entering the list pins
@@ -91,10 +129,11 @@ export function BattleList() {
    * sort, filters, search — releases the pin too, because then the reader
    * asked for the movement.
    */
-  const [held, setHeld] = createSignal<number[] | null>(null)
+  const [held, setHeld] = createSignal<string[] | null>(null)
   createEffect(() => {
     filters()
     search()
+    leftOut()
     setHeld(null)
   })
 
@@ -122,11 +161,11 @@ export function BattleList() {
     const going = new Set(
       all()
         .filter((row) => row.running)
-        .map((row) => row.battle.id),
+        .map((row) => row.key),
     )
     noteRunning(going, looked)
     // Anything running at the first look was already running before it.
-    if (lobby.phase === 'ready') looked = true
+    if (anyReady()) looked = true
   })
 
   // A minute is the resolution the label has, so it is the rate it needs.
@@ -150,9 +189,9 @@ export function BattleList() {
    * the webview everywhere that is not Windows, refuses it outright and hands
    * back `null`, so a passworded room could never be joined there at all.
    */
-  async function join(battle: BattleView) {
-    if (battle.passworded) return setAsking(battle)
-    await enter(battle, null)
+  async function join(row: Row) {
+    if (row.battle.passworded) return setAsking(row)
+    await enter(row, null)
   }
 
   /**
@@ -167,10 +206,10 @@ export function BattleList() {
     return play.joinAs
   }
 
-  async function enter(battle: BattleView, password: string | null) {
+  async function enter(row: Row, password: string | null) {
     try {
       markJoinAsked()
-      await api.joinBattle(battle.id, password)
+      await api.joinBattle(row.server, row.battle.id, password)
       joinMilestone('accepted')
       navigate('/room')
     } catch (error) {
@@ -192,7 +231,7 @@ export function BattleList() {
    * waits for the host to let us in — going there earlier would only be
    * bounced straight back here.
    */
-  const [hosting, setHosting] = createSignal<number | null>(null)
+  const [hosting, setHosting] = createSignal<BattleOn | null>(null)
   const [hostBusy, setHostBusy] = createSignal(false)
   createEffect(() => {
     const wanted = hosting()
@@ -200,15 +239,33 @@ export function BattleList() {
     // leaves `myBattle` pointing at the old one for the whole round trip --
     // the implicit leave is not projected to the front end -- so a mismatch
     // here means "not there yet", never "went somewhere else".
-    if (wanted === null || lobby.myBattle?.id !== wanted) return
+    if (
+      wanted === null ||
+      roomServer() !== wanted.server ||
+      roomSession()?.myBattle?.id !== wanted.id
+    )
+      return
     setHosting(null)
     navigate('/room')
   })
 
-  async function host() {
+  /** Which server to host on, asked while there is more than one. */
+  const [choosing, setChoosing] = createSignal(false)
+  let hostPick: HTMLDivElement | undefined
+  createEffect(() => {
+    if (choosing())
+      dismiss(
+        () => hostPick,
+        () => setChoosing(false),
+      )
+  })
+
+  async function host(server: string | undefined) {
+    setChoosing(false)
     setHostBusy(true)
     try {
-      setHosting(await api.hostPublic())
+      if (server === undefined) throw new Error('not logged in')
+      setHosting({ server, id: await api.hostPublic(server) })
     } catch (error) {
       pushNotice('warning', `host a room: ${describeError(error)}`)
     } finally {
@@ -223,7 +280,7 @@ export function BattleList() {
    * only while it is still open — a room that closed while we were away is
    * nothing to go back to.
    */
-  const [remembered, setRemembered] = createSignal<number | null>(null)
+  const [remembered, setRemembered] = createSignal<BattleOn | null>(null)
   const [peek, setPeek] = createSignal<Peek | null>(null)
   /**
    * Where the pointer is, kept apart from `peek` on purpose: rolling it into
@@ -231,7 +288,7 @@ export function BattleList() {
    * for a change that only moves a box sideways.
    */
   const [pointerX, setPointerX] = createSignal(0)
-  const [asking, setAsking] = createSignal<BattleView | null>(null)
+  const [asking, setAsking] = createSignal<Row | null>(null)
   onMount(async () => {
     try {
       setRemembered(await api.rememberedBattle())
@@ -239,10 +296,12 @@ export function BattleList() {
       // Never having an offer is a fine outcome; it is not worth a notice.
     }
   })
-  const rejoinable = createMemo(() => {
-    const id = remembered()
-    if (id === null || lobby.myBattle) return undefined
-    return lobby.battles[id]
+  const rejoinable = createMemo((): Row | undefined => {
+    const held = remembered()
+    if (held === null || roomServer() !== undefined) return undefined
+    return all().find(
+      (row) => row.battle.id === held.id && row.server === held.server,
+    )
   })
 
   async function forget() {
@@ -293,13 +352,35 @@ export function BattleList() {
 
         {/* Shown while it is on even with no friends loaded: hiding the
             control that is emptying the list would strand the reader. */}
-        <Show when={filters().friendsOnly || lobby.friends.friends.length > 0}>
+        <Show
+          when={
+            filters().friendsOnly ||
+            sessions().some(([, session]) => session.friends.friends.length > 0)
+          }
+        >
           <div class='filter-group' role='group' aria-label='Friends'>
             <Choice
               label='Friends only'
               on={filters().friendsOnly}
               onClick={() => update({ friendsOnly: !filters().friendsOnly })}
             />
+          </div>
+        </Show>
+
+        {/* Only once there is a choice: with one server there is nothing
+            to leave out. */}
+        <Show when={readyServers().length > 1}>
+          <div class='filter-group' role='group' aria-label='Servers'>
+            <For each={readyServers()}>
+              {(server) => (
+                <Include
+                  label={serverLabel(server)}
+                  what={serverLabel(server)}
+                  on={!leftOut().has(server)}
+                  onClick={() => toggleServer(server)}
+                />
+              )}
+            </For>
           </div>
         </Show>
 
@@ -336,30 +417,52 @@ export function BattleList() {
         <span class='muted count'>
           {rows().length} rooms
           <Show when={hidden() > 0}> · {hidden()} hidden</Show> ·{' '}
-          {Object.keys(lobby.users).length} users
+          {sessions().reduce(
+            (total, [, session]) => total + Object.keys(session.users).length,
+            0,
+          )}{' '}
+          users
         </span>
-        <button
-          class='primary'
-          disabled={hostBusy()}
-          title='Take over an empty autohost near you and become its boss'
-          onClick={() => void host()}
-        >
-          Host battle
-        </button>
+        <div class='host-pick' ref={hostPick}>
+          <button
+            class='primary'
+            disabled={hostBusy()}
+            aria-expanded={readyServers().length > 1 ? choosing() : undefined}
+            title='Take over an empty autohost near you and become its boss'
+            onClick={() =>
+              readyServers().length > 1
+                ? setChoosing(!choosing())
+                : void host(readyServers()[0])
+            }
+          >
+            Host battle
+          </button>
+          <Show when={choosing()}>
+            <div class='popover host-menu'>
+              <For each={readyServers()}>
+                {(server) => (
+                  <button type='button' onClick={() => void host(server)}>
+                    on {serverLabel(server)}
+                  </button>
+                )}
+              </For>
+            </div>
+          </Show>
+        </div>
       </header>
 
       <Show when={rejoinable()}>
-        {(battle) => (
+        {(row) => (
           <div class='rejoin'>
             <span class='rejoin-what'>
-              You were in <b>{battle().title}</b> when modlobby last closed.
+              You were in <b>{row().battle.title}</b> when modlobby last closed.
             </span>
             <button
               class='primary'
               onClick={() => {
                 // Read the room before clearing: clearing unmounts this
                 // block, and with it the accessor the value came from.
-                const room = battle()
+                const room = row()
                 setRemembered(null)
                 void join(room)
               }}
@@ -374,7 +477,7 @@ export function BattleList() {
       <div
         class='list'
         ref={scrollRef}
-        onPointerEnter={() => setHeld(rows().map((row) => row.battle.id))}
+        onPointerEnter={() => setHeld(rows().map((row) => row.key))}
         onPointerLeave={() => setHeld(null)}
       >
         <Show
@@ -409,16 +512,17 @@ export function BattleList() {
                         }}
                         role='button'
                         tabindex={0}
-                        onClick={() => join(r().battle)}
+                        onClick={() => join(r())}
                         onKeyDown={(event) => {
                           if (event.key === 'Enter' || event.key === ' ') {
                             event.preventDefault()
-                            join(r().battle)
+                            join(r())
                           }
                         }}
                         onMouseEnter={(event) => {
                           setPointerX(event.clientX)
                           setPeek({
+                            server: r().server,
                             id: r().battle.id,
                             top: event.currentTarget.getBoundingClientRect()
                               .top,
@@ -426,7 +530,11 @@ export function BattleList() {
                           // Resting on a running room is what asks its host
                           // how long the game has been going.
                           if (r().running)
-                            askAboutGame(r().battle.id, r().battle.founder)
+                            askAboutGame(
+                              r().server,
+                              r().key,
+                              r().battle.founder,
+                            )
                         }}
                       >
                         <MapPicture
@@ -451,14 +559,12 @@ export function BattleList() {
                           {/* The host is being asked how long its game has
                               been going; without this the answer arrives out
                               of nowhere a second later. */}
-                          <Show when={askingAbout() === r().battle.id}>
+                          <Show when={askingAbout() === r().key}>
                             <span class='running-for'>
                               <Thinking title='asking the host how long this game has been running' />
                             </span>
                           </Show>
-                          <Show
-                            when={r().running && runningGames()[r().battle.id]}
-                          >
+                          <Show when={r().running && runningGames()[r().key]}>
                             {(going) => (
                               <span
                                 class='running-for'
@@ -484,13 +590,13 @@ export function BattleList() {
         <Occupants peek={peek()} now={now()} x={pointerX()} />
 
         <Show when={asking()}>
-          {(battle) => (
+          {(row) => (
             <PasswordDialog
-              title={battle().title}
+              title={row().battle.title}
               onCancel={() => setAsking(null)}
               onEnter={(password) => {
                 setAsking(null)
-                void enter(battle(), password)
+                void enter(row(), password)
               }}
             />
           )}
@@ -509,7 +615,7 @@ export function BattleList() {
  * the server sends battle status for the room you are in and no other, so
  * there is no way to say who here is playing and who is watching.
  */
-type Peek = { id: number; top: number }
+type Peek = { server: string; id: number; top: number }
 
 /** Kept in step with `.occupants` in the stylesheet. */
 const CARD_WIDTH = 300
@@ -545,7 +651,7 @@ function EmptyList(props: { total: number; hidden: number }) {
   return (
     <p class='muted empty-list'>
       <Switch fallback='No rooms open right now.'>
-        <Match when={lobby.phase !== 'ready'}>
+        <Match when={!anyReady()}>
           <A href='/login'>Log in</A> to see the rooms people are playing in.
         </Match>
         <Match when={props.total > 0}>
@@ -557,8 +663,11 @@ function EmptyList(props: { total: number; hidden: number }) {
 }
 
 function Occupants(props: { peek: Peek | null; now: number; x: number }) {
+  /** The server the room is on, whose people these are. */
+  const session = () =>
+    props.peek === null ? undefined : lobby.servers[props.peek.server]
   const battle = () =>
-    props.peek === null ? undefined : lobby.battles[props.peek.id]
+    props.peek === null ? undefined : session()?.battles[props.peek.id]
 
   /**
    * How long this room's game has been going, when it is going.
@@ -571,12 +680,12 @@ function Occupants(props: { peek: Peek | null; now: number; x: number }) {
    * still counting from when we first looked.
    */
   const running = () => {
-    const id = props.peek?.id
-    if (id === undefined) return undefined
-    const held = runningGames()[id]
+    const peek = props.peek
+    if (peek === null) return undefined
+    const held = runningGames()[battleKey(peek.server, peek.id)]
     if (
       !held ||
-      !(lobby.users[battle()?.founder ?? '']?.status.inGame ?? false)
+      !(session()?.users[battle()?.founder ?? '']?.status.inGame ?? false)
     )
       return undefined
     return elapsed(held, props.now)
@@ -586,7 +695,7 @@ function Occupants(props: { peek: Peek | null; now: number; x: number }) {
   const people = createMemo(() => {
     const room = battle()
     if (!room) return []
-    const friends = new Set(lobby.friends.friends)
+    const friends = new Set(session()?.friends.friends)
     return room.members
       .filter((name) => name !== room.founder)
       .sort((a, b) => {
@@ -622,20 +731,25 @@ function Occupants(props: { peek: Peek | null; now: number; x: number }) {
           <Show when={battle()?.founder}>
             {(host) => <span class='muted'> · hosted by {host()}</span>}
           </Show>
+          <Show when={severalServers() && props.peek}>
+            {(peek) => (
+              <span class='muted'> · on {serverLabel(peek().server)}</span>
+            )}
+          </Show>
         </div>
         <div class='occupants-names'>
           <For each={people().slice(0, 28)}>
             {(name) => (
               <span
                 classList={{
-                  friend: lobby.friends.friends.includes(name),
-                  me: name === lobby.me,
+                  friend: session()?.friends.friends.includes(name) ?? false,
+                  me: name === session()?.me,
                 }}
               >
                 {/* The chevron is the one thing about a stranger everybody
                     already reads, and it is the difference between a room
                     worth joining and one you will be carried through. */}
-                <Show when={lobby.users[name]}>
+                <Show when={session()?.users[name]}>
                   {(who) => <RankIcon status={who().status} />}
                 </Show>
                 {name}
@@ -701,17 +815,20 @@ function PasswordDialog(props: {
  * A room type the list lets through. On is the resting state, so the eye is
  * drawn to what you have switched off rather than to four lit chips.
  */
-function Include(props: { label: string; on: boolean; onClick: () => void }) {
+function Include(props: {
+  label: string
+  /** The rooms it lets through, as the hint names them; the label, lowercased. */
+  what?: string
+  on: boolean
+  onClick: () => void
+}) {
+  const what = () => props.what ?? props.label.toLowerCase()
   return (
     <button
       class='chip-include'
       classList={{ off: !props.on }}
       aria-pressed={props.on}
-      title={
-        props.on
-          ? `Hide ${props.label.toLowerCase()} rooms`
-          : `Show ${props.label.toLowerCase()} rooms`
-      }
+      title={props.on ? `Hide ${what()} rooms` : `Show ${what()} rooms`}
       onClick={props.onClick}
     >
       {props.label}

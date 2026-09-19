@@ -22,7 +22,7 @@ import {
   type Side,
 } from '../../lib/tweakspace'
 import { pushNotice } from '../../store/chat'
-import { lobby } from '../../store/lobby'
+import { roomSession } from '../../store/lobby'
 import { tweakspaceFor } from '../../store/tweakspaceInstance'
 import { useRoom } from '../room/model'
 import { VoteDiff } from '../VoteDiff'
@@ -64,20 +64,21 @@ export function Workspace() {
 
   /** SPADS takes `bSet` only from a player; see `Setup`. */
   const seated = createMemo(() => {
-    const me = lobby.me
-    return me !== null && lobby.users[me]?.battleStatus?.player === true
+    const room = roomSession()
+    const me = room?.me ?? null
+    return me !== null && room?.users[me]?.battleStatus?.player === true
   })
 
   /** The vote in progress, when it proposes the open slot. */
   const proposal = createMemo(() => {
-    const vote = lobby.myBattle?.vote
+    const vote = roomSession()?.myBattle?.vote
     const open = doc()
     if (vote?.proposal.type !== 'setOption' || open.origin !== 'slot')
       return null
     return vote.proposal.key === open.title ? vote.proposal.value : null
   })
 
-  const history = () => lobby.myBattle?.history ?? []
+  const history = () => roomSession()?.myBattle?.history ?? []
 
   /** Unit keys this game does not have -- only meaningful in a units table. */
   const warnings = createMemo(() =>

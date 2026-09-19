@@ -1,6 +1,6 @@
 import { MemoryRouter, Route, createMemoryHistory } from '@solidjs/router'
 import { fireEvent, render } from '@solidjs/testing-library'
-import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { Settings } from '../ipc/bindings/Settings'
 import { applySettings } from '../store/settings'
 import { SettingsView } from './Settings'
@@ -16,13 +16,18 @@ vi.mock('@tauri-apps/api/core', () => ({
 function loaded(): Settings {
   return {
     $schema: null,
-    server: {
-      host: 'server4',
-      encryption: 'stls',
-      plainPort: 8200,
-      tlsPort: 8201,
-    },
-    account: { username: 'me', rememberPassword: false, autoLogin: false },
+    servers: [
+      {
+        host: 'server4.beyondallreason.info',
+        name: 'BAR',
+        ports: [8200, 8201],
+        allowUnencrypted: false,
+        website: null,
+        username: 'me',
+        channels: ['main'],
+      },
+    ],
+    account: { rememberPassword: false, autoLogin: false },
     connection: { idleDisconnectMinutes: 60 },
     paths: { dataDir: null },
     play: {
@@ -55,7 +60,6 @@ function loaded(): Settings {
     chat: {
       filterHostChatter: true,
       maxLines: 3000,
-      channels: ['main'],
       muted: ['main'],
     },
     overlay: {
@@ -91,22 +95,115 @@ function choiceFor(container: HTMLElement, label: string) {
   }
 }
 
-/**
- * The view on its Notifications tab.
- *
- * Opened at the address rather than by clicking the tab, because that address
- * is the feature: the corner notices link straight to this page, and the tab
- * is a search parameter so that a link can name it.
- */
-function openNotifications() {
+function openAt(address: string) {
   const history = createMemoryHistory()
-  history.set({ value: '/?tab=notifications' })
+  history.set({ value: address })
   return render(() => (
     <MemoryRouter history={history}>
       <Route path='/' component={SettingsView} />
     </MemoryRouter>
   ))
 }
+
+/**
+ * The view scrolled to its notifications.
+ *
+ * Opened at the address rather than through the index, because that address
+ * is the feature: the corner notices link straight to this section, and the
+ * section is a search parameter so that a link can name it.
+ */
+const openNotifications = () => openAt('/?section=notifications')
+
+/** The rows a search has left showing, by their first line of text. */
+function shown(container: HTMLElement): string[] {
+  return [...container.querySelectorAll('.set-row')]
+    .filter((row) => !row.hasAttribute('hidden'))
+    .map((row) => row.textContent?.trim().split('\n')[0] ?? '')
+}
+
+function search(container: HTMLElement, query: string) {
+  const box = container.querySelector<HTMLInputElement>(
+    'input[aria-label="Search settings"]',
+  )
+  if (!box) throw new Error('no search box')
+  fireEvent.input(box, { target: { value: query } })
+}
+
+/** The ids of the elements asked to scroll into view, in order. */
+const scrolledTo: string[] = []
+
+beforeAll(() => {
+  // happy-dom lays nothing out, so there is nothing to scroll; what was asked
+  // for is what can be checked.
+  Element.prototype.scrollIntoView = function (this: Element) {
+    scrolledTo.push(this.id)
+  }
+})
+
+describe('finding a setting', () => {
+  beforeEach(() => {
+    applySettings(loaded())
+    scrolledTo.length = 0
+  })
+
+  test('a word from a description finds the row it describes', () => {
+    const { container } = openAt('/')
+    search(container, 'metered')
+    expect(shown(container)).toHaveLength(1)
+    expect(shown(container)[0]).toContain(
+      'Download what a room needs automatically',
+    )
+  })
+
+  test('the words of a label find it, in any order', () => {
+    const { container } = openAt('/')
+    search(container, 'chatter bot')
+    expect(shown(container)).toHaveLength(1)
+    expect(shown(container)[0]).toContain('Filter bot chatter')
+  })
+
+  test("a section's title finds every row in it", () => {
+    const { container } = openAt('/')
+    const overlay = container.querySelector('#settings-overlay')
+    search(container, 'overlay')
+    const rows = overlay?.querySelectorAll('.set-row') ?? []
+    expect(rows.length).toBeGreaterThan(1)
+    for (const row of rows) expect(row.hasAttribute('hidden')).toBe(false)
+  })
+
+  test('clearing the search brings every row back', () => {
+    const { container } = openAt('/')
+    const every = container.querySelectorAll('.set-row').length
+    search(container, 'metered')
+    search(container, '')
+    expect(shown(container)).toHaveLength(every)
+  })
+
+  test('what a notification means is on the page, not in a tooltip', () => {
+    const { container } = openAt('/')
+    expect(container.textContent).toContain(
+      'which is how a host says the game is waiting on you',
+    )
+    expect(container.querySelector('.choice-row[title]')).toBeNull()
+  })
+
+  test('a link naming a section scrolls to it', () => {
+    openNotifications()
+    expect(scrolledTo).toEqual(['settings-notifications'])
+  })
+
+  test('the index jumps to the section it names', () => {
+    const { container } = openAt('/')
+    const index = container.querySelector('.settings-index')
+    const chat = [...(index?.querySelectorAll('button') ?? [])].find(
+      (button) => button.textContent === 'Chat',
+    )
+    if (!chat) throw new Error('no Chat entry')
+    fireEvent.click(chat)
+    expect(scrolledTo).toEqual(['settings-chat'])
+    expect(chat.classList.contains('on')).toBe(true)
+  })
+})
 
 describe('choosing where a notification goes', () => {
   beforeEach(() => applySettings(loaded()))

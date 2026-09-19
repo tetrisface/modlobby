@@ -14,6 +14,8 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+use crate::json_file;
+
 /// One round trip to a machine, or `None` when it did not answer in time.
 /// Blocking: call it off the actor.
 pub trait Latency: Send + Sync {
@@ -110,6 +112,8 @@ pub const GOOD_FOR: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 /// moment's packet loss is not held against it for a week.
 pub const RETRY_AFTER: Duration = Duration::from_secs(60 * 60);
 
+pub(crate) const FILE: &str = "latency.json";
+
 /// What the host machines answered, kept between runs.
 ///
 /// Every request probes what has expired plus one address chosen at random,
@@ -144,21 +148,12 @@ impl Cache {
     /// The file's contents, or an empty cache when there is no file yet or
     /// it cannot be read: a cache that will not load is a cache to rebuild.
     pub fn load(path: &Path) -> Self {
-        match std::fs::read_to_string(path) {
-            Ok(text) => serde_json::from_str(&text).unwrap_or_else(|err| {
-                tracing::debug!(path = %path.display(), %err, "latency cache unreadable; starting over");
-                Self::default()
-            }),
-            Err(_) => Self::default(),
-        }
+        json_file::load(path, "latency cache")
     }
 
     /// Writes the cache; a file that cannot be written only costs a probe.
     pub fn save(&self, path: &Path) {
-        let text = serde_json::to_string_pretty(self).expect("a cache serialises");
-        if let Err(err) = std::fs::write(path, text) {
-            tracing::warn!(path = %path.display(), %err, "latency cache not written");
-        }
+        json_file::save(self, path, "latency cache");
     }
 
     /// Which of `ips` to probe now: those without a live answer, plus one

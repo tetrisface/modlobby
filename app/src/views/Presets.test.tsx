@@ -4,7 +4,8 @@ import { reconcile } from 'solid-js/store'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { Book } from '../ipc/bindings/Book'
 import type { Preset } from '../ipc/bindings/Preset'
-import { emptyLobby, setLobby } from '../store/lobby'
+import { emptyLobby, emptyServer, setLobby } from '../store/lobby'
+import { TEST_SERVER, onlySession } from '../store/testing'
 import { Presets } from './Presets'
 import { RoomProvider } from './room/model'
 import { onlineRoom } from './room/online'
@@ -81,7 +82,7 @@ function calls(command: string) {
 
 /** Puts us in room 7, which is what Save and Load need. */
 function enterRoom() {
-  const next = emptyLobby()
+  const next = emptyServer()
   next.me = 'me'
   next.battles[7] = {
     id: 7,
@@ -115,7 +116,7 @@ function enterRoom() {
     vote: null,
     history: [],
   }
-  setLobby(reconcile(next))
+  onlySession(next)
 }
 
 beforeEach(() => {

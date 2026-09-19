@@ -26,7 +26,7 @@ export function PlayerRow(props: {
   moves?: Moves
 }) {
   const menu = (event: MouseEvent) =>
-    showPlayerMenu(props.user.name, event, props.moves)
+    showPlayerMenu(props.user.name, event, { moves: props.moves })
   const press = rowGesture({
     canMove: () => props.moves !== undefined,
     onMove: (ally) => void props.moves?.to(ally),

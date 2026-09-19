@@ -10,6 +10,7 @@ import {
 } from 'solid-js'
 import type { BattleView } from '../ipc/bindings/BattleView'
 import { fitCount } from '../lib/fold'
+import { dismiss } from './dismiss'
 import { Glyph } from './icons'
 import { NavRoom } from './NavRoom'
 
@@ -201,19 +202,11 @@ export function NavTabs(props: {
   // The menu closes on a click anywhere else, on Escape, and when there is
   // nothing left in it.
   createEffect(() => {
-    if (!open()) return
-    const away = (event: MouseEvent) => {
-      if (!fold?.contains(event.target as Node)) setOpen(false)
-    }
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false)
-    }
-    window.addEventListener('mousedown', away)
-    window.addEventListener('keydown', escape)
-    onCleanup(() => {
-      window.removeEventListener('mousedown', away)
-      window.removeEventListener('keydown', escape)
-    })
+    if (open())
+      dismiss(
+        () => fold,
+        () => setOpen(false),
+      )
   })
   createEffect(() => {
     if (folded().length === 0) setOpen(false)

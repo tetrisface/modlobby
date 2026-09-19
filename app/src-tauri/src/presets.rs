@@ -70,10 +70,10 @@ pub fn chobby_presets_path(app: State<'_, App>) -> Option<String> {
 #[tauri::command]
 pub async fn save_preset(app: State<'_, App>, name: String) -> Result<Book> {
     let snapshot = app.client.snapshot().await?;
-    let Some(my) = snapshot.my_battle.as_ref() else {
+    let Some((session, my)) = snapshot.room() else {
         return Err(ApiError::new("not in a room", "join a room to save it"));
     };
-    let room = snapshot
+    let room = session
         .battles
         .iter()
         .find(|battle| battle.id == my.id)
@@ -249,18 +249,18 @@ pub async fn pve_score(app: State<'_, App>) -> Result<Option<pve::Score>> {
         return Ok(None);
     }
     let snapshot = app.client.snapshot().await?;
-    let Some(my) = snapshot.my_battle.as_ref() else {
+    let Some((session, my)) = snapshot.room() else {
         return Ok(None);
     };
-    let Some(room) = snapshot.battles.iter().find(|battle| battle.id == my.id) else {
+    let Some(room) = session.battles.iter().find(|battle| battle.id == my.id) else {
         return Ok(None);
     };
     // What lists the room as a game being played. Answers the service already
     // gave are memoised by body, so a room that stops changing stops
     // refreshing its row; the row expires on the service's own clock, which is
     // what a lobby that went quiet should do.
-    let listed = pve::lobby_game_id(&app.settings.get().server.host, room.id, &room.founder);
-    let Some(ask) = pve_ask(my, room, &snapshot.users, Some(listed)) else {
+    let listed = pve::lobby_game_id(&session.server, room.id, &room.founder);
+    let Some(ask) = pve_ask(my, room, &session.users, Some(listed)) else {
         return Ok(None);
     };
     ask_pve(&app, ask).await
@@ -408,11 +408,11 @@ fn one(app: &App, name: &str) -> Result<Preset> {
 /// The room as it stands, so a plan can leave out what is already true.
 async fn current_room(app: &App) -> Result<presets::Room> {
     let snapshot = app.client.snapshot().await?;
-    let Some(my) = snapshot.my_battle.as_ref() else {
+    let Some((session, my)) = snapshot.room() else {
         return Ok(presets::Room::default());
     };
     Ok(presets::Room {
-        map: snapshot
+        map: session
             .battles
             .iter()
             .find(|battle| battle.id == my.id)

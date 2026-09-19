@@ -1,7 +1,14 @@
 import { api } from '../../ipc/client'
 import { BATTLE_ROOM } from '../../store/chat'
 import { playsOnline } from '../../store/build'
-import { lobby, myRoom } from '../../store/lobby'
+import {
+  anyConnected,
+  lobby,
+  myRoom,
+  roomServer,
+  roomSession,
+  sessions,
+} from '../../store/lobby'
 import type { RoomCaps, RoomModel } from './model'
 
 /** A room on the server: someone else's, run by SPADS, full of people. */
@@ -31,11 +38,11 @@ const ONLINE: RoomCaps = {
 export function onlineRoom(): RoomModel {
   return {
     battle: () => myRoom(),
-    my: () => lobby.myBattle,
-    users: () => lobby.users,
-    me: () => lobby.me,
+    my: () => roomSession()?.myBattle ?? null,
+    users: () => roomSession()?.users ?? {},
+    me: () => roomSession()?.me ?? null,
     content: () => lobby.content,
-    running: () => lobby.gameRunning,
+    running: () => roomSession()?.gameRunning ?? null,
     exit,
     log: BATTLE_ROOM,
     caps: ONLINE,
@@ -60,10 +67,13 @@ function exit(): string | null {
   // No connection at all -- logged out, or a launch that reopened on a stale
   // `#/room` hash. Either way there is no room here to be in. Waiting for
   // `ready` instead would leave an empty shell on screen indefinitely.
-  if (lobby.phase === null) return '/'
-  // Connected and in no room. Gated on `ready` so a reconnect, which has not
-  // replayed `myBattle` yet, does not throw you out of the room you are
-  // standing in.
-  if (lobby.phase === 'ready' && !lobby.myBattle) return '/battles'
+  if (!anyConnected()) return '/'
+  // Connected and in no room. Gated on every session being `ready` so a
+  // reconnect, which has not replayed `myBattle` yet, does not throw you out
+  // of the room you are standing in — whichever server it is on.
+  const settled = sessions().every(
+    ([, session]) => session.phase === null || session.phase === 'ready',
+  )
+  if (settled && roomServer() === undefined) return '/battles'
   return null
 }

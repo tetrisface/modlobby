@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { BotView } from '../../ipc/bindings/BotView'
 import type { ModOption } from '../../ipc/bindings/ModOption'
 import { emptyLobby, setLobby } from '../../store/lobby'
+import { seedSession } from '../../store/testing'
 import { PlayerMenu } from '../../components/PlayerMenu'
 import { Room } from '../Room'
 import {
@@ -339,9 +340,11 @@ describe('the bonus, from a row to the host', () => {
   /** The menu lives beside the page, as in the app; what it knows of people
    *  it reads off the lobby store. */
   async function openWithMenu(model: RoomModel) {
-    setLobby('me', 'me')
-    setLobby('myBattle', myBattle({ boss: 'me' }))
-    setLobby('users', { alice: user('alice') })
+    seedSession({
+      me: 'me',
+      myBattle: myBattle({ boss: 'me' }),
+      users: { alice: user('alice') },
+    })
     const result = render(() => (
       <MemoryRouter
         root={(props) => (

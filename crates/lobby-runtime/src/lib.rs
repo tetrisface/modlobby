@@ -4,11 +4,13 @@
 
 pub mod client;
 pub mod idle;
+mod json_file;
 pub mod latency;
 pub mod launch;
 pub mod platform;
 pub mod player_files;
 pub mod reconnect;
+mod ways;
 
 pub use client::{Client, ClientError, Connector};
 pub use latency::{IcmpEcho, Latency, Unmeasured};

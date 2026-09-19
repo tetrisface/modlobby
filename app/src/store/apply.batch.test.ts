@@ -38,33 +38,41 @@ describe('applyMessage', () => {
     applyMessage({
       type: 'snapshot',
       data: {
-        phase: 'ready',
-        retryIn: null,
-        me: 'me',
-        users: names.map(user),
-        battles: [],
-        myBattle: null,
-        gameRunning: null,
+        servers: [
+          {
+            server: 'server4',
+            phase: 'ready',
+            retryIn: null,
+            me: 'me',
+            users: names.map(user),
+            battles: [],
+            myBattle: null,
+            gameRunning: null,
+            channels: [],
+            friends: { friends: [], requests: [], ignored: [] },
+          },
+        ],
         engine: { state: 'idle' },
-        channels: [],
-        friends: { friends: [], requests: [], ignored: [] },
         download: { state: 'idle' },
         paste: { state: 'idle' },
         skirmish: null,
+        ways: {},
       },
     })
     const runs: number[] = []
     const dispose = createRoot((dispose) => {
       createEffect(() => {
         runs.push(
-          names.filter((n) => lobby.users[n]?.battleStatus?.player).length,
+          names.filter(
+            (n) => lobby.servers.server4?.users[n]?.battleStatus?.player,
+          ).length,
         )
       })
       return dispose
     })
     applyMessage({
       type: 'deltas',
-      data: names.map((n, i) => status(n, i)),
+      data: { server: 'server4', deltas: names.map((n, i) => status(n, i)) },
     })
     dispose()
     // The initial run, then one for the whole burst — not one per line.

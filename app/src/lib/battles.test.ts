@@ -1,7 +1,14 @@
 import { describe, expect, test } from 'vitest'
 import type { BattleList } from '../ipc/bindings/BattleList'
 import type { BattleView } from '../ipc/bindings/BattleView'
-import { arrange, isVsAi, matches, stabilize, type Row } from './battles'
+import {
+  arrange,
+  battleKey,
+  isVsAi,
+  matches,
+  stabilize,
+  type Row,
+} from './battles'
 
 let nextId = 1
 
@@ -35,11 +42,20 @@ const row = (
   over: Partial<BattleView> = {},
   running = false,
   hasFriend = false,
-): Row => ({
-  battle: battle(over),
-  running,
-  hasFriend,
-})
+  server = 's',
+): Row => {
+  const room = battle(over)
+  return {
+    server,
+    key: battleKey(server, room.id),
+    battle: room,
+    running,
+    hasFriend,
+  }
+}
+
+/** Held orders are by key; these tests' rooms are all on one server. */
+const held = (...ids: number[]) => ids.map((id) => battleKey('s', id))
 
 const filters = (over: Partial<BattleList> = {}): BattleList => ({
   showPassworded: true,
@@ -274,12 +290,12 @@ describe('holding the order still under the pointer', () => {
       row({ id: 2, playerCount: 7 }),
     ]
     // The reader froze the list when it read 1, 2, 3.
-    expect(ids(stabilize(resorted, [1, 2, 3]))).toEqual([1, 2, 3])
+    expect(ids(stabilize(resorted, held(1, 2, 3)))).toEqual([1, 2, 3])
   })
 
   test('a room that closed drops out; the rest stay put', () => {
     const resorted = [row({ id: 3 }), row({ id: 1 })]
-    expect(ids(stabilize(resorted, [1, 2, 3]))).toEqual([1, 3])
+    expect(ids(stabilize(resorted, held(1, 2, 3)))).toEqual([1, 3])
   })
 
   test('a room that opened appends at the bottom, in sorted order', () => {
@@ -290,11 +306,22 @@ describe('holding the order still under the pointer', () => {
     ]
     // 9 and 4 are new: they arrive below, keeping their order relative to
     // each other, rather than teleporting into the middle of the reading.
-    expect(ids(stabilize(resorted, [1]))).toEqual([1, 9, 4])
+    expect(ids(stabilize(resorted, held(1)))).toEqual([1, 9, 4])
+  })
+
+  test('the same id on two servers is two rooms', () => {
+    const both = [
+      row({ id: 1 }, false, false, 'a'),
+      row({ id: 1 }, false, false, 'b'),
+    ]
+    expect(stabilize(both, ['b/1', 'a/1']).map((r) => r.server)).toEqual([
+      'b',
+      'a',
+    ])
   })
 
   test('holding nothing is the sorted list itself', () => {
     const resorted = [row({ id: 2 }), row({ id: 1 })]
-    expect(ids(stabilize(resorted, []))).toEqual([2, 1])
+    expect(ids(stabilize(resorted, held()))).toEqual([2, 1])
   })
 })

@@ -532,12 +532,36 @@ pub enum PasteStatus {
     },
 }
 
+/// Everything the front end mirrors, whole: each server's session, and what
+/// belongs to this machine rather than to any of them.
+///
 /// `Default` is "nothing has happened yet", which is what a test that cares
-/// about one field wants and what a fresh session is.
+/// about one field wants and what a fresh start is.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct Snapshot {
+    /// One per server there is a session with, or a retry pending for.
+    pub servers: Vec<ServerSnapshot>,
+    pub engine: EngineStatus,
+    pub download: DownloadStatus,
+    pub paste: PasteStatus,
+    /// The skirmish room, which outlives a session rather than belonging to
+    /// one: it is still there after a logout, a dropped connection or a
+    /// reloaded window.
+    pub skirmish: Option<Box<SkirmishView>>,
+    /// The way into each server that worked last, by lowercased host. The
+    /// machine's memory rather than a session's, so it is here logged out too.
+    pub ways: BTreeMap<String, String>,
+}
+
+/// One server's session.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ServerSnapshot {
+    /// Which server: its host, lowercased.
+    pub server: String,
     pub phase: Option<Phase>,
     /// Seconds until the runtime tries the last credentials again on its
     /// own, while it means to; `None` when it does not — connected, logged
@@ -550,18 +574,11 @@ pub struct Snapshot {
     pub battles: Vec<BattleView>,
     pub my_battle: Option<MyBattleView>,
     pub game_running: Option<GameRunningView>,
-    pub engine: EngineStatus,
     /// Channels we are in. Chat lines are not replayed — a reload keeps
     /// whichever backlog the front end still holds — but membership is, so the
     /// channel list is right the moment the window comes back.
     pub channels: Vec<ChannelView>,
     pub friends: FriendsView,
-    pub download: DownloadStatus,
-    pub paste: PasteStatus,
-    /// The skirmish room, which outlives a session rather than belonging to
-    /// one: it is still there after a logout, a dropped connection or a
-    /// reloaded window.
-    pub skirmish: Option<Box<SkirmishView>>,
 }
 
 /// Who we are friends with, and who is waiting on an answer.
@@ -576,31 +593,37 @@ pub struct FriendsView {
 }
 
 impl Snapshot {
-    pub fn disconnected() -> Self {
+    /// The room we are in, with the session it is on. There is one at most,
+    /// across every server.
+    pub fn room(&self) -> Option<(&ServerSnapshot, &MyBattleView)> {
+        self.servers
+            .iter()
+            .find_map(|server| Some((server, server.my_battle.as_ref()?)))
+    }
+
+    /// The session a caller from before there were several servers means by
+    /// "the" session: the one whose room we are in, else the first.
+    pub fn session(&self) -> Option<&ServerSnapshot> {
+        self.room()
+            .map(|(server, _)| server)
+            .or_else(|| self.servers.first())
+    }
+}
+
+impl ServerSnapshot {
+    /// A server there is no session with (yet), under its id.
+    pub fn disconnected(server: impl Into<String>) -> Self {
         Self {
-            phase: None,
-            retry_in: None,
-            me: None,
-            users: Vec::new(),
-            battles: Vec::new(),
-            my_battle: None,
-            game_running: None,
-            engine: EngineStatus::Idle,
-            channels: Vec::new(),
-            friends: FriendsView::default(),
-            download: DownloadStatus::Idle,
-            paste: PasteStatus::Idle,
-            // Not the session's to lose. The runtime owns both and fills this
-            // in, because a skirmish outlives whatever happened to the socket.
-            skirmish: None,
+            server: server.into(),
+            ..Self::default()
         }
     }
 
     /// Users sorted by name and battles by id, so two snapshots of one state are equal.
     pub fn from_state(
+        server: impl Into<String>,
         state: &LobbyState,
         game_running: Option<GameRunningView>,
-        engine: EngineStatus,
     ) -> Self {
         let mut users: Vec<UserView> = state
             .users
@@ -611,15 +634,15 @@ impl Snapshot {
         let mut battles: Vec<BattleView> = state.battles.values().map(BattleView::from).collect();
         battles.sort_by_key(|b| b.id);
         Self {
+            server: server.into(),
             phase: state.phase.map(Into::into),
-            // Only the runtime knows; it fills this in beside the download.
+            // Only the runtime knows; it fills this in.
             retry_in: None,
             me: state.me.clone(),
             users,
             battles,
             my_battle: state.my_battle.as_ref().map(MyBattleView::from),
             game_running,
-            engine,
             channels: state
                 .channels
                 .values()
@@ -630,12 +653,6 @@ impl Snapshot {
                 })
                 .collect(),
             friends: FriendsView::from(state),
-            // A download belongs to the runtime, not to lobby state; a fresh
-            // snapshot says nothing about one that may be in flight.
-            download: DownloadStatus::Idle,
-            paste: PasteStatus::Idle,
-            // Likewise the skirmish room, which is not the session's at all.
-            skirmish: None,
         }
     }
 }
@@ -841,6 +858,8 @@ pub enum Delta {
     Download(DownloadStatus),
     /// How a multi-line paste is going.
     Paste(PasteStatus),
+    /// Every remembered way into a server, replaced whole. See `Snapshot::ways`.
+    Ways(BTreeMap<String, String>),
     /// Something worth interrupting the reader for. The front end decides
     /// whether to raise it, since only it knows whether anyone is looking.
     Alert {
@@ -859,5 +878,14 @@ pub enum Delta {
 pub enum UiMessage {
     /// Boxed: a snapshot dwarfs a delta batch, and this enum is moved per message.
     Snapshot(Box<Snapshot>),
-    Deltas(Vec<Delta>),
+    /// One server's session over again, in place of whatever was held of it:
+    /// what a login ends in. Every other server's is left as it was, so one
+    /// server coming back does not send a second one's two thousand users.
+    Session(Box<ServerSnapshot>),
+    /// A run of changes from one source: `server`'s session, or with `None`
+    /// this machine's own — the engine, a download, a skirmish.
+    Deltas {
+        server: Option<String>,
+        deltas: Vec<Delta>,
+    },
 }

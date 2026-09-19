@@ -479,8 +479,22 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+/* The login page: the form, with a choice of server above it once there is
+   more than one. */
+.login-page {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
   width: 20rem;
   margin: 5rem auto;
+}
+
+.login-page > label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
 }
 
 .login label,
@@ -1363,6 +1377,9 @@ body.resizing-y {
 .settings {
   height: 100%;
   overflow-y: auto;
+  /* A search short enough to lose the scrollbar would otherwise shift the
+     whole page sideways by its width. */
+  scrollbar-gutter: stable;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1370,13 +1387,179 @@ body.resizing-y {
   padding: 1.5rem 1rem;
 }
 
-.settings > * {
+/* The index beside the column rather than above it, so every section is one
+   click away however far down the page is. The column may give up width on a
+   narrow or zoomed window; the index keeps its own. */
+.settings-page {
+  display: grid;
+  grid-template-columns: 10rem minmax(0, 35rem);
+  justify-content: center;
+  gap: 1.5rem;
   width: 100%;
-  max-width: 35rem;
+  flex: 1;
 }
 
-/* Under every tab, quiet: the build is what a bug report is missing, not
-   something to read on the way past. Pushed to the bottom of a short tab. */
+/* Sticks to the top of the scroller, so it stays in reach at any depth. */
+.settings-index {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.settings-index .search-box {
+  margin-bottom: 0.5rem;
+}
+
+.settings-index > button {
+  text-align: left;
+  background: none;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: 0;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.03em;
+  color: var(--faint);
+}
+
+.settings-index > button:hover {
+  color: var(--text);
+}
+
+.settings-index > button.on {
+  color: var(--text);
+  border-left-color: var(--accent);
+}
+
+.settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+/* A row owns its layout, so `hidden` has to be restated to win over it. */
+.set-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.set-row[hidden] {
+  display: none;
+}
+
+/* What a setting does sits right under it, a size down, so the labels are
+   what the eye runs down. */
+.set-row p {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.set-row > button {
+  align-self: flex-start;
+}
+
+/* A search that leaves a section nothing to show takes its frame away too,
+   and one that leaves the page nothing says so. */
+.set-section:not(:has(.set-row:not([hidden]))) {
+  display: none;
+}
+
+.settings-none {
+  display: none;
+}
+
+.settings-body:not(:has(.set-row:not([hidden]))) .settings-none {
+  display: block;
+}
+
+/* ---- a server in Settings: its session, how it is reached, what to do ---- */
+
+.server-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--line-soft);
+  border-radius: 4px;
+  background: var(--sunken);
+}
+
+.server-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* The name reads as the card's title, and is edited in place. */
+.server-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  background: none;
+  border-color: transparent;
+}
+
+.server-name:hover,
+.server-name:focus {
+  border-color: var(--line);
+}
+
+/* Kept to the right, on whichever line the row's wrapping leaves it. */
+.server-remove {
+  margin-left: auto;
+}
+
+/* What is set once, if ever, folded under one word. */
+.server-connection > summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.server-connection[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.server-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.server-actions button.danger {
+  color: var(--error);
+  border-color: var(--error);
+}
+
+.server-add {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.server-add label {
+  flex: 1;
+}
+
+.warn-text {
+  color: var(--warn);
+}
+
+/* The login form over Settings: the form's own width, not the sheet's. */
+.sheet-card.login-sheet {
+  width: min(22rem, calc(100vw - 40px));
+}
+
+/* At the foot of the page, quiet: the build is what a bug report is missing,
+   not something to read on the way past. Pushed to the bottom of a short page. */
 .build-stamp {
   margin-top: auto;
   padding-top: 0.75rem;
@@ -1392,7 +1575,7 @@ body.resizing-y {
   border-radius: 4px;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.875rem;
 }
 
 /* Buttons per install to copy from, then the snapshot picker; the same
@@ -2022,9 +2205,6 @@ body.resizing {
 /* Takes what the tabs leave on their row, down to a placeholder's worth,
    and wraps under them only past that. */
 .setup-search {
-  position: relative;
-  display: flex;
-  align-items: center;
   flex: 1 1 6rem;
   min-width: 6rem;
   max-width: 10rem;
@@ -2032,14 +2212,22 @@ body.resizing {
   margin-bottom: 0.25rem;
 }
 
-.setup-search input {
+/* ---- a search field with its clear button (`SearchBox`) ---- */
+
+.search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-box input {
   width: 100%;
   min-width: 0;
   padding: 0.1875rem 1.375rem 0.1875rem 0.5rem;
   font-size: 0.71875rem;
 }
 
-.setup-search .clear {
+.search-box .clear {
   position: absolute;
   right: 0.1875rem;
   width: 1rem;
@@ -2053,7 +2241,7 @@ body.resizing {
   color: var(--faint);
 }
 
-.setup-search .clear:hover {
+.search-box .clear:hover {
   background: var(--line);
   color: var(--text);
 }
@@ -3196,7 +3384,6 @@ input[type='checkbox'].v-edit {
   align-items: center;
   gap: 0.75rem;
   justify-content: space-between;
-  cursor: help;
 }
 
 .choice {
@@ -3229,13 +3416,7 @@ input[type='checkbox'].v-edit {
   color: var(--accent);
 }
 
-/* ---- settings tabs ---- */
-
-.tabs {
-  display: flex;
-  gap: 0.125rem;
-  border-bottom: 1px solid var(--line);
-}
+/* ---- tabs (the chat's `TabStrip` builds on these) ---- */
 
 .tab {
   background: none;
@@ -3448,9 +3629,10 @@ input[type='checkbox'].v-edit {
   font-weight: 600;
 }
 
-/* The corner while nobody is logged in. Quiet like the text it replaces, a
-   button only on approach; the icon says what pressing it does. */
-.reconnect {
+/* The corner: your name while logged in, a way back in while not. Quiet like
+   the text it replaces, a button only on approach. */
+.reconnect,
+.account-name {
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
@@ -3464,9 +3646,78 @@ input[type='checkbox'].v-edit {
   border: 1px solid transparent;
 }
 
-.reconnect:hover:not(:disabled) {
+.reconnect:hover:not(:disabled),
+.account-name:hover,
+.account-name[aria-expanded='true'] {
   color: var(--text);
   border-color: var(--line);
+}
+
+/* Your name in the corner, and every server behind it. Quiet like the
+   reconnect button it stands in for; a dot says a server of yours is down. */
+.account {
+  position: relative;
+}
+
+.account-name {
+  color: var(--text);
+}
+
+.account-name.partial::after {
+  content: '';
+  display: inline-block;
+  width: 0.375rem;
+  height: 0.375rem;
+  margin-left: 0.375rem;
+  vertical-align: middle;
+  border-radius: 50%;
+  background: var(--warn);
+}
+
+/* A panel hanging off the button that opened it, right edges lined up. */
+.popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.25rem);
+  z-index: 20;
+  padding: 0.5rem 0.75rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  white-space: nowrap;
+}
+
+.account-menu {
+  display: grid;
+  grid-template-columns: auto auto auto;
+  align-items: center;
+  gap: 0.375rem 0.625rem;
+}
+
+.host-pick {
+  position: relative;
+}
+
+.host-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+/* Each server a row of the menu's grid, so names, states and buttons line up. */
+.account-server {
+  display: contents;
+}
+
+/* A row starts at its name whether the row before had a button or not. */
+.account-server-name {
+  grid-column: 1;
+  font-size: 0.8125rem;
+}
+
+.account-server button {
+  grid-column: 3;
 }
 
 /* ---- something is being asked for ---- */

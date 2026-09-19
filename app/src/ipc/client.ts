@@ -2,6 +2,7 @@ import { invoke, type Channel } from '@tauri-apps/api/core'
 import type { Act } from './bindings/Act'
 import type { AiChoice } from './bindings/AiChoice'
 import type { Arrangement } from './bindings/Arrangement'
+import type { BattleOn } from './bindings/BattleOn'
 import type { ArrangementView } from './bindings/ArrangementView'
 import type { Check } from './bindings/Check'
 import type { Encoded } from './bindings/Encoded'
@@ -41,26 +42,51 @@ export type VoteChoice = 'y' | 'n' | 'b'
 export const api = {
   subscribe: (channel: Channel<UiMessage>) =>
     invoke<void>('subscribe', { channel }),
+  /**
+   * Logs in to `server` (its id), answering with the settings as the login
+   * left them — apply them, or the next save writes the old account back.
+   */
   login: (
+    server: string,
     username: string,
     password: string | null,
     remember: boolean,
     autoLogin: boolean,
-  ) => invoke<void>('login', { username, password, remember, autoLogin }),
-  logout: () => invoke<void>('logout'),
-  reconnect: () => invoke<void>('reconnect'),
+  ) =>
+    invoke<Settings>('login', {
+      server,
+      username,
+      password,
+      remember,
+      autoLogin,
+    }),
+  /** Logs out of `server`, or of every server with none named. */
+  logout: (server: string | null = null) => invoke<void>('logout', { server }),
+  /** Forgets which way into `host` worked, so the next connect tries every way. */
+  forgetWay: (host: string) => invoke<void>('forget_way', { host }),
+  /** Tries the last login again, under `server`'s login limit. */
+  reconnect: (server: string) => invoke<void>('reconnect', { server }),
   /** Answers with the user agreement the server replies to the first login with. */
-  register: (username: string, password: string, email: string) =>
-    invoke<string[]>('register', { username, password, email }),
-  /** Finishes that login; the account is what this machine remembers after. */
+  register: (
+    server: string,
+    username: string,
+    password: string,
+    email: string,
+  ) => invoke<string[]>('register', { server, username, password, email }),
+  /**
+   * Finishes that login; the account is what this machine remembers after,
+   * and the settings that say so come back.
+   */
   confirmAgreement: (
+    server: string,
     username: string,
     password: string,
     code: string,
     remember: boolean,
     autoLogin: boolean,
   ) =>
-    invoke<void>('confirm_agreement', {
+    invoke<Settings>('confirm_agreement', {
+      server,
       username,
       password,
       code,
@@ -70,25 +96,26 @@ export const api = {
   /** Why a username would be refused, without spending a round trip on it. */
   nameProblem: (username: string) =>
     invoke<string | null>('name_problem', { username }),
-  loginWait: () => invoke<number>('login_wait'),
-  joinBattle: (id: number, password: string | null) =>
-    invoke<void>('join_battle', { id, password }),
+  loginWait: (server: string) => invoke<number>('login_wait', { server }),
+  joinBattle: (server: string, id: number, password: string | null) =>
+    invoke<void>('join_battle', { server, id, password }),
   leaveBattle: () => invoke<void>('leave_battle'),
-  rememberedBattle: () => invoke<number | null>('remembered_battle'),
+  rememberedBattle: () => invoke<BattleOn | null>('remembered_battle'),
   forgetBattle: () => invoke<void>('forget_battle'),
   launch: () => invoke<void>('launch'),
   sayBattle: (text: string) => invoke<void>('say_battle', { text }),
   vote: (choice: VoteChoice) => invoke<void>('vote', { choice }),
   setOption: (key: string, value: string) =>
     invoke<void>('set_option', { key, value }),
-  joinChannel: (room: string, key: string | null) =>
-    invoke<void>('join_channel', { room, key }),
-  leaveChannel: (room: string) => invoke<void>('leave_channel', { room }),
-  sayChannel: (room: string, text: string) =>
-    invoke<void>('say_channel', { room, text }),
-  sayPrivate: (user: string, text: string) =>
-    invoke<void>('say_private', { user, text }),
-  listChannels: () => invoke<void>('list_channels'),
+  joinChannel: (server: string, room: string, key: string | null) =>
+    invoke<void>('join_channel', { server, room, key }),
+  leaveChannel: (server: string, room: string) =>
+    invoke<void>('leave_channel', { server, room }),
+  sayChannel: (server: string, room: string, text: string) =>
+    invoke<void>('say_channel', { server, room, text }),
+  sayPrivate: (server: string, user: string, text: string) =>
+    invoke<void>('say_private', { server, user, text }),
+  listChannels: (server: string) => invoke<void>('list_channels', { server }),
   downloadMissing: () => invoke<void>('download_missing'),
   /** Looks at what is installed again, for an engine that arrived by hand. */
   recheckContent: () => invoke<void>('recheck_content'),
@@ -151,8 +178,8 @@ export const api = {
     invoke<string>('describe_map_option', { key, raw }),
   flashEngine: () => invoke<boolean>('flash_engine'),
   engineInFront: () => invoke<boolean>('engine_in_front'),
-  requestGameStatus: (founder: string) =>
-    invoke<void>('request_game_status', { founder }),
+  requestGameStatus: (server: string, founder: string) =>
+    invoke<void>('request_game_status', { server, founder }),
 
   pveScore: () => invoke<Score | null>('pve_score'),
   widgetUsage: () => invoke<Usage | null>('widget_usage'),
@@ -192,8 +219,8 @@ export const api = {
     invoke<number>('export_presets', { path, names }),
   rememberPlayed: (played: boolean) =>
     invoke<Settings>('remember_played', { played }),
-  rememberChannels: (channels: string[]) =>
-    invoke<Settings>('remember_channels', { channels }),
+  rememberChannels: (server: string, channels: string[]) =>
+    invoke<Settings>('remember_channels', { server, channels }),
   skirmishOptions: () => invoke<SkirmishOptions>('skirmish_options'),
 
   // ---- the room with no server behind it ----
@@ -225,16 +252,17 @@ export const api = {
   playReplay: (path: string) => invoke<void>('play_replay', { path }),
   refreshFriends: () => invoke<void>('refresh_friends'),
   friendAction: (
+    server: string,
     action: 'request' | 'accept' | 'decline' | 'remove' | 'ignore' | 'unignore',
     user: string,
-  ) => invoke<void>('friend_action', { action, user }),
+  ) => invoke<void>('friend_action', { server, action, user }),
   getSettings: () => invoke<Settings>('get_settings'),
   updateSettings: (settings: Settings) =>
     invoke<Settings>('update_settings', { settings }),
-  hasPassword: (username: string) =>
-    invoke<boolean>('has_password', { username }),
-  clearPassword: (username: string) =>
-    invoke<void>('clear_password', { username }),
+  hasPassword: (server: string, username: string) =>
+    invoke<boolean>('has_password', { server, username }),
+  clearPassword: (server: string, username: string) =>
+    invoke<void>('clear_password', { server, username }),
   openSettingsFile: () => invoke<void>('open_settings_file'),
   openDataDir: () => invoke<void>('open_data_dir'),
   openEngineDir: () => invoke<void>('open_engine_dir'),
@@ -249,8 +277,9 @@ export const api = {
   releaseSeat: () => invoke<void>('release_seat'),
   setReady: (ready: boolean) => invoke<void>('set_ready', { ready }),
   setSide: (side: number) => invoke<void>('set_side', { side }),
-  requestPrivateHost: () => invoke<string>('request_private_host'),
-  hostPublic: () => invoke<number>('host_public'),
+  requestPrivateHost: (server: string) =>
+    invoke<string>('request_private_host', { server }),
+  hostPublic: (server: string) => invoke<number>('host_public', { server }),
 
   tweakDecode: (blob: string, kind: Kind) =>
     invoke<TweakView>('tweak_decode', { blob, kind }),
