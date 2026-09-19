@@ -87,7 +87,7 @@ describe('warming the list ahead', () => {
     expect(warm).toHaveBeenCalledWith(
       ['AcidicQuarry 5.17', 'Nowhere 1'],
       [
-        { width: 100, height: 100 },
+        { width: 100, height: 82 },
         { width: 260, height: 260 },
         { width: 80, height: 56 },
       ],

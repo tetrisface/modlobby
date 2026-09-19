@@ -30,10 +30,10 @@ import { devicePixels, thumbSrc } from './thumb'
  * drawing will. Change these with the CSS they mirror.
  */
 export const TILES = {
-  /** Inside `.col-thumb` in the battle list, which is 50 wide and as tall as
-   *  a row leaves it — 41, both less the 1px border. Cut square rather than to
-   *  the box: `object-fit: cover` crops the rest away, and on a wide map that
-   *  second crop is what keeps the tile from being a letterbox sliver. */
+  /** Inside `.col-thumb` in the battle list: 50 wide, and as tall as a 3rem
+   *  row leaves it, both less the 1px border. Cut a hair taller than the box
+   *  rather than shorter — `object-fit: cover` trims the surplus, where a
+   *  short tile would be stretched. */
   list: { width: 50, height: 41 },
   /** `.minimap` in the room card's 132px column, less a 1px border. */
   minimap: { width: 130, height: 130 },

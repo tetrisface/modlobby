@@ -3210,7 +3210,7 @@ input[type='checkbox'].v-edit {
 /* As tall as the row: the grid would centre it, so it asks to be stretched. */
 .col-thumb {
   width: 3.25rem;
-	height: 2.6rem;
+	height: stretch;
   border: 1px solid var(--line-soft);
   border-radius: 2px;
   overflow: hidden;

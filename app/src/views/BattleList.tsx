@@ -38,6 +38,7 @@ import {
   type Row,
 } from '../lib/battles'
 import { TILES, warmMapPictures } from '../lib/maps'
+import { remPx } from '../lib/rem'
 import { pushNotice } from '../store/chat'
 import { joinMilestone, markJoinAsked } from '../store/join'
 import {
@@ -51,7 +52,8 @@ import {
 } from '../store/lobby'
 import { applySettings, serverLabel, settings } from '../store/settings'
 
-const ROW_HEIGHT = 44
+/** A row's height, in rem so that sizing the interface sizes the list too. */
+const ROW_REM = 3
 
 const DEFAULTS: Filters = {
   showPassworded: true,
@@ -173,13 +175,24 @@ export function BattleList() {
   const tick = setInterval(() => setNow(Date.now()), 30_000)
   onCleanup(() => clearInterval(tick))
 
+  // Measured, not assumed: the virtualiser positions rows in pixels, and the
+  // stylesheet draws them in rem.
+  const rowHeight = remPx(ROW_REM)
+
   const virtualizer = createVirtualizer({
     get count() {
       return rows().length
     },
     getScrollElement: () => scrollRef ?? null,
-    estimateSize: () => ROW_HEIGHT,
+    estimateSize: () => rowHeight(),
     overscan: 10,
+  })
+
+  // Sizing the interface changes every row at once, and the sizes the
+  // virtualiser cached were the old ones.
+  createEffect(() => {
+    rowHeight()
+    virtualizer.measure()
   })
 
   /**
@@ -508,7 +521,7 @@ export function BattleList() {
                         style={{
                           position: 'absolute',
                           top: `${item.start}px`,
-                          height: `${ROW_HEIGHT}px`,
+                          height: `${rowHeight()}px`,
                           width: '100%',
                         }}
                         role='button'
