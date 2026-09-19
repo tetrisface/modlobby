@@ -19,4 +19,13 @@ key: string, kind: ForkKind,
 /**
  * The lineage the row itself speaks for.
  */
-main: boolean, id: string, author: string, description: string, install: Install, image: string, windows: { [key in string]: { [key in string]: WindowStats } }, };
+main: boolean, id: string, author: string, description: string, install: Install, image: string, 
+/**
+ * Every picture, best first; `image` is the first. See `WidgetUsage::images`.
+ */
+images: Array<string>, 
+/**
+ * When this version's first and newest revisions were published, as
+ * `YYYY-MM-DDTHH:MM:SSZ`; empty when no source said.
+ */
+first_published: string, last_updated: string, windows: { [key in string]: { [key in string]: WindowStats } }, };

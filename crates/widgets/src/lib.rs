@@ -203,6 +203,15 @@ pub struct Fork {
     pub install: Install,
     #[serde(default)]
     pub image: String,
+    /// Every picture, best first; `image` is the first. See `WidgetUsage::images`.
+    #[serde(default)]
+    pub images: Vec<String>,
+    /// When this version's first and newest revisions were published, as
+    /// `YYYY-MM-DDTHH:MM:SSZ`; empty when no source said.
+    #[serde(default)]
+    pub first_published: String,
+    #[serde(default)]
+    pub last_updated: String,
     #[serde(default)]
     pub windows: BTreeMap<String, BTreeMap<String, WindowStats>>,
 }
@@ -249,12 +258,32 @@ pub struct WidgetUsage {
     /// the webview directly — see `thumbs.rs`.
     #[serde(default)]
     pub image: String,
+    /// Every picture of the widget, best first, at most eight. `image` is the
+    /// first, kept for readers that show one. A document from before galleries
+    /// has none, and `picture` falls back to `image`.
+    #[serde(default)]
+    pub images: Vec<String>,
+    /// When the main version was first published and last updated, as
+    /// `YYYY-MM-DDTHH:MM:SSZ`; empty when no source said.
+    #[serde(default)]
+    pub first_published: String,
+    #[serde(default)]
+    pub last_updated: String,
     /// The lineage key the row speaks for; empty when nothing was traced.
     #[serde(default)]
     pub main: String,
     /// Every version under this name, main first and "other versions" last.
     #[serde(default)]
     pub forks: Vec<Fork>,
+}
+
+/// Picture `index` from a published list, or the single `image` of a document
+/// published before there were lists.
+fn picture<'a>(images: &'a [String], image: &'a str, index: usize) -> Option<&'a str> {
+    if images.is_empty() {
+        return (index == 0).then_some(image);
+    }
+    images.get(index).map(String::as_str)
 }
 
 impl WidgetUsage {
@@ -352,22 +381,23 @@ impl Usage {
         self.widgets.iter().find(|widget| widget.key == key)
     }
 
-    /// The picture a row or a fork publishes, by either key.
+    /// Picture `index` of a row or a fork, by either key.
     ///
-    /// One lookup for both, so the thumbnail scheme serves a fork's picture as
-    /// readily as a row's — and still only a URL this document named.
-    pub fn image(&self, key: &str) -> Option<&str> {
+    /// One lookup for both, so the thumbnail scheme serves a fork's pictures as
+    /// readily as a row's — and still only a URL this document named: the index
+    /// picks from the published list, never from anything a caller supplies.
+    pub fn image(&self, key: &str, index: usize) -> Option<&str> {
         self.widgets
             .iter()
             .find_map(|widget| {
                 if widget.key == key {
-                    return Some(widget.image.as_str());
+                    return picture(&widget.images, &widget.image, index);
                 }
                 widget
                     .forks
                     .iter()
                     .find(|fork| fork.key == key)
-                    .map(|fork| fork.image.as_str())
+                    .and_then(|fork| picture(&fork.images, &fork.image, index))
             })
             .filter(|image| !image.is_empty())
     }
@@ -979,11 +1009,33 @@ mod tests {
         ]);
         let usage = parse(document(serde_json::json!([widget])));
         assert_eq!(
-            usage.image("github:bob/w:Ping Wheel"),
+            usage.image("github:bob/w:Ping Wheel", 0),
             Some("https://example.test/bob.png")
         );
-        assert_eq!(usage.image("other"), None);
-        assert_eq!(usage.image("nothing"), None);
+        assert_eq!(usage.image("other", 0), None);
+        assert_eq!(usage.image("nothing", 0), None);
+    }
+
+    #[test]
+    fn every_picture_of_a_gallery_is_found_by_its_index() {
+        let mut widget = ping_wheel();
+        widget["image"] = serde_json::json!("https://example.test/1.png");
+        widget["images"] = serde_json::json!(["https://example.test/1.png", "https://example.test/2.png"]);
+        let usage = parse(document(serde_json::json!([widget])));
+        let key = usage.widgets[0].key.clone();
+        assert_eq!(usage.image(&key, 0), Some("https://example.test/1.png"));
+        assert_eq!(usage.image(&key, 1), Some("https://example.test/2.png"));
+        assert_eq!(usage.image(&key, 2), None, "past the end is nothing, not a wrap");
+    }
+
+    #[test]
+    fn a_document_from_before_galleries_still_has_its_one_picture() {
+        let mut widget = ping_wheel();
+        widget["image"] = serde_json::json!("https://example.test/only.png");
+        let usage = parse(document(serde_json::json!([widget])));
+        let key = usage.widgets[0].key.clone();
+        assert_eq!(usage.image(&key, 0), Some("https://example.test/only.png"));
+        assert_eq!(usage.image(&key, 1), None);
     }
 
     #[tokio::test]

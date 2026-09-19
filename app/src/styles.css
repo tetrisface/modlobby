@@ -4709,6 +4709,36 @@ button.link:hover {
   cursor: default;
 }
 
+/* The rest of a widget's pictures, beside its tile while the tile is looked
+   at: in front of the row it belongs to, never over another, and gone the
+   moment the pointer or focus leaves them. */
+.widget-companions {
+  position: absolute;
+  z-index: 4;
+  top: 0;
+  bottom: 0;
+  left: calc(100% + 0.25rem);
+  display: flex;
+  gap: 0.25rem;
+}
+
+.widget-thumb.companion {
+  position: relative;
+  box-shadow: 0 0.25rem 0.75rem rgb(0 0 0 / 45%);
+}
+
+/* How many more the gallery holds than the tiles show. */
+.widget-more {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--display);
+  font-weight: 600;
+  color: var(--text);
+  background: rgb(0 0 0 / 55%);
+}
+
 /* About four rows tall, over the rows below rather than pushing them down:
    the list does not jump when a picture opens. */
 .widget-preview {
@@ -4716,23 +4746,65 @@ button.link:hover {
   z-index: 5;
   top: 0;
   left: calc(100% + 0.5rem);
+  display: flex;
+  flex-direction: column;
   width: 30rem;
   max-width: 60vw;
-  aspect-ratio: 16 / 10;
-  padding: 0;
   overflow: hidden;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 4px;
   box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 45%);
+}
+
+.widget-preview-picture {
+  aspect-ratio: 16 / 10;
+  padding: 0;
+  background: none;
+  border: 0;
   cursor: zoom-out;
 }
 
-.widget-preview img {
+.widget-preview-picture img {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+
+/* Every picture, small, under the big one: the one showing is outlined. */
+.widget-film {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  overflow-x: auto;
+  border-top: 1px solid var(--line);
+}
+
+.widget-film-tile {
+  flex: 0 0 4rem;
+  aspect-ratio: 16 / 10;
+  padding: 0;
+  overflow: hidden;
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.widget-film-tile:hover {
+  border-color: var(--muted);
+}
+
+.widget-film-tile[aria-current='true'] {
+  border-color: var(--accent);
+}
+
+.widget-film-tile img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 /* What is on this machine under this row's name. */

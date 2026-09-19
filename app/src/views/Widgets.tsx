@@ -14,6 +14,7 @@ import type { Fork } from '../ipc/bindings/Fork'
 import type { LocalWidget } from '../ipc/bindings/LocalWidget'
 import type { WidgetUsage } from '../ipc/bindings/WidgetUsage'
 import type { WindowStats } from '../ipc/bindings/WindowStats'
+import { age, exactly } from '../lib/age'
 import { devicePixels, thumbSrc } from '../lib/thumb'
 import {
   type Action,
@@ -44,6 +45,7 @@ import {
   mainFork,
   matches,
   notUsing,
+  picturesOf,
   ranked,
   refreshInstalled,
   sortWidgets,
@@ -126,6 +128,13 @@ const FORK_TILE = { width: 64, height: 48 }
  * the tile, so opening it costs a local resize and no request.
  */
 const PREVIEW = { width: 480, height: 300 }
+/** A picture in the gallery's strip. */
+const FILM = { width: 64, height: 40 }
+/** Pictures shown beside a hovered tile; the rest are counted on the last. */
+const COMPANIONS = 4
+/** Which picture of which widget is open, and how many there are to step through. */
+type Enlarged = { key: string; index: number; count: number }
+const STEP: Record<string, number> = { ArrowRight: 1, ArrowLeft: -1 }
 
 /** Headers in column order. Every one sorts. */
 const COLUMNS: ReadonlyArray<{
@@ -138,6 +147,8 @@ const COLUMNS: ReadonlyArray<{
   { key: 'players', label: () => 'Players', numeric: true },
   { key: 'using', label: (mode) => USING_LABEL[mode], numeric: true },
   { key: 'off', label: () => 'Off', numeric: true },
+  { key: 'updated', label: () => 'Updated', numeric: true },
+  { key: 'published', label: () => 'Published', numeric: true },
   { key: 'replays', label: () => 'Replays', numeric: true },
   { key: 'sightings', label: () => 'Sightings', numeric: true },
   { key: 'window', label: () => 'Window' },
@@ -234,7 +245,7 @@ export function Widgets() {
 
   const [busy, setBusy] = createSignal<string | null>(null)
   const [note, setNote] = createSignal<string | null>(null)
-  const [enlarged, setEnlarged] = createSignal<string | null>(null)
+  const [enlarged, setEnlarged] = createSignal<Enlarged | null>(null)
   const [expanded, setExpanded] = createSignal<ReadonlySet<string>>(new Set())
 
   const toggleExpanded = (key: string) => {
@@ -243,12 +254,22 @@ export function Widgets() {
     else next.add(key)
     setExpanded(next)
   }
-  const toggleEnlarged = (key: string) =>
-    setEnlarged(enlarged() === key ? null : key)
+  const showPicture = (key: string, index: number | null, count: number) =>
+    setEnlarged(index === null ? null : { key, index, count })
 
   onMount(() => {
+    /** Escape closes the picture; the arrows step through its gallery. */
     const close = (event: KeyboardEvent) => {
+      const open = enlarged()
+      const step = STEP[event.key]
       if (event.key === 'Escape') setEnlarged(null)
+      else if (open && open.count > 1 && step) {
+        event.preventDefault()
+        setEnlarged({
+          ...open,
+          index: (open.index + step + open.count) % open.count,
+        })
+      }
     }
     /**
      * An enlarged picture stays open until you look elsewhere, so a press
@@ -456,7 +477,7 @@ export function Widgets() {
                     expanded={expanded().has(widget.key)}
                     onExpand={() => toggleExpanded(widget.key)}
                     enlarged={enlarged()}
-                    onEnlarge={toggleEnlarged}
+                    onEnlarge={showPicture}
                     onAct={act}
                   />
                   <Show when={expanded().has(widget.key)}>
@@ -470,7 +491,7 @@ export function Widgets() {
                           mode={mode()}
                           busy={busy()}
                           enlarged={enlarged()}
-                          onEnlarge={toggleEnlarged}
+                          onEnlarge={showPicture}
                           onAct={act}
                         />
                       )}
@@ -549,8 +570,8 @@ function Row(props: {
   busy: string | null
   expanded: boolean
   onExpand: () => void
-  enlarged: string | null
-  onEnlarge: (key: string) => void
+  enlarged: Enlarged | null
+  onEnlarge: (key: string, index: number | null, count: number) => void
   onAct: (widget: WidgetUsage, fork: Fork, action: Action) => void
 }) {
   const found = () => statsFor(props.widget, props.audience, props.window)
@@ -604,10 +625,16 @@ function Row(props: {
           <Thumb
             pictureKey={props.widget.key}
             name={props.widget.name}
-            image={props.widget.image}
+            images={picturesOf(props.widget)}
             tile={TILE}
-            enlarged={props.enlarged === props.widget.key}
-            onEnlarge={() => props.onEnlarge(props.widget.key)}
+            open={
+              props.enlarged?.key === props.widget.key
+                ? props.enlarged.index
+                : null
+            }
+            onShow={(index, count) =>
+              props.onEnlarge(props.widget.key, index, count)
+            }
           />
           <div class='widget-text'>
             <strong>{props.widget.name}</strong>
@@ -622,7 +649,7 @@ function Row(props: {
           </div>
         </div>
       </td>
-      <Numbers stats={stats()} mode={props.mode} />
+      <Numbers stats={stats()} mode={props.mode} dated={props.widget} />
       <td>
         {label(shownWindow())}
         <Show when={stats() && !isRepresentative(stats()!)}>
@@ -659,8 +686,8 @@ function ForkRow(props: {
   window: string
   mode: UsingMode
   busy: string | null
-  enlarged: string | null
-  onEnlarge: (key: string) => void
+  enlarged: Enlarged | null
+  onEnlarge: (key: string, index: number | null, count: number) => void
   onAct: (widget: WidgetUsage, fork: Fork, action: Action) => void
 }) {
   const stats = () =>
@@ -686,10 +713,16 @@ function ForkRow(props: {
             <Thumb
               pictureKey={props.fork.key}
               name={props.fork.author || props.widget.name}
-              image={props.fork.image}
+              images={picturesOf(props.fork)}
               tile={FORK_TILE}
-              enlarged={props.enlarged === props.fork.key}
-              onEnlarge={() => props.onEnlarge(props.fork.key)}
+              open={
+                props.enlarged?.key === props.fork.key
+                  ? props.enlarged.index
+                  : null
+              }
+              onShow={(index, count) =>
+                props.onEnlarge(props.fork.key, index, count)
+              }
             />
           </Show>
           <div class='widget-text'>
@@ -726,7 +759,7 @@ function ForkRow(props: {
           </div>
         </div>
       </td>
-      <Numbers stats={stats()} mode={props.mode} />
+      <Numbers stats={stats()} mode={props.mode} dated={props.fork} />
       <td />
       <td class='widget-source'>
         <Show when={!other()} fallback={<span class='muted'>—</span>}>
@@ -777,6 +810,8 @@ function YourVersionRow(props: { file: LocalWidget }) {
       <td class='num muted'>—</td>
       <td class='num muted'>—</td>
       <td class='num muted'>—</td>
+      <td class='num muted'>—</td>
+      <td class='num muted'>—</td>
       <td />
       <td class='widget-source'>
         <span class='muted'>local</span>
@@ -794,7 +829,24 @@ function YourVersionRow(props: { file: LocalWidget }) {
  * A fork the anonymity floor withheld has its numbers zeroed in the document;
  * it reads "few" here rather than a zero, which would be a false statement.
  */
-function Numbers(props: { stats: WindowStats | undefined; mode: UsingMode }) {
+/**
+ * A published date as "1y 1m ago", with the exact moment on hover. Not
+ * withheld like the counts beside it: when a widget was published is its
+ * author's public fact, not something about the players who run it.
+ */
+function When(props: { iso: string }) {
+  return (
+    <td class='num' title={exactly(props.iso)}>
+      {age(props.iso) || '—'}
+    </td>
+  )
+}
+
+function Numbers(props: {
+  stats: WindowStats | undefined
+  mode: UsingMode
+  dated: { first_published: string; last_updated: string }
+}) {
   const withheld = () => props.stats?.withheld ?? false
   const cell = (value: () => string) => (
     <td class='num' classList={{ muted: withheld() }}>
@@ -817,6 +869,8 @@ function Numbers(props: { stats: WindowStats | undefined; mode: UsingMode }) {
       {cell(() => props.stats!.players.toLocaleString())}
       {cell(() => `${Math.round(usingShare(props.stats!, props.mode) * 100)}%`)}
       {cell(() => notUsing(props.stats!, props.mode).toLocaleString())}
+      <When iso={props.dated.last_updated} />
+      <When iso={props.dated.first_published} />
       {cell(() => props.stats!.replays.toLocaleString())}
       {cell(() => props.stats!.sightings.toLocaleString())}
     </>
@@ -833,20 +887,36 @@ function Numbers(props: { stats: WindowStats | undefined; mode: UsingMode }) {
 function Thumb(props: {
   pictureKey: string
   name: string
-  image: string
+  images: readonly string[]
   tile: { width: number; height: number }
-  enlarged: boolean
-  onEnlarge: () => void
+  /** Which picture the gallery shows, or null when it is closed. */
+  open: number | null
+  onShow: (index: number | null, count: number) => void
 }) {
   const [failed, setFailed] = createSignal(false)
-  const src = (box: { width: number; height: number }) => {
+  const [peeking, setPeeking] = createSignal(false)
+  const src = (box: { width: number; height: number }, index: number) => {
     const tile = devicePixels(box)
-    return thumbSrc(`widget/${tile.width}x${tile.height}/${props.pictureKey}`)
+    return thumbSrc(
+      `widget/${tile.width}x${tile.height}/${index}/${props.pictureKey}`,
+    )
   }
-  const pictured = () => !!props.image && !failed()
+  const count = () => props.images.length
+  const show = (index: number | null) => props.onShow(index, count())
+  const pictured = () => count() > 0 && !failed()
   // Only the width: the height comes from the row the tile stands in, which
   // the stylesheet stretches it to.
   const size = () => ({ width: `${props.tile.width / 16}rem` })
+  // Beside the tile while it is looked at: the next few pictures, the rest
+  // counted on the last. Rendered only then, so rows nobody hovers fetch
+  // nothing more, and gone as soon as the pointer or focus leaves them.
+  const companions = () =>
+    props.images.slice(1, 1 + COMPANIONS).map((_, i) => i + 1)
+  const more = () => count() - 1 - COMPANIONS
+  const leave = (event: FocusEvent) => {
+    const anchor = event.currentTarget as HTMLElement
+    if (!anchor.contains(event.relatedTarget as Node | null)) setPeeking(false)
+  }
 
   return (
     <Show
@@ -861,17 +931,23 @@ function Thumb(props: {
         </span>
       }
     >
-      <span class='widget-thumb-anchor'>
+      <span
+        class='widget-thumb-anchor'
+        onPointerLeave={() => setPeeking(false)}
+        onFocusOut={leave}
+      >
         <button
           type='button'
           class='widget-thumb'
           style={size()}
           aria-label={`Show a larger picture of ${props.name}`}
-          aria-expanded={props.enlarged}
-          onClick={() => props.onEnlarge()}
+          aria-expanded={props.open !== null}
+          onPointerEnter={() => setPeeking(true)}
+          onFocus={() => setPeeking(true)}
+          onClick={() => show(props.open === null ? 0 : null)}
         >
           <img
-            src={src(props.tile)}
+            src={src(props.tile, 0)}
             width={props.tile.width}
             height={props.tile.height}
             loading='lazy'
@@ -879,20 +955,76 @@ function Thumb(props: {
             onError={() => setFailed(true)}
           />
         </button>
-        <Show when={props.enlarged}>
-          <button
-            type='button'
-            class='widget-preview'
-            aria-label='Close the larger picture'
-            onClick={() => props.onEnlarge()}
-          >
-            <img
-              src={src(PREVIEW)}
-              width={PREVIEW.width}
-              height={PREVIEW.height}
-              alt={props.name}
-            />
-          </button>
+        <Show when={peeking() && count() > 1 && props.open === null}>
+          <span class='widget-companions'>
+            <For each={companions()}>
+              {(index, position) => (
+                <button
+                  type='button'
+                  class='widget-thumb companion'
+                  style={size()}
+                  aria-label={`Show picture ${index + 1} of ${count()} of ${props.name}`}
+                  onClick={() => show(index)}
+                >
+                  <img
+                    src={src(props.tile, index)}
+                    width={props.tile.width}
+                    height={props.tile.height}
+                    alt=''
+                  />
+                  <Show
+                    when={position() === companions().length - 1 && more() > 0}
+                  >
+                    <span class='widget-more'>+{more()}</span>
+                  </Show>
+                </button>
+              )}
+            </For>
+          </span>
+        </Show>
+        <Show when={props.open !== null}>
+          <div class='widget-preview'>
+            <button
+              type='button'
+              class='widget-preview-picture'
+              aria-label='Close the larger picture'
+              onClick={() => show(null)}
+            >
+              <img
+                src={src(PREVIEW, props.open ?? 0)}
+                width={PREVIEW.width}
+                height={PREVIEW.height}
+                alt={props.name}
+              />
+            </button>
+            <Show when={count() > 1}>
+              <div
+                class='widget-film'
+                role='group'
+                aria-label={`Pictures of ${props.name}`}
+              >
+                <For each={props.images}>
+                  {(_, index) => (
+                    <button
+                      type='button'
+                      class='widget-film-tile'
+                      aria-current={index() === props.open ? 'true' : undefined}
+                      aria-label={`Picture ${index() + 1} of ${count()}`}
+                      onClick={() => show(index())}
+                    >
+                      <img
+                        src={src(FILM, index())}
+                        width={FILM.width}
+                        height={FILM.height}
+                        loading='lazy'
+                        alt=''
+                      />
+                    </button>
+                  )}
+                </For>
+              </div>
+            </Show>
+          </div>
         </Show>
       </span>
     </Show>

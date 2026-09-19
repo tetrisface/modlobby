@@ -46,6 +46,17 @@ install: Install,
  */
 image: string, 
 /**
+ * Every picture of the widget, best first, at most eight. `image` is the
+ * first, kept for readers that show one. A document from before galleries
+ * has none, and `picture` falls back to `image`.
+ */
+images: Array<string>, 
+/**
+ * When the main version was first published and last updated, as
+ * `YYYY-MM-DDTHH:MM:SSZ`; empty when no source said.
+ */
+first_published: string, last_updated: string, 
+/**
  * The lineage key the row speaks for; empty when nothing was traced.
  */
 main: string, 

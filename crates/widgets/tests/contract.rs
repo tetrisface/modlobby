@@ -413,3 +413,50 @@ fn a_helper_file_is_never_published_as_a_widget() {
         );
     }
 }
+
+#[test]
+fn every_picture_is_https_and_the_first_is_the_single_picture() {
+    // `image` is kept for clients that show one picture; it has to be the
+    // gallery's first or the two kinds of client would disagree.
+    let check = |name: &str, image: &str, images: &[String]| {
+        for picture in images {
+            assert!(picture.starts_with("https://"), "{name}: {picture}");
+        }
+        if let Some(first) = images.first() {
+            assert_eq!(image, first, "{name}");
+        }
+        assert!(images.len() <= 8, "{name} publishes {} pictures", images.len());
+    };
+    for widget in &published().widgets {
+        check(&widget.name, &widget.image, &widget.images);
+        for fork in &widget.forks {
+            check(&fork.key, &fork.image, &fork.images);
+        }
+    }
+}
+
+#[test]
+fn a_date_is_utc_to_the_second_or_nothing_and_never_updated_before_published() {
+    let valid = |value: &str| {
+        value.is_empty()
+            || (value.len() == 20 && value.ends_with('Z') && value.as_bytes()[10] == b'T')
+    };
+    for widget in &published().widgets {
+        for (first, last, name) in std::iter::once((
+            &widget.first_published,
+            &widget.last_updated,
+            widget.name.as_str(),
+        ))
+        .chain(
+            widget
+                .forks
+                .iter()
+                .map(|fork| (&fork.first_published, &fork.last_updated, fork.key.as_str())),
+        ) {
+            assert!(valid(first) && valid(last), "{name}: {first} / {last}");
+            if !first.is_empty() && !last.is_empty() {
+                assert!(first <= last, "{name} updated {last} before it was published {first}");
+            }
+        }
+    }
+}

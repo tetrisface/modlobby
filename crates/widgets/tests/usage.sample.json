@@ -1,6 +1,6 @@
 {
   "document_version": 4,
-  "generated_at": "2026-09-17T18:44:53.721398+00:00",
+  "generated_at": "2026-09-19T14:42:19.583548+00:00",
   "policy_version": "pve_widget_harvest_v2_prefix_262144_audience",
   "audiences": [
     "all",
@@ -14,7 +14,7 @@
     "365d",
     "all"
   ],
-  "widget_count": 14,
+  "widget_count": 16,
   "widgets": [
     {
       "key": "name:586547a1596affdf",
@@ -35,10 +35,13 @@
         "files": []
       },
       "image": "",
+      "images": [],
+      "first_published": "",
+      "last_updated": "",
       "windows": {
         "all": {
           "7d": {
-            "rank": 11,
+            "rank": 13,
             "players": 28,
             "players_active": 26,
             "players_still_using": 26,
@@ -50,7 +53,7 @@
             "coverage": 1.0
           },
           "30d": {
-            "rank": 11,
+            "rank": 13,
             "players": 65,
             "players_active": 62,
             "players_still_using": 61,
@@ -62,7 +65,7 @@
             "coverage": 1.0
           },
           "90d": {
-            "rank": 11,
+            "rank": 13,
             "players": 114,
             "players_active": 110,
             "players_still_using": 108,
@@ -74,7 +77,7 @@
             "coverage": 0.9
           },
           "365d": {
-            "rank": 11,
+            "rank": 13,
             "players": 114,
             "players_active": 110,
             "players_still_using": 108,
@@ -86,7 +89,7 @@
             "coverage": 0.2219178082191781
           },
           "all": {
-            "rank": 11,
+            "rank": 13,
             "players": 114,
             "players_active": 110,
             "players_still_using": 108,
@@ -100,7 +103,7 @@
         },
         "pve": {
           "7d": {
-            "rank": 13,
+            "rank": 15,
             "players": 15,
             "players_active": 14,
             "players_still_using": 14,
@@ -112,7 +115,7 @@
             "coverage": 1.0
           },
           "30d": {
-            "rank": 14,
+            "rank": 16,
             "players": 23,
             "players_active": 22,
             "players_still_using": 22,
@@ -124,7 +127,7 @@
             "coverage": 1.0
           },
           "90d": {
-            "rank": 12,
+            "rank": 14,
             "players": 62,
             "players_active": 59,
             "players_still_using": 57,
@@ -136,7 +139,7 @@
             "coverage": 0.9
           },
           "365d": {
-            "rank": 12,
+            "rank": 14,
             "players": 62,
             "players_active": 59,
             "players_still_using": 57,
@@ -148,7 +151,7 @@
             "coverage": 0.2219178082191781
           },
           "all": {
-            "rank": 12,
+            "rank": 14,
             "players": 62,
             "players_active": 59,
             "players_still_using": 57,
@@ -162,7 +165,7 @@
         },
         "pvp": {
           "7d": {
-            "rank": 11,
+            "rank": 13,
             "players": 20,
             "players_active": 19,
             "players_still_using": 19,
@@ -174,7 +177,7 @@
             "coverage": 1.0
           },
           "30d": {
-            "rank": 11,
+            "rank": 13,
             "players": 56,
             "players_active": 53,
             "players_still_using": 52,
@@ -186,7 +189,7 @@
             "coverage": 1.0
           },
           "90d": {
-            "rank": 10,
+            "rank": 12,
             "players": 97,
             "players_active": 93,
             "players_still_using": 91,
@@ -198,7 +201,7 @@
             "coverage": 0.9
           },
           "365d": {
-            "rank": 10,
+            "rank": 12,
             "players": 97,
             "players_active": 93,
             "players_still_using": 91,
@@ -210,7 +213,7 @@
             "coverage": 0.2219178082191781
           },
           "all": {
-            "rank": 10,
+            "rank": 12,
             "players": 97,
             "players_active": 93,
             "players_still_using": 91,
@@ -242,6 +245,9 @@
             "files": []
           },
           "image": "",
+          "images": [],
+          "first_published": "",
+          "last_updated": "",
           "windows": {
             "all": {
               "7d": {
@@ -474,6 +480,11 @@
         ]
       },
       "image": "https://widget-hub.beyondallreason.dev/sites/gui_extended_eta_info/gui_extended_eta_info_460x300.png",
+      "images": [
+        "https://widget-hub.beyondallreason.dev/sites/gui_extended_eta_info/gui_extended_eta_info_460x300.png"
+      ],
+      "first_published": "2026-04-18T00:00:00Z",
+      "last_updated": "2026-04-18T00:00:00Z",
       "windows": {
         "all": {
           "7d": {
@@ -539,7 +550,7 @@
         },
         "pve": {
           "7d": {
-            "rank": 6,
+            "rank": 7,
             "players": 132,
             "players_active": 123,
             "players_still_using": 123,
@@ -688,6 +699,11 @@
             ]
           },
           "image": "https://widget-hub.beyondallreason.dev/sites/gui_extended_eta_info/gui_extended_eta_info_460x300.png",
+          "images": [
+            "https://widget-hub.beyondallreason.dev/sites/gui_extended_eta_info/gui_extended_eta_info_460x300.png"
+          ],
+          "first_published": "2026-04-18T00:00:00Z",
+          "last_updated": "2026-04-18T00:00:00Z",
           "windows": {
             "all": {
               "7d": {
@@ -910,6 +926,9 @@
             "files": []
           },
           "image": "",
+          "images": [],
+          "first_published": "",
+          "last_updated": "",
           "windows": {
             "all": {
               "7d": {
@@ -1135,10 +1154,13 @@
         ]
       },
       "image": "",
+      "images": [],
+      "first_published": "",
+      "last_updated": "",
       "windows": {
         "all": {
           "7d": {
-            "rank": 13,
+            "rank": 15,
             "players": 22,
             "players_active": 18,
             "players_still_using": 18,
@@ -1150,7 +1172,7 @@
             "coverage": 1.0
           },
           "30d": {
-            "rank": 13,
+            "rank": 15,
             "players": 46,
             "players_active": 38,
             "players_still_using": 37,
@@ -1162,7 +1184,7 @@
             "coverage": 1.0
           },
           "90d": {
-            "rank": 13,
+            "rank": 15,
             "players": 86,
             "players_active": 76,
             "players_still_using": 71,
@@ -1174,7 +1196,7 @@
             "coverage": 0.9
           },
           "365d": {
-            "rank": 13,
+            "rank": 15,
             "players": 86,
             "players_active": 76,
             "players_still_using": 71,
@@ -1186,7 +1208,7 @@
             "coverage": 0.2219178082191781
           },
           "all": {
-            "rank": 13,
+            "rank": 15,
             "players": 86,
             "players_active": 76,
             "players_still_using": 71,
@@ -1200,7 +1222,7 @@
         },
         "pve": {
           "7d": {
-            "rank": 14,
+            "rank": 16,
             "players": 7,
             "players_active": 6,
             "players_still_using": 6,
@@ -1212,7 +1234,7 @@
             "coverage": 1.0
           },
           "30d": {
-            "rank": 13,
+            "rank": 15,
             "players": 24,
             "players_active": 19,
             "players_still_using": 19,
@@ -1224,7 +1246,7 @@
             "coverage": 1.0
           },
           "90d": {
-            "rank": 13,
+            "rank": 15,
             "players": 44,
             "players_active": 36,
             "players_still_using": 33,
@@ -1236,7 +1258,7 @@
             "coverage": 0.9
           },
           "365d": {
-            "rank": 13,
+            "rank": 15,
             "players": 44,
             "players_active": 36,
             "players_still_using": 33,
@@ -1248,7 +1270,7 @@
             "coverage": 0.2219178082191781
           },
           "all": {
-            "rank": 13,
+            "rank": 15,
             "players": 44,
             "players_active": 36,
             "players_still_using": 33,
@@ -1262,7 +1284,7 @@
         },
         "pvp": {
           "7d": {
-            "rank": 12,
+            "rank": 14,
             "players": 19,
             "players_active": 15,
             "players_still_using": 15,
@@ -1274,7 +1296,7 @@
             "coverage": 1.0
           },
           "30d": {
-            "rank": 12,
+            "rank": 14,
             "players": 39,
             "players_active": 33,
             "players_still_using": 32,
@@ -1286,7 +1308,7 @@
             "coverage": 1.0
           },
           "90d": {
-            "rank": 13,
+            "rank": 15,
             "players": 74,
             "players_active": 66,
             "players_still_using": 62,
@@ -1298,7 +1320,7 @@
             "coverage": 0.9
           },
           "365d": {
-            "rank": 13,
+            "rank": 15,
             "players": 74,
             "players_active": 66,
             "players_still_using": 62,
@@ -1310,7 +1332,7 @@
             "coverage": 0.2219178082191781
           },
           "all": {
-            "rank": 13,
+            "rank": 15,
             "players": 74,
             "players_active": 66,
             "players_still_using": 62,
@@ -1355,6 +1377,9 @@
             ]
           },
           "image": "",
+          "images": [],
+          "first_published": "",
+          "last_updated": "",
           "windows": {
             "all": {
               "7d": {
@@ -1577,6 +1602,9 @@
             "files": []
           },
           "image": "",
+          "images": [],
+          "first_published": "",
+          "last_updated": "",
           "windows": {
             "all": {
               "7d": {
@@ -1820,11 +1848,17 @@
           }
         ]
       },
-      "image": "",
+      "image": "https://raw.githubusercontent.com/goldjee/BAR-Widgets/ed57938/dist/raptor-panel/panel-grace.png",
+      "images": [
+        "https://raw.githubusercontent.com/goldjee/BAR-Widgets/ed57938/dist/raptor-panel/panel-grace.png",
+        "https://raw.githubusercontent.com/goldjee/BAR-Widgets/ed57938/dist/raptor-panel/panel-hatching.png"
+      ],
+      "first_published": "2025-11-13T20:57:52Z",
+      "last_updated": "2026-08-22T16:59:07Z",
       "windows": {
         "all": {
           "7d": {
-            "rank": 14,
+            "rank": 16,
             "players": 21,
             "players_active": 10,
             "players_still_using": 8,
@@ -1836,7 +1870,7 @@
             "coverage": 1.0
           },
           "30d": {
-            "rank": 14,
+            "rank": 16,
             "players": 33,
             "players_active": 19,
             "players_still_using": 11,
@@ -1848,7 +1882,7 @@
             "coverage": 1.0
           },
           "90d": {
-            "rank": 14,
+            "rank": 16,
             "players": 40,
             "players_active": 28,
             "players_still_using": 15,
@@ -1860,7 +1894,7 @@
             "coverage": 0.9
           },
           "365d": {
-            "rank": 14,
+            "rank": 16,
             "players": 40,
             "players_active": 28,
             "players_still_using": 15,
@@ -1872,7 +1906,7 @@
             "coverage": 0.2219178082191781
           },
           "all": {
-            "rank": 14,
+            "rank": 16,
             "players": 40,
             "players_active": 28,
             "players_still_using": 15,
@@ -1886,7 +1920,7 @@
         },
         "pve": {
           "7d": {
-            "rank": 11,
+            "rank": 13,
             "players": 19,
             "players_active": 9,
             "players_still_using": 7,
@@ -1898,7 +1932,7 @@
             "coverage": 1.0
           },
           "30d": {
-            "rank": 12,
+            "rank": 14,
             "players": 30,
             "players_active": 17,
             "players_still_using": 10,
@@ -1910,7 +1944,7 @@
             "coverage": 1.0
           },
           "90d": {
-            "rank": 14,
+            "rank": 16,
             "players": 39,
             "players_active": 27,
             "players_still_using": 15,
@@ -1922,7 +1956,7 @@
             "coverage": 0.9
           },
           "365d": {
-            "rank": 14,
+            "rank": 16,
             "players": 39,
             "players_active": 27,
             "players_still_using": 15,
@@ -1934,7 +1968,7 @@
             "coverage": 0.2219178082191781
           },
           "all": {
-            "rank": 14,
+            "rank": 16,
             "players": 39,
             "players_active": 27,
             "players_still_using": 15,
@@ -1948,7 +1982,7 @@
         },
         "pvp": {
           "7d": {
-            "rank": 14,
+            "rank": 16,
             "players": 13,
             "players_active": 2,
             "players_still_using": 2,
@@ -1960,7 +1994,7 @@
             "coverage": 1.0
           },
           "30d": {
-            "rank": 14,
+            "rank": 16,
             "players": 19,
             "players_active": 3,
             "players_still_using": 3,
@@ -1972,7 +2006,7 @@
             "coverage": 1.0
           },
           "90d": {
-            "rank": 14,
+            "rank": 16,
             "players": 23,
             "players_active": 5,
             "players_still_using": 5,
@@ -1984,7 +2018,7 @@
             "coverage": 0.9
           },
           "365d": {
-            "rank": 14,
+            "rank": 16,
             "players": 23,
             "players_active": 5,
             "players_still_using": 5,
@@ -1996,7 +2030,7 @@
             "coverage": 0.2219178082191781
           },
           "all": {
-            "rank": 14,
+            "rank": 16,
             "players": 23,
             "players_active": 5,
             "players_still_using": 5,
@@ -2046,7 +2080,13 @@
               }
             ]
           },
-          "image": "",
+          "image": "https://raw.githubusercontent.com/goldjee/BAR-Widgets/ed57938/dist/raptor-panel/panel-grace.png",
+          "images": [
+            "https://raw.githubusercontent.com/goldjee/BAR-Widgets/ed57938/dist/raptor-panel/panel-grace.png",
+            "https://raw.githubusercontent.com/goldjee/BAR-Widgets/ed57938/dist/raptor-panel/panel-hatching.png"
+          ],
+          "first_published": "2025-11-13T20:57:52Z",
+          "last_updated": "2026-08-22T16:59:07Z",
           "windows": {
             "all": {
               "7d": {
@@ -2269,6 +2309,9 @@
             "files": []
           },
           "image": "",
+          "images": [],
+          "first_published": "",
+          "last_updated": "",
           "windows": {
             "all": {
               "7d": {
@@ -2480,7 +2523,7 @@
       "resolved": true,
       "id": "unit_builders_are_lazy",
       "name": "Builders Are Lazy",
-      "main": "discord:ubdead:Builders Are Lazy",
+      "main": "discord:343401269425340436:Builders Are Lazy",
       "author": "uBdead (using code from other widgets)",
       "description": "Builders will idle instead of guarding after building (to become available from the idle mechanic)",
       "install": {
@@ -2501,10 +2544,15 @@
         ]
       },
       "image": "https://d29i3oohxql6zz.cloudfront.net/widget_img/b261e55941c013096fa390d76809d169fe6550c495727b0d10d3ea5d1bc4de70.webp",
+      "images": [
+        "https://d29i3oohxql6zz.cloudfront.net/widget_img/b261e55941c013096fa390d76809d169fe6550c495727b0d10d3ea5d1bc4de70.webp"
+      ],
+      "first_published": "2025-06-13T21:04:46Z",
+      "last_updated": "2025-06-13T21:04:46Z",
       "windows": {
         "all": {
           "7d": {
-            "rank": 9,
+            "rank": 11,
             "players": 59,
             "players_active": 36,
             "players_still_using": 31,
@@ -2516,7 +2564,7 @@
             "coverage": 1.0
           },
           "30d": {
-            "rank": 9,
+            "rank": 11,
             "players": 125,
             "players_active": 94,
             "players_still_using": 76,
@@ -2528,7 +2576,7 @@
             "coverage": 1.0
           },
           "90d": {
-            "rank": 9,
+            "rank": 11,
             "players": 170,
             "players_active": 135,
             "players_still_using": 102,
@@ -2540,7 +2588,7 @@
             "coverage": 0.9
           },
           "365d": {
-            "rank": 9,
+            "rank": 11,
             "players": 170,
             "players_active": 135,
             "players_still_using": 102,
@@ -2552,7 +2600,7 @@
             "coverage": 0.2219178082191781
           },
           "all": {
-            "rank": 9,
+            "rank": 11,
             "players": 170,
             "players_active": 135,
             "players_still_using": 102,
@@ -2566,7 +2614,7 @@
         },
         "pve": {
           "7d": {
-            "rank": 10,
+            "rank": 12,
             "players": 25,
             "players_active": 14,
             "players_still_using": 13,
@@ -2578,7 +2626,7 @@
             "coverage": 1.0
           },
           "30d": {
-            "rank": 9,
+            "rank": 11,
             "players": 67,
             "players_active": 46,
             "players_still_using": 39,
@@ -2590,7 +2638,7 @@
             "coverage": 1.0
           },
           "90d": {
-            "rank": 9,
+            "rank": 11,
             "players": 99,
             "players_active": 76,
             "players_still_using": 63,
@@ -2602,7 +2650,7 @@
             "coverage": 0.9
           },
           "365d": {
-            "rank": 9,
+            "rank": 11,
             "players": 99,
             "players_active": 76,
             "players_still_using": 63,
@@ -2614,7 +2662,7 @@
             "coverage": 0.2219178082191781
           },
           "all": {
-            "rank": 9,
+            "rank": 11,
             "players": 99,
             "players_active": 76,
             "players_still_using": 63,
@@ -2628,7 +2676,7 @@
         },
         "pvp": {
           "7d": {
-            "rank": 9,
+            "rank": 11,
             "players": 48,
             "players_active": 27,
             "players_still_using": 23,
@@ -2640,7 +2688,7 @@
             "coverage": 1.0
           },
           "30d": {
-            "rank": 8,
+            "rank": 10,
             "players": 100,
             "players_active": 71,
             "players_still_using": 57,
@@ -2652,7 +2700,7 @@
             "coverage": 1.0
           },
           "90d": {
-            "rank": 9,
+            "rank": 11,
             "players": 133,
             "players_active": 97,
             "players_still_using": 72,
@@ -2664,7 +2712,7 @@
             "coverage": 0.9
           },
           "365d": {
-            "rank": 9,
+            "rank": 11,
             "players": 133,
             "players_active": 97,
             "players_still_using": 72,
@@ -2676,7 +2724,7 @@
             "coverage": 0.2219178082191781
           },
           "all": {
-            "rank": 9,
+            "rank": 11,
             "players": 133,
             "players_active": 97,
             "players_still_using": 72,
@@ -2691,7 +2739,7 @@
       },
       "forks": [
         {
-          "key": "discord:ubdead:Builders Are Lazy",
+          "key": "discord:343401269425340436:Builders Are Lazy",
           "kind": "lineage",
           "main": true,
           "id": "unit_builders_are_lazy",
@@ -2715,6 +2763,11 @@
             ]
           },
           "image": "https://d29i3oohxql6zz.cloudfront.net/widget_img/b261e55941c013096fa390d76809d169fe6550c495727b0d10d3ea5d1bc4de70.webp",
+          "images": [
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/b261e55941c013096fa390d76809d169fe6550c495727b0d10d3ea5d1bc4de70.webp"
+          ],
+          "first_published": "2025-06-13T21:04:46Z",
+          "last_updated": "2025-06-13T21:04:46Z",
           "windows": {
             "all": {
               "7d": {
@@ -2947,10 +3000,13 @@
         ]
       },
       "image": "",
+      "images": [],
+      "first_published": "2025-05-31T15:58:15Z",
+      "last_updated": "2026-08-26T17:01:21Z",
       "windows": {
         "all": {
           "7d": {
-            "rank": 8,
+            "rank": 10,
             "players": 102,
             "players_active": 3,
             "players_still_using": 1,
@@ -2962,7 +3018,7 @@
             "coverage": 1.0
           },
           "30d": {
-            "rank": 8,
+            "rank": 10,
             "players": 181,
             "players_active": 5,
             "players_still_using": 1,
@@ -2974,7 +3030,7 @@
             "coverage": 1.0
           },
           "90d": {
-            "rank": 8,
+            "rank": 10,
             "players": 238,
             "players_active": 13,
             "players_still_using": 1,
@@ -2986,7 +3042,7 @@
             "coverage": 0.9
           },
           "365d": {
-            "rank": 8,
+            "rank": 10,
             "players": 238,
             "players_active": 13,
             "players_still_using": 1,
@@ -2998,7 +3054,7 @@
             "coverage": 0.2219178082191781
           },
           "all": {
-            "rank": 8,
+            "rank": 10,
             "players": 238,
             "players_active": 13,
             "players_still_using": 1,
@@ -3012,7 +3068,7 @@
         },
         "pve": {
           "7d": {
-            "rank": 8,
+            "rank": 10,
             "players": 81,
             "players_active": 3,
             "players_still_using": 1,
@@ -3024,7 +3080,7 @@
             "coverage": 1.0
           },
           "30d": {
-            "rank": 8,
+            "rank": 10,
             "players": 157,
             "players_active": 5,
             "players_still_using": 1,
@@ -3036,7 +3092,7 @@
             "coverage": 1.0
           },
           "90d": {
-            "rank": 8,
+            "rank": 10,
             "players": 214,
             "players_active": 13,
             "players_still_using": 1,
@@ -3048,7 +3104,7 @@
             "coverage": 0.9
           },
           "365d": {
-            "rank": 8,
+            "rank": 10,
             "players": 214,
             "players_active": 13,
             "players_still_using": 1,
@@ -3060,7 +3116,7 @@
             "coverage": 0.2219178082191781
           },
           "all": {
-            "rank": 8,
+            "rank": 10,
             "players": 214,
             "players_active": 13,
             "players_still_using": 1,
@@ -3074,7 +3130,7 @@
         },
         "pvp": {
           "7d": {
-            "rank": 8,
+            "rank": 10,
             "players": 57,
             "players_active": 0,
             "players_still_using": 0,
@@ -3086,7 +3142,7 @@
             "coverage": 1.0
           },
           "30d": {
-            "rank": 9,
+            "rank": 11,
             "players": 100,
             "players_active": 0,
             "players_still_using": 0,
@@ -3098,7 +3154,7 @@
             "coverage": 1.0
           },
           "90d": {
-            "rank": 8,
+            "rank": 10,
             "players": 143,
             "players_active": 0,
             "players_still_using": 0,
@@ -3110,7 +3166,7 @@
             "coverage": 0.9
           },
           "365d": {
-            "rank": 8,
+            "rank": 10,
             "players": 143,
             "players_active": 0,
             "players_still_using": 0,
@@ -3122,7 +3178,7 @@
             "coverage": 0.2219178082191781
           },
           "all": {
-            "rank": 8,
+            "rank": 10,
             "players": 143,
             "players_active": 0,
             "players_still_using": 0,
@@ -3161,6 +3217,9 @@
             ]
           },
           "image": "",
+          "images": [],
+          "first_published": "2025-05-31T15:58:15Z",
+          "last_updated": "2026-08-26T17:01:21Z",
           "windows": {
             "all": {
               "7d": {
@@ -3366,7 +3425,7 @@
           }
         },
         {
-          "key": "discord:rcore:Raptor Grid Draw 12 players (Full Metal Plate 1.7)",
+          "key": "discord:283291729472389130:Raptor Grid Draw 12 players (Full Metal Plate 1.7)",
           "kind": "lineage",
           "main": false,
           "id": "map_nuttyb_raptor_grid_draw",
@@ -3390,6 +3449,9 @@
             ]
           },
           "image": "",
+          "images": [],
+          "first_published": "2025-06-29T10:27:21Z",
+          "last_updated": "2025-06-29T10:27:21Z",
           "windows": {
             "all": {
               "7d": {
@@ -3612,6 +3674,9 @@
             "files": []
           },
           "image": "",
+          "images": [],
+          "first_published": "",
+          "last_updated": "",
           "windows": {
             "all": {
               "7d": {
@@ -3844,6 +3909,11 @@
         ]
       },
       "image": "https://raw.githubusercontent.com/Arginou57/BAR-widgets/38208d3/Widgets/community/gui_build_watch/cover.png",
+      "images": [
+        "https://raw.githubusercontent.com/Arginou57/BAR-widgets/38208d3/Widgets/community/gui_build_watch/cover.png"
+      ],
+      "first_published": "2026-07-12T17:54:10Z",
+      "last_updated": "2026-07-12T17:54:10Z",
       "windows": {
         "all": {
           "7d": {
@@ -4058,6 +4128,11 @@
             ]
           },
           "image": "https://raw.githubusercontent.com/Arginou57/BAR-widgets/38208d3/Widgets/community/gui_build_watch/cover.png",
+          "images": [
+            "https://raw.githubusercontent.com/Arginou57/BAR-widgets/38208d3/Widgets/community/gui_build_watch/cover.png"
+          ],
+          "first_published": "2026-07-12T17:54:10Z",
+          "last_updated": "2026-07-12T17:54:10Z",
           "windows": {
             "all": {
               "7d": {
@@ -4280,6 +4355,9 @@
             "files": []
           },
           "image": "",
+          "images": [],
+          "first_published": "",
+          "last_updated": "",
           "windows": {
             "all": {
               "30d": {
@@ -4473,10 +4551,13 @@
         ]
       },
       "image": "",
+      "images": [],
+      "first_published": "2025-04-07T11:49:56Z",
+      "last_updated": "2025-09-14T23:36:51Z",
       "windows": {
         "all": {
           "7d": {
-            "rank": 12,
+            "rank": 14,
             "players": 27,
             "players_active": 21,
             "players_still_using": 21,
@@ -4488,7 +4569,7 @@
             "coverage": 1.0
           },
           "30d": {
-            "rank": 12,
+            "rank": 14,
             "players": 51,
             "players_active": 42,
             "players_still_using": 42,
@@ -4500,7 +4581,7 @@
             "coverage": 1.0
           },
           "90d": {
-            "rank": 10,
+            "rank": 12,
             "players": 118,
             "players_active": 101,
             "players_still_using": 100,
@@ -4512,7 +4593,7 @@
             "coverage": 0.9
           },
           "365d": {
-            "rank": 10,
+            "rank": 12,
             "players": 118,
             "players_active": 101,
             "players_still_using": 100,
@@ -4524,7 +4605,7 @@
             "coverage": 0.2219178082191781
           },
           "all": {
-            "rank": 10,
+            "rank": 12,
             "players": 118,
             "players_active": 101,
             "players_still_using": 100,
@@ -4538,7 +4619,7 @@
         },
         "pve": {
           "7d": {
-            "rank": 12,
+            "rank": 14,
             "players": 16,
             "players_active": 14,
             "players_still_using": 14,
@@ -4550,7 +4631,7 @@
             "coverage": 1.0
           },
           "30d": {
-            "rank": 11,
+            "rank": 13,
             "players": 35,
             "players_active": 30,
             "players_still_using": 30,
@@ -4562,7 +4643,7 @@
             "coverage": 1.0
           },
           "90d": {
-            "rank": 10,
+            "rank": 12,
             "players": 88,
             "players_active": 77,
             "players_still_using": 76,
@@ -4574,7 +4655,7 @@
             "coverage": 0.9
           },
           "365d": {
-            "rank": 10,
+            "rank": 12,
             "players": 88,
             "players_active": 77,
             "players_still_using": 76,
@@ -4586,7 +4667,7 @@
             "coverage": 0.2219178082191781
           },
           "all": {
-            "rank": 10,
+            "rank": 12,
             "players": 88,
             "players_active": 77,
             "players_still_using": 76,
@@ -4600,7 +4681,7 @@
         },
         "pvp": {
           "7d": {
-            "rank": 13,
+            "rank": 15,
             "players": 15,
             "players_active": 10,
             "players_still_using": 10,
@@ -4612,7 +4693,7 @@
             "coverage": 1.0
           },
           "30d": {
-            "rank": 13,
+            "rank": 15,
             "players": 28,
             "players_active": 21,
             "players_still_using": 21,
@@ -4624,7 +4705,7 @@
             "coverage": 1.0
           },
           "90d": {
-            "rank": 12,
+            "rank": 14,
             "players": 77,
             "players_active": 62,
             "players_still_using": 62,
@@ -4636,7 +4717,7 @@
             "coverage": 0.9
           },
           "365d": {
-            "rank": 12,
+            "rank": 14,
             "players": 77,
             "players_active": 62,
             "players_still_using": 62,
@@ -4648,7 +4729,7 @@
             "coverage": 0.2219178082191781
           },
           "all": {
-            "rank": 12,
+            "rank": 14,
             "players": 77,
             "players_active": 62,
             "players_still_using": 62,
@@ -4687,6 +4768,9 @@
             ]
           },
           "image": "",
+          "images": [],
+          "first_published": "2025-04-07T11:49:56Z",
+          "last_updated": "2025-09-14T23:36:51Z",
           "windows": {
             "all": {
               "7d": {
@@ -4892,7 +4976,7 @@
           }
         },
         {
-          "key": "discord:.robert82:Reclaim Selected",
+          "key": "discord:467082045609476096:Reclaim Selected",
           "kind": "lineage",
           "main": false,
           "id": "reclaim_selected",
@@ -4902,7 +4986,7 @@
             "kind": "discord",
             "url": "",
             "archive": false,
-            "page": "https://discord.com/channels/549281623154229250/1167027291440812063",
+            "page": "https://discord.com/channels/549281623154229250/1167027291440812063/1194910914361692260",
             "license": "",
             "permissive": false,
             "reason": "licence does not grant redistribution",
@@ -4916,6 +5000,9 @@
             ]
           },
           "image": "",
+          "images": [],
+          "first_published": "2024-01-11T07:49:22Z",
+          "last_updated": "2024-01-11T07:49:22Z",
           "windows": {
             "all": {
               "7d": {
@@ -5151,6 +5238,9 @@
             ]
           },
           "image": "",
+          "images": [],
+          "first_published": "2025-10-24T19:02:13Z",
+          "last_updated": "2025-10-24T19:02:13Z",
           "windows": {
             "all": {
               "90d": {
@@ -5302,6 +5392,9 @@
             ]
           },
           "image": "",
+          "images": [],
+          "first_published": "2026-08-24T14:29:31Z",
+          "last_updated": "2026-09-15T05:09:18Z",
           "windows": {
             "all": {
               "7d": {
@@ -5457,6 +5550,9 @@
             "files": []
           },
           "image": "",
+          "images": [],
+          "first_published": "",
+          "last_updated": "",
           "windows": {
             "all": {
               "7d": {
@@ -5668,7 +5764,7 @@
       "resolved": true,
       "id": "smart_turrets",
       "name": "Smart Construction Turret",
-      "main": "discord:flameink:Smart Construction Turret",
+      "main": "discord:187808226933211139:Smart Construction Turret",
       "author": "timuela",
       "description": "Forces nano turrets to assist based on your energy and metal situation",
       "install": {
@@ -5689,10 +5785,13 @@
         ]
       },
       "image": "",
+      "images": [],
+      "first_published": "2025-06-23T23:25:32Z",
+      "last_updated": "2025-06-23T23:25:32Z",
       "windows": {
         "all": {
           "7d": {
-            "rank": 10,
+            "rank": 12,
             "players": 46,
             "players_active": 31,
             "players_still_using": 31,
@@ -5704,7 +5803,7 @@
             "coverage": 1.0
           },
           "30d": {
-            "rank": 10,
+            "rank": 12,
             "players": 83,
             "players_active": 65,
             "players_still_using": 55,
@@ -5716,7 +5815,7 @@
             "coverage": 1.0
           },
           "90d": {
-            "rank": 12,
+            "rank": 14,
             "players": 110,
             "players_active": 92,
             "players_still_using": 76,
@@ -5728,7 +5827,7 @@
             "coverage": 0.9
           },
           "365d": {
-            "rank": 12,
+            "rank": 14,
             "players": 110,
             "players_active": 92,
             "players_still_using": 76,
@@ -5740,7 +5839,7 @@
             "coverage": 0.2219178082191781
           },
           "all": {
-            "rank": 12,
+            "rank": 14,
             "players": 110,
             "players_active": 92,
             "players_still_using": 76,
@@ -5754,7 +5853,7 @@
         },
         "pve": {
           "7d": {
-            "rank": 9,
+            "rank": 11,
             "players": 26,
             "players_active": 18,
             "players_still_using": 18,
@@ -5766,7 +5865,7 @@
             "coverage": 1.0
           },
           "30d": {
-            "rank": 10,
+            "rank": 12,
             "players": 56,
             "players_active": 43,
             "players_still_using": 35,
@@ -5778,7 +5877,7 @@
             "coverage": 1.0
           },
           "90d": {
-            "rank": 11,
+            "rank": 13,
             "players": 74,
             "players_active": 60,
             "players_still_using": 46,
@@ -5790,7 +5889,7 @@
             "coverage": 0.9
           },
           "365d": {
-            "rank": 11,
+            "rank": 13,
             "players": 74,
             "players_active": 60,
             "players_still_using": 46,
@@ -5802,7 +5901,7 @@
             "coverage": 0.2219178082191781
           },
           "all": {
-            "rank": 11,
+            "rank": 13,
             "players": 74,
             "players_active": 60,
             "players_still_using": 46,
@@ -5816,7 +5915,7 @@
         },
         "pvp": {
           "7d": {
-            "rank": 10,
+            "rank": 12,
             "players": 37,
             "players_active": 24,
             "players_still_using": 24,
@@ -5828,7 +5927,7 @@
             "coverage": 1.0
           },
           "30d": {
-            "rank": 10,
+            "rank": 12,
             "players": 66,
             "players_active": 51,
             "players_still_using": 45,
@@ -5840,7 +5939,7 @@
             "coverage": 1.0
           },
           "90d": {
-            "rank": 11,
+            "rank": 13,
             "players": 92,
             "players_active": 78,
             "players_still_using": 66,
@@ -5852,7 +5951,7 @@
             "coverage": 0.9
           },
           "365d": {
-            "rank": 11,
+            "rank": 13,
             "players": 92,
             "players_active": 78,
             "players_still_using": 66,
@@ -5864,7 +5963,7 @@
             "coverage": 0.2219178082191781
           },
           "all": {
-            "rank": 11,
+            "rank": 13,
             "players": 92,
             "players_active": 78,
             "players_still_using": 66,
@@ -5879,7 +5978,7 @@
       },
       "forks": [
         {
-          "key": "discord:flameink:Smart Construction Turret",
+          "key": "discord:187808226933211139:Smart Construction Turret",
           "kind": "lineage",
           "main": true,
           "id": "smart_turrets",
@@ -5903,6 +6002,9 @@
             ]
           },
           "image": "",
+          "images": [],
+          "first_published": "2025-06-23T23:25:32Z",
+          "last_updated": "2025-06-23T23:25:32Z",
           "windows": {
             "all": {
               "7d": {
@@ -6132,6 +6234,9 @@
             ]
           },
           "image": "",
+          "images": [],
+          "first_published": "2025-11-21T22:32:39Z",
+          "last_updated": "2025-11-24T02:28:19Z",
           "windows": {
             "all": {
               "7d": {
@@ -6354,6 +6459,9 @@
             "files": []
           },
           "image": "",
+          "images": [],
+          "first_published": "",
+          "last_updated": "",
           "windows": {
             "all": {
               "7d": {
@@ -6586,6 +6694,11 @@
         ]
       },
       "image": "https://raw.githubusercontent.com/Arginou57/BAR-widgets/38208d3/Widgets/community/gui_factory_queue/cover.png",
+      "images": [
+        "https://raw.githubusercontent.com/Arginou57/BAR-widgets/38208d3/Widgets/community/gui_factory_queue/cover.png"
+      ],
+      "first_published": "2026-07-12T17:54:10Z",
+      "last_updated": "2026-07-12T17:54:10Z",
       "windows": {
         "all": {
           "7d": {
@@ -6800,6 +6913,11 @@
             ]
           },
           "image": "https://raw.githubusercontent.com/Arginou57/BAR-widgets/38208d3/Widgets/community/gui_factory_queue/cover.png",
+          "images": [
+            "https://raw.githubusercontent.com/Arginou57/BAR-widgets/38208d3/Widgets/community/gui_factory_queue/cover.png"
+          ],
+          "first_published": "2026-07-12T17:54:10Z",
+          "last_updated": "2026-07-12T17:54:10Z",
           "windows": {
             "all": {
               "7d": {
@@ -7005,7 +7123,7 @@
           }
         },
         {
-          "key": "discord:gammapath:Factory Queue",
+          "key": "discord:266232329557639168:Factory Queue",
           "kind": "lineage",
           "main": false,
           "id": "gui_factory_queue",
@@ -7029,6 +7147,11 @@
             ]
           },
           "image": "https://d29i3oohxql6zz.cloudfront.net/widget_img/85de9ecd88d50d65198e83b189ed6f0bfb8abfe120a804e40e57e832978004bd.webp",
+          "images": [
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/85de9ecd88d50d65198e83b189ed6f0bfb8abfe120a804e40e57e832978004bd.webp"
+          ],
+          "first_published": "2026-06-09T15:35:24Z",
+          "last_updated": "2026-06-09T15:35:24Z",
           "windows": {
             "all": {
               "7d": {
@@ -7238,6 +7361,9 @@
             "files": []
           },
           "image": "",
+          "images": [],
+          "first_published": "",
+          "last_updated": "",
           "windows": {
             "all": {
               "7d": {
@@ -7403,6 +7529,11 @@
         ]
       },
       "image": "https://raw.githubusercontent.com/Arginou57/BAR-widgets/38208d3/Widgets/community/gui_energy_conversion_meter/cover.png",
+      "images": [
+        "https://raw.githubusercontent.com/Arginou57/BAR-widgets/38208d3/Widgets/community/gui_energy_conversion_meter/cover.png"
+      ],
+      "first_published": "2026-07-31T21:03:45Z",
+      "last_updated": "2026-08-06T20:29:32Z",
       "windows": {
         "all": {
           "7d": {
@@ -7617,6 +7748,11 @@
             ]
           },
           "image": "https://raw.githubusercontent.com/Arginou57/BAR-widgets/38208d3/Widgets/community/gui_energy_conversion_meter/cover.png",
+          "images": [
+            "https://raw.githubusercontent.com/Arginou57/BAR-widgets/38208d3/Widgets/community/gui_energy_conversion_meter/cover.png"
+          ],
+          "first_published": "2026-07-31T21:03:45Z",
+          "last_updated": "2026-08-06T20:29:32Z",
           "windows": {
             "all": {
               "7d": {
@@ -7822,30 +7958,42 @@
           }
         },
         {
-          "key": "discord:egzothicki:Energy Conversion Meter",
+          "key": "discord:697250421563195493:Energy Conversion Meter",
           "kind": "lineage",
           "main": false,
-          "id": "energy_conversion_meter",
+          "id": "gui_energy_conversion_meter",
           "author": "Egzothicki",
           "description": "9-bar meter next to the top bar showing your energy<->converter balance: green center = balanced, ba...",
           "install": {
             "kind": "discord",
             "url": "https://d29i3oohxql6zz.cloudfront.net/widget_lua/2dfc8fe427f5a0f5e46d2ff2f5664920.lua",
             "archive": false,
-            "page": "https://discord.com/channels/549281623154229250/1532349057287061604",
+            "page": "https://discord.com/channels/549281623154229250/1532349057287061604/1532349057287061604",
             "license": "GNU GPL, v2 or later",
             "permissive": true,
             "reason": "",
             "files": [
               {
-                "path": "energy_conversion_meter.lua",
+                "path": "gui_energy_conversion_meter.lua",
                 "content_hash": "LfyP5Cf1oPXkbS/y9WZJIA==",
                 "url": "https://d29i3oohxql6zz.cloudfront.net/widget_lua/2dfc8fe427f5a0f5e46d2ff2f5664920.lua",
-                "install_path": "energy_conversion_meter.lua"
+                "install_path": "gui_energy_conversion_meter.lua"
               }
             ]
           },
           "image": "https://d29i3oohxql6zz.cloudfront.net/widget_img/7bd88255671547707ec02251cc0b35bfba1eeb81857fe121da406eaad4b1a2c4.webp",
+          "images": [
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/7bd88255671547707ec02251cc0b35bfba1eeb81857fe121da406eaad4b1a2c4.webp",
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/6ff7d8143a87b903be7589b8cef8ff3af5076ac61846978c97ed4cf2769e3640.webp",
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/f94c3528b95922a539ce0ca6f3d7ec1468480294715063fb8b9086743d5cf3ee.webp",
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/786185de36a066af6e5bd2b81818d22e43a6c4631aebf9acdbc0f4d6eaf3f488.webp",
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/4494a9da5ba61e7c7b3e332afb5988025e48b5f215ea83b3daf4c329a8c1de2e.webp",
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/9dc572129a8b3a2ffb0c7582d4b35ba6cd99a1ad79521c77420043733c43e810.webp",
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/6d00d600eadc695244e8b8b3c5dae1f158f8b0aca15681f9909c52c5a9cb747f.webp",
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/3c4c828854ddf6a9f610d5ad0cd4877f69a91cf175d7129b6bc9e559bf0ff044.webp"
+          ],
+          "first_published": "2026-07-30T11:28:04Z",
+          "last_updated": "2026-08-01T15:01:55Z",
           "windows": {
             "all": {
               "7d": {
@@ -8068,6 +8216,9 @@
             "files": []
           },
           "image": "",
+          "images": [],
+          "first_published": "",
+          "last_updated": "",
           "windows": {
             "all": {
               "7d": {
@@ -8287,6 +8438,11 @@
         ]
       },
       "image": "https://raw.githubusercontent.com/Arginou57/BAR-widgets/38208d3/Widgets/community/gui_build_placement_cost/cover.png",
+      "images": [
+        "https://raw.githubusercontent.com/Arginou57/BAR-widgets/38208d3/Widgets/community/gui_build_placement_cost/cover.png"
+      ],
+      "first_published": "",
+      "last_updated": "",
       "windows": {
         "all": {
           "7d": {
@@ -8501,6 +8657,11 @@
             ]
           },
           "image": "https://raw.githubusercontent.com/Arginou57/BAR-widgets/38208d3/Widgets/community/gui_build_placement_cost/cover.png",
+          "images": [
+            "https://raw.githubusercontent.com/Arginou57/BAR-widgets/38208d3/Widgets/community/gui_build_placement_cost/cover.png"
+          ],
+          "first_published": "",
+          "last_updated": "",
           "windows": {
             "all": {
               "7d": {
@@ -8723,6 +8884,9 @@
             "files": []
           },
           "image": "",
+          "images": [],
+          "first_published": "",
+          "last_updated": "",
           "windows": {
             "all": {
               "7d": {
@@ -8955,6 +9119,11 @@
         ]
       },
       "image": "https://raw.githubusercontent.com/Arginou57/BAR-widgets/38208d3/Widgets/community/gui_ping_wheel/cover.png",
+      "images": [
+        "https://raw.githubusercontent.com/Arginou57/BAR-widgets/38208d3/Widgets/community/gui_ping_wheel/cover.png"
+      ],
+      "first_published": "2026-03-21T17:52:21Z",
+      "last_updated": "2026-07-12T17:54:10Z",
       "windows": {
         "all": {
           "7d": {
@@ -9169,6 +9338,11 @@
             ]
           },
           "image": "https://raw.githubusercontent.com/Arginou57/BAR-widgets/38208d3/Widgets/community/gui_ping_wheel/cover.png",
+          "images": [
+            "https://raw.githubusercontent.com/Arginou57/BAR-widgets/38208d3/Widgets/community/gui_ping_wheel/cover.png"
+          ],
+          "first_published": "2026-03-21T17:52:21Z",
+          "last_updated": "2026-07-12T17:54:10Z",
           "windows": {
             "all": {
               "7d": {
@@ -9397,7 +9571,13 @@
               }
             ]
           },
-          "image": "",
+          "image": "https://d29i3oohxql6zz.cloudfront.net/widget_img/0381eaac7a97e7004fff5b2ff18ffee1ef69f2900a381beac9833bbdc6adf08c.webp",
+          "images": [
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/0381eaac7a97e7004fff5b2ff18ffee1ef69f2900a381beac9833bbdc6adf08c.webp",
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/1224fc4bbe5041167d3149b2dc630366ecc7bd1a5f6b2608f920d4d49398371a.webp"
+          ],
+          "first_published": "2023-06-21T15:34:47Z",
+          "last_updated": "2023-07-26T13:42:24Z",
           "windows": {
             "all": {
               "7d": {
@@ -9626,7 +9806,19 @@
               }
             ]
           },
-          "image": "",
+          "image": "https://d29i3oohxql6zz.cloudfront.net/widget_img/ee70e90660ef932009f9db23b703b0b91599599eb146e81883b632be6fe3a2a6.webp",
+          "images": [
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/ee70e90660ef932009f9db23b703b0b91599599eb146e81883b632be6fe3a2a6.webp",
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/3527a26226c0dbd8ab4f29fc3082e99f4c451407bdc955d5bac00681d305ca67.webp",
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/34c56b21a7a6a629fa1cea68b031cad5acd767a03525d0486e23de981318a0f4.webp",
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/4a912eacc17359f5411f3c523940cc20cd005d2d54eb9822b05317dfdf4d6cf3.webp",
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/35b2bff398edbc21432ca2908789ba75737e1febd0f3518fee7423c857e019d0.webp",
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/76a2e9c7f0a70080df43c58b545088cbfb1ffd7f5cd80f6b1a8d1af52e9d2e7e.webp",
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/f0966f9063df047946fbf01f98f6d05a4433ee8b84f319dabc5cff020cf85c91.webp",
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/ff0429dac7809e18bdd2f0f9f3cc21426adc646ce1b32b88e0e882256e2c8287.webp"
+          ],
+          "first_published": "2026-04-04T18:07:21Z",
+          "last_updated": "2026-04-04T18:07:21Z",
           "windows": {
             "all": {
               "7d": {
@@ -9832,7 +10024,7 @@
           }
         },
         {
-          "key": "discord:chronographer:Ping Wheel",
+          "key": "discord:136392858373455872:Ping Wheel",
           "kind": "lineage",
           "main": false,
           "id": "pingwheel",
@@ -9856,6 +10048,18 @@
             ]
           },
           "image": "https://d29i3oohxql6zz.cloudfront.net/widget_img/6b79d2200824bef534500a9c20bfab8223d75ebec8e16e8340b3604560aad8c4.webp",
+          "images": [
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/6b79d2200824bef534500a9c20bfab8223d75ebec8e16e8340b3604560aad8c4.webp",
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/0950837c52cc369906daa285e0e335351b87e06f3755f852f75506bd5b7a5b56.webp",
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/dab8d469477cea41c9cabf3da275415fade1abe8ea3d1bd61d12e63d88915401.webp",
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/77896d16a6829e84bed50fcb38a7957def21796c3cc38be447e5b447ec6356f7.webp",
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/2e950305c5a6bb7ca11a004bacdea60cee4059613d29649da932f9e80988ad8f.webp",
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/e7a5c7b55202bd1fe96683e91a2f963b6e34ea8bb0ca42fc8fa39d76d60c26f1.webp",
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/41a94ac0e9c58f60023cc0ced9061e41a25a31c6062ffc6f67decf7e4a65fc6a.webp",
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/9bf5a714f2fa58abe4d293372d9da380bca0dd07de64d342bc83e697342ddc6e.webp"
+          ],
+          "first_published": "2026-03-24T13:52:45Z",
+          "last_updated": "2026-03-24T13:52:45Z",
           "windows": {
             "all": {
               "90d": {
@@ -9983,10 +10187,10 @@
           }
         },
         {
-          "key": "discord:jazcash:Ping Wheel",
+          "key": "discord:147075197378232320:Ping Wheel",
           "kind": "lineage",
           "main": false,
-          "id": "gui_ping_wheel_jazcash",
+          "id": "gui_ping_wheel_147075197378232320",
           "author": "Errrrrrr & Modded by sprEEEzy",
           "description": "Displays a ping wheel when a keybind is held down. Default keybind is 'alt-f', rebindable. Left clic...",
           "install": {
@@ -10007,6 +10211,9 @@
             ]
           },
           "image": "",
+          "images": [],
+          "first_published": "2024-07-26T12:34:33Z",
+          "last_updated": "2024-07-26T12:34:33Z",
           "windows": {
             "all": {
               "30d": {
@@ -10119,30 +10326,35 @@
           }
         },
         {
-          "key": "discord:mannysvk:Ping Wheel",
+          "key": "discord:185098717798334464:Ping Wheel",
           "kind": "lineage",
           "main": false,
-          "id": "ping_wheel",
+          "id": "gui_ping_wheel_185098717798334464",
           "author": "Errrrrrr",
           "description": "Displays a ping wheel when a keybind is held down. Default keybind is 'alt-f', rebindable. Left clic...",
           "install": {
             "kind": "discord",
             "url": "https://d29i3oohxql6zz.cloudfront.net/widget_lua/fde069b5b377aa0dd03adbd9312208ac.lua",
             "archive": false,
-            "page": "https://discord.com/channels/549281623154229250/1121129869565239306",
+            "page": "https://discord.com/channels/549281623154229250/1121129869565239306/1543331722488320060",
             "license": "GNU GPL, v2 or later",
             "permissive": true,
             "reason": "",
             "files": [
               {
-                "path": "ping_wheel.lua",
+                "path": "gui_ping_wheel.lua",
                 "content_hash": "/eBptbN3qg3QOtvZMSIIrA==",
                 "url": "https://d29i3oohxql6zz.cloudfront.net/widget_lua/fde069b5b377aa0dd03adbd9312208ac.lua",
-                "install_path": "ping_wheel.lua"
+                "install_path": "gui_ping_wheel.lua"
               }
             ]
           },
-          "image": "",
+          "image": "https://d29i3oohxql6zz.cloudfront.net/widget_img/2784e0451cd13b913db458cf89c62349051c15a889c9b83e2d506af1e98475ee.webp",
+          "images": [
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/2784e0451cd13b913db458cf89c62349051c15a889c9b83e2d506af1e98475ee.webp"
+          ],
+          "first_published": "2026-08-29T18:49:16Z",
+          "last_updated": "2026-08-29T18:49:16Z",
           "windows": {
             "all": {
               "30d": {
@@ -10309,10 +10521,10 @@
           }
         },
         {
-          "key": "discord:spreeezy:Ping Wheel",
+          "key": "discord:95616420703907840:Ping Wheel",
           "kind": "lineage",
           "main": false,
-          "id": "gui_ping_wheel_spreeezy",
+          "id": "gui_ping_wheel_95616420703907840",
           "author": "Errrrrrr & Modded by sprEEEzy",
           "description": "Displays a ping wheel when a keybind is held down. Default keybind is 'alt-f', rebindable. Left clic...",
           "install": {
@@ -10333,6 +10545,9 @@
             ]
           },
           "image": "",
+          "images": [],
+          "first_published": "2024-06-01T19:24:43Z",
+          "last_updated": "2024-06-01T19:24:43Z",
           "windows": {
             "all": {
               "7d": {
@@ -10555,6 +10770,9 @@
             "files": []
           },
           "image": "",
+          "images": [],
+          "first_published": "",
+          "last_updated": "",
           "windows": {
             "all": {
               "7d": {
@@ -10787,6 +11005,11 @@
         ]
       },
       "image": "https://raw.githubusercontent.com/beyond-all-reason/BAR-Widgets/c6fd104/Widgets/community/gui_metal_tracker/cover.png",
+      "images": [
+        "https://raw.githubusercontent.com/beyond-all-reason/BAR-Widgets/c6fd104/Widgets/community/gui_metal_tracker/cover.png"
+      ],
+      "first_published": "2026-03-22T09:34:42Z",
+      "last_updated": "2026-09-10T06:45:10Z",
       "windows": {
         "all": {
           "7d": {
@@ -10802,7 +11025,7 @@
             "coverage": 1.0
           },
           "30d": {
-            "rank": 7,
+            "rank": 8,
             "players": 561,
             "players_active": 232,
             "players_still_using": 190,
@@ -10852,7 +11075,7 @@
         },
         "pve": {
           "7d": {
-            "rank": 7,
+            "rank": 8,
             "players": 127,
             "players_active": 45,
             "players_still_using": 27,
@@ -10864,7 +11087,7 @@
             "coverage": 1.0
           },
           "30d": {
-            "rank": 7,
+            "rank": 8,
             "players": 281,
             "players_active": 46,
             "players_still_using": 27,
@@ -11001,6 +11224,11 @@
             ]
           },
           "image": "https://raw.githubusercontent.com/beyond-all-reason/BAR-Widgets/c6fd104/Widgets/community/gui_metal_tracker/cover.png",
+          "images": [
+            "https://raw.githubusercontent.com/beyond-all-reason/BAR-Widgets/c6fd104/Widgets/community/gui_metal_tracker/cover.png"
+          ],
+          "first_published": "2026-03-22T09:34:42Z",
+          "last_updated": "2026-09-10T06:45:10Z",
           "windows": {
             "all": {
               "7d": {
@@ -11230,6 +11458,11 @@
             ]
           },
           "image": "https://raw.githubusercontent.com/Arginou57/BAR-widgets/38208d3/Widgets/community/gui_metal_tracker/cover.png",
+          "images": [
+            "https://raw.githubusercontent.com/Arginou57/BAR-widgets/38208d3/Widgets/community/gui_metal_tracker/cover.png"
+          ],
+          "first_published": "2026-03-22T09:34:42Z",
+          "last_updated": "2026-07-12T17:54:10Z",
           "windows": {
             "all": {
               "7d": {
@@ -11452,6 +11685,9 @@
             "files": []
           },
           "image": "",
+          "images": [],
+          "first_published": "",
+          "last_updated": "",
           "windows": {
             "all": {
               "7d": {
@@ -11649,6 +11885,1838 @@
                 "still_using": 0.4375,
                 "sightings": 2919,
                 "replays": 2847,
+                "days_covered": 81,
+                "coverage": 1.0,
+                "withheld": false
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "key": "name:6ba765d08e223d18",
+      "resolved": true,
+      "id": "Tweakdefs_bridge",
+      "name": "Tweakdefs Bridge",
+      "main": "github:tetrisface/widgets:Tweakdefs Bridge",
+      "author": "Ambo",
+      "description": "A helper Widget to rename unit names and descriptions with prefixes or full names from infolog. Alt+...",
+      "install": {
+        "kind": "github",
+        "url": "https://raw.githubusercontent.com/tetrisface/widgets/f5accf1/Widgets/Tweakdefs_bridge.lua",
+        "archive": false,
+        "page": "https://github.com/tetrisface/widgets",
+        "license": "GNU GPL, v3 or later",
+        "permissive": true,
+        "reason": "",
+        "files": [
+          {
+            "path": "Widgets/Tweakdefs_bridge.lua",
+            "content_hash": "DXjFshCA0L56h+atG0p+8w==",
+            "url": "https://raw.githubusercontent.com/tetrisface/widgets/f5accf1/Widgets/Tweakdefs_bridge.lua",
+            "install_path": "Tweakdefs_bridge.lua"
+          }
+        ]
+      },
+      "image": "https://d29i3oohxql6zz.cloudfront.net/widget_img/33fab30fde16a480c79f891a5382a2306adede21ba1c3ae595a8319af1dab36a.webp",
+      "images": [
+        "https://d29i3oohxql6zz.cloudfront.net/widget_img/33fab30fde16a480c79f891a5382a2306adede21ba1c3ae595a8319af1dab36a.webp",
+        "https://d29i3oohxql6zz.cloudfront.net/widget_img/2d12d22949967af555c708224a178de68ea2be626ffea9183cee89c1d4f698b2.webp",
+        "https://d29i3oohxql6zz.cloudfront.net/widget_img/f04e7fc11e3e7c15042016acf3c7d3b59e6008ca29b86d638a147dc8fdffa372.webp",
+        "https://d29i3oohxql6zz.cloudfront.net/widget_img/9cb1f221b791b24a4f3f1dd07044b6f89e8ecdb119eee5dc3ed9c6a26764178f.webp"
+      ],
+      "first_published": "2026-03-08T11:11:46Z",
+      "last_updated": "2026-03-08T11:11:46Z",
+      "windows": {
+        "all": {
+          "7d": {
+            "rank": 9,
+            "players": 154,
+            "players_active": 127,
+            "players_still_using": 125,
+            "retention": 0.8246753246753247,
+            "still_using": 0.8116883116883117,
+            "sightings": 2097,
+            "replays": 1748,
+            "days_covered": 7,
+            "coverage": 1.0
+          },
+          "30d": {
+            "rank": 9,
+            "players": 260,
+            "players_active": 210,
+            "players_still_using": 204,
+            "retention": 0.8076923076923077,
+            "still_using": 0.7846153846153846,
+            "sightings": 11241,
+            "replays": 8939,
+            "days_covered": 30,
+            "coverage": 1.0
+          },
+          "90d": {
+            "rank": 9,
+            "players": 361,
+            "players_active": 306,
+            "players_still_using": 293,
+            "retention": 0.8476454293628809,
+            "still_using": 0.8116343490304709,
+            "sightings": 32125,
+            "replays": 25054,
+            "days_covered": 81,
+            "coverage": 0.9
+          },
+          "365d": {
+            "rank": 9,
+            "players": 361,
+            "players_active": 306,
+            "players_still_using": 293,
+            "retention": 0.8476454293628809,
+            "still_using": 0.8116343490304709,
+            "sightings": 32125,
+            "replays": 25054,
+            "days_covered": 81,
+            "coverage": 0.2219178082191781
+          },
+          "all": {
+            "rank": 9,
+            "players": 361,
+            "players_active": 306,
+            "players_still_using": 293,
+            "retention": 0.8476454293628809,
+            "still_using": 0.8116343490304709,
+            "sightings": 32125,
+            "replays": 25054,
+            "days_covered": 81,
+            "coverage": 1.0
+          }
+        },
+        "pve": {
+          "7d": {
+            "rank": 9,
+            "players": 81,
+            "players_active": 68,
+            "players_still_using": 66,
+            "retention": 0.8395061728395061,
+            "still_using": 0.8148148148148148,
+            "sightings": 705,
+            "replays": 592,
+            "days_covered": 7,
+            "coverage": 1.0
+          },
+          "30d": {
+            "rank": 9,
+            "players": 183,
+            "players_active": 148,
+            "players_still_using": 142,
+            "retention": 0.8087431693989071,
+            "still_using": 0.7759562841530054,
+            "sightings": 3633,
+            "replays": 2845,
+            "days_covered": 30,
+            "coverage": 1.0
+          },
+          "90d": {
+            "rank": 9,
+            "players": 269,
+            "players_active": 224,
+            "players_still_using": 214,
+            "retention": 0.8327137546468402,
+            "still_using": 0.7955390334572491,
+            "sightings": 9119,
+            "replays": 7294,
+            "days_covered": 81,
+            "coverage": 0.9
+          },
+          "365d": {
+            "rank": 9,
+            "players": 269,
+            "players_active": 224,
+            "players_still_using": 214,
+            "retention": 0.8327137546468402,
+            "still_using": 0.7955390334572491,
+            "sightings": 9119,
+            "replays": 7294,
+            "days_covered": 81,
+            "coverage": 0.2219178082191781
+          },
+          "all": {
+            "rank": 9,
+            "players": 269,
+            "players_active": 224,
+            "players_still_using": 214,
+            "retention": 0.8327137546468402,
+            "still_using": 0.7955390334572491,
+            "sightings": 9119,
+            "replays": 7294,
+            "days_covered": 81,
+            "coverage": 1.0
+          }
+        },
+        "pvp": {
+          "7d": {
+            "rank": 9,
+            "players": 119,
+            "players_active": 95,
+            "players_still_using": 95,
+            "retention": 0.7983193277310925,
+            "still_using": 0.7983193277310925,
+            "sightings": 1392,
+            "replays": 1156,
+            "days_covered": 7,
+            "coverage": 1.0
+          },
+          "30d": {
+            "rank": 9,
+            "players": 200,
+            "players_active": 162,
+            "players_still_using": 157,
+            "retention": 0.81,
+            "still_using": 0.785,
+            "sightings": 7608,
+            "replays": 6094,
+            "days_covered": 30,
+            "coverage": 1.0
+          },
+          "90d": {
+            "rank": 9,
+            "players": 293,
+            "players_active": 247,
+            "players_still_using": 235,
+            "retention": 0.8430034129692833,
+            "still_using": 0.8020477815699659,
+            "sightings": 23006,
+            "replays": 17760,
+            "days_covered": 81,
+            "coverage": 0.9
+          },
+          "365d": {
+            "rank": 9,
+            "players": 293,
+            "players_active": 247,
+            "players_still_using": 235,
+            "retention": 0.8430034129692833,
+            "still_using": 0.8020477815699659,
+            "sightings": 23006,
+            "replays": 17760,
+            "days_covered": 81,
+            "coverage": 0.2219178082191781
+          },
+          "all": {
+            "rank": 9,
+            "players": 293,
+            "players_active": 247,
+            "players_still_using": 235,
+            "retention": 0.8430034129692833,
+            "still_using": 0.8020477815699659,
+            "sightings": 23006,
+            "replays": 17760,
+            "days_covered": 81,
+            "coverage": 1.0
+          }
+        }
+      },
+      "forks": [
+        {
+          "key": "github:tetrisface/widgets:Tweakdefs Bridge",
+          "kind": "lineage",
+          "main": true,
+          "id": "Tweakdefs_bridge",
+          "author": "Ambo",
+          "description": "A helper Widget to rename unit names and descriptions with prefixes or full names from infolog. Alt+...",
+          "install": {
+            "kind": "github",
+            "url": "https://raw.githubusercontent.com/tetrisface/widgets/f5accf1/Widgets/Tweakdefs_bridge.lua",
+            "archive": false,
+            "page": "https://github.com/tetrisface/widgets",
+            "license": "GNU GPL, v3 or later",
+            "permissive": true,
+            "reason": "",
+            "files": [
+              {
+                "path": "Widgets/Tweakdefs_bridge.lua",
+                "content_hash": "DXjFshCA0L56h+atG0p+8w==",
+                "url": "https://raw.githubusercontent.com/tetrisface/widgets/f5accf1/Widgets/Tweakdefs_bridge.lua",
+                "install_path": "Tweakdefs_bridge.lua"
+              }
+            ]
+          },
+          "image": "",
+          "images": [],
+          "first_published": "2026-03-08T11:11:46Z",
+          "last_updated": "2026-03-08T11:11:46Z",
+          "windows": {
+            "all": {
+              "7d": {
+                "rank": 1,
+                "players": 87,
+                "players_active": 67,
+                "players_still_using": 66,
+                "retention": 0.7701149425287356,
+                "still_using": 0.7586206896551724,
+                "sightings": 1227,
+                "replays": 1113,
+                "days_covered": 7,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "30d": {
+                "rank": 1,
+                "players": 147,
+                "players_active": 114,
+                "players_still_using": 109,
+                "retention": 0.7755102040816326,
+                "still_using": 0.7414965986394558,
+                "sightings": 6324,
+                "replays": 5656,
+                "days_covered": 30,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "90d": {
+                "rank": 1,
+                "players": 201,
+                "players_active": 163,
+                "players_still_using": 147,
+                "retention": 0.8109452736318408,
+                "still_using": 0.7313432835820896,
+                "sightings": 18907,
+                "replays": 16404,
+                "days_covered": 81,
+                "coverage": 0.9,
+                "withheld": false
+              },
+              "365d": {
+                "rank": 1,
+                "players": 201,
+                "players_active": 163,
+                "players_still_using": 147,
+                "retention": 0.8109452736318408,
+                "still_using": 0.7313432835820896,
+                "sightings": 18907,
+                "replays": 16404,
+                "days_covered": 81,
+                "coverage": 0.2219178082191781,
+                "withheld": false
+              },
+              "all": {
+                "rank": 1,
+                "players": 201,
+                "players_active": 163,
+                "players_still_using": 147,
+                "retention": 0.8109452736318408,
+                "still_using": 0.7313432835820896,
+                "sightings": 18907,
+                "replays": 16404,
+                "days_covered": 81,
+                "coverage": 1.0,
+                "withheld": false
+              }
+            },
+            "pve": {
+              "7d": {
+                "rank": 1,
+                "players": 45,
+                "players_active": 37,
+                "players_still_using": 36,
+                "retention": 0.8222222222222222,
+                "still_using": 0.8,
+                "sightings": 333,
+                "replays": 314,
+                "days_covered": 7,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "30d": {
+                "rank": 1,
+                "players": 109,
+                "players_active": 86,
+                "players_still_using": 81,
+                "retention": 0.7889908256880734,
+                "still_using": 0.7431192660550459,
+                "sightings": 1605,
+                "replays": 1476,
+                "days_covered": 30,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "90d": {
+                "rank": 1,
+                "players": 153,
+                "players_active": 121,
+                "players_still_using": 111,
+                "retention": 0.7908496732026143,
+                "still_using": 0.7254901960784313,
+                "sightings": 4494,
+                "replays": 4061,
+                "days_covered": 81,
+                "coverage": 0.9,
+                "withheld": false
+              },
+              "365d": {
+                "rank": 1,
+                "players": 153,
+                "players_active": 121,
+                "players_still_using": 111,
+                "retention": 0.7908496732026143,
+                "still_using": 0.7254901960784313,
+                "sightings": 4494,
+                "replays": 4061,
+                "days_covered": 81,
+                "coverage": 0.2219178082191781,
+                "withheld": false
+              },
+              "all": {
+                "rank": 1,
+                "players": 153,
+                "players_active": 121,
+                "players_still_using": 111,
+                "retention": 0.7908496732026143,
+                "still_using": 0.7254901960784313,
+                "sightings": 4494,
+                "replays": 4061,
+                "days_covered": 81,
+                "coverage": 1.0,
+                "withheld": false
+              }
+            },
+            "pvp": {
+              "7d": {
+                "rank": 1,
+                "players": 65,
+                "players_active": 48,
+                "players_still_using": 48,
+                "retention": 0.7384615384615385,
+                "still_using": 0.7384615384615385,
+                "sightings": 894,
+                "replays": 799,
+                "days_covered": 7,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "30d": {
+                "rank": 1,
+                "players": 115,
+                "players_active": 90,
+                "players_still_using": 87,
+                "retention": 0.782608695652174,
+                "still_using": 0.7565217391304347,
+                "sightings": 4719,
+                "replays": 4180,
+                "days_covered": 30,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "90d": {
+                "rank": 1,
+                "players": 167,
+                "players_active": 135,
+                "players_still_using": 121,
+                "retention": 0.8083832335329342,
+                "still_using": 0.7245508982035929,
+                "sightings": 14413,
+                "replays": 12343,
+                "days_covered": 81,
+                "coverage": 0.9,
+                "withheld": false
+              },
+              "365d": {
+                "rank": 1,
+                "players": 167,
+                "players_active": 135,
+                "players_still_using": 121,
+                "retention": 0.8083832335329342,
+                "still_using": 0.7245508982035929,
+                "sightings": 14413,
+                "replays": 12343,
+                "days_covered": 81,
+                "coverage": 0.2219178082191781,
+                "withheld": false
+              },
+              "all": {
+                "rank": 1,
+                "players": 167,
+                "players_active": 135,
+                "players_still_using": 121,
+                "retention": 0.8083832335329342,
+                "still_using": 0.7245508982035929,
+                "sightings": 14413,
+                "replays": 12343,
+                "days_covered": 81,
+                "coverage": 1.0,
+                "withheld": false
+              }
+            }
+          }
+        },
+        {
+          "key": "discord:182966095941074944:Tweakdefs Bridge",
+          "kind": "lineage",
+          "main": false,
+          "id": "widget_tweakdefs_bridge",
+          "author": "Ambo",
+          "description": "A helper Widget to rename unit names and descriptions with prefixes or full names from infolog. Alt+...",
+          "install": {
+            "kind": "discord",
+            "url": "https://d29i3oohxql6zz.cloudfront.net/widget_lua/e6ce6826bf7ef8ea2b6da386578b6f60.lua",
+            "archive": false,
+            "page": "https://discord.com/channels/549281623154229250/1468742915315470591/1489715775676616754",
+            "license": "GNU GPL, v3 or later",
+            "permissive": true,
+            "reason": "",
+            "files": [
+              {
+                "path": "widget_tweakdefs_bridge.lua",
+                "content_hash": "5s5oJr9++OorbaOGV4tvYA==",
+                "url": "https://d29i3oohxql6zz.cloudfront.net/widget_lua/e6ce6826bf7ef8ea2b6da386578b6f60.lua",
+                "install_path": "widget_tweakdefs_bridge.lua"
+              }
+            ]
+          },
+          "image": "",
+          "images": [],
+          "first_published": "2026-04-03T19:58:38Z",
+          "last_updated": "2026-04-03T19:58:38Z",
+          "windows": {
+            "all": {
+              "7d": {
+                "rank": 3,
+                "players": 27,
+                "players_active": 22,
+                "players_still_using": 22,
+                "retention": 0.8148148148148148,
+                "still_using": 0.8148148148148148,
+                "sightings": 369,
+                "replays": 332,
+                "days_covered": 7,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "30d": {
+                "rank": 2,
+                "players": 54,
+                "players_active": 45,
+                "players_still_using": 43,
+                "retention": 0.8333333333333334,
+                "still_using": 0.7962962962962963,
+                "sightings": 2343,
+                "replays": 2062,
+                "days_covered": 30,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "90d": {
+                "rank": 2,
+                "players": 81,
+                "players_active": 75,
+                "players_still_using": 69,
+                "retention": 0.9259259259259259,
+                "still_using": 0.8518518518518519,
+                "sightings": 5988,
+                "replays": 5388,
+                "days_covered": 81,
+                "coverage": 0.9,
+                "withheld": false
+              },
+              "365d": {
+                "rank": 2,
+                "players": 81,
+                "players_active": 75,
+                "players_still_using": 69,
+                "retention": 0.9259259259259259,
+                "still_using": 0.8518518518518519,
+                "sightings": 5988,
+                "replays": 5388,
+                "days_covered": 81,
+                "coverage": 0.2219178082191781,
+                "withheld": false
+              },
+              "all": {
+                "rank": 2,
+                "players": 81,
+                "players_active": 75,
+                "players_still_using": 69,
+                "retention": 0.9259259259259259,
+                "still_using": 0.8518518518518519,
+                "sightings": 5988,
+                "replays": 5388,
+                "days_covered": 81,
+                "coverage": 1.0,
+                "withheld": false
+              }
+            },
+            "pve": {
+              "7d": {
+                "rank": 3,
+                "players": 12,
+                "players_active": 8,
+                "players_still_using": 8,
+                "retention": 0.6666666666666666,
+                "still_using": 0.6666666666666666,
+                "sightings": 159,
+                "replays": 132,
+                "days_covered": 7,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "30d": {
+                "rank": 3,
+                "players": 33,
+                "players_active": 25,
+                "players_still_using": 23,
+                "retention": 0.7575757575757576,
+                "still_using": 0.696969696969697,
+                "sightings": 929,
+                "replays": 753,
+                "days_covered": 30,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "90d": {
+                "rank": 3,
+                "players": 52,
+                "players_active": 46,
+                "players_still_using": 42,
+                "retention": 0.8846153846153846,
+                "still_using": 0.8076923076923077,
+                "sightings": 1728,
+                "replays": 1490,
+                "days_covered": 81,
+                "coverage": 0.9,
+                "withheld": false
+              },
+              "365d": {
+                "rank": 3,
+                "players": 52,
+                "players_active": 46,
+                "players_still_using": 42,
+                "retention": 0.8846153846153846,
+                "still_using": 0.8076923076923077,
+                "sightings": 1728,
+                "replays": 1490,
+                "days_covered": 81,
+                "coverage": 0.2219178082191781,
+                "withheld": false
+              },
+              "all": {
+                "rank": 3,
+                "players": 52,
+                "players_active": 46,
+                "players_still_using": 42,
+                "retention": 0.8846153846153846,
+                "still_using": 0.8076923076923077,
+                "sightings": 1728,
+                "replays": 1490,
+                "days_covered": 81,
+                "coverage": 1.0,
+                "withheld": false
+              }
+            },
+            "pvp": {
+              "7d": {
+                "rank": 2,
+                "players": 26,
+                "players_active": 22,
+                "players_still_using": 22,
+                "retention": 0.8461538461538461,
+                "still_using": 0.8461538461538461,
+                "sightings": 210,
+                "replays": 200,
+                "days_covered": 7,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "30d": {
+                "rank": 2,
+                "players": 45,
+                "players_active": 40,
+                "players_still_using": 38,
+                "retention": 0.8888888888888888,
+                "still_using": 0.8444444444444444,
+                "sightings": 1414,
+                "replays": 1309,
+                "days_covered": 30,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "90d": {
+                "rank": 2,
+                "players": 67,
+                "players_active": 64,
+                "players_still_using": 59,
+                "retention": 0.9552238805970149,
+                "still_using": 0.8805970149253731,
+                "sightings": 4260,
+                "replays": 3898,
+                "days_covered": 81,
+                "coverage": 0.9,
+                "withheld": false
+              },
+              "365d": {
+                "rank": 2,
+                "players": 67,
+                "players_active": 64,
+                "players_still_using": 59,
+                "retention": 0.9552238805970149,
+                "still_using": 0.8805970149253731,
+                "sightings": 4260,
+                "replays": 3898,
+                "days_covered": 81,
+                "coverage": 0.2219178082191781,
+                "withheld": false
+              },
+              "all": {
+                "rank": 2,
+                "players": 67,
+                "players_active": 64,
+                "players_still_using": 59,
+                "retention": 0.9552238805970149,
+                "still_using": 0.8805970149253731,
+                "sightings": 4260,
+                "replays": 3898,
+                "days_covered": 81,
+                "coverage": 1.0,
+                "withheld": false
+              }
+            }
+          }
+        },
+        {
+          "key": "discord:278668638196596736:Tweakdefs Bridge",
+          "kind": "lineage",
+          "main": false,
+          "id": "Tweakdefs_bridge",
+          "author": "Ambo",
+          "description": "A helper Widget to rename unit names and descriptions from infolog. Supports tweakdefs_rename_block_...",
+          "install": {
+            "kind": "discord",
+            "url": "https://d29i3oohxql6zz.cloudfront.net/widget_lua/60778b3faa6533b7391b6750f3500f6e.lua",
+            "archive": false,
+            "page": "https://discord.com/channels/549281623154229250/1468742915315470591/1469959303015301247",
+            "license": "GNU GPL, v3 or later",
+            "permissive": true,
+            "reason": "",
+            "files": [
+              {
+                "path": "Tweakdefs_bridge.lua",
+                "content_hash": "YHeLP6plM7c5G2dQ81APbg==",
+                "url": "https://d29i3oohxql6zz.cloudfront.net/widget_lua/60778b3faa6533b7391b6750f3500f6e.lua",
+                "install_path": "Tweakdefs_bridge.lua"
+              }
+            ]
+          },
+          "image": "https://d29i3oohxql6zz.cloudfront.net/widget_img/33fab30fde16a480c79f891a5382a2306adede21ba1c3ae595a8319af1dab36a.webp",
+          "images": [
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/33fab30fde16a480c79f891a5382a2306adede21ba1c3ae595a8319af1dab36a.webp",
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/2d12d22949967af555c708224a178de68ea2be626ffea9183cee89c1d4f698b2.webp",
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/f04e7fc11e3e7c15042016acf3c7d3b59e6008ca29b86d638a147dc8fdffa372.webp",
+            "https://d29i3oohxql6zz.cloudfront.net/widget_img/9cb1f221b791b24a4f3f1dd07044b6f89e8ecdb119eee5dc3ed9c6a26764178f.webp"
+          ],
+          "first_published": "2026-02-08T07:33:28Z",
+          "last_updated": "2026-05-18T00:56:39Z",
+          "windows": {
+            "all": {
+              "7d": {
+                "rank": 2,
+                "players": 29,
+                "players_active": 27,
+                "players_still_using": 26,
+                "retention": 0.9310344827586207,
+                "still_using": 0.896551724137931,
+                "sightings": 399,
+                "replays": 384,
+                "days_covered": 7,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "30d": {
+                "rank": 3,
+                "players": 47,
+                "players_active": 39,
+                "players_still_using": 37,
+                "retention": 0.8297872340425532,
+                "still_using": 0.7872340425531915,
+                "sightings": 2067,
+                "replays": 1886,
+                "days_covered": 30,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "90d": {
+                "rank": 3,
+                "players": 74,
+                "players_active": 63,
+                "players_still_using": 58,
+                "retention": 0.8513513513513513,
+                "still_using": 0.7837837837837838,
+                "sightings": 5671,
+                "replays": 5074,
+                "days_covered": 81,
+                "coverage": 0.9,
+                "withheld": false
+              },
+              "365d": {
+                "rank": 3,
+                "players": 74,
+                "players_active": 63,
+                "players_still_using": 58,
+                "retention": 0.8513513513513513,
+                "still_using": 0.7837837837837838,
+                "sightings": 5671,
+                "replays": 5074,
+                "days_covered": 81,
+                "coverage": 0.2219178082191781,
+                "withheld": false
+              },
+              "all": {
+                "rank": 3,
+                "players": 74,
+                "players_active": 63,
+                "players_still_using": 58,
+                "retention": 0.8513513513513513,
+                "still_using": 0.7837837837837838,
+                "sightings": 5671,
+                "replays": 5074,
+                "days_covered": 81,
+                "coverage": 1.0,
+                "withheld": false
+              }
+            },
+            "pve": {
+              "7d": {
+                "rank": 2,
+                "players": 17,
+                "players_active": 16,
+                "players_still_using": 15,
+                "retention": 0.9411764705882353,
+                "still_using": 0.8823529411764706,
+                "sightings": 157,
+                "replays": 151,
+                "days_covered": 7,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "30d": {
+                "rank": 2,
+                "players": 34,
+                "players_active": 30,
+                "players_still_using": 28,
+                "retention": 0.8823529411764706,
+                "still_using": 0.8235294117647058,
+                "sightings": 837,
+                "replays": 750,
+                "days_covered": 30,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "90d": {
+                "rank": 2,
+                "players": 58,
+                "players_active": 51,
+                "players_still_using": 46,
+                "retention": 0.8793103448275862,
+                "still_using": 0.7931034482758621,
+                "sightings": 2047,
+                "replays": 1832,
+                "days_covered": 81,
+                "coverage": 0.9,
+                "withheld": false
+              },
+              "365d": {
+                "rank": 2,
+                "players": 58,
+                "players_active": 51,
+                "players_still_using": 46,
+                "retention": 0.8793103448275862,
+                "still_using": 0.7931034482758621,
+                "sightings": 2047,
+                "replays": 1832,
+                "days_covered": 81,
+                "coverage": 0.2219178082191781,
+                "withheld": false
+              },
+              "all": {
+                "rank": 2,
+                "players": 58,
+                "players_active": 51,
+                "players_still_using": 46,
+                "retention": 0.8793103448275862,
+                "still_using": 0.7931034482758621,
+                "sightings": 2047,
+                "replays": 1832,
+                "days_covered": 81,
+                "coverage": 1.0,
+                "withheld": false
+              }
+            },
+            "pvp": {
+              "7d": {
+                "rank": 3,
+                "players": 21,
+                "players_active": 18,
+                "players_still_using": 18,
+                "retention": 0.8571428571428571,
+                "still_using": 0.8571428571428571,
+                "sightings": 242,
+                "replays": 233,
+                "days_covered": 7,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "30d": {
+                "rank": 3,
+                "players": 32,
+                "players_active": 24,
+                "players_still_using": 23,
+                "retention": 0.75,
+                "still_using": 0.71875,
+                "sightings": 1230,
+                "replays": 1136,
+                "days_covered": 30,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "90d": {
+                "rank": 3,
+                "players": 57,
+                "players_active": 46,
+                "players_still_using": 44,
+                "retention": 0.8070175438596491,
+                "still_using": 0.7719298245614035,
+                "sightings": 3624,
+                "replays": 3242,
+                "days_covered": 81,
+                "coverage": 0.9,
+                "withheld": false
+              },
+              "365d": {
+                "rank": 3,
+                "players": 57,
+                "players_active": 46,
+                "players_still_using": 44,
+                "retention": 0.8070175438596491,
+                "still_using": 0.7719298245614035,
+                "sightings": 3624,
+                "replays": 3242,
+                "days_covered": 81,
+                "coverage": 0.2219178082191781,
+                "withheld": false
+              },
+              "all": {
+                "rank": 3,
+                "players": 57,
+                "players_active": 46,
+                "players_still_using": 44,
+                "retention": 0.8070175438596491,
+                "still_using": 0.7719298245614035,
+                "sightings": 3624,
+                "replays": 3242,
+                "days_covered": 81,
+                "coverage": 1.0,
+                "withheld": false
+              }
+            }
+          }
+        },
+        {
+          "key": "other",
+          "kind": "other",
+          "main": false,
+          "id": "",
+          "author": "Ambo",
+          "description": "A helper Widget to rename unit names and descriptions with prefixes or full names from infolog. Alt+...",
+          "install": {
+            "kind": "none",
+            "url": "",
+            "archive": false,
+            "page": "",
+            "license": "",
+            "permissive": false,
+            "reason": "no known source",
+            "files": []
+          },
+          "image": "",
+          "images": [],
+          "first_published": "",
+          "last_updated": "",
+          "windows": {
+            "all": {
+              "7d": {
+                "rank": 4,
+                "players": 11,
+                "players_active": 11,
+                "players_still_using": 11,
+                "retention": 1.0,
+                "still_using": 1.0,
+                "sightings": 102,
+                "replays": 102,
+                "days_covered": 7,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "30d": {
+                "rank": 4,
+                "players": 15,
+                "players_active": 15,
+                "players_still_using": 15,
+                "retention": 1.0,
+                "still_using": 1.0,
+                "sightings": 507,
+                "replays": 491,
+                "days_covered": 30,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "90d": {
+                "rank": 4,
+                "players": 19,
+                "players_active": 19,
+                "players_still_using": 19,
+                "retention": 1.0,
+                "still_using": 1.0,
+                "sightings": 1559,
+                "replays": 1523,
+                "days_covered": 81,
+                "coverage": 0.9,
+                "withheld": false
+              },
+              "365d": {
+                "rank": 4,
+                "players": 19,
+                "players_active": 19,
+                "players_still_using": 19,
+                "retention": 1.0,
+                "still_using": 1.0,
+                "sightings": 1559,
+                "replays": 1523,
+                "days_covered": 81,
+                "coverage": 0.2219178082191781,
+                "withheld": false
+              },
+              "all": {
+                "rank": 4,
+                "players": 19,
+                "players_active": 19,
+                "players_still_using": 19,
+                "retention": 1.0,
+                "still_using": 1.0,
+                "sightings": 1559,
+                "replays": 1523,
+                "days_covered": 81,
+                "coverage": 1.0,
+                "withheld": false
+              }
+            },
+            "pve": {
+              "7d": {
+                "rank": 4,
+                "players": 7,
+                "players_active": 7,
+                "players_still_using": 7,
+                "retention": 1.0,
+                "still_using": 1.0,
+                "sightings": 56,
+                "replays": 56,
+                "days_covered": 7,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "30d": {
+                "rank": 4,
+                "players": 10,
+                "players_active": 10,
+                "players_still_using": 10,
+                "retention": 1.0,
+                "still_using": 1.0,
+                "sightings": 262,
+                "replays": 257,
+                "days_covered": 30,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "90d": {
+                "rank": 4,
+                "players": 15,
+                "players_active": 15,
+                "players_still_using": 15,
+                "retention": 1.0,
+                "still_using": 1.0,
+                "sightings": 850,
+                "replays": 835,
+                "days_covered": 81,
+                "coverage": 0.9,
+                "withheld": false
+              },
+              "365d": {
+                "rank": 4,
+                "players": 15,
+                "players_active": 15,
+                "players_still_using": 15,
+                "retention": 1.0,
+                "still_using": 1.0,
+                "sightings": 850,
+                "replays": 835,
+                "days_covered": 81,
+                "coverage": 0.2219178082191781,
+                "withheld": false
+              },
+              "all": {
+                "rank": 4,
+                "players": 15,
+                "players_active": 15,
+                "players_still_using": 15,
+                "retention": 1.0,
+                "still_using": 1.0,
+                "sightings": 850,
+                "replays": 835,
+                "days_covered": 81,
+                "coverage": 1.0,
+                "withheld": false
+              }
+            },
+            "pvp": {
+              "7d": {
+                "rank": 4,
+                "players": 7,
+                "players_active": 7,
+                "players_still_using": 7,
+                "retention": 1.0,
+                "still_using": 1.0,
+                "sightings": 46,
+                "replays": 46,
+                "days_covered": 7,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "30d": {
+                "rank": 4,
+                "players": 9,
+                "players_active": 9,
+                "players_still_using": 9,
+                "retention": 1.0,
+                "still_using": 1.0,
+                "sightings": 245,
+                "replays": 234,
+                "days_covered": 30,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "90d": {
+                "rank": 4,
+                "players": 11,
+                "players_active": 11,
+                "players_still_using": 11,
+                "retention": 1.0,
+                "still_using": 1.0,
+                "sightings": 709,
+                "replays": 688,
+                "days_covered": 81,
+                "coverage": 0.9,
+                "withheld": false
+              },
+              "365d": {
+                "rank": 4,
+                "players": 11,
+                "players_active": 11,
+                "players_still_using": 11,
+                "retention": 1.0,
+                "still_using": 1.0,
+                "sightings": 709,
+                "replays": 688,
+                "days_covered": 81,
+                "coverage": 0.2219178082191781,
+                "withheld": false
+              },
+              "all": {
+                "rank": 4,
+                "players": 11,
+                "players_active": 11,
+                "players_still_using": 11,
+                "retention": 1.0,
+                "still_using": 1.0,
+                "sightings": 709,
+                "replays": 688,
+                "days_covered": 81,
+                "coverage": 1.0,
+                "withheld": false
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "key": "name:79df94cde8bfde73",
+      "resolved": true,
+      "id": "cmd_build_snap",
+      "name": "Build Snap (all buildings)",
+      "main": "hub:cmd_build_snap",
+      "author": "uBdead (based on Extractor Snap patterns) by Hobo Joe, based on work by Niobium and Floris",
+      "description": "Snaps building placement to the nearest valid build grid point (within a small search radius). Hold ...",
+      "install": {
+        "kind": "hub",
+        "url": "https://widget-hub.beyondallreason.dev/distributions/cmd_build_snap.zip",
+        "archive": true,
+        "page": "https://github.com/beyond-all-reason/BAR-Widgets",
+        "license": "GNU GPL, v2 or later",
+        "permissive": true,
+        "reason": "",
+        "files": [
+          {
+            "path": "cmd_build_snap.lua",
+            "content_hash": "UE8UsKFr77PQBg4/bmNjNQ==",
+            "url": "",
+            "install_path": "cmd_build_snap.lua"
+          }
+        ]
+      },
+      "image": "https://widget-hub.beyondallreason.dev/sites/cmd_build_snap/cmd_build_snap_460x300.png",
+      "images": [
+        "https://widget-hub.beyondallreason.dev/sites/cmd_build_snap/cmd_build_snap_460x300.png"
+      ],
+      "first_published": "2025-08-31T11:06:22Z",
+      "last_updated": "2026-07-31T15:46:50Z",
+      "windows": {
+        "all": {
+          "7d": {
+            "rank": 8,
+            "players": 327,
+            "players_active": 274,
+            "players_still_using": 262,
+            "retention": 0.8379204892966361,
+            "still_using": 0.8012232415902141,
+            "sightings": 4930,
+            "replays": 3783,
+            "days_covered": 7,
+            "coverage": 1.0
+          },
+          "30d": {
+            "rank": 7,
+            "players": 585,
+            "players_active": 536,
+            "players_still_using": 492,
+            "retention": 0.9162393162393162,
+            "still_using": 0.841025641025641,
+            "sightings": 21132,
+            "replays": 16796,
+            "days_covered": 30,
+            "coverage": 1.0
+          },
+          "90d": {
+            "rank": 8,
+            "players": 742,
+            "players_active": 703,
+            "players_still_using": 635,
+            "retention": 0.9474393530997305,
+            "still_using": 0.8557951482479784,
+            "sightings": 33172,
+            "replays": 27611,
+            "days_covered": 81,
+            "coverage": 0.9
+          },
+          "365d": {
+            "rank": 8,
+            "players": 742,
+            "players_active": 703,
+            "players_still_using": 635,
+            "retention": 0.9474393530997305,
+            "still_using": 0.8557951482479784,
+            "sightings": 33172,
+            "replays": 27611,
+            "days_covered": 81,
+            "coverage": 0.2219178082191781
+          },
+          "all": {
+            "rank": 8,
+            "players": 742,
+            "players_active": 703,
+            "players_still_using": 635,
+            "retention": 0.9474393530997305,
+            "still_using": 0.8557951482479784,
+            "sightings": 33172,
+            "replays": 27611,
+            "days_covered": 81,
+            "coverage": 1.0
+          }
+        },
+        "pve": {
+          "7d": {
+            "rank": 6,
+            "players": 137,
+            "players_active": 115,
+            "players_still_using": 112,
+            "retention": 0.8394160583941606,
+            "still_using": 0.8175182481751825,
+            "sightings": 761,
+            "replays": 671,
+            "days_covered": 7,
+            "coverage": 1.0
+          },
+          "30d": {
+            "rank": 7,
+            "players": 307,
+            "players_active": 276,
+            "players_still_using": 261,
+            "retention": 0.8990228013029316,
+            "still_using": 0.8501628664495114,
+            "sightings": 3231,
+            "replays": 2889,
+            "days_covered": 30,
+            "coverage": 1.0
+          },
+          "90d": {
+            "rank": 8,
+            "players": 413,
+            "players_active": 380,
+            "players_still_using": 354,
+            "retention": 0.9200968523002422,
+            "still_using": 0.8571428571428571,
+            "sightings": 4832,
+            "replays": 4419,
+            "days_covered": 81,
+            "coverage": 0.9
+          },
+          "365d": {
+            "rank": 8,
+            "players": 413,
+            "players_active": 380,
+            "players_still_using": 354,
+            "retention": 0.9200968523002422,
+            "still_using": 0.8571428571428571,
+            "sightings": 4832,
+            "replays": 4419,
+            "days_covered": 81,
+            "coverage": 0.2219178082191781
+          },
+          "all": {
+            "rank": 8,
+            "players": 413,
+            "players_active": 380,
+            "players_still_using": 354,
+            "retention": 0.9200968523002422,
+            "still_using": 0.8571428571428571,
+            "sightings": 4832,
+            "replays": 4419,
+            "days_covered": 81,
+            "coverage": 1.0
+          }
+        },
+        "pvp": {
+          "7d": {
+            "rank": 8,
+            "players": 284,
+            "players_active": 235,
+            "players_still_using": 226,
+            "retention": 0.8274647887323944,
+            "still_using": 0.795774647887324,
+            "sightings": 4169,
+            "replays": 3112,
+            "days_covered": 7,
+            "coverage": 1.0
+          },
+          "30d": {
+            "rank": 8,
+            "players": 494,
+            "players_active": 446,
+            "players_still_using": 409,
+            "retention": 0.902834008097166,
+            "still_using": 0.8279352226720648,
+            "sightings": 17901,
+            "replays": 13907,
+            "days_covered": 30,
+            "coverage": 1.0
+          },
+          "90d": {
+            "rank": 8,
+            "players": 617,
+            "players_active": 577,
+            "players_still_using": 516,
+            "retention": 0.9351701782820098,
+            "still_using": 0.8363047001620746,
+            "sightings": 28340,
+            "replays": 23192,
+            "days_covered": 81,
+            "coverage": 0.9
+          },
+          "365d": {
+            "rank": 8,
+            "players": 617,
+            "players_active": 577,
+            "players_still_using": 516,
+            "retention": 0.9351701782820098,
+            "still_using": 0.8363047001620746,
+            "sightings": 28340,
+            "replays": 23192,
+            "days_covered": 81,
+            "coverage": 0.2219178082191781
+          },
+          "all": {
+            "rank": 8,
+            "players": 617,
+            "players_active": 577,
+            "players_still_using": 516,
+            "retention": 0.9351701782820098,
+            "still_using": 0.8363047001620746,
+            "sightings": 28340,
+            "replays": 23192,
+            "days_covered": 81,
+            "coverage": 1.0
+          }
+        }
+      },
+      "forks": [
+        {
+          "key": "hub:cmd_build_snap",
+          "kind": "lineage",
+          "main": true,
+          "id": "cmd_build_snap",
+          "author": "uBdead (based on Extractor Snap patterns) by Hobo Joe, based on work by Niobium and Floris",
+          "description": "Snaps building placement to the nearest valid build grid point (within a small search radius). Hold ...",
+          "install": {
+            "kind": "hub",
+            "url": "https://widget-hub.beyondallreason.dev/distributions/cmd_build_snap.zip",
+            "archive": true,
+            "page": "https://github.com/beyond-all-reason/BAR-Widgets",
+            "license": "GNU GPL, v2 or later",
+            "permissive": true,
+            "reason": "",
+            "files": [
+              {
+                "path": "cmd_build_snap.lua",
+                "content_hash": "UE8UsKFr77PQBg4/bmNjNQ==",
+                "url": "",
+                "install_path": "cmd_build_snap.lua"
+              }
+            ]
+          },
+          "image": "https://widget-hub.beyondallreason.dev/sites/cmd_build_snap/cmd_build_snap_460x300.png",
+          "images": [
+            "https://widget-hub.beyondallreason.dev/sites/cmd_build_snap/cmd_build_snap_460x300.png"
+          ],
+          "first_published": "2025-08-31T11:06:22Z",
+          "last_updated": "2026-07-31T15:46:50Z",
+          "windows": {
+            "all": {
+              "7d": {
+                "rank": 1,
+                "players": 311,
+                "players_active": 263,
+                "players_still_using": 250,
+                "retention": 0.8456591639871383,
+                "still_using": 0.8038585209003215,
+                "sightings": 4509,
+                "replays": 3549,
+                "days_covered": 7,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "30d": {
+                "rank": 1,
+                "players": 561,
+                "players_active": 519,
+                "players_still_using": 472,
+                "retention": 0.9251336898395722,
+                "still_using": 0.8413547237076648,
+                "sightings": 19384,
+                "replays": 15730,
+                "days_covered": 30,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "90d": {
+                "rank": 1,
+                "players": 677,
+                "players_active": 648,
+                "players_still_using": 580,
+                "retention": 0.9571639586410635,
+                "still_using": 0.8567208271787297,
+                "sightings": 26489,
+                "replays": 22102,
+                "days_covered": 81,
+                "coverage": 0.9,
+                "withheld": false
+              },
+              "365d": {
+                "rank": 1,
+                "players": 677,
+                "players_active": 648,
+                "players_still_using": 580,
+                "retention": 0.9571639586410635,
+                "still_using": 0.8567208271787297,
+                "sightings": 26489,
+                "replays": 22102,
+                "days_covered": 81,
+                "coverage": 0.2219178082191781,
+                "withheld": false
+              },
+              "all": {
+                "rank": 1,
+                "players": 677,
+                "players_active": 648,
+                "players_still_using": 580,
+                "retention": 0.9571639586410635,
+                "still_using": 0.8567208271787297,
+                "sightings": 26489,
+                "replays": 22102,
+                "days_covered": 81,
+                "coverage": 1.0,
+                "withheld": false
+              }
+            },
+            "pve": {
+              "7d": {
+                "rank": 1,
+                "players": 135,
+                "players_active": 114,
+                "players_still_using": 111,
+                "retention": 0.8444444444444444,
+                "still_using": 0.8222222222222222,
+                "sightings": 755,
+                "replays": 666,
+                "days_covered": 7,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "30d": {
+                "rank": 1,
+                "players": 299,
+                "players_active": 270,
+                "players_still_using": 255,
+                "retention": 0.903010033444816,
+                "still_using": 0.8528428093645485,
+                "sightings": 3170,
+                "replays": 2835,
+                "days_covered": 30,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "90d": {
+                "rank": 1,
+                "players": 374,
+                "players_active": 349,
+                "players_still_using": 325,
+                "retention": 0.9331550802139037,
+                "still_using": 0.8689839572192514,
+                "sightings": 4397,
+                "replays": 4002,
+                "days_covered": 81,
+                "coverage": 0.9,
+                "withheld": false
+              },
+              "365d": {
+                "rank": 1,
+                "players": 374,
+                "players_active": 349,
+                "players_still_using": 325,
+                "retention": 0.9331550802139037,
+                "still_using": 0.8689839572192514,
+                "sightings": 4397,
+                "replays": 4002,
+                "days_covered": 81,
+                "coverage": 0.2219178082191781,
+                "withheld": false
+              },
+              "all": {
+                "rank": 1,
+                "players": 374,
+                "players_active": 349,
+                "players_still_using": 325,
+                "retention": 0.9331550802139037,
+                "still_using": 0.8689839572192514,
+                "sightings": 4397,
+                "replays": 4002,
+                "days_covered": 81,
+                "coverage": 1.0,
+                "withheld": false
+              }
+            },
+            "pvp": {
+              "7d": {
+                "rank": 1,
+                "players": 268,
+                "players_active": 224,
+                "players_still_using": 214,
+                "retention": 0.835820895522388,
+                "still_using": 0.7985074626865671,
+                "sightings": 3754,
+                "replays": 2883,
+                "days_covered": 7,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "30d": {
+                "rank": 1,
+                "players": 471,
+                "players_active": 430,
+                "players_still_using": 390,
+                "retention": 0.9129511677282378,
+                "still_using": 0.8280254777070064,
+                "sightings": 16214,
+                "replays": 12895,
+                "days_covered": 30,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "90d": {
+                "rank": 1,
+                "players": 560,
+                "players_active": 531,
+                "players_still_using": 470,
+                "retention": 0.9482142857142857,
+                "still_using": 0.8392857142857143,
+                "sightings": 22092,
+                "replays": 18100,
+                "days_covered": 81,
+                "coverage": 0.9,
+                "withheld": false
+              },
+              "365d": {
+                "rank": 1,
+                "players": 560,
+                "players_active": 531,
+                "players_still_using": 470,
+                "retention": 0.9482142857142857,
+                "still_using": 0.8392857142857143,
+                "sightings": 22092,
+                "replays": 18100,
+                "days_covered": 81,
+                "coverage": 0.2219178082191781,
+                "withheld": false
+              },
+              "all": {
+                "rank": 1,
+                "players": 560,
+                "players_active": 531,
+                "players_still_using": 470,
+                "retention": 0.9482142857142857,
+                "still_using": 0.8392857142857143,
+                "sightings": 22092,
+                "replays": 18100,
+                "days_covered": 81,
+                "coverage": 1.0,
+                "withheld": false
+              }
+            }
+          }
+        },
+        {
+          "key": "other",
+          "kind": "other",
+          "main": false,
+          "id": "",
+          "author": "uBdead (based on Extractor Snap patterns) by Hobo Joe, based on work by Niobium and Floris",
+          "description": "Snaps building placement to the nearest valid build grid point (within a small search radius). Hold ...",
+          "install": {
+            "kind": "none",
+            "url": "",
+            "archive": false,
+            "page": "",
+            "license": "",
+            "permissive": false,
+            "reason": "no known source",
+            "files": []
+          },
+          "image": "",
+          "images": [],
+          "first_published": "",
+          "last_updated": "",
+          "windows": {
+            "all": {
+              "7d": {
+                "rank": 2,
+                "players": 17,
+                "players_active": 12,
+                "players_still_using": 12,
+                "retention": 0.7058823529411765,
+                "still_using": 0.7058823529411765,
+                "sightings": 421,
+                "replays": 413,
+                "days_covered": 7,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "30d": {
+                "rank": 2,
+                "players": 28,
+                "players_active": 20,
+                "players_still_using": 20,
+                "retention": 0.7142857142857143,
+                "still_using": 0.7142857142857143,
+                "sightings": 1748,
+                "replays": 1712,
+                "days_covered": 30,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "90d": {
+                "rank": 2,
+                "players": 114,
+                "players_active": 87,
+                "players_still_using": 55,
+                "retention": 0.7631578947368421,
+                "still_using": 0.4824561403508772,
+                "sightings": 6683,
+                "replays": 6371,
+                "days_covered": 81,
+                "coverage": 0.9,
+                "withheld": false
+              },
+              "365d": {
+                "rank": 2,
+                "players": 114,
+                "players_active": 87,
+                "players_still_using": 55,
+                "retention": 0.7631578947368421,
+                "still_using": 0.4824561403508772,
+                "sightings": 6683,
+                "replays": 6371,
+                "days_covered": 81,
+                "coverage": 0.2219178082191781,
+                "withheld": false
+              },
+              "all": {
+                "rank": 2,
+                "players": 114,
+                "players_active": 87,
+                "players_still_using": 55,
+                "retention": 0.7631578947368421,
+                "still_using": 0.4824561403508772,
+                "sightings": 6683,
+                "replays": 6371,
+                "days_covered": 81,
+                "coverage": 1.0,
+                "withheld": false
+              }
+            },
+            "pve": {
+              "7d": {
+                "rank": 2,
+                "players": 0,
+                "players_active": 0,
+                "players_still_using": 0,
+                "retention": 0.0,
+                "still_using": 0.0,
+                "sightings": 0,
+                "replays": 0,
+                "days_covered": 7,
+                "coverage": 1.0,
+                "withheld": true
+              },
+              "30d": {
+                "rank": 2,
+                "players": 8,
+                "players_active": 6,
+                "players_still_using": 6,
+                "retention": 0.75,
+                "still_using": 0.75,
+                "sightings": 61,
+                "replays": 61,
+                "days_covered": 30,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "90d": {
+                "rank": 2,
+                "players": 49,
+                "players_active": 35,
+                "players_still_using": 29,
+                "retention": 0.7142857142857143,
+                "still_using": 0.5918367346938775,
+                "sightings": 435,
+                "replays": 428,
+                "days_covered": 81,
+                "coverage": 0.9,
+                "withheld": false
+              },
+              "365d": {
+                "rank": 2,
+                "players": 49,
+                "players_active": 35,
+                "players_still_using": 29,
+                "retention": 0.7142857142857143,
+                "still_using": 0.5918367346938775,
+                "sightings": 435,
+                "replays": 428,
+                "days_covered": 81,
+                "coverage": 0.2219178082191781,
+                "withheld": false
+              },
+              "all": {
+                "rank": 2,
+                "players": 49,
+                "players_active": 35,
+                "players_still_using": 29,
+                "retention": 0.7142857142857143,
+                "still_using": 0.5918367346938775,
+                "sightings": 435,
+                "replays": 428,
+                "days_covered": 81,
+                "coverage": 1.0,
+                "withheld": false
+              }
+            },
+            "pvp": {
+              "7d": {
+                "rank": 2,
+                "players": 17,
+                "players_active": 12,
+                "players_still_using": 12,
+                "retention": 0.7058823529411765,
+                "still_using": 0.7058823529411765,
+                "sightings": 415,
+                "replays": 407,
+                "days_covered": 7,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "30d": {
+                "rank": 2,
+                "players": 27,
+                "players_active": 19,
+                "players_still_using": 19,
+                "retention": 0.7037037037037037,
+                "still_using": 0.7037037037037037,
+                "sightings": 1687,
+                "replays": 1651,
+                "days_covered": 30,
+                "coverage": 1.0,
+                "withheld": false
+              },
+              "90d": {
+                "rank": 2,
+                "players": 101,
+                "players_active": 75,
+                "players_still_using": 46,
+                "retention": 0.7425742574257426,
+                "still_using": 0.45544554455445546,
+                "sightings": 6248,
+                "replays": 5943,
+                "days_covered": 81,
+                "coverage": 0.9,
+                "withheld": false
+              },
+              "365d": {
+                "rank": 2,
+                "players": 101,
+                "players_active": 75,
+                "players_still_using": 46,
+                "retention": 0.7425742574257426,
+                "still_using": 0.45544554455445546,
+                "sightings": 6248,
+                "replays": 5943,
+                "days_covered": 81,
+                "coverage": 0.2219178082191781,
+                "withheld": false
+              },
+              "all": {
+                "rank": 2,
+                "players": 101,
+                "players_active": 75,
+                "players_still_using": 46,
+                "retention": 0.7425742574257426,
+                "still_using": 0.45544554455445546,
+                "sightings": 6248,
+                "replays": 5943,
                 "days_covered": 81,
                 "coverage": 1.0,
                 "withheld": false

@@ -51,6 +51,9 @@ function widget(over: Partial<WidgetUsage> = {}): WidgetUsage {
     windows: combined({ '30d': stats() }),
     install: noSource(),
     image: '',
+    images: [],
+    first_published: '',
+    last_updated: '',
     main: '',
     forks: [],
     ...over,
@@ -669,6 +672,41 @@ describe('what is on this machine', () => {
   })
 })
 
+describe('dates', () => {
+  test('when it was last updated and first published read as ages, exact on hover', async () => {
+    const updated = new Date(Date.now() - 400 * 86_400_000).toISOString()
+    serve(published([widget({ last_updated: updated, first_published: '' })]))
+    const Widgets = await fresh()
+    const { container, getByText } = render(() => <Widgets />)
+    await drawn(container)
+    const cell = getByText('1y 1m ago')
+    expect(cell.getAttribute('title')).toBe(new Date(updated).toLocaleString())
+    expect(container.querySelector('th')?.parentElement?.textContent).toContain(
+      'Updated',
+    )
+    expect(container.querySelector('th')?.parentElement?.textContent).toContain(
+      'Published',
+    )
+  })
+
+  test('Updated sorts newest first on the first click, and undated last', async () => {
+    const at = (days: number) =>
+      new Date(Date.now() - days * 86_400_000).toISOString()
+    serve(
+      published([
+        widget({ key: 'a', name: 'Old', last_updated: at(300) }),
+        widget({ key: 'b', name: 'Undated', last_updated: '' }),
+        widget({ key: 'c', name: 'Fresh', last_updated: at(2) }),
+      ]),
+    )
+    const Widgets = await fresh()
+    const { container, getByRole } = render(() => <Widgets />)
+    await drawn(container)
+    fireEvent.click(getByRole('button', { name: /Updated/ }))
+    expect(names(container)).toEqual(['Fresh', 'Old', 'Undated'])
+  })
+})
+
 describe('pictures', () => {
   test('a widget with a picture asks the thumbnail scheme for it by key', async () => {
     serve(
@@ -697,7 +735,7 @@ describe('pictures', () => {
     ) as HTMLImageElement
     expect(preview).not.toBeNull()
     expect(decodeURIComponent(preview.src)).toMatch(
-      /widget\/\d+x\d+\/widget:gui_ping_wheel/,
+      /widget\/\d+x\d+\/0\/widget:gui_ping_wheel/,
     )
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(container.querySelector('.widget-preview')).toBeNull()
@@ -723,6 +761,86 @@ describe('pictures', () => {
       container.querySelector('.widget-text') as HTMLElement,
     )
     expect(container.querySelector('.widget-preview')).toBeNull()
+  })
+
+  const FIRST = 'https://cdn.example/1.webp'
+  const GALLERY = [1, 2, 3, 4, 5, 6, 7].map(
+    (n) => `https://cdn.example/${n}.webp`,
+  )
+  const gallery = () => published([widget({ image: FIRST, images: GALLERY })])
+  const pictureIndex = (img: Element | null) =>
+    decodeURIComponent((img as HTMLImageElement).src).match(
+      /widget\/\d+x\d+\/(\d+)\//,
+    )?.[1]
+
+  test('hovering the tile shows the other pictures beside it, and leaving hides them', async () => {
+    serve(gallery())
+    const Widgets = await fresh()
+    const { container, getByLabelText } = render(() => <Widgets />)
+    await drawn(container)
+    expect(container.querySelector('.widget-companions')).toBeNull()
+
+    fireEvent.pointerEnter(getByLabelText(/Show a larger picture/))
+    const companions = container.querySelectorAll('.widget-companions button')
+    expect(companions).toHaveLength(4)
+    expect(pictureIndex(companions.item(0).querySelector('img'))).toBe('1')
+    // Seven pictures, four beside the tile: the last counts the other two.
+    expect(container.querySelector('.widget-more')?.textContent).toBe('+2')
+
+    fireEvent.pointerLeave(
+      container.querySelector('.widget-thumb-anchor') as HTMLElement,
+    )
+    expect(container.querySelector('.widget-companions')).toBeNull()
+  })
+
+  test('a companion opens the gallery at its own picture', async () => {
+    serve(gallery())
+    const Widgets = await fresh()
+    const { container, getByLabelText } = render(() => <Widgets />)
+    await drawn(container)
+    fireEvent.pointerEnter(getByLabelText(/Show a larger picture/))
+    fireEvent.click(getByLabelText(/Show picture 3 of 7/))
+    expect(
+      pictureIndex(container.querySelector('.widget-preview-picture img')),
+    ).toBe('2')
+    expect(
+      container
+        .querySelector('.widget-film [aria-current="true"]')
+        ?.getAttribute('aria-label'),
+    ).toBe('Picture 3 of 7')
+  })
+
+  test('the strip switches pictures and the arrows step through them, wrapping', async () => {
+    serve(gallery())
+    const Widgets = await fresh()
+    const { container, getByLabelText } = render(() => <Widgets />)
+    await drawn(container)
+    fireEvent.click(getByLabelText(/Show a larger picture/))
+    const shown = () =>
+      pictureIndex(container.querySelector('.widget-preview-picture img'))
+    expect(shown()).toBe('0')
+
+    fireEvent.click(getByLabelText('Picture 5 of 7'))
+    expect(shown()).toBe('4')
+    fireEvent.keyDown(window, { key: 'ArrowRight' })
+    expect(shown()).toBe('5')
+    fireEvent.keyDown(window, { key: 'ArrowRight' })
+    fireEvent.keyDown(window, { key: 'ArrowRight' })
+    expect(shown()).toBe('0')
+    fireEvent.keyDown(window, { key: 'ArrowLeft' })
+    expect(shown()).toBe('6')
+  })
+
+  test('a widget with one picture has no companions and no strip', async () => {
+    serve(published([widget({ image: FIRST, images: [FIRST] })]))
+    const Widgets = await fresh()
+    const { container, getByLabelText } = render(() => <Widgets />)
+    await drawn(container)
+    fireEvent.pointerEnter(getByLabelText(/Show a larger picture/))
+    expect(container.querySelector('.widget-companions')).toBeNull()
+    fireEvent.click(getByLabelText(/Show a larger picture/))
+    expect(container.querySelector('.widget-preview')).not.toBeNull()
+    expect(container.querySelector('.widget-film')).toBeNull()
   })
 
   test('a widget with no picture gets its initials rather than a broken image', async () => {
@@ -758,6 +876,9 @@ function fork(over: Partial<Fork> = {}): Fork {
     description: '',
     install: fromGithub(),
     image: '',
+    images: [],
+    first_published: '',
+    last_updated: '',
     windows: combined({ '30d': stats() }),
     ...over,
   }

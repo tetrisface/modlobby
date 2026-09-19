@@ -223,9 +223,23 @@ export function forksOf(widget: WidgetUsage): [Fork, ...Fork[]] {
       description: widget.description,
       install: widget.install,
       image: widget.image,
+      images: widget.images,
+      first_published: widget.first_published,
+      last_updated: widget.last_updated,
       windows: widget.windows,
     },
   ]
+}
+
+/**
+ * Every picture of a row or a fork, best first. A document from before
+ * galleries has only `image`, which is then the one picture.
+ */
+export function picturesOf(
+  entry: Pick<WidgetUsage, 'image' | 'images'>,
+): readonly string[] {
+  if (entry.images?.length) return entry.images
+  return entry.image ? [entry.image] : []
 }
 
 /** The version the row speaks for. */
@@ -427,6 +441,8 @@ export type SortKey =
   | 'off'
   | 'replays'
   | 'sightings'
+  | 'updated'
+  | 'published'
   | 'window'
   | 'source'
   | 'status'
@@ -440,6 +456,8 @@ export const SORT_STARTS_DESCENDING: Record<SortKey, boolean> = {
   off: true,
   replays: true,
   sightings: true,
+  updated: true,
+  published: true,
   window: true,
   source: false,
   status: true,
@@ -457,6 +475,12 @@ function standing(widget: WidgetUsage): number {
     return configured && !isEnabled(configured) ? 2 : 3
   }
   return mainFork(widget).install.url ? 1 : 0
+}
+
+/** A published date as a number to sort by; unknown sorts below every date. */
+function moment(iso: string): number {
+  const at = Date.parse(iso)
+  return Number.isNaN(at) ? -1 : at
 }
 
 /**
@@ -492,6 +516,10 @@ export function sortWidgets(
         return found?.replays ?? -1
       case 'sightings':
         return found?.sightings ?? -1
+      case 'updated':
+        return moment(widget.last_updated)
+      case 'published':
+        return moment(widget.first_published)
       case 'window':
         return found?.coverage ?? -1
       case 'source':
