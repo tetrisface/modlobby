@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { newServer } from '../lib/servers'
 import { emptyServer } from '../store/lobby'
 import { applySettings } from '../store/settings'
-import { onlySession } from '../store/testing'
+import { onlySession, seedSession } from '../store/testing'
 import { blankSettings } from '../views/Settings'
 import { AccountMenu } from './AccountMenu'
 
@@ -61,6 +61,13 @@ describe('the account menu', () => {
       [RAPID, 'not connected', 'Reconnect'],
       ['fresh.example', 'not connected', 'Log in'],
     ])
+    // Down because it was never logged in to, or was logged out of: as asked.
+    expect(container.querySelector('.account-name.partial')).toBeNull()
+  })
+
+  test('marks the name only for a server that dropped and is being retried', () => {
+    seedSession({ ...emptyServer(), retryAt: Date.now() + 30_000 }, RAPID)
+    const { container } = render(() => <AccountMenu name='me' />)
     expect(container.querySelector('.account-name.partial')).not.toBeNull()
   })
 

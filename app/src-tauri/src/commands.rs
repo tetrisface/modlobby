@@ -194,17 +194,39 @@ fn remember_account(
 /// Tries the last login again, now rather than when the runtime's own retry
 /// falls due, under `server`'s flood guard — over the server as the settings
 /// have it now, so ports changed or plaintext allowed since the login take
-/// hold. Fails with `noCredentials` when this run has nothing to try.
+/// hold.
+///
+/// With nothing held from this run — logged out of, or never logged in to —
+/// the keyring's password for the server's account is used instead: asking
+/// to reconnect is asking to be let back in, not to be shown a form for what
+/// is already known. Fails with `noCredentials` only when neither has one.
 #[tauri::command]
 pub async fn reconnect(app: State<'_, App>, server: String) -> Result<()> {
     // Gone from the settings: what the login used is all there is.
-    let endpoint = entry(&app, &server).ok().map(|entry| endpoint(&entry));
-    guarded_login(
+    let entry = entry(&app, &server).ok();
+    let kept = guarded_login(
         &app,
         &server,
-        app.client.reconnect(server.clone(), endpoint),
+        app.client
+            .reconnect(server.clone(), entry.as_ref().map(endpoint)),
     )
-    .await
+    .await;
+    if !matches!(&kept, Err(err) if err.code == "noCredentials") {
+        return kept;
+    }
+    let Some(entry) = entry.filter(|entry| !entry.username.trim().is_empty()) else {
+        return kept;
+    };
+    let Some(password) = credentials::password(&*app.credentials, &server, &entry.username)? else {
+        return kept;
+    };
+    let request = LoginRequest::new(
+        &entry.username,
+        &password,
+        LOBBY_VERSION,
+        app.hardware.lobby_hash.clone(),
+    );
+    guarded_login(&app, &server, app.client.login(endpoint(&entry), request)).await
 }
 
 /// One login attempt under `server`'s flood guard, whichever command makes
@@ -216,11 +238,18 @@ async fn guarded_login(
     attempt: impl Future<Output = std::result::Result<(), ClientError>>,
 ) -> Result<()> {
     let guard = &app.login_guard;
-    if let Some(wait) = guard.wait(server, SystemTime::now()) {
+    let asked = SystemTime::now();
+    if let Some(wait) = guard.wait(server, asked) {
         return Err(throttled(wait));
     }
-    guard.record_attempt(server, SystemTime::now());
-    match attempt.await {
+    let result = attempt.await;
+    // Counted as of when it was asked for, and only if a login went out: one
+    // that stopped here costs the server's allowance nothing, and counting it
+    // would hold the next — the real one — back for twenty seconds.
+    if reached_the_server(&result) {
+        guard.record_attempt(server, asked);
+    }
+    match result {
         Ok(()) => {
             guard.record_success(server, SystemTime::now());
             Ok(())
@@ -232,6 +261,15 @@ async fn guarded_login(
             Err(err.into())
         }
     }
+}
+
+/// Whether a login attempt got as far as sending one: nothing to log in with,
+/// or a login already under way, never did.
+fn reached_the_server(result: &std::result::Result<(), ClientError>) -> bool {
+    !matches!(
+        result,
+        Err(ClientError::NoCredentials | ClientError::AlreadyConnected)
+    )
 }
 
 /// Seconds a login to `server` must wait for teiserver's limit to lapse; 0 when clear.
@@ -1686,6 +1724,17 @@ pub struct SkirmishOptions {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_login_that_never_left_is_not_counted_against_the_server() {
+        use super::{ClientError, reached_the_server};
+        assert!(!reached_the_server(&Err(ClientError::NoCredentials)));
+        assert!(!reached_the_server(&Err(ClientError::AlreadyConnected)));
+        assert!(reached_the_server(&Ok(())));
+        assert!(reached_the_server(&Err(ClientError::Refused(
+            "wrong password".into()
+        ))));
+    }
+
     use super::ai_rank;
 
     #[test]
