@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatLine } from '../ipc/bindings/ChatLine'
 import {
+  byActivity,
   chat,
   clearChat,
   closePrivate,
@@ -9,6 +10,7 @@ import {
   privateRoom,
   pushLine,
   pushNotice,
+  unreadTotal,
   watchRoom,
 } from './chat'
 
@@ -64,6 +66,59 @@ describe('closing a private conversation', () => {
 
   it('is harmless on a conversation that was never open', () => {
     expect(() => closePrivate(privateRoom('nobody'))).not.toThrow()
+  })
+})
+
+describe('unread counts', () => {
+  beforeEach(() => {
+    clearChat()
+    watchRoom('#battle')
+  })
+
+  it('leaves the message of the day out: it comes on every connect', () => {
+    pushLine({ ...said('#server', 'Welcome to Teiserver'), kind: 'motd' })
+    expect(chat.rooms['#server']).toHaveLength(1)
+    expect(chat.unread['#server']).toBeUndefined()
+  })
+
+  it('still counts a broadcast', () => {
+    pushLine({ ...said('#server', 'Restarting soon'), kind: 'system' })
+    expect(chat.unread['#server']).toBe(1)
+  })
+})
+
+describe('the count on the Chat tab', () => {
+  beforeEach(() => {
+    clearChat()
+    watchRoom('#battle')
+  })
+
+  it('leaves a muted room out and counts the rest', () => {
+    pushLine(said('main', 'hello'))
+    pushLine(said('main', 'anyone?'))
+    pushLine(said(privateRoom('friend'), 'hi'))
+    expect(unreadTotal(['main'])).toBe(1)
+    expect(unreadTotal([])).toBe(3)
+  })
+
+  it('lets a muted room back in once it names you', () => {
+    pushLine(said('main', 'hello'))
+    pushLine(said('main', 'hey you', true))
+    expect(unreadTotal(['main'])).toBe(2)
+  })
+})
+
+describe('people by activity', () => {
+  beforeEach(() => clearChat())
+
+  it('puts who you can talk to first, then who spoke last, then names', () => {
+    pushLine({ ...said(privateRoom('offline'), 'late'), at: 300 })
+    pushLine({ ...said(privateRoom('early'), 'first'), at: 100 })
+    pushLine({ ...said(privateRoom('recent'), 'then'), at: 200 })
+    const online = (name: string) => name !== 'offline'
+    expect(
+      ['offline', 'zed', 'early', 'recent', 'abe'].sort(byActivity(online)),
+    ).toEqual(['recent', 'early', 'abe', 'zed', 'offline'])
   })
 })
 

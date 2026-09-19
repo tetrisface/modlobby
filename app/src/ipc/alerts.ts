@@ -15,9 +15,10 @@ import { settings } from '../store/settings'
  *
  * Three choices that do three different things, and never each other's. `off`
  * says nothing. `lobby` puts a line in this window's corner. `desktop` raises
- * a notification from the operating system, and only while the window is in
- * the background — a desktop toast for something already on screen is noise,
- * which is the line Chobby draws too (`api_notification_handler.lua`).
+ * a notification from the operating system, and only while the news is not
+ * already on screen — a desktop toast for something you are looking at is
+ * noise, which is the line Chobby draws too (`api_notification_handler.lua`).
+ * See [`onScreen`] for what counts as looking.
  *
  * `desktop` deliberately does not fall back to the lobby's corner. It did, and
  * that made the choices overlap: picking `desktop` also got you what `lobby`
@@ -89,6 +90,26 @@ const TITLES: Record<AlertKind, string> = {
   ring: 'modlobby — someone wants you',
 }
 
+/** Alerts about the game itself, which is the window you would rather see. */
+const ABOUT_THE_GAME: ReadonlySet<AlertKind> = new Set<AlertKind>([
+  'gameStarting',
+  'gameEnded',
+])
+
+/**
+ * Whether the news is already in front of whoever is playing. The lobby's
+ * window shows all of it; the engine's shows only its game, so it counts for
+ * alerts about the game and nothing else — a message still wants a toast
+ * mid-game, while a game ending is something you just watched happen.
+ */
+export function onScreen(
+  kind: AlertKind,
+  lobbyFocused: boolean,
+  engineInFront: boolean,
+): boolean {
+  return lobbyFocused || (engineInFront && ABOUT_THE_GAME.has(kind))
+}
+
 /**
  * What to do about an alert, given where it is meant to go and whether anyone
  * is looking at the window.
@@ -117,8 +138,18 @@ function cannot(): void {
   )
 }
 
+/** The engine's window belongs to another process, so Rust is asked. */
+async function engineInFront(): Promise<boolean> {
+  try {
+    return await api.engineInFront()
+  } catch {
+    return false
+  }
+}
+
 export async function raise(kind: AlertKind, body: string): Promise<void> {
-  const what = plan(wanted(kind), document.hasFocus())
+  const looking = onScreen(kind, document.hasFocus(), await engineInFront())
+  const what = plan(wanted(kind), looking)
   if (what === 'nothing') return
   if (what === 'lobby') return pushNotice('info', body)
 
@@ -130,12 +161,6 @@ export async function raise(kind: AlertKind, body: string): Promise<void> {
     cannot()
   }
 }
-
-/** Alerts about the game itself, which is the window you would rather see. */
-const ABOUT_THE_GAME: ReadonlySet<AlertKind> = new Set<AlertKind>([
-  'gameStarting',
-  'gameEnded',
-])
 
 /**
  * How long to keep looking for the engine's window before deciding it is not

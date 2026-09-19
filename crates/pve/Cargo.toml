@@ -1,6 +1,6 @@
 [package]
 name = "pve"
-description = "PvE Stats: what a lobby setup scores, from the service the in-game widget uses"
+description = "What a PvE lobby setup scores, from the pve.bar stats service the in-game widget uses"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

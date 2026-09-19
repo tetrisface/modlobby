@@ -1,6 +1,6 @@
 //! What a PvE lobby setup scores, before anyone plays it.
 //!
-//! BAR's PvE Stats service already answers this for a game in progress — the
+//! The pve.bar stats service already answers this for a game in progress — the
 //! in-game widget at `Widgets/widgets-extra/gui_pve_stats` posts the map, the
 //! modoptions and the encounter to it and shows a challenge score, a win
 //! chance and where the setup sits among games people have actually played.

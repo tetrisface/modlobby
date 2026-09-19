@@ -3,6 +3,7 @@ import type { ChannelView } from '../ipc/bindings/ChannelView'
 import type { ChannelSummaryView } from '../ipc/bindings/ChannelSummaryView'
 import type { ChatLine } from '../ipc/bindings/ChatLine'
 import type { NoticeLevel } from '../ipc/bindings/NoticeLevel'
+import { api } from '../ipc/client'
 
 export type Notice = {
   seq: number
@@ -79,7 +80,8 @@ export function pushLine(line: ChatLine): void {
       if (lines.length > state.maxLines)
         lines.splice(0, lines.length - state.maxLines)
       state.rooms[line.room] = lines
-      if (line.room !== watching) {
+      // The message of the day is the same greeting on every connect.
+      if (line.room !== watching && line.kind !== 'motd') {
         state.unread[line.room] = (state.unread[line.room] ?? 0) + 1
         if (line.mention) state.named[line.room] = true
       }
@@ -159,6 +161,32 @@ export function openPrivates(): string[] {
   return Object.keys(chat.rooms).filter(isPrivate).sort()
 }
 
+/**
+ * The unread count on the Chat tab: everything outside the muted rooms, and a
+ * muted room's too once one of its lines names you.
+ */
+export function unreadTotal(muted: readonly string[]): number {
+  return Object.entries(chat.unread)
+    .filter(([room]) => chat.named[room] || !muted.includes(room))
+    .reduce((total, [, count]) => total + count, 0)
+}
+
+/** When a conversation last moved, in seconds; 0 when nothing has been said. */
+export function lastSaid(room: string): number {
+  return chat.rooms[room]?.at(-1)?.at ?? 0
+}
+
+/**
+ * People by who you can talk to now, then who spoke last, then name. Muting
+ * plays no part: a muted person who writes still comes up to the top.
+ */
+export function byActivity(online: (name: string) => boolean) {
+  return (a: string, b: string) =>
+    Number(online(b)) - Number(online(a)) ||
+    lastSaid(privateRoom(b)) - lastSaid(privateRoom(a)) ||
+    a.localeCompare(b)
+}
+
 /** Every room that can be selected, for checking one still exists. */
 export function openRooms(): string[] {
   return [BATTLE_ROOM, SERVER_ROOM, ...openChannels(), ...openPrivates()]
@@ -201,6 +229,9 @@ export function pushNotice(level: NoticeLevel, text: string): void {
   }
   setChat('notices', (notices) => [...notices.slice(-19), notice])
   sweeping ??= setInterval(sweep, SWEEP_EVERY)
+  // An error is the app's own failing, so the next look for a fix comes
+  // sooner. Losable bookkeeping, like the rest of the update memory.
+  if (level === 'error') api.noteTrouble().catch(() => {})
 }
 
 /**

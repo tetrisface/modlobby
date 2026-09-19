@@ -22,6 +22,11 @@ import type { Score } from './bindings/Score'
 import type { Sections } from './bindings/Sections'
 import type { Settings } from './bindings/Settings'
 import type { Tile } from './bindings/Tile'
+import type { Deleted } from './bindings/Deleted'
+import type { Install } from './bindings/Install'
+import type { InstalledWidget } from './bindings/InstalledWidget'
+import type { Usage } from './bindings/Usage'
+import type { WidgetStatus } from './bindings/WidgetStatus'
 import type { Slot } from './bindings/Slot'
 import type { TweakView } from './bindings/TweakView'
 import type { UiMessage } from './bindings/UiMessage'
@@ -105,6 +110,8 @@ export const api = {
   installUpdate: () => invoke<UpdateProgress>('install_update'),
   /** Installs a download an earlier run kept; `null` when there is none. */
   resumeUpdate: () => invoke<UpdateProgress | null>('resume_update'),
+  /** Something went wrong this session: the next look for a fix comes sooner. */
+  noteTrouble: () => invoke<void>('note_trouble'),
   ring: (user: string) => invoke<void>('ring', { user }),
   addBot: (
     name: string,
@@ -143,10 +150,22 @@ export const api = {
   describeMapOption: (key: string, raw: string) =>
     invoke<string>('describe_map_option', { key, raw }),
   flashEngine: () => invoke<boolean>('flash_engine'),
+  engineInFront: () => invoke<boolean>('engine_in_front'),
   requestGameStatus: (founder: string) =>
     invoke<void>('request_game_status', { founder }),
 
   pveScore: () => invoke<Score | null>('pve_score'),
+  widgetUsage: () => invoke<Usage | null>('widget_usage'),
+  /** What modlobby installed, and what BAR's own config says about it. */
+  widgetInstalled: () => invoke<WidgetStatus>('widget_installed'),
+  widgetInstall: (key: string, name: string, install: Install) =>
+    invoke<InstalledWidget>('widget_install', { key, name, install }),
+  widgetUpdate: (key: string, name: string, install: Install) =>
+    invoke<InstalledWidget>('widget_update', { key, name, install }),
+  widgetDisable: (name: string) => invoke<boolean>('widget_disable', { name }),
+  widgetEnable: (name: string) => invoke<boolean>('widget_enable', { name }),
+  /** Removes what modlobby installed and reports what it deliberately left. */
+  widgetDelete: (key: string) => invoke<Deleted>('widget_delete', { key }),
 
   // ---- saved room setups ----
   gameModOptions: (game: string) =>

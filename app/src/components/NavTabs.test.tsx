@@ -15,6 +15,7 @@ const NEEDS: Record<NavKey, number> = {
   skirmish: 70,
   chat: 40,
   news: 45,
+  widgets: 55,
   replays: 65,
   settings: 70,
   login: 50,
@@ -22,8 +23,8 @@ const NEEDS: Record<NavKey, number> = {
 }
 const GAP = 18
 const MENU = 30
-/** The six links and the gaps between them. */
-const ALL_SIX = 350 + 5 * GAP
+/** The seven links and the gaps between them. */
+const ALL_SEVEN = 405 + 6 * GAP
 
 type Props = Parameters<typeof NavTabs>[0]
 
@@ -107,6 +108,7 @@ describe('NavTabs', () => {
       'Skirmish',
       'Chat',
       'News',
+      'Widgets',
       'Replays',
       'Settings',
     ])
@@ -114,14 +116,15 @@ describe('NavTabs', () => {
   })
 
   test('folds from the right, one page at a time, into the menu', async () => {
-    // Five pages, the button and their gaps come to exactly this.
-    const { container } = mount(ALL_SIX - 70 + MENU)
+    // Six pages, the button and their gaps come to exactly this.
+    const { container } = mount(ALL_SEVEN - 70 + MENU)
     await settle()
     expect(inRow(container)).toEqual([
       'Battles',
       'Skirmish',
       'Chat',
       'News',
+      'Widgets',
       'Replays',
     ])
     fireEvent.click(more(container)!)
@@ -138,6 +141,7 @@ describe('NavTabs', () => {
       'Skirmish',
       'Chat',
       'News',
+      'Widgets',
       'Replays',
       'Settings',
     ])
@@ -154,6 +158,7 @@ describe('NavTabs', () => {
       'Skirmish',
       'Chat',
       'News',
+      'Widgets',
       'Replays',
       'Settings',
     ])
@@ -174,17 +179,17 @@ describe('NavTabs', () => {
   })
 
   test('a row that widens takes its pages back', async () => {
-    const { container, setRoom } = mount(ALL_SIX - 70 + MENU)
+    const { container, setRoom } = mount(ALL_SEVEN - 70 + MENU)
     await settle()
     expect(more(container)).not.toBeNull()
     setRoom(1000)
     await settle()
-    expect(inRow(container)).toHaveLength(6)
+    expect(inRow(container)).toHaveLength(7)
     expect(more(container)).toBeNull()
   })
 
   test('the menu closes on Escape and after picking a page', async () => {
-    const { container } = mount(ALL_SIX - 70 + MENU)
+    const { container } = mount(ALL_SEVEN - 70 + MENU)
     await settle()
     fireEvent.click(more(container)!)
     expect(container.querySelector('.nav-menu')).not.toBeNull()
@@ -200,7 +205,7 @@ describe('NavTabs', () => {
     const { container } = mount(1000, { loggedOut: true })
     await settle()
     expect(inRow(container)).toContain('Log in')
-    const { container: tight } = mount(ALL_SIX, { loggedOut: true })
+    const { container: tight } = mount(ALL_SEVEN, { loggedOut: true })
     await settle()
     expect(inRow(tight)).not.toContain('Log in')
   })

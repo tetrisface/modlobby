@@ -19,4 +19,10 @@ maxLines: number,
  * moment you disconnect, so remembering is the client's job — and keeping
  * it here means you can also just write one in.
  */
-channels: Array<string>, };
+channels: Array<string>, 
+/**
+ * Rooms left out of the unread count on the Chat tab, by room key: a
+ * channel's name, or `@name` for a person. A line that names you still
+ * counts.
+ */
+muted: Array<string>, };

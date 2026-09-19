@@ -2,9 +2,7 @@ import { HashRouter, Route, useLocation, useNavigate } from '@solidjs/router'
 import { listen } from '@tauri-apps/api/event'
 import {
   For,
-  Match,
   Show,
-  Switch,
   createEffect,
   createSignal,
   onCleanup,
@@ -25,9 +23,8 @@ import {
 } from './lib/overlay'
 import { api, describeError, errorCode } from './ipc/client'
 import type { Settings } from './ipc/bindings/Settings'
-import type { VersionView } from './ipc/bindings/VersionView'
-import { setBuild } from './store/build'
-import { chat, holdNotices, pushNotice } from './store/chat'
+import { build, setBuild } from './store/build'
+import { chat, holdNotices, pushNotice, unreadTotal } from './store/chat'
 import { lobby, myRoom } from './store/lobby'
 import { loadNews, unreadNews } from './store/news'
 import { over, setOver } from './store/overlay'
@@ -42,6 +39,7 @@ import {
   available,
   busy as updating,
   checkUpdate,
+  checking,
   downloading,
   failure,
   heldBy,
@@ -60,6 +58,7 @@ import { Replays } from './views/Replays'
 import { OnlineRoom } from './views/room/OnlineRoom'
 import { SkirmishRoom } from './views/room/SkirmishRoom'
 import { SettingsView } from './views/Settings'
+import { Widgets } from './views/Widgets'
 
 type SettingsEvent = { changed: Settings } | { invalid: string }
 
@@ -143,10 +142,10 @@ function Layout(props: ParentProps) {
   /**
    * Everything unread, anywhere. A notification is only raised while the
    * window is in the background, so without this a message that arrives while
-   * you are reading the battle list leaves no mark at all.
+   * you are reading the battle list leaves no mark at all. Muted rooms stay
+   * out of it until they name you.
    */
-  const unread = () =>
-    Object.values(chat.unread).reduce((total, count) => total + count, 0)
+  const unread = () => unreadTotal(settings()?.chat.muted ?? [])
   const named = () => Object.values(chat.named).some(Boolean)
 
   /**
@@ -167,18 +166,13 @@ function Layout(props: ParentProps) {
   )
 
   /**
-   * Which build this is, in the corner where the brand is. Clicking it looks
-   * for a newer one; found, it becomes the offer to fetch and install it, and
-   * once downloaded with a room or a game in the way, the offer to restart.
+   * Which version this is, in the corner where the brand is. Clicking it looks
+   * for a newer one; found, a button beside it offers the restart into it.
    */
-  const [version, setVersion] = createSignal<VersionView | null>(null)
   onMount(() => {
     void api
       .appVersion()
-      .then((found) => {
-        setVersion(found)
-        setBuild(found)
-      })
+      .then(setBuild)
       .catch(() => {})
     onCleanup(watchUpdates())
   })
@@ -192,10 +186,24 @@ function Layout(props: ParentProps) {
     onCleanup(() => clearTimeout(timer))
   })
   const versionTitle = () => {
-    if (updating()) return 'Looking for a newer version…'
+    if (checking()) return 'Looking for a newer version…'
     const reason = failedFor()
     if (reason) return `Could not look for an update: ${reason}`
-    return 'Version, and the commit it was built from. Click to look for a newer one.'
+    return 'The version running. Click to look for a newer one.'
+  }
+  /** Found, fetching or fetched: while any of them, the button is there. */
+  const hasUpdate = () =>
+    available() !== null || downloading() !== null || waiting() !== null
+  const updateTitle = () => {
+    const next = waiting()
+    if (next !== null) {
+      return heldBy()
+        ? `Version ${next} is downloaded and installs on the next start. Restarting now would lose ${heldBy()}.`
+        : `Version ${next} is downloaded. Restart into it.`
+    }
+    const percent = downloading()
+    if (percent !== null) return `Downloading the update — ${percent}%`
+    return `Version ${available()} is out. Fetch it and restart into it.`
   }
 
   /** What the server says about us, which is what everyone else can see. */
@@ -383,60 +391,43 @@ function Layout(props: ParentProps) {
           drag={!fullscreen() && !over()}
         />
         {/* Small and out of the way, level with the account: the
-            build is worth a glance, not a place in the row. */}
+            version is worth a glance, not a place in the row. An update
+            puts its button beside it; the version itself never changes. */}
         <span class='version-slot'>
-          <Show when={version()}>
-            {(build) => (
-              <Switch
-                fallback={
+          <Show when={build()}>
+            {(found) => (
+              <>
+                <Show when={hasUpdate()}>
                   <button
                     type='button'
-                    class='version'
-                    title={versionTitle()}
-                    disabled={updating()}
-                    onClick={() => void checkUpdate()}
+                    class='primary'
+                    title={updateTitle()}
+                    disabled={downloading() !== null}
+                    onClick={() => void installUpdate()}
                   >
-                    {build().version}+{build().commit}
-                    <Show when={updating()}>
-                      <Thinking title='Looking for a newer version' />
+                    {/* Says what the click costs: fetched already, it only
+                        restarts; otherwise it fetches first. */}
+                    {waiting() ? 'Restart to Update' : 'Update and Restart'}
+                    <Show when={downloading() !== null}>
+                      {' '}
+                      · {downloading()}%
                     </Show>
                   </button>
-                }
-              >
-                <Match when={waiting()}>
-                  {(next) => (
-                    <button
-                      type='button'
-                      class='version waiting'
-                      title={
-                        heldBy()
-                          ? `Version ${next()} is downloaded and installs on the next start. Restarting now would lose ${heldBy()}.`
-                          : `Version ${next()} is downloaded. Restart into it.`
-                      }
-                      onClick={() => void installUpdate()}
-                    >
-                      {build().version} → {next()} ⟳
-                    </button>
-                  )}
-                </Match>
-                <Match when={downloading() !== null}>
-                  <span class='version' title='Downloading the update'>
-                    {build().version} ↓ {downloading()}%
-                  </span>
-                </Match>
-                <Match when={available()}>
-                  {(next) => (
-                    <button
-                      type='button'
-                      class='version available'
-                      title={`Version ${next()} is out. Download and install it.`}
-                      onClick={() => void installUpdate()}
-                    >
-                      {build().version} ↑ {next()}
-                    </button>
-                  )}
-                </Match>
-              </Switch>
+                </Show>
+                <button
+                  type='button'
+                  class='version'
+                  classList={{ steady: downloading() !== null }}
+                  title={versionTitle()}
+                  disabled={updating()}
+                  onClick={() => void checkUpdate()}
+                >
+                  {found().version}
+                  <Show when={checking()}>
+                    <Thinking title='Looking for a newer version' />
+                  </Show>
+                </button>
+              </>
             )}
           </Show>
         </span>
@@ -561,6 +552,7 @@ export function App() {
       <Route path='/battles' component={BattleList} />
       <Route path='/chat' component={Chat} />
       <Route path='/news' component={News} />
+      <Route path='/widgets' component={Widgets} />
       <Route path='/replays' component={Replays} />
       <Route path='/presets' component={PresetsPage} />
       <Route path='/skirmish' component={SkirmishRoom} />

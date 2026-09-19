@@ -831,6 +831,23 @@ pub async fn flash_engine(app: State<'_, App>) -> Result<bool> {
     Ok(crate::flash::flash_process(pid))
 }
 
+/// Whether the running engine's window is the one in front, where news about
+/// its game is already on screen.
+#[tauri::command]
+pub async fn engine_in_front(app: State<'_, App>) -> Result<bool> {
+    let Some(pid) = app.client.engine_pid().await? else {
+        return Ok(false);
+    };
+    #[cfg(windows)]
+    return Ok(crate::win::owns_foreground(pid));
+    // Nothing to ask elsewhere, so the alert goes out as it always did.
+    #[cfg(not(windows))]
+    {
+        let _ = pid;
+        Ok(false)
+    }
+}
+
 /// Whether the window is currently sitting over a running game.
 #[tauri::command]
 pub fn overlay_active(overlay: State<'_, std::sync::Arc<crate::overlay::Controller>>) -> bool {

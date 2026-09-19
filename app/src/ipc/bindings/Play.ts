@@ -27,7 +27,7 @@ autoLaunch: boolean,
  */
 autoDownload: boolean, 
 /**
- * Whether to ask BAR's PvE Stats service what a PvE room scores.
+ * Whether to ask the pve.bar stats service what a PvE room scores.
  *
  * On, because the number is the point of looking at a PvE room before
  * joining it. It sends the map, the settings and the team size to a

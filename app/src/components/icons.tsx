@@ -299,6 +299,48 @@ export function IconSprite() {
             stroke-linecap='round'
           />
         </symbol>
+        {/* A box with an arrow leaving it: opens outside the app, in the
+            system browser, which is not where the reader is now. */}
+        <symbol id='act-external' viewBox='0 0 20 20'>
+          <path
+            d='M9 4.5 H5.5 A1.5 1.5 0 0 0 4 6 v8.5 A1.5 1.5 0 0 0 5.5 16 H14 a1.5 1.5 0 0 0 1.5 -1.5 V11'
+            fill='none'
+            stroke='currentColor'
+            stroke-width='1.6'
+            stroke-linecap='round'
+            stroke-linejoin='round'
+          />
+          <path
+            d='M12 3.8 h4.2 v4.2 M16 4 l-6.5 6.5'
+            fill='none'
+            stroke='currentColor'
+            stroke-width='1.6'
+            stroke-linecap='round'
+            stroke-linejoin='round'
+          />
+        </symbol>
+        {/* A chevron that turns: the row it sits on opens to its versions. */}
+        <symbol id='act-expand' viewBox='0 0 20 20'>
+          <path
+            d='M7.5 5 L12.5 10 L7.5 15'
+            fill='none'
+            stroke='currentColor'
+            stroke-width='1.8'
+            stroke-linecap='round'
+            stroke-linejoin='round'
+          />
+        </symbol>
+        {/* A bell struck through: this room stays out of the unread count. */}
+        <symbol id='act-mute' viewBox='0 0 20 20'>
+          <path
+            d='M10 3.5 a4.3 4.3 0 0 0 -4.3 4.3 v3.6 L4.2 13.8 h11.6 l-1.5 -2.4 V7.8 A4.3 4.3 0 0 0 10 3.5 Z M8.4 16 a1.7 1.7 0 0 0 3.2 0 M3.5 3.5 L16.5 16.5'
+            fill='none'
+            stroke='currentColor'
+            stroke-width='1.6'
+            stroke-linecap='round'
+            stroke-linejoin='round'
+          />
+        </symbol>
         <symbol id='side-random' viewBox='0 0 20 20'>
           <path
             d='M10 2.6 L17.4 10 L10 17.4 L2.6 10 Z'

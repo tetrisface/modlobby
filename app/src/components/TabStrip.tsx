@@ -9,6 +9,8 @@ export type Tab = {
   badge?: number
   /** Whether that badge should shout. */
   urgent?: boolean
+  /** Whether that badge should keep its voice down: the room is muted. */
+  quiet?: boolean
   /** Absent means this tab cannot be closed. */
   closable?: boolean
   title?: string
@@ -88,7 +90,10 @@ export function TabStrip(props: {
             >
               <span class='tab-label'>{tab.label}</span>
               <Show when={tab.badge}>
-                <span class='badge' classList={{ named: tab.urgent }}>
+                <span
+                  class='badge'
+                  classList={{ named: tab.urgent, quiet: tab.quiet }}
+                >
                   {tab.badge}
                 </span>
               </Show>

@@ -2249,6 +2249,7 @@ impl Runtime {
                 | Effect::FriendsChanged
                 | Effect::BossChanged
                 | Effect::ServerSaid { .. }
+                | Effect::Motd { .. }
                 | Effect::Rung { .. }
                 | Effect::ModOptionsChanged { .. }
                 | Effect::VoteChanged => {}
@@ -2320,8 +2321,11 @@ impl Runtime {
         } else {
             format!("connection lost: {reason}")
         };
+        // A warning: the network and the server are not the app's to fix, and
+        // `Error` makes the next look for a fix come sooner. A server restart
+        // would otherwise put every client on that ladder at once.
         self.batcher.push(Delta::Notice {
-            level: lobby_ui::NoticeLevel::Error,
+            level: lobby_ui::NoticeLevel::Warning,
             text,
         });
         self.batcher.push(Delta::Phase(None));

@@ -246,7 +246,7 @@ pub struct Play {
     /// nothing until its content is here. Off leaves a button in the room for
     /// each fetch, for a metered connection or a disk being kept small.
     pub auto_download: bool,
-    /// Whether to ask BAR's PvE Stats service what a PvE room scores.
+    /// Whether to ask the pve.bar stats service what a PvE room scores.
     ///
     /// On, because the number is the point of looking at a PvE room before
     /// joining it. It sends the map, the settings and the team size to a
@@ -416,6 +416,10 @@ pub struct Chat {
     /// moment you disconnect, so remembering is the client's job — and keeping
     /// it here means you can also just write one in.
     pub channels: Vec<String>,
+    /// Rooms left out of the unread count on the Chat tab, by room key: a
+    /// channel's name, or `@name` for a person. A line that names you still
+    /// counts.
+    pub muted: Vec<String>,
 }
 
 impl Default for Chat {
@@ -425,6 +429,8 @@ impl Default for Chat {
             max_lines: 3000,
             // Where the server puts everyone, and where the announcements are.
             channels: vec!["main".into()],
+            // Everyone is in it, so a count that includes it is never zero.
+            muted: vec!["main".into()],
         }
     }
 }
@@ -473,15 +479,30 @@ pub struct Updates {
     ///
     /// On, because an out-of-date lobby is one that quietly talks to a server
     /// that has moved on. Looking is one small request for the release
-    /// manifest and nothing is downloaded or installed by itself: a newer
-    /// version shows in the corner of the nav, and a click on it fetches and
-    /// installs. Off, the corner still looks when clicked.
+    /// manifest and nothing is installed by itself: a newer version puts a
+    /// button in the nav, and a click on it restarts into that version. Off,
+    /// the nav still looks when the version is clicked.
+    ///
+    /// After a session that ended badly the look comes round more often for a
+    /// while -- hourly at first, easing back to daily -- so a fix reaches a
+    /// broken client sooner. Nothing about the failure is sent anywhere.
     pub automatic: bool,
+    /// Whether to fetch a newer release as soon as a look finds one.
+    ///
+    /// On. Nothing is installed by itself: the download is kept beside the
+    /// settings and the app goes on running the version it started with, so
+    /// the offer in the nav is one restart rather than a restart and a wait on
+    /// a link that may be slow. Off, nothing is fetched until the button is
+    /// clicked, and that click fetches before it restarts.
+    pub download: bool,
 }
 
 impl Default for Updates {
     fn default() -> Self {
-        Self { automatic: true }
+        Self {
+            automatic: true,
+            download: true,
+        }
     }
 }
 

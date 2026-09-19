@@ -652,6 +652,9 @@ pub enum ChatKind {
     Emote,
     /// Said by the app rather than by anyone on the server.
     System,
+    /// The server's message of the day: the same greeting on every connect,
+    /// so it is there to scroll back to but never counts as unread.
+    Motd,
     /// A host line written for a program to read, not a person: the
     /// `BarManager|{…}` side-channel. Already parsed into room state by the
     /// time it gets here, so showing it is a debugging choice.

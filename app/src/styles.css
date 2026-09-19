@@ -1375,6 +1375,18 @@ body.resizing-y {
   max-width: 35rem;
 }
 
+/* Under every tab, quiet: the build is what a bug report is missing, not
+   something to read on the way past. Pushed to the bottom of a short tab. */
+.build-stamp {
+  margin-top: auto;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+  font-family: var(--mono, monospace);
+  font-size: 0.75rem;
+  color: var(--faint, var(--muted));
+  user-select: text;
+}
+
 .settings fieldset {
   border: 1px solid var(--line);
   border-radius: 4px;
@@ -2640,12 +2652,14 @@ input[type='checkbox'].v-edit {
 }
 
 .line.emote .text,
-.line.system .text {
+.line.system .text,
+.line.motd .text {
   color: var(--warn);
   font-style: italic;
 }
 
-.line.system .text {
+.line.system .text,
+.line.motd .text {
   color: var(--faint);
 }
 
@@ -2668,6 +2682,50 @@ input[type='checkbox'].v-edit {
 
 .room-tab.friend .room-name {
   color: var(--friend);
+}
+
+/* A header you can fold: a list item again, so it keeps its disclosure mark. */
+.room-group > summary {
+  display: list-item;
+  cursor: pointer;
+}
+
+/* A room in the list, with its mute bell beside it. */
+.room-row {
+  display: flex;
+  align-items: center;
+}
+
+.room-row .room-tab {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The selected row's highlight takes in its bell too. */
+.room-row:has(> .room-tab.on) {
+  background: var(--raised);
+}
+
+/* Faint until the row is pointed at; a muted room keeps it in full. */
+.room-mute {
+  display: flex;
+  margin-right: 0.5rem;
+  padding: 0.125rem;
+  background: transparent;
+  border: none;
+  color: var(--faint);
+  opacity: 0.4;
+}
+
+.room-row:hover .room-mute,
+.room-mute:focus-visible,
+.room-mute.on {
+  opacity: 1;
+}
+
+.room-mute:hover:not(:disabled),
+.room-mute.on {
+  color: var(--text);
 }
 
 .rejoin {
@@ -2884,7 +2942,9 @@ input[type='checkbox'].v-edit {
 }
 
 .line.system .from,
-.line.system .at {
+.line.system .at,
+.line.motd .from,
+.line.motd .at {
   cursor: default;
 }
 
@@ -3004,6 +3064,12 @@ input[type='checkbox'].v-edit {
   background: var(--accent);
   color: var(--bg);
   font-weight: 600;
+}
+
+/* A muted room: still counted where it is, just not asking for attention. */
+.badge.quiet {
+  background: var(--raised);
+  color: var(--muted);
 }
 
 .player-menu-about {
@@ -3868,11 +3934,13 @@ button.link:hover {
 }
 
 /* The version, in the corner where the brand is. Small because it is a fact,
-   not a feature; a button only while a downloaded update is waiting. */
+   not a feature; an update is a separate button to its left. */
 .version-slot {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   align-self: center;
+  gap: 0.5rem;
   /* The build must not fold into the account name before the room card
      gives way. */
   flex-shrink: 0;
@@ -3902,20 +3970,11 @@ button.link:hover {
   cursor: default;
 }
 
-/* A newer version is out and a click fetches it: the one state the corner
-   is allowed to catch the eye in, and only by colour. */
-.version.available {
-  color: var(--accent);
-}
-
-.version.waiting {
-  font-size: 0.5625rem;
-  padding: 0.125rem 0.5rem;
-  color: var(--text);
-  background: transparent;
-  border: 1px solid var(--accent);
-  border-radius: 2px;
-  cursor: pointer;
+/* Inert while an update downloads -- a look then would start the fetch over
+   -- but not faded: the version does not change with the update, the button
+   beside it does. */
+.version.steady:disabled {
+  opacity: 1;
 }
 
 /* ---- the map, large, with the start-box editor ---- */
@@ -4279,4 +4338,576 @@ button.link:hover {
   font-size: 0.78125rem;
   line-height: 1.45;
   color: var(--muted);
+}
+
+/* ---- What people actually run ---- */
+
+.widgets {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1.25rem 1.5rem 2rem;
+}
+
+.widgets h1 {
+  margin: 0 0 0.75rem;
+}
+
+/* The row of windows is the question being asked, so it sits directly under
+   the heading and above the sentence that qualifies the answer. */
+.widgets .tabs {
+  flex: 0 0 auto;
+}
+
+.widgets-about {
+  margin: 0.625rem 0 1rem;
+  max-width: 45rem;
+  font-family: var(--body);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--faint);
+}
+
+/* The controls read as one line: what to search for, who was playing, and
+   over what period. Wrapping rather than scrolling, so a narrow window stacks
+   them instead of hiding the window picker off the right edge. */
+/* The battles toolbar, reused: readers learn one set of controls. On this page
+   it scrolls with the table rather than pinning, and the page's own padding
+   already gives it its margin. */
+.widget-toolbar {
+  padding: 0 0 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.widget-toolbar .filter-group:first-of-type {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.widget-note {
+  margin: 0 0 0.75rem;
+  padding: 0.5rem 0.75rem;
+  font-family: var(--body);
+  font-size: 0.78125rem;
+  line-height: 1.45;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: 4px;
+}
+
+/* A table rather than cards: four times as many widgets fit on a screen, and
+   comparing two widgets' retention is what the list is for. Every field the
+   card carried is still here. */
+.widget-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+/* A header is a button, so it sorts from the keyboard as well as the mouse,
+   but it should still read as a header. */
+.sort-head {
+  display: inline-flex;
+  gap: 0.25rem;
+  align-items: center;
+  padding: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.sort-head:hover {
+  color: var(--text);
+}
+
+.widget-table th[aria-sort='ascending'] .sort-head,
+.widget-table th[aria-sort='descending'] .sort-head {
+  color: var(--text);
+}
+
+/* Reserved even when empty, so a column does not shift sideways when it
+   becomes the sorted one. */
+.sort-mark {
+  display: inline-block;
+  width: 0.625rem;
+  text-align: left;
+}
+
+.widget-table thead .num .sort-head {
+  flex-direction: row-reverse;
+}
+
+.widget-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.375rem 0.5rem;
+  font-family: var(--display);
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
+  text-align: left;
+  color: var(--faint);
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+
+.widget-table td {
+  padding: 0.5rem;
+  vertical-align: top;
+  border-bottom: 1px solid var(--line);
+}
+
+/* Figures are read down the column, so they are aligned right and monospaced;
+   a ragged edge would make comparing two rows a hunt. */
+.widget-table .num {
+  font-family: var(--mono);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.widget-table thead .num {
+  text-align: right;
+}
+
+/* A switched-off widget is still worth listing — that it is installed and off
+   is the point — but it should not read as active. */
+.widget-table tbody tr.off .widget-name strong {
+  color: var(--muted);
+}
+
+/* One width, open or closed. The versions under a row carry file names with
+   nothing in them a line can break at, and a table sizes its columns from
+   every row it holds -- so without a width of its own, opening a row moved
+   this column and rewrapped every description in the table. */
+.widget-name {
+  width: 40%;
+  min-width: 16rem;
+}
+
+/* The same reason: a path is allowed to break anywhere rather than demand a
+   column as wide as itself. */
+.widget-local code,
+.widget-fork .widget-text {
+  overflow-wrap: anywhere;
+}
+
+/* The picture is as tall as the row it stands in, so the identity's items
+   stretch rather than sit at the top. */
+.widget-identity {
+  display: flex;
+  gap: 0.625rem;
+  align-items: stretch;
+}
+
+.widget-text {
+  min-width: 0;
+}
+
+/* The rank reads down the far left edge, with the chevron that opens the row
+   under it: one column answering "which row is this" and "open it". As narrow
+   as the figures in it, because the space a wide rank column used to hold
+   between the chevron and the picture was doing nothing. */
+.widget-table .widget-rank {
+  width: 2rem;
+  padding-right: 0.25rem;
+  padding-left: 0;
+  text-align: left;
+}
+
+.widget-table .widget-name {
+  padding-left: 0;
+}
+
+.widget-table thead .num.widget-rank {
+  padding-left: 0;
+  text-align: left;
+}
+
+.widget-table thead .num.widget-rank .sort-head {
+  flex-direction: row;
+}
+
+/* A row that has versions to show says so by the cursor; the whole row opens
+   it, so the chevron is the affordance rather than the only target. */
+.widget-table tbody tr.openable {
+  cursor: pointer;
+}
+
+.widget-table tbody tr.openable:hover td {
+  background: color-mix(in srgb, var(--panel) 35%, transparent);
+}
+
+/* The chevron that opens a row to its versions, and the gap that keeps fork
+   rows aligned with the rows that have one. */
+.widget-expand,
+.widget-expand-space {
+  flex: 0 0 auto;
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.widget-expand-space {
+  margin-top: 0.5rem;
+}
+
+.widget-rank .widget-expand {
+  margin-top: 0.25rem;
+}
+
+.widget-expand {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.widget-expand:hover {
+  color: var(--text);
+  background: var(--panel);
+}
+
+.widget-expand .icon {
+  width: 0.875rem;
+  height: 0.875rem;
+  transition: transform 120ms ease;
+}
+
+.widget-expand[aria-expanded='true'] .icon {
+  transform: rotate(90deg);
+}
+
+/* An open row and its versions read as one block. */
+.widget-table tbody tr.widget-row.open td {
+  border-bottom-color: transparent;
+}
+
+/* One level down, never a tree: indented once, on a quieter ground, and with
+   nothing that could open further. */
+.widget-table tbody tr.widget-fork td {
+  padding-top: 0.3125rem;
+  padding-bottom: 0.3125rem;
+  font-size: 0.75rem;
+  background: color-mix(in srgb, var(--panel) 55%, transparent);
+}
+
+.widget-table tbody tr.widget-fork .widget-identity {
+  padding-left: 1.25rem;
+}
+
+.widget-fork-kind {
+  font-family: var(--display);
+  font-size: 0.65625rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.widget-fork.main .widget-fork-kind {
+  color: var(--accent);
+}
+
+.widget-fork.yours .widget-fork-kind {
+  color: var(--warn);
+}
+
+.widget-fork .chips {
+  margin-top: 0.25rem;
+}
+
+/* Where a fork would show a picture but has none to show: a quiet box, so the
+   text lines up down the list. */
+.widget-fork-tile {
+  flex: 0 0 auto;
+  width: 3rem;
+  height: 1.875rem;
+  border: 1px dashed var(--line);
+  border-radius: 3px;
+}
+
+/* Leaves the app, so it is a button that says so rather than a link that
+   might not. */
+.link-button {
+  display: inline-flex;
+  gap: 0.3125rem;
+  align-items: center;
+  padding: 0.1875rem 0.5rem;
+  font-size: 0.71875rem;
+  color: var(--text);
+  white-space: nowrap;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.link-button:hover {
+  border-color: var(--muted);
+}
+
+.link-button .icon {
+  width: 0.8125rem;
+  height: 0.8125rem;
+  color: var(--muted);
+}
+
+/* The picture's anchor, so the enlarged view opens beside its own row. A
+   column, so that the tile inside it fills whatever height the row has. */
+.widget-thumb-anchor {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+}
+
+/* One width down the column, whatever the row holds; the height is the row's.
+   The picture is cut to fill rather than squeezed, so a tall row shows more of
+   the middle of it and never a stretched one. */
+.widget-thumb {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  padding: 0;
+  overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  cursor: zoom-in;
+}
+
+.widget-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.widget-thumb:hover {
+  border-color: var(--muted);
+}
+
+/* Initials on a colour derived from the name: recognisable next visit, and no
+   broken-image icon for the half of the list nobody has a picture of. */
+.widget-thumb.placeholder {
+  flex: 0 0 auto;
+  font-family: var(--display);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: hsl(var(--hue) 35% 82%);
+  background: hsl(var(--hue) 30% 24%);
+  border-color: hsl(var(--hue) 25% 32%);
+  cursor: default;
+}
+
+/* The rest of a widget's pictures, beside its tile while the tile is looked
+   at: in front of the row it belongs to, never over another, and gone the
+   moment the pointer or focus leaves them. */
+.widget-companions {
+  position: absolute;
+  z-index: 4;
+  top: 0;
+  bottom: 0;
+  left: calc(100% + 0.25rem);
+  display: flex;
+  gap: 0.25rem;
+}
+
+.widget-thumb.companion {
+  position: relative;
+  box-shadow: 0 0.25rem 0.75rem rgb(0 0 0 / 45%);
+}
+
+/* How many more the gallery holds than the tiles show. */
+.widget-more {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--display);
+  font-weight: 600;
+  color: var(--text);
+  background: rgb(0 0 0 / 55%);
+}
+
+/* About four rows tall, over the rows below rather than pushing them down:
+   the list does not jump when a picture opens. */
+.widget-preview {
+  position: absolute;
+  z-index: 5;
+  top: 0;
+  left: calc(100% + 0.5rem);
+  display: flex;
+  flex-direction: column;
+  width: 30rem;
+  max-width: 60vw;
+  overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 45%);
+}
+
+.widget-preview-picture {
+  aspect-ratio: 16 / 10;
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: zoom-out;
+}
+
+.widget-preview-picture img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* Every picture, small, under the big one: the one showing is outlined. */
+.widget-film {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  overflow-x: auto;
+  border-top: 1px solid var(--line);
+}
+
+.widget-film-tile {
+  flex: 0 0 4rem;
+  aspect-ratio: 16 / 10;
+  padding: 0;
+  overflow: hidden;
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.widget-film-tile:hover {
+  border-color: var(--muted);
+}
+
+.widget-film-tile[aria-current='true'] {
+  border-color: var(--accent);
+}
+
+.widget-film-tile img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* What is on this machine under this row's name. */
+.widget-local {
+  margin: 0.375rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.71875rem;
+  line-height: 1.5;
+}
+
+.widget-local li {
+  color: var(--muted);
+}
+
+.widget-local code {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--text);
+}
+
+.widget-local-kind {
+  font-weight: 600;
+  color: var(--warn, var(--text));
+}
+
+.widget-local li.exact .widget-local-kind {
+  color: var(--ok, var(--accent));
+}
+
+.widget-name strong {
+  font-size: 0.875rem;
+}
+
+.widget-by {
+  font-family: var(--mono);
+  font-size: 0.7875rem;
+  color: var(--faint);
+}
+
+.widget-about {
+  margin: 0.25rem 0 0;
+  font-family: var(--body);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.widget-name .chips {
+  margin-top: 0.375rem;
+}
+
+.widget-source {
+  max-width: 10rem;
+  font-size: 0.75rem;
+}
+
+/* Why there is no download, where the button would have been. A button that
+   does nothing would be worse than no button. */
+.widget-why {
+  margin: 0.25rem 0 0;
+  font-family: var(--body);
+  font-size: 0.6875rem;
+  line-height: 1.35;
+}
+
+.widget-actions-head {
+  text-align: right;
+}
+
+.widget-actions {
+  text-align: right;
+}
+
+.widget-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  justify-content: flex-end;
+}
+
+.widget-buttons button {
+  white-space: nowrap;
+}
+
+/* Narrow: the columns a reader can reconstruct from the widget itself go
+   first, so what is left is the name, the headline number and the buttons. */
+@media (max-width: 62rem) {
+  .widget-table th:nth-child(6),
+  .widget-table td:nth-child(6),
+  .widget-table th:nth-child(7),
+  .widget-table td:nth-child(7),
+  .widget-table th:nth-child(8),
+  .widget-table td:nth-child(8) {
+    display: none;
+  }
+}
+
+@media (max-width: 46rem) {
+  .widget-table th:nth-child(5),
+  .widget-table td:nth-child(5),
+  .widget-table th:nth-child(9),
+  .widget-table td:nth-child(9) {
+    display: none;
+  }
 }

@@ -52,7 +52,12 @@ function loaded(): Settings {
       sort: 'relevance',
       sortDescending: false,
     },
-    chat: { filterHostChatter: true, maxLines: 3000, channels: ['main'] },
+    chat: {
+      filterHostChatter: true,
+      maxLines: 3000,
+      channels: ['main'],
+      muted: ['main'],
+    },
     overlay: {
       enabled: true,
       hotkey: 'Alt+Shift+L',
@@ -61,7 +66,7 @@ function loaded(): Settings {
     },
     tweaks: { styluaConfig: null, defaultSlot: 'tweakdefs1' },
     logging: { filter: 'info' },
-    updates: { automatic: true },
+    updates: { automatic: true, download: true },
     ui: { scale: {} },
   }
 }

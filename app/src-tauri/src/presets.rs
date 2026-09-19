@@ -238,7 +238,7 @@ pub async fn skirmish_apply_preset(
     })
 }
 
-/// What BAR's PvE Stats service says the current room scores.
+/// What the pve.bar stats service says the current room scores.
 ///
 /// Answers `None` rather than an error for a room that is not PvE, or when the
 /// setting is off: neither is a failure, and a panel that says nothing is the

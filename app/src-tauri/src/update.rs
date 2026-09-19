@@ -2,12 +2,13 @@
 //!
 //! Looking and installing are two steps with a click between them. The look
 //! is one small request for the release manifest, made once a day when the
-//! app opens (if the setting allows) or whenever the version in the corner of
-//! the nav is clicked; it downloads nothing. A newer version found becomes
-//! that corner's offer. Taking the offer downloads the installer and installs
-//! it at once, unless a room is joined or a game is running, in which case
-//! the download waits as [`Pending::Downloaded`] and the corner offers the
-//! restart instead.
+//! app opens (if the setting allows) or whenever the version in the nav is
+//! clicked. A newer version found puts a button beside it. With
+//! `updates.download` on, the look goes on to fetch the installer by itself
+//! and stops there, as [`Pending::Downloaded`], so the button only restarts.
+//! Otherwise the click downloads the installer and installs it at once,
+//! unless a room is joined or a game is running, in which case the download
+//! waits as [`Pending::Downloaded`] and the button offers the restart instead.
 //!
 //! A download that waits is also kept on disk, under `updates/` beside the
 //! settings, so closing the app does not throw it away: the next start finds
@@ -23,7 +24,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -236,9 +237,6 @@ fn remove(path: &Path) {
     }
 }
 
-/// How often the app looks on its own.
-pub const EVERY: Duration = Duration::from_secs(24 * 60 * 60);
-
 /// Whether this build may update itself. Unset means yes in a release and no
 /// in a `tauri dev` run, which is always a local build the released one would
 /// replace; `0`, `false`, `off` or `no` means no look at all, anything else
@@ -270,10 +268,11 @@ fn disabled() -> ApiError {
     )
 }
 
-/// Looks for a newer release. Downloads nothing: the answer is `Available`
-/// with the version, `UpToDate`, or `Ready` when that version has already
-/// been downloaded and is waiting for a restart. A completed look is
-/// remembered so the daily one knows when it is due.
+/// Looks for a newer release. The answer is `Available` with the version,
+/// `UpToDate`, or `Ready` when that version has already been downloaded and
+/// is waiting for a restart -- or `Downloading` when `updates.download` sent
+/// a fetch after what was found, which [`stage`] carries on with. A completed
+/// look is remembered so the daily one knows when it is due.
 #[tauri::command]
 pub async fn check_update(
     app: State<'_, App>,
@@ -297,6 +296,16 @@ pub async fn check_update(
         }
         Err(err) => Err(err),
     };
+    // Answered as `Downloading` rather than `Available`, so the button is
+    // never offered enabled for the moment before the fetch says so itself: a
+    // click then would find the update already taken by `stage`.
+    let outcome = outcome.map(|progress| match progress {
+        UpdateProgress::Available { .. } if app.settings.get().updates.download => {
+            tauri::async_runtime::spawn(stage(handle.clone()));
+            UpdateProgress::Downloading { got: 0, total: 0 }
+        }
+        other => other,
+    });
 
     match &outcome {
         Ok(progress) => say(progress.clone()),
@@ -419,6 +428,45 @@ pub async fn install_update(
     outcome
 }
 
+/// Fetches what the look found and keeps it, without installing: fetching by
+/// itself stops at `Ready`, because the restart is the user's to ask for --
+/// or the next start's, which installs a kept download before logging in.
+async fn stage(handle: AppHandle) {
+    let app = handle.state::<App>();
+    let staged = handle.state::<Staged>();
+    let say = |progress: UpdateProgress| {
+        let _ = handle.emit("app-update", progress);
+    };
+
+    let update = {
+        let mut held = staged.held.lock().expect("staged update");
+        match held.take() {
+            Some(Pending::Found(update)) => update,
+            other => {
+                // A click took it first, or it is already here.
+                *held = other;
+                return;
+            }
+        }
+    };
+
+    match download(&update, &say).await {
+        Ok(bytes) => {
+            staged.keep(&update.version, &bytes);
+            let version = update.version.clone();
+            *staged.held.lock().expect("staged update") = Some(Pending::Downloaded(update, bytes));
+            say(ready(version, busy(&app).await));
+        }
+        Err(err) => {
+            // Still found, still on offer: the button fetches it on a click.
+            tracing::warn!(reason = %err.message, "update: fetching ahead failed");
+            let version = update.version.clone();
+            *staged.held.lock().expect("staged update") = Some(Pending::Found(update));
+            say(UpdateProgress::Available { version });
+        }
+    }
+}
+
 /// Installs the download an earlier run kept, before this one logs in.
 /// `None` when nothing was kept, or when this build does not update itself;
 /// otherwise what `install_update` answers when it does not install — the
@@ -434,6 +482,13 @@ pub async fn resume_update(
         return Ok(None);
     }
     install_update(app, staged, handle).await.map(Some)
+}
+
+/// The front end raised an error: the app's own failing, so the next start
+/// looks for a fix sooner. Kept locally, sent nowhere.
+#[tauri::command]
+pub fn note_trouble(app: State<'_, App>) {
+    app.update_memory.note_trouble();
 }
 
 enum Reopened {
@@ -482,9 +537,11 @@ async fn reopen(
     }
 }
 
-/// The daily look, when it is due. Quiet about being offline: an update is
-/// not something to be told about failing to look for. Not while a download
-/// waits on disk: the start that found it is installing it.
+/// The look on opening, when it is due: daily, or sooner after a session
+/// that went wrong (see `UpdateMemory::interval`). Quiet about being
+/// offline: an update is not something to be told about failing to look
+/// for. Not while a download waits on disk: the start that found it is
+/// installing it.
 pub async fn daily(handle: AppHandle) {
     let app = handle.state::<App>();
     let staged = handle.state::<Staged>();
@@ -492,8 +549,12 @@ pub async fn daily(handle: AppHandle) {
         tracing::debug!("update check: a kept download is being resumed, not looking");
         return;
     }
-    if !app.update_memory.due(SystemTime::now(), EVERY) {
-        tracing::debug!("update check: looked within the day, not again");
+    let every = app.update_memory.interval();
+    if !app.update_memory.due(SystemTime::now(), every) {
+        tracing::debug!(
+            ?every,
+            "update check: looked within the interval, not again"
+        );
         return;
     }
     match check_update(app, staged, handle.clone()).await {
@@ -558,9 +619,14 @@ fn install(
     bytes: &[u8],
 ) -> Result<UpdateProgress> {
     // The exit that follows is not Tauri's, so the exit handler that takes the
-    // in-game widget back out of the user's data directory will not run.
+    // in-game widget back out of the user's data directory will not run --
+    // nor the one that marks the session as ended, without which every
+    // update would read as a crash and the updated client would look hourly.
     if let Some(held) = handle.try_state::<crate::InGameHandle>() {
         drop(held.lock().expect("in-game").take());
+    }
+    if let Some(app) = handle.try_state::<App>() {
+        app.update_memory.ended();
     }
     update
         .install(bytes)

@@ -3,7 +3,13 @@
 //! `thumb://localhost/full/<spring name>`, the picture as published, for a
 //! box to show while its size is cut; and
 //! `thumb://localhost/news/<width>x<height>/<guid>`, the banner a news item
-//! published, which the webview cannot fetch itself.
+//! published, which the webview cannot fetch itself; and
+//! `thumb://localhost/widget/<width>x<height>/<n>/<usage key>`, picture `n` of
+//! a widget from the usage document.
+//!
+//! A widget's small tile and its enlarged view are two sizes cut from one
+//! download: the published picture is fetched once and kept, so opening the
+//! larger one costs a resize and no request.
 //!
 //! A URI scheme rather than a command, so the picture stays an `<img src>`:
 //! the webview loads it when the row scrolls into view, keeps it, and reports
@@ -24,14 +30,22 @@ use crate::state::App;
 
 pub const SCHEME: &str = "thumb";
 
-/// Which of the two stores the rest of the path names a picture in.
+/// Which store the rest of the path names a picture in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Source {
     /// A map, by its spring name.
     Map,
     /// A news item, by the permalink that identifies it.
     News,
+    /// Picture `n` of a widget or one of its forks, by its key in the usage
+    /// document. An index into the list the document published, so still
+    /// never a URL a caller chose.
+    Widget(usize),
 }
+
+/// The most pictures a widget publishes; an index past it is refused outright
+/// rather than looked up.
+const MAX_WIDGET_PICTURES: usize = 8;
 
 /// The handler Tauri calls per request; the work is on the async runtime so
 /// the webview's thread is not held while a picture is fetched.
@@ -59,6 +73,10 @@ async fn respond<R: Runtime>(app: &tauri::AppHandle<R>, path: &str) -> Response<
             .into_iter()
             .find(|item| item.id == key)
             .and_then(|item| item.image),
+        Source::Widget(index) => state
+            .widget_usage()
+            .await
+            .and_then(|usage| usage.image(&key, index).map(str::to_owned)),
     };
     let Some(url) = url else {
         return status(StatusCode::NOT_FOUND);
@@ -112,10 +130,20 @@ fn parse(path: &str) -> Option<(Source, Option<Tile>, String)> {
         .decode_utf8()
         .ok()?;
     let (head, rest) = decoded.split_once('/')?;
-    if head == "news" {
+    if head == "news" || head == "widget" {
         let (size, id) = rest.split_once('/')?;
         let tile = tile(size)?;
-        return (!id.is_empty()).then(|| (Source::News, Some(tile), id.to_owned()));
+        let (source, id) = if head == "news" {
+            (Source::News, id)
+        } else {
+            // `widget/<size>/<index>/<key>`: the index before the key, because a
+            // key may itself contain slashes and only the first one counts.
+            let (index, key) = id.split_once('/')?;
+            let index: usize = index.parse().ok()?;
+            (index < MAX_WIDGET_PICTURES).then_some(())?;
+            (Source::Widget(index), key)
+        };
+        return (!id.is_empty()).then(|| (source, Some(tile), id.to_owned()));
     }
     let tile = match head {
         "full" => None,
@@ -172,6 +200,35 @@ mod tests {
         assert_eq!((tile.width, tile.height), (320, 180));
         // The whole permalink, slashes and all: it is the id, not a path.
         assert_eq!(id, "https://www.beyondallreason.info/news/the-lore");
+    }
+
+    #[test]
+    fn a_widget_path_names_a_tile_a_picture_and_the_usage_key() {
+        let (source, tile, key) = parse("/widget/96x60/2/widget%3Agui_fire").unwrap();
+        assert_eq!(source, Source::Widget(2));
+        assert_eq!(tile, Tile::new(96, 60));
+        assert_eq!(key, "widget:gui_fire");
+    }
+
+    #[test]
+    fn a_fork_key_keeps_its_own_slashes() {
+        let (source, _, key) = parse("/widget/96x60/0/github%3Aowner%2Frepo%3APing%20Wheel").unwrap();
+        assert_eq!(source, Source::Widget(0));
+        assert_eq!(key, "github:owner/repo:Ping Wheel");
+    }
+
+    #[test]
+    fn a_widget_path_without_a_size_is_refused() {
+        // No "full" form: a widget picture is only ever served cut to a box,
+        // so a caller cannot ask the lobby to relay an original of any size.
+        assert!(parse("/widget/full/0/widget:gui_fire").is_none());
+    }
+
+    #[test]
+    fn a_widget_path_without_a_valid_picture_index_is_refused() {
+        assert!(parse("/widget/96x60/widget:gui_fire").is_none(), "no index at all");
+        assert!(parse("/widget/96x60/x/widget:gui_fire").is_none(), "not a number");
+        assert!(parse("/widget/96x60/8/widget:gui_fire").is_none(), "past the most published");
     }
 
     #[test]

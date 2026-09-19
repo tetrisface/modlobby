@@ -38,7 +38,10 @@
           "main"
         ],
         "filterHostChatter": true,
-        "maxLines": 3000
+        "maxLines": 3000,
+        "muted": [
+          "main"
+        ]
       }
     },
     "connection": {
@@ -116,7 +119,8 @@
     "updates": {
       "$ref": "#/$defs/Updates",
       "default": {
-        "automatic": true
+        "automatic": true,
+        "download": true
       }
     }
   },
@@ -243,6 +247,16 @@
           "format": "uint32",
           "default": 3000,
           "minimum": 0
+        },
+        "muted": {
+          "description": "Rooms left out of the unread count on the Chat tab, by room key: a\nchannel's name, or `@name` for a person. A line that names you still\ncounts.",
+          "type": "array",
+          "default": [
+            "main"
+          ],
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
@@ -428,7 +442,7 @@
           "default": true
         },
         "pveStats": {
-          "description": "Whether to ask BAR's PvE Stats service what a PvE room scores.\n\nOn, because the number is the point of looking at a PvE room before\njoining it. It sends the map, the settings and the team size to a\nthird-party service — never a name or an account — so it stays\nsomething that can be turned off.",
+          "description": "Whether to ask the pve.bar stats service what a PvE room scores.\n\nOn, because the number is the point of looking at a PvE room before\njoining it. It sends the map, the settings and the team size to a\nthird-party service — never a name or an account — so it stays\nsomething that can be turned off.",
           "type": "boolean",
           "default": true
         }
@@ -505,7 +519,12 @@
       "type": "object",
       "properties": {
         "automatic": {
-          "description": "Whether to look for a newer release once a day, when the app opens.\n\nOn, because an out-of-date lobby is one that quietly talks to a server\nthat has moved on. Looking is one small request for the release\nmanifest and nothing is downloaded or installed by itself: a newer\nversion shows in the corner of the nav, and a click on it fetches and\ninstalls. Off, the corner still looks when clicked.",
+          "description": "Whether to look for a newer release once a day, when the app opens.\n\nOn, because an out-of-date lobby is one that quietly talks to a server\nthat has moved on. Looking is one small request for the release\nmanifest and nothing is installed by itself: a newer version puts a\nbutton in the nav, and a click on it restarts into that version. Off,\nthe nav still looks when the version is clicked.\n\nAfter a session that ended badly the look comes round more often for a\nwhile -- hourly at first, easing back to daily -- so a fix reaches a\nbroken client sooner. Nothing about the failure is sent anywhere.",
+          "type": "boolean",
+          "default": true
+        },
+        "download": {
+          "description": "Whether to fetch a newer release as soon as a look finds one.\n\nOn. Nothing is installed by itself: the download is kept beside the\nsettings and the app goes on running the version it started with, so\nthe offer in the nav is one restart rather than a restart and a wait on\na link that may be slow. Off, nothing is fetched until the button is\nclicked, and that click fetches before it restarts.",
           "type": "boolean",
           "default": true
         }

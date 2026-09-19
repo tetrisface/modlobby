@@ -1,7 +1,7 @@
 import type { UserView } from '../ipc/bindings/UserView'
 
 /**
- * Who in a room asks the PvE Stats service first, and how long the rest wait.
+ * Who in a room asks the pve.bar stats service first, and how long the rest wait.
  *
  * Every client in a room sees the same change at the same moment, and the
  * service answers one request at a time: asked all at once, one client gets

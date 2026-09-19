@@ -9,8 +9,22 @@ export type Updates = {
  *
  * On, because an out-of-date lobby is one that quietly talks to a server
  * that has moved on. Looking is one small request for the release
- * manifest and nothing is downloaded or installed by itself: a newer
- * version shows in the corner of the nav, and a click on it fetches and
- * installs. Off, the corner still looks when clicked.
+ * manifest and nothing is installed by itself: a newer version puts a
+ * button in the nav, and a click on it restarts into that version. Off,
+ * the nav still looks when the version is clicked.
+ *
+ * After a session that ended badly the look comes round more often for a
+ * while -- hourly at first, easing back to daily -- so a fix reaches a
+ * broken client sooner. Nothing about the failure is sent anywhere.
  */
-automatic: boolean, };
+automatic: boolean, 
+/**
+ * Whether to fetch a newer release as soon as a look finds one.
+ *
+ * On. Nothing is installed by itself: the download is kept beside the
+ * settings and the app goes on running the version it started with, so
+ * the offer in the nav is one restart rather than a restart and a wait on
+ * a link that may be slow. Off, nothing is fetched until the button is
+ * clicked, and that click fetches before it restarts.
+ */
+download: boolean, };

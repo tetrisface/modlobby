@@ -29,6 +29,7 @@ export type NavKey =
   | 'skirmish'
   | 'chat'
   | 'news'
+  | 'widgets'
   | 'replays'
   | 'settings'
   | 'login'
@@ -42,6 +43,7 @@ const LINKS: readonly Link[] = [
   { key: 'skirmish', href: '/skirmish', label: 'Skirmish' },
   { key: 'chat', href: '/chat', label: 'Chat' },
   { key: 'news', href: '/news', label: 'News' },
+  { key: 'widgets', href: '/widgets', label: 'Widgets' },
   { key: 'replays', href: '/replays', label: 'Replays' },
   { key: 'settings', href: '/settings', label: 'Settings' },
   { key: 'login', href: '/login', label: 'Log in' },
@@ -57,6 +59,7 @@ const KEPT: readonly NavKey[] = [
   'skirmish',
   'chat',
   'news',
+  'widgets',
   'replays',
   'settings',
   'login',

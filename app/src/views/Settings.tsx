@@ -4,6 +4,7 @@ import { createStore, unwrap } from 'solid-js/store'
 import { PlayerFiles } from '../components/PlayerFiles'
 import type { Settings } from '../ipc/bindings/Settings'
 import { api, describeError } from '../ipc/client'
+import { build } from '../store/build'
 import { pushNotice } from '../store/chat'
 import { bounds } from '../lib/scale'
 import {
@@ -13,7 +14,7 @@ import {
   settings,
   uiScale,
 } from '../store/settings'
-import { busy as updating, checkUpdate } from '../store/update'
+import { busy as updating, checkUpdate, checking } from '../store/update'
 
 /** Long enough that typing a hostname is one write rather than twelve. */
 const SAVE_AFTER = 600
@@ -88,7 +89,10 @@ export function SettingsView() {
    */
   async function checkNow() {
     await checkUpdate()
-    pushNotice('info', 'Looked. The version in the corner says what was found.')
+    pushNotice(
+      'info',
+      'Looked. If there is a newer version, the nav offers it.',
+    )
   }
 
   /** What is in the file, as far as we know. */
@@ -124,9 +128,10 @@ export function SettingsView() {
       setState('saved')
     } catch (error) {
       // The draft keeps the rejected value so it can be corrected rather than
-      // silently reverted; the file still holds the last good one.
+      // silently reverted; the file still holds the last good one. A warning:
+      // a value typed wrong is not the app's bug.
       setState('clean')
-      pushNotice('error', describeError(error))
+      pushNotice('warning', describeError(error))
     }
   }
 
@@ -273,17 +278,33 @@ export function SettingsView() {
             />
             Look for a newer version once a day
           </label>
+          <label class='row'>
+            <input
+              type='checkbox'
+              checked={draft.updates.download}
+              onChange={(e) =>
+                setDraft('updates', 'download', e.currentTarget.checked)
+              }
+            />
+            Download a newer version as soon as one is found
+          </label>
           <p class='muted'>
-            One small request when the app opens, at most once a day; nothing is
-            downloaded by itself. A newer version shows on the version in the
-            corner of the nav, and a click there fetches and installs it. In a
-            room or a game the install waits for a second click.{' '}
+            One small request when the app opens, at most once a day. A newer
+            version puts a button beside the version in the nav. With
+            downloading on it is fetched in the background and kept, nothing is
+            installed, and the button restarts into it; the next start installs
+            it if you do not. Off, nothing is fetched until you click, and the
+            click fetches first. In a room or a game the install waits for a
+            second click. After a session that ended badly the look comes round
+            more often for a while — hourly at first, easing back to daily — so
+            a fix reaches you sooner; nothing about the failure is sent
+            anywhere.{' '}
             <button
               type='button'
               disabled={updating()}
               onClick={() => void checkNow()}
             >
-              {updating() ? 'Looking…' : 'Check now'}
+              {checking() ? 'Looking…' : 'Check now'}
             </button>
           </p>
         </fieldset>
@@ -676,10 +697,10 @@ export function SettingsView() {
             Show what a PvE room scores (pve.bar)
           </label>
           <p class='muted'>
-            Asks BAR's PvE Stats service — the one the in-game widget uses — for
-            a challenge score and win chance, and lists the room among the games
-            being played. Sends the map, the settings and the team size; never a
-            name or an account. Off hides the panel and sends nothing.
+            Asks the pve.bar stats service — the one the in-game widget uses —
+            for a challenge score and win chance, and lists the room among the
+            games being played. Sends the map, the settings and the team size;
+            never a name or an account. Off hides the panel and sends nothing.
           </p>
         </fieldset>
 
@@ -694,6 +715,15 @@ export function SettingsView() {
             Open log folder
           </button>
         </fieldset>
+      </Show>
+
+      {/* The build, under every tab: the one fact a bug report needs. */}
+      <Show when={build()}>
+        {(found) => (
+          <p class='build-stamp'>
+            modlobby {found().version}+{found().commit}
+          </p>
+        )}
       </Show>
     </form>
   )
@@ -740,7 +770,12 @@ export function blankSettings(): Settings {
       sort: 'relevance',
       sortDescending: false,
     },
-    chat: { filterHostChatter: true, maxLines: 3000, channels: ['main'] },
+    chat: {
+      filterHostChatter: true,
+      maxLines: 3000,
+      channels: ['main'],
+      muted: ['main'],
+    },
     overlay: {
       enabled: true,
       hotkey: 'Alt+Shift+L',
@@ -749,7 +784,7 @@ export function blankSettings(): Settings {
     },
     tweaks: { styluaConfig: null, defaultSlot: 'tweakdefs1' },
     logging: { filter: 'info' },
-    updates: { automatic: true },
+    updates: { automatic: true, download: true },
     ui: { scale: {} },
   }
 }
