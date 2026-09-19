@@ -1020,12 +1020,17 @@ mod tests {
     fn every_picture_of_a_gallery_is_found_by_its_index() {
         let mut widget = ping_wheel();
         widget["image"] = serde_json::json!("https://example.test/1.png");
-        widget["images"] = serde_json::json!(["https://example.test/1.png", "https://example.test/2.png"]);
+        widget["images"] =
+            serde_json::json!(["https://example.test/1.png", "https://example.test/2.png"]);
         let usage = parse(document(serde_json::json!([widget])));
         let key = usage.widgets[0].key.clone();
         assert_eq!(usage.image(&key, 0), Some("https://example.test/1.png"));
         assert_eq!(usage.image(&key, 1), Some("https://example.test/2.png"));
-        assert_eq!(usage.image(&key, 2), None, "past the end is nothing, not a wrap");
+        assert_eq!(
+            usage.image(&key, 2),
+            None,
+            "past the end is nothing, not a wrap"
+        );
     }
 
     #[test]

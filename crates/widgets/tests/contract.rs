@@ -293,9 +293,16 @@ fn every_widget_has_forks_and_names_one_of_them_as_its_main() {
     for widget in &published().widgets {
         assert!(!widget.forks.is_empty(), "{} has no forks", widget.key);
         if widget.main.is_empty() {
-            assert!(!widget.resolved, "{} resolved but names no main", widget.key);
             assert!(
-                widget.forks.iter().all(|fork| fork.kind == widgets::ForkKind::Other),
+                !widget.resolved,
+                "{} resolved but names no main",
+                widget.key
+            );
+            assert!(
+                widget
+                    .forks
+                    .iter()
+                    .all(|fork| fork.kind == widgets::ForkKind::Other),
                 "{} has a publisher but names no main",
                 widget.key
             );
@@ -375,9 +382,17 @@ fn an_other_versions_fork_never_offers_a_download() {
     // "Other versions" is whatever players ran that matches no known source,
     // including their own edits. There is nothing to install and nobody to name.
     for widget in &published().widgets {
-        for fork in widget.forks.iter().filter(|f| f.kind == widgets::ForkKind::Other) {
+        for fork in widget
+            .forks
+            .iter()
+            .filter(|f| f.kind == widgets::ForkKind::Other)
+        {
             assert!(!fork.install.is_installable(), "{}", widget.key);
-            assert!(!fork.main, "{}: other versions cannot be the main fork", widget.key);
+            assert!(
+                !fork.main,
+                "{}: other versions cannot be the main fork",
+                widget.key
+            );
         }
     }
 }
@@ -425,7 +440,11 @@ fn every_picture_is_https_and_the_first_is_the_single_picture() {
         if let Some(first) = images.first() {
             assert_eq!(image, first, "{name}");
         }
-        assert!(images.len() <= 8, "{name} publishes {} pictures", images.len());
+        assert!(
+            images.len() <= 8,
+            "{name} publishes {} pictures",
+            images.len()
+        );
     };
     for widget in &published().widgets {
         check(&widget.name, &widget.image, &widget.images);
@@ -455,7 +474,10 @@ fn a_date_is_utc_to_the_second_or_nothing_and_never_updated_before_published() {
         ) {
             assert!(valid(first) && valid(last), "{name}: {first} / {last}");
             if !first.is_empty() && !last.is_empty() {
-                assert!(first <= last, "{name} updated {last} before it was published {first}");
+                assert!(
+                    first <= last,
+                    "{name} updated {last} before it was published {first}"
+                );
             }
         }
     }
