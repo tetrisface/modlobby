@@ -155,7 +155,30 @@ beforeEach(() => {
   // happens to be callable is taken for a teardown hook and called with the
   // test context — which for a mock means one phantom invoke per test.
   asked.mockReset()
+  // The toolbar remembers itself across mounts, so each test gets an empty
+  // store of its own -- otherwise a filter one test clicks is a default the
+  // next one starts from. happy-dom ships no `localStorage`, which is also why
+  // the page has to work without one.
+  Object.defineProperty(window, 'localStorage', {
+    value: memoryStore(),
+    configurable: true,
+  })
 })
+
+/** Enough of `Storage` for a page that only gets, sets and clears. */
+function memoryStore(): Storage {
+  const held = new Map<string, string>()
+  return {
+    getItem: (key: string) => held.get(key) ?? null,
+    setItem: (key: string, value: string) => void held.set(key, value),
+    removeItem: (key: string) => void held.delete(key),
+    clear: () => held.clear(),
+    key: (at: number) => [...held.keys()][at] ?? null,
+    get length() {
+      return held.size
+    },
+  } as Storage
+}
 
 afterEach(cleanup)
 
@@ -561,6 +584,25 @@ describe('sorting', () => {
     expect(sorted?.textContent).toContain('Still using')
     expect(sorted?.getAttribute('aria-sort')).toBe('descending')
     expect(names(container)).toEqual(['Bravo', 'Charlie', 'Alpha'])
+  })
+
+  test('the sort and the toolbar are still set on the next visit', async () => {
+    serve(three())
+    const Widgets = await fresh()
+    const first = render(() => <Widgets />)
+    await drawn(first.container)
+    fireEvent.click(first.getByRole('button', { name: /Players/ }))
+    fireEvent.click(first.getByRole('button', { name: 'Include used once' }))
+    cleanup()
+
+    const { container, getByRole } = render(() => <Widgets />)
+    await drawn(container)
+    expect(names(container)).toEqual(['Bravo', 'Charlie', 'Alpha'])
+    expect(
+      getByRole('button', { name: 'Include used once' }).getAttribute(
+        'aria-pressed',
+      ),
+    ).toBe('true')
   })
 
   test('a text column sorts A to Z first', async () => {

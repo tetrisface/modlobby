@@ -166,10 +166,30 @@ impl Service {
     /// has been made before, otherwise made from the published picture —
     /// itself fetched only the first time — and kept.
     pub async fn get(&self, url: &str, tile: Tile) -> Result<Vec<u8>, Error> {
-        let path = self
-            .0
-            .dir
-            .join(format!("{}-{}x{}.png", hash(url), tile.width, tile.height));
+        self.make(url, tile, "", fill).await
+    }
+
+    /// The picture at `url` whole inside `tile`: scaled to fit, never cropped,
+    /// so the box it is drawn in pads it instead of cutting it. What a
+    /// screenshot of an interface wants — its edges are the part that says
+    /// which interface it is.
+    pub async fn get_whole(&self, url: &str, tile: Tile) -> Result<Vec<u8>, Error> {
+        self.make(url, tile, "-whole", fit).await
+    }
+
+    async fn make(
+        &self,
+        url: &str,
+        tile: Tile,
+        kind: &str,
+        resize: fn(&[u8], Tile) -> Result<Vec<u8>, image::ImageError>,
+    ) -> Result<Vec<u8>, Error> {
+        let path = self.0.dir.join(format!(
+            "{}-{}x{}{kind}.png",
+            hash(url),
+            tile.width,
+            tile.height
+        ));
         if let Ok(png) = tokio::fs::read(&path).await {
             return Ok(png);
         }
@@ -182,7 +202,7 @@ impl Service {
         let picture = self.published(url).await?;
         // Decoding and resizing a 1024px picture is tens of milliseconds of
         // CPU, which the async runtime should not sit through.
-        let png = tokio::task::spawn_blocking(move || fill(&picture, tile))
+        let png = tokio::task::spawn_blocking(move || resize(&picture, tile))
             .await
             .expect("resizing does not panic")?;
         write(&path, &png).await?;
@@ -351,6 +371,20 @@ pub fn fill(picture: &[u8], tile: Tile) -> Result<Vec<u8>, image::ImageError> {
     Ok(png.into_inner())
 }
 
+/// `picture`, scaled to fit *inside* `tile` with its shape kept and nothing
+/// cropped — what CSS `object-fit: contain` would have done — as a PNG no
+/// bigger than the tile on either side. The padding is the box's, not the
+/// picture's, so a tall screenshot and a wide one both arrive whole. Pure.
+pub fn fit(picture: &[u8], tile: Tile) -> Result<Vec<u8>, image::ImageError> {
+    let image = ImageReader::new(Cursor::new(picture))
+        .with_guessed_format()?
+        .decode()?;
+    let small = image.resize(tile.width, tile.height, FilterType::Lanczos3);
+    let mut png = Cursor::new(Vec::new());
+    small.into_rgb8().write_to(&mut png, ImageFormat::Png)?;
+    Ok(png.into_inner())
+}
+
 /// Temp file and rename, so a crash never leaves half a picture behind.
 async fn write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
@@ -426,6 +460,17 @@ mod tests {
         assert_eq!((small.width(), small.height()), (50, 50));
         assert_eq!(*small.get_pixel(5, 25), RED);
         assert_eq!(*small.get_pixel(44, 25), BLUE);
+    }
+
+    #[test]
+    fn a_fit_keeps_the_whole_picture_and_its_shape() {
+        // 200×100 into 50×50: 50×25, both halves still there and neither side
+        // past the tile — the box pads what is left over.
+        let png = fit(&halves(ImageFormat::Png), tile(50, 50)).unwrap();
+        let small = image::load_from_memory(&png).unwrap().into_rgb8();
+        assert_eq!((small.width(), small.height()), (50, 25));
+        assert_eq!(*small.get_pixel(5, 12), RED);
+        assert_eq!(*small.get_pixel(44, 12), BLUE);
     }
 
     #[test]

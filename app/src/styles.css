@@ -5023,8 +5023,8 @@ button.link:hover {
 }
 
 /* One width down the column, whatever the row holds; the height is the row's.
-   The picture is cut to fill rather than squeezed, so a tall row shows more of
-   the middle of it and never a stretched one. */
+   The picture is shown whole inside that box rather than cut to fill it: a
+   widget's screenshot says what it is at its edges, so a tall row pads it. */
 .widget-thumb {
   display: grid;
   flex: 1;
@@ -5041,7 +5041,7 @@ button.link:hover {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .widget-thumb:hover {
@@ -5157,7 +5157,7 @@ button.link:hover {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 /* What is on this machine under this row's name. */

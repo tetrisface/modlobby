@@ -15,6 +15,7 @@ import type { LocalWidget } from '../ipc/bindings/LocalWidget'
 import type { WidgetUsage } from '../ipc/bindings/WidgetUsage'
 import type { WindowStats } from '../ipc/bindings/WindowStats'
 import { age, exactly } from '../lib/age'
+import { sticky } from '../lib/sticky'
 import { devicePixels, thumbSrc } from '../lib/thumb'
 import {
   type Action,
@@ -172,7 +173,7 @@ export function Widgets() {
   const offered = createMemo<string[]>(() =>
     WINDOW_ORDER.filter((name) => windows().includes(name)),
   )
-  const [picked, setPicked] = createSignal<string | null>(null)
+  const [picked, setPicked] = sticky<string | null>('widgets.window', null)
   /**
    * The window being shown. A pick that the document does not carry is not
    * honoured — the default first, and the widest published as a last resort,
@@ -194,18 +195,26 @@ export function Widgets() {
   const splits = createMemo<Audience[]>(() =>
     AUDIENCE_ORDER.filter((name) => audiences().includes(name)),
   )
-  const [audience, setAudience] = createSignal<Audience>(DEFAULT_AUDIENCE)
+  const [audience, setAudience] = sticky<Audience>(
+    'widgets.audience',
+    DEFAULT_AUDIENCE,
+  )
   const shownAudience = createMemo<Audience>(() =>
     splits().includes(audience()) ? audience() : DEFAULT_AUDIENCE,
   )
 
+  // The search box is not remembered: a query kept from last time hides most
+  // of the page, and unlike a filter button nothing on screen says why.
   const [query, setQuery] = createSignal('')
-  const [installedOnly, setInstalledOnly] = createSignal(false)
-  const [includeUsedOnce, setIncludeUsedOnce] = createSignal(false)
+  const [installedOnly, setInstalledOnly] = sticky('widgets.installed', false)
+  const [includeUsedOnce, setIncludeUsedOnce] = sticky('widgets.once', false)
   const mode = (): UsingMode =>
     includeUsedOnce() ? 'once' : DEFAULT_USING_MODE
-  const [sort, setSort] = createSignal<SortKey>('rank')
-  const [descending, setDescending] = createSignal(false)
+  const [chosenSort, setSort] = sticky<SortKey>('widgets.sort', 'rank')
+  /** A key a later build renamed is not honoured, the way a window is not. */
+  const sort = (): SortKey =>
+    chosenSort() in SORT_STARTS_DESCENDING ? chosenSort() : 'rank'
+  const [descending, setDescending] = sticky('widgets.descending', false)
 
   /** Clicking the header already sorted by flips it, as any table does. */
   const sortBy = (key: SortKey) => {

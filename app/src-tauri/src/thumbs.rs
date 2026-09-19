@@ -82,11 +82,15 @@ async fn respond<R: Runtime>(app: &tauri::AppHandle<R>, path: &str) -> Response<
         return status(StatusCode::NOT_FOUND);
     };
     let made = match tile {
-        Some(tile) => state
-            .thumbs
-            .get(&url, tile)
-            .await
-            .map(|png| ("image/png", png)),
+        // A map's tile is cut to fill it — a bigger row shows more of the
+        // middle of the terrain. A widget's picture is a screenshot, and what
+        // it is a screenshot of is often at an edge, so it comes whole and the
+        // tile pads it.
+        Some(tile) => match source {
+            Source::Widget(_) => state.thumbs.get_whole(&url, tile).await,
+            _ => state.thumbs.get(&url, tile).await,
+        }
+        .map(|png| ("image/png", png)),
         None => state
             .thumbs
             .published(&url)
