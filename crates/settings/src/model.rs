@@ -246,7 +246,7 @@ pub struct Play {
     /// nothing until its content is here. Off leaves a button in the room for
     /// each fetch, for a metered connection or a disk being kept small.
     pub auto_download: bool,
-    /// Whether to ask BAR's PvE Stats service what a PvE room scores.
+    /// Whether to ask the pve.bar stats service what a PvE room scores.
     ///
     /// On, because the number is the point of looking at a PvE room before
     /// joining it. It sends the map, the settings and the team size to a

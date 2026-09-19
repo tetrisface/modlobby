@@ -14,9 +14,9 @@
 //! last copy, a picture that is not there is remembered as not being there,
 //! and the one download that matters resumes from the part file it left
 //! behind. A retry would buy little and is the shape a client takes on just
-//! before somebody has to block it. (The PvE stats service, which is ours,
-//! does retry, with a patience of its own -- `pve::Patience` -- and
-//! pr-downloader retries a failed file with backoff, as it does for bar-lobby.)
+//! before somebody has to block it. (The pve.bar stats service does retry,
+//! with a patience of its own -- `pve::Patience` -- and pr-downloader retries
+//! a failed file with backoff, as it does for bar-lobby.)
 //!
 //! Should one ever be wanted here, it has three obligations, and none of them
 //! are satisfied by a loop with a sleep in it:

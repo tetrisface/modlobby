@@ -697,10 +697,10 @@ export function SettingsView() {
             Show what a PvE room scores (pve.bar)
           </label>
           <p class='muted'>
-            Asks BAR's PvE Stats service — the one the in-game widget uses — for
-            a challenge score and win chance, and lists the room among the games
-            being played. Sends the map, the settings and the team size; never a
-            name or an account. Off hides the panel and sends nothing.
+            Asks the pve.bar stats service — the one the in-game widget uses —
+            for a challenge score and win chance, and lists the room among the
+            games being played. Sends the map, the settings and the team size;
+            never a name or an account. Off hides the panel and sends nothing.
           </p>
         </fieldset>
 

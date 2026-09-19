@@ -50,7 +50,7 @@ pub struct App {
     pub presets: presets::Store,
     /// The one client every HTTP request leaves through: pooled, and named.
     pub http: reqwest::Client,
-    /// BAR's PvE Stats service, with what it has already answered this run.
+    /// The pve.bar stats service, with what it has already answered this run.
     pub pve: pve::Service,
     /// BAR's map index for this run, loaded the first time anything asks.
     map_index: tokio::sync::Mutex<MapIndexHeld>,

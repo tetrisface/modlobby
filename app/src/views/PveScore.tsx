@@ -15,7 +15,7 @@ import { settings } from '../store/settings'
 import { useRoom, type RoomModel } from './room/model'
 
 /**
- * What BAR's PvE Stats service says this room scores.
+ * What the pve.bar stats service says this room scores.
  *
  * The same numbers the in-game widget shows, asked for while there is still
  * time to change the answer — which is when "this is going to be a massacre"
