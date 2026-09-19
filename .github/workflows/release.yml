@@ -10,7 +10,7 @@
 # `tag` bumps, tags and opens the GitHub release; `build` runs once
 # per platform (Windows NSIS; Linux AppImage, .deb and .rpm; mac waits for a
 # Recoil build) and each attaches its bundles, .sig files and latest.json to
-# that release as soon as it finishes. tauri-action merges the `platforms` map of an existing
+# that release as soon as it finishes, then versionless copies of the bundles. tauri-action merges the `platforms` map of an existing
 # latest.json rather than replacing it, so the manifest fills in one platform
 # at a time. A client whose platform is not in the manifest yet sees a
 # transient "no update for this target" — the same class of window as the 404
@@ -180,6 +180,7 @@ jobs:
       # submodule is needed: the one file compiled in from external/ is only
       # read under #[cfg(test)].
       - uses: tauri-apps/tauri-action@v1.0.0
+        id: tauri
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -190,6 +191,28 @@ jobs:
           tauriScript: bun run tauri
           tagName: v${{ needs.tag.outputs.next }}
           releaseName: ${{ needs.tag.outputs.next }}
+
+      # The same bundles again under names without the version, so the README
+      # links /releases/latest/download/<name> and never goes stale. The .sig
+      # files and latest.json keep naming the versioned ones.
+      - name: Versionless copies for the README
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEXT: ${{ needs.tag.outputs.next }}
+          ARTIFACTS: ${{ steps.tauri.outputs.artifactPaths }}
+        run: |
+          mkdir -p latest
+          jq -r '.[]' <<<"$ARTIFACTS" | tr -d '\r' | while read -r path; do
+            case "$path" in
+              *.exe) name=modlobby_x64-setup.exe ;;
+              *.AppImage) name=modlobby_amd64.AppImage ;;
+              *.deb) name=modlobby_amd64.deb ;;
+              *.rpm) name=modlobby.x86_64.rpm ;;
+              *) continue ;;
+            esac
+            cp "$path" "latest/$name"
+          done
+          gh release upload "v$NEXT" latest/* --clobber
 
   # The Arch package: packaging/aur/PKGBUILD with this release's version,
   # checksummed and test-built in an Arch container, then pushed to

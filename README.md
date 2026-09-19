@@ -6,8 +6,14 @@ A Beyond All Reason lobby focused on modding, experiments and performance that u
 
 ## Packages
 
-Packages are available at [releases](https://github.com/tetrisface/modlobby/releases) as .exe,
-.AppImage, .deb and .rpm, all of which update themselves from the next release. MacOS is not supported for skirmish yet.
+Packages are available at [releases](https://github.com/tetrisface/modlobby/releases) as
+[.exe][exe], [.AppImage][appimage], [.deb][deb] and [.rpm][rpm], all of which update themselves
+from the next release. MacOS is not supported for skirmish yet.
+
+[exe]: https://github.com/tetrisface/modlobby/releases/latest/download/modlobby_x64-setup.exe
+[appimage]: https://github.com/tetrisface/modlobby/releases/latest/download/modlobby_amd64.AppImage
+[deb]: https://github.com/tetrisface/modlobby/releases/latest/download/modlobby_amd64.deb
+[rpm]: https://github.com/tetrisface/modlobby/releases/latest/download/modlobby.x86_64.rpm
 
 ## From source
 
