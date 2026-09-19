@@ -50,6 +50,27 @@ fn overlay_config_dir(settings: &settings::Settings) -> Option<std::path::PathBu
         .then(|| settings::config_dir().join("engine"))
 }
 
+/// Tells the runtime and the overlay what the settings now say. The one way
+/// they learn of it, whoever changed them: the file watcher for an edit made
+/// in the file, and `update_settings` for one made in the app — whose own
+/// write the watcher skips, so without this a box ticked on the Settings page
+/// took hold only at the next start.
+pub(crate) async fn push_settings(
+    client: &lobby_runtime::Client,
+    overlay: &overlay::Controller,
+    settings: &settings::Settings,
+) {
+    // The content check needs to know where BAR keeps its files.
+    let _ = client.set_data_dir(settings.paths.data_dir.clone()).await;
+    let _ = client.set_auto_launch(settings.play.auto_launch).await;
+    let _ = client.set_auto_download(settings.play.auto_download).await;
+    let _ = client
+        .set_overlay_config_dir(overlay_config_dir(settings))
+        .await;
+    let _ = client.set_idle_timeout(idle_timeout(settings)).await;
+    overlay.settings_changed(overlay_settings(settings));
+}
+
 /// The live in-game socket, or nothing if it could not be bound.
 ///
 /// Dropping it takes the widget back out of the user's data directory, which
@@ -230,33 +251,16 @@ pub fn run() {
             let mut watch = app.settings.watch()?;
             let handle = tauri_app.handle().clone();
             let client = app.client.clone();
-            let data_dir = app.settings.get().paths.data_dir;
-            let auto_launch = app.settings.get().play.auto_launch;
-            let auto_download = app.settings.get().play.auto_download;
-            let engine_config = overlay_config_dir(&app.settings.get());
-            let idle = idle_timeout(&app.settings.get());
+            let at_start = app.settings.get();
             // Beside the settings and the preset book, because it is the same
             // kind of thing: what this person has set up, kept for next time.
             let skirmish_path = commands::skirmish_path(&app);
             tauri::async_runtime::spawn(async move {
-                // The content check needs to know where BAR keeps its files,
-                // both now and whenever the setting changes.
-                let _ = client.set_data_dir(data_dir).await;
-                let _ = client.set_auto_launch(auto_launch).await;
-                let _ = client.set_auto_download(auto_download).await;
-                let _ = client.set_overlay_config_dir(engine_config).await;
-                let _ = client.set_idle_timeout(idle).await;
+                push_settings(&client, &controller, &at_start).await;
                 let _ = client.set_skirmish_path(Some(skirmish_path)).await;
                 while let Some(event) = watch.recv().await {
                     if let settings::SettingsEvent::Changed(settings) = &event {
-                        let _ = client.set_data_dir(settings.paths.data_dir.clone()).await;
-                        let _ = client.set_auto_launch(settings.play.auto_launch).await;
-                        let _ = client.set_auto_download(settings.play.auto_download).await;
-                        let _ = client
-                            .set_overlay_config_dir(overlay_config_dir(settings))
-                            .await;
-                        let _ = client.set_idle_timeout(idle_timeout(settings)).await;
-                        controller.settings_changed(overlay_settings(settings));
+                        push_settings(&client, &controller, settings).await;
                     }
                     let _ = handle.emit("settings", &event);
                 }

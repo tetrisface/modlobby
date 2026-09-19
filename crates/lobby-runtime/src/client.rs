@@ -2003,6 +2003,12 @@ impl Runtime {
             Command::SetMenuArchive(menu) => self.menu_archive = menu,
             Command::SetSkirmishPath(path) => self.skirmish_path = path,
             Command::SetDataDir(data_dir) => {
+                // Told on every save of the settings, of which most change
+                // something else: the scan below is too slow to repeat for
+                // a battle-list filter being clicked.
+                if data_dir == self.data_dir {
+                    return;
+                }
                 self.data_dir = data_dir;
                 // Re-check against the new directory.
                 self.checked = None;

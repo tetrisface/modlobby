@@ -30,16 +30,16 @@ describe('servers', () => {
     )
     expect(
       forgotPasswordUrl({
-        ...newServer('randomguyrapid.duckdns.org'),
-        website: 'https://moddedbar.duckdns.org/',
+        ...newServer('server.example.com'),
+        website: 'https://server.example.com/',
       }),
-    ).toBe('https://moddedbar.duckdns.org/forgot_password')
+    ).toBe('https://server.example.com/forgot_password')
   })
 })
 
 describe('adding a server', () => {
   test('takes a bare host that is not listed yet', () => {
-    expect(hostProblem('randomguyrapid.duckdns.org', ['server4'])).toBeNull()
+    expect(hostProblem('server.example.com', ['server4'])).toBeNull()
   })
 
   test('refuses nothing, a port or a path, and a server already listed', () => {

@@ -30,7 +30,7 @@ async function settle() {
 }
 
 const BAR = 'server4.beyondallreason.info'
-const RAPID = 'randomguyrapid.duckdns.org'
+const RAPID = 'server.example.com'
 
 /** Settings with the given flags and servers; the rest is never read here. */
 function remembered(

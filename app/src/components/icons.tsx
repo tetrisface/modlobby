@@ -330,6 +330,34 @@ export function IconSprite() {
             stroke-linejoin='round'
           />
         </symbol>
+        {/* An eye, open: shows what is typed in a password field. */}
+        <symbol id='act-eye' viewBox='0 0 20 20'>
+          <path
+            d='M2 10 Q10 2.5 18 10 Q10 17.5 2 10 Z'
+            fill='none'
+            stroke='currentColor'
+            stroke-width='1.6'
+            stroke-linejoin='round'
+          />
+          <circle cx='10' cy='10' r='2.4' fill='currentColor' />
+        </symbol>
+        {/* The same eye struck through: hides it again. */}
+        <symbol id='act-eye-off' viewBox='0 0 20 20'>
+          <path
+            d='M2 10 Q10 2.5 18 10 Q10 17.5 2 10 Z'
+            fill='none'
+            stroke='currentColor'
+            stroke-width='1.6'
+            stroke-linejoin='round'
+          />
+          <circle cx='10' cy='10' r='2.4' fill='currentColor' />
+          <path
+            d='M3.5 3.5 L16.5 16.5'
+            stroke='currentColor'
+            stroke-width='1.6'
+            stroke-linecap='round'
+          />
+        </symbol>
         {/* A bell struck through: this room stays out of the unread count. */}
         <symbol id='act-mute' viewBox='0 0 20 20'>
           <path

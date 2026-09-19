@@ -39,22 +39,23 @@ describe('the login page', () => {
     setSettingsSignal(withServers('server4.beyondallreason.info'))
     const { container } = render(() => <Login />)
     expect(container.querySelector('select')).toBeNull()
-    expect(serverLine(container)).toContain('server4.beyondallreason.info')
+    // BAR is the one everybody means, so the form does not name it.
+    expect(serverLine(container)).toBeUndefined()
   })
 
   test('with more, the form is for the one picked', () => {
     setSettingsSignal(
-      withServers('server4.beyondallreason.info', 'randomguyrapid.duckdns.org'),
+      withServers('server4.beyondallreason.info', 'server.example.com'),
     )
     const { container } = render(() => <Login />)
     const choice = container.querySelector('select')!
     expect(choice.options).toHaveLength(2)
-    expect(serverLine(container)).toContain('server4.beyondallreason.info')
+    expect(serverLine(container)).toBeUndefined()
 
     fireEvent.change(choice, {
-      target: { value: 'randomguyrapid.duckdns.org' },
+      target: { value: 'server.example.com' },
     })
-    expect(serverLine(container)).toContain('randomguyrapid.duckdns.org')
+    expect(serverLine(container)).toContain('server.example.com')
   })
 
   test('with none, says where one is added', () => {

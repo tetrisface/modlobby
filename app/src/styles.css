@@ -3975,14 +3975,44 @@ button.link:hover {
   color: var(--text);
 }
 
-/* Part of the password field rather than a row of the form, so it sits under
-   it at its own width instead of stretching across the column. */
-.login-reveal {
-  align-self: flex-start;
+/* The eye inside the password field, at its right end; the field keeps
+   room for it so a long password never runs underneath. */
+.password-field {
+  position: relative;
+  display: flex;
 }
 
-/* A change of mind, under the button that would have submitted the other one. */
-.login-switch {
+.password-field input {
+  flex: 1;
+  min-width: 0;
+  padding-right: 2rem;
+}
+
+.password-reveal {
+  position: absolute;
+  inset: 0 0 0 auto;
+  display: flex;
+  align-items: center;
+  padding: 0 0.5625rem;
+  color: var(--muted);
+  background: none;
+  border: none;
+}
+
+.password-reveal:hover:not(:disabled),
+.password-reveal[aria-pressed='true'] {
+  color: var(--text);
+}
+
+.password-reveal .icon.act {
+  width: 1rem;
+  height: 1rem;
+}
+
+/* A change of mind, under the button that would have submitted the other
+   one, and the way back in when the password is gone: both centred under it. */
+.login-switch,
+.login-forgot {
   align-self: center;
 }
 

@@ -1160,9 +1160,17 @@ pub fn get_settings(app: State<'_, App>) -> Settings {
 }
 
 /// Replaces the settings; the file keeps the user's comments and layout.
+/// What the runtime and the overlay go by is told to them here: the file
+/// watcher, which tells them of an edit made in the file, skips our own write.
 #[tauri::command]
-pub fn update_settings(app: State<'_, App>, settings: Settings) -> Result<Settings> {
-    Ok(app.settings.update(|current| *current = settings)?)
+pub async fn update_settings(
+    app: State<'_, App>,
+    overlay: State<'_, std::sync::Arc<crate::overlay::Controller>>,
+    settings: Settings,
+) -> Result<Settings> {
+    let written = app.settings.update(|current| *current = settings)?;
+    crate::push_settings(&app.client, &overlay, &written).await;
+    Ok(written)
 }
 
 /// Records which channels to rejoin next time. Written on its own rather than

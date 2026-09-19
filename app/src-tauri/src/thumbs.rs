@@ -212,7 +212,8 @@ mod tests {
 
     #[test]
     fn a_fork_key_keeps_its_own_slashes() {
-        let (source, _, key) = parse("/widget/96x60/0/github%3Aowner%2Frepo%3APing%20Wheel").unwrap();
+        let (source, _, key) =
+            parse("/widget/96x60/0/github%3Aowner%2Frepo%3APing%20Wheel").unwrap();
         assert_eq!(source, Source::Widget(0));
         assert_eq!(key, "github:owner/repo:Ping Wheel");
     }
@@ -226,9 +227,18 @@ mod tests {
 
     #[test]
     fn a_widget_path_without_a_valid_picture_index_is_refused() {
-        assert!(parse("/widget/96x60/widget:gui_fire").is_none(), "no index at all");
-        assert!(parse("/widget/96x60/x/widget:gui_fire").is_none(), "not a number");
-        assert!(parse("/widget/96x60/8/widget:gui_fire").is_none(), "past the most published");
+        assert!(
+            parse("/widget/96x60/widget:gui_fire").is_none(),
+            "no index at all"
+        );
+        assert!(
+            parse("/widget/96x60/x/widget:gui_fire").is_none(),
+            "not a number"
+        );
+        assert!(
+            parse("/widget/96x60/8/widget:gui_fire").is_none(),
+            "past the most published"
+        );
     }
 
     #[test]
