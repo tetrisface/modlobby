@@ -210,16 +210,6 @@ function ServerCard(props: {
             cross the network readable. Never raced against encryption.
           </p>
         </Show>
-        <label>
-          Website, where a forgotten password is reset
-          <input
-            value={props.entry.website ?? ''}
-            placeholder={`https://${props.entry.host}`}
-            onInput={(event) =>
-              props.change('website', event.currentTarget.value.trim() || null)
-            }
-          />
-        </label>
       </details>
       <div class='server-actions'>
         <Show

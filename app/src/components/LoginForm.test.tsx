@@ -98,15 +98,23 @@ describe('the login form', () => {
     expect(other.container.textContent).toContain('Server: Rapid')
   })
 
-  test('starts from the one answer to whether passwords are kept, and sends it', async () => {
+  test('on the login page, asks whether passwords are kept, starting from the one answer', () => {
+    const kept = settingsWith()
+    kept.account = { rememberPassword: true, autoLogin: false }
+    setSettingsSignal(kept)
+    const { container } = render(() => <LoginForm server={SERVER} asksFlags />)
+    const boxes = [
+      ...container.querySelectorAll<HTMLInputElement>('input[type=checkbox]'),
+    ]
+    expect(boxes.map((box) => box.checked)).toEqual([true, false])
+  })
+
+  test('over Settings, follows the one answer without asking', async () => {
     const kept = settingsWith()
     kept.account = { rememberPassword: true, autoLogin: true }
     setSettingsSignal(kept)
     const { container } = render(() => <Login />)
-    const boxes = [
-      ...container.querySelectorAll<HTMLInputElement>('input[type=checkbox]'),
-    ]
-    expect(boxes.map((box) => box.checked)).toEqual([true, true])
+    expect(container.querySelector('input[type=checkbox]')).toBeNull()
 
     fill(container, 'input[autocomplete="username"]', 'me')
     fill(container, 'input[autocomplete="current-password"]', 'pw')

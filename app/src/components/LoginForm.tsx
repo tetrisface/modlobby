@@ -47,6 +47,13 @@ export function LoginForm(props: {
   mode?: 'login' | 'register'
   /** The session is up; whoever opened the form can put it away. */
   onDone?: () => void
+  /**
+   * Whether the form asks whether to remember the password and log in at
+   * startup. Only the login page does: opened over Settings, which has the
+   * one answer for every server, the form follows it rather than offering a
+   * second place to change it.
+   */
+  asksFlags?: boolean
 }) {
   /** The server as the settings list it. */
   const entry = () =>
@@ -335,26 +342,28 @@ export function LoginForm(props: {
           />
         </label>
       </Show>
-      <label class='row'>
-        <input
-          type='checkbox'
-          checked={remember()}
-          onChange={(e) => {
-            setRemember(e.currentTarget.checked)
-            if (!e.currentTarget.checked) setAutoLogin(false)
-          }}
-        />
-        Remember the password (OS keyring)
-      </label>
-      <label class='row'>
-        <input
-          type='checkbox'
-          checked={autoLogin()}
-          disabled={!remember()}
-          onChange={(e) => setAutoLogin(e.currentTarget.checked)}
-        />
-        Log in automatically on startup
-      </label>
+      <Show when={props.asksFlags}>
+        <label class='row'>
+          <input
+            type='checkbox'
+            checked={remember()}
+            onChange={(e) => {
+              setRemember(e.currentTarget.checked)
+              if (!e.currentTarget.checked) setAutoLogin(false)
+            }}
+          />
+          Remember the password (OS keyring)
+        </label>
+        <label class='row'>
+          <input
+            type='checkbox'
+            checked={autoLogin()}
+            disabled={!remember()}
+            onChange={(e) => setAutoLogin(e.currentTarget.checked)}
+          />
+          Log in automatically on startup
+        </label>
+      </Show>
       <Show
         when={
           mode() === 'register' && !awaitingCode() && props.server === BAR_HOST

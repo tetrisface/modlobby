@@ -86,9 +86,7 @@ describe('the servers section', () => {
     typeHost(container, 'server.example.com')
     fireEvent.click(button(container, 'Add'))
     expect(cards(container)).toHaveLength(2)
-    expect(cards(container)[1]?.textContent).toContain(
-      'server.example.com',
-    )
+    expect(cards(container)[1]?.textContent).toContain('server.example.com')
 
     typeHost(container, 'server.example.com')
     expect(button(container, 'Add').disabled).toBe(true)
