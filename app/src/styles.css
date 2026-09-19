@@ -547,7 +547,7 @@ textarea {
 /* The whole row is the button now, so it has to read as one. */
 .battle-row {
   display: grid;
-  grid-template-columns: 3.5rem 5rem 3rem 1fr 17.75rem 4rem;
+  grid-template-columns: 3.5rem 5rem 4.5rem 1fr 17.75rem 4rem;
   align-items: center;
   gap: 0.75rem;
   padding: 0 1rem;
@@ -559,6 +559,21 @@ textarea {
   .col-map {
     font-size: 0.95rem;
   }
+}
+
+/* The slash sits on the same pixel in every row: the taken count gets a
+   fixed track it is pushed to the right of, the rest starts where that ends. */
+.col-players {
+  display: grid;
+	grid-template-columns: 1.4rem auto auto;
+		/* Without this the auto tracks stretch to share the column's spare width,
+								     and the slash drifts away from the number after it. */
+		justify-content: start;
+		column-gap: 0.2rem;
+}
+
+.col-players > :first-child {
+  text-align: right;
 }
 
 .battle-row:hover,
@@ -590,7 +605,8 @@ textarea {
   font-size: 0.9em;
 }
 .col-title,
-.col-map {
+.col-map,
+.col-layout {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;

@@ -33,6 +33,7 @@ import {
   SORTS,
   arrange,
   battleKey,
+  layoutLabel,
   stabilize,
   type Row,
 } from '../lib/battles'
@@ -545,13 +546,15 @@ export function BattleList() {
                           lazy
                         />
                         <span class='col-players'>
-                          {r().battle.playerCount}/{r().battle.maxPlayers}
-                          <small> +{r().battle.spectatorCount}</small>
+                          <span>{r().battle.playerCount}</span>
+                          <span>/</span>
+                          <span>
+                            {r().battle.maxPlayers}
+                            <small> +{r().battle.spectatorCount}</small>
+                          </span>
                         </span>
                         <span class='col-layout'>
-                          {r().battle.layout
-                            ? `${r().battle.layout?.teams}x${r().battle.layout?.teamSize}`
-                            : ''}
+                          {layoutLabel(r().battle.layout)}
                         </span>
                         <span class='col-title'>{r().battle.title}</span>
                         <span class='col-map'>{r().battle.mapName}</span>

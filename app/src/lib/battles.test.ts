@@ -5,6 +5,7 @@ import {
   arrange,
   battleKey,
   isVsAi,
+  layoutLabel,
   matches,
   stabilize,
   type Row,
@@ -323,5 +324,21 @@ describe('holding the order still under the pointer', () => {
   test('holding nothing is the sorted list itself', () => {
     const resorted = [row({ id: 2 }), row({ id: 1 })]
     expect(ids(stabilize(resorted, held()))).toEqual([2, 1])
+  })
+})
+
+describe('layoutLabel', () => {
+  test('a room with two or more teams is said as a matchup', () => {
+    expect(layoutLabel({ teams: 2, teamSize: 8 })).toBe('8v8')
+    expect(layoutLabel({ teams: 4, teamSize: 4 })).toBe('4v4v4v4')
+  })
+
+  test('one team of several is co-op, one of one is a duel', () => {
+    expect(layoutLabel({ teams: 1, teamSize: 6 })).toBe('coop')
+    expect(layoutLabel({ teams: 1, teamSize: 1 })).toBe('1v1')
+  })
+
+  test('a room that never said its shape says nothing', () => {
+    expect(layoutLabel(null)).toBe('')
   })
 })

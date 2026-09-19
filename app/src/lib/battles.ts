@@ -9,6 +9,7 @@
 
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { BattleList } from '../ipc/bindings/BattleList'
+import type { LayoutView } from '../ipc/bindings/LayoutView'
 import type { BattleSort } from '../ipc/bindings/BattleSort'
 import type { ModeFilter } from '../ipc/bindings/ModeFilter'
 import { ordered } from './reorder'
@@ -27,6 +28,17 @@ export type Row = {
 
 /** A room's name across every server: two servers can each have a battle 12. */
 export const battleKey = (server: string, id: number) => `${server}/${id}`
+
+/**
+ * How a room's shape is said out loud: `2x8` is `8v8`, and one team of more
+ * than one is co-op, whoever it is they are all playing against.
+ */
+export function layoutLabel(layout: LayoutView | null): string {
+  if (!layout) return ''
+  const { teams, teamSize } = layout
+  if (teams < 2) return teamSize > 1 ? 'coop' : '1v1'
+  return Array(teams).fill(teamSize).join('v')
+}
 
 /**
  * Whether a room looks like it is against AI.
