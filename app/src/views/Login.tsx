@@ -50,6 +50,7 @@ export function Login() {
         {(id) => (
           <LoginForm
             server={id}
+            asksFlags
             onDone={() => navigate('/battles', { replace: true })}
           />
         )}
