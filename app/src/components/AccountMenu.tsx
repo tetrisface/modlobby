@@ -29,9 +29,15 @@ export function AccountMenu(props: { name: string }) {
   })
 
   const listed = () => settings()?.servers ?? []
-  /** A server you have an account on and are not connected to: marked on the name. */
-  const missing = () =>
-    listed().some((entry) => entry.username !== '' && disconnected(entry))
+  /**
+   * A server that dropped and is being tried again: the one kind of "not
+   * connected" worth a mark on the name. One logged out of on purpose, or
+   * never logged in to this run, is where it was asked to be.
+   */
+  const dropped = () =>
+    Object.values(lobby.servers).some(
+      (session) => session.phase === null && session.retryAt !== null,
+    )
 
   function logIn(server: string) {
     setOpen(false)
@@ -60,9 +66,9 @@ export function AccountMenu(props: { name: string }) {
       <button
         type='button'
         class='account-name'
-        classList={{ partial: missing() }}
+        classList={{ partial: dropped() }}
         aria-expanded={open()}
-        title={missing() ? 'Not connected to every server' : 'Your servers'}
+        title={dropped() ? 'A server dropped; trying it again' : 'Your servers'}
         onClick={() => setOpen(!open())}
       >
         {props.name}

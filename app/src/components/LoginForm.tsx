@@ -309,6 +309,13 @@ export function LoginForm(props: {
           </button>
         </span>
       </label>
+      {/* The field is empty and the login still works: say so, rather than
+          leaving a row of dots to be read as a password already typed. */}
+      <Show when={hasStored() && mode() === 'login' && !password()}>
+        <p class='muted'>
+          Leave it empty to use the password this machine remembers.
+        </p>
+      </Show>
       <Show when={mode() === 'register'}>
         <label>
           Email
