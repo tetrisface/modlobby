@@ -182,7 +182,14 @@ pub fn spawn(
         .ok()
         .flatten();
     let config = overlay_config_dir.and_then(|dir| {
-        recoil::window_mode::borderless_config(&dirs.write, engine_version, dir)
+        // The engine's own order for its settings: the write dir, the
+        // directory it runs from (`--isolation`, `DataDirLocater::LocateDataDirs`
+        // level 2a), then `SPRING_DATADIR`.
+        let data_dirs: Vec<&Path> = [dirs.write.as_path(), engine.bin.as_path()]
+            .into_iter()
+            .chain(dirs.read.iter().map(PathBuf::as_path))
+            .collect();
+        recoil::window_mode::borderless_config(&data_dirs, engine_version, dir)
             .inspect_err(|err| tracing::warn!(%err, "no borderless config; overlay may not show"))
             .ok()
             .flatten()
