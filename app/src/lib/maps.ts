@@ -30,15 +30,15 @@ import { devicePixels, thumbSrc } from './thumb'
  * drawing will. Change these with the CSS they mirror.
  */
 export const TILES = {
-  /** Inside `.col-thumb` in the battle list: 50 wide, and as tall as a 3rem
-   *  row leaves it, both less the 1px border. Cut a hair taller than the box
-   *  rather than shorter — `object-fit: cover` trims the surplus, where a
-   *  short tile would be stretched. */
-  list: { width: 50, height: 41 },
-  /** `.minimap` in the room card's 132px column, less a 1px border. */
-  minimap: { width: 130, height: 130 },
-  /** `.nav-room-pic`, at the left of the room card in the nav. */
-  nav: { width: 40, height: 28 },
+	/** Inside `.col-thumb` in the battle list: 50 wide, and as tall as a 3rem
+	 *  row leaves it, both less the 1px border. Cut a hair taller than the box
+	 *  rather than shorter — `object-fit: cover` trims the surplus, where a
+	 *  short tile would be stretched. */
+	list: { width: 50, height: 41 },
+	/** `.minimap` in the room card's 132px column, less a 1px border. */
+	minimap: { width: 130, height: 130 },
+	/** `.nav-room-pic`, at the left of the room card in the nav. */
+	nav: { width: 40, height: 28 },
 } as const satisfies Record<string, Tile>
 
 /** Where an earlier version kept its own copy; shed once, then never seen. */
@@ -47,24 +47,24 @@ const OLD_CACHE_KEY = 'modlobby.mapImages'
 let pending: Promise<MapIndex> | null = null
 
 function load(): Promise<MapIndex> {
-  try {
-    localStorage.removeItem(OLD_CACHE_KEY)
-  } catch {
-    // Storage the webview refuses; nothing to shed.
-  }
-  return api.mapIndex()
+	try {
+		localStorage.removeItem(OLD_CACHE_KEY)
+	} catch {
+		// Storage the webview refuses; nothing to shed.
+	}
+	return api.mapIndex()
 }
 
 /** One in-flight load, however many callers ask at once. */
 async function index(): Promise<MapIndex | null> {
-  try {
-    pending ??= load()
-    return await pending
-  } catch {
-    // Rust could not be reached; the next caller asks again.
-    pending = null
-    return null
-  }
+	try {
+		pending ??= load()
+		return await pending
+	} catch {
+		// Rust could not be reached; the next caller asks again.
+		pending = null
+		return null
+	}
 }
 
 /**
@@ -74,7 +74,7 @@ async function index(): Promise<MapIndex | null> {
  * capitalisation the engine expects — only this index does.
  */
 export async function mapNames(): Promise<MapIndex['names']> {
-  return (await index())?.names ?? {}
+	return (await index())?.names ?? {}
 }
 
 /**
@@ -88,13 +88,13 @@ export async function mapNames(): Promise<MapIndex['names']> {
  * pixels, so that it is drawn one to one and nothing is scaled again.
  */
 export function mapThumb(
-  springName: string,
-  width: number,
-  height: number,
+	springName: string,
+	width: number,
+	height: number,
 ): string | null {
-  if (!springName) return null
-  const tile = devicePixels({ width, height })
-  return thumbSrc(`${tile.width}x${tile.height}/${springName}`)
+	if (!springName) return null
+	const tile = devicePixels({ width, height })
+	return thumbSrc(`${tile.width}x${tile.height}/${springName}`)
 }
 
 /**
@@ -103,8 +103,8 @@ export function mapThumb(
  * too.
  */
 export function mapPicture(springName: string): string | null {
-  if (!springName) return null
-  return thumbSrc(`full/${springName}`)
+	if (!springName) return null
+	return thumbSrc(`full/${springName}`)
 }
 
 /**
@@ -114,11 +114,11 @@ export function mapPicture(springName: string): string | null {
  * worker in the lobby process, and the newest list replaces what was queued.
  */
 export async function warmMapPictures(springNames: string[]): Promise<void> {
-  if (springNames.length === 0) return
-  const tiles = Object.values(TILES).map(devicePixels)
-  try {
-    await api.warmMapPictures(springNames, tiles)
-  } catch {
-    // Rust could not be reached; the pictures are made on demand instead.
-  }
+	if (springNames.length === 0) return
+	const tiles = Object.values(TILES).map(devicePixels)
+	try {
+		await api.warmMapPictures(springNames, tiles)
+	} catch {
+		// Rust could not be reached; the pictures are made on demand instead.
+	}
 }

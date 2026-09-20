@@ -6,6 +6,6 @@ import type { DownloadStatus } from '../ipc/bindings/DownloadStatus'
  * (the runtime reports `0/0` until it does).
  */
 export function downloadFraction(status: DownloadStatus): number | null {
-  if (status.state !== 'running' || status.total <= 0) return null
-  return Math.min(status.current / status.total, 1)
+	if (status.state !== 'running' || status.total <= 0) return null
+	return Math.min(status.current / status.total, 1)
 }

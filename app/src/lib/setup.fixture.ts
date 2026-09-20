@@ -19,75 +19,75 @@ import type { ModOption } from '../ipc/bindings/ModOption'
  */
 
 type Spec = {
-  key: string
-  type?: string
-  name?: string
-  section?: string
-  weight?: number
-  hidden?: boolean
-  def?: string
-  items?: Array<{ key: string; name: string }>
+	key: string
+	type?: string
+	name?: string
+	section?: string
+	weight?: number
+	hidden?: boolean
+	def?: string
+	items?: Array<{ key: string; name: string }>
 }
 
 const option = (spec: Spec): ModOption =>
-  ({
-    key: spec.key,
-    name: spec.name ?? spec.key,
-    desc: '',
-    type: spec.type ?? 'bool',
-    def: spec.def ?? '',
-    items: spec.items,
-    section: spec.section,
-    weight: spec.weight,
-    hidden: spec.hidden,
-  }) as unknown as ModOption
+	({
+		key: spec.key,
+		name: spec.name ?? spec.key,
+		desc: '',
+		type: spec.type ?? 'bool',
+		def: spec.def ?? '',
+		items: spec.items,
+		section: spec.section,
+		weight: spec.weight,
+		hidden: spec.hidden,
+	}) as unknown as ModOption
 
 /** Sections in BAR's declared weight order, heaviest first. */
 const SECTIONS: Array<[string, string, number]> = [
-  ['options_main', 'Main', 100],
-  ['raptor_defense_options', 'Raptors', 90],
-  ['scavengers', 'Scavengers', 80],
-  ['extras', 'Extras', 70],
-  ['experimental', 'Experimental', 60],
-  ['other', 'Other', 0],
-  ['options_cheats', 'Cheats', -10],
-  // Chobby drops this one outright, and so do we.
-  ['dev', 'Dev', -20],
+	['options_main', 'Main', 100],
+	['raptor_defense_options', 'Raptors', 90],
+	['scavengers', 'Scavengers', 80],
+	['extras', 'Extras', 70],
+	['experimental', 'Experimental', 60],
+	['other', 'Other', 0],
+	['options_cheats', 'Cheats', -10],
+	// Chobby drops this one outright, and so do we.
+	['dev', 'Dev', -20],
 ]
 
 /** Cheats' own subheaders, and enough options under each to be realistic. */
 const CHEAT_GROUPS: Array<[string, string[]]> = [
-  ['AI Cheats', ['dynamiccheats', 'aicheats_resources']],
-  [
-    'Starting Resources',
-    ['startmetal', 'startenergy', 'startmetalstorage', 'startenergystorage'],
-  ],
-  [
-    'Resource Multipliers',
-    [
-      'multiplier_resourceincome',
-      'multiplier_metalcost',
-      'multiplier_energycost',
-      'multiplier_buildpower',
-      'multiplier_buildtimecost',
-      'nowasting',
-    ],
-  ],
-  [
-    'Unit Parameter Multipliers',
-    [
-      'multiplier_maxdamage',
-      'multiplier_turnrate',
-      'multiplier_losrange',
-      'multiplier_radarrange',
-      'multiplier_weaponrange',
-      'multiplier_weapondamage',
-      'multiplier_weaponreload',
-      'multiplier_shieldpower',
-      'multiplier_maxvelocity',
-      'multiplier_buildrange',
-    ],
-  ],
+	['AI Cheats', ['dynamiccheats', 'aicheats_resources']],
+	[
+		'Starting Resources',
+		['startmetal', 'startenergy', 'startmetalstorage', 'startenergystorage'],
+	],
+	[
+		'Resource Multipliers',
+		[
+			'multiplier_resourceincome',
+			'multiplier_metalcost',
+			'multiplier_energycost',
+			'multiplier_buildpower',
+			'multiplier_buildtimecost',
+			'nowasting',
+		],
+	],
+	[
+		'Unit Parameter Multipliers',
+		[
+			'multiplier_maxdamage',
+			'multiplier_turnrate',
+			'multiplier_losrange',
+			'multiplier_radarrange',
+			'multiplier_weaponrange',
+			'multiplier_weapondamage',
+			'multiplier_weaponreload',
+			'multiplier_shieldpower',
+			'multiplier_maxvelocity',
+			'multiplier_buildrange',
+		],
+	],
 ]
 
 /**
@@ -97,125 +97,125 @@ const CHEAT_GROUPS: Array<[string, string[]]> = [
  * compare against; everything else can stay a bool with no default.
  */
 const DEFAULTS: Record<string, { type: string; def: string }> = {
-  dynamiccheats: { type: 'bool', def: '1' },
-  startmetal: { type: 'number', def: '1000' },
-  startenergy: { type: 'number', def: '1000' },
-  multiplier_buildpower: { type: 'number', def: '1' },
-  // A list, so the rule that shows an item's name rather than its key has
-  // something to show.
-  nowasting: { type: 'list', def: 'enabled' },
+	dynamiccheats: { type: 'bool', def: '1' },
+	startmetal: { type: 'number', def: '1000' },
+	startenergy: { type: 'number', def: '1000' },
+	multiplier_buildpower: { type: 'number', def: '1' },
+	// A list, so the rule that shows an item's name rather than its key has
+	// something to show.
+	nowasting: { type: 'list', def: 'enabled' },
 }
 
 /** Items for the one list option above. */
 const LIST_ITEMS = [
-  { key: 'enabled', name: 'Enabled' },
-  { key: 'disabled', name: 'Disabled' },
+	{ key: 'enabled', name: 'Enabled' },
+	{ key: 'disabled', name: 'Disabled' },
 ]
 
 export function fixtureOptions(): ModOption[] {
-  const options: ModOption[] = []
+	const options: ModOption[] = []
 
-  for (const [key, name, weight] of SECTIONS) {
-    options.push(option({ key, name, type: 'section', weight }))
-  }
+	for (const [key, name, weight] of SECTIONS) {
+		options.push(option({ key, name, type: 'section', weight }))
+	}
 
-  // One ordinary option per section, so none of them is empty.
-  for (const [key] of SECTIONS) {
-    if (key === 'options_cheats') continue
-    options.push(option({ key: `${key}_setting`, section: key }))
-  }
+	// One ordinary option per section, so none of them is empty.
+	for (const [key] of SECTIONS) {
+		if (key === 'options_cheats') continue
+		options.push(option({ key: `${key}_setting`, section: key }))
+	}
 
-  for (const [label, keys] of CHEAT_GROUPS) {
-    options.push(
-      option({
-        key: `sub_${label}`,
-        type: 'subheader',
-        name: `-- ${label}`,
-        section: 'options_cheats',
-      }),
-    )
-    for (const key of keys) {
-      options.push(
-        option({
-          key,
-          section: 'options_cheats',
-          type: DEFAULTS[key]?.type,
-          def: DEFAULTS[key]?.def,
-          items: DEFAULTS[key]?.type === 'list' ? LIST_ITEMS : undefined,
-        }),
-      )
-    }
-  }
+	for (const [label, keys] of CHEAT_GROUPS) {
+		options.push(
+			option({
+				key: `sub_${label}`,
+				type: 'subheader',
+				name: `-- ${label}`,
+				section: 'options_cheats',
+			}),
+		)
+		for (const key of keys) {
+			options.push(
+				option({
+					key,
+					section: 'options_cheats',
+					type: DEFAULTS[key]?.type,
+					def: DEFAULTS[key]?.def,
+					items: DEFAULTS[key]?.type === 'list' ? LIST_ITEMS : undefined,
+				}),
+			)
+		}
+	}
 
-  // BAR's trailing group under Cheats holds only options that are hidden or
-  // that move to Modding, so it empties out and stops being drawn.
-  options.push(
-    option({
-      key: 'sub_other',
-      type: 'subheader',
-      name: '-- Other',
-      section: 'options_cheats',
-    }),
-  )
-  options.push(
-    option({
-      key: 'experimentalshields',
-      section: 'options_cheats',
-      hidden: true,
-    }),
-  )
-  options.push(
-    option({ key: 'holiday_events', section: 'options_cheats', hidden: true }),
-  )
+	// BAR's trailing group under Cheats holds only options that are hidden or
+	// that move to Modding, so it empties out and stops being drawn.
+	options.push(
+		option({
+			key: 'sub_other',
+			type: 'subheader',
+			name: '-- Other',
+			section: 'options_cheats',
+		}),
+	)
+	options.push(
+		option({
+			key: 'experimentalshields',
+			section: 'options_cheats',
+			hidden: true,
+		}),
+	)
+	options.push(
+		option({ key: 'holiday_events', section: 'options_cheats', hidden: true }),
+	)
 
-  // The six that are lifted into the Modding tab, in the sections BAR puts
-  // them in.
-  for (const [key, section] of [
-    ['tweakdefs', 'options_cheats'],
-    ['tweakunits', 'options_cheats'],
-    ['forceallunits', 'options_cheats'],
-    ['experimentallegionfaction', 'experimental'],
-    ['experimentalextraunits', 'experimental'],
-    ['scavunitsforplayers', 'scavengers'],
-  ] as const) {
-    options.push(option({ key, section }))
-  }
+	// The six that are lifted into the Modding tab, in the sections BAR puts
+	// them in.
+	for (const [key, section] of [
+		['tweakdefs', 'options_cheats'],
+		['tweakunits', 'options_cheats'],
+		['forceallunits', 'options_cheats'],
+		['experimentallegionfaction', 'experimental'],
+		['experimentalextraunits', 'experimental'],
+		['scavunitsforplayers', 'scavengers'],
+	] as const) {
+		options.push(option({ key, section }))
+	}
 
-  // BAR's `mapmetadata` section: hidden, unweighted, and every option in it
-  // hidden too, as `modoptions.lua` declares them.
-  options.push(
-    option({
-      key: 'mapmetadata',
-      name: 'MapMetadata',
-      type: 'section',
-      hidden: true,
-    }),
-  )
-  options.push(
-    option({
-      key: 'sub_header',
-      type: 'subheader',
-      name: 'Hidden map metadata options',
-      section: 'mapmetadata',
-      hidden: true,
-    }),
-  )
-  for (const [key, name] of [
-    ['mapmetadata_startpos', 'Map Metadata: StartPos'],
-    ['mapmetadata_startboxes_set', 'Map Metadata: Startboxes Set'],
-    ['mapmetadata_startbox_override', 'Map Metadata: Startbox Override'],
-  ] as const) {
-    options.push(
-      option({
-        key,
-        name,
-        type: 'string',
-        def: '',
-        section: 'mapmetadata',
-        hidden: true,
-      }),
-    )
-  }
+	// BAR's `mapmetadata` section: hidden, unweighted, and every option in it
+	// hidden too, as `modoptions.lua` declares them.
+	options.push(
+		option({
+			key: 'mapmetadata',
+			name: 'MapMetadata',
+			type: 'section',
+			hidden: true,
+		}),
+	)
+	options.push(
+		option({
+			key: 'sub_header',
+			type: 'subheader',
+			name: 'Hidden map metadata options',
+			section: 'mapmetadata',
+			hidden: true,
+		}),
+	)
+	for (const [key, name] of [
+		['mapmetadata_startpos', 'Map Metadata: StartPos'],
+		['mapmetadata_startboxes_set', 'Map Metadata: Startboxes Set'],
+		['mapmetadata_startbox_override', 'Map Metadata: Startbox Override'],
+	] as const) {
+		options.push(
+			option({
+				key,
+				name,
+				type: 'string',
+				def: '',
+				section: 'mapmetadata',
+				hidden: true,
+			}),
+		)
+	}
 
-  return options
+	return options
 }

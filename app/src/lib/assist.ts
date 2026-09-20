@@ -15,9 +15,9 @@ import type { Symbol } from '../ipc/bindings/Symbol'
 import type { Tag } from '../ipc/bindings/Tag'
 
 export type Assist = {
-  /** Lowercased unit names, as the game's `units/` folder spells them. */
-  units: string[]
-  weaponTags: Tag[]
+	/** Lowercased unit names, as the game's `units/` folder spells them. */
+	units: string[]
+	weaponTags: Tag[]
 }
 
 export const NO_ASSIST: Assist = { units: [], weaponTags: [] }
@@ -33,58 +33,58 @@ export const NO_ASSIST: Assist = { units: [], weaponTags: [] }
  * wrong, and the callers treat one they cannot place as no context.
  */
 export function pathAt(text: string, offset: number): string[] {
-  const path: string[] = []
-  let i = 0
-  const end = Math.min(offset, text.length)
-  while (i < end) {
-    const ch = text[i]!
-    if (ch === '-' && text[i + 1] === '-') {
-      const eol = text.indexOf('\n', i)
-      i = eol === -1 ? end : eol + 1
-      continue
-    }
-    if (ch === '"' || ch === "'") {
-      i = skipString(text, i, end)
-      continue
-    }
-    if (ch === '{') {
-      path.push(keyBefore(text, i))
-      i += 1
-      continue
-    }
-    if (ch === '}') {
-      path.pop()
-      i += 1
-      continue
-    }
-    i += 1
-  }
-  return path
+	const path: string[] = []
+	let i = 0
+	const end = Math.min(offset, text.length)
+	while (i < end) {
+		const ch = text[i]!
+		if (ch === '-' && text[i + 1] === '-') {
+			const eol = text.indexOf('\n', i)
+			i = eol === -1 ? end : eol + 1
+			continue
+		}
+		if (ch === '"' || ch === "'") {
+			i = skipString(text, i, end)
+			continue
+		}
+		if (ch === '{') {
+			path.push(keyBefore(text, i))
+			i += 1
+			continue
+		}
+		if (ch === '}') {
+			path.pop()
+			i += 1
+			continue
+		}
+		i += 1
+	}
+	return path
 }
 
 /** Past a quoted string that opens at `at`, honouring backslashes. */
 function skipString(text: string, at: number, end: number): number {
-  const quote = text[at]
-  let i = at + 1
-  while (i < end) {
-    if (text[i] === '\\') {
-      i += 2
-      continue
-    }
-    if (text[i] === quote) return i + 1
-    i += 1
-  }
-  return end
+	const quote = text[at]
+	let i = at + 1
+	while (i < end) {
+		if (text[i] === '\\') {
+			i += 2
+			continue
+		}
+		if (text[i] === quote) return i + 1
+		i += 1
+	}
+	return end
 }
 
 /** The `name =` or `["name"] =` immediately before a `{`, or `''`. */
 function keyBefore(text: string, brace: number): string {
-  const before = text.slice(Math.max(0, brace - 200), brace)
-  const match =
-    /(?:\[\s*["']([^"']+)["']\s*\]|([A-Za-z_][A-Za-z0-9_]*))\s*=\s*$/.exec(
-      before,
-    )
-  return match?.[1] ?? match?.[2] ?? ''
+	const before = text.slice(Math.max(0, brace - 200), brace)
+	const match =
+		/(?:\[\s*["']([^"']+)["']\s*\]|([A-Za-z_][A-Za-z0-9_]*))\s*=\s*$/.exec(
+			before,
+		)
+	return match?.[1] ?? match?.[2] ?? ''
 }
 
 export type Suggestion = { name: string; detail: string; doc?: string }
@@ -98,22 +98,22 @@ export type Suggestion = { name: string; detail: string; doc?: string }
  * silence in a completion list.
  */
 export function suggestions(path: string[], assist: Assist): Suggestion[] {
-  if (path.length === 1) {
-    return assist.units.map((name) => ({ name, detail: 'unit' }))
-  }
-  if (path.length >= 2 && path[path.length - 2] === 'weapondefs') {
-    return assist.weaponTags.map((tag) => ({
-      name: tag.name,
-      detail: describeTag(tag),
-      doc: tag.description ?? undefined,
-    }))
-  }
-  return []
+	if (path.length === 1) {
+		return assist.units.map((name) => ({ name, detail: 'unit' }))
+	}
+	if (path.length >= 2 && path[path.length - 2] === 'weapondefs') {
+		return assist.weaponTags.map((tag) => ({
+			name: tag.name,
+			detail: describeTag(tag),
+			doc: tag.description ?? undefined,
+		}))
+	}
+	return []
 }
 
 /** A tag's type and default in a few characters: `float = 1.0`. */
 export function describeTag(tag: Tag): string {
-  return tag.default === null ? tag.kind : `${tag.kind} = ${tag.default}`
+	return tag.default === null ? tag.kind : `${tag.kind} = ${tag.default}`
 }
 
 /**
@@ -121,15 +121,15 @@ export function describeTag(tag: Tag): string {
  * Weapon tags are matched without case, as the engine reads them.
  */
 export function tagAt(
-  path: string[],
-  word: string,
-  assist: Assist,
+	path: string[],
+	word: string,
+	assist: Assist,
 ): Tag | null {
-  if (path.length < 2 || path[path.length - 2] !== 'weapondefs') return null
-  const wanted = word.toLowerCase()
-  return (
-    assist.weaponTags.find((tag) => tag.name.toLowerCase() === wanted) ?? null
-  )
+	if (path.length < 2 || path[path.length - 2] !== 'weapondefs') return null
+	const wanted = word.toLowerCase()
+	return (
+		assist.weaponTags.find((tag) => tag.name.toLowerCase() === wanted) ?? null
+	)
 }
 
 export type Warning = { line: number; message: string }
@@ -140,12 +140,12 @@ export type Warning = { line: number; message: string }
  * misspelt unit is a tweak that quietly does nothing.
  */
 export function unknownUnits(outline: Symbol[], units: string[]): Warning[] {
-  if (units.length === 0) return []
-  const known = new Set(units)
-  return outline
-    .filter((symbol) => !known.has(symbol.name.toLowerCase()))
-    .map((symbol) => ({
-      line: symbol.line,
-      message: `no unit named ${symbol.name} in this game; the tweak skips it`,
-    }))
+	if (units.length === 0) return []
+	const known = new Set(units)
+	return outline
+		.filter((symbol) => !known.has(symbol.name.toLowerCase()))
+		.map((symbol) => ({
+			line: symbol.line,
+			message: `no unit named ${symbol.name} in this game; the tweak skips it`,
+		}))
 }

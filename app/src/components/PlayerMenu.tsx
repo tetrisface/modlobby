@@ -22,53 +22,53 @@ import { Flag, RankIcon } from './icons'
  * them differently from a room on the server. Absent where a row cannot move.
  */
 export type Moves = {
-  /** Ally team indices to offer, in the order the room draws them. */
-  teams: number[]
-  /** Where they are now, so it is not offered as somewhere to go. */
-  on: number | null
-  to: (allyTeam: number) => Promise<void>
-  /** Present only where a bonus can be set: an AI of ours, or a boss's word. */
-  bonus?: (percent: number) => Promise<void>
-  bonusNow?: number
+	/** Ally team indices to offer, in the order the room draws them. */
+	teams: number[]
+	/** Where they are now, so it is not offered as somewhere to go. */
+	on: number | null
+	to: (allyTeam: number) => Promise<void>
+	/** Present only where a bonus can be set: an AI of ours, or a boss's word. */
+	bonus?: (percent: number) => Promise<void>
+	bonusNow?: number
 }
 
 type Target =
-  | {
-      kind: 'user'
-      name: string
-      /** The server they were seen on; the room's when not said. */
-      server?: string
-      moves?: Moves
-      x: number
-      y: number
-    }
-  /** One of our own AIs; `remove` is the one thing there is to do about it. */
-  | {
-      kind: 'bot'
-      bot: BotView
-      remove: () => Promise<void>
-      moves?: Moves
-      x: number
-      y: number
-    }
+	| {
+			kind: 'user'
+			name: string
+			/** The server they were seen on; the room's when not said. */
+			server?: string
+			moves?: Moves
+			x: number
+			y: number
+	  }
+	/** One of our own AIs; `remove` is the one thing there is to do about it. */
+	| {
+			kind: 'bot'
+			bot: BotView
+			remove: () => Promise<void>
+			moves?: Moves
+			x: number
+			y: number
+	  }
 
 const [openFor, setOpenFor] = createSignal<Target | null>(null)
 
 /** Opens the menu for a name at the pointer. */
 export function showPlayerMenu(
-  name: string,
-  event: MouseEvent,
-  where: { moves?: Moves; server?: string } = {},
+	name: string,
+	event: MouseEvent,
+	where: { moves?: Moves; server?: string } = {},
 ): void {
-  event.preventDefault()
-  event.stopPropagation()
-  setOpenFor({
-    kind: 'user',
-    name,
-    ...where,
-    x: event.clientX,
-    y: event.clientY,
-  })
+	event.preventDefault()
+	event.stopPropagation()
+	setOpenFor({
+		kind: 'user',
+		name,
+		...where,
+		x: event.clientX,
+		y: event.clientY,
+	})
 }
 
 /**
@@ -77,269 +77,269 @@ export function showPlayerMenu(
  * for another player's AI there would be nothing in the menu.
  */
 export function showBotMenu(
-  bot: BotView,
-  remove: () => Promise<void>,
-  event: MouseEvent,
-  moves?: Moves,
+	bot: BotView,
+	remove: () => Promise<void>,
+	event: MouseEvent,
+	moves?: Moves,
 ): void {
-  event.preventDefault()
-  event.stopPropagation()
-  setOpenFor({
-    kind: 'bot',
-    bot,
-    remove,
-    moves,
-    x: event.clientX,
-    y: event.clientY,
-  })
+	event.preventDefault()
+	event.stopPropagation()
+	setOpenFor({
+		kind: 'bot',
+		bot,
+		remove,
+		moves,
+		x: event.clientX,
+		y: event.clientY,
+	})
 }
 
 export function PlayerMenu() {
-  /** Whether the menu shows the bonus panel in place of its entries. */
-  const [picking, setPicking] = createSignal(false)
-  const close = () => {
-    setOpenFor(null)
-    setPicking(false)
-  }
+	/** Whether the menu shows the bonus panel in place of its entries. */
+	const [picking, setPicking] = createSignal(false)
+	const close = () => {
+		setOpenFor(null)
+		setPicking(false)
+	}
 
-  let root: HTMLDivElement | undefined
+	let root: HTMLDivElement | undefined
 
-  // Any press elsewhere, or Escape, dismisses it — the usual bargain for
-  // something that floats above everything.
-  dismiss(() => root, close)
+	// Any press elsewhere, or Escape, dismisses it — the usual bargain for
+	// something that floats above everything.
+	dismiss(() => root, close)
 
-  /** A SPADS command, sent the way anyone would type it into the room. */
-  const say = (command: string) => api.sayBattle(command)
+	/** A SPADS command, sent the way anyone would type it into the room. */
+	const say = (command: string) => api.sayBattle(command)
 
-  async function act(what: string, run: () => Promise<void>) {
-    close()
-    try {
-      await run()
-    } catch (error) {
-      pushNotice('warning', `${what}: ${describeError(error)}`)
-    }
-  }
+	async function act(what: string, run: () => Promise<void>) {
+		close()
+		try {
+			await run()
+		} catch (error) {
+			pushNotice('warning', `${what}: ${describeError(error)}`)
+		}
+	}
 
-  return (
-    <Show when={openFor()}>
-      {(target) => {
-        const bot = () => {
-          const t = target()
-          return t.kind === 'bot' ? t : undefined
-        }
-        const name = () => {
-          const t = target()
-          return t.kind === 'bot' ? t.bot.name : t.name
-        }
-        /** Which server's person this is: a name means someone else elsewhere. */
-        const server = () => {
-          const t = target()
-          return (
-            (t.kind === 'user' ? t.server : undefined) ??
-            roomServer() ??
-            mainServer()
-          )
-        }
-        const session = () => {
-          const at = server()
-          return at === undefined ? undefined : lobby.servers[at]
-        }
-        const isFriend = () =>
-          session()?.friends.friends.includes(name()) ?? false
-        const isIgnored = () =>
-          session()?.friends.ignored.includes(name()) ?? false
-        const isMe = () => name() === session()?.me
+	return (
+		<Show when={openFor()}>
+			{(target) => {
+				const bot = () => {
+					const t = target()
+					return t.kind === 'bot' ? t : undefined
+				}
+				const name = () => {
+					const t = target()
+					return t.kind === 'bot' ? t.bot.name : t.name
+				}
+				/** Which server's person this is: a name means someone else elsewhere. */
+				const server = () => {
+					const t = target()
+					return (
+						(t.kind === 'user' ? t.server : undefined) ??
+						roomServer() ??
+						mainServer()
+					)
+				}
+				const session = () => {
+					const at = server()
+					return at === undefined ? undefined : lobby.servers[at]
+				}
+				const isFriend = () =>
+					session()?.friends.friends.includes(name()) ?? false
+				const isIgnored = () =>
+					session()?.friends.ignored.includes(name()) ?? false
+				const isMe = () => name() === session()?.me
 
-        const user = () => (bot() ? undefined : session()?.users[name()])
-        /** Whether they are in the room we are in. */
-        const together = () =>
-          server() === roomServer() &&
-          user()?.battleId !== null &&
-          user()?.battleId === roomSession()?.myBattle?.id
-        /**
-         * The room they are in, when it is one we can see and not the one we
-         * are already standing in — where they are is only news if it is
-         * somewhere else.
-         */
-        const theirRoom = () => {
-          const id = user()?.battleId
-          if (id === null || id === undefined || together()) return undefined
-          return session()?.battles[id]
-        }
+				const user = () => (bot() ? undefined : session()?.users[name()])
+				/** Whether they are in the room we are in. */
+				const together = () =>
+					server() === roomServer() &&
+					user()?.battleId !== null &&
+					user()?.battleId === roomSession()?.myBattle?.id
+				/**
+				 * The room they are in, when it is one we can see and not the one we
+				 * are already standing in — where they are is only news if it is
+				 * somewhere else.
+				 */
+				const theirRoom = () => {
+					const id = user()?.battleId
+					if (id === null || id === undefined || together()) return undefined
+					return session()?.battles[id]
+				}
 
-        /** Whether SPADS would take our word for it in this room. */
-        const bossing = () => {
-          const room = roomSession()
-          return !!room?.myBattle?.boss && room.myBattle.boss === room.me
-        }
+				/** Whether SPADS would take our word for it in this room. */
+				const bossing = () => {
+					const room = roomSession()
+					return !!room?.myBattle?.boss && room.myBattle.boss === room.me
+				}
 
-        /** `stay`: the entry opens something in the menu, so it stays. */
-        type Entry = [string, () => Promise<void> | void, 'stay'?]
+				/** `stay`: the entry opens something in the menu, so it stays. */
+				type Entry = [string, () => Promise<void> | void, 'stay'?]
 
-        /**
-         * Where this row can be sent, as words.
-         *
-         * The same rows a drag produces, said out loud: dragging is quicker
-         * once you know it is there, and nothing tells you that it is.
-         */
-        const placings = (moves: Moves | undefined): Entry[] => {
-          if (!moves) return []
-          const rows: Entry[] = moves.teams
-            .filter((ally) => ally !== moves.on)
-            .map((ally) => [`Move to team ${ally + 1}`, () => moves.to(ally)])
-          if (moves.bonus)
-            rows.push([
-              'Bonus',
-              () => {
-                setPicking(true)
-              },
-              'stay',
-            ])
-          return rows
-        }
+				/**
+				 * Where this row can be sent, as words.
+				 *
+				 * The same rows a drag produces, said out loud: dragging is quicker
+				 * once you know it is there, and nothing tells you that it is.
+				 */
+				const placings = (moves: Moves | undefined): Entry[] => {
+					if (!moves) return []
+					const rows: Entry[] = moves.teams
+						.filter((ally) => ally !== moves.on)
+						.map((ally) => [`Move to team ${ally + 1}`, () => moves.to(ally)])
+					if (moves.bonus)
+						rows.push([
+							'Bonus',
+							() => {
+								setPicking(true)
+							},
+							'stay',
+						])
+					return rows
+				}
 
-        const items = () => {
-          const ai = bot()
-          if (ai) {
-            return [
-              ...placings(openFor()?.moves),
-              ['Remove', ai.remove] as Entry,
-            ]
-          }
-          const entries: Entry[] = [
-            [
-              'Message',
-              () => {
-                const at = server()
-                if (at !== undefined) ensureRoom(privateRoom(at, name()))
-                location.hash = '#/chat'
-              },
-            ],
-          ]
-          // In the same room, and it is ours to run: SPADS takes these as
-          // chat, so they need nothing but the words a host would type.
-          const alongside = together() && !isMe()
-          if (alongside) {
-            entries.push(['Ring', () => api.ring(name())])
-          }
-          if (alongside) entries.push(...placings(openFor()?.moves))
-          if (alongside && bossing()) {
-            entries.push(['Move to spectators', () => say(`!spec ${name()}`)])
-            entries.push(['Kick from the room', () => say(`!kick ${name()}`)])
-          }
+				const items = () => {
+					const ai = bot()
+					if (ai) {
+						return [
+							...placings(openFor()?.moves),
+							['Remove', ai.remove] as Entry,
+						]
+					}
+					const entries: Entry[] = [
+						[
+							'Message',
+							() => {
+								const at = server()
+								if (at !== undefined) ensureRoom(privateRoom(at, name()))
+								location.hash = '#/chat'
+							},
+						],
+					]
+					// In the same room, and it is ours to run: SPADS takes these as
+					// chat, so they need nothing but the words a host would type.
+					const alongside = together() && !isMe()
+					if (alongside) {
+						entries.push(['Ring', () => api.ring(name())])
+					}
+					if (alongside) entries.push(...placings(openFor()?.moves))
+					if (alongside && bossing()) {
+						entries.push(['Move to spectators', () => say(`!spec ${name()}`)])
+						entries.push(['Kick from the room', () => say(`!kick ${name()}`)])
+					}
 
-          const room = theirRoom()
-          if (room) {
-            entries.push([
-              'Go to their room',
-              async () => {
-                // Passworded rooms are the host's business; the list is where
-                // you get asked for one.
-                if (room.passworded) {
-                  pushNotice('info', `${room.title} needs a password`)
-                  location.hash = '#/battles'
-                  return
-                }
-                const at = server()
-                if (at === undefined) return
-                await api.joinBattle(at, room.id, null)
-                location.hash = '#/room'
-              },
-            ])
-          }
-          if (isMe()) return entries
-          const on = server()
-          if (on === undefined) return entries
-          entries.push(
-            isFriend()
-              ? ['Remove friend', () => api.friendAction(on, 'remove', name())]
-              : ['Add friend', () => api.friendAction(on, 'request', name())],
-          )
-          entries.push(
-            isIgnored()
-              ? [
-                  'Stop ignoring',
-                  () => api.friendAction(on, 'unignore', name()),
-                ]
-              : ['Ignore', () => api.friendAction(on, 'ignore', name())],
-          )
-          return entries
-        }
+					const room = theirRoom()
+					if (room) {
+						entries.push([
+							'Go to their room',
+							async () => {
+								// Passworded rooms are the host's business; the list is where
+								// you get asked for one.
+								if (room.passworded) {
+									pushNotice('info', `${room.title} needs a password`)
+									location.hash = '#/battles'
+									return
+								}
+								const at = server()
+								if (at === undefined) return
+								await api.joinBattle(at, room.id, null)
+								location.hash = '#/room'
+							},
+						])
+					}
+					if (isMe()) return entries
+					const on = server()
+					if (on === undefined) return entries
+					entries.push(
+						isFriend()
+							? ['Remove friend', () => api.friendAction(on, 'remove', name())]
+							: ['Add friend', () => api.friendAction(on, 'request', name())],
+					)
+					entries.push(
+						isIgnored()
+							? [
+									'Stop ignoring',
+									() => api.friendAction(on, 'unignore', name()),
+								]
+							: ['Ignore', () => api.friendAction(on, 'ignore', name())],
+					)
+					return entries
+				}
 
-        return (
-          <div
-            ref={root}
-            class='player-menu'
-            style={{ left: `${target().x}px`, top: `${target().y}px` }}
-          >
-            <div class='player-menu-name'>{name()}</div>
-            <Show when={bot()}>
-              {(ai) => (
-                <div class='player-menu-about muted'>
-                  {ai().bot.ai} · {ai().bot.owner}
-                </div>
-              )}
-            </Show>
-            <Show when={user()}>
-              {(who) => (
-                <div class='player-menu-about'>
-                  <Flag country={who().country} />
-                  <RankIcon status={who().status} />
-                  <Show when={who().status.inGame}>
-                    <span class='chip warn'>in game</span>
-                  </Show>
-                  <Show when={who().status.away}>
-                    <span class='chip'>away</span>
-                  </Show>
-                </div>
-              )}
-            </Show>
-            <Show when={theirRoom()}>
-              {(room) => (
-                <div class='player-menu-about muted' title={room().title}>
-                  in {room().title}
-                </div>
-              )}
-            </Show>
-            <Show
-              when={!picking()}
-              fallback={
-                <BonusPanel
-                  now={target().moves?.bonusNow ?? 0}
-                  apply={(percent) => {
-                    // Taken before `act` closes the menu: once it has, the
-                    // target is gone and there is nothing to read it off.
-                    const bonus = target().moves?.bonus
-                    void act('bonus', async () => {
-                      await bonus?.(percent)
-                    })
-                  }}
-                  cancel={close}
-                />
-              }
-            >
-              <For each={items()}>
-                {([label, run, stay]) => (
-                  <button
-                    onClick={() =>
-                      stay
-                        ? void run()
-                        : void act(
-                            label.toLowerCase(),
-                            async () => void (await run()),
-                          )
-                    }
-                  >
-                    {label}
-                  </button>
-                )}
-              </For>
-            </Show>
-          </div>
-        )
-      }}
-    </Show>
-  )
+				return (
+					<div
+						ref={root}
+						class='player-menu'
+						style={{ left: `${target().x}px`, top: `${target().y}px` }}
+					>
+						<div class='player-menu-name'>{name()}</div>
+						<Show when={bot()}>
+							{(ai) => (
+								<div class='player-menu-about muted'>
+									{ai().bot.ai} · {ai().bot.owner}
+								</div>
+							)}
+						</Show>
+						<Show when={user()}>
+							{(who) => (
+								<div class='player-menu-about'>
+									<Flag country={who().country} />
+									<RankIcon status={who().status} />
+									<Show when={who().status.inGame}>
+										<span class='chip warn'>in game</span>
+									</Show>
+									<Show when={who().status.away}>
+										<span class='chip'>away</span>
+									</Show>
+								</div>
+							)}
+						</Show>
+						<Show when={theirRoom()}>
+							{(room) => (
+								<div class='player-menu-about muted' title={room().title}>
+									in {room().title}
+								</div>
+							)}
+						</Show>
+						<Show
+							when={!picking()}
+							fallback={
+								<BonusPanel
+									now={target().moves?.bonusNow ?? 0}
+									apply={(percent) => {
+										// Taken before `act` closes the menu: once it has, the
+										// target is gone and there is nothing to read it off.
+										const bonus = target().moves?.bonus
+										void act('bonus', async () => {
+											await bonus?.(percent)
+										})
+									}}
+									cancel={close}
+								/>
+							}
+						>
+							<For each={items()}>
+								{([label, run, stay]) => (
+									<button
+										onClick={() =>
+											stay
+												? void run()
+												: void act(
+														label.toLowerCase(),
+														async () => void (await run()),
+													)
+										}
+									>
+										{label}
+									</button>
+								)}
+							</For>
+						</Show>
+					</div>
+				)
+			}}
+		</Show>
+	)
 }
 
 /**
@@ -347,50 +347,50 @@ export function PlayerMenu() {
  * normal income, and SPADS takes nothing higher.
  */
 function BonusPanel(props: {
-  now: number
-  apply: (percent: number) => void
-  cancel: () => void
+	now: number
+	apply: (percent: number) => void
+	cancel: () => void
 }) {
-  const [value, setValue] = createSignal(props.now)
-  const take = (text: string) => {
-    const n = Number(text)
-    if (Number.isFinite(n)) setValue(Math.max(0, Math.min(100, Math.round(n))))
-  }
-  return (
-    <form
-      class='bonus-pick'
-      onSubmit={(event) => {
-        event.preventDefault()
-        props.apply(value())
-      }}
-    >
-      <label>
-        Bonus
-        <input
-          type='range'
-          min={0}
-          max={100}
-          step={1}
-          value={value()}
-          onInput={(e) => take(e.currentTarget.value)}
-        />
-        <input
-          type='number'
-          min={0}
-          max={100}
-          value={value()}
-          onInput={(e) => take(e.currentTarget.value)}
-        />
-        %
-      </label>
-      <div class='sheet-actions'>
-        <button type='button' onClick={props.cancel}>
-          Cancel
-        </button>
-        <button type='submit' class='primary'>
-          Set
-        </button>
-      </div>
-    </form>
-  )
+	const [value, setValue] = createSignal(props.now)
+	const take = (text: string) => {
+		const n = Number(text)
+		if (Number.isFinite(n)) setValue(Math.max(0, Math.min(100, Math.round(n))))
+	}
+	return (
+		<form
+			class='bonus-pick'
+			onSubmit={(event) => {
+				event.preventDefault()
+				props.apply(value())
+			}}
+		>
+			<label>
+				Bonus
+				<input
+					type='range'
+					min={0}
+					max={100}
+					step={1}
+					value={value()}
+					onInput={(e) => take(e.currentTarget.value)}
+				/>
+				<input
+					type='number'
+					min={0}
+					max={100}
+					value={value()}
+					onInput={(e) => take(e.currentTarget.value)}
+				/>
+				%
+			</label>
+			<div class='sheet-actions'>
+				<button type='button' onClick={props.cancel}>
+					Cancel
+				</button>
+				<button type='submit' class='primary'>
+					Set
+				</button>
+			</div>
+		</form>
+	)
 }

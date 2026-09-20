@@ -20,33 +20,33 @@ import type { api } from '../../ipc/client'
  * is still called on `api` directly.
  */
 export type RoomIo = Pick<
-  typeof api,
-  | 'setOption'
-  | 'takeSeat'
-  | 'releaseSeat'
-  | 'setReady'
-  | 'setSide'
-  | 'addBot'
-  | 'updateBot'
-  | 'removeBot'
-  | 'launch'
-  | 'leaveBattle'
-  | 'sayBattle'
-  | 'startBoxes'
-  | 'currentArrangement'
-  | 'downloadMissing'
-  | 'pveScore'
-  | 'tweakSend'
-  | 'tweakClear'
+	typeof api,
+	| 'setOption'
+	| 'takeSeat'
+	| 'releaseSeat'
+	| 'setReady'
+	| 'setSide'
+	| 'addBot'
+	| 'updateBot'
+	| 'removeBot'
+	| 'launch'
+	| 'leaveBattle'
+	| 'sayBattle'
+	| 'startBoxes'
+	| 'currentArrangement'
+	| 'downloadMissing'
+	| 'pveScore'
+	| 'tweakSend'
+	| 'tweakClear'
 > & {
-  /** Online this is `!rename`; in a room of your own it is just its name. */
-  renameRoom(title: string): Promise<void>
-  /** By its spring name, which is what a room and a start script both use. */
-  setMap(name: string): Promise<void>
-  /** 0 the map's own, 1 random, 2 chosen in the start boxes. */
-  setStartPos(startPos: number): Promise<void>
-  /** One of an AI's own options. An empty value restores its default. */
-  setBotOption(name: string, key: string, value: string): Promise<void>
+	/** Online this is `!rename`; in a room of your own it is just its name. */
+	renameRoom(title: string): Promise<void>
+	/** By its spring name, which is what a room and a start script both use. */
+	setMap(name: string): Promise<void>
+	/** 0 the map's own, 1 random, 2 chosen in the start boxes. */
+	setStartPos(startPos: number): Promise<void>
+	/** One of an AI's own options. An empty value restores its default. */
+	setBotOption(name: string, key: string, value: string): Promise<void>
 }
 
 /**
@@ -58,8 +58,8 @@ export type RoomIo = Pick<
  * method that would fail.
  */
 export type PresetIo = {
-  savePreset(name: string): Promise<Book>
-  applyPreset(name: string, sections: Sections): Promise<Plan>
+	savePreset(name: string): Promise<Book>
+	applyPreset(name: string, sections: Sections): Promise<Plan>
 }
 
 /**
@@ -72,38 +72,38 @@ export type PresetIo = {
  * switches.
  */
 export type RoomCaps = {
-  /**
-   * A SPADS autohost runs this room. It decides, so a change is a proposal;
-   * it takes `!` commands; it rate-limits chat; and it is what hosting a room
-   * of your own means. All of that is one fact, so it is one flag.
-   */
-  spads: boolean
-  /** Other people to talk to. Off, the composer is a local command console. */
-  chat: boolean
-  /** A ready flag means something, because somebody is waiting on it. */
-  ready: boolean
-  /** The game is started from here rather than by a host. */
-  startsGame: boolean
-  /** There is a room to leave, as opposed to one that is simply yours. */
-  leave: boolean
-  /**
-   * The map, game and engine are chosen here rather than by whoever set the
-   * room up. Off, they are shown as what they are and changed by asking.
-   *
-   * Whether there is anything to choose between is a second question, and not
-   * one about the room: an engine can only be picked where an engine can be
-   * fetched, which `store/build`'s `noPublishedEngine` answers. That one is
-   * asked at the cell, because it is the same answer in every room here.
-   */
-  picksContent: boolean
-  /**
-   * The game this room is for can be played on this machine.
-   *
-   * Off leaves a room to read and talk in: no seat to take, no ready flag and
-   * no way to start or join the game. macOS turns this off for rooms on the
-   * server, where the only engine available may not be used.
-   */
-  plays: boolean
+	/**
+	 * A SPADS autohost runs this room. It decides, so a change is a proposal;
+	 * it takes `!` commands; it rate-limits chat; and it is what hosting a room
+	 * of your own means. All of that is one fact, so it is one flag.
+	 */
+	spads: boolean
+	/** Other people to talk to. Off, the composer is a local command console. */
+	chat: boolean
+	/** A ready flag means something, because somebody is waiting on it. */
+	ready: boolean
+	/** The game is started from here rather than by a host. */
+	startsGame: boolean
+	/** There is a room to leave, as opposed to one that is simply yours. */
+	leave: boolean
+	/**
+	 * The map, game and engine are chosen here rather than by whoever set the
+	 * room up. Off, they are shown as what they are and changed by asking.
+	 *
+	 * Whether there is anything to choose between is a second question, and not
+	 * one about the room: an engine can only be picked where an engine can be
+	 * fetched, which `store/build`'s `noPublishedEngine` answers. That one is
+	 * asked at the cell, because it is the same answer in every room here.
+	 */
+	picksContent: boolean
+	/**
+	 * The game this room is for can be played on this machine.
+	 *
+	 * Off leaves a room to read and talk in: no seat to take, no ready flag and
+	 * no way to start or join the game. macOS turns this off for rooms on the
+	 * server, where the only engine available may not be used.
+	 */
+	plays: boolean
 }
 
 /**
@@ -114,28 +114,28 @@ export type RoomCaps = {
  * answered for every room, and the compiler is what says so.
  */
 export type RoomModel = {
-  battle: Accessor<BattleView | undefined>
-  my: Accessor<MyBattleView | null>
-  users: Accessor<Record<string, UserView>>
-  me: Accessor<string | null>
-  /** Whether this machine has the room's engine, game and map. */
-  content: Accessor<{ engine: boolean; game: boolean; map: boolean } | null>
-  /** The room's game, while one is running. */
-  running: Accessor<GameRunningView | null>
-  /**
-   * Where to go when there is no room here any more, or `null` to stay.
-   *
-   * The answer belongs to whoever knows what a missing room means -- a dropped
-   * session, or nothing at all -- while the navigating stays in the view,
-   * which is where the router is.
-   */
-  exit: Accessor<string | null>
-  /** Which chat room this room's lines are filed under. */
-  log: string
-  caps: RoomCaps
-  io: RoomIo
-  /** Presets, where this room can carry them. */
-  presets: Accessor<PresetIo | null>
+	battle: Accessor<BattleView | undefined>
+	my: Accessor<MyBattleView | null>
+	users: Accessor<Record<string, UserView>>
+	me: Accessor<string | null>
+	/** Whether this machine has the room's engine, game and map. */
+	content: Accessor<{ engine: boolean; game: boolean; map: boolean } | null>
+	/** The room's game, while one is running. */
+	running: Accessor<GameRunningView | null>
+	/**
+	 * Where to go when there is no room here any more, or `null` to stay.
+	 *
+	 * The answer belongs to whoever knows what a missing room means -- a dropped
+	 * session, or nothing at all -- while the navigating stays in the view,
+	 * which is where the router is.
+	 */
+	exit: Accessor<string | null>
+	/** Which chat room this room's lines are filed under. */
+	log: string
+	caps: RoomCaps
+	io: RoomIo
+	/** Presets, where this room can carry them. */
+	presets: Accessor<PresetIo | null>
 }
 
 const RoomContext = createContext<RoomModel>()
@@ -148,9 +148,9 @@ export const RoomProvider = RoomContext.Provider
  * say so here and not quietly start talking to the server.
  */
 export function useRoom(): RoomModel {
-  const room = useContext(RoomContext)
-  if (room === undefined) {
-    throw new Error('useRoom() outside a <RoomProvider>')
-  }
-  return room
+	const room = useContext(RoomContext)
+	if (room === undefined) {
+		throw new Error('useRoom() outside a <RoomProvider>')
+	}
+	return room
 }

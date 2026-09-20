@@ -9,8 +9,8 @@ import { splitProps, type JSX } from 'solid-js'
  * straight through.
  */
 export function Select(props: JSX.SelectHTMLAttributes<HTMLSelectElement>) {
-  const [own, rest] = splitProps(props, ['class'])
-  return (
-    <select class={own.class ? `select ${own.class}` : 'select'} {...rest} />
-  )
+	const [own, rest] = splitProps(props, ['class'])
+	return (
+		<select class={own.class ? `select ${own.class}` : 'select'} {...rest} />
+	)
 }

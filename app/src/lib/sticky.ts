@@ -16,25 +16,25 @@ import { localStore } from './resize'
  * the window and audience it was given.
  */
 export function sticky<T>(key: string, fallback: T): Signal<T> {
-  const signal = createSignal<T>(read(key, fallback))
-  createEffect(() => write(key, signal[0]()))
-  return signal
+	const signal = createSignal<T>(read(key, fallback))
+	createEffect(() => write(key, signal[0]()))
+	return signal
 }
 
 function read<T>(key: string, fallback: T): T {
-  const held = localStore()?.getItem(key)
-  if (!held) return fallback
-  try {
-    return JSON.parse(held) as T
-  } catch {
-    return fallback
-  }
+	const held = localStore()?.getItem(key)
+	if (!held) return fallback
+	try {
+		return JSON.parse(held) as T
+	} catch {
+		return fallback
+	}
 }
 
 function write<T>(key: string, value: T): void {
-  try {
-    localStore()?.setItem(key, JSON.stringify(value))
-  } catch {
-    // A full or locked store costs a remembered preference, nothing more.
-  }
+	try {
+		localStore()?.setItem(key, JSON.stringify(value))
+	} catch {
+		// A full or locked store costs a remembered preference, nothing more.
+	}
 }

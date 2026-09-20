@@ -10,17 +10,17 @@ import { onCleanup } from 'solid-js'
  * reach a listener on the same node.
  */
 export function dismiss(root: () => Node | undefined, close: () => void) {
-  const onDown = (event: MouseEvent) => {
-    if (root()?.contains(event.target as Node)) return
-    close()
-  }
-  const onKey = (event: KeyboardEvent) => {
-    if (event.key === 'Escape') close()
-  }
-  document.addEventListener('mousedown', onDown)
-  document.addEventListener('keydown', onKey)
-  onCleanup(() => {
-    document.removeEventListener('mousedown', onDown)
-    document.removeEventListener('keydown', onKey)
-  })
+	const onDown = (event: MouseEvent) => {
+		if (root()?.contains(event.target as Node)) return
+		close()
+	}
+	const onKey = (event: KeyboardEvent) => {
+		if (event.key === 'Escape') close()
+	}
+	document.addEventListener('mousedown', onDown)
+	document.addEventListener('keydown', onKey)
+	onCleanup(() => {
+		document.removeEventListener('mousedown', onDown)
+		document.removeEventListener('keydown', onKey)
+	})
 }

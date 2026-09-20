@@ -7,7 +7,7 @@ import { pushNotice } from '../store/chat'
 
 /** Bytes as something a person reads, which for this is always whole MB. */
 function mb(bytes: number): string {
-  return `${Math.round(bytes / 1_000_000)} MB`
+	return `${Math.round(bytes / 1_000_000)} MB`
 }
 
 /** Where `askedFor` is mirrored. Before it, since it is read at load. */
@@ -39,34 +39,34 @@ const SETTLED = new Set(['notFound', 'version', 'platform'])
 
 /** `sessionStorage`, when the webview lets us at it. */
 function session(): Storage | null {
-  try {
-    return window.sessionStorage
-  } catch {
-    return null
-  }
+	try {
+		return window.sessionStorage
+	} catch {
+		return null
+	}
 }
 
 function recall(): Set<string> {
-  try {
-    const kept = session()?.getItem(ASKED_KEY)
-    return new Set(kept ? (JSON.parse(kept) as string[]) : [])
-  } catch {
-    return new Set()
-  }
+	try {
+		const kept = session()?.getItem(ASKED_KEY)
+		return new Set(kept ? (JSON.parse(kept) as string[]) : [])
+	} catch {
+		return new Set()
+	}
 }
 
 function keep(asked: Set<string>) {
-  try {
-    session()?.setItem(ASKED_KEY, JSON.stringify([...asked]))
-  } catch {
-    // Nothing to do: the module variable still covers a remount.
-  }
+	try {
+		session()?.setItem(ASKED_KEY, JSON.stringify([...asked]))
+	} catch {
+		// Nothing to do: the module variable still covers a remount.
+	}
 }
 
 /** Forgets what was asked automatically. For tests, which share this module. */
 export function forgetAskedEngines() {
-  askedFor.clear()
-  keep(askedFor)
+	askedFor.clear()
+	keep(askedFor)
 }
 
 /**
@@ -90,114 +90,114 @@ export function forgetAskedEngines() {
  * back rather than being quietly ignored.
  */
 export function GetEngine(props: {
-  version: string
-  auto?: boolean
-  onDone?: () => void
+	version: string
+	auto?: boolean
+	onDone?: () => void
 }) {
-  const [progress, setProgress] = createSignal<EngineProgress | null>(null)
-  const [busy, setBusy] = createSignal(false)
+	const [progress, setProgress] = createSignal<EngineProgress | null>(null)
+	const [busy, setBusy] = createSignal(false)
 
-  onMount(() => {
-    const pending = listen<EngineProgress>('engine-download', (event) =>
-      setProgress(event.payload),
-    )
-    onCleanup(() => void pending.then((unlisten) => unlisten()))
-  })
+	onMount(() => {
+		const pending = listen<EngineProgress>('engine-download', (event) =>
+			setProgress(event.payload),
+		)
+		onCleanup(() => void pending.then((unlisten) => unlisten()))
+	})
 
-  // A version we do not have is a question the index answers 404 to, and
-  // firing it on mount is what turned an empty room into a retry loop. So is
-  // a machine no build is published for, which the shell answers a moment
-  // after the window: waiting for it costs a frame, and asking without it
-  // costs an error nobody can act on.
-  createEffect(() => {
-    const known = build()
-    const version = props.version
-    if (!known || !props.auto || !version || askedFor.has(version)) return
-    // In before the answer, so a second mount during the download does not
-    // ask too; taken out again if the answer turns out to be about the moment.
-    askedFor.add(version)
-    keep(askedFor)
-    if (!known.noPublishedEngine) void get(version)
-  })
+	// A version we do not have is a question the index answers 404 to, and
+	// firing it on mount is what turned an empty room into a retry loop. So is
+	// a machine no build is published for, which the shell answers a moment
+	// after the window: waiting for it costs a frame, and asking without it
+	// costs an error nobody can act on.
+	createEffect(() => {
+		const known = build()
+		const version = props.version
+		if (!known || !props.auto || !version || askedFor.has(version)) return
+		// In before the answer, so a second mount during the download does not
+		// ask too; taken out again if the answer turns out to be about the moment.
+		askedFor.add(version)
+		keep(askedFor)
+		if (!known.noPublishedEngine) void get(version)
+	})
 
-  async function get(version: string) {
-    if (!version) return
-    setBusy(true)
-    try {
-      await api.downloadEngine(version)
-      props.onDone?.()
-    } catch (error) {
-      if (!SETTLED.has(errorCode(error) ?? '')) {
-        askedFor.delete(version)
-        keep(askedFor)
-      }
-      pushNotice('error', describeError(error))
-    } finally {
-      setBusy(false)
-    }
-  }
+	async function get(version: string) {
+		if (!version) return
+		setBusy(true)
+		try {
+			await api.downloadEngine(version)
+			props.onDone?.()
+		} catch (error) {
+			if (!SETTLED.has(errorCode(error) ?? '')) {
+				askedFor.delete(version)
+				keep(askedFor)
+			}
+			pushNotice('error', describeError(error))
+		} finally {
+			setBusy(false)
+		}
+	}
 
-  /** Named where the room knows the version, general where it does not. */
-  const heading = () =>
-    props.version
-      ? `Engine ${props.version} is not installed.`
-      : 'The engine is not installed.'
+	/** Named where the room knows the version, general where it does not. */
+	const heading = () =>
+		props.version
+			? `Engine ${props.version} is not installed.`
+			: 'The engine is not installed.'
 
-  const said = () => {
-    const at = progress()
-    if (!at) return null
-    switch (at.phase) {
-      case 'finding':
-        return 'looking it up…'
-      case 'downloading':
-        return at.total > 0 ? `${mb(at.got)} of ${mb(at.total)}` : mb(at.got)
-      case 'extracting':
-        return 'unpacking…'
-      case 'done':
-        return `engine ${at.version} installed`
-      case 'failed':
-        return at.reason
-    }
-  }
+	const said = () => {
+		const at = progress()
+		if (!at) return null
+		switch (at.phase) {
+			case 'finding':
+				return 'looking it up…'
+			case 'downloading':
+				return at.total > 0 ? `${mb(at.got)} of ${mb(at.total)}` : mb(at.got)
+			case 'extracting':
+				return 'unpacking…'
+			case 'done':
+				return `engine ${at.version} installed`
+			case 'failed':
+				return at.reason
+		}
+	}
 
-  const fraction = () => {
-    const at = progress()
-    return at?.phase === 'downloading' && at.total > 0
-      ? at.got / at.total
-      : null
-  }
+	const fraction = () => {
+		const at = progress()
+		return at?.phase === 'downloading' && at.total > 0
+			? at.got / at.total
+			: null
+	}
 
-  return (
-    <div class='get-engine'>
-      <div class='get-engine-say'>
-        <strong>{heading()}</strong>{' '}
-        <span class='muted'>
-          It is a few hundred megabytes and only needs fetching once.
-        </span>
-      </div>
-      <Show when={said()}>
-        {(text) => (
-          <div class='get-engine-progress'>
-            <div class='bar'>
-              <div
-                class='fill'
-                classList={{ indeterminate: fraction() === null }}
-                style={
-                  fraction() === null
-                    ? undefined
-                    : { width: `${(fraction() ?? 0) * 100}%` }
-                }
-              />
-            </div>
-            <span class='muted'>{text()}</span>
-          </div>
-        )}
-      </Show>
-      <Show when={!busy()}>
-        <button class='primary' onClick={() => void get(props.version)}>
-          {progress()?.phase === 'failed' ? 'Try again' : 'Download the engine'}
-        </button>
-      </Show>
-    </div>
-  )
+	return (
+		<div class='get-engine'>
+			<div class='get-engine-say'>
+				<strong>{heading()}</strong>{' '}
+				<span class='muted'>
+					It is a few hundred megabytes and only needs fetching once.
+				</span>
+			</div>
+			<Show when={said()}>
+				{(text) => (
+					<div class='get-engine-progress'>
+						<div class='bar'>
+							<div
+								class='fill'
+								classList={{ indeterminate: fraction() === null }}
+								style={
+									fraction() === null
+										? undefined
+										: { width: `${(fraction() ?? 0) * 100}%` }
+								}
+							/>
+						</div>
+						<span class='muted'>{text()}</span>
+					</div>
+				)}
+			</Show>
+			<Show when={!busy()}>
+				<button class='primary' onClick={() => void get(props.version)}>
+					{progress()?.phase === 'failed' ? 'Try again' : 'Download the engine'}
+				</button>
+			</Show>
+		</div>
+	)
 }

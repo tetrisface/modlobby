@@ -12,14 +12,14 @@ import { onlineRoom } from './room/online'
  * "none" -- exactly what disables those two buttons.
  */
 export function PresetsPage() {
-  return (
-    <section class='presets-page'>
-      <RoomProvider value={onlineRoom()}>
-        {/* Loading a preset is a burst of throttled host commands that can
+	return (
+		<section class='presets-page'>
+			<RoomProvider value={onlineRoom()}>
+				{/* Loading a preset is a burst of throttled host commands that can
             take a minute; the bar is how that minute reads as progress. */}
-        <PasteBanner />
-        <Presets />
-      </RoomProvider>
-    </section>
-  )
+				<PasteBanner />
+				<Presets />
+			</RoomProvider>
+		</section>
+	)
 }

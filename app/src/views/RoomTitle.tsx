@@ -10,36 +10,36 @@ import { Ask } from '../components/Ask'
  * the command would be taken rather than refused.
  */
 export function RoomTitle(props: {
-  title: string
-  canRename: boolean
-  onRename: (name: string) => void
+	title: string
+	canRename: boolean
+	onRename: (name: string) => void
 }) {
-  const [asking, setAsking] = createSignal(false)
+	const [asking, setAsking] = createSignal(false)
 
-  return (
-    <div class='room-title'>
-      <h1 title={props.title}>{props.title}</h1>
-      <Show when={props.canRename}>
-        <ActionCell>
-          <CellButton
-            icon='act-pen'
-            title='Rename room'
-            onClick={() => setAsking(true)}
-          />
-        </ActionCell>
-      </Show>
-      <Show when={asking()}>
-        <Ask
-          title='Rename room'
-          initial={props.title}
-          confirm='Rename'
-          onCancel={() => setAsking(false)}
-          onAnswer={(name) => {
-            setAsking(false)
-            if (name !== props.title) props.onRename(name)
-          }}
-        />
-      </Show>
-    </div>
-  )
+	return (
+		<div class='room-title'>
+			<h1 title={props.title}>{props.title}</h1>
+			<Show when={props.canRename}>
+				<ActionCell>
+					<CellButton
+						icon='act-pen'
+						title='Rename room'
+						onClick={() => setAsking(true)}
+					/>
+				</ActionCell>
+			</Show>
+			<Show when={asking()}>
+				<Ask
+					title='Rename room'
+					initial={props.title}
+					confirm='Rename'
+					onCancel={() => setAsking(false)}
+					onAnswer={(name) => {
+						setAsking(false)
+						if (name !== props.title) props.onRename(name)
+					}}
+				/>
+			</Show>
+		</div>
+	)
 }

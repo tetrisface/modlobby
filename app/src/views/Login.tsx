@@ -11,50 +11,50 @@ import { settings } from '../store/settings'
  * is picked — the one the lobby already means, else the first listed.
  */
 export function Login() {
-  const navigate = useNavigate()
-  const servers = () => settings()?.servers ?? []
-  const [picked, setPicked] = createSignal<string | null>(null)
-  const server = () =>
-    picked() ??
-    mainServer() ??
-    (servers()[0] ? serverId(servers()[0]!.host) : null)
+	const navigate = useNavigate()
+	const servers = () => settings()?.servers ?? []
+	const [picked, setPicked] = createSignal<string | null>(null)
+	const server = () =>
+		picked() ??
+		mainServer() ??
+		(servers()[0] ? serverId(servers()[0]!.host) : null)
 
-  return (
-    <div class='login-page'>
-      <Show when={servers().length > 1}>
-        <label>
-          Server
-          <Select
-            value={server() ?? ''}
-            onChange={(event) => setPicked(event.currentTarget.value)}
-          >
-            <For each={servers()}>
-              {(entry) => (
-                <option value={serverId(entry.host)}>
-                  {serverName(entry)}
-                </option>
-              )}
-            </For>
-          </Select>
-        </label>
-      </Show>
-      <Show
-        when={server()}
-        keyed
-        fallback={
-          <p class='muted'>
-            No server is set up. Add one in Settings, under Servers.
-          </p>
-        }
-      >
-        {(id) => (
-          <LoginForm
-            server={id}
-            asksFlags
-            onDone={() => navigate('/battles', { replace: true })}
-          />
-        )}
-      </Show>
-    </div>
-  )
+	return (
+		<div class='login-page'>
+			<Show when={servers().length > 1}>
+				<label>
+					Server
+					<Select
+						value={server() ?? ''}
+						onChange={(event) => setPicked(event.currentTarget.value)}
+					>
+						<For each={servers()}>
+							{(entry) => (
+								<option value={serverId(entry.host)}>
+									{serverName(entry)}
+								</option>
+							)}
+						</For>
+					</Select>
+				</label>
+			</Show>
+			<Show
+				when={server()}
+				keyed
+				fallback={
+					<p class='muted'>
+						No server is set up. Add one in Settings, under Servers.
+					</p>
+				}
+			>
+				{(id) => (
+					<LoginForm
+						server={id}
+						asksFlags
+						onDone={() => navigate('/battles', { replace: true })}
+					/>
+				)}
+			</Show>
+		</div>
+	)
 }

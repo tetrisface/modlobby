@@ -4,7 +4,7 @@
  * (`battle_list_window.lua:803-845`). An empty query matches everything.
  */
 export function hasEveryWord(text: string, query: string): boolean {
-  const words = query.toLowerCase().split(/\s+/).filter(Boolean)
-  const haystack = text.toLowerCase()
-  return words.every((word) => haystack.includes(word))
+	const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+	const haystack = text.toLowerCase()
+	return words.every((word) => haystack.includes(word))
 }

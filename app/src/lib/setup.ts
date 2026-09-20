@@ -23,10 +23,10 @@ export type Group = { name: string; options: ModOption[] }
 export type Tab = { key: string; name: string; desc: string; groups: Group[] }
 
 export type Row = {
-  option: ModOption
-  /** What the room has set, if anything. */
-  current: string | null
-  changed: boolean
+	option: ModOption
+	/** What the room has set, if anything. */
+	current: string | null
+	changed: boolean
 }
 
 /** Chobby nulls this section outright (`gui_modoptions_panel.lua:1242`). */
@@ -42,15 +42,15 @@ const DROPPED_SECTION = 'dev'
  * categories/panels"), so moving them changes nothing on the wire.
  */
 const MODDING_GROUPS: ReadonlyArray<readonly [string, readonly string[]]> = [
-  [
-    'Unit packs',
-    [
-      'experimentallegionfaction',
-      'experimentalextraunits',
-      'scavunitsforplayers',
-    ],
-  ],
-  ['Loading', ['forceallunits']],
+	[
+		'Unit packs',
+		[
+			'experimentallegionfaction',
+			'experimentalextraunits',
+			'scavunitsforplayers',
+		],
+	],
+	['Loading', ['forceallunits']],
 ]
 
 /**
@@ -60,16 +60,16 @@ const MODDING_GROUPS: ReadonlyArray<readonly [string, readonly string[]]> = [
 const DECLARED_TWEAK_SLOTS = ['tweakdefs', 'tweakunits']
 
 const MOVED = new Set([
-  ...MODDING_GROUPS.flatMap(([, keys]) => keys),
-  ...DECLARED_TWEAK_SLOTS,
+	...MODDING_GROUPS.flatMap(([, keys]) => keys),
+	...DECLARED_TWEAK_SLOTS,
 ])
 
 /** The 20 slots the `tweaks` crate models; BAR declares 1-9 as hidden. */
 export const TWEAK_SLOTS: readonly string[] = ['defs', 'units'].flatMap(
-  (kind) =>
-    ['', '1', '2', '3', '4', '5', '6', '7', '8', '9'].map(
-      (index) => `tweak${kind}${index}`,
-    ),
+	(kind) =>
+		['', '1', '2', '3', '4', '5', '6', '7', '8', '9'].map(
+			(index) => `tweak${kind}${index}`,
+		),
 )
 
 export const MODDING_TAB = 'modding'
@@ -85,7 +85,7 @@ export const MAP_TAB = 'map'
 const MAP_SECTION = 'mapmetadata'
 
 export function isMapOption(option: ModOption): boolean {
-  return option.section === MAP_SECTION
+	return option.section === MAP_SECTION
 }
 
 /**
@@ -101,54 +101,54 @@ export const ALL_TAB = 'all'
  * settings, so neither becomes a row.
  */
 function groupsOf(options: ModOption[]): Group[] {
-  const groups: Group[] = []
-  let current: Group = { name: '', options: [] }
+	const groups: Group[] = []
+	let current: Group = { name: '', options: [] }
 
-  for (const option of options) {
-    if (option.type === 'separator') continue
-    if (option.type === 'subheader') {
-      const label = option.name ?? ''
-      if (!label.startsWith('--')) continue
-      if (current.options.length > 0) groups.push(current)
-      current = { name: label.replace(/^--\s*/, '').trim(), options: [] }
-      continue
-    }
-    if (option.hidden) continue
-    current.options.push(option)
-  }
+	for (const option of options) {
+		if (option.type === 'separator') continue
+		if (option.type === 'subheader') {
+			const label = option.name ?? ''
+			if (!label.startsWith('--')) continue
+			if (current.options.length > 0) groups.push(current)
+			current = { name: label.replace(/^--\s*/, '').trim(), options: [] }
+			continue
+		}
+		if (option.hidden) continue
+		current.options.push(option)
+	}
 
-  if (current.options.length > 0) groups.push(current)
-  return groups
+	if (current.options.length > 0) groups.push(current)
+	return groups
 }
 
 function moddingTab(options: ModOption[]): Tab {
-  const byKey = new Map(options.map((option) => [option.key, option]))
-  const groups: Group[] = [
-    {
-      name: 'Tweak slots',
-      options: TWEAK_SLOTS.map((key) => ({
-        key,
-        name: key,
-        desc: 'Base64url Lua carried as a modoption.',
-        type: 'string',
-        def: '',
-      })),
-    },
-  ]
+	const byKey = new Map(options.map((option) => [option.key, option]))
+	const groups: Group[] = [
+		{
+			name: 'Tweak slots',
+			options: TWEAK_SLOTS.map((key) => ({
+				key,
+				name: key,
+				desc: 'Base64url Lua carried as a modoption.',
+				type: 'string',
+				def: '',
+			})),
+		},
+	]
 
-  for (const [name, keys] of MODDING_GROUPS) {
-    const options = keys
-      .map((key) => byKey.get(key))
-      .filter((option): option is ModOption => option !== undefined)
-    if (options.length > 0) groups.push({ name, options })
-  }
+	for (const [name, keys] of MODDING_GROUPS) {
+		const options = keys
+			.map((key) => byKey.get(key))
+			.filter((option): option is ModOption => option !== undefined)
+		if (options.length > 0) groups.push({ name, options })
+	}
 
-  return {
-    key: MODDING_TAB,
-    name: 'Modding',
-    desc: 'What unit definitions the game loads, and the Lua that rewrites them.',
-    groups,
-  }
+	return {
+		key: MODDING_TAB,
+		name: 'Modding',
+		desc: 'What unit definitions the game loads, and the Lua that rewrites them.',
+		groups,
+	}
 }
 
 /**
@@ -157,24 +157,24 @@ function moddingTab(options: ModOption[]): Tab {
  * the tab already says so. Nothing when the game has no such section.
  */
 function mapTab(options: ModOption[]): Tab | null {
-  const rows = options
-    .filter(
-      (option) =>
-        isMapOption(option) &&
-        option.type !== 'subheader' &&
-        option.type !== 'separator',
-    )
-    .map((option) => ({
-      ...option,
-      name: (option.name ?? option.key).replace(/^Map Metadata:\s*/i, ''),
-    }))
-  if (rows.length === 0) return null
-  return {
-    key: MAP_TAB,
-    name: 'Map',
-    desc: 'What the map brings to the room: its start boxes, any custom arrangement, and fixed start positions.',
-    groups: [{ name: 'Map metadata', options: rows }],
-  }
+	const rows = options
+		.filter(
+			(option) =>
+				isMapOption(option) &&
+				option.type !== 'subheader' &&
+				option.type !== 'separator',
+		)
+		.map((option) => ({
+			...option,
+			name: (option.name ?? option.key).replace(/^Map Metadata:\s*/i, ''),
+		}))
+	if (rows.length === 0) return null
+	return {
+		key: MAP_TAB,
+		name: 'Map',
+		desc: 'What the map brings to the room: its start boxes, any custom arrangement, and fixed start positions.',
+		groups: [{ name: 'Map metadata', options: rows }],
+	}
 }
 
 /**
@@ -183,84 +183,84 @@ function mapTab(options: ModOption[]): Tab | null {
  * next to Cheats, where the tweak slots used to live, and Map last.
  */
 export function tabs(options: ModOption[]): Tab[] {
-  const sections = options
-    .filter(
-      (option) =>
-        option.type === 'section' &&
-        !option.hidden &&
-        option.key !== DROPPED_SECTION,
-    )
-    .sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0))
+	const sections = options
+		.filter(
+			(option) =>
+				option.type === 'section' &&
+				!option.hidden &&
+				option.key !== DROPPED_SECTION,
+		)
+		.sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0))
 
-  const declared = sections.map((section) => ({
-    key: section.key,
-    name: section.name ?? section.key,
-    desc: section.desc ?? '',
-    groups: groupsOf(
-      options.filter(
-        (option) => option.section === section.key && !MOVED.has(option.key),
-      ),
-    ),
-  }))
+	const declared = sections.map((section) => ({
+		key: section.key,
+		name: section.name ?? section.key,
+		desc: section.desc ?? '',
+		groups: groupsOf(
+			options.filter(
+				(option) => option.section === section.key && !MOVED.has(option.key),
+			),
+		),
+	}))
 
-  const map = mapTab(options)
-  return [...declared, moddingTab(options), ...(map === null ? [] : [map])]
+	const map = mapTab(options)
+	return [...declared, moddingTab(options), ...(map === null ? [] : [map])]
 }
 
 /** Modoptions the room has set, keyed without the `game/modoptions/` prefix. */
 export function readModOptions(
-  scriptTags: Record<string, string> | undefined,
+	scriptTags: Record<string, string> | undefined,
 ): Record<string, string> {
-  const values: Record<string, string> = {}
-  if (!scriptTags) return values
+	const values: Record<string, string> = {}
+	if (!scriptTags) return values
 
-  for (const [key, value] of Object.entries(scriptTags)) {
-    const name = /^game\/modoptions\/(.+)$/.exec(key)?.[1]
-    if (name !== undefined) values[name] = value
-  }
-  return values
+	for (const [key, value] of Object.entries(scriptTags)) {
+		const name = /^game\/modoptions\/(.+)$/.exec(key)?.[1]
+		if (name !== undefined) values[name] = value
+	}
+	return values
 }
 
 /** How Lua's default reads once it has been through the protocol. */
 export function defaultText(option: ModOption): string {
-  const def: OptionValue | null | undefined = option.def
-  if (def === null || def === undefined) return ''
-  if (typeof def === 'boolean') return def ? '1' : '0'
-  return String(def)
+	const def: OptionValue | null | undefined = option.def
+	if (def === null || def === undefined) return ''
+	if (typeof def === 'boolean') return def ? '1' : '0'
+	return String(def)
 }
 
 export function isOn(text: string): boolean {
-  return text === '1' || text.toLowerCase() === 'true'
+	return text === '1' || text.toLowerCase() === 'true'
 }
 
 /** SPADS empties a slot by writing `0` (`sendBattleSetting` skips `''`). */
 export function isCleared(text: string): boolean {
-  return text === '' || text === '0'
+	return text === '' || text === '0'
 }
 
 function isChanged(option: ModOption, current: string): boolean {
-  // A map option is set or cleared; there is no default to sit on.
-  if (isMapOption(option)) return !isCleared(current)
-  const def = defaultText(option)
-  if (option.type === 'number') return Number(current) !== Number(def)
-  if (option.type === 'bool') return isOn(current) !== isOn(def)
-  return current !== def
+	// A map option is set or cleared; there is no default to sit on.
+	if (isMapOption(option)) return !isCleared(current)
+	const def = defaultText(option)
+	if (option.type === 'number') return Number(current) !== Number(def)
+	if (option.type === 'bool') return isOn(current) !== isOn(def)
+	return current !== def
 }
 
 /** What a row is called: BAR's name, or the key when it has none. */
 export function label(option: ModOption): string {
-  return option.name || option.key
+	return option.name || option.key
 }
 
 export function rowsOf(group: Group, values: Record<string, string>): Row[] {
-  return group.options.map((option) => {
-    const current = values[option.key] ?? null
-    return {
-      option,
-      current,
-      changed: current !== null && isChanged(option, current),
-    }
-  })
+	return group.options.map((option) => {
+		const current = values[option.key] ?? null
+		return {
+			option,
+			current,
+			changed: current !== null && isChanged(option, current),
+		}
+	})
 }
 
 export type Changed = { tab: Tab; rows: Row[] }
@@ -270,18 +270,18 @@ export type Changed = { tab: Tab; rows: Row[] }
  * default, or all of it. Tabs with nothing to show are left out.
  */
 export function rowsByTab(
-  tabs: Tab[],
-  values: Record<string, string>,
-  onlyChanged: boolean,
+	tabs: Tab[],
+	values: Record<string, string>,
+	onlyChanged: boolean,
 ): Changed[] {
-  return tabs
-    .map((tab) => ({
-      tab,
-      rows: tab.groups
-        .flatMap((group) => rowsOf(group, values))
-        .filter((row) => row.changed || !onlyChanged),
-    }))
-    .filter((entry) => entry.rows.length > 0)
+	return tabs
+		.map((tab) => ({
+			tab,
+			rows: tab.groups
+				.flatMap((group) => rowsOf(group, values))
+				.filter((row) => row.changed || !onlyChanged),
+		}))
+		.filter((entry) => entry.rows.length > 0)
 }
 
 /** Rows under one heading: a tab's on the All tab, a group's inside a tab. */
@@ -295,16 +295,16 @@ export const GENERAL_GROUP = 'General'
  * default, or all of it. Groups with nothing to show are left out.
  */
 export function rowsByGroup(
-  tab: Tab,
-  values: Record<string, string>,
-  onlyChanged: boolean,
+	tab: Tab,
+	values: Record<string, string>,
+	onlyChanged: boolean,
 ): Section[] {
-  return tab.groups
-    .map((group) => ({
-      name: group.name || GENERAL_GROUP,
-      rows: rowsOf(group, values).filter((row) => row.changed || !onlyChanged),
-    }))
-    .filter((entry) => entry.rows.length > 0)
+	return tab.groups
+		.map((group) => ({
+			name: group.name || GENERAL_GROUP,
+			rows: rowsOf(group, values).filter((row) => row.changed || !onlyChanged),
+		}))
+		.filter((entry) => entry.rows.length > 0)
 }
 
 /**
@@ -314,17 +314,17 @@ export function rowsByGroup(
  * them; their blob is base64 and stays out of it.
  */
 export function searchRows(
-  tabs: Tab[],
-  values: Record<string, string>,
-  needle: string,
+	tabs: Tab[],
+	values: Record<string, string>,
+	needle: string,
 ): Changed[] {
-  if (needle.trim() === '') return []
-  return rowsByTab(tabs, values, false)
-    .map((entry) => ({
-      tab: entry.tab,
-      rows: entry.rows.filter((row) => hasEveryWord(searchText(row), needle)),
-    }))
-    .filter((entry) => entry.rows.length > 0)
+	if (needle.trim() === '') return []
+	return rowsByTab(tabs, values, false)
+		.map((entry) => ({
+			tab: entry.tab,
+			rows: entry.rows.filter((row) => hasEveryWord(searchText(row), needle)),
+		}))
+		.filter((entry) => entry.rows.length > 0)
 }
 
 /**
@@ -333,47 +333,47 @@ export function searchRows(
  * and `true` count too.
  */
 function searchText(row: Row): string {
-  const { option } = row
-  const value =
-    isTweakSlot(row) || isMapOption(row.option)
-      ? ''
-      : `${displayText(row)} ${row.current ?? ''}`
-  return `${label(option)} ${option.key} ${option.desc ?? ''} ${value}`
+	const { option } = row
+	const value =
+		isTweakSlot(row) || isMapOption(row.option)
+			? ''
+			: `${displayText(row)} ${row.current ?? ''}`
+	return `${label(option)} ${option.key} ${option.desc ?? ''} ${value}`
 }
 
 /** Every setting that differs from BAR's default, by the tab it lives in. */
 export function changedByTab(
-  tabs: Tab[],
-  values: Record<string, string>,
+	tabs: Tab[],
+	values: Record<string, string>,
 ): Changed[] {
-  return rowsByTab(tabs, values, true)
+	return rowsByTab(tabs, values, true)
 }
 
 /** Whether a row is one of the twenty tweak slots, drawn as actions, not a value. */
 export function isTweakSlot(row: Row): boolean {
-  return TWEAK_SLOTS.includes(row.option.key)
+	return TWEAK_SLOTS.includes(row.option.key)
 }
 
 /** How many of a tab's settings differ from BAR's default. */
 export function changedCount(tab: Tab, values: Record<string, string>): number {
-  return tab.groups.reduce(
-    (total, group) =>
-      total + rowsOf(group, values).filter((row) => row.changed).length,
-    0,
-  )
+	return tab.groups.reduce(
+		(total, group) =>
+			total + rowsOf(group, values).filter((row) => row.changed).length,
+		0,
+	)
 }
 
 /** What a row shows on the right: the value, or the default it is sitting on. */
 export function displayText(row: Row): string {
-  const text = row.current ?? defaultText(row.option)
-  // A tweak is a blob of base64; its size is the one thing a row can say.
-  if (TWEAK_SLOTS.includes(row.option.key))
-    return text === '' ? 'empty' : `${text.length} B`
-  // The Map tab asks Rust for words; this is what it says until then.
-  if (isMapOption(row.option))
-    return isCleared(text) ? 'none' : `${text.length} B`
-  if (row.option.type === 'bool') return isOn(text) ? 'on' : 'off'
-  if (row.option.type === 'string' && text === '') return 'empty'
-  const item = row.option.items?.find((entry) => entry.key === text)
-  return item?.name ?? text
+	const text = row.current ?? defaultText(row.option)
+	// A tweak is a blob of base64; its size is the one thing a row can say.
+	if (TWEAK_SLOTS.includes(row.option.key))
+		return text === '' ? 'empty' : `${text.length} B`
+	// The Map tab asks Rust for words; this is what it says until then.
+	if (isMapOption(row.option))
+		return isCleared(text) ? 'none' : `${text.length} B`
+	if (row.option.type === 'bool') return isOn(text) ? 'on' : 'off'
+	if (row.option.type === 'string' && text === '') return 'empty'
+	const item = row.option.items?.find((entry) => entry.key === text)
+	return item?.name ?? text
 }

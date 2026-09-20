@@ -13,18 +13,18 @@ import type { RoomModel } from './model'
 
 /** Who is being moved. */
 export type Target =
-  | { kind: 'me' }
-  | { kind: 'player'; name: string }
-  | {
-      kind: 'bot'
-      name: string
-      /** Whether we added it. Anyone else's, the server ignores us for. */
-      mine: boolean
-      /** Kept as it is when only the team changes, and vice versa. */
-      team: number
-      handicap: number
-      colour: number
-    }
+	| { kind: 'me' }
+	| { kind: 'player'; name: string }
+	| {
+			kind: 'bot'
+			name: string
+			/** Whether we added it. Anyone else's, the server ignores us for. */
+			mine: boolean
+			/** Kept as it is when only the team changes, and vice versa. */
+			team: number
+			handicap: number
+			colour: number
+	  }
 
 /**
  * Whether the room arranges its own teams.
@@ -40,8 +40,8 @@ export type Target =
  * chat and is right whenever it is on.
  */
 export function balancing(room: RoomModel): boolean {
-  const mode = room.my()?.autoBalance
-  return mode !== null && mode !== undefined && mode !== 'off'
+	const mode = room.my()?.autoBalance
+	return mode !== null && mode !== undefined && mode !== 'off'
 }
 
 /** A target with a name to put in a command: everybody except yourself. */
@@ -49,17 +49,17 @@ type Named = Exclude<Target, { kind: 'me' }>
 
 /** Whether SPADS would take our word for it in this room. */
 export function bossing(room: RoomModel): boolean {
-  // A room with no host to ask is one we already run.
-  if (!room.caps.spads) return true
-  const boss = room.my()?.boss
-  return boss !== undefined && boss !== null && boss === room.me()
+	// A room with no host to ask is one we already run.
+	if (!room.caps.spads) return true
+	const boss = room.my()?.boss
+	return boss !== undefined && boss !== null && boss === room.me()
 }
 
 /** Whether this row can be moved at all, and so whether it can be dragged. */
 export function movable(room: RoomModel, target: Target): boolean {
-  if (target.kind === 'me') return true
-  if (target.kind === 'bot' && target.mine) return true
-  return bossing(room)
+	if (target.kind === 'me') return true
+	if (target.kind === 'bot' && target.mine) return true
+	return bossing(room)
 }
 
 /**
@@ -71,57 +71,57 @@ export function movable(room: RoomModel, target: Target): boolean {
  * so it is not searched for among the players (`spads.pl:8917`).
  */
 export function forceTeam(target: Named, allyTeam: number): string {
-  const who = target.kind === 'bot' ? `%${target.name}` : target.name
-  return `!force ${who} team ${allyTeam + 1}`
+	const who = target.kind === 'bot' ? `%${target.name}` : target.name
+	return `!force ${who} team ${allyTeam + 1}`
 }
 
 /** `!force <name> bonus <percent>`; SPADS refuses anything over 100. */
 export function forceBonus(target: Named, percent: number): string {
-  const who = target.kind === 'bot' ? `%${target.name}` : target.name
-  return `!force ${who} bonus ${Math.max(0, Math.min(100, Math.round(percent)))}`
+	const who = target.kind === 'bot' ? `%${target.name}` : target.name
+	return `!force ${who} bonus ${Math.max(0, Math.min(100, Math.round(percent)))}`
 }
 
 /** The lowest engine team nobody holds, which is what a new seat needs. */
 function ourTeam(room: RoomModel): number {
-  const battle = room.battle()
-  return battle ? freeTeam(battle, room.users(), room.me()) : 0
+	const battle = room.battle()
+	return battle ? freeTeam(battle, room.users(), room.me()) : 0
 }
 
 export async function moveTo(
-  room: RoomModel,
-  target: Target,
-  allyTeam: number,
+	room: RoomModel,
+	target: Target,
+	allyTeam: number,
 ): Promise<void> {
-  if (target.kind === 'me') {
-    await room.io.takeSeat(ourTeam(room), allyTeam)
-    return
-  }
-  if (target.kind === 'bot' && target.mine) {
-    // The message replaces the whole status, so everything not being changed
-    // has to be sent again -- the bonus included.
-    await room.io.updateBot(
-      target.name,
-      target.team,
-      allyTeam,
-      target.handicap,
-      target.colour,
-    )
-    // A host keeps its own book of bonuses; the status we just sent does not
-    // reliably reach it, so the bonus is said again the way Chobby does after
-    // a move (`api_user_handler.lua:1585`).
-    if (room.caps.spads && target.handicap > 0)
-      await room.io.sayBattle(forceBonus(target, target.handicap))
-    return
-  }
-  if (balancing(room)) {
-    // Sending it anyway means the answer arrives in battle chat, where a
-    // person mid-drag is not looking. Better to say it here, in the words
-    // that name the fix.
-    throw new Error(
-      'the room is balancing its own teams; turn Auto balance off first',
-    )
-  }
-  await room.io.sayBattle(forceTeam(target, allyTeam))
+	if (target.kind === 'me') {
+		await room.io.takeSeat(ourTeam(room), allyTeam)
+		return
+	}
+	if (target.kind === 'bot' && target.mine) {
+		// The message replaces the whole status, so everything not being changed
+		// has to be sent again -- the bonus included.
+		await room.io.updateBot(
+			target.name,
+			target.team,
+			allyTeam,
+			target.handicap,
+			target.colour,
+		)
+		// A host keeps its own book of bonuses; the status we just sent does not
+		// reliably reach it, so the bonus is said again the way Chobby does after
+		// a move (`api_user_handler.lua:1585`).
+		if (room.caps.spads && target.handicap > 0)
+			await room.io.sayBattle(forceBonus(target, target.handicap))
+		return
+	}
+	if (balancing(room)) {
+		// Sending it anyway means the answer arrives in battle chat, where a
+		// person mid-drag is not looking. Better to say it here, in the words
+		// that name the fix.
+		throw new Error(
+			'the room is balancing its own teams; turn Auto balance off first',
+		)
+	}
+	await room.io.sayBattle(forceTeam(target, allyTeam))
 }
 
 /**
@@ -137,21 +137,21 @@ export async function moveTo(
  * bonus straight into the AI's status.
  */
 export async function setBonus(
-  room: RoomModel,
-  target: Named,
-  percent: number,
-  allyTeam: number,
+	room: RoomModel,
+	target: Named,
+	percent: number,
+	allyTeam: number,
 ): Promise<void> {
-  const wanted = Math.max(0, Math.min(100, Math.round(percent)))
-  if (target.kind === 'bot' && target.mine && !room.caps.spads) {
-    await room.io.updateBot(
-      target.name,
-      target.team,
-      allyTeam,
-      wanted,
-      target.colour,
-    )
-    return
-  }
-  await room.io.sayBattle(forceBonus(target, wanted))
+	const wanted = Math.max(0, Math.min(100, Math.round(percent)))
+	if (target.kind === 'bot' && target.mine && !room.caps.spads) {
+		await room.io.updateBot(
+			target.name,
+			target.team,
+			allyTeam,
+			wanted,
+			target.colour,
+		)
+		return
+	}
+	await room.io.sayBattle(forceBonus(target, wanted))
 }

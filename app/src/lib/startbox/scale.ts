@@ -53,7 +53,7 @@ const HANDLE_MIN = 4
 export const HANDLE_STROKE = 1.5
 
 function clamp(value: number, low: number, high: number): number {
-  return Math.min(Math.max(value, low), high)
+	return Math.min(Math.max(value, low), high)
 }
 
 /**
@@ -65,7 +65,7 @@ function clamp(value: number, low: number, high: number): number {
  * as one, so a box mid-drag cannot raise zero to a power.
  */
 function span(width: number, height: number): number {
-  return Math.sqrt(Math.max(width, 1) * Math.max(height, 1))
+	return Math.sqrt(Math.max(width, 1) * Math.max(height, 1))
 }
 
 /**
@@ -76,12 +76,12 @@ function span(width: number, height: number): number {
  * the box's share of the view.
  */
 export function labelSize(view: Px, box: Bounds): number {
-  const seen = span(view.width, view.height) / VIEW_REF
-  const share = span(box.right - box.left, box.bottom - box.top) / SIZE
-  const size = LABEL_REF * seen ** VIEW_POWER * share ** BOX_POWER
-  // A tenth of a pixel is under what a reader can see and over what a window
-  // being dragged can churn through.
-  return Math.round(clamp(size, LABEL_MIN, LABEL_MAX) * 10) / 10
+	const seen = span(view.width, view.height) / VIEW_REF
+	const share = span(box.right - box.left, box.bottom - box.top) / SIZE
+	const size = LABEL_REF * seen ** VIEW_POWER * share ** BOX_POWER
+	// A tenth of a pixel is under what a reader can see and over what a window
+	// being dragged can churn through.
+	return Math.round(clamp(size, LABEL_MIN, LABEL_MAX) * 10) / 10
 }
 
 /**
@@ -95,9 +95,9 @@ export function labelSize(view: Px, box: Bounds): number {
  * the radius counted, so the mark cannot promise a target `hitTest` will refuse.
  */
 export function handleSize(view: Px, box: Bounds): number {
-  const size = HANDLE_RATIO * labelSize(view, box)
-  return (
-    Math.round(clamp(size, HANDLE_MIN, GRAB_PIXELS - HANDLE_STROKE / 2) * 100) /
-    100
-  )
+	const size = HANDLE_RATIO * labelSize(view, box)
+	return (
+		Math.round(clamp(size, HANDLE_MIN, GRAB_PIXELS - HANDLE_STROKE / 2) * 100) /
+		100
+	)
 }

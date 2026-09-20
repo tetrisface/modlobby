@@ -1,10 +1,10 @@
 import {
-  Show,
-  createEffect,
-  createMemo,
-  createSignal,
-  on,
-  onCleanup,
+	Show,
+	createEffect,
+	createMemo,
+	createSignal,
+	on,
+	onCleanup,
 } from 'solid-js'
 import { Thinking } from '../components/Thinking'
 import type { Score } from '../ipc/bindings/Score'
@@ -39,26 +39,26 @@ export const AT_MOST_EVERY = 2000
  * never fire again after the first look.
  */
 function fingerprint(room: RoomModel): string | undefined {
-  const my = room.my()
-  const battle = room.battle()
-  if (!my || !battle) return undefined
-  const settings = Object.entries(my.scriptTags)
-    .filter(([key]) => key.startsWith('game/modoptions/'))
-    .map(([key, value]) => `${key}=${value}`)
-    .sort()
-  const bots = battle.bots.map((bot) => `${bot.ai}@${bot.status.handicap}`)
-  const seats = battle.members.map((name) => {
-    const status = room.users()[name]?.battleStatus
-    return status?.player ? String(status.handicap) : ''
-  })
-  return [
-    my.id,
-    battle.mapName,
-    battle.playerCount,
-    ...bots,
-    ...seats,
-    ...settings,
-  ].join('\n')
+	const my = room.my()
+	const battle = room.battle()
+	if (!my || !battle) return undefined
+	const settings = Object.entries(my.scriptTags)
+		.filter(([key]) => key.startsWith('game/modoptions/'))
+		.map(([key, value]) => `${key}=${value}`)
+		.sort()
+	const bots = battle.bots.map((bot) => `${bot.ai}@${bot.status.handicap}`)
+	const seats = battle.members.map((name) => {
+		const status = room.users()[name]?.battleStatus
+		return status?.player ? String(status.handicap) : ''
+	})
+	return [
+		my.id,
+		battle.mapName,
+		battle.playerCount,
+		...bots,
+		...seats,
+		...settings,
+	].join('\n')
 }
 
 /**
@@ -71,14 +71,14 @@ function fingerprint(room: RoomModel): string | undefined {
  * find out nothing.
  */
 function isPve(room: RoomModel): boolean {
-  const names = (room.battle()?.bots ?? [])
-    .map((bot) => bot.ai.toLowerCase())
-    .join(' ')
-  const raptors = names.includes('raptor')
-  const scavengers = names.includes('scavenger')
-  // Both at once is not a setup the model knows, so it is not asked about.
-  if (raptors && scavengers) return false
-  return raptors || scavengers || names.includes('barb')
+	const names = (room.battle()?.bots ?? [])
+		.map((bot) => bot.ai.toLowerCase())
+		.join(' ')
+	const raptors = names.includes('raptor')
+	const scavengers = names.includes('scavenger')
+	// Both at once is not a setup the model knows, so it is not asked about.
+	if (raptors && scavengers) return false
+	return raptors || scavengers || names.includes('barb')
 }
 
 /**
@@ -88,176 +88,176 @@ function isPve(room: RoomModel): boolean {
  * have arrived, which is the file's default.
  */
 function enabled(): boolean {
-  return settings()?.play.pveStats ?? true
+	return settings()?.play.pveStats ?? true
 }
 
 /** This client's place in the room's asking order, as a wait. */
 function myStagger(room: RoomModel): number {
-  return askDelay({
-    me: room.me(),
-    members: room.battle()?.members ?? [],
-    boss: room.my()?.boss ?? null,
-    users: room.users(),
-  })
+	return askDelay({
+		me: room.me(),
+		members: room.battle()?.members ?? [],
+		boss: room.my()?.boss ?? null,
+		users: room.users(),
+	})
 }
 
 export function PveScore() {
-  const room = useRoom()
-  /** `undefined` before any answer; `null` when Rust declined to ask. */
-  const [score, setScore] = createSignal<Score | null | undefined>(undefined)
-  const [asking, setAsking] = createSignal(false)
-  const [failure, setFailure] = createSignal<string | null>(null)
+	const room = useRoom()
+	/** `undefined` before any answer; `null` when Rust declined to ask. */
+	const [score, setScore] = createSignal<Score | null | undefined>(undefined)
+	const [asking, setAsking] = createSignal(false)
+	const [failure, setFailure] = createSignal<string | null>(null)
 
-  /**
-   * Paced, because the service is a Lambda with a concurrency of one and a
-   * twenty-second cold start, and everyone in the room sees the same change
-   * at the same moment. One ask out at a time, a floor between asks, and a
-   * wait by seat rank so the room's clients arrive one after another rather
-   * than all at once. Rust reads the room afresh for each ask, so a single
-   * follow-up covers whatever changed while one was out.
-   */
-  const asks = asker(
-    async () => {
-      setAsking(true)
-      try {
-        setScore(await room.io.pveScore())
-        setFailure(null)
-      } catch (err) {
-        setFailure(describeError(err))
-        console.warn('pve stats:', err)
-      } finally {
-        setAsking(false)
-      }
-    },
-    { floor: AT_MOST_EVERY, stagger: () => myStagger(room) },
-  )
+	/**
+	 * Paced, because the service is a Lambda with a concurrency of one and a
+	 * twenty-second cold start, and everyone in the room sees the same change
+	 * at the same moment. One ask out at a time, a floor between asks, and a
+	 * wait by seat rank so the room's clients arrive one after another rather
+	 * than all at once. Rust reads the room afresh for each ask, so a single
+	 * follow-up covers whatever changed while one was out.
+	 */
+	const asks = asker(
+		async () => {
+			setAsking(true)
+			try {
+				setScore(await room.io.pveScore())
+				setFailure(null)
+			} catch (err) {
+				setFailure(describeError(err))
+				console.warn('pve stats:', err)
+			} finally {
+				setAsking(false)
+			}
+		},
+		{ floor: AT_MOST_EVERY, stagger: () => myStagger(room) },
+	)
 
-  /**
-   * Asked as soon as a room is in view, then again whenever it settles.
-   *
-   * A host applying a preset changes a hundred settings in a couple of
-   * minutes, and each one arrives as its own script tag. Asking per change
-   * would put a hundred requests on somebody else's service to answer a
-   * question whose answer only matters once the changes stop.
-   */
-  let pending: ReturnType<typeof setTimeout> | undefined
-  // A memo, so a change that leaves the string as it was — someone toggling
-  // ready, say — does not count as the room changing.
-  const print = createMemo(() => fingerprint(room))
-  // The setting is part of the key: turning it on in a room asks once, and
-  // turning it off drops whatever was waiting to go out.
-  const watched = createMemo(() => (enabled() ? print() : undefined))
-  createEffect(
-    on(watched, (now, before) => {
-      clearTimeout(pending)
-      if (now === undefined || !isPve(room)) return
-      const sameRoom = before?.split('\n')[0] === now.split('\n')[0]
-      if (sameRoom) {
-        pending = setTimeout(asks.ask, QUIET_FOR)
-        return
-      }
-      // A new room: whatever the last one scored is not this one's.
-      setScore(undefined)
-      setFailure(null)
-      asks.ask()
-    }),
-  )
-  onCleanup(() => {
-    clearTimeout(pending)
-    asks.stop()
-  })
+	/**
+	 * Asked as soon as a room is in view, then again whenever it settles.
+	 *
+	 * A host applying a preset changes a hundred settings in a couple of
+	 * minutes, and each one arrives as its own script tag. Asking per change
+	 * would put a hundred requests on somebody else's service to answer a
+	 * question whose answer only matters once the changes stop.
+	 */
+	let pending: ReturnType<typeof setTimeout> | undefined
+	// A memo, so a change that leaves the string as it was — someone toggling
+	// ready, say — does not count as the room changing.
+	const print = createMemo(() => fingerprint(room))
+	// The setting is part of the key: turning it on in a room asks once, and
+	// turning it off drops whatever was waiting to go out.
+	const watched = createMemo(() => (enabled() ? print() : undefined))
+	createEffect(
+		on(watched, (now, before) => {
+			clearTimeout(pending)
+			if (now === undefined || !isPve(room)) return
+			const sameRoom = before?.split('\n')[0] === now.split('\n')[0]
+			if (sameRoom) {
+				pending = setTimeout(asks.ask, QUIET_FOR)
+				return
+			}
+			// A new room: whatever the last one scored is not this one's.
+			setScore(undefined)
+			setFailure(null)
+			asks.ask()
+		}),
+	)
+	onCleanup(() => {
+		clearTimeout(pending)
+		asks.stop()
+	})
 
-  /** No answer yet, or a fresh one on its way. */
-  const waiting = () => asking() || score() === undefined
+	/** No answer yet, or a fresh one on its way. */
+	const waiting = () => asking() || score() === undefined
 
-  const percent = (value: number | null | undefined) =>
-    value == null ? '—' : `${Math.round(value * 100)}%`
+	const percent = (value: number | null | undefined) =>
+		value == null ? '—' : `${Math.round(value * 100)}%`
 
-  const challenge = () => {
-    const held = score()?.challenge
-    return held == null ? '—' : `${held.toFixed(1)}/34`
-  }
+	const challenge = () => {
+		const held = score()?.challenge
+		return held == null ? '—' : `${held.toFixed(1)}/34`
+	}
 
-  /**
-   * A number's place in the row, kept while the number is being asked for.
-   *
-   * The dots sit where the figure will land, so the row neither disappears
-   * nor jumps when an answer arrives; a figure appearing from nowhere reads
-   * as a glitch. Every slot waits the same way — none of them may claim
-   * something about the setup before the service has said it. Still dots:
-   * this panel is in view for as long as the room is, and a cycle there is
-   * noise; a dash afterwards is the answer "none".
-   */
-  const Slot = (props: { value: string }) => (
-    <b>
-      <Show
-        when={!waiting()}
-        fallback={<Thinking still title='asking how hard this setup is' />}
-      >
-        {props.value}
-      </Show>
-    </b>
-  )
+	/**
+	 * A number's place in the row, kept while the number is being asked for.
+	 *
+	 * The dots sit where the figure will land, so the row neither disappears
+	 * nor jumps when an answer arrives; a figure appearing from nowhere reads
+	 * as a glitch. Every slot waits the same way — none of them may claim
+	 * something about the setup before the service has said it. Still dots:
+	 * this panel is in view for as long as the room is, and a cycle there is
+	 * noise; a dash afterwards is the answer "none".
+	 */
+	const Slot = (props: { value: string }) => (
+		<b>
+			<Show
+				when={!waiting()}
+				fallback={<Thinking still title='asking how hard this setup is' />}
+			>
+				{props.value}
+			</Show>
+		</b>
+	)
 
-  return (
-    <Show when={enabled() && isPve(room) && score() !== null}>
-      <div class='pve-score'>
-        <span class='filter-label'>PvE</span>
+	return (
+		<Show when={enabled() && isPve(room) && score() !== null}>
+			<div class='pve-score'>
+				<span class='filter-label'>PvE</span>
 
-        <Show
-          when={!failure()}
-          fallback={
-            <span class='muted' title={failure() ?? ''}>
-              unavailable
-            </span>
-          }
-        >
-          <span
-            class='pve-stat'
-            title='Absolute difficulty on a 0-34 scale. 17 is an estimated even game for a representative human team; higher is harder. A dash means the service has not placed this setup among played games yet.'
-          >
-            <span class='pve-label'>Challenge</span>
-            <span class='pve-figure'>
-              <Slot value={challenge()} />
-            </span>
-          </span>
+				<Show
+					when={!failure()}
+					fallback={
+						<span class='muted' title={failure() ?? ''}>
+							unavailable
+						</span>
+					}
+				>
+					<span
+						class='pve-stat'
+						title='Absolute difficulty on a 0-34 scale. 17 is an estimated even game for a representative human team; higher is harder. A dash means the service has not placed this setup among played games yet.'
+					>
+						<span class='pve-label'>Challenge</span>
+						<span class='pve-figure'>
+							<Slot value={challenge()} />
+						</span>
+					</span>
 
-          <span
-            class='pve-stat'
-            title='Estimated chance a representative current BAR human team wins this map and setup. The people in this room are not part of that estimate.'
-          >
-            <span class='pve-label'>Win</span>
-            <span class='pve-figure'>
-              <Slot value={percent(score()?.winChance)} />
-            </span>
-          </span>
+					<span
+						class='pve-stat'
+						title='Estimated chance a representative current BAR human team wins this map and setup. The people in this room are not part of that estimate.'
+					>
+						<span class='pve-label'>Win</span>
+						<span class='pve-figure'>
+							<Slot value={percent(score()?.winChance)} />
+						</span>
+					</span>
 
-          <span
-            class='pve-stat muted'
-            title='Where this setup sits among eligible played games for this opponent.'
-          >
-            <span class='pve-label'>Harder than</span>
-            <span class='pve-figure'>
-              <Slot
-                value={
-                  score()?.percentile == null
-                    ? '—'
-                    : `${Math.round(score()?.percentile ?? 0)}%`
-                }
-              />
-            </span>
-          </span>
+					<span
+						class='pve-stat muted'
+						title='Where this setup sits among eligible played games for this opponent.'
+					>
+						<span class='pve-label'>Harder than</span>
+						<span class='pve-figure'>
+							<Slot
+								value={
+									score()?.percentile == null
+										? '—'
+										: `${Math.round(score()?.percentile ?? 0)}%`
+								}
+							/>
+						</span>
+					</span>
 
-          <Show when={!waiting() && score()?.bestEffort}>
-            <span
-              class='chip warn'
-              title='This room uses settings the service has not catalogued, so these are best-effort estimates rather than an exact match.'
-            >
-              best effort
-            </span>
-          </Show>
-        </Show>
-      </div>
-    </Show>
-  )
+					<Show when={!waiting() && score()?.bestEffort}>
+						<span
+							class='chip warn'
+							title='This room uses settings the service has not catalogued, so these are best-effort estimates rather than an exact match.'
+						>
+							best effort
+						</span>
+					</Show>
+				</Show>
+			</div>
+		</Show>
+	)
 }

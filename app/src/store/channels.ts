@@ -17,27 +17,27 @@ import { applySettings, settings } from './settings'
  * front end learns of it.
  */
 export async function rememberChannel(
-  server: string | null | undefined,
-  name: string,
-  joined: boolean,
+	server: string | null | undefined,
+	name: string,
+	joined: boolean,
 ): Promise<void> {
-  if (!server) return
-  const saved =
-    settings()?.servers.find((entry) => serverId(entry.host) === server)
-      ?.channels ?? []
-  const next = joined
-    ? saved.includes(name)
-      ? saved
-      : [...saved, name]
-    : saved.filter((channel) => channel !== name)
-  if (next.length === saved.length && next.every((c, i) => c === saved[i]))
-    return
-  applySettings(await api.rememberChannels(server, next))
+	if (!server) return
+	const saved =
+		settings()?.servers.find((entry) => serverId(entry.host) === server)
+			?.channels ?? []
+	const next = joined
+		? saved.includes(name)
+			? saved
+			: [...saved, name]
+		: saved.filter((channel) => channel !== name)
+	if (next.length === saved.length && next.every((c, i) => c === saved[i]))
+		return
+	applySettings(await api.rememberChannels(server, next))
 }
 
 /** Whether a room is kept out of the Chat tab's unread count. */
 export function isMuted(key: string): boolean {
-  return muteOf(settings()?.chat.muted ?? [], key)
+	return muteOf(settings()?.chat.muted ?? [], key)
 }
 
 /**
@@ -45,21 +45,21 @@ export function isMuted(key: string): boolean {
  * its name, so on every server that has one.
  */
 export async function toggleMute(key: string): Promise<void> {
-  const current = settings()
-  if (!current) return
-  const room = roomName(key)
-  const saved = current.chat.muted
-  const next = saved.includes(room)
-    ? saved.filter((name) => name !== room)
-    : [...saved, room]
-  try {
-    applySettings(
-      await api.updateSettings({
-        ...current,
-        chat: { ...current.chat, muted: next },
-      }),
-    )
-  } catch (error) {
-    pushNotice('warning', `mute: ${describeError(error)}`)
-  }
+	const current = settings()
+	if (!current) return
+	const room = roomName(key)
+	const saved = current.chat.muted
+	const next = saved.includes(room)
+		? saved.filter((name) => name !== room)
+		: [...saved, room]
+	try {
+		applySettings(
+			await api.updateSettings({
+				...current,
+				chat: { ...current.chat, muted: next },
+			}),
+		)
+	} catch (error) {
+		pushNotice('warning', `mute: ${describeError(error)}`)
+	}
 }

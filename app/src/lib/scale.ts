@@ -22,7 +22,7 @@ const CEILING = 400
  * than a new one with no remembered size.
  */
 export function bucket(width: number, height: number): string {
-  return `${Math.floor(width / 500)}x${Math.floor(height / 250)}`
+	return `${Math.floor(width / 500)}x${Math.floor(height / 250)}`
 }
 
 /**
@@ -34,13 +34,13 @@ export function bucket(width: number, height: number): string {
  * text.
  */
 export function bounds(
-  width: number,
-  height: number,
+	width: number,
+	height: number,
 ): { min: number; max: number } {
-  const max = Math.round(
-    Math.max(100, (width / 960) * 100, (height / 540) * 100),
-  )
-  return { min: FLOOR, max: Math.min(CEILING, max) }
+	const max = Math.round(
+		Math.max(100, (width / 960) * 100, (height / 540) * 100),
+	)
+	return { min: FLOOR, max: Math.min(CEILING, max) }
 }
 
 /**
@@ -52,24 +52,24 @@ export function bounds(
  * multiplying that again on a large one overshoots.
  */
 export function derived(_width: number, height: number): number {
-  if (height >= 1800) return 125
-  if (height >= 1300) return 110
-  return 100
+	if (height >= 1800) return 125
+	if (height >= 1300) return 110
+	return 100
 }
 
 export function clamp(percent: number, width: number, height: number): number {
-  const { min, max } = bounds(width, height)
-  return Math.min(max, Math.max(min, Math.round(percent)))
+	const { min, max } = bounds(width, height)
+	return Math.min(max, Math.max(min, Math.round(percent)))
 }
 
 /** The size to draw at: what was chosen for this screen, else what suits it. */
 export function scaleFor(
-  saved: Record<string, number>,
-  width: number,
-  height: number,
+	saved: Record<string, number>,
+	width: number,
+	height: number,
 ): number {
-  const chosen = saved[bucket(width, height)]
-  return clamp(chosen ?? derived(width, height), width, height)
+	const chosen = saved[bucket(width, height)]
+	return clamp(chosen ?? derived(width, height), width, height)
 }
 
 /**
@@ -80,5 +80,5 @@ export function scaleFor(
  * number a person can read back in settings.
  */
 export function step(percent: number, direction: 1 | -1): number {
-  return Math.round(percent / 10) * 10 + direction * 10
+	return Math.round(percent / 10) * 10 + direction * 10
 }

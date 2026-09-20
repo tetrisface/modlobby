@@ -4,18 +4,18 @@ import { Glyph } from './icons'
 import { Linkify, openExternal } from './Linkify'
 import { api, describeError, errorCode } from '../ipc/client'
 import {
-  BAR_HOST,
-  forgotPasswordUrl,
-  serverId,
-  serverName,
+	BAR_HOST,
+	forgotPasswordUrl,
+	serverId,
+	serverName,
 } from '../lib/servers'
 import { lobby } from '../store/lobby'
 import { applySettings, settings } from '../store/settings'
 
 const phaseText: Record<string, string> = {
-  connecting: 'connecting…',
-  awaitingLogin: 'logging in…',
-  loading: 'loading the lobby…',
+	connecting: 'connecting…',
+	awaitingLogin: 'logging in…',
+	loading: 'loading the lobby…',
 }
 
 /** What a stored password looks like: present, and not readable. */
@@ -30,10 +30,10 @@ const CONDUCT = 'https://www.beyondallreason.info/code-of-conduct'
  * that would let modlobby in anyway.
  */
 function explained(err: unknown): string {
-  const text = describeError(err)
-  return errorCode(err) === 'noEncryption'
-    ? `${text}. If you trust this server, allow unencrypted connections to it in Settings → Servers.`
-    : text
+	const text = describeError(err)
+	return errorCode(err) === 'noEncryption'
+		? `${text}. If you trust this server, allow unencrypted connections to it in Settings → Servers.`
+		: text
 }
 
 /**
@@ -41,424 +41,424 @@ function explained(err: unknown): string {
  * this and a choice of server; Settings opens it over the page.
  */
 export function LoginForm(props: {
-  /** The server, by its id: the host, lowercased. */
-  server: string
-  /** Which of the two jobs the form opens on. */
-  mode?: 'login' | 'register'
-  /** The session is up; whoever opened the form can put it away. */
-  onDone?: () => void
-  /**
-   * Whether the form asks whether to remember the password and log in at
-   * startup. Only the login page does: opened over Settings, which has the
-   * one answer for every server, the form follows it rather than offering a
-   * second place to change it.
-   */
-  asksFlags?: boolean
+	/** The server, by its id: the host, lowercased. */
+	server: string
+	/** Which of the two jobs the form opens on. */
+	mode?: 'login' | 'register'
+	/** The session is up; whoever opened the form can put it away. */
+	onDone?: () => void
+	/**
+	 * Whether the form asks whether to remember the password and log in at
+	 * startup. Only the login page does: opened over Settings, which has the
+	 * one answer for every server, the form follows it rather than offering a
+	 * second place to change it.
+	 */
+	asksFlags?: boolean
 }) {
-  /** The server as the settings list it. */
-  const entry = () =>
-    settings()?.servers.find((held) => serverId(held.host) === props.server)
-  const phase = () => lobby.servers[props.server]?.phase ?? null
-  /**
-   * Logging in, or creating an account.
-   *
-   * Same form either way: an account needs a username and a password, and
-   * registering needs an email as well. Making it a second view would mean
-   * typing the same two things twice.
-   */
-  // Read once: the form is opened on a job, then changes it itself.
-  const [mode, setMode] = createSignal(props.mode ?? 'login')
-  const [email, setEmail] = createSignal('')
-  /** Set once the account exists and the server has emailed its code. */
-  const [awaitingCode, setAwaitingCode] = createSignal(false)
-  const [code, setCode] = createSignal('')
-  /** The agreement the server answered the new account's first login with. */
-  const [agreement, setAgreement] = createSignal<string[]>([])
-  const [username, setUsername] = createSignal('')
-  const [password, setPassword] = createSignal('')
-  /** Whether the password is being read back, rather than a confirm field. */
-  const [reveal, setReveal] = createSignal(false)
-  /**
-   * Whether passwords are kept, and used at startup. One answer for every
-   * server: a login here sets it for all of them, as the one in Settings does.
-   */
-  const [remember, setRemember] = createSignal(false)
-  const [autoLogin, setAutoLogin] = createSignal(false)
-  const [hasStored, setHasStored] = createSignal(false)
-  /** Why this username cannot be had, answered without asking the server. */
-  const [nameProblem, setNameProblem] = createSignal<string | null>(null)
-  const [error, setError] = createSignal<string | null>(null)
-  const [busy, setBusy] = createSignal(false)
-  /** Seconds teiserver's login limit still needs; 0 when clear. */
-  const [wait, setWait] = createSignal(0)
+	/** The server as the settings list it. */
+	const entry = () =>
+		settings()?.servers.find((held) => serverId(held.host) === props.server)
+	const phase = () => lobby.servers[props.server]?.phase ?? null
+	/**
+	 * Logging in, or creating an account.
+	 *
+	 * Same form either way: an account needs a username and a password, and
+	 * registering needs an email as well. Making it a second view would mean
+	 * typing the same two things twice.
+	 */
+	// Read once: the form is opened on a job, then changes it itself.
+	const [mode, setMode] = createSignal(props.mode ?? 'login')
+	const [email, setEmail] = createSignal('')
+	/** Set once the account exists and the server has emailed its code. */
+	const [awaitingCode, setAwaitingCode] = createSignal(false)
+	const [code, setCode] = createSignal('')
+	/** The agreement the server answered the new account's first login with. */
+	const [agreement, setAgreement] = createSignal<string[]>([])
+	const [username, setUsername] = createSignal('')
+	const [password, setPassword] = createSignal('')
+	/** Whether the password is being read back, rather than a confirm field. */
+	const [reveal, setReveal] = createSignal(false)
+	/**
+	 * Whether passwords are kept, and used at startup. One answer for every
+	 * server: a login here sets it for all of them, as the one in Settings does.
+	 */
+	const [remember, setRemember] = createSignal(false)
+	const [autoLogin, setAutoLogin] = createSignal(false)
+	const [hasStored, setHasStored] = createSignal(false)
+	/** Why this username cannot be had, answered without asking the server. */
+	const [nameProblem, setNameProblem] = createSignal<string | null>(null)
+	const [error, setError] = createSignal<string | null>(null)
+	const [busy, setBusy] = createSignal(false)
+	/** Seconds teiserver's login limit still needs; 0 when clear. */
+	const [wait, setWait] = createSignal(0)
 
-  // The server refuses a login within twenty seconds of the account's last,
-  // and the clock is kept across restarts — a rebuild loop reaches it easily,
-  // so rather than failing the login we count down and go when it lapses.
-  createEffect(() => {
-    void api
-      .loginWait(props.server)
-      .then(setWait)
-      .catch(() => setWait(0))
-  })
-  createEffect(() => {
-    if (wait() <= 0) return
-    const timer = setTimeout(() => setWait((seconds) => seconds - 1), 1000)
-    onCleanup(() => clearTimeout(timer))
-  })
+	// The server refuses a login within twenty seconds of the account's last,
+	// and the clock is kept across restarts — a rebuild loop reaches it easily,
+	// so rather than failing the login we count down and go when it lapses.
+	createEffect(() => {
+		void api
+			.loginWait(props.server)
+			.then(setWait)
+			.catch(() => setWait(0))
+	})
+	createEffect(() => {
+		if (wait() <= 0) return
+		const timer = setTimeout(() => setWait((seconds) => seconds - 1), 1000)
+		onCleanup(() => clearTimeout(timer))
+	})
 
-  createEffect(() => {
-    const s = settings()
-    if (!s || username()) return
-    const known = entry()?.username ?? ''
-    setUsername(known)
-    setRemember(s.account.rememberPassword)
-    setAutoLogin(s.account.autoLogin)
-    if (s.account.rememberPassword && known) {
-      void api
-        .hasPassword(props.server, known)
-        .then(setHasStored)
-        .catch(() => setHasStored(false))
-    }
-  })
+	createEffect(() => {
+		const s = settings()
+		if (!s || username()) return
+		const known = entry()?.username ?? ''
+		setUsername(known)
+		setRemember(s.account.rememberPassword)
+		setAutoLogin(s.account.autoLogin)
+		if (s.account.rememberPassword && known) {
+			void api
+				.hasPassword(props.server, known)
+				.then(setHasStored)
+				.catch(() => setHasStored(false))
+		}
+	})
 
-  // Logging in anywhere lands here as a phase change, including the login that
-  // an emailed code finishes, and this is what carries the form off screen.
-  createEffect(() => {
-    if (phase() === 'ready') props.onDone?.()
-  })
+	// Logging in anywhere lands here as a phase change, including the login that
+	// an emailed code finishes, and this is what carries the form off screen.
+	createEffect(() => {
+		if (phase() === 'ready') props.onDone?.()
+	})
 
-  /**
-   * The name rules, checked when the field is left rather than per keystroke:
-   * they are teiserver's own and mechanical, so the answer costs nothing, but
-   * telling somebody their name is wrong while they are still typing it is
-   * the kind of form that makes people give up.
-   */
-  async function checkName() {
-    if (mode() !== 'register' || !username().trim()) {
-      setNameProblem(null)
-      return
-    }
-    setNameProblem(await api.nameProblem(username().trim()).catch(() => null))
-  }
+	/**
+	 * The name rules, checked when the field is left rather than per keystroke:
+	 * they are teiserver's own and mechanical, so the answer costs nothing, but
+	 * telling somebody their name is wrong while they are still typing it is
+	 * the kind of form that makes people give up.
+	 */
+	async function checkName() {
+		if (mode() !== 'register' || !username().trim()) {
+			setNameProblem(null)
+			return
+		}
+		setNameProblem(await api.nameProblem(username().trim()).catch(() => null))
+	}
 
-  /** Sends the typed password, or falls back to the remembered one. */
-  async function login() {
-    setError(null)
-    setBusy(true)
-    try {
-      applySettings(
-        await api.login(
-          props.server,
-          username().trim(),
-          password() || null,
-          remember(),
-          autoLogin(),
-        ),
-      )
-    } catch (err) {
-      setError(explained(err))
-      void api
-        .loginWait(props.server)
-        .then(setWait)
-        .catch(() => {})
-    } finally {
-      setBusy(false)
-    }
-  }
+	/** Sends the typed password, or falls back to the remembered one. */
+	async function login() {
+		setError(null)
+		setBusy(true)
+		try {
+			applySettings(
+				await api.login(
+					props.server,
+					username().trim(),
+					password() || null,
+					remember(),
+					autoLogin(),
+				),
+			)
+		} catch (err) {
+			setError(explained(err))
+			void api
+				.loginWait(props.server)
+				.then(setWait)
+				.catch(() => {})
+		} finally {
+			setBusy(false)
+		}
+	}
 
-  async function register() {
-    setBusy(true)
-    setError(null)
-    try {
-      // The account is made and logged in on in one go; what comes back is the
-      // agreement the server answers that login with, because a new account is
-      // unverified until the emailed code says otherwise.
-      setAgreement(
-        await api.register(
-          props.server,
-          username().trim(),
-          password(),
-          email(),
-        ),
-      )
-      setAwaitingCode(true)
-    } catch (err) {
-      setError(explained(err))
-    } finally {
-      setBusy(false)
-    }
-  }
+	async function register() {
+		setBusy(true)
+		setError(null)
+		try {
+			// The account is made and logged in on in one go; what comes back is the
+			// agreement the server answers that login with, because a new account is
+			// unverified until the emailed code says otherwise.
+			setAgreement(
+				await api.register(
+					props.server,
+					username().trim(),
+					password(),
+					email(),
+				),
+			)
+			setAwaitingCode(true)
+		} catch (err) {
+			setError(explained(err))
+		} finally {
+			setBusy(false)
+		}
+	}
 
-  /**
-   * A wrong code is a `DENIED`, and teiserver hangs up on those — so a second
-   * attempt needs the connection back first. Logging in again puts the server
-   * exactly where it was: an unverified account is answered with the agreement
-   * rather than a session, which arrives here as a refusal and is the expected
-   * outcome, not a failure worth showing.
-   */
-  async function reopen() {
-    if (phase() !== null) return
-    await api
-      .login(
-        props.server,
-        username().trim(),
-        password(),
-        remember(),
-        autoLogin(),
-      )
-      .then(applySettings)
-      .catch(() => {})
-  }
+	/**
+	 * A wrong code is a `DENIED`, and teiserver hangs up on those — so a second
+	 * attempt needs the connection back first. Logging in again puts the server
+	 * exactly where it was: an unverified account is answered with the agreement
+	 * rather than a session, which arrives here as a refusal and is the expected
+	 * outcome, not a failure worth showing.
+	 */
+	async function reopen() {
+		if (phase() !== null) return
+		await api
+			.login(
+				props.server,
+				username().trim(),
+				password(),
+				remember(),
+				autoLogin(),
+			)
+			.then(applySettings)
+			.catch(() => {})
+	}
 
-  async function confirm() {
-    setBusy(true)
-    setError(null)
-    try {
-      await reopen()
-      // This is the login finishing, not a step before one: teiserver verifies
-      // the account and accepts it on the same connection.
-      applySettings(
-        await api.confirmAgreement(
-          props.server,
-          username().trim(),
-          password(),
-          code(),
-          remember(),
-          autoLogin(),
-        ),
-      )
-    } catch (err) {
-      setError(explained(err))
-    } finally {
-      setBusy(false)
-    }
-  }
+	async function confirm() {
+		setBusy(true)
+		setError(null)
+		try {
+			await reopen()
+			// This is the login finishing, not a step before one: teiserver verifies
+			// the account and accepts it on the same connection.
+			applySettings(
+				await api.confirmAgreement(
+					props.server,
+					username().trim(),
+					password(),
+					code(),
+					remember(),
+					autoLogin(),
+				),
+			)
+		} catch (err) {
+			setError(explained(err))
+		} finally {
+			setBusy(false)
+		}
+	}
 
-  function submit(event: Event) {
-    event.preventDefault()
-    if (awaitingCode()) void confirm()
-    else if (mode() === 'register') void register()
-    else void login()
-  }
+	function submit(event: Event) {
+		event.preventDefault()
+		if (awaitingCode()) void confirm()
+		else if (mode() === 'register') void register()
+		else void login()
+	}
 
-  /**
-   * What the one button says, which is five different things.
-   *
-   * In precedence order: the server's throttle outranks everything because
-   * pressing the button would do nothing, then whatever is already in flight,
-   * then which of the three jobs the form is currently for.
-   */
-  function submitLabel(): string {
-    if (wait() > 0) return `throttled — ${wait()}s`
-    if (busy()) return phaseText[phase() ?? ''] ?? 'working…'
-    if (awaitingCode()) return 'Confirm and log in'
-    return mode() === 'register' ? 'Create account' : 'Log in'
-  }
+	/**
+	 * What the one button says, which is five different things.
+	 *
+	 * In precedence order: the server's throttle outranks everything because
+	 * pressing the button would do nothing, then whatever is already in flight,
+	 * then which of the three jobs the form is currently for.
+	 */
+	function submitLabel(): string {
+		if (wait() > 0) return `throttled — ${wait()}s`
+		if (busy()) return phaseText[phase() ?? ''] ?? 'working…'
+		if (awaitingCode()) return 'Confirm and log in'
+		return mode() === 'register' ? 'Create account' : 'Log in'
+	}
 
-  function heading(): string {
-    if (awaitingCode()) return 'Check your email'
-    return mode() === 'register' ? 'Create an account' : 'Log in'
-  }
+	function heading(): string {
+		if (awaitingCode()) return 'Check your email'
+		return mode() === 'register' ? 'Create an account' : 'Log in'
+	}
 
-  return (
-    <form class='login' onSubmit={submit}>
-      <h1>{heading()}</h1>
-      <label>
-        Username
-        <input
-          value={username()}
-          onInput={(e) => {
-            setUsername(e.currentTarget.value)
-            setNameProblem(null)
-          }}
-          onBlur={() => void checkName()}
-          disabled={awaitingCode()}
-          autocomplete='username'
-        />
-      </label>
-      <Show when={nameProblem()}>
-        {(problem) => <p class='error'>{problem()}</p>}
-      </Show>
-      <label>
-        Password
-        <span class='password-field'>
-          <input
-            // Read back rather than typed twice: the login that follows sends
-            // whatever was typed and succeeds either way, so a confirm field
-            // would not catch the typo it exists to catch — it would only be
-            // found on the next launch, out of the keyring.
-            type={reveal() ? 'text' : 'password'}
-            value={password()}
-            onInput={(e) => setPassword(e.currentTarget.value)}
-            placeholder={hasStored() && mode() === 'login' ? MASKED : ''}
-            disabled={awaitingCode()}
-            autocomplete={
-              mode() === 'register' ? 'new-password' : 'current-password'
-            }
-          />
-          <button
-            type='button'
-            class='password-reveal'
-            aria-pressed={reveal()}
-            aria-label={reveal() ? 'Hide password' : 'Show password'}
-            title={reveal() ? 'Hide password' : 'Show password'}
-            onClick={() => setReveal(!reveal())}
-          >
-            <Glyph id={reveal() ? 'act-eye-off' : 'act-eye'} />
-          </button>
-        </span>
-      </label>
-      {/* The field is empty and the login still works: say so, rather than
+	return (
+		<form class='login' onSubmit={submit}>
+			<h1>{heading()}</h1>
+			<label>
+				Username
+				<input
+					value={username()}
+					onInput={(e) => {
+						setUsername(e.currentTarget.value)
+						setNameProblem(null)
+					}}
+					onBlur={() => void checkName()}
+					disabled={awaitingCode()}
+					autocomplete='username'
+				/>
+			</label>
+			<Show when={nameProblem()}>
+				{(problem) => <p class='error'>{problem()}</p>}
+			</Show>
+			<label>
+				Password
+				<span class='password-field'>
+					<input
+						// Read back rather than typed twice: the login that follows sends
+						// whatever was typed and succeeds either way, so a confirm field
+						// would not catch the typo it exists to catch — it would only be
+						// found on the next launch, out of the keyring.
+						type={reveal() ? 'text' : 'password'}
+						value={password()}
+						onInput={(e) => setPassword(e.currentTarget.value)}
+						placeholder={hasStored() && mode() === 'login' ? MASKED : ''}
+						disabled={awaitingCode()}
+						autocomplete={
+							mode() === 'register' ? 'new-password' : 'current-password'
+						}
+					/>
+					<button
+						type='button'
+						class='password-reveal'
+						aria-pressed={reveal()}
+						aria-label={reveal() ? 'Hide password' : 'Show password'}
+						title={reveal() ? 'Hide password' : 'Show password'}
+						onClick={() => setReveal(!reveal())}
+					>
+						<Glyph id={reveal() ? 'act-eye-off' : 'act-eye'} />
+					</button>
+				</span>
+			</label>
+			{/* The field is empty and the login still works: say so, rather than
           leaving a row of dots to be read as a password already typed. */}
-      <Show when={hasStored() && mode() === 'login' && !password()}>
-        <p class='muted'>
-          Leave it empty to use the password this machine remembers.
-        </p>
-      </Show>
-      <Show when={mode() === 'register'}>
-        <label>
-          Email
-          <input
-            type='email'
-            value={email()}
-            onInput={(e) => setEmail(e.currentTarget.value)}
-            disabled={awaitingCode()}
-            autocomplete='email'
-          />
-        </label>
-        <p class='muted'>
-          Used to send the code that activates the account, and to recover it.
-        </p>
-      </Show>
-      <Show when={awaitingCode()}>
-        {/* The server's own words, and the thing the code agrees to. */}
-        <For each={agreement().filter((line) => line.trim() !== '')}>
-          {(line) => (
-            <p class='muted'>
-              <Linkify text={line} />
-            </p>
-          )}
-        </For>
-        <label>
-          Code from the email
-          <input
-            value={code()}
-            onInput={(e) => setCode(e.currentTarget.value)}
-            autocomplete='one-time-code'
-          />
-        </label>
-      </Show>
-      <Show when={props.asksFlags}>
-        <label class='row'>
-          <input
-            type='checkbox'
-            checked={remember()}
-            onChange={(e) => {
-              setRemember(e.currentTarget.checked)
-              if (!e.currentTarget.checked) setAutoLogin(false)
-            }}
-          />
-          Remember the password (OS keyring)
-        </label>
-        <label class='row'>
-          <input
-            type='checkbox'
-            checked={autoLogin()}
-            disabled={!remember()}
-            onChange={(e) => setAutoLogin(e.currentTarget.checked)}
-          />
-          Log in automatically on startup
-        </label>
-      </Show>
-      <Show
-        when={
-          mode() === 'register' && !awaitingCode() && props.server === BAR_HOST
-        }
-      >
-        <p class='muted'>
-          Creating an account accepts BAR's{' '}
-          <a
-            href={PRIVACY}
-            onClick={(event) => {
-              event.preventDefault()
-              void openExternal(PRIVACY)
-            }}
-          >
-            privacy policy
-          </a>{' '}
-          and{' '}
-          <a
-            href={CONDUCT}
-            onClick={(event) => {
-              event.preventDefault()
-              void openExternal(CONDUCT)
-            }}
-          >
-            code of conduct
-          </a>
-          .
-        </p>
-      </Show>
-      {/* Above the button, because it is the reason the last press did
+			<Show when={hasStored() && mode() === 'login' && !password()}>
+				<p class='muted'>
+					Leave it empty to use the password this machine remembers.
+				</p>
+			</Show>
+			<Show when={mode() === 'register'}>
+				<label>
+					Email
+					<input
+						type='email'
+						value={email()}
+						onInput={(e) => setEmail(e.currentTarget.value)}
+						disabled={awaitingCode()}
+						autocomplete='email'
+					/>
+				</label>
+				<p class='muted'>
+					Used to send the code that activates the account, and to recover it.
+				</p>
+			</Show>
+			<Show when={awaitingCode()}>
+				{/* The server's own words, and the thing the code agrees to. */}
+				<For each={agreement().filter((line) => line.trim() !== '')}>
+					{(line) => (
+						<p class='muted'>
+							<Linkify text={line} />
+						</p>
+					)}
+				</For>
+				<label>
+					Code from the email
+					<input
+						value={code()}
+						onInput={(e) => setCode(e.currentTarget.value)}
+						autocomplete='one-time-code'
+					/>
+				</label>
+			</Show>
+			<Show when={props.asksFlags}>
+				<label class='row'>
+					<input
+						type='checkbox'
+						checked={remember()}
+						onChange={(e) => {
+							setRemember(e.currentTarget.checked)
+							if (!e.currentTarget.checked) setAutoLogin(false)
+						}}
+					/>
+					Remember the password (OS keyring)
+				</label>
+				<label class='row'>
+					<input
+						type='checkbox'
+						checked={autoLogin()}
+						disabled={!remember()}
+						onChange={(e) => setAutoLogin(e.currentTarget.checked)}
+					/>
+					Log in automatically on startup
+				</label>
+			</Show>
+			<Show
+				when={
+					mode() === 'register' && !awaitingCode() && props.server === BAR_HOST
+				}
+			>
+				<p class='muted'>
+					Creating an account accepts BAR's{' '}
+					<a
+						href={PRIVACY}
+						onClick={(event) => {
+							event.preventDefault()
+							void openExternal(PRIVACY)
+						}}
+					>
+						privacy policy
+					</a>{' '}
+					and{' '}
+					<a
+						href={CONDUCT}
+						onClick={(event) => {
+							event.preventDefault()
+							void openExternal(CONDUCT)
+						}}
+					>
+						code of conduct
+					</a>
+					.
+				</p>
+			</Show>
+			{/* Above the button, because it is the reason the last press did
           nothing and reading it after pressing again is too late. */}
-      <Show when={error()}>
-        {(message) => <p class='error'>{message()}</p>}
-      </Show>
-      <button
-        type='submit'
-        disabled={
-          busy() ||
-          wait() > 0 ||
-          !username().trim() ||
-          (mode() === 'register' && nameProblem() !== null)
-        }
-      >
-        {submitLabel()}
-      </button>
-      {/* Directly under the button: a change of mind about which form this
+			<Show when={error()}>
+				{(message) => <p class='error'>{message()}</p>}
+			</Show>
+			<button
+				type='submit'
+				disabled={
+					busy() ||
+					wait() > 0 ||
+					!username().trim() ||
+					(mode() === 'register' && nameProblem() !== null)
+				}
+			>
+				{submitLabel()}
+			</button>
+			{/* Directly under the button: a change of mind about which form this
           is, next to the thing that submits it. */}
-      <Show when={!awaitingCode()}>
-        <p class='muted login-switch'>
-          {mode() === 'login'
-            ? "Don't have an account?"
-            : 'Already have an account?'}{' '}
-          <button
-            type='button'
-            class='link'
-            onClick={() => {
-              setMode(mode() === 'login' ? 'register' : 'login')
-              setNameProblem(null)
-              setError(null)
-            }}
-          >
-            {mode() === 'login' ? 'Register' : 'Log in'}
-          </button>
-        </p>
-      </Show>
-      <p class='muted login-forgot'>
-        <Show when={props.server !== BAR_HOST}>
-          Server: {entry() ? serverName(entry()!) : props.server}
-          <Show when={entry()}>{' · '}</Show>
-        </Show>
-        <Show when={entry()}>
-          {(known) => (
-            <>
-              <a
-                href={forgotPasswordUrl(known())}
-                onClick={(event) => {
-                  event.preventDefault()
-                  void openExternal(forgotPasswordUrl(known()))
-                }}
-              >
-                Forgot the password?
-              </a>
-            </>
-          )}
-        </Show>
-      </p>
-    </form>
-  )
+			<Show when={!awaitingCode()}>
+				<p class='muted login-switch'>
+					{mode() === 'login'
+						? "Don't have an account?"
+						: 'Already have an account?'}{' '}
+					<button
+						type='button'
+						class='link'
+						onClick={() => {
+							setMode(mode() === 'login' ? 'register' : 'login')
+							setNameProblem(null)
+							setError(null)
+						}}
+					>
+						{mode() === 'login' ? 'Register' : 'Log in'}
+					</button>
+				</p>
+			</Show>
+			<p class='muted login-forgot'>
+				<Show when={props.server !== BAR_HOST}>
+					Server: {entry() ? serverName(entry()!) : props.server}
+					<Show when={entry()}>{' · '}</Show>
+				</Show>
+				<Show when={entry()}>
+					{(known) => (
+						<>
+							<a
+								href={forgotPasswordUrl(known())}
+								onClick={(event) => {
+									event.preventDefault()
+									void openExternal(forgotPasswordUrl(known()))
+								}}
+							>
+								Forgot the password?
+							</a>
+						</>
+					)}
+				</Show>
+			</p>
+		</form>
+	)
 }
 
 /**
@@ -466,32 +466,32 @@ export function LoginForm(props: {
  * sits above everything and a form inside a form never happens.
  */
 export function LoginSheet(props: {
-  server: string
-  mode?: 'login' | 'register'
-  close: () => void
+	server: string
+	mode?: 'login' | 'register'
+	close: () => void
 }) {
-  return (
-    <Portal>
-      <div class='sheet' onMouseDown={() => props.close()}>
-        <div
-          class='sheet-card login-sheet'
-          onMouseDown={(event) => event.stopPropagation()}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') props.close()
-          }}
-        >
-          <LoginForm
-            server={props.server}
-            mode={props.mode}
-            onDone={() => props.close()}
-          />
-          <div class='sheet-actions'>
-            <button type='button' onClick={() => props.close()}>
-              Close
-            </button>
-          </div>
-        </div>
-      </div>
-    </Portal>
-  )
+	return (
+		<Portal>
+			<div class='sheet' onMouseDown={() => props.close()}>
+				<div
+					class='sheet-card login-sheet'
+					onMouseDown={(event) => event.stopPropagation()}
+					onKeyDown={(event) => {
+						if (event.key === 'Escape') props.close()
+					}}
+				>
+					<LoginForm
+						server={props.server}
+						mode={props.mode}
+						onDone={() => props.close()}
+					/>
+					<div class='sheet-actions'>
+						<button type='button' onClick={() => props.close()}>
+							Close
+						</button>
+					</div>
+				</div>
+			</div>
+		</Portal>
+	)
 }

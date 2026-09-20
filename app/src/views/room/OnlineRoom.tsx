@@ -9,9 +9,9 @@ import { onlineRoom } from './online'
  * is the one place the tweak workspace meets Tauri.
  */
 export function OnlineRoom() {
-  return (
-    <RoomProvider value={onlineRoom()}>
-      <Room />
-    </RoomProvider>
-  )
+	return (
+		<RoomProvider value={onlineRoom()}>
+			<Room />
+		</RoomProvider>
+	)
 }

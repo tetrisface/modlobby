@@ -23,14 +23,14 @@ import { settings } from '../store/settings'
  * two of empty page rather than a wait.
  */
 export function Home() {
-  return (
-    <Show when={settings()}>
-      {(loaded) => {
-        const account = loaded().account
-        const expectSession =
-          anyReady() || (account.autoLogin && account.rememberPassword)
-        return <Navigate href={expectSession ? '/battles' : '/skirmish'} />
-      }}
-    </Show>
-  )
+	return (
+		<Show when={settings()}>
+			{(loaded) => {
+				const account = loaded().account
+				const expectSession =
+					anyReady() || (account.autoLogin && account.rememberPassword)
+				return <Navigate href={expectSession ? '/battles' : '/skirmish'} />
+			}}
+		</Show>
+	)
 }

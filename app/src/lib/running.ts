@@ -15,10 +15,10 @@
  */
 
 export type Running = {
-  /** Unix milliseconds we first saw this game running. */
-  since: number
-  /** Whether that is the real start, rather than the moment we first looked. */
-  exact: boolean
+	/** Unix milliseconds we first saw this game running. */
+	since: number
+	/** Whether that is the real start, rather than the moment we first looked. */
+	exact: boolean
 }
 
 /**
@@ -31,16 +31,16 @@ export type Running = {
  * running and we would have started counting from zero.
  */
 export function told(
-  previous: Readonly<Record<string, Running>>,
-  /** The room, as a battle list key. */
-  key: string,
-  secondsAgo: number,
-  now: number,
+	previous: Readonly<Record<string, Running>>,
+	/** The room, as a battle list key. */
+	key: string,
+	secondsAgo: number,
+	now: number,
 ): Record<string, Running> {
-  return {
-    ...previous,
-    [key]: { since: now - secondsAgo * 1000, exact: true },
-  }
+	return {
+		...previous,
+		[key]: { since: now - secondsAgo * 1000, exact: true },
+	}
 }
 
 /**
@@ -51,31 +51,31 @@ export function told(
  * while its game is running.
  */
 export function track(
-  previous: Readonly<Record<string, Running>>,
-  /** The rooms whose game is going, as battle list keys. */
-  running: ReadonlySet<string>,
-  /** Whether anything has been seen at all yet — false on the first look. */
-  settled: boolean,
-  now: number,
+	previous: Readonly<Record<string, Running>>,
+	/** The rooms whose game is going, as battle list keys. */
+	running: ReadonlySet<string>,
+	/** Whether anything has been seen at all yet — false on the first look. */
+	settled: boolean,
+	now: number,
 ): Record<string, Running> {
-  const next: Record<string, Running> = {}
-  for (const key of running) {
-    const held = previous[key]
-    // Already timed, and still the same game: keep the start we have.
-    if (held) {
-      next[key] = held
-      continue
-    }
-    next[key] = { since: now, exact: settled }
-  }
-  return next
+	const next: Record<string, Running> = {}
+	for (const key of running) {
+		const held = previous[key]
+		// Already timed, and still the same game: keep the start we have.
+		if (held) {
+			next[key] = held
+			continue
+		}
+		next[key] = { since: now, exact: settled }
+	}
+	return next
 }
 
 /** `7m`, `1h04`, and `+` when the start is only a floor. */
 export function elapsed(running: Running, now: number): string {
-  const minutes = Math.max(0, Math.floor((now - running.since) / 60_000))
-  const mark = running.exact ? '' : '+'
-  if (minutes < 60) return `${minutes}m${mark}`
-  const hours = Math.floor(minutes / 60)
-  return `${hours}h${String(minutes % 60).padStart(2, '0')}${mark}`
+	const minutes = Math.max(0, Math.floor((now - running.since) / 60_000))
+	const mark = running.exact ? '' : '+'
+	if (minutes < 60) return `${minutes}m${mark}`
+	const hours = Math.floor(minutes / 60)
+	return `${hours}h${String(minutes % 60).padStart(2, '0')}${mark}`
 }

@@ -11,15 +11,15 @@ const logged = new Set<string>()
 
 /** The moment the room was asked for. */
 export function markJoinAsked(): void {
-  askedAt = performance.now()
-  logged.clear()
+	askedAt = performance.now()
+	logged.clear()
 }
 
 /** Logs `label` once per join, with the time since asking. */
 export function joinMilestone(label: string): void {
-  if (askedAt === null || logged.has(label)) return
-  logged.add(label)
-  console.info(
-    `join: ${label} at ${Math.round(performance.now() - askedAt)} ms`,
-  )
+	if (askedAt === null || logged.has(label)) return
+	logged.add(label)
+	console.info(
+		`join: ${label} at ${Math.round(performance.now() - askedAt)} ms`,
+	)
 }

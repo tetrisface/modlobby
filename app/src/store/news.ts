@@ -25,18 +25,18 @@ let pending: Promise<NewsFeed> | null = null
 
 /** One request, however many callers arrive together. */
 export async function loadNews(): Promise<void> {
-  try {
-    pending ??= api.news()
-    setNews(await pending)
-  } catch {
-    // Rust could not be reached at all; the next caller asks again.
-    pending = null
-  }
+	try {
+		pending ??= api.news()
+		setNews(await pending)
+	} catch {
+		// Rust could not be reached at all; the next caller asks again.
+		pending = null
+	}
 }
 
 /** How many stories have turned up since the tab was last opened. */
 export function unreadNews(): number {
-  return news()?.unread ?? 0
+	return news()?.unread ?? 0
 }
 
 /**
@@ -46,18 +46,18 @@ export function unreadNews(): number {
  * mark an empty list as read and leave the stories in it unread forever.
  */
 export async function markNewsRead(): Promise<void> {
-  await loadNews()
-  if (unreadNews() === 0) return
-  try {
-    await api.markNewsRead()
-    // The held promise still carries the count from before the mark, and
-    // replaying it would put the badge back. Dropped, so the next caller asks
-    // Rust — which now answers with the marks that were just written.
-    pending = null
-    setNews((feed) => (feed ? { ...feed, unread: 0 } : feed))
-  } catch {
-    // The mark is bookkeeping; failing to write it costs one badge.
-  }
+	await loadNews()
+	if (unreadNews() === 0) return
+	try {
+		await api.markNewsRead()
+		// The held promise still carries the count from before the mark, and
+		// replaying it would put the badge back. Dropped, so the next caller asks
+		// Rust — which now answers with the marks that were just written.
+		pending = null
+		setNews((feed) => (feed ? { ...feed, unread: 0 } : feed))
+	} catch {
+		// The mark is bookkeeping; failing to write it costs one badge.
+	}
 }
 
 /**
@@ -66,7 +66,7 @@ export async function markNewsRead(): Promise<void> {
  * `<img>` as an `error` event.
  */
 export function newsBanner(id: string): string | null {
-  if (!id) return null
-  const tile = devicePixels(BANNER)
-  return thumbSrc(`news/${tile.width}x${tile.height}/${id}`)
+	if (!id) return null
+	const tile = devicePixels(BANNER)
+	return thumbSrc(`news/${tile.width}x${tile.height}/${id}`)
 }

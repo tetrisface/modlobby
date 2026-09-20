@@ -1,8 +1,8 @@
 import { UserAttentionType, getCurrentWindow } from '@tauri-apps/api/window'
 import {
-  isPermissionGranted,
-  requestPermission,
-  sendNotification,
+	isPermissionGranted,
+	requestPermission,
+	sendNotification,
 } from '@tauri-apps/plugin-notification'
 import type { Alert } from './bindings/Alert'
 import type { AlertKind } from './bindings/AlertKind'
@@ -39,15 +39,15 @@ import { settings } from '../store/settings'
 let permission: Promise<boolean> | null = null
 
 function allowed(): Promise<boolean> {
-  permission ??= (async () => {
-    try {
-      if (await isPermissionGranted()) return true
-      return (await requestPermission()) === 'granted'
-    } catch {
-      return false
-    }
-  })()
-  return permission
+	permission ??= (async () => {
+		try {
+			if (await isPermissionGranted()) return true
+			return (await requestPermission()) === 'granted'
+		} catch {
+			return false
+		}
+	})()
+	return permission
 }
 
 /**
@@ -57,43 +57,43 @@ function allowed(): Promise<boolean> {
  * decision, and the rest of this file is desktop plumbing no test can reach.
  */
 export function wanted(kind: AlertKind): Alert {
-  const notifications = settings()?.notifications
-  if (!notifications) return 'off'
-  // One switch over all of them, and it forgets nothing: how each kind was
-  // set is still there when it goes back off.
-  if (notifications.doNotDisturb) return 'off'
-  switch (kind) {
-    case 'privateMessage':
-      return notifications.privateMessage
-    case 'mention':
-      return notifications.mention
-    case 'friendOnline':
-      return notifications.friendOnline
-    case 'vote':
-      return notifications.vote
-    case 'gameStarting':
-      return notifications.gameStarting
-    case 'gameEnded':
-      return notifications.gameEnded
-    case 'ring':
-      return notifications.ring
-  }
+	const notifications = settings()?.notifications
+	if (!notifications) return 'off'
+	// One switch over all of them, and it forgets nothing: how each kind was
+	// set is still there when it goes back off.
+	if (notifications.doNotDisturb) return 'off'
+	switch (kind) {
+		case 'privateMessage':
+			return notifications.privateMessage
+		case 'mention':
+			return notifications.mention
+		case 'friendOnline':
+			return notifications.friendOnline
+		case 'vote':
+			return notifications.vote
+		case 'gameStarting':
+			return notifications.gameStarting
+		case 'gameEnded':
+			return notifications.gameEnded
+		case 'ring':
+			return notifications.ring
+	}
 }
 
 const TITLES: Record<AlertKind, string> = {
-  privateMessage: 'modlobby — message',
-  mention: 'modlobby — you were named',
-  friendOnline: 'modlobby — a friend is online',
-  vote: 'modlobby — vote',
-  gameStarting: 'modlobby — game starting',
-  gameEnded: 'modlobby — game finished',
-  ring: 'modlobby — someone wants you',
+	privateMessage: 'modlobby — message',
+	mention: 'modlobby — you were named',
+	friendOnline: 'modlobby — a friend is online',
+	vote: 'modlobby — vote',
+	gameStarting: 'modlobby — game starting',
+	gameEnded: 'modlobby — game finished',
+	ring: 'modlobby — someone wants you',
 }
 
 /** Alerts about the game itself, which is the window you would rather see. */
 const ABOUT_THE_GAME: ReadonlySet<AlertKind> = new Set<AlertKind>([
-  'gameStarting',
-  'gameEnded',
+	'gameStarting',
+	'gameEnded',
 ])
 
 /**
@@ -103,11 +103,11 @@ const ABOUT_THE_GAME: ReadonlySet<AlertKind> = new Set<AlertKind>([
  * mid-game, while a game ending is something you just watched happen.
  */
 export function onScreen(
-  kind: AlertKind,
-  lobbyFocused: boolean,
-  engineInFront: boolean,
+	kind: AlertKind,
+	lobbyFocused: boolean,
+	engineInFront: boolean,
 ): boolean {
-  return lobbyFocused || (engineInFront && ABOUT_THE_GAME.has(kind))
+	return lobbyFocused || (engineInFront && ABOUT_THE_GAME.has(kind))
 }
 
 /**
@@ -118,48 +118,48 @@ export function onScreen(
  * plumbing that cannot be tested without a desktop.
  */
 export function plan(
-  where: Alert,
-  focused: boolean,
+	where: Alert,
+	focused: boolean,
 ): 'nothing' | 'lobby' | 'desktop' {
-  if (where === 'off') return 'nothing'
-  if (where === 'lobby') return 'lobby'
-  return focused ? 'nothing' : 'desktop'
+	if (where === 'off') return 'nothing'
+	if (where === 'lobby') return 'lobby'
+	return focused ? 'nothing' : 'desktop'
 }
 
 /** Said once, not once per alert, when the desktop will not play along. */
 let refused = false
 
 function cannot(): void {
-  if (refused) return
-  refused = true
-  pushNotice(
-    'warning',
-    'your desktop is not letting modlobby raise notifications, so anything set to Desktop will stay quiet',
-  )
+	if (refused) return
+	refused = true
+	pushNotice(
+		'warning',
+		'your desktop is not letting modlobby raise notifications, so anything set to Desktop will stay quiet',
+	)
 }
 
 /** The engine's window belongs to another process, so Rust is asked. */
 async function engineInFront(): Promise<boolean> {
-  try {
-    return await api.engineInFront()
-  } catch {
-    return false
-  }
+	try {
+		return await api.engineInFront()
+	} catch {
+		return false
+	}
 }
 
 export async function raise(kind: AlertKind, body: string): Promise<void> {
-  const looking = onScreen(kind, document.hasFocus(), await engineInFront())
-  const what = plan(wanted(kind), looking)
-  if (what === 'nothing') return
-  if (what === 'lobby') return pushNotice('info', body)
+	const looking = onScreen(kind, document.hasFocus(), await engineInFront())
+	const what = plan(wanted(kind), looking)
+	if (what === 'nothing') return
+	if (what === 'lobby') return pushNotice('info', body)
 
-  void flash(kind)
-  if (!(await allowed())) return cannot()
-  try {
-    sendNotification({ title: TITLES[kind], body })
-  } catch {
-    cannot()
-  }
+	void flash(kind)
+	if (!(await allowed())) return cannot()
+	try {
+		sendNotification({ title: TITLES[kind], body })
+	} catch {
+		cannot()
+	}
 }
 
 /**
@@ -181,12 +181,12 @@ const ENGINE_WINDOW_POLL_MS = 250
  * is where you are headed, so it stands in. Everything else is about the lobby.
  */
 export function flashTarget(
-  kind: AlertKind,
-  engineFound: boolean,
+	kind: AlertKind,
+	engineFound: boolean,
 ): 'engine' | 'lobby' | 'nothing' {
-  if (!ABOUT_THE_GAME.has(kind)) return 'lobby'
-  if (engineFound) return 'engine'
-  return kind === 'gameStarting' ? 'nothing' : 'lobby'
+	if (!ABOUT_THE_GAME.has(kind)) return 'lobby'
+	if (engineFound) return 'engine'
+	return kind === 'gameStarting' ? 'nothing' : 'lobby'
 }
 
 /**
@@ -194,19 +194,19 @@ export function flashTarget(
  * `now` and `sleep` are parameters so a test can run it on a fake clock.
  */
 export async function keepTrying(
-  attempt: () => Promise<boolean>,
-  total: number,
-  every: number,
-  now: () => number = Date.now,
-  sleep: (ms: number) => Promise<void> = (ms) =>
-    new Promise((resolve) => setTimeout(resolve, ms)),
+	attempt: () => Promise<boolean>,
+	total: number,
+	every: number,
+	now: () => number = Date.now,
+	sleep: (ms: number) => Promise<void> = (ms) =>
+		new Promise((resolve) => setTimeout(resolve, ms)),
 ): Promise<boolean> {
-  const deadline = now() + total
-  for (;;) {
-    if (await attempt()) return true
-    if (now() >= deadline) return false
-    await sleep(every)
-  }
+	const deadline = now() + total
+	for (;;) {
+		if (await attempt()) return true
+		if (now() >= deadline) return false
+		await sleep(every)
+	}
 }
 
 /**
@@ -218,18 +218,18 @@ export async function keepTrying(
  * is still loading; see [`flashTarget`] for what happens when it does not.
  */
 async function flash(kind: AlertKind): Promise<void> {
-  try {
-    const engineFound =
-      ABOUT_THE_GAME.has(kind) &&
-      (await keepTrying(
-        () => api.flashEngine(),
-        ENGINE_WINDOW_WAIT_MS,
-        ENGINE_WINDOW_POLL_MS,
-      ))
-    if (flashTarget(kind, engineFound) !== 'lobby') return
-    await getCurrentWindow().requestUserAttention(UserAttentionType.Critical)
-  } catch {
-    // A platform with no taskbar to flash is not an error; the notification is
-    // the point and it has already gone out.
-  }
+	try {
+		const engineFound =
+			ABOUT_THE_GAME.has(kind) &&
+			(await keepTrying(
+				() => api.flashEngine(),
+				ENGINE_WINDOW_WAIT_MS,
+				ENGINE_WINDOW_POLL_MS,
+			))
+		if (flashTarget(kind, engineFound) !== 'lobby') return
+		await getCurrentWindow().requestUserAttention(UserAttentionType.Critical)
+	} catch {
+		// A platform with no taskbar to flash is not an error; the notification is
+		// the point and it has already gone out.
+	}
 }

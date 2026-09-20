@@ -10,7 +10,7 @@ export const [settings, setSettingsSignal] = createSignal<Settings | null>(null)
 
 /** What a server is called, by its id: its name in Settings, else its host. */
 export const serverLabel = (id: string): string =>
-  labelOf(settings()?.servers ?? [], id)
+	labelOf(settings()?.servers ?? [], id)
 
 /** How long a run of wheel notches settles before the file is written. */
 const SAVE_AFTER = 600
@@ -22,8 +22,8 @@ let pending: ReturnType<typeof setTimeout> | undefined
 
 /** The screen the window is on. Absent under a test runner. */
 function display(): { width: number; height: number } {
-  const screen = typeof window === 'undefined' ? undefined : window.screen
-  return { width: screen?.width ?? 1920, height: screen?.height ?? 1080 }
+	const screen = typeof window === 'undefined' ? undefined : window.screen
+	return { width: screen?.width ?? 1920, height: screen?.height ?? 1080 }
 }
 
 /**
@@ -33,22 +33,22 @@ function display(): { width: number; height: number } {
  * `calc(16px * var(--ui-scale))`, so this one property is the whole of it.
  */
 function draw(percent: number): void {
-  setUiScale(percent)
-  document.documentElement.style.setProperty(
-    '--ui-scale',
-    String(percent / 100),
-  )
+	setUiScale(percent)
+	document.documentElement.style.setProperty(
+		'--ui-scale',
+		String(percent / 100),
+	)
 }
 
 export function applySettings(next: Settings): void {
-  setSettingsSignal(next)
-  setChat('maxLines', next.chat.maxLines)
-  setChat('filterHostChatter', next.chat.filterHostChatter)
-  const { width, height } = display()
-  // `ui` is optional only in the moment a reloaded front end meets a runtime
-  // built before this field existed, which is a development-only skew — but
-  // the cost of it is a lobby that will not draw, so it is worth the `??`.
-  draw(scaleFor(next.ui?.scale ?? {}, width, height))
+	setSettingsSignal(next)
+	setChat('maxLines', next.chat.maxLines)
+	setChat('filterHostChatter', next.chat.filterHostChatter)
+	const { width, height } = display()
+	// `ui` is optional only in the moment a reloaded front end meets a runtime
+	// built before this field existed, which is a development-only skew — but
+	// the cost of it is a lobby that will not draw, so it is worth the `??`.
+	draw(scaleFor(next.ui?.scale ?? {}, width, height))
 }
 
 /**
@@ -59,34 +59,34 @@ export function applySettings(next: Settings): void {
  * edits the settings file in place.
  */
 export function setScale(percent: number): void {
-  const { width, height } = display()
-  const next = clamp(percent, width, height)
-  draw(next)
-  const current = settings()
-  if (current === null) return
-  const written = {
-    ...current,
-    ui: {
-      ...current.ui,
-      scale: { ...current.ui.scale, [bucket(width, height)]: next },
-    },
-  }
-  setSettingsSignal(written)
-  clearTimeout(pending)
-  pending = setTimeout(() => {
-    api
-      .updateSettings(written)
-      .catch(() => pushNotice('warning', 'could not save the interface size'))
-  }, SAVE_AFTER)
+	const { width, height } = display()
+	const next = clamp(percent, width, height)
+	draw(next)
+	const current = settings()
+	if (current === null) return
+	const written = {
+		...current,
+		ui: {
+			...current.ui,
+			scale: { ...current.ui.scale, [bucket(width, height)]: next },
+		},
+	}
+	setSettingsSignal(written)
+	clearTimeout(pending)
+	pending = setTimeout(() => {
+		api
+			.updateSettings(written)
+			.catch(() => pushNotice('warning', 'could not save the interface size'))
+	}, SAVE_AFTER)
 }
 
 /** One notch of the wheel. */
 export function nudgeScale(direction: 1 | -1): void {
-  setScale(step(uiScale(), direction))
+	setScale(step(uiScale(), direction))
 }
 
 /** Back to the size this screen suits. */
 export function resetScale(): void {
-  const { width, height } = display()
-  setScale(derived(width, height))
+	const { width, height } = display()
+	setScale(derived(width, height))
 }

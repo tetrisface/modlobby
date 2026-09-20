@@ -16,38 +16,38 @@ import { Workspace } from './Workspace'
  * space than a mirror.
  */
 export function Tweaks(props: { initial?: string }) {
-  const space = tweakspaceFor(useRoom())
-  onMount(() => {
-    if (props.initial) space.open(slotId(props.initial))
-    void space
-      .refreshDrafts()
-      .catch((error) =>
-        pushNotice('warning', `drafts: ${describeError(error)}`),
-      )
-  })
+	const space = tweakspaceFor(useRoom())
+	onMount(() => {
+		if (props.initial) space.open(slotId(props.initial))
+		void space
+			.refreshDrafts()
+			.catch((error) =>
+				pushNotice('warning', `drafts: ${describeError(error)}`),
+			)
+	})
 
-  return (
-    <>
-      <Show
-        when={!space.ws.fullscreen}
-        fallback={
-          <div class='tweaks-away'>
-            <p class='muted setup-empty'>The editor is filling the window.</p>
-            <button onClick={() => space.setFullscreen(false)}>
-              Bring it back here
-            </button>
-          </div>
-        }
-      >
-        <Workspace />
-      </Show>
-      <Show when={space.ws.fullscreen}>
-        <Portal>
-          <div class='tweak-full'>
-            <Workspace />
-          </div>
-        </Portal>
-      </Show>
-    </>
-  )
+	return (
+		<>
+			<Show
+				when={!space.ws.fullscreen}
+				fallback={
+					<div class='tweaks-away'>
+						<p class='muted setup-empty'>The editor is filling the window.</p>
+						<button onClick={() => space.setFullscreen(false)}>
+							Bring it back here
+						</button>
+					</div>
+				}
+			>
+				<Workspace />
+			</Show>
+			<Show when={space.ws.fullscreen}>
+				<Portal>
+					<div class='tweak-full'>
+						<Workspace />
+					</div>
+				</Portal>
+			</Show>
+		</>
+	)
 }

@@ -15,51 +15,51 @@ export const [update, setUpdate] = createSignal<UpdateProgress | null>(null)
 
 /** Follows Rust's steps. Returns what stops following. */
 export function watchUpdates(): () => void {
-  const pending = listen<UpdateProgress>('app-update', (event) =>
-    setUpdate(event.payload),
-  )
-  return () => void pending.then((unlisten) => unlisten())
+	const pending = listen<UpdateProgress>('app-update', (event) =>
+		setUpdate(event.payload),
+	)
+	return () => void pending.then((unlisten) => unlisten())
 }
 
 /** The version a look found and nothing has fetched yet. */
 export function available(): string | null {
-  const at = update()
-  return at?.phase === 'available' ? at.version : null
+	const at = update()
+	return at?.phase === 'available' ? at.version : null
 }
 
 /** The version downloaded and waiting for a restart. */
 export function waiting(): string | null {
-  const at = update()
-  return at?.phase === 'ready' ? at.version : null
+	const at = update()
+	return at?.phase === 'ready' ? at.version : null
 }
 
 /** What restarting into the waiting version now would lose, while something. */
 export function heldBy(): string | null {
-  const at = update()
-  return at?.phase === 'ready' ? at.heldBy : null
+	const at = update()
+	return at?.phase === 'ready' ? at.heldBy : null
 }
 
 /** Percent downloaded, while downloading; `null` otherwise or when unknown. */
 export function downloading(): number | null {
-  const at = update()
-  if (at?.phase !== 'downloading') return null
-  return at.total > 0 ? Math.floor((at.got / at.total) * 100) : 0
+	const at = update()
+	if (at?.phase !== 'downloading') return null
+	return at.total > 0 ? Math.floor((at.got / at.total) * 100) : 0
 }
 
 /** A look is out. */
 export function checking(): boolean {
-  return update()?.phase === 'checking'
+	return update()?.phase === 'checking'
 }
 
 /** A look or a download is out. */
 export function busy(): boolean {
-  const phase = update()?.phase
-  return phase === 'checking' || phase === 'downloading'
+	const phase = update()?.phase
+	return phase === 'checking' || phase === 'downloading'
 }
 
 export function failure(): string | null {
-  const at = update()
-  return at?.phase === 'failed' ? at.reason : null
+	const at = update()
+	return at?.phase === 'failed' ? at.reason : null
 }
 
 /**
@@ -69,11 +69,11 @@ export function failure(): string | null {
  * looking harder for a server it cannot reach.
  */
 export async function checkUpdate(): Promise<void> {
-  try {
-    setUpdate(await api.checkUpdate())
-  } catch (error) {
-    pushNotice('warning', describeError(error))
-  }
+	try {
+		setUpdate(await api.checkUpdate())
+	} catch (error) {
+		pushNotice('warning', describeError(error))
+	}
 }
 
 /**
@@ -83,18 +83,18 @@ export async function checkUpdate(): Promise<void> {
  * that changes nothing on screen looks like a click that did nothing.
  */
 export async function installUpdate(): Promise<void> {
-  try {
-    const outcome = await api.installUpdate()
-    setUpdate(outcome)
-    if (outcome.phase === 'ready' && outcome.heldBy !== null) {
-      pushNotice(
-        'info',
-        `version ${outcome.version} is downloaded and installs on the next start; restarting now would lose ${outcome.heldBy}`,
-      )
-    }
-  } catch (error) {
-    pushNotice('error', describeError(error))
-  }
+	try {
+		const outcome = await api.installUpdate()
+		setUpdate(outcome)
+		if (outcome.phase === 'ready' && outcome.heldBy !== null) {
+			pushNotice(
+				'info',
+				`version ${outcome.version} is downloaded and installs on the next start; restarting now would lose ${outcome.heldBy}`,
+			)
+		}
+	} catch (error) {
+		pushNotice('error', describeError(error))
+	}
 }
 
 /**
@@ -103,10 +103,10 @@ export async function installUpdate(): Promise<void> {
  * on, or could not be reached, and either is the corner's to show.
  */
 export async function resumeUpdate(): Promise<void> {
-  try {
-    const outcome = await api.resumeUpdate()
-    if (outcome !== null) setUpdate(outcome)
-  } catch (error) {
-    pushNotice('warning', describeError(error))
-  }
+	try {
+		const outcome = await api.resumeUpdate()
+		if (outcome !== null) setUpdate(outcome)
+	} catch (error) {
+		pushNotice('warning', describeError(error))
+	}
 }

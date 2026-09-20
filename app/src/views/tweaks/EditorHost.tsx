@@ -1,10 +1,10 @@
 import { createEffect, onCleanup, onMount } from 'solid-js'
 import {
-  createEditor,
-  idOfModel,
-  monaco,
-  setProblems,
-  switchModel,
+	createEditor,
+	idOfModel,
+	monaco,
+	setProblems,
+	switchModel,
 } from '../../editor/monaco'
 import type { Problem } from '../../ipc/bindings/Problem'
 import type { Assist, Warning } from '../../lib/assist'
@@ -24,60 +24,60 @@ export type Goto = { line: number; column: number; at: number }
  * from chasing each other.
  */
 export function EditorHost(props: {
-  doc: Doc
-  problems: Problem[]
-  warnings: Warning[]
-  assist: Assist
-  goto: Goto | null
-  onEdit: (id: DocId, text: string) => void
-  onSave: () => void
+	doc: Doc
+	problems: Problem[]
+	warnings: Warning[]
+	assist: Assist
+	goto: Goto | null
+	onEdit: (id: DocId, text: string) => void
+	onSave: () => void
 }) {
-  let host: HTMLDivElement | undefined
-  let editor: monaco.editor.IStandaloneCodeEditor | undefined
-  const language = () => KINDS[props.doc.kind].language
+	let host: HTMLDivElement | undefined
+	let editor: monaco.editor.IStandaloneCodeEditor | undefined
+	const language = () => KINDS[props.doc.kind].language
 
-  onMount(() => {
-    if (!host) return
-    editor = createEditor(host, {
-      minimap: { enabled: true },
-      wordWrap: 'on',
-      folding: true,
-      bracketPairColorization: { enabled: true },
-      insertSpaces: false,
-    })
-    editor.onDidChangeModelContent(() => {
-      const model = editor?.getModel()
-      if (!model) return
-      props.onEdit(idOfModel(model), model.getValue())
-    })
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () =>
-      props.onSave(),
-    )
-    switchModel(editor, props.doc.id, props.doc.buffer, language())
-    registerAssist(() => ({ assist: props.assist, kind: props.doc.kind }))
-  })
+	onMount(() => {
+		if (!host) return
+		editor = createEditor(host, {
+			minimap: { enabled: true },
+			wordWrap: 'on',
+			folding: true,
+			bracketPairColorization: { enabled: true },
+			insertSpaces: false,
+		})
+		editor.onDidChangeModelContent(() => {
+			const model = editor?.getModel()
+			if (!model) return
+			props.onEdit(idOfModel(model), model.getValue())
+		})
+		editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () =>
+			props.onSave(),
+		)
+		switchModel(editor, props.doc.id, props.doc.buffer, language())
+		registerAssist(() => ({ assist: props.assist, kind: props.doc.kind }))
+	})
 
-  createEffect(() => {
-    const { id, buffer } = props.doc
-    if (editor) switchModel(editor, id, buffer, language())
-  })
+	createEffect(() => {
+		const { id, buffer } = props.doc
+		if (editor) switchModel(editor, id, buffer, language())
+	})
 
-  // The problems are the active document's; on a switch they are cleared
-  // until the check for the new one arrives.
-  createEffect(() => {
-    const model = editor?.getModel()
-    if (model) setProblems(model, props.problems, props.warnings)
-  })
+	// The problems are the active document's; on a switch they are cleared
+	// until the check for the new one arrives.
+	createEffect(() => {
+		const model = editor?.getModel()
+		if (model) setProblems(model, props.problems, props.warnings)
+	})
 
-  createEffect(() => {
-    const target = props.goto
-    if (!target || !editor) return
-    editor.revealLineInCenter(target.line)
-    editor.setPosition({ lineNumber: target.line, column: target.column })
-    editor.focus()
-  })
+	createEffect(() => {
+		const target = props.goto
+		if (!target || !editor) return
+		editor.revealLineInCenter(target.line)
+		editor.setPosition({ lineNumber: target.line, column: target.column })
+		editor.focus()
+	})
 
-  onCleanup(() => editor?.dispose())
+	onCleanup(() => editor?.dispose())
 
-  return <div class='tweak-editor' ref={host} />
+	return <div class='tweak-editor' ref={host} />
 }

@@ -5,7 +5,7 @@ import { api } from './client'
 
 /** Opens the one stream the runtime pushes into; a snapshot arrives first. */
 export async function connectChannel(): Promise<void> {
-  const channel = new Channel<UiMessage>()
-  channel.onmessage = applyMessage
-  await api.subscribe(channel)
+	const channel = new Channel<UiMessage>()
+	channel.onmessage = applyMessage
+	await api.subscribe(channel)
 }

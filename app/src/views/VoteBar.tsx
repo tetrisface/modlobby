@@ -23,97 +23,97 @@ import { useRoom } from './room/model'
  * different answers to the same question.
  */
 export function VoteBar(props: { teams: number }) {
-  const room = useRoom()
-  const vote = () => room.my()?.vote ?? null
-  const key = createMemo(() => {
-    const v = vote()
-    return v === null ? null : voteKey(v)
-  })
+	const room = useRoom()
+	const vote = () => room.my()?.vote ?? null
+	const key = createMemo(() => {
+		const v = vote()
+		return v === null ? null : voteKey(v)
+	})
 
-  const said = () => vote()?.remainingSecs ?? 0
-  const left = createCountdown(said)
-  const span = createSpan(said, key)
-  /** How much of the vote's time is still to run, for the line at the foot. */
-  const running = () => (span() > 0 ? left() / span() : 0)
+	const said = () => vote()?.remainingSecs ?? 0
+	const left = createCountdown(said)
+	const span = createSpan(said, key)
+	/** How much of the vote's time is still to run, for the line at the foot. */
+	const running = () => (span() > 0 ? left() / span() : 0)
 
-  /** What we cast, so the button shows it. Forgotten with the vote. */
-  const [mine, setMine] = createSignal<VoteChoice | null>(null)
-  createEffect(on(key, () => setMine(null)))
+	/** What we cast, so the button shows it. Forgotten with the vote. */
+	const [mine, setMine] = createSignal<VoteChoice | null>(null)
+	createEffect(on(key, () => setMine(null)))
 
-  /**
-   * A vote that would move the start boxes, and what it would move them to.
-   *
-   * Worth singling out because the value is base64url(zlib(json)): the vote
-   * line shows a wall of characters that tells nobody anything.
-   */
-  const boxProposal = createMemo(() => {
-    const proposal = vote()?.proposal
-    if (proposal?.type !== 'setOption') return null
-    if (!isBoxKey(proposal.key)) return null
-    const current =
-      room.my()?.scriptTags[`game/modoptions/${proposal.key}`] ?? ''
-    return { current, proposed: proposal.value }
-  })
+	/**
+	 * A vote that would move the start boxes, and what it would move them to.
+	 *
+	 * Worth singling out because the value is base64url(zlib(json)): the vote
+	 * line shows a wall of characters that tells nobody anything.
+	 */
+	const boxProposal = createMemo(() => {
+		const proposal = vote()?.proposal
+		if (proposal?.type !== 'setOption') return null
+		if (!isBoxKey(proposal.key)) return null
+		const current =
+			room.my()?.scriptTags[`game/modoptions/${proposal.key}`] ?? ''
+		return { current, proposed: proposal.value }
+	})
 
-  async function cast(choice: VoteChoice) {
-    try {
-      await api.vote(choice)
-      setMine(choice)
-    } catch (error) {
-      pushNotice('warning', describeError(error))
-    }
-  }
+	async function cast(choice: VoteChoice) {
+		try {
+			await api.vote(choice)
+			setMine(choice)
+		} catch (error) {
+			pushNotice('warning', describeError(error))
+		}
+	}
 
-  return (
-    <Show when={vote()}>
-      {(v) => (
-        <div class='vote-bar' style={{ '--left': String(running()) }}>
-          <div class='vote-what'>
-            <strong>{v().by ?? 'someone'}</strong> called a vote:{' '}
-            <code>{v().command}</code>
-            <Show when={v().proposal.type === 'setOption'}>
-              <span class='muted'> (a modoption change)</span>
-            </Show>
-          </div>
-          <div class='vote-cast' role='group' aria-label='Your vote'>
-            <Ballot
-              choice='y'
-              label='Yes'
-              have={v().yes}
-              needed={v().yesNeeded}
-              mine={mine()}
-              cast={cast}
-            />
-            <Ballot
-              choice='n'
-              label='No'
-              have={v().no}
-              needed={v().noNeeded}
-              mine={mine()}
-              cast={cast}
-            />
-            <Ballot choice='b' label='Blank' mine={mine()} cast={cast} />
-          </div>
-          <Show when={left() > 0}>
-            <span class='vote-left' title='Seconds until the vote closes'>
-              {left()}s
-            </span>
-          </Show>
-          <Show when={boxProposal()}>
-            {(change) => (
-              <BoxDiff
-                current={change().current}
-                proposed={change().proposed}
-                teams={props.teams}
-                mapName={room.battle()?.mapName ?? ''}
-              />
-            )}
-          </Show>
-          <div class='vote-clock' aria-hidden='true' />
-        </div>
-      )}
-    </Show>
-  )
+	return (
+		<Show when={vote()}>
+			{(v) => (
+				<div class='vote-bar' style={{ '--left': String(running()) }}>
+					<div class='vote-what'>
+						<strong>{v().by ?? 'someone'}</strong> called a vote:{' '}
+						<code>{v().command}</code>
+						<Show when={v().proposal.type === 'setOption'}>
+							<span class='muted'> (a modoption change)</span>
+						</Show>
+					</div>
+					<div class='vote-cast' role='group' aria-label='Your vote'>
+						<Ballot
+							choice='y'
+							label='Yes'
+							have={v().yes}
+							needed={v().yesNeeded}
+							mine={mine()}
+							cast={cast}
+						/>
+						<Ballot
+							choice='n'
+							label='No'
+							have={v().no}
+							needed={v().noNeeded}
+							mine={mine()}
+							cast={cast}
+						/>
+						<Ballot choice='b' label='Blank' mine={mine()} cast={cast} />
+					</div>
+					<Show when={left() > 0}>
+						<span class='vote-left' title='Seconds until the vote closes'>
+							{left()}s
+						</span>
+					</Show>
+					<Show when={boxProposal()}>
+						{(change) => (
+							<BoxDiff
+								current={change().current}
+								proposed={change().proposed}
+								teams={props.teams}
+								mapName={room.battle()?.mapName ?? ''}
+							/>
+						)}
+					</Show>
+					<div class='vote-clock' aria-hidden='true' />
+				</div>
+			)}
+		</Show>
+	)
 }
 
 /** The class each answer is coloured by. */
@@ -125,34 +125,34 @@ const SIDE: Record<VoteChoice, string> = { y: 'yes', n: 'no', b: 'blank' }
  * and abstain, which lowers what the sides need.
  */
 function Ballot(props: {
-  choice: VoteChoice
-  label: string
-  have?: number
-  needed?: number
-  mine: VoteChoice | null
-  cast: (choice: VoteChoice) => void
+	choice: VoteChoice
+	label: string
+	have?: number
+	needed?: number
+	mine: VoteChoice | null
+	cast: (choice: VoteChoice) => void
 }) {
-  const counted = () => props.have !== undefined && props.needed !== undefined
-  const fill = () => Math.round(share(props.have ?? 0, props.needed ?? 0) * 100)
-  const title = () =>
-    counted()
-      ? `Vote ${props.label.toLowerCase()}: ${tally(props.have ?? 0, props.needed ?? 0)} needed to pass`
-      : 'Abstain, but count as having voted'
+	const counted = () => props.have !== undefined && props.needed !== undefined
+	const fill = () => Math.round(share(props.have ?? 0, props.needed ?? 0) * 100)
+	const title = () =>
+		counted()
+			? `Vote ${props.label.toLowerCase()}: ${tally(props.have ?? 0, props.needed ?? 0)} needed to pass`
+			: 'Abstain, but count as having voted'
 
-  return (
-    <button
-      type='button'
-      class={SIDE[props.choice]}
-      classList={{ on: props.mine === props.choice }}
-      style={{ '--fill': `${fill()}%` }}
-      title={title()}
-      aria-pressed={props.mine === props.choice}
-      onClick={() => props.cast(props.choice)}
-    >
-      {props.label}
-      <Show when={counted()}>
-        <span class='tally'>{tally(props.have ?? 0, props.needed ?? 0)}</span>
-      </Show>
-    </button>
-  )
+	return (
+		<button
+			type='button'
+			class={SIDE[props.choice]}
+			classList={{ on: props.mine === props.choice }}
+			style={{ '--fill': `${fill()}%` }}
+			title={title()}
+			aria-pressed={props.mine === props.choice}
+			onClick={() => props.cast(props.choice)}
+		>
+			{props.label}
+			<Show when={counted()}>
+				<span class='tally'>{tally(props.have ?? 0, props.needed ?? 0)}</span>
+			</Show>
+		</button>
+	)
 }

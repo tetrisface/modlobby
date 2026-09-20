@@ -19,21 +19,21 @@ import { RoomProvider } from './model'
  * back to a room half-arranged is the whole point of keeping it.
  */
 export function SkirmishRoom() {
-  onMount(() => {
-    if (lobby.skirmish !== null) return
-    void api
-      .skirmishOpen(null, null, null)
-      .catch((error) => pushNotice('warning', describeError(error)))
-  })
+	onMount(() => {
+		if (lobby.skirmish !== null) return
+		void api
+			.skirmishOpen(null, null, null)
+			.catch((error) => pushNotice('warning', describeError(error)))
+	})
 
-  return (
-    <Show
-      when={lobby.skirmish}
-      fallback={<p class='muted empty-list'>Looking at what is installed…</p>}
-    >
-      <RoomProvider value={localRoom()}>
-        <Room />
-      </RoomProvider>
-    </Show>
-  )
+	return (
+		<Show
+			when={lobby.skirmish}
+			fallback={<p class='muted empty-list'>Looking at what is installed…</p>}
+		>
+			<RoomProvider value={localRoom()}>
+				<Room />
+			</RoomProvider>
+		</Show>
+	)
 }

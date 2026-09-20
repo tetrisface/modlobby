@@ -5,7 +5,7 @@ import { MapPicture } from './MapPicture'
 
 /** What the card cuts or leaves out, in the room page's own words. */
 export function glance(b: BattleView): string {
-  return `${b.title}\n${b.mapName}\n${b.playerCount} players · ${b.spectatorCount} spectators`
+	return `${b.title}\n${b.mapName}\n${b.playerCount} players · ${b.spectatorCount} spectators`
 }
 
 /**
@@ -15,33 +15,33 @@ export function glance(b: BattleView): string {
  * stays so the line keeps its width when the first spectator arrives.
  */
 export function NavRoom(props: {
-  battle: BattleView
-  /** The card's own element, for a row that measures what it holds. */
-  ref?: HTMLAnchorElement | ((el: HTMLAnchorElement) => void)
+	battle: BattleView
+	/** The card's own element, for a row that measures what it holds. */
+	ref?: HTMLAnchorElement | ((el: HTMLAnchorElement) => void)
 }) {
-  return (
-    <A
-      href='/room'
-      class='nav-room'
-      title={glance(props.battle)}
-      ref={props.ref}
-    >
-      <MapPicture
-        class='nav-room-pic'
-        mapName={props.battle.mapName}
-        width={TILES.nav.width}
-        height={TILES.nav.height}
-      />
-      <span class='nav-room-text'>
-        <span class='nav-room-title'>{props.battle.title}</span>
-        <span class='nav-room-count'>
-          {props.battle.playerCount}/{props.battle.maxPlayers}
-          <span class='nav-room-spectators'>
-            {' '}
-            +{props.battle.spectatorCount}
-          </span>
-        </span>
-      </span>
-    </A>
-  )
+	return (
+		<A
+			href='/room'
+			class='nav-room'
+			title={glance(props.battle)}
+			ref={props.ref}
+		>
+			<MapPicture
+				class='nav-room-pic'
+				mapName={props.battle.mapName}
+				width={TILES.nav.width}
+				height={TILES.nav.height}
+			/>
+			<span class='nav-room-text'>
+				<span class='nav-room-title'>{props.battle.title}</span>
+				<span class='nav-room-count'>
+					{props.battle.playerCount}/{props.battle.maxPlayers}
+					<span class='nav-room-spectators'>
+						{' '}
+						+{props.battle.spectatorCount}
+					</span>
+				</span>
+			</span>
+		</A>
+	)
 }

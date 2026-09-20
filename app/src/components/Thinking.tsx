@@ -11,15 +11,15 @@
  * corner is noise and three dim dots already say "not yet".
  */
 export function Thinking(props: { title?: string; still?: boolean }) {
-  return (
-    <span
-      classList={{ thinking: true, still: props.still }}
-      title={props.title ?? 'asking…'}
-      aria-label='asking'
-    >
-      <i />
-      <i />
-      <i />
-    </span>
-  )
+	return (
+		<span
+			classList={{ thinking: true, still: props.still }}
+			title={props.title ?? 'asking…'}
+			aria-label='asking'
+		>
+			<i />
+			<i />
+			<i />
+		</span>
+	)
 }

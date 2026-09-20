@@ -19,22 +19,22 @@ export { running }
 
 /** What the battle list can see: whichever games are going right now. */
 export function noteRunning(keys: ReadonlySet<string>, settled: boolean): void {
-  // A game that ended takes its answer with it: the next one in that room is a
-  // different game, and worth asking about again.
-  for (const key of answered) if (!keys.has(key)) answered.delete(key)
-  setRunning((held) => track(held, keys, settled, Date.now()))
+	// A game that ended takes its answer with it: the next one in that room is a
+	// different game, and worth asking about again.
+	for (const key of answered) if (!keys.has(key)) answered.delete(key)
+	setRunning((held) => track(held, keys, settled, Date.now()))
 }
 
 /** What a host told us, which beats anything we watched. */
 export function noteToldStart(
-  server: string,
-  id: number,
-  secondsAgo: number,
+	server: string,
+	id: number,
+	secondsAgo: number,
 ): void {
-  const key = battleKey(server, id)
-  answered.add(key)
-  if (asking() === key) setAsking(null)
-  setRunning((held) => told(held, key, secondsAgo, Date.now()))
+	const key = battleKey(server, id)
+	answered.add(key)
+	if (asking() === key) setAsking(null)
+	setRunning((held) => told(held, key, secondsAgo, Date.now()))
 }
 
 /**
@@ -67,28 +67,28 @@ const GIVE_UP_AFTER = 8000
 let giveUp: ReturnType<typeof setTimeout> | undefined
 
 export function askAboutGame(
-  server: string,
-  key: string,
-  founder: string,
+	server: string,
+	key: string,
+	founder: string,
 ): void {
-  if (answered.has(key)) return
-  wanted = { server, key, founder }
-  if (timer) return
-  const wait = Math.max(0, nextAsk - Date.now())
-  timer = setTimeout(() => {
-    timer = undefined
-    const ask = wanted
-    wanted = null
-    if (!ask || answered.has(ask.key)) return
-    nextAsk = Date.now() + ASK_EVERY
-    setAsking(ask.key)
-    clearTimeout(giveUp)
-    giveUp = setTimeout(() => setAsking(null), GIVE_UP_AFTER)
-    void api.requestGameStatus(ask.server, ask.founder).catch(() => {
-      // A host that will not answer is not worth a notice; the estimate stands.
-      setAsking(null)
-    })
-  }, wait)
+	if (answered.has(key)) return
+	wanted = { server, key, founder }
+	if (timer) return
+	const wait = Math.max(0, nextAsk - Date.now())
+	timer = setTimeout(() => {
+		timer = undefined
+		const ask = wanted
+		wanted = null
+		if (!ask || answered.has(ask.key)) return
+		nextAsk = Date.now() + ASK_EVERY
+		setAsking(ask.key)
+		clearTimeout(giveUp)
+		giveUp = setTimeout(() => setAsking(null), GIVE_UP_AFTER)
+		void api.requestGameStatus(ask.server, ask.founder).catch(() => {
+			// A host that will not answer is not worth a notice; the estimate stands.
+			setAsking(null)
+		})
+	}, wait)
 }
 
 const ASK_EVERY = 400

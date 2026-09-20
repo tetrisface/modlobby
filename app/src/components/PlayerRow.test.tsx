@@ -8,491 +8,491 @@ import { PlayerMenu } from './PlayerMenu'
 import { BotRow, PlayerRow, WatcherRow } from './PlayerRow'
 
 const status = (over: Partial<UserStatusView> = {}): UserStatusView => ({
-  inGame: false,
-  away: false,
-  rank: 0,
-  moderator: false,
-  bot: false,
-  ...over,
+	inGame: false,
+	away: false,
+	rank: 0,
+	moderator: false,
+	bot: false,
+	...over,
 })
 
 const battle = (over: Partial<BattleStatusView> = {}): BattleStatusView => ({
-  ready: true,
-  team: 0,
-  allyTeam: 0,
-  player: true,
-  handicap: 0,
-  sync: 'synced',
-  side: 0,
-  ...over,
+	ready: true,
+	team: 0,
+	allyTeam: 0,
+	player: true,
+	handicap: 0,
+	sync: 'synced',
+	side: 0,
+	...over,
 })
 
 const user = (over: Partial<UserView> = {}): UserView => ({
-  name: 'DrDandy',
-  country: 'SE',
-  userId: 1,
-  lobbyClient: 'modlobby',
-  status: status(),
-  battleStatus: battle(),
-  battleId: 1,
-  ...over,
+	name: 'DrDandy',
+	country: 'SE',
+	userId: 1,
+	lobbyClient: 'modlobby',
+	status: status(),
+	battleStatus: battle(),
+	battleId: 1,
+	...over,
 })
 
 const skill = (over: Partial<Skill> = {}): Skill => ({
-  value: 23.4,
-  origin: 'plugin',
-  sigma: 0.9,
-  ...over,
+	value: 23.4,
+	origin: 'plugin',
+	sigma: 0.9,
+	...over,
 })
 
 /** The `<use href>` of every icon in the row, left to right. */
 function icons(container: HTMLElement): string[] {
-  return [...container.querySelectorAll('use')].map(
-    (use) => use.getAttribute('href') ?? '',
-  )
+	return [...container.querySelectorAll('use')].map(
+		(use) => use.getAttribute('href') ?? '',
+	)
 }
 
 describe('a player row', () => {
-  test('draws Chobby six columns in Chobby order', () => {
-    const { container } = render(() => (
-      <PlayerRow user={user()} skill={skill()} me={false} />
-    ))
+	test('draws Chobby six columns in Chobby order', () => {
+		const { container } = render(() => (
+			<PlayerRow user={user()} skill={skill()} me={false} />
+		))
 
-    // status, rank, faction. The flag is a styled span, the skill is text.
-    expect(icons(container)).toEqual(['#st-ready', '#chev1', '#side-armada'])
-    expect(container.querySelector('.flag')?.className).toContain('fi-se')
-    expect(container.querySelector('.skill')?.textContent).toBe('23')
-    expect(container.querySelector('.pname')?.textContent).toBe('DrDandy')
-  })
+		// status, rank, faction. The flag is a styled span, the skill is text.
+		expect(icons(container)).toEqual(['#st-ready', '#chev1', '#side-armada'])
+		expect(container.querySelector('.flag')?.className).toContain('fi-se')
+		expect(container.querySelector('.skill')?.textContent).toBe('23')
+		expect(container.querySelector('.pname')?.textContent).toBe('DrDandy')
+	})
 
-  test('the status ladder puts in-game above sync above ready', () => {
-    const ladder: Array<[UserView, string]> = [
-      [
-        user({
-          status: status({ inGame: true }),
-          battleStatus: battle({ ready: false, sync: 'unsynced' }),
-        }),
-        'ingame',
-      ],
-      [user({ battleStatus: battle({ sync: 'unsynced' }) }), 'sync'],
-      [user({ battleStatus: battle({ ready: false }) }), 'unready'],
-      [user(), 'ready'],
-    ]
+	test('the status ladder puts in-game above sync above ready', () => {
+		const ladder: Array<[UserView, string]> = [
+			[
+				user({
+					status: status({ inGame: true }),
+					battleStatus: battle({ ready: false, sync: 'unsynced' }),
+				}),
+				'ingame',
+			],
+			[user({ battleStatus: battle({ sync: 'unsynced' }) }), 'sync'],
+			[user({ battleStatus: battle({ ready: false }) }), 'unready'],
+			[user(), 'ready'],
+		]
 
-    for (const [who, expected] of ladder) {
-      const { container, unmount } = render(() => (
-        <PlayerRow user={who} skill={null} me={false} />
-      ))
-      expect(container.querySelector('.status')?.classList).toContain(expected)
-      unmount()
-    }
-  })
+		for (const [who, expected] of ladder) {
+			const { container, unmount } = render(() => (
+				<PlayerRow user={who} skill={null} me={false} />
+			))
+			expect(container.querySelector('.status')?.classList).toContain(expected)
+			unmount()
+		}
+	})
 
-  test('only our own arrow fills, and says how far', () => {
-    const unsynced = user({ battleStatus: battle({ sync: 'unsynced' }) })
+	test('only our own arrow fills, and says how far', () => {
+		const unsynced = user({ battleStatus: battle({ sync: 'unsynced' }) })
 
-    const theirs = render(() => (
-      <PlayerRow user={unsynced} skill={null} me={false} />
-    ))
-    expect(theirs.container.querySelector('.status.running')).toBeNull()
-    expect(theirs.container.querySelector('.glass')).toBeNull()
-    expect(theirs.container.querySelector('.status title')?.textContent).toBe(
-      'Downloading content',
-    )
-    theirs.unmount()
+		const theirs = render(() => (
+			<PlayerRow user={unsynced} skill={null} me={false} />
+		))
+		expect(theirs.container.querySelector('.status.running')).toBeNull()
+		expect(theirs.container.querySelector('.glass')).toBeNull()
+		expect(theirs.container.querySelector('.status title')?.textContent).toBe(
+			'Downloading content',
+		)
+		theirs.unmount()
 
-    const sizing = render(() => (
-      <PlayerRow
-        user={unsynced}
-        skill={null}
-        me={true}
-        download={{ state: 'running', what: 'map', current: 0, total: 0 }}
-      />
-    ))
-    expect(sizing.container.querySelector('.status.running')).not.toBeNull()
-    expect(sizing.container.querySelector('.glass')).toBeNull()
-    sizing.unmount()
+		const sizing = render(() => (
+			<PlayerRow
+				user={unsynced}
+				skill={null}
+				me={true}
+				download={{ state: 'running', what: 'map', current: 0, total: 0 }}
+			/>
+		))
+		expect(sizing.container.querySelector('.status.running')).not.toBeNull()
+		expect(sizing.container.querySelector('.glass')).toBeNull()
+		sizing.unmount()
 
-    const { container } = render(() => (
-      <PlayerRow
-        user={unsynced}
-        skill={null}
-        me={true}
-        download={{ state: 'running', what: 'map', current: 4, total: 10 }}
-      />
-    ))
-    const glass = container.querySelector('.glass')
-    expect(glass?.getAttribute('height')).toBe('8')
-    expect(glass?.getAttribute('y')).toBe('12')
-    expect(container.querySelector('.status title')?.textContent).toBe(
-      'Downloading 40%',
-    )
-  })
+		const { container } = render(() => (
+			<PlayerRow
+				user={unsynced}
+				skill={null}
+				me={true}
+				download={{ state: 'running', what: 'map', current: 4, total: 10 }}
+			/>
+		))
+		const glass = container.querySelector('.glass')
+		expect(glass?.getAttribute('height')).toBe('8')
+		expect(glass?.getAttribute('y')).toBe('12')
+		expect(container.querySelector('.status title')?.textContent).toBe(
+			'Downloading 40%',
+		)
+	})
 
-  test('ranks 1-4 are outlined silver, 5-8 solid gold', () => {
-    for (const [rank, id, lower] of [
-      [0, '#chev1', true],
-      [3, '#chev4', true],
-      [4, '#chev1-solid', false],
-      [7, '#chev4-solid', false],
-    ] as const) {
-      const { container, unmount } = render(() => (
-        <PlayerRow
-          user={user({ status: status({ rank }) })}
-          skill={null}
-          me={false}
-        />
-      ))
-      expect(icons(container)[1]).toBe(id)
-      expect(container.querySelector('.rank.lower') !== null).toBe(lower)
-      unmount()
-    }
-  })
+	test('ranks 1-4 are outlined silver, 5-8 solid gold', () => {
+		for (const [rank, id, lower] of [
+			[0, '#chev1', true],
+			[3, '#chev4', true],
+			[4, '#chev1-solid', false],
+			[7, '#chev4-solid', false],
+		] as const) {
+			const { container, unmount } = render(() => (
+				<PlayerRow
+					user={user({ status: status({ rank }) })}
+					skill={null}
+					me={false}
+				/>
+			))
+			expect(icons(container)[1]).toBe(id)
+			expect(container.querySelector('.rank.lower') !== null).toBe(lower)
+			unmount()
+		}
+	})
 
-  test('a moderator keeps the rank and gains the shield', () => {
-    const { container } = render(() => (
-      <PlayerRow
-        user={user({ status: status({ rank: 6, moderator: true }) })}
-        skill={null}
-        me={false}
-      />
-    ))
-    expect(icons(container)).toEqual([
-      '#st-ready',
-      '#chev3-solid',
-      '#rank-shield',
-      '#side-armada',
-    ])
-    expect(container.querySelector('.rank use')?.getAttribute('mask')).toBe(
-      'url(#rank-shield-cut)',
-    )
-  })
+	test('a moderator keeps the rank and gains the shield', () => {
+		const { container } = render(() => (
+			<PlayerRow
+				user={user({ status: status({ rank: 6, moderator: true }) })}
+				skill={null}
+				me={false}
+			/>
+		))
+		expect(icons(container)).toEqual([
+			'#st-ready',
+			'#chev3-solid',
+			'#rank-shield',
+			'#side-armada',
+		])
+		expect(container.querySelector('.rank use')?.getAttribute('mask')).toBe(
+			'url(#rank-shield-cut)',
+		)
+	})
 
-  test('the boss wears a crown after the name, an away player a snooze', () => {
-    const { container } = render(() => (
-      <PlayerRow
-        user={user({ status: status({ away: true }) })}
-        skill={null}
-        me={false}
-        boss={true}
-      />
-    ))
-    expect(icons(container)).toEqual([
-      '#st-ready',
-      '#chev1',
-      '#side-armada',
-      '#mark-boss',
-      '#mark-away',
-    ])
-  })
+	test('the boss wears a crown after the name, an away player a snooze', () => {
+		const { container } = render(() => (
+			<PlayerRow
+				user={user({ status: status({ away: true }) })}
+				skill={null}
+				me={false}
+				boss={true}
+			/>
+		))
+		expect(icons(container)).toEqual([
+			'#st-ready',
+			'#chev1',
+			'#side-armada',
+			'#mark-boss',
+			'#mark-away',
+		])
+	})
 
-  test('an uncertain rating reads ?? and a confident one is bright', () => {
-    const unrated = render(() => (
-      <PlayerRow user={user()} skill={skill({ sigma: 6.81 })} me={false} />
-    ))
-    expect(unrated.container.querySelector('.skill')?.textContent).toBe('??')
-    unrated.unmount()
+	test('an uncertain rating reads ?? and a confident one is bright', () => {
+		const unrated = render(() => (
+			<PlayerRow user={user()} skill={skill({ sigma: 6.81 })} me={false} />
+		))
+		expect(unrated.container.querySelector('.skill')?.textContent).toBe('??')
+		unrated.unmount()
 
-    const dim = render(() => (
-      <PlayerRow user={user()} skill={skill({ sigma: 3.2 })} me={false} />
-    ))
-    expect(dim.container.querySelector('.skill')?.className).toContain('tier3')
-    dim.unmount()
-  })
+		const dim = render(() => (
+			<PlayerRow user={user()} skill={skill({ sigma: 3.2 })} me={false} />
+		))
+		expect(dim.container.querySelector('.skill')?.className).toContain('tier3')
+		dim.unmount()
+	})
 
-  test('faction follows the side bits', () => {
-    for (const [side, id] of [
-      [0, '#side-armada'],
-      [1, '#side-cortex'],
-      [3, '#side-legion'],
-    ] as const) {
-      const { container, unmount } = render(() => (
-        <PlayerRow
-          user={user({ battleStatus: battle({ side }) })}
-          skill={null}
-          me={false}
-        />
-      ))
-      expect(icons(container)[2]).toBe(id)
-      unmount()
-    }
-  })
+	test('faction follows the side bits', () => {
+		for (const [side, id] of [
+			[0, '#side-armada'],
+			[1, '#side-cortex'],
+			[3, '#side-legion'],
+		] as const) {
+			const { container, unmount } = render(() => (
+				<PlayerRow
+					user={user({ battleStatus: battle({ side }) })}
+					skill={null}
+					me={false}
+				/>
+			))
+			expect(icons(container)[2]).toBe(id)
+			unmount()
+		}
+	})
 
-  test('no colour is applied to a row beyond the faction mark', () => {
-    const { container } = render(() => (
-      <PlayerRow user={user()} skill={skill()} me={false} />
-    ))
-    // Team colours are not knowable before the game starts, so no element in
-    // the row may carry one.
-    expect(container.querySelector('[class*="team-"]')).toBeNull()
-    expect(container.querySelector('.player')?.getAttribute('style')).toBeNull()
-  })
+	test('no colour is applied to a row beyond the faction mark', () => {
+		const { container } = render(() => (
+			<PlayerRow user={user()} skill={skill()} me={false} />
+		))
+		// Team colours are not knowable before the game starts, so no element in
+		// the row may carry one.
+		expect(container.querySelector('[class*="team-"]')).toBeNull()
+		expect(container.querySelector('.player')?.getAttribute('style')).toBeNull()
+	})
 
-  test('BAR special AIs hide the faction icon but normal AIs keep it', () => {
-    const { container, unmount } = render(() => (
-      <>
-        <BotRow
-          bot={{
-            name: 'RaptorsDefenseAI(1)',
-            owner: 'host',
-            status: {
-              ready: true,
-              team: 1,
-              allyTeam: 1,
-              player: true,
-              handicap: 0,
-              sync: 'bot',
-              side: 0,
-            },
-            teamColour: 0,
-            ai: 'RaptorsAI',
-            options: {},
-          }}
-        />
-        <BotRow
-          bot={{
-            name: 'ScavengerAI(1)',
-            owner: 'host',
-            status: {
-              ready: true,
-              team: 1,
-              allyTeam: 1,
-              player: true,
-              handicap: 0,
-              sync: 'bot',
-              side: 1,
-            },
-            teamColour: 0,
-            ai: 'ScavengersAI',
-            options: {},
-          }}
-        />
-        <BotRow
-          bot={{
-            name: 'BARb(1)',
-            owner: 'host',
-            status: {
-              ready: true,
-              team: 1,
-              allyTeam: 1,
-              player: true,
-              handicap: 0,
-              sync: 'bot',
-              side: 3,
-            },
-            teamColour: 0,
-            ai: 'BARb',
-            options: {},
-          }}
-        />
-        <BotRow
-          bot={{
-            name: 'OtherAI(1)',
-            owner: 'host',
-            status: {
-              ready: true,
-              team: 1,
-              allyTeam: 1,
-              player: true,
-              handicap: 0,
-              sync: 'bot',
-              side: 2,
-            },
-            teamColour: 0,
-            ai: 'OtherAI',
-            options: {},
-          }}
-        />
-      </>
-    ))
+	test('BAR special AIs hide the faction icon but normal AIs keep it', () => {
+		const { container, unmount } = render(() => (
+			<>
+				<BotRow
+					bot={{
+						name: 'RaptorsDefenseAI(1)',
+						owner: 'host',
+						status: {
+							ready: true,
+							team: 1,
+							allyTeam: 1,
+							player: true,
+							handicap: 0,
+							sync: 'bot',
+							side: 0,
+						},
+						teamColour: 0,
+						ai: 'RaptorsAI',
+						options: {},
+					}}
+				/>
+				<BotRow
+					bot={{
+						name: 'ScavengerAI(1)',
+						owner: 'host',
+						status: {
+							ready: true,
+							team: 1,
+							allyTeam: 1,
+							player: true,
+							handicap: 0,
+							sync: 'bot',
+							side: 1,
+						},
+						teamColour: 0,
+						ai: 'ScavengersAI',
+						options: {},
+					}}
+				/>
+				<BotRow
+					bot={{
+						name: 'BARb(1)',
+						owner: 'host',
+						status: {
+							ready: true,
+							team: 1,
+							allyTeam: 1,
+							player: true,
+							handicap: 0,
+							sync: 'bot',
+							side: 3,
+						},
+						teamColour: 0,
+						ai: 'BARb',
+						options: {},
+					}}
+				/>
+				<BotRow
+					bot={{
+						name: 'OtherAI(1)',
+						owner: 'host',
+						status: {
+							ready: true,
+							team: 1,
+							allyTeam: 1,
+							player: true,
+							handicap: 0,
+							sync: 'bot',
+							side: 2,
+						},
+						teamColour: 0,
+						ai: 'OtherAI',
+						options: {},
+					}}
+				/>
+			</>
+		))
 
-    const hasSide = [...container.querySelectorAll('.player.bot-row')].map(
-      (row) => row.querySelector('.icon.side') !== null,
-    )
-    expect(hasSide).toEqual([false, false, false, true])
-    unmount()
-  })
+		const hasSide = [...container.querySelectorAll('.player.bot-row')].map(
+			(row) => row.querySelector('.icon.side') !== null,
+		)
+		expect(hasSide).toEqual([false, false, false, true])
+		unmount()
+	})
 
-  test('a game-mode AI is one per room, so it offers no copy', () => {
-    const clone = () => Promise.resolve()
-    const row = (ai: string) => ({
-      name: `${ai}(1)`,
-      owner: 'host',
-      status: battle({ player: true }),
-      teamColour: 0,
-      ai,
-      options: {},
-    })
-    const { container } = render(() => (
-      <>
-        <BotRow bot={row('ScavengersAI')} onClone={clone} />
-        <BotRow bot={row('BARb')} onClone={clone} />
-      </>
-    ))
+	test('a game-mode AI is one per room, so it offers no copy', () => {
+		const clone = () => Promise.resolve()
+		const row = (ai: string) => ({
+			name: `${ai}(1)`,
+			owner: 'host',
+			status: battle({ player: true }),
+			teamColour: 0,
+			ai,
+			options: {},
+		})
+		const { container } = render(() => (
+			<>
+				<BotRow bot={row('ScavengersAI')} onClone={clone} />
+				<BotRow bot={row('BARb')} onClone={clone} />
+			</>
+		))
 
-    const hasClone = [...container.querySelectorAll('.player.bot-row')].map(
-      (one) => one.querySelector('.bot-clone') !== null,
-    )
-    expect(hasClone).toEqual([false, true])
-  })
+		const hasClone = [...container.querySelectorAll('.player.bot-row')].map(
+			(one) => one.querySelector('.bot-clone') !== null,
+		)
+		expect(hasClone).toEqual([false, true])
+	})
 
-  test('an unknown country falls back rather than guessing', () => {
-    const { container } = render(() => (
-      <PlayerRow user={user({ country: '??' })} skill={null} me={false} />
-    ))
-    expect(container.querySelector('.flag')?.className).toContain('unknown')
-  })
+	test('an unknown country falls back rather than guessing', () => {
+		const { container } = render(() => (
+			<PlayerRow user={user({ country: '??' })} skill={null} me={false} />
+		))
+		expect(container.querySelector('.flag')?.className).toContain('unknown')
+	})
 })
 
 describe('a spectator row', () => {
-  test('shows neither status nor faction, as Chobby hides both', () => {
-    const { container } = render(() => (
-      <WatcherRow
-        skill={null}
-        user={user({ battleStatus: battle({ player: false }) })}
-        me={true}
-      />
-    ))
-    expect(icons(container)).toEqual(['#chev1'])
-    expect(container.querySelector('.pname')?.classList.contains('me')).toBe(
-      true,
-    )
-  })
+	test('shows neither status nor faction, as Chobby hides both', () => {
+		const { container } = render(() => (
+			<WatcherRow
+				skill={null}
+				user={user({ battleStatus: battle({ player: false }) })}
+				me={true}
+			/>
+		))
+		expect(icons(container)).toEqual(['#chev1'])
+		expect(container.querySelector('.pname')?.classList.contains('me')).toBe(
+			true,
+		)
+	})
 
-  test('a bossing spectator still wears the crown', () => {
-    const { container } = render(() => (
-      <WatcherRow
-        skill={null}
-        user={user({ battleStatus: battle({ player: false }) })}
-        me={false}
-        boss={true}
-      />
-    ))
-    expect(icons(container)).toEqual(['#chev1', '#mark-boss'])
-  })
+	test('a bossing spectator still wears the crown', () => {
+		const { container } = render(() => (
+			<WatcherRow
+				skill={null}
+				user={user({ battleStatus: battle({ player: false }) })}
+				me={false}
+				boss={true}
+			/>
+		))
+		expect(icons(container)).toEqual(['#chev1', '#mark-boss'])
+	})
 
-  test('an autohost gets the bot mark instead of a rank', () => {
-    const { container } = render(() => (
-      <WatcherRow
-        skill={null}
-        user={user({ name: 'Host[US4][000]', status: status({ bot: true }) })}
-        me={false}
-      />
-    ))
-    expect(icons(container)).toEqual(['#rank-bot'])
-  })
+	test('an autohost gets the bot mark instead of a rank', () => {
+		const { container } = render(() => (
+			<WatcherRow
+				skill={null}
+				user={user({ name: 'Host[US4][000]', status: status({ bot: true }) })}
+				me={false}
+			/>
+		))
+		expect(icons(container)).toEqual(['#rank-bot'])
+	})
 })
 
 describe('a press on an AI row', () => {
-  const barb = {
-    name: 'BARb(1)',
-    owner: 'me',
-    status: {
-      ready: true,
-      team: 1,
-      allyTeam: 1,
-      player: true,
-      handicap: 0,
-      sync: 'bot' as const,
-      side: 0,
-    },
-    teamColour: 0,
-    ai: 'BARb',
-    options: {},
-  }
-  const nothing = () => Promise.resolve()
+	const barb = {
+		name: 'BARb(1)',
+		owner: 'me',
+		status: {
+			ready: true,
+			team: 1,
+			allyTeam: 1,
+			player: true,
+			handicap: 0,
+			sync: 'bot' as const,
+			side: 0,
+		},
+		teamColour: 0,
+		ai: 'BARb',
+		options: {},
+	}
+	const nothing = () => Promise.resolve()
 
-  // The menu's open state outlives a render, so each test shuts it.
-  afterEach(() => {
-    fireEvent.keyDown(document, { key: 'Escape' })
-    cleanup()
-  })
+	// The menu's open state outlives a render, so each test shuts it.
+	afterEach(() => {
+		fireEvent.keyDown(document, { key: 'Escape' })
+		cleanup()
+	})
 
-  /** A press and release in one place, which is what a click is. */
-  function tap(element: Element) {
-    fireEvent.pointerDown(element, { button: 0, clientX: 5, clientY: 5 })
-    fireEvent.pointerUp(element, { button: 0, clientX: 5, clientY: 5 })
-  }
+	/** A press and release in one place, which is what a click is. */
+	function tap(element: Element) {
+		fireEvent.pointerDown(element, { button: 0, clientX: 5, clientY: 5 })
+		fireEvent.pointerUp(element, { button: 0, clientX: 5, clientY: 5 })
+	}
 
-  test('on the name opens the menu', () => {
-    const { container } = render(() => (
-      <>
-        <BotRow bot={barb} onRemove={nothing} onClone={nothing} />
-        <PlayerMenu />
-      </>
-    ))
-    tap(container.querySelector('.pname') as Element)
-    expect(container.querySelector('.player-menu')).toBeTruthy()
-  })
+	test('on the name opens the menu', () => {
+		const { container } = render(() => (
+			<>
+				<BotRow bot={barb} onRemove={nothing} onClone={nothing} />
+				<PlayerMenu />
+			</>
+		))
+		tap(container.querySelector('.pname') as Element)
+		expect(container.querySelector('.player-menu')).toBeTruthy()
+	})
 
-  test('that travels lifts a copy and leaves the row where it was', () => {
-    const { container } = render(() => (
-      <BotRow
-        bot={barb}
-        onRemove={nothing}
-        moves={{ teams: [0, 1], on: 1, to: nothing }}
-      />
-    ))
-    const row = container.querySelector('.player') as HTMLElement
-    fireEvent.pointerDown(row, { button: 0, clientX: 5, clientY: 5 })
-    fireEvent.pointerMove(window, { clientX: 60, clientY: 40 })
+	test('that travels lifts a copy and leaves the row where it was', () => {
+		const { container } = render(() => (
+			<BotRow
+				bot={barb}
+				onRemove={nothing}
+				moves={{ teams: [0, 1], on: 1, to: nothing }}
+			/>
+		))
+		const row = container.querySelector('.player') as HTMLElement
+		fireEvent.pointerDown(row, { button: 0, clientX: 5, clientY: 5 })
+		fireEvent.pointerMove(window, { clientX: 60, clientY: 40 })
 
-    const ghost = document.body.querySelector('.drag-ghost')
-    expect(ghost).toBeTruthy()
-    expect(ghost?.parentElement).toBe(document.body)
-    expect(row.classList.contains('lifted')).toBe(true)
-    // Still the only row in the list: nothing was taken out or moved.
-    expect(container.querySelectorAll('.player').length).toBe(1)
+		const ghost = document.body.querySelector('.drag-ghost')
+		expect(ghost).toBeTruthy()
+		expect(ghost?.parentElement).toBe(document.body)
+		expect(row.classList.contains('lifted')).toBe(true)
+		// Still the only row in the list: nothing was taken out or moved.
+		expect(container.querySelectorAll('.player').length).toBe(1)
 
-    fireEvent.pointerUp(window, { clientX: 60, clientY: 40 })
-    expect(document.body.querySelector('.drag-ghost')).toBeNull()
-    expect(row.classList.contains('lifted')).toBe(false)
-    expect(container.querySelector('.player-menu')).toBeNull()
-  })
+		fireEvent.pointerUp(window, { clientX: 60, clientY: 40 })
+		expect(document.body.querySelector('.drag-ghost')).toBeNull()
+		expect(row.classList.contains('lifted')).toBe(false)
+		expect(container.querySelector('.player-menu')).toBeNull()
+	})
 
-  test('on the copy or remove button is that button, not the row', () => {
-    let removed = 0
-    const { container } = render(() => (
-      <>
-        <BotRow
-          bot={barb}
-          onRemove={() => {
-            removed++
-            return Promise.resolve()
-          }}
-          onClone={nothing}
-        />
-        <PlayerMenu />
-      </>
-    ))
-    tap(container.querySelector('.bot-clone') as Element)
-    expect(container.querySelector('.player-menu')).toBeNull()
-    const remove = container.querySelector('.bot-remove') as Element
-    tap(remove)
-    fireEvent.click(remove)
-    expect(container.querySelector('.player-menu')).toBeNull()
-    expect(removed).toBe(1)
-  })
+	test('on the copy or remove button is that button, not the row', () => {
+		let removed = 0
+		const { container } = render(() => (
+			<>
+				<BotRow
+					bot={barb}
+					onRemove={() => {
+						removed++
+						return Promise.resolve()
+					}}
+					onClone={nothing}
+				/>
+				<PlayerMenu />
+			</>
+		))
+		tap(container.querySelector('.bot-clone') as Element)
+		expect(container.querySelector('.player-menu')).toBeNull()
+		const remove = container.querySelector('.bot-remove') as Element
+		tap(remove)
+		fireEvent.click(remove)
+		expect(container.querySelector('.player-menu')).toBeNull()
+		expect(removed).toBe(1)
+	})
 })
 
 describe("a watcher's skill", () => {
-  test('is the number the host sent, or an empty cell where it sent none', () => {
-    const rated = render(() => (
-      <WatcherRow
-        user={user({ battleStatus: battle({ player: false }) })}
-        skill={{ value: 25.3, origin: 'exact', sigma: 1 }}
-        me={false}
-      />
-    ))
-    expect(rated.container.querySelector('.skill')?.textContent).toBe('25')
-    rated.unmount()
-    const unrated = render(() => (
-      <WatcherRow
-        user={user({ battleStatus: battle({ player: false }) })}
-        skill={null}
-        me={false}
-      />
-    ))
-    expect(unrated.container.querySelector('.skill')?.textContent).toBe('')
-  })
+	test('is the number the host sent, or an empty cell where it sent none', () => {
+		const rated = render(() => (
+			<WatcherRow
+				user={user({ battleStatus: battle({ player: false }) })}
+				skill={{ value: 25.3, origin: 'exact', sigma: 1 }}
+				me={false}
+			/>
+		))
+		expect(rated.container.querySelector('.skill')?.textContent).toBe('25')
+		rated.unmount()
+		const unrated = render(() => (
+			<WatcherRow
+				user={user({ battleStatus: battle({ player: false }) })}
+				skill={null}
+				me={false}
+			/>
+		))
+		expect(unrated.container.querySelector('.skill')?.textContent).toBe('')
+	})
 })

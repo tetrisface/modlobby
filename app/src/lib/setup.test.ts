@@ -1,402 +1,402 @@
 import { describe, expect, test } from 'vitest'
 import {
-  GENERAL_GROUP,
-  MAP_TAB,
-  MODDING_TAB,
-  TWEAK_SLOTS,
-  changedByTab,
-  changedCount,
-  isTweakSlot,
-  rowsByGroup,
-  rowsByTab,
-  defaultText,
-  displayText,
-  readModOptions,
-  rowsOf,
-  searchRows,
-  tabs,
-  type Tab,
+	GENERAL_GROUP,
+	MAP_TAB,
+	MODDING_TAB,
+	TWEAK_SLOTS,
+	changedByTab,
+	changedCount,
+	isTweakSlot,
+	rowsByGroup,
+	rowsByTab,
+	defaultText,
+	displayText,
+	readModOptions,
+	rowsOf,
+	searchRows,
+	tabs,
+	type Tab,
 } from './setup'
 import { fixtureOptions } from './setup.fixture'
 
 const TABS = tabs(fixtureOptions())
 const byKey = (key: string): Tab => {
-  const tab = TABS.find((entry) => entry.key === key)
-  if (!tab) throw new Error(`no tab ${key}`)
-  return tab
+	const tab = TABS.find((entry) => entry.key === key)
+	if (!tab) throw new Error(`no tab ${key}`)
+	return tab
 }
 const optionKeys = (tab: Tab) =>
-  tab.groups.flatMap((group) => group.options.map((option) => option.key))
+	tab.groups.flatMap((group) => group.options.map((option) => option.key))
 
 describe('tabs', () => {
-  test('are BAR sections by weight, then Modding, then Map', () => {
-    expect(TABS.map((tab) => tab.name)).toEqual([
-      'Main',
-      'Raptors',
-      'Scavengers',
-      'Extras',
-      'Experimental',
-      'Other',
-      'Cheats',
-      'Modding',
-      'Map',
-    ])
-  })
+	test('are BAR sections by weight, then Modding, then Map', () => {
+		expect(TABS.map((tab) => tab.name)).toEqual([
+			'Main',
+			'Raptors',
+			'Scavengers',
+			'Extras',
+			'Experimental',
+			'Other',
+			'Cheats',
+			'Modding',
+			'Map',
+		])
+	})
 
-  test('Map holds the three metadata options, hidden or not, and nothing else', () => {
-    const map = byKey(MAP_TAB)
-    expect(optionKeys(map)).toEqual([
-      'mapmetadata_startpos',
-      'mapmetadata_startboxes_set',
-      'mapmetadata_startbox_override',
-    ])
-    expect(map.groups.map((group) => group.name)).toEqual(['Map metadata'])
-    expect(map.groups[0]?.options.map((option) => option.name)).toEqual([
-      'StartPos',
-      'Startboxes Set',
-      'Startbox Override',
-    ])
-    for (const tab of TABS.filter((entry) => entry.key !== MAP_TAB)) {
-      expect(optionKeys(tab)).not.toContain('mapmetadata_startbox_override')
-    }
-  })
+	test('Map holds the three metadata options, hidden or not, and nothing else', () => {
+		const map = byKey(MAP_TAB)
+		expect(optionKeys(map)).toEqual([
+			'mapmetadata_startpos',
+			'mapmetadata_startboxes_set',
+			'mapmetadata_startbox_override',
+		])
+		expect(map.groups.map((group) => group.name)).toEqual(['Map metadata'])
+		expect(map.groups[0]?.options.map((option) => option.name)).toEqual([
+			'StartPos',
+			'Startboxes Set',
+			'Startbox Override',
+		])
+		for (const tab of TABS.filter((entry) => entry.key !== MAP_TAB)) {
+			expect(optionKeys(tab)).not.toContain('mapmetadata_startbox_override')
+		}
+	})
 
-  test('there is no Map tab for a game without the section', () => {
-    const without = fixtureOptions().filter(
-      (option) =>
-        option.key !== 'mapmetadata' && option.section !== 'mapmetadata',
-    )
-    expect(tabs(without).map((tab) => tab.name)).not.toContain('Map')
-  })
+	test('there is no Map tab for a game without the section', () => {
+		const without = fixtureOptions().filter(
+			(option) =>
+				option.key !== 'mapmetadata' && option.section !== 'mapmetadata',
+		)
+		expect(tabs(without).map((tab) => tab.name)).not.toContain('Map')
+	})
 
-  test('Cheats keeps its name and its balance settings', () => {
-    const cheats = byKey('options_cheats')
-    const keys = optionKeys(cheats)
-    expect(keys).toContain('startmetal')
-    expect(keys).toContain('multiplier_buildpower')
-    expect(keys).toContain('dynamiccheats')
-    expect(keys.length).toBeGreaterThan(20)
-    // `experimentalshields` and `holiday_events` are declared hidden in BAR,
-    // so Chobby draws neither and neither do we.
-    expect(keys).not.toContain('experimentalshields')
-  })
+	test('Cheats keeps its name and its balance settings', () => {
+		const cheats = byKey('options_cheats')
+		const keys = optionKeys(cheats)
+		expect(keys).toContain('startmetal')
+		expect(keys).toContain('multiplier_buildpower')
+		expect(keys).toContain('dynamiccheats')
+		expect(keys.length).toBeGreaterThan(20)
+		// `experimentalshields` and `holiday_events` are declared hidden in BAR,
+		// so Chobby draws neither and neither do we.
+		expect(keys).not.toContain('experimentalshields')
+	})
 
-  test('groups inside Cheats are BAR own subheaders', () => {
-    // BAR's trailing `-- Other` group held only the two hidden options and the
-    // four that move to Modding, so it empties out and stops being drawn.
-    expect(byKey('options_cheats').groups.map((group) => group.name)).toEqual([
-      'AI Cheats',
-      'Starting Resources',
-      'Resource Multipliers',
-      'Unit Parameter Multipliers',
-    ])
-  })
+	test('groups inside Cheats are BAR own subheaders', () => {
+		// BAR's trailing `-- Other` group held only the two hidden options and the
+		// four that move to Modding, so it empties out and stops being drawn.
+		expect(byKey('options_cheats').groups.map((group) => group.name)).toEqual([
+			'AI Cheats',
+			'Starting Resources',
+			'Resource Multipliers',
+			'Unit Parameter Multipliers',
+		])
+	})
 
-  test('every modding option leaves its old tab exactly once', () => {
-    const moved = [
-      'tweakdefs',
-      'tweakunits',
-      'forceallunits',
-      'experimentallegionfaction',
-      'experimentalextraunits',
-      'scavunitsforplayers',
-    ]
-    const modding = optionKeys(byKey(MODDING_TAB))
-    for (const key of moved) {
-      expect(modding).toContain(key)
-      const elsewhere = TABS.filter((tab) => tab.key !== MODDING_TAB).filter(
-        (tab) => optionKeys(tab).includes(key),
-      )
-      expect(elsewhere.map((tab) => tab.name)).toEqual([])
-    }
-  })
+	test('every modding option leaves its old tab exactly once', () => {
+		const moved = [
+			'tweakdefs',
+			'tweakunits',
+			'forceallunits',
+			'experimentallegionfaction',
+			'experimentalextraunits',
+			'scavunitsforplayers',
+		]
+		const modding = optionKeys(byKey(MODDING_TAB))
+		for (const key of moved) {
+			expect(modding).toContain(key)
+			const elsewhere = TABS.filter((tab) => tab.key !== MODDING_TAB).filter(
+				(tab) => optionKeys(tab).includes(key),
+			)
+			expect(elsewhere.map((tab) => tab.name)).toEqual([])
+		}
+	})
 
-  test('tweak slots are all twenty, defs before units', () => {
-    expect(TWEAK_SLOTS).toHaveLength(20)
-    expect(TWEAK_SLOTS[0]).toBe('tweakdefs')
-    expect(TWEAK_SLOTS[9]).toBe('tweakdefs9')
-    expect(TWEAK_SLOTS[10]).toBe('tweakunits')
-    expect(TWEAK_SLOTS[19]).toBe('tweakunits9')
-  })
+	test('tweak slots are all twenty, defs before units', () => {
+		expect(TWEAK_SLOTS).toHaveLength(20)
+		expect(TWEAK_SLOTS[0]).toBe('tweakdefs')
+		expect(TWEAK_SLOTS[9]).toBe('tweakdefs9')
+		expect(TWEAK_SLOTS[10]).toBe('tweakunits')
+		expect(TWEAK_SLOTS[19]).toBe('tweakunits9')
+	})
 
-  test('hidden options never become a row', () => {
-    // `holiday_events` is declared hidden in the Cheats section.
-    expect(optionKeys(byKey('options_cheats'))).not.toContain('holiday_events')
-  })
+	test('hidden options never become a row', () => {
+		// `holiday_events` is declared hidden in the Cheats section.
+		expect(optionKeys(byKey('options_cheats'))).not.toContain('holiday_events')
+	})
 })
 
 describe('changes against BAR defaults', () => {
-  const values = readModOptions({
-    'game/modoptions/startmetal': '2000',
-    'game/modoptions/multiplier_buildpower': '1.5',
-    'game/modoptions/startenergy': '1000',
-    'game/modoptions/dynamiccheats': '1',
-    'game/modoptions/tweakdefs1': 'bG9jYWw=',
-    'game/hosttype': 'SPADS',
-    'game/players/bob/skill': '[14]',
-  })
+	const values = readModOptions({
+		'game/modoptions/startmetal': '2000',
+		'game/modoptions/multiplier_buildpower': '1.5',
+		'game/modoptions/startenergy': '1000',
+		'game/modoptions/dynamiccheats': '1',
+		'game/modoptions/tweakdefs1': 'bG9jYWw=',
+		'game/hosttype': 'SPADS',
+		'game/players/bob/skill': '[14]',
+	})
 
-  test('reads only the modoption tags', () => {
-    expect(values).toEqual({
-      startmetal: '2000',
-      multiplier_buildpower: '1.5',
-      startenergy: '1000',
-      dynamiccheats: '1',
-      tweakdefs1: 'bG9jYWw=',
-    })
-  })
+	test('reads only the modoption tags', () => {
+		expect(values).toEqual({
+			startmetal: '2000',
+			multiplier_buildpower: '1.5',
+			startenergy: '1000',
+			dynamiccheats: '1',
+			tweakdefs1: 'bG9jYWw=',
+		})
+	})
 
-  test('a value equal to the default is not a change', () => {
-    // startenergy's default is 1000, and dynamiccheats defaults to true.
-    const cheats = byKey('options_cheats')
-    const changed = cheats.groups
-      .flatMap((group) => rowsOf(group, values))
-      .filter((row) => row.changed)
-      .map((row) => row.option.key)
-    expect(changed.sort()).toEqual(['multiplier_buildpower', 'startmetal'])
-  })
+	test('a value equal to the default is not a change', () => {
+		// startenergy's default is 1000, and dynamiccheats defaults to true.
+		const cheats = byKey('options_cheats')
+		const changed = cheats.groups
+			.flatMap((group) => rowsOf(group, values))
+			.filter((row) => row.changed)
+			.map((row) => row.option.key)
+		expect(changed.sort()).toEqual(['multiplier_buildpower', 'startmetal'])
+	})
 
-  test('a number compares numerically, not as text', () => {
-    const rows = rowsOf(
-      byKey('options_cheats').groups.find(
-        (group) => group.name === 'Starting Resources',
-      )!,
-      readModOptions({ 'game/modoptions/startmetal': '1000.0' }),
-    )
-    const metal = rows.find((row) => row.option.key === 'startmetal')
-    expect(metal?.changed).toBe(false)
-  })
+	test('a number compares numerically, not as text', () => {
+		const rows = rowsOf(
+			byKey('options_cheats').groups.find(
+				(group) => group.name === 'Starting Resources',
+			)!,
+			readModOptions({ 'game/modoptions/startmetal': '1000.0' }),
+		)
+		const metal = rows.find((row) => row.option.key === 'startmetal')
+		expect(metal?.changed).toBe(false)
+	})
 
-  test('the tab badge counts what the tab shows', () => {
-    expect(changedCount(byKey('options_cheats'), values)).toBe(2)
-    expect(changedCount(byKey('raptor_defense_options'), values)).toBe(0)
-  })
+	test('the tab badge counts what the tab shows', () => {
+		expect(changedCount(byKey('options_cheats'), values)).toBe(2)
+		expect(changedCount(byKey('raptor_defense_options'), values)).toBe(0)
+	})
 
-  test('the All tab lists every changed setting under the tab it lives in', () => {
-    const changed = changedByTab(TABS, values)
-    expect(changed.map((entry) => entry.tab.name)).toEqual([
-      'Cheats',
-      'Modding',
-    ])
-    expect(
-      changed.map((entry) => entry.rows.map((row) => row.option.key).sort()),
-    ).toEqual([['multiplier_buildpower', 'startmetal'], ['tweakdefs1']])
-  })
+	test('the All tab lists every changed setting under the tab it lives in', () => {
+		const changed = changedByTab(TABS, values)
+		expect(changed.map((entry) => entry.tab.name)).toEqual([
+			'Cheats',
+			'Modding',
+		])
+		expect(
+			changed.map((entry) => entry.rows.map((row) => row.option.key).sort()),
+		).toEqual([['multiplier_buildpower', 'startmetal'], ['tweakdefs1']])
+	})
 
-  test('a room on BAR defaults has nothing under All', () => {
-    expect(changedByTab(TABS, {})).toEqual([])
-  })
+	test('a room on BAR defaults has nothing under All', () => {
+		expect(changedByTab(TABS, {})).toEqual([])
+	})
 
-  test('a map option is changed when set and not when SPADS cleared it to 0', () => {
-    const map = byKey(MAP_TAB)
-    const set = readModOptions({
-      'game/modoptions/mapmetadata_startbox_override': 'eJyrVjJS',
-      'game/modoptions/mapmetadata_startboxes_set': '0',
-      'game/modoptions/mapmetadata_startpos': '',
-    })
-    const rows = rowsOf(map.groups[0]!, set)
-    expect(rows.map((row) => [row.option.key, row.changed])).toEqual([
-      ['mapmetadata_startpos', false],
-      ['mapmetadata_startboxes_set', false],
-      ['mapmetadata_startbox_override', true],
-    ])
-    expect(changedCount(map, set)).toBe(1)
-    expect(changedByTab(TABS, set).map((entry) => entry.tab.name)).toEqual([
-      'Map',
-    ])
-    expect(displayText(rows[2]!)).toBe('8 B')
-    expect(displayText(rows[1]!)).toBe('none')
-  })
+	test('a map option is changed when set and not when SPADS cleared it to 0', () => {
+		const map = byKey(MAP_TAB)
+		const set = readModOptions({
+			'game/modoptions/mapmetadata_startbox_override': 'eJyrVjJS',
+			'game/modoptions/mapmetadata_startboxes_set': '0',
+			'game/modoptions/mapmetadata_startpos': '',
+		})
+		const rows = rowsOf(map.groups[0]!, set)
+		expect(rows.map((row) => [row.option.key, row.changed])).toEqual([
+			['mapmetadata_startpos', false],
+			['mapmetadata_startboxes_set', false],
+			['mapmetadata_startbox_override', true],
+		])
+		expect(changedCount(map, set)).toBe(1)
+		expect(changedByTab(TABS, set).map((entry) => entry.tab.name)).toEqual([
+			'Map',
+		])
+		expect(displayText(rows[2]!)).toBe('8 B')
+		expect(displayText(rows[1]!)).toBe('none')
+	})
 
-  test('showing the unchanged too lists every tab with all of its rows', () => {
-    const all = rowsByTab(TABS, values, false)
-    expect(all.map((entry) => entry.tab.name)).toEqual(
-      TABS.map((tab) => tab.name),
-    )
-    const cheats = all.find((entry) => entry.tab.key === 'options_cheats')!
-    expect(cheats.rows.length).toBeGreaterThan(20)
-    expect(cheats.rows.filter((row) => row.changed)).toHaveLength(2)
-    const modding = all.find((entry) => entry.tab.key === MODDING_TAB)!
-    expect(modding.rows.filter(isTweakSlot)).toHaveLength(20)
-    expect(cheats.rows.some(isTweakSlot)).toBe(false)
-  })
+	test('showing the unchanged too lists every tab with all of its rows', () => {
+		const all = rowsByTab(TABS, values, false)
+		expect(all.map((entry) => entry.tab.name)).toEqual(
+			TABS.map((tab) => tab.name),
+		)
+		const cheats = all.find((entry) => entry.tab.key === 'options_cheats')!
+		expect(cheats.rows.length).toBeGreaterThan(20)
+		expect(cheats.rows.filter((row) => row.changed)).toHaveLength(2)
+		const modding = all.find((entry) => entry.tab.key === MODDING_TAB)!
+		expect(modding.rows.filter(isTweakSlot)).toHaveLength(20)
+		expect(cheats.rows.some(isTweakSlot)).toBe(false)
+	})
 
-  test("a tab's changes come under BAR's own groups", () => {
-    const cheats = rowsByGroup(byKey('options_cheats'), values, true)
-    expect(cheats.map((entry) => entry.name)).toEqual([
-      'Starting Resources',
-      'Resource Multipliers',
-    ])
-    expect(
-      cheats.map((entry) => entry.rows.map((row) => row.option.key)),
-    ).toEqual([['startmetal'], ['multiplier_buildpower']])
-  })
+	test("a tab's changes come under BAR's own groups", () => {
+		const cheats = rowsByGroup(byKey('options_cheats'), values, true)
+		expect(cheats.map((entry) => entry.name)).toEqual([
+			'Starting Resources',
+			'Resource Multipliers',
+		])
+		expect(
+			cheats.map((entry) => entry.rows.map((row) => row.option.key)),
+		).toEqual([['startmetal'], ['multiplier_buildpower']])
+	})
 
-  test('showing the unchanged inside a tab lists every group with all of its rows', () => {
-    const tab = byKey('options_cheats')
-    const all = rowsByGroup(tab, values, false)
-    expect(all.map((entry) => entry.name)).toEqual(
-      tab.groups.map((group) => group.name),
-    )
-    expect(all.map((entry) => entry.rows.length)).toEqual(
-      tab.groups.map((group) => group.options.length),
-    )
-    expect(
-      all.flatMap((entry) => entry.rows).filter((row) => row.changed),
-    ).toHaveLength(2)
-  })
+	test('showing the unchanged inside a tab lists every group with all of its rows', () => {
+		const tab = byKey('options_cheats')
+		const all = rowsByGroup(tab, values, false)
+		expect(all.map((entry) => entry.name)).toEqual(
+			tab.groups.map((group) => group.name),
+		)
+		expect(all.map((entry) => entry.rows.length)).toEqual(
+			tab.groups.map((group) => group.options.length),
+		)
+		expect(
+			all.flatMap((entry) => entry.rows).filter((row) => row.changed),
+		).toHaveLength(2)
+	})
 
-  test('a group BAR left unnamed is called General', () => {
-    const raptors = byKey('raptor_defense_options')
-    expect(rowsByGroup(raptors, {}, true)).toEqual([])
-    expect(
-      rowsByGroup(raptors, {}, false).map((entry) => [
-        entry.name,
-        entry.rows.length,
-      ]),
-    ).toEqual([[GENERAL_GROUP, 1]])
-  })
+	test('a group BAR left unnamed is called General', () => {
+		const raptors = byKey('raptor_defense_options')
+		expect(rowsByGroup(raptors, {}, true)).toEqual([])
+		expect(
+			rowsByGroup(raptors, {}, false).map((entry) => [
+				entry.name,
+				entry.rows.length,
+			]),
+		).toEqual([[GENERAL_GROUP, 1]])
+	})
 
-  test('the tweak slots are rows of the Modding tab, not a grid', () => {
-    const modding = byKey(MODDING_TAB)
-    expect(
-      rowsByGroup(modding, values, true).map((entry) => [
-        entry.name,
-        entry.rows.map((row) => row.option.key),
-      ]),
-    ).toEqual([['Tweak slots', ['tweakdefs1']]])
-    const slots = rowsByGroup(modding, values, false)[0]!
-    expect(slots.name).toBe('Tweak slots')
-    expect(slots.rows).toHaveLength(20)
-    expect(slots.rows.every(isTweakSlot)).toBe(true)
-  })
+	test('the tweak slots are rows of the Modding tab, not a grid', () => {
+		const modding = byKey(MODDING_TAB)
+		expect(
+			rowsByGroup(modding, values, true).map((entry) => [
+				entry.name,
+				entry.rows.map((row) => row.option.key),
+			]),
+		).toEqual([['Tweak slots', ['tweakdefs1']]])
+		const slots = rowsByGroup(modding, values, false)[0]!
+		expect(slots.name).toBe('Tweak slots')
+		expect(slots.rows).toHaveLength(20)
+		expect(slots.rows.every(isTweakSlot)).toBe(true)
+	})
 })
 
 describe('search', () => {
-  const keys = (found: ReturnType<typeof searchRows>) =>
-    found.flatMap((entry) => entry.rows.map((row) => row.option.key))
+	const keys = (found: ReturnType<typeof searchRows>) =>
+		found.flatMap((entry) => entry.rows.map((row) => row.option.key))
 
-  test('an empty needle finds nothing, whitespace included', () => {
-    expect(searchRows(TABS, {}, '')).toEqual([])
-    expect(searchRows(TABS, {}, '   ')).toEqual([])
-  })
+	test('an empty needle finds nothing, whitespace included', () => {
+		expect(searchRows(TABS, {}, '')).toEqual([])
+		expect(searchRows(TABS, {}, '   ')).toEqual([])
+	})
 
-  // The fixture names every option after its key and describes none, so the
-  // name and description rules get a tab of their own.
-  const named: Tab = {
-    key: 'named',
-    name: 'Named',
-    desc: '',
-    groups: [
-      {
-        name: '',
-        options: [
-          {
-            key: 'startmetal',
-            name: 'Starting Metal',
-            desc: 'Metal each player starts with.',
-            type: 'number',
-            def: '1000',
-          },
-          { key: 'other', name: 'Other', desc: '', type: 'bool', def: '0' },
-        ],
-      },
-    ],
-  }
+	// The fixture names every option after its key and describes none, so the
+	// name and description rules get a tab of their own.
+	const named: Tab = {
+		key: 'named',
+		name: 'Named',
+		desc: '',
+		groups: [
+			{
+				name: '',
+				options: [
+					{
+						key: 'startmetal',
+						name: 'Starting Metal',
+						desc: 'Metal each player starts with.',
+						type: 'number',
+						def: '1000',
+					},
+					{ key: 'other', name: 'Other', desc: '', type: 'bool', def: '0' },
+				],
+			},
+		],
+	}
 
-  test('matches a word of the name, in any case', () => {
-    const found = searchRows([named], {}, 'STARTING METAL')
-    expect(keys(found)).toEqual(['startmetal'])
-    expect(found.map((entry) => entry.tab.name)).toEqual(['Named'])
-  })
+	test('matches a word of the name, in any case', () => {
+		const found = searchRows([named], {}, 'STARTING METAL')
+		expect(keys(found)).toEqual(['startmetal'])
+		expect(found.map((entry) => entry.tab.name)).toEqual(['Named'])
+	})
 
-  test('matches the key when the name says something else', () => {
-    expect(keys(searchRows(TABS, {}, 'multiplier_buildpower'))).toEqual([
-      'multiplier_buildpower',
-    ])
-  })
+	test('matches the key when the name says something else', () => {
+		expect(keys(searchRows(TABS, {}, 'multiplier_buildpower'))).toEqual([
+			'multiplier_buildpower',
+		])
+	})
 
-  test('matches the description', () => {
-    expect(keys(searchRows([named], {}, 'each player'))).toEqual(['startmetal'])
-  })
+	test('matches the description', () => {
+		expect(keys(searchRows([named], {}, 'each player'))).toEqual(['startmetal'])
+	})
 
-  test('every word has to match', () => {
-    expect(keys(searchRows(TABS, {}, 'start metal'))).toContain('startmetal')
-    expect(keys(searchRows(TABS, {}, 'start metal zzzz'))).toEqual([])
-  })
+	test('every word has to match', () => {
+		expect(keys(searchRows(TABS, {}, 'start metal'))).toContain('startmetal')
+		expect(keys(searchRows(TABS, {}, 'start metal zzzz'))).toEqual([])
+	})
 
-  test('a tweak slot is found by its key', () => {
-    const found = searchRows(TABS, { tweakunits2: 'e30=' }, 'tweakunits2')
-    expect(keys(found)).toEqual(['tweakunits2'])
-    expect(found[0]?.tab.key).toBe(MODDING_TAB)
-    expect(found[0]?.rows[0]?.changed).toBe(true)
-  })
+	test('a tweak slot is found by its key', () => {
+		const found = searchRows(TABS, { tweakunits2: 'e30=' }, 'tweakunits2')
+		expect(keys(found)).toEqual(['tweakunits2'])
+		expect(found[0]?.tab.key).toBe(MODDING_TAB)
+		expect(found[0]?.rows[0]?.changed).toBe(true)
+	})
 
-  test('matches the value the room holds', () => {
-    expect(keys(searchRows([named], { startmetal: '2500' }, '2500'))).toEqual([
-      'startmetal',
-    ])
-    expect(keys(searchRows([named], {}, '2500'))).toEqual([])
-  })
+	test('matches the value the room holds', () => {
+		expect(keys(searchRows([named], { startmetal: '2500' }, '2500'))).toEqual([
+			'startmetal',
+		])
+		expect(keys(searchRows([named], {}, '2500'))).toEqual([])
+	})
 
-  test('matches the value as the row shows it, and as it arrived', () => {
-    const on = searchRows([named], { other: 'true' }, 'other on')
-    expect(keys(on)).toEqual(['other'])
-    expect(keys(searchRows([named], { other: 'true' }, 'other true'))).toEqual([
-      'other',
-    ])
-    expect(keys(searchRows([named], {}, 'other on'))).toEqual([])
-  })
+	test('matches the value as the row shows it, and as it arrived', () => {
+		const on = searchRows([named], { other: 'true' }, 'other on')
+		expect(keys(on)).toEqual(['other'])
+		expect(keys(searchRows([named], { other: 'true' }, 'other true'))).toEqual([
+			'other',
+		])
+		expect(keys(searchRows([named], {}, 'other on'))).toEqual([])
+	})
 
-  test('matches a list item by its name or its key', () => {
-    const values = { nowasting: 'disabled' }
-    expect(keys(searchRows(TABS, values, 'nowasting Disabled'))).toEqual([
-      'nowasting',
-    ])
-    expect(keys(searchRows(TABS, values, 'nowasting disabled'))).toEqual([
-      'nowasting',
-    ])
-  })
+	test('matches a list item by its name or its key', () => {
+		const values = { nowasting: 'disabled' }
+		expect(keys(searchRows(TABS, values, 'nowasting Disabled'))).toEqual([
+			'nowasting',
+		])
+		expect(keys(searchRows(TABS, values, 'nowasting disabled'))).toEqual([
+			'nowasting',
+		])
+	})
 
-  test('a tweak blob is never searched', () => {
-    expect(keys(searchRows(TABS, { tweakunits2: 'e30=' }, 'e30'))).toEqual([])
-  })
+	test('a tweak blob is never searched', () => {
+		expect(keys(searchRows(TABS, { tweakunits2: 'e30=' }, 'e30'))).toEqual([])
+	})
 })
 
 describe('display', () => {
-  const cheats = byKey('options_cheats')
-  const row = (key: string, values: Record<string, string>) =>
-    cheats.groups
-      .flatMap((group) => rowsOf(group, values))
-      .find((entry) => entry.option.key === key)!
+	const cheats = byKey('options_cheats')
+	const row = (key: string, values: Record<string, string>) =>
+		cheats.groups
+			.flatMap((group) => rowsOf(group, values))
+			.find((entry) => entry.option.key === key)!
 
-  test('a bool reads as on or off, however it arrived', () => {
-    expect(displayText(row('dynamiccheats', { dynamiccheats: '0' }))).toBe(
-      'off',
-    )
-    expect(displayText(row('dynamiccheats', { dynamiccheats: 'true' }))).toBe(
-      'on',
-    )
-  })
+	test('a bool reads as on or off, however it arrived', () => {
+		expect(displayText(row('dynamiccheats', { dynamiccheats: '0' }))).toBe(
+			'off',
+		)
+		expect(displayText(row('dynamiccheats', { dynamiccheats: 'true' }))).toBe(
+			'on',
+		)
+	})
 
-  test('a list shows the item name, not its key', () => {
-    expect(displayText(row('nowasting', { nowasting: 'disabled' }))).toBe(
-      'Disabled',
-    )
-  })
+	test('a list shows the item name, not its key', () => {
+		expect(displayText(row('nowasting', { nowasting: 'disabled' }))).toBe(
+			'Disabled',
+		)
+	})
 
-  test('a tweak slot shows its size, never its blob', () => {
-    const modding = byKey(MODDING_TAB)
-    const slot = (values: Record<string, string>) =>
-      modding.groups
-        .flatMap((group) => rowsOf(group, values))
-        .find((entry) => entry.option.key === 'tweakunits2')!
-    expect(displayText(slot({ tweakunits2: 'e30=' }))).toBe('4 B')
-    expect(displayText(slot({}))).toBe('empty')
-  })
+	test('a tweak slot shows its size, never its blob', () => {
+		const modding = byKey(MODDING_TAB)
+		const slot = (values: Record<string, string>) =>
+			modding.groups
+				.flatMap((group) => rowsOf(group, values))
+				.find((entry) => entry.option.key === 'tweakunits2')!
+		expect(displayText(slot({ tweakunits2: 'e30=' }))).toBe('4 B')
+		expect(displayText(slot({}))).toBe('empty')
+	})
 
-  test('an unset row falls back to the default it sits on', () => {
-    expect(displayText(row('startmetal', {}))).toBe('1000')
-    expect(defaultText(row('dynamiccheats', {}).option)).toBe('1')
-  })
+	test('an unset row falls back to the default it sits on', () => {
+		expect(displayText(row('startmetal', {}))).toBe('1000')
+		expect(defaultText(row('dynamiccheats', {}).option)).toBe('1')
+	})
 })

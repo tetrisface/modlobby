@@ -44,4 +44,4 @@ export const playsOnline = (): boolean => build()?.playsOnline ?? true
  * is a red notice on the first room the machine opens.
  */
 export const noPublishedEngine = (): string | null | undefined =>
-  build()?.noPublishedEngine
+	build()?.noPublishedEngine

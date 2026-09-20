@@ -13,17 +13,17 @@ export type Bounds = { min: number; max: number }
 export type WidthStore = Pick<Storage, 'getItem' | 'setItem'>
 
 export function clamp(width: number, bounds: Bounds): number {
-  return Math.min(Math.max(width, bounds.min), bounds.max)
+	return Math.min(Math.max(width, bounds.min), bounds.max)
 }
 
 /** The width after the pointer moved from `startX` to `x`, kept in bounds. */
 export function dragWidth(
-  startWidth: number,
-  startX: number,
-  x: number,
-  bounds: Bounds,
+	startWidth: number,
+	startX: number,
+	x: number,
+	bounds: Bounds,
 ): number {
-  return clamp(Math.round(startWidth - (x - startX)), bounds)
+	return clamp(Math.round(startWidth - (x - startX)), bounds)
 }
 
 /**
@@ -31,12 +31,12 @@ export function dragWidth(
  * the pane's *bottom* edge: moving down makes the pane taller.
  */
 export function dragHeight(
-  startHeight: number,
-  startY: number,
-  y: number,
-  bounds: Bounds,
+	startHeight: number,
+	startY: number,
+	y: number,
+	bounds: Bounds,
 ): number {
-  return clamp(Math.round(startHeight + (y - startY)), bounds)
+	return clamp(Math.round(startHeight + (y - startY)), bounds)
 }
 
 /**
@@ -45,16 +45,16 @@ export function dragHeight(
  * pane too small to hold the neighbour's share still has a size.
  */
 export function splitBounds(total: number, keep: number, min: number): Bounds {
-  return { min, max: Math.max(min, Math.round(total - keep)) }
+	return { min, max: Math.max(min, Math.round(total - keep)) }
 }
 
 /** `localStorage`, when the webview lets us at it. */
 export function localStore(): Storage | null {
-  try {
-    return window.localStorage
-  } catch {
-    return null
-  }
+	try {
+		return window.localStorage
+	} catch {
+		return null
+	}
 }
 
 /**
@@ -64,54 +64,54 @@ export function localStore(): Storage | null {
  * than a constant to fall back on -- a measurement of what would fit.
  */
 export function readWidth(
-  storage: WidthStore | null,
-  key: string,
+	storage: WidthStore | null,
+	key: string,
 ): number | null {
-  if (!storage) return null
-  let raw: string | null
-  try {
-    raw = storage.getItem(key)
-  } catch {
-    return null
-  }
-  if (raw === null) return null
-  const width = Number(raw)
-  return Number.isFinite(width) && width > 0 ? width : null
+	if (!storage) return null
+	let raw: string | null
+	try {
+		raw = storage.getItem(key)
+	} catch {
+		return null
+	}
+	if (raw === null) return null
+	const width = Number(raw)
+	return Number.isFinite(width) && width > 0 ? width : null
 }
 
 export function writeWidth(
-  storage: WidthStore | null,
-  key: string,
-  width: number,
+	storage: WidthStore | null,
+	key: string,
+	width: number,
 ): void {
-  if (!storage) return
-  try {
-    storage.setItem(key, String(Math.round(width)))
-  } catch {
-    // Storage that refuses a write (private mode, a full quota) costs the
-    // reader nothing but remembering the width next time.
-  }
+	if (!storage) return
+	try {
+		storage.setItem(key, String(Math.round(width)))
+	} catch {
+		// Storage that refuses a write (private mode, a full quota) costs the
+		// reader nothing but remembering the width next time.
+	}
 }
 
 /** A yes-or-no remembered the same way: a form a pane was left in. */
 export function readFlag(storage: WidthStore | null, key: string): boolean {
-  if (!storage) return false
-  try {
-    return storage.getItem(key) === '1'
-  } catch {
-    return false
-  }
+	if (!storage) return false
+	try {
+		return storage.getItem(key) === '1'
+	} catch {
+		return false
+	}
 }
 
 export function writeFlag(
-  storage: WidthStore | null,
-  key: string,
-  on: boolean,
+	storage: WidthStore | null,
+	key: string,
+	on: boolean,
 ): void {
-  if (!storage) return
-  try {
-    storage.setItem(key, on ? '1' : '0')
-  } catch {
-    // As above: forgotten, not broken.
-  }
+	if (!storage) return
+	try {
+		storage.setItem(key, on ? '1' : '0')
+	} catch {
+		// As above: forgotten, not broken.
+	}
 }

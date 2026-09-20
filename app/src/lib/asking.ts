@@ -10,17 +10,17 @@
  */
 
 export type Pace = {
-  /** The least time between the starts of two asks. */
-  floor: number
-  /** How long to wait before an ask, read when the ask is scheduled. */
-  stagger: () => number
+	/** The least time between the starts of two asks. */
+	floor: number
+	/** How long to wait before an ask, read when the ask is scheduled. */
+	stagger: () => number
 }
 
 export type Asker = {
-  /** Asks, or arranges to: never more than one out, never sooner than the pace allows. */
-  ask(): void
-  /** Nothing further happens after this. */
-  stop(): void
+	/** Asks, or arranges to: never more than one out, never sooner than the pace allows. */
+	ask(): void
+	/** Nothing further happens after this. */
+	stop(): void
 }
 
 /**
@@ -32,45 +32,45 @@ export type Asker = {
  * changes. An ask that arrives while one is scheduled is that one.
  */
 export function asker(run: () => Promise<void>, pace: Pace): Asker {
-  let inFlight = false
-  let again = false
-  let stopped = false
-  let lastStart = Number.NEGATIVE_INFINITY
-  let timer: ReturnType<typeof setTimeout> | undefined
+	let inFlight = false
+	let again = false
+	let stopped = false
+	let lastStart = Number.NEGATIVE_INFINITY
+	let timer: ReturnType<typeof setTimeout> | undefined
 
-  async function go() {
-    timer = undefined
-    inFlight = true
-    lastStart = Date.now()
-    try {
-      await run()
-    } catch {
-      // run reports its own failures
-    } finally {
-      inFlight = false
-    }
-    if (stopped || !again) return
-    again = false
-    ask()
-  }
+	async function go() {
+		timer = undefined
+		inFlight = true
+		lastStart = Date.now()
+		try {
+			await run()
+		} catch {
+			// run reports its own failures
+		} finally {
+			inFlight = false
+		}
+		if (stopped || !again) return
+		again = false
+		ask()
+	}
 
-  function ask() {
-    if (stopped) return
-    if (inFlight) {
-      again = true
-      return
-    }
-    if (timer !== undefined) return
-    const wait = Math.max(pace.stagger(), lastStart + pace.floor - Date.now())
-    timer = setTimeout(() => void go(), wait)
-  }
+	function ask() {
+		if (stopped) return
+		if (inFlight) {
+			again = true
+			return
+		}
+		if (timer !== undefined) return
+		const wait = Math.max(pace.stagger(), lastStart + pace.floor - Date.now())
+		timer = setTimeout(() => void go(), wait)
+	}
 
-  return {
-    ask,
-    stop() {
-      stopped = true
-      clearTimeout(timer)
-      timer = undefined
-    },
-  }
+	return {
+		ask,
+		stop() {
+			stopped = true
+			clearTimeout(timer)
+			timer = undefined
+		},
+	}
 }

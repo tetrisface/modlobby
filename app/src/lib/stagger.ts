@@ -17,11 +17,11 @@ export const STAGGER_STEP = 400
 export const STAGGER_CAP = 4000
 
 export type Room = {
-  me: string | null
-  /** The room's members in the lobby's own order. */
-  members: string[]
-  boss: string | null
-  users: Record<string, UserView>
+	me: string | null
+	/** The room's members in the lobby's own order. */
+	members: string[]
+	boss: string | null
+	users: Record<string, UserView>
 }
 
 /**
@@ -30,34 +30,34 @@ export type Room = {
  * among them — do not ask, so they do not hold a place.
  */
 export function askOrder(
-  room: Pick<Room, 'members' | 'boss' | 'users'>,
+	room: Pick<Room, 'members' | 'boss' | 'users'>,
 ): string[] {
-  type Key = [boss: number, spectator: number, rank: number]
-  const key = (name: string): Key => {
-    const user = room.users[name]
-    return [
-      name === room.boss ? 0 : 1,
-      user?.battleStatus?.player ? 0 : 1,
-      -(user?.status.rank ?? 0),
-    ]
-  }
-  return room.members
-    .filter((name) => !room.users[name]?.status.bot)
-    .map((name, index) => ({ name, index, key: key(name) }))
-    .sort(
-      (a, b) =>
-        a.key[0] - b.key[0] ||
-        a.key[1] - b.key[1] ||
-        a.key[2] - b.key[2] ||
-        a.index - b.index,
-    )
-    .map((entry) => entry.name)
+	type Key = [boss: number, spectator: number, rank: number]
+	const key = (name: string): Key => {
+		const user = room.users[name]
+		return [
+			name === room.boss ? 0 : 1,
+			user?.battleStatus?.player ? 0 : 1,
+			-(user?.status.rank ?? 0),
+		]
+	}
+	return room.members
+		.filter((name) => !room.users[name]?.status.bot)
+		.map((name, index) => ({ name, index, key: key(name) }))
+		.sort(
+			(a, b) =>
+				a.key[0] - b.key[0] ||
+				a.key[1] - b.key[1] ||
+				a.key[2] - b.key[2] ||
+				a.index - b.index,
+		)
+		.map((entry) => entry.name)
 }
 
 /** Milliseconds this client waits before asking, from its place in the room. */
 export function askDelay(room: Room): number {
-  if (room.me === null) return 0
-  const place = askOrder(room).indexOf(room.me)
-  if (place < 0) return 0
-  return Math.min(place * STAGGER_STEP, STAGGER_CAP)
+	if (room.me === null) return 0
+	const place = askOrder(room).indexOf(room.me)
+	if (place < 0) return 0
+	return Math.min(place * STAGGER_STEP, STAGGER_CAP)
 }

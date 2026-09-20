@@ -19,47 +19,47 @@ import { over } from '../store/overlay'
  * whoever draws them.
  */
 export function GameActions() {
-  const [confirming, setConfirming] = createSignal<'leave' | 'quit' | null>(
-    null,
-  )
-  createEffect(() => {
-    over()
-    setConfirming(null)
-  })
+	const [confirming, setConfirming] = createSignal<'leave' | 'quit' | null>(
+		null,
+	)
+	createEffect(() => {
+		over()
+		setConfirming(null)
+	})
 
-  function guarded(which: 'leave' | 'quit', run: () => void) {
-    if (confirming() !== which) {
-      setConfirming(which)
-      return
-    }
-    setConfirming(null)
-    run()
-  }
+	function guarded(which: 'leave' | 'quit', run: () => void) {
+		if (confirming() !== which) {
+			setConfirming(which)
+			return
+		}
+		setConfirming(null)
+		run()
+	}
 
-  return (
-    <>
-      <button
-        class='quit'
-        title='Ends the game and leaves you here in the lobby'
-        onClick={() =>
-          guarded(
-            'leave',
-            () =>
-              void api
-                .stopGame()
-                .catch((error) => pushNotice('warning', describeError(error))),
-          )
-        }
-      >
-        {confirming() === 'leave' ? 'End the game?' : 'Leave game'}
-      </button>
-      <button
-        class='quit'
-        title='Ends the game and closes modlobby'
-        onClick={() => guarded('quit', () => void api.quitAll())}
-      >
-        {confirming() === 'quit' ? 'Quit everything?' : 'Quit'}
-      </button>
-    </>
-  )
+	return (
+		<>
+			<button
+				class='quit'
+				title='Ends the game and leaves you here in the lobby'
+				onClick={() =>
+					guarded(
+						'leave',
+						() =>
+							void api
+								.stopGame()
+								.catch((error) => pushNotice('warning', describeError(error))),
+					)
+				}
+			>
+				{confirming() === 'leave' ? 'End the game?' : 'Leave game'}
+			</button>
+			<button
+				class='quit'
+				title='Ends the game and closes modlobby'
+				onClick={() => guarded('quit', () => void api.quitAll())}
+			>
+				{confirming() === 'quit' ? 'Quit everything?' : 'Quit'}
+			</button>
+		</>
+	)
 }

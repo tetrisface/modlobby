@@ -1,8 +1,8 @@
 import {
-  createContext,
-  useContext,
-  type Accessor,
-  type ParentProps,
+	createContext,
+	useContext,
+	type Accessor,
+	type ParentProps,
 } from 'solid-js'
 import { hasEveryWord } from '../lib/search'
 
@@ -22,16 +22,16 @@ export const Heading = createContext('')
  * never on its own.
  */
 export function Row(props: ParentProps<{ class?: string }>) {
-  const query = useContext(Query)
-  const heading = useContext(Heading)
-  let row: HTMLDivElement | undefined
-  return (
-    <div
-      ref={row}
-      class={props.class ? `set-row ${props.class}` : 'set-row'}
-      hidden={!hasEveryWord(`${heading} ${row?.textContent ?? ''}`, query())}
-    >
-      {props.children}
-    </div>
-  )
+	const query = useContext(Query)
+	const heading = useContext(Heading)
+	let row: HTMLDivElement | undefined
+	return (
+		<div
+			ref={row}
+			class={props.class ? `set-row ${props.class}` : 'set-row'}
+			hidden={!hasEveryWord(`${heading} ${row?.textContent ?? ''}`, query())}
+		>
+			{props.children}
+		</div>
+	)
 }

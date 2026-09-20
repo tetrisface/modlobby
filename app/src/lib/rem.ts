@@ -15,10 +15,10 @@ import { uiScale } from '../store/settings'
 const FALLBACK = 16
 
 export function remPx(count: number): () => number {
-  return createMemo(() => {
-    // The dependency: the root font size is the whole of what scaling changes.
-    uiScale()
-    const root = parseFloat(getComputedStyle(document.documentElement).fontSize)
-    return count * (root > 0 ? root : FALLBACK)
-  })
+	return createMemo(() => {
+		// The dependency: the root font size is the whole of what scaling changes.
+		uiScale()
+		const root = parseFloat(getComputedStyle(document.documentElement).fontSize)
+		return count * (root > 0 ? root : FALLBACK)
+	})
 }

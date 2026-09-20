@@ -23,24 +23,24 @@ const URLS = /\bhttps?:\/\/[^\s<>"']+/gi
 type Piece = { text: string; href?: string }
 
 export function split(text: string): Piece[] {
-  const pieces: Piece[] = []
-  let at = 0
+	const pieces: Piece[] = []
+	let at = 0
 
-  for (const match of text.matchAll(URLS)) {
-    const start = match.index
-    if (start > at) pieces.push({ text: text.slice(at, start) })
+	for (const match of text.matchAll(URLS)) {
+		const start = match.index
+		if (start > at) pieces.push({ text: text.slice(at, start) })
 
-    const raw = match[0]
-    const trimmed = raw.replace(TRAILING, '')
-    pieces.push({ text: trimmed, href: trimmed })
-    if (trimmed.length < raw.length) {
-      pieces.push({ text: raw.slice(trimmed.length) })
-    }
-    at = start + raw.length
-  }
+		const raw = match[0]
+		const trimmed = raw.replace(TRAILING, '')
+		pieces.push({ text: trimmed, href: trimmed })
+		if (trimmed.length < raw.length) {
+			pieces.push({ text: raw.slice(trimmed.length) })
+		}
+		at = start + raw.length
+	}
 
-  if (at < text.length) pieces.push({ text: text.slice(at) })
-  return pieces
+	if (at < text.length) pieces.push({ text: text.slice(at) })
+	return pieces
 }
 
 /**
@@ -48,33 +48,33 @@ export function split(text: string): Piece[] {
  * text rather than showing the address.
  */
 export async function openExternal(href: string): Promise<void> {
-  try {
-    await api.openUrl(href)
-  } catch (error) {
-    pushNotice('warning', describeError(error))
-  }
+	try {
+		await api.openUrl(href)
+	} catch (error) {
+		pushNotice('warning', describeError(error))
+	}
 }
 
 export function Linkify(props: { text: string }) {
-  return (
-    <For each={split(props.text)}>
-      {(piece) =>
-        piece.href ? (
-          <a
-            class='chat-link'
-            href={piece.href}
-            title={piece.href}
-            onClick={(event) => {
-              event.preventDefault()
-              void openExternal(piece.href!)
-            }}
-          >
-            {piece.text}
-          </a>
-        ) : (
-          piece.text
-        )
-      }
-    </For>
-  )
+	return (
+		<For each={split(props.text)}>
+			{(piece) =>
+				piece.href ? (
+					<a
+						class='chat-link'
+						href={piece.href}
+						title={piece.href}
+						onClick={(event) => {
+							event.preventDefault()
+							void openExternal(piece.href!)
+						}}
+					>
+						{piece.text}
+					</a>
+				) : (
+					piece.text
+				)
+			}
+		</For>
+	)
 }

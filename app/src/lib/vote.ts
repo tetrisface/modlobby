@@ -1,9 +1,9 @@
 import {
-  createEffect,
-  createMemo,
-  createSignal,
-  onCleanup,
-  type Accessor,
+	createEffect,
+	createMemo,
+	createSignal,
+	onCleanup,
+	type Accessor,
 } from 'solid-js'
 import type { VoteView } from '../ipc/bindings/VoteView'
 
@@ -17,7 +17,7 @@ import type { VoteView } from '../ipc/bindings/VoteView'
 
 /** Tells one vote from the next: the same command called again is a new vote. */
 export function voteKey(vote: VoteView): string {
-  return `${vote.by ?? ''}\n${vote.command}`
+	return `${vote.by ?? ''}\n${vote.command}`
 }
 
 /**
@@ -25,13 +25,13 @@ export function voteKey(vote: VoteView): string {
  * counting -- a needed count of nought -- is nowhere.
  */
 export function share(have: number, needed: number): number {
-  if (needed <= 0) return 0
-  return Math.min(1, have / needed)
+	if (needed <= 0) return 0
+	return Math.min(1, have / needed)
 }
 
 /** `1/8`, or just `1` where the host names no target. */
 export function tally(have: number, needed: number): string {
-  return needed > 0 ? `${have}/${needed}` : `${have}`
+	return needed > 0 ? `${have}/${needed}` : `${have}`
 }
 
 /**
@@ -41,18 +41,18 @@ export function tally(have: number, needed: number): string {
  * moved when the host spoke would stand still for most of the vote.
  */
 export function createCountdown(said: Accessor<number>): Accessor<number> {
-  const [left, setLeft] = createSignal(0)
-  createEffect(() => {
-    const from = said()
-    setLeft(from)
-    if (from <= 0) return
-    const timer = setInterval(
-      () => setLeft((seconds) => Math.max(0, seconds - 1)),
-      1000,
-    )
-    onCleanup(() => clearInterval(timer))
-  })
-  return left
+	const [left, setLeft] = createSignal(0)
+	createEffect(() => {
+		const from = said()
+		setLeft(from)
+		if (from <= 0) return
+		const timer = setInterval(
+			() => setLeft((seconds) => Math.max(0, seconds - 1)),
+			1000,
+		)
+		onCleanup(() => clearInterval(timer))
+	})
+	return left
 }
 
 /**
@@ -61,15 +61,15 @@ export function createCountdown(said: Accessor<number>): Accessor<number> {
  * Forgotten with the vote, so the next one is measured against its own time.
  */
 export function createSpan(
-  said: Accessor<number>,
-  key: Accessor<string | null>,
+	said: Accessor<number>,
+	key: Accessor<string | null>,
 ): Accessor<number> {
-  let of: string | null = null
-  return createMemo<number>((longest) => {
-    const now = said()
-    const which = key()
-    const span = which === of ? Math.max(longest, now) : now
-    of = which
-    return span
-  }, 0)
+	let of: string | null = null
+	return createMemo<number>((longest) => {
+		const now = said()
+		const which = key()
+		const span = which === of ? Math.max(longest, now) : now
+		of = which
+		return span
+	}, 0)
 }

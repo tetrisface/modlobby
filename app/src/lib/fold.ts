@@ -16,25 +16,25 @@
  * whatever is folded -- which takes room only once something is.
  */
 export function fitCount(
-  needs: readonly number[],
-  room: number,
-  gap: number,
-  menu: number,
+	needs: readonly number[],
+	room: number,
+	gap: number,
+	menu: number,
 ): number {
-  for (let kept = needs.length; kept > 0; kept--) {
-    const folded = kept < needs.length
-    if (width(needs.slice(0, kept), folded, gap, menu) <= room) return kept
-  }
-  return 0
+	for (let kept = needs.length; kept > 0; kept--) {
+		const folded = kept < needs.length
+		if (width(needs.slice(0, kept), folded, gap, menu) <= room) return kept
+	}
+	return 0
 }
 
 function width(
-  needs: readonly number[],
-  folded: boolean,
-  gap: number,
-  menu: number,
+	needs: readonly number[],
+	folded: boolean,
+	gap: number,
+	menu: number,
 ): number {
-  const items = needs.length + (folded ? 1 : 0)
-  const sum = needs.reduce((total, need) => total + need, 0)
-  return sum + (folded ? menu : 0) + gap * Math.max(0, items - 1)
+	const items = needs.length + (folded ? 1 : 0)
+	const sum = needs.reduce((total, need) => total + need, 0)
+	return sum + (folded ? menu : 0) + gap * Math.max(0, items - 1)
 }

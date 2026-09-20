@@ -16,14 +16,14 @@ import { ordered } from './reorder'
 import { hasEveryWord } from './search'
 
 export type Row = {
-  /** Which server the room is on. */
-  server: string
-  /** The room across every server; see `battleKey`. */
-  key: string
-  battle: BattleView
-  running: boolean
-  /** Whether anyone in the room is a friend. */
-  hasFriend: boolean
+	/** Which server the room is on. */
+	server: string
+	/** The room across every server; see `battleKey`. */
+	key: string
+	battle: BattleView
+	running: boolean
+	/** Whether anyone in the room is a friend. */
+	hasFriend: boolean
 }
 
 /** A room's name across every server: two servers can each have a battle 12. */
@@ -34,10 +34,10 @@ export const battleKey = (server: string, id: number) => `${server}/${id}`
  * than one is co-op, whoever it is they are all playing against.
  */
 export function layoutLabel(layout: LayoutView | null): string {
-  if (!layout) return ''
-  const { teams, teamSize } = layout
-  if (teams < 2) return teamSize > 1 ? 'coop' : '1v1'
-  return Array(teams).fill(teamSize).join('v')
+	if (!layout) return ''
+	const { teams, teamSize } = layout
+	if (teams < 2) return teamSize > 1 ? 'coop' : '1v1'
+	return Array(teams).fill(teamSize).join('v')
 }
 
 /**
@@ -49,10 +49,10 @@ export function layoutLabel(layout: LayoutView | null): string {
  * and adds the ones BAR's autohosts actually use.
  */
 const VS_AI =
-  /\bvs\.?\s*(ai|scavengers?|raptors?|chickens?|bots?)\b|\bpve\b|\bcoop\b/i
+	/\bvs\.?\s*(ai|scavengers?|raptors?|chickens?|bots?)\b|\bpve\b|\bcoop\b/i
 
 export function isVsAi(battle: BattleView): boolean {
-  return VS_AI.test(battle.title)
+	return VS_AI.test(battle.title)
 }
 
 /**
@@ -61,30 +61,30 @@ export function isVsAi(battle: BattleView): boolean {
  * (`battle_list_window.lua:803-845`).
  */
 export function matches(battle: BattleView, query: string): boolean {
-  return hasEveryWord(
-    [battle.title, battle.mapName, battle.founder, battle.gameName].join(' '),
-    query,
-  )
+	return hasEveryWord(
+		[battle.title, battle.mapName, battle.founder, battle.gameName].join(' '),
+		query,
+	)
 }
 
 export function keep(row: Row, filters: BattleList, query: string): boolean {
-  const { battle } = row
-  if (filters.friendsOnly && !row.hasFriend) return false
-  if (!filters.showPassworded && battle.passworded) return false
-  if (!filters.showLocked && battle.locked) return false
-  if (!filters.showRunning && row.running) return false
-  // A running room with nobody in it is still worth watching; an idle one is
-  // what people mean by empty. Chobby's comparator draws the same line, so the
-  // filter follows it.
-  if (!filters.showEmpty && battle.playerCount === 0 && !row.running)
-    return false
-  if (!matchesMode(battle, filters.mode)) return false
-  return matches(battle, query)
+	const { battle } = row
+	if (filters.friendsOnly && !row.hasFriend) return false
+	if (!filters.showPassworded && battle.passworded) return false
+	if (!filters.showLocked && battle.locked) return false
+	if (!filters.showRunning && row.running) return false
+	// A running room with nobody in it is still worth watching; an idle one is
+	// what people mean by empty. Chobby's comparator draws the same line, so the
+	// filter follows it.
+	if (!filters.showEmpty && battle.playerCount === 0 && !row.running)
+		return false
+	if (!matchesMode(battle, filters.mode)) return false
+	return matches(battle, query)
 }
 
 function matchesMode(battle: BattleView, mode: ModeFilter): boolean {
-  if (mode === 'all') return true
-  return mode === 'pve' ? isVsAi(battle) : !isVsAi(battle)
+	if (mode === 'all') return true
+	return mode === 'pve' ? isVsAi(battle) : !isVsAi(battle)
 }
 
 /**
@@ -93,22 +93,22 @@ function matchesMode(battle: BattleView, mode: ModeFilter): boolean {
  * the order never flickers between updates.
  */
 function relevance(a: Row, b: Row): number {
-  if (a.battle.passworded !== b.battle.passworded)
-    return a.battle.passworded ? 1 : -1
-  if (a.battle.passworded)
-    return a.battle.title.toLowerCase() < b.battle.title.toLowerCase() ? -1 : 1
+	if (a.battle.passworded !== b.battle.passworded)
+		return a.battle.passworded ? 1 : -1
+	if (a.battle.passworded)
+		return a.battle.title.toLowerCase() < b.battle.title.toLowerCase() ? -1 : 1
 
-  if (a.battle.locked !== b.battle.locked) return a.battle.locked ? 1 : -1
+	if (a.battle.locked !== b.battle.locked) return a.battle.locked ? 1 : -1
 
-  const idle = (row: Row) => !row.running && row.battle.playerCount === 0
-  if (idle(a) !== idle(b)) return idle(a) ? 1 : -1
+	const idle = (row: Row) => !row.running && row.battle.playerCount === 0
+	if (idle(a) !== idle(b)) return idle(a) ? 1 : -1
 
-  if (a.running !== b.running) return a.running ? 1 : -1
+	if (a.running !== b.running) return a.running ? 1 : -1
 
-  if (a.battle.playerCount !== b.battle.playerCount)
-    return b.battle.playerCount - a.battle.playerCount
+	if (a.battle.playerCount !== b.battle.playerCount)
+		return b.battle.playerCount - a.battle.playerCount
 
-  return watchers(a, b) || b.battle.id - a.battle.id
+	return watchers(a, b) || b.battle.id - a.battle.id
 }
 
 /**
@@ -119,51 +119,51 @@ function relevance(a: Row, b: Row): number {
  * this is the default order's opinion, not a rule about every column.
  */
 function watchers(a: Row, b: Row): number {
-  return b.battle.spectatorCount - a.battle.spectatorCount
+	return b.battle.spectatorCount - a.battle.spectatorCount
 }
 
 const BY: Record<
-  Exclude<BattleSort, 'relevance'>,
-  (row: Row) => string | number
+	Exclude<BattleSort, 'relevance'>,
+	(row: Row) => string | number
 > = {
-  players: (row) => row.battle.playerCount,
-  title: (row) => row.battle.title.toLowerCase(),
-  map: (row) => row.battle.mapName.toLowerCase(),
+	players: (row) => row.battle.playerCount,
+	title: (row) => row.battle.title.toLowerCase(),
+	map: (row) => row.battle.mapName.toLowerCase(),
 }
 
 export function compare(a: Row, b: Row, sort: BattleSort, descending: boolean) {
-  if (sort === 'relevance') return relevance(a, b)
+	if (sort === 'relevance') return relevance(a, b)
 
-  const key = BY[sort]
-  const left = key(a)
-  const right = key(b)
-  if (left === right) return a.battle.id - b.battle.id
+	const key = BY[sort]
+	const left = key(a)
+	const right = key(b)
+	if (left === right) return a.battle.id - b.battle.id
 
-  const order = left < right ? -1 : 1
-  return descending ? -order : order
+	const order = left < right ? -1 : 1
+	return descending ? -order : order
 }
 
 export function arrange(
-  rows: Row[],
-  filters: BattleList,
-  query: string,
+	rows: Row[],
+	filters: BattleList,
+	query: string,
 ): Row[] {
-  return rows
-    .filter((row) => keep(row, filters, query))
-    .sort((a, b) => compare(a, b, filters.sort, filters.sortDescending))
+	return rows
+		.filter((row) => keep(row, filters, query))
+		.sort((a, b) => compare(a, b, filters.sort, filters.sortDescending))
 }
 
 export const SORTS: ReadonlyArray<{ key: BattleSort; label: string }> = [
-  { key: 'relevance', label: 'Relevance' },
-  { key: 'players', label: 'Players' },
-  { key: 'title', label: 'Title' },
-  { key: 'map', label: 'Map' },
+	{ key: 'relevance', label: 'Relevance' },
+	{ key: 'players', label: 'Players' },
+	{ key: 'title', label: 'Title' },
+	{ key: 'map', label: 'Map' },
 ]
 
 export const MODES: ReadonlyArray<{ key: ModeFilter; label: string }> = [
-  { key: 'all', label: 'All' },
-  { key: 'pve', label: 'PvE' },
-  { key: 'pvp', label: 'PvP' },
+	{ key: 'all', label: 'All' },
+	{ key: 'pve', label: 'PvE' },
+	{ key: 'pvp', label: 'PvP' },
 ]
 
 /**
@@ -181,8 +181,8 @@ export const MODES: ReadonlyArray<{ key: ModeFilter; label: string }> = [
  *   sorted order, rather than teleporting into the middle.
  */
 export function stabilize(sorted: Row[], held: readonly string[]): Row[] {
-  const byKey = new Map(sorted.map((row) => [row.key, row]))
-  // The same "saved order, applied to what is actually there" rule the chat
-  // tabs follow, over battle keys instead of room names.
-  return ordered([...byKey.keys()], held).flatMap((key) => byKey.get(key) ?? [])
+	const byKey = new Map(sorted.map((row) => [row.key, row]))
+	// The same "saved order, applied to what is actually there" rule the chat
+	// tabs follow, over battle keys instead of room names.
+	return ordered([...byKey.keys()], held).flatMap((key) => byKey.get(key) ?? [])
 }

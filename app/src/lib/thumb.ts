@@ -19,7 +19,7 @@ import { uiScale } from '../store/settings'
  * rather than building the string.
  */
 export function thumbSrc(path: string): string {
-  return convertFileSrc(path, 'thumb')
+	return convertFileSrc(path, 'thumb')
 }
 
 /**
@@ -36,11 +36,11 @@ export function thumbSrc(path: string): string {
  * from that copy (`content::map_thumb`), so nothing is fetched again.
  */
 export function devicePixels(tile: Tile): Tile {
-  const scale = (window.devicePixelRatio || 1) * zoom()
-  return {
-    width: Math.round(tile.width * scale),
-    height: Math.round(tile.height * scale),
-  }
+	const scale = (window.devicePixelRatio || 1) * zoom()
+	return {
+		width: Math.round(tile.width * scale),
+		height: Math.round(tile.height * scale),
+	}
 }
 
 /**
@@ -51,5 +51,5 @@ export function devicePixels(tile: Tile): Tile {
  * up to an eighth off is drawn by the box that already scales it anyway.
  */
 function zoom(): number {
-  return Math.round(uiScale() / 25) / 4 || 1
+	return Math.round(uiScale() / 25) / 4 || 1
 }

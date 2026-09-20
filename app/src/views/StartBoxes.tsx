@@ -15,32 +15,32 @@ import { useRoom } from './room/model'
  * nothing at all.
  */
 export function StartBoxes(props: { teams: number; mapName: string }) {
-  const room = useRoom()
-  const changes = createMemo(() =>
-    (room.my()?.history ?? [])
-      .filter((change) => isBoxKey(change.key))
-      .reverse(),
-  )
+	const room = useRoom()
+	const changes = createMemo(() =>
+		(room.my()?.history ?? [])
+			.filter((change) => isBoxKey(change.key))
+			.reverse(),
+	)
 
-  return (
-    <Show when={changes().length > 0}>
-      <details class='box-history'>
-        <summary>
-          Start boxes moved {changes().length}{' '}
-          {changes().length === 1 ? 'time' : 'times'} this session
-        </summary>
-        <For each={changes()}>
-          {(change) => (
-            <BoxDiff
-              title={`#${change.seq} · ${change.by ?? 'someone'}`}
-              current={change.from}
-              proposed={change.to}
-              teams={props.teams}
-              mapName={props.mapName}
-            />
-          )}
-        </For>
-      </details>
-    </Show>
-  )
+	return (
+		<Show when={changes().length > 0}>
+			<details class='box-history'>
+				<summary>
+					Start boxes moved {changes().length}{' '}
+					{changes().length === 1 ? 'time' : 'times'} this session
+				</summary>
+				<For each={changes()}>
+					{(change) => (
+						<BoxDiff
+							title={`#${change.seq} · ${change.by ?? 'someone'}`}
+							current={change.from}
+							proposed={change.to}
+							teams={props.teams}
+							mapName={props.mapName}
+						/>
+					)}
+				</For>
+			</details>
+		</Show>
+	)
 }

@@ -21,36 +21,36 @@ export const HISTORY_MAX = 60
  * newest returns to `draft` — whatever was half-typed when the recall started.
  */
 export function recall(
-  history: string[],
-  at: number,
-  step: -1 | 1,
-  draft: string,
+	history: string[],
+	at: number,
+	step: -1 | 1,
+	draft: string,
 ): { at: number; text: string } {
-  const wanted = at + step
-  if (wanted < 0) return { at: -1, text: draft }
-  if (wanted >= history.length) {
-    return at >= history.length
-      ? { at, text: history[history.length - 1] ?? draft }
-      : { at, text: history[history.length - 1 - at] ?? draft }
-  }
-  return { at: wanted, text: history[history.length - 1 - wanted] ?? draft }
+	const wanted = at + step
+	if (wanted < 0) return { at: -1, text: draft }
+	if (wanted >= history.length) {
+		return at >= history.length
+			? { at, text: history[history.length - 1] ?? draft }
+			: { at, text: history[history.length - 1 - at] ?? draft }
+	}
+	return { at: wanted, text: history[history.length - 1 - wanted] ?? draft }
 }
 
 /** Adds a sent line, dropping an immediate repeat and anything too old. */
 export function remember(history: string[], line: string): string[] {
-  const trimmed = line.trim()
-  if (!trimmed || history[history.length - 1] === trimmed) return history
-  return [...history, trimmed].slice(-HISTORY_MAX)
+	const trimmed = line.trim()
+	if (!trimmed || history[history.length - 1] === trimmed) return history
+	return [...history, trimmed].slice(-HISTORY_MAX)
 }
 
 /** The word the caret sits in, and where it starts. */
 export function wordAt(
-  text: string,
-  caret: number,
+	text: string,
+	caret: number,
 ): { word: string; from: number } {
-  const before = text.slice(0, caret)
-  const from = before.lastIndexOf(' ') + 1
-  return { word: before.slice(from), from }
+	const before = text.slice(0, caret)
+	const from = before.lastIndexOf(' ') + 1
+	return { word: before.slice(from), from }
 }
 
 /**
@@ -61,19 +61,19 @@ export function wordAt(
  * it: typing `sky` means `Skywalker` far more often than `BlueSky`.
  */
 export function completions(word: string, names: string[]): string[] {
-  const needle = word.toLowerCase()
-  if (!needle) return []
-  const starts: string[] = []
-  const contains: string[] = []
-  for (const name of names) {
-    const lower = name.toLowerCase()
-    if (lower === needle) continue
-    if (lower.startsWith(needle)) starts.push(name)
-    else if (lower.includes(needle)) contains.push(name)
-  }
-  starts.sort((a, b) => a.localeCompare(b))
-  contains.sort((a, b) => a.localeCompare(b))
-  return [...starts, ...contains]
+	const needle = word.toLowerCase()
+	if (!needle) return []
+	const starts: string[] = []
+	const contains: string[] = []
+	for (const name of names) {
+		const lower = name.toLowerCase()
+		if (lower === needle) continue
+		if (lower.startsWith(needle)) starts.push(name)
+		else if (lower.includes(needle)) contains.push(name)
+	}
+	starts.sort((a, b) => a.localeCompare(b))
+	contains.sort((a, b) => a.localeCompare(b))
+	return [...starts, ...contains]
 }
 
 /**
@@ -84,12 +84,12 @@ export function completions(word: string, names: string[]): string[] {
  * just a name in a sentence and gets a space.
  */
 export function complete(
-  text: string,
-  caret: number,
-  name: string,
+	text: string,
+	caret: number,
+	name: string,
 ): { text: string; caret: number } {
-  const { from } = wordAt(text, caret)
-  const tail = from === 0 ? `${name}: ` : `${name} `
-  const next = text.slice(0, from) + tail + text.slice(caret)
-  return { text: next, caret: from + tail.length }
+	const { from } = wordAt(text, caret)
+	const tail = from === 0 ? `${name}: ` : `${name} `
+	const next = text.slice(0, from) + tail + text.slice(caret)
+	return { text: next, caret: from + tail.length }
 }

@@ -14,11 +14,11 @@ export const REPORT_EVERY = 30_000
 
 /** The window events that mean a person, not a message, is in the window. */
 export const ACTIVITY_EVENTS: readonly (keyof WindowEventMap)[] = [
-  'keydown',
-  'pointerdown',
-  'pointermove',
-  'wheel',
-  'focus',
+	'keydown',
+	'pointerdown',
+	'pointermove',
+	'wheel',
+	'focus',
 ]
 
 /**
@@ -26,15 +26,15 @@ export const ACTIVITY_EVENTS: readonly (keyof WindowEventMap)[] = [
  * per `every` milliseconds. `now` is a clock, replaceable for tests.
  */
 export function activityReporter(
-  report: () => void,
-  every = REPORT_EVERY,
-  now: () => number = Date.now,
+	report: () => void,
+	every = REPORT_EVERY,
+	now: () => number = Date.now,
 ): () => void {
-  let last = Number.NEGATIVE_INFINITY
-  return () => {
-    const at = now()
-    if (at - last < every) return
-    last = at
-    report()
-  }
+	let last = Number.NEGATIVE_INFINITY
+	return () => {
+		const at = now()
+		if (at - last < every) return
+		last = at
+		report()
+	}
 }

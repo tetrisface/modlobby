@@ -37,33 +37,33 @@ export { usage, loaded, status }
 let pending: Promise<Usage | null> | null = null
 
 export async function loadWidgetUsage(): Promise<void> {
-  if (loaded()) return
-  try {
-    pending ??= api.widgetUsage()
-    const document = await pending
-    setUsage(document)
-    if (document) {
-      setLoaded(true)
-      return
-    }
-    // A document is latched; a failure is not. Rust holds its own failure for
-    // as long as the service asked to be left alone, so opening the page again
-    // costs a call into Rust and no request at all — and once the service is
-    // back, the numbers turn up without the app being restarted.
-    pending = null
-  } catch {
-    // Rust could not be reached at all; the next caller asks again.
-    pending = null
-  }
+	if (loaded()) return
+	try {
+		pending ??= api.widgetUsage()
+		const document = await pending
+		setUsage(document)
+		if (document) {
+			setLoaded(true)
+			return
+		}
+		// A document is latched; a failure is not. Rust holds its own failure for
+		// as long as the service asked to be left alone, so opening the page again
+		// costs a call into Rust and no request at all — and once the service is
+		// back, the numbers turn up without the app being restarted.
+		pending = null
+	} catch {
+		// Rust could not be reached at all; the next caller asks again.
+		pending = null
+	}
 }
 
 /** What is installed right now. Cheap, and the only honest source. */
 export async function refreshInstalled(): Promise<void> {
-  try {
-    setStatus(await api.widgetInstalled())
-  } catch {
-    setStatus(null)
-  }
+	try {
+		setStatus(await api.widgetInstalled())
+	} catch {
+		setStatus(null)
+	}
 }
 
 /**
@@ -92,12 +92,12 @@ export const DEFAULT_AUDIENCE: Audience = 'all'
 
 /** The windows the document actually carries. */
 export function windows(): string[] {
-  return usage()?.windows ?? []
+	return usage()?.windows ?? []
 }
 
 /** The audiences the document actually carries. */
 export function audiences(): string[] {
-  return usage()?.audiences ?? [DEFAULT_AUDIENCE]
+	return usage()?.audiences ?? [DEFAULT_AUDIENCE]
 }
 
 /**
@@ -110,31 +110,31 @@ export function audiences(): string[] {
  * a combined total.
  */
 export function ranked(audience: string, window: string): WidgetUsage[] {
-  const document = usage()
-  if (!document) return []
-  const withRank = document.widgets.flatMap((widget) => {
-    const stats = widget.windows[audience]?.[window]
-    return stats ? [{ widget, rank: stats.rank }] : []
-  })
-  return withRank.sort((a, b) => a.rank - b.rank).map((entry) => entry.widget)
+	const document = usage()
+	if (!document) return []
+	const withRank = document.widgets.flatMap((widget) => {
+		const stats = widget.windows[audience]?.[window]
+		return stats ? [{ widget, rank: stats.rank }] : []
+	})
+	return withRank.sort((a, b) => a.rank - b.rank).map((entry) => entry.widget)
 }
 
 /** The stats to show for a widget, falling back when the window withheld it. */
 export function statsFor(
-  widget: WidgetUsage,
-  audience: string,
-  window: string,
+	widget: WidgetUsage,
+	audience: string,
+	window: string,
 ): { window: string; stats: WindowStats } | null {
-  const inAudience =
-    widget.windows[audience] ?? widget.windows[DEFAULT_AUDIENCE]
-  if (!inAudience) return null
-  const wanted = inAudience[window]
-  if (wanted) return { window, stats: wanted }
-  for (const name of [...WINDOW_ORDER].reverse()) {
-    const stats = inAudience[name]
-    if (stats) return { window: name, stats }
-  }
-  return null
+	const inAudience =
+		widget.windows[audience] ?? widget.windows[DEFAULT_AUDIENCE]
+	if (!inAudience) return null
+	const wanted = inAudience[window]
+	if (wanted) return { window, stats: wanted }
+	for (const name of [...WINDOW_ORDER].reverse()) {
+		const stats = inAudience[name]
+		if (stats) return { window: name, stats }
+	}
+	return null
 }
 
 /**
@@ -144,12 +144,12 @@ export function statsFor(
  * legitimately hold a fortnight. Saying so beats implying a year of evidence.
  */
 export function isRepresentative(stats: WindowStats): boolean {
-  return stats.coverage >= 0.5
+	return stats.coverage >= 0.5
 }
 
 /** Players who reported a widget but never had it enabled. */
 export function disabledOnly(stats: WindowStats): number {
-  return Math.max(0, stats.players - stats.players_active)
+	return Math.max(0, stats.players - stats.players_active)
 }
 
 /**
@@ -166,23 +166,23 @@ export const DEFAULT_USING_MODE: UsingMode = 'still'
 
 /** What the column is called in each mode. */
 export const USING_LABEL: Record<UsingMode, string> = {
-  still: 'Still using',
-  once: 'Used once',
+	still: 'Still using',
+	once: 'Used once',
 }
 
 /** Players counted as using it, in the chosen mode. */
 export function usingCount(stats: WindowStats, mode: UsingMode): number {
-  return mode === 'still' ? stats.players_still_using : stats.players_active
+	return mode === 'still' ? stats.players_still_using : stats.players_active
 }
 
 /** The share of players counted as using it, in the chosen mode. */
 export function usingShare(stats: WindowStats, mode: UsingMode): number {
-  return mode === 'still' ? stats.still_using : stats.retention
+	return mode === 'still' ? stats.still_using : stats.retention
 }
 
 /** Players not counted as using it: the "Off" column, in the chosen mode. */
 export function notUsing(stats: WindowStats, mode: UsingMode): number {
-  return Math.max(0, stats.players - usingCount(stats, mode))
+	return Math.max(0, stats.players - usingCount(stats, mode))
 }
 
 /**
@@ -194,14 +194,14 @@ export function notUsing(stats: WindowStats, mode: UsingMode): number {
  * too, so searching for a forker finds the row their version sits under.
  */
 export function matches(widget: WidgetUsage, query: string): boolean {
-  const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
-  if (terms.length === 0) return true
-  const forkAuthors = forksOf(widget)
-    .map((fork) => fork.author)
-    .join(' ')
-  const haystack =
-    `${widget.name} ${widget.author} ${widget.description} ${forkAuthors}`.toLowerCase()
-  return terms.every((term) => haystack.includes(term))
+	const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
+	if (terms.length === 0) return true
+	const forkAuthors = forksOf(widget)
+		.map((fork) => fork.author)
+		.join(' ')
+	const haystack =
+		`${widget.name} ${widget.author} ${widget.description} ${forkAuthors}`.toLowerCase()
+	return terms.every((term) => haystack.includes(term))
 }
 
 /**
@@ -211,24 +211,24 @@ export function matches(widget: WidgetUsage, query: string): boolean {
  * stands in as its only, main, version, so everything below works on either.
  */
 export function forksOf(widget: WidgetUsage): [Fork, ...Fork[]] {
-  const [first, ...rest] = widget.forks
-  if (first) return [first, ...rest]
-  return [
-    {
-      key: widget.main || widget.key,
-      kind: 'lineage',
-      main: true,
-      id: widget.id,
-      author: widget.author,
-      description: widget.description,
-      install: widget.install,
-      image: widget.image,
-      images: widget.images,
-      first_published: widget.first_published,
-      last_updated: widget.last_updated,
-      windows: widget.windows,
-    },
-  ]
+	const [first, ...rest] = widget.forks
+	if (first) return [first, ...rest]
+	return [
+		{
+			key: widget.main || widget.key,
+			kind: 'lineage',
+			main: true,
+			id: widget.id,
+			author: widget.author,
+			description: widget.description,
+			install: widget.install,
+			image: widget.image,
+			images: widget.images,
+			first_published: widget.first_published,
+			last_updated: widget.last_updated,
+			windows: widget.windows,
+		},
+	]
 }
 
 /**
@@ -236,31 +236,31 @@ export function forksOf(widget: WidgetUsage): [Fork, ...Fork[]] {
  * galleries has only `image`, which is then the one picture.
  */
 export function picturesOf(
-  entry: Pick<WidgetUsage, 'image' | 'images'>,
+	entry: Pick<WidgetUsage, 'image' | 'images'>,
 ): readonly string[] {
-  if (entry.images?.length) return entry.images
-  return entry.image ? [entry.image] : []
+	if (entry.images?.length) return entry.images
+	return entry.image ? [entry.image] : []
 }
 
 /** The version the row speaks for. */
 export function mainFork(widget: WidgetUsage): Fork {
-  const forks = forksOf(widget)
-  return forks.find((fork) => fork.main) ?? forks[0]
+	const forks = forksOf(widget)
+	return forks.find((fork) => fork.main) ?? forks[0]
 }
 
 /** A fork's own numbers in one slice, falling back like a row's do. */
 export function forkStatsFor(
-  fork: Fork,
-  audience: string,
-  window: string,
+	fork: Fork,
+	audience: string,
+	window: string,
 ): WindowStats | null {
-  const inAudience = fork.windows[audience] ?? fork.windows[DEFAULT_AUDIENCE]
-  if (!inAudience) return null
-  if (inAudience[window]) return inAudience[window]
-  for (const name of [...WINDOW_ORDER].reverse()) {
-    if (inAudience[name]) return inAudience[name]
-  }
-  return null
+	const inAudience = fork.windows[audience] ?? fork.windows[DEFAULT_AUDIENCE]
+	if (!inAudience) return null
+	if (inAudience[window]) return inAudience[window]
+	for (const name of [...WINDOW_ORDER].reverse()) {
+		if (inAudience[name]) return inAudience[name]
+	}
+	return null
 }
 
 /** What can be done about one widget: to the name, or to one version of it. */
@@ -268,14 +268,14 @@ export type Action = 'install' | 'update' | 'disable' | 'enable' | 'delete'
 
 /** Modlobby's record of installing a version, by its lineage key. */
 export function installedEntry(key: string) {
-  return status()?.installed.find((entry) => entry.key === key) ?? null
+	return status()?.installed.find((entry) => entry.key === key) ?? null
 }
 
 /** What BAR's config says about a widget name, whoever installed it. */
 export function configuredState(widget: WidgetUsage): WidgetState | null {
-  return (
-    status()?.configured.find((state) => state.name === widget.name) ?? null
-  )
+	return (
+		status()?.configured.find((state) => state.name === widget.name) ?? null
+	)
 }
 
 /**
@@ -286,7 +286,7 @@ export function configuredState(widget: WidgetUsage): WidgetState | null {
  * against `0n` rather than `0`.
  */
 export function isEnabled(state: WidgetState): boolean {
-  return state.order !== 0n
+	return state.order !== 0n
 }
 
 /**
@@ -297,14 +297,14 @@ export function isEnabled(state: WidgetState): boolean {
  * to bump it.
  */
 export function isOutdated(fork: Fork): boolean {
-  const entry = installedEntry(fork.key)
-  if (!entry) return false
-  const published = fork.install.files.map((file) => file.content_hash)
-  if (published.length === 0) return false
-  return (
-    published.length !== entry.hashes.length ||
-    published.some((hash, at) => hash !== entry.hashes[at])
-  )
+	const entry = installedEntry(fork.key)
+	if (!entry) return false
+	const published = fork.install.files.map((file) => file.content_hash)
+	if (published.length === 0) return false
+	return (
+		published.length !== entry.hashes.length ||
+		published.some((hash, at) => hash !== entry.hashes[at])
+	)
 }
 
 /**
@@ -315,12 +315,12 @@ export function isOutdated(fork: Fork): boolean {
  * business.
  */
 export function forkActions(fork: Fork): Action[] {
-  const entry = installedEntry(fork.key)
-  const actions: Action[] = []
-  if (!entry && fork.install.url) actions.push('install')
-  if (entry && isOutdated(fork)) actions.push('update')
-  if (entry) actions.push('delete')
-  return actions
+	const entry = installedEntry(fork.key)
+	const actions: Action[] = []
+	if (!entry && fork.install.url) actions.push('install')
+	if (entry && isOutdated(fork)) actions.push('update')
+	if (entry) actions.push('delete')
+	return actions
 }
 
 /**
@@ -332,12 +332,12 @@ export function forkActions(fork: Fork): Action[] {
  * buttons on "Dont Stand in Fire" caused.
  */
 export function familyToggle(widget: WidgetUsage): Action | null {
-  const configured = configuredState(widget)
-  if (configured && isEnabled(configured)) return 'disable'
-  // A widget BAR has never loaded has no config entry and starts switched off,
-  // so something just installed has to be offered Enable without one.
-  if (configured || isInstalled(widget)) return 'enable'
-  return null
+	const configured = configuredState(widget)
+	if (configured && isEnabled(configured)) return 'disable'
+	// A widget BAR has never loaded has no config entry and starts switched off,
+	// so something just installed has to be offered Enable without one.
+	if (configured || isInstalled(widget)) return 'enable'
+	return null
 }
 
 /**
@@ -346,18 +346,18 @@ export function familyToggle(widget: WidgetUsage): Action | null {
  * In reading order: get it, update it, switch it, remove it.
  */
 export function actionsFor(widget: WidgetUsage): Action[] {
-  const version = forkActions(mainFork(widget))
-  const toggle = familyToggle(widget)
-  const order: Action[] = ['install', 'update', 'disable', 'enable', 'delete']
-  const all = toggle ? [...version, toggle] : version
-  return order.filter((action) => all.includes(action))
+	const version = forkActions(mainFork(widget))
+	const toggle = familyToggle(widget)
+	const order: Action[] = ['install', 'update', 'disable', 'enable', 'delete']
+	const all = toggle ? [...version, toggle] : version
+	return order.filter((action) => all.includes(action))
 }
 
 /** Why a version cannot be downloaded, when it cannot. */
 export function unavailableBecause(install: Install): string | null {
-  if (install.url && install.files.length > 0) return null
-  if (install.reason) return install.reason
-  return install.kind === 'none' ? 'no known source' : 'no download available'
+	if (install.url && install.files.length > 0) return null
+	if (install.reason) return install.reason
+	return install.kind === 'none' ? 'no known source' : 'no download available'
 }
 
 /**
@@ -369,35 +369,35 @@ export function unavailableBecause(install: Install): string | null {
  * the published versions — and then says which — or is the player's own.
  */
 export interface LocalMatch {
-  file: LocalWidget
-  /** The version this file is byte for byte, or null for the player's own. */
-  fork: Fork | null
+	file: LocalWidget
+	/** The version this file is byte for byte, or null for the player's own. */
+	fork: Fork | null
 }
 
 /** Every file on disk declaring this widget's name, matched ones first. */
 export function localFor(widget: WidgetUsage): LocalMatch[] {
-  const forks = forksOf(widget)
-  return (status()?.local ?? [])
-    .filter((file) => file.name === widget.name)
-    .map((file) => ({
-      file,
-      fork:
-        forks.find((fork) =>
-          fork.install.files.some(
-            (published) =>
-              published.content_hash === file.hash ||
-              published.content_hash === file.hash_text,
-          ),
-        ) ?? null,
-    }))
-    .sort((a, b) => Number(b.fork !== null) - Number(a.fork !== null))
+	const forks = forksOf(widget)
+	return (status()?.local ?? [])
+		.filter((file) => file.name === widget.name)
+		.map((file) => ({
+			file,
+			fork:
+				forks.find((fork) =>
+					fork.install.files.some(
+						(published) =>
+							published.content_hash === file.hash ||
+							published.content_hash === file.hash_text,
+					),
+				) ?? null,
+		}))
+		.sort((a, b) => Number(b.fork !== null) - Number(a.fork !== null))
 }
 
 /** Files on disk that are this version, byte for byte. */
 export function localForFork(widget: WidgetUsage, fork: Fork): LocalWidget[] {
-  return localFor(widget)
-    .filter((match) => match.fork?.key === fork.key)
-    .map((match) => match.file)
+	return localFor(widget)
+		.filter((match) => match.fork?.key === fork.key)
+		.map((match) => match.file)
 }
 
 /**
@@ -408,9 +408,9 @@ export function localForFork(widget: WidgetUsage, fork: Fork): LocalWidget[] {
  * player looks for what they have.
  */
 export function yourVersions(widget: WidgetUsage): LocalWidget[] {
-  return localFor(widget)
-    .filter((match) => match.fork === null)
-    .map((match) => match.file)
+	return localFor(widget)
+		.filter((match) => match.fork === null)
+		.map((match) => match.file)
 }
 
 /**
@@ -421,46 +421,46 @@ export function yourVersions(widget: WidgetUsage): LocalWidget[] {
  * name there says the game once saw it, not that it is here now.
  */
 export function isInstalled(widget: WidgetUsage): boolean {
-  return (
-    forksOf(widget).some((fork) => installedEntry(fork.key) !== null) ||
-    localFor(widget).length > 0
-  )
+	return (
+		forksOf(widget).some((fork) => installedEntry(fork.key) !== null) ||
+		localFor(widget).length > 0
+	)
 }
 
 /** Where a file sits, in words a player recognises. */
 export function locationOf(file: LocalWidget): string {
-  return file.writable ? "modlobby's folder" : "BAR's folder"
+	return file.writable ? "modlobby's folder" : "BAR's folder"
 }
 
 /** What a header sorts by. */
 export type SortKey =
-  | 'rank'
-  | 'name'
-  | 'players'
-  | 'using'
-  | 'off'
-  | 'replays'
-  | 'sightings'
-  | 'updated'
-  | 'published'
-  | 'window'
-  | 'source'
-  | 'status'
+	| 'rank'
+	| 'name'
+	| 'players'
+	| 'using'
+	| 'off'
+	| 'replays'
+	| 'sightings'
+	| 'updated'
+	| 'published'
+	| 'window'
+	| 'source'
+	| 'status'
 
 /** Which way a header starts when first clicked: most first for numbers, A to Z for text. */
 export const SORT_STARTS_DESCENDING: Record<SortKey, boolean> = {
-  rank: false,
-  name: false,
-  players: true,
-  using: true,
-  off: true,
-  replays: true,
-  sightings: true,
-  updated: true,
-  published: true,
-  window: true,
-  source: false,
-  status: true,
+	rank: false,
+	name: false,
+	players: true,
+	using: true,
+	off: true,
+	replays: true,
+	sightings: true,
+	updated: true,
+	published: true,
+	window: true,
+	source: false,
+	status: true,
 }
 
 /**
@@ -470,17 +470,17 @@ export const SORT_STARTS_DESCENDING: Record<SortKey, boolean> = {
  * the order a player managing their widgets reads down.
  */
 function standing(widget: WidgetUsage): number {
-  const configured = configuredState(widget)
-  if (isInstalled(widget)) {
-    return configured && !isEnabled(configured) ? 2 : 3
-  }
-  return mainFork(widget).install.url ? 1 : 0
+	const configured = configuredState(widget)
+	if (isInstalled(widget)) {
+		return configured && !isEnabled(configured) ? 2 : 3
+	}
+	return mainFork(widget).install.url ? 1 : 0
 }
 
 /** A published date as a number to sort by; unknown sorts below every date. */
 function moment(iso: string): number {
-  const at = Date.parse(iso)
-  return Number.isNaN(at) ? -1 : at
+	const at = Date.parse(iso)
+	return Number.isNaN(at) ? -1 : at
 }
 
 /**
@@ -490,54 +490,54 @@ function moment(iso: string): number {
  * popularity list it came from rather than in document order.
  */
 export function sortWidgets(
-  widgets: WidgetUsage[],
-  key: SortKey,
-  descending: boolean,
-  audience: string,
-  window: string,
-  mode: UsingMode = DEFAULT_USING_MODE,
+	widgets: WidgetUsage[],
+	key: SortKey,
+	descending: boolean,
+	audience: string,
+	window: string,
+	mode: UsingMode = DEFAULT_USING_MODE,
 ): WidgetUsage[] {
-  const stats = (widget: WidgetUsage) =>
-    statsFor(widget, audience, window)?.stats
-  const value = (widget: WidgetUsage): number | string => {
-    const found = stats(widget)
-    switch (key) {
-      case 'rank':
-        return found?.rank ?? Number.MAX_SAFE_INTEGER
-      case 'name':
-        return widget.name.toLowerCase()
-      case 'players':
-        return found?.players ?? -1
-      case 'using':
-        return found ? usingShare(found, mode) : -1
-      case 'off':
-        return found ? notUsing(found, mode) : -1
-      case 'replays':
-        return found?.replays ?? -1
-      case 'sightings':
-        return found?.sightings ?? -1
-      case 'updated':
-        return moment(widget.last_updated)
-      case 'published':
-        return moment(widget.first_published)
-      case 'window':
-        return found?.coverage ?? -1
-      case 'source':
-        return mainFork(widget).install.kind
-      case 'status':
-        return standing(widget)
-    }
-  }
-  const rank = (widget: WidgetUsage) =>
-    stats(widget)?.rank ?? Number.MAX_SAFE_INTEGER
-  return [...widgets].sort((a, b) => {
-    const left = value(a)
-    const right = value(b)
-    const order =
-      typeof left === 'string' && typeof right === 'string'
-        ? left.localeCompare(right)
-        : (left as number) - (right as number)
-    if (order !== 0) return descending ? -order : order
-    return rank(a) - rank(b)
-  })
+	const stats = (widget: WidgetUsage) =>
+		statsFor(widget, audience, window)?.stats
+	const value = (widget: WidgetUsage): number | string => {
+		const found = stats(widget)
+		switch (key) {
+			case 'rank':
+				return found?.rank ?? Number.MAX_SAFE_INTEGER
+			case 'name':
+				return widget.name.toLowerCase()
+			case 'players':
+				return found?.players ?? -1
+			case 'using':
+				return found ? usingShare(found, mode) : -1
+			case 'off':
+				return found ? notUsing(found, mode) : -1
+			case 'replays':
+				return found?.replays ?? -1
+			case 'sightings':
+				return found?.sightings ?? -1
+			case 'updated':
+				return moment(widget.last_updated)
+			case 'published':
+				return moment(widget.first_published)
+			case 'window':
+				return found?.coverage ?? -1
+			case 'source':
+				return mainFork(widget).install.kind
+			case 'status':
+				return standing(widget)
+		}
+	}
+	const rank = (widget: WidgetUsage) =>
+		stats(widget)?.rank ?? Number.MAX_SAFE_INTEGER
+	return [...widgets].sort((a, b) => {
+		const left = value(a)
+		const right = value(b)
+		const order =
+			typeof left === 'string' && typeof right === 'string'
+				? left.localeCompare(right)
+				: (left as number) - (right as number)
+		if (order !== 0) return descending ? -order : order
+		return rank(a) - rank(b)
+	})
 }

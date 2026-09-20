@@ -10,7 +10,7 @@
 
 /** Elements that consume Escape themselves before the overlay may have it. */
 const CLAIMS_ESCAPE =
-  'input, textarea, select, [contenteditable=""], [contenteditable="true"]'
+	'input, textarea, select, [contenteditable=""], [contenteditable="true"]'
 
 /**
  * Whether this key press should hand the game back.
@@ -21,14 +21,14 @@ const CLAIMS_ESCAPE =
  * nasty surprise.
  */
 export function escapeLeavesOverlay(event: {
-  key: string
-  defaultPrevented: boolean
-  target: EventTarget | null
+	key: string
+	defaultPrevented: boolean
+	target: EventTarget | null
 }): boolean {
-  if (event.key !== 'Escape' || event.defaultPrevented) return false
-  const target = event.target
-  if (target instanceof Element && target.closest(CLAIMS_ESCAPE)) return false
-  return true
+	if (event.key !== 'Escape' || event.defaultPrevented) return false
+	const target = event.target
+	if (target instanceof Element && target.closest(CLAIMS_ESCAPE)) return false
+	return true
 }
 
 /**
@@ -40,8 +40,8 @@ export function escapeLeavesOverlay(event: {
  * this reason, or a click on it would be taken for a click-away.
  */
 export function clickLeavesOverlay(target: EventTarget | null): boolean {
-  if (!(target instanceof Element)) return false
-  return target.closest('.shell') === null
+	if (!(target instanceof Element)) return false
+	return target.closest('.shell') === null
 }
 
 /**
@@ -53,5 +53,5 @@ export function clickLeavesOverlay(target: EventTarget | null): boolean {
  * needs no mount and cleanup to answer for.
  */
 export function roomOnScreen(pathname: string): boolean {
-  return /^\/(room|skirmish)(\/|$)/.test(pathname)
+	return /^\/(room|skirmish)(\/|$)/.test(pathname)
 }

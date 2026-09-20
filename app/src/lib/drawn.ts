@@ -16,7 +16,7 @@ export const STEP = 64
 
 /** `side` rounded up to a whole number of steps. Zero stays zero. */
 export function step(side: number): number {
-  return Math.ceil(side / STEP) * STEP
+	return Math.ceil(side / STEP) * STEP
 }
 
 /**
@@ -25,23 +25,23 @@ export function step(side: number): number {
  * asked for a box that is not on screen yet.
  */
 export function createDrawnSize(
-  el: Accessor<HTMLElement | undefined>,
+	el: Accessor<HTMLElement | undefined>,
 ): Accessor<Drawn | null> {
-  const [drawn, setDrawn] = createSignal<Drawn | null>(null, {
-    equals: (a, b) => a?.width === b?.width && a?.height === b?.height,
-  })
-  createEffect(() => {
-    const element = el()
-    if (!element) return
-    const measure = () => {
-      const width = step(element.clientWidth)
-      const height = step(element.clientHeight)
-      setDrawn(width > 0 && height > 0 ? { width, height } : null)
-    }
-    measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(element)
-    onCleanup(() => observer.disconnect())
-  })
-  return drawn
+	const [drawn, setDrawn] = createSignal<Drawn | null>(null, {
+		equals: (a, b) => a?.width === b?.width && a?.height === b?.height,
+	})
+	createEffect(() => {
+		const element = el()
+		if (!element) return
+		const measure = () => {
+			const width = step(element.clientWidth)
+			const height = step(element.clientHeight)
+			setDrawn(width > 0 && height > 0 ? { width, height } : null)
+		}
+		measure()
+		const observer = new ResizeObserver(measure)
+		observer.observe(element)
+		onCleanup(() => observer.disconnect())
+	})
+	return drawn
 }
