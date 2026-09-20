@@ -8,7 +8,8 @@ A Beyond All Reason lobby focused on modding, experiments and performance that u
 
 Packages are available at [releases](https://github.com/tetrisface/modlobby/releases) as
 [.exe][exe], [.AppImage][appimage], [.deb][deb] and [.rpm][rpm], all of which update themselves
-from the next release. MacOS is not supported for skirmish yet.
+from the next release. There is no macOS package yet; built from source, a Mac plays skirmish
+and replays on the Apple Silicon engine, which modlobby fetches by itself.
 
 [exe]: https://github.com/tetrisface/modlobby/releases/latest/download/modlobby_x64-setup.exe
 [appimage]: https://github.com/tetrisface/modlobby/releases/latest/download/modlobby_amd64.AppImage
@@ -132,13 +133,13 @@ from a client identifying itself as
 protocol itself is one TCP connection to the lobby server with its keepalive
 pings, the same as any client's, and is not what this section is about.
 
-| What                                         | When                                                                                                          | Kept                                                                                            |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `files-cdn…/find`                            | By modlobby itself only when an engine is missing and one is published for the machine; by pr-downloader once per game or map it is about to fetch | A version the index has no build for is not asked about twice while the page is open           |
-| `repos-cdn…/repos.gz`, then rapid pool files | Through pr-downloader, when a game or map is missing                                                           | pr-downloader's own pool on disk                                                                 |
-| `maps-metadata…/lobby_maps.validated.json`   | Once a run, then once a day; a fetch that fails is not tried again for five minutes                            | On disk, revalidated with `If-None-Match` — usually a bodiless 304                               |
-| Map and news pictures                        | Once per picture that exists, at most six at a time; one that answers 5xx or drops is asked again on the next paint | On disk for good; the URL changes when the picture does. A 404 is remembered for the run          |
-| `beyondallreason.info/news/rss.xml`          | Once a run, then hourly                                                                                        | On disk                                                                                          |
+| What                                         | When                                                                                                                                               | Kept                                                                                     |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `files-cdn…/find`                            | By modlobby itself only when an engine is missing and one is published for the machine; by pr-downloader once per game or map it is about to fetch | A version the index has no build for is not asked about twice while the page is open     |
+| `repos-cdn…/repos.gz`, then rapid pool files | Through pr-downloader, when a game or map is missing                                                                                               | pr-downloader's own pool on disk                                                         |
+| `maps-metadata…/lobby_maps.validated.json`   | Once a run, then once a day; a fetch that fails is not tried again for five minutes                                                                | On disk, revalidated with `If-None-Match` — usually a bodiless 304                       |
+| Map and news pictures                        | Once per picture that exists, at most six at a time; one that answers 5xx or drops is asked again on the next paint                                | On disk for good; the URL changes when the picture does. A 404 is remembered for the run |
+| `beyondallreason.info/news/rss.xml`          | Once a run, then hourly                                                                                                                            | On disk                                                                                  |
 
 Nothing is on a timer and nothing polls: each of those is a consequence of
 somebody opening a window, a room or a list. There is no "does BAR have this
@@ -218,10 +219,11 @@ nothing on the wire, and Cheats keeps its name and every balance setting.
 
 ## Extras
 
-Beyond All Reason publishes no engine for MacOS, and the Apple Silicon build that exists —
-[RecoilEngine-AppleSilicon](https://github.com/Vandomas/RecoilEngine-AppleSilicon) — has online
-play turned off, because unofficial builds are not permitted on the official servers until their
-author has approval and lobby integration is done.
+Beyond All Reason publishes no engine for macOS. The Apple Silicon build that exists —
+[RecoilEngine-AppleSilicon](https://github.com/Vandomas/RecoilEngine-AppleSilicon) — is fetched
+from its GitHub releases into the engine folder, with its author's blessing, the first time a room
+needs an engine. It has online play turned off, because unofficial builds are not permitted on the
+official servers until their author has approval and lobby integration is done.
 
 `scripts/webview.ts` drives the running window over the DevTools protocol so those checks can be
 made without a pair of hands:

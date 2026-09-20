@@ -25,6 +25,8 @@ import {
 	serverName,
 	sessionStatus,
 } from '../lib/servers'
+import { LanServerCard } from '../lan/LanServerCard'
+import { isLan } from '../lan/lan'
 import { pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
 
@@ -75,18 +77,30 @@ export function ServerRows(props: {
 			<For each={props.draft.servers}>
 				{(entry, index) => (
 					<Row>
-						<ServerCard
-							entry={entry}
-							change={(field, value) =>
-								props.setDraft('servers', index(), field, value)
+						<Show
+							when={isLan(entry)}
+							fallback={
+								<ServerCard
+									entry={entry}
+									change={(field, value) =>
+										props.setDraft('servers', index(), field, value)
+									}
+									remove={() =>
+										props.setDraft('servers', (servers) =>
+											servers.filter((_, at) => at !== index()),
+										)
+									}
+									ask={(mode) => void ask(entry, mode)}
+								/>
 							}
-							remove={() =>
-								props.setDraft('servers', (servers) =>
-									servers.filter((_, at) => at !== index()),
-								)
-							}
-							ask={(mode) => void ask(entry, mode)}
-						/>
+						>
+							<LanServerCard
+								entry={entry}
+								change={(field, value) =>
+									props.setDraft('servers', index(), field, value)
+								}
+							/>
+						</Show>
 					</Row>
 				)}
 			</For>

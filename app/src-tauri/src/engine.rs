@@ -17,6 +17,7 @@ use std::time::Duration;
 
 use md5::{Digest, Md5};
 use serde::Serialize;
+use sha2::Sha256;
 use tauri::{Emitter, State};
 use tokio::io::AsyncWriteExt;
 
@@ -47,7 +48,11 @@ pub enum EngineProgress {
 	},
 }
 
-/// Downloads and unpacks an engine into `<data>/engine/<version>`.
+/// Downloads and unpacks an engine into `<data>/engine/`.
+///
+/// An empty `version` asks for whatever Beyond All Reason plays on today: a
+/// machine with nothing on it does not know which to want, and the launcher
+/// config does. On a Mac there is one build whatever is asked for.
 ///
 /// Progress arrives on the `engine-download` event rather than as a return
 /// value: it is a hundreds-of-megabytes download and a silent one would look
@@ -68,11 +73,10 @@ pub async fn download_engine(
 	// second caller finds the engine installed and returns at once.
 	let _one_at_a_time = app.engine_downloads.lock().await;
 	match fetch(&app.http, &dirs, &version, &say).await {
-		Ok(path) => {
-			say(EngineProgress::Done {
-				version: version.clone(),
-			});
-			// A room waiting on this engine can now fetch its game and map.
+		Ok((path, version)) => {
+			say(EngineProgress::Done { version });
+			// A room waiting on this engine can now fetch its game and map --
+			// and a room that named no engine now has one to name.
 			let _ = app.client.recheck_content().await;
 			Ok(path.to_string_lossy().into_owned())
 		}
@@ -90,55 +94,72 @@ pub async fn download_engine(
 /// more likely an engine nobody wants any more.
 const STALE_PART_AFTER: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
+/// The engine's binary directory, and the version it turned out to be.
 async fn fetch(
 	http: &reqwest::Client,
 	dirs: &content::DataDirs,
 	version: &str,
 	say: &impl Fn(EngineProgress),
-) -> Result<PathBuf> {
+) -> Result<(PathBuf, String)> {
+	let version = version.trim();
 	// Already there, ours or another lobby's: not an error, and not a reason
 	// to download it again.
 	let library = content::Library::new(dirs.clone());
-	if let Some(found) = library.find_engine(version) {
-		return Ok(found.bin);
+	if !version.is_empty()
+		&& let Some(found) = library.find_engine(version)
+	{
+		return Ok((found.bin, version.to_owned()));
 	}
-	let data_dir = library.write_dir();
+	let data_dir = library.write_dir().to_path_buf();
 	let engine_dir = data_dir.join("engine");
 	std::fs::create_dir_all(&engine_dir)
 		.map_err(|err| ApiError::new("io", format!("making the engine directory: {err}")))?;
 	sweep_stale_parts(&engine_dir, STALE_PART_AFTER);
 
-	// No index entry to ask for is not a network problem, and saying so early
-	// beats downloading something that cannot run here.
-	let find =
-		content::release::find_url(version).map_err(|no| ApiError::new(no.code(), no.reason()))?;
-
 	say(EngineProgress::Finding);
-	let index = http
-		.get(find)
-		.send()
-		.await
-		.and_then(reqwest::Response::error_for_status)
-		.map_err(|err| ApiError::new("network", format!("asking BAR's file index: {err}")))?
-		.text()
-		.await
-		.map_err(|err| ApiError::new("network", format!("reading the index answer: {err}")))?;
-
-	let release = content::release::pick(&index).ok_or_else(|| {
-		ApiError::new(
-			"notFound",
-			format!(
-				"BAR's index has no {} build of engine {version}",
-				content::release::category().unwrap_or("matching")
-			),
-		)
-	})?;
+	// Which build, where it goes, and what it will be called -- which a bundle
+	// only says once unpacked, so `None` until then.
+	let (version, release, target) = if content::release::one_engine() {
+		// The one build there is. Having it is the answer to any version, and
+		// a room that wants another cannot be given one.
+		if let Some(installed) = library.installed_engines().into_iter().next() {
+			if version.is_empty() || version == installed {
+				let found = library.find_engine(&installed).map(|engine| engine.bin);
+				return found.map(|bin| (bin, installed)).ok_or_else(|| {
+					ApiError::new(
+						"archive",
+						"an installed engine went missing between two looks",
+					)
+				});
+			}
+			return Err(ApiError::new(
+				"notFound",
+				format!(
+					"the Apple Silicon build here is engine {installed}, and there is no other; \
+					 this room wants {version}"
+				),
+			));
+		}
+		let (tag, release) = apple_release(http).await?;
+		(None, release, engine_dir.join(tag))
+	} else {
+		let version = if version.is_empty() {
+			newest_version(http).await?
+		} else {
+			version.to_owned()
+		};
+		if let Some(found) = library.find_engine(&version) {
+			return Ok((found.bin, version));
+		}
+		let release = index_release(http, &version).await?;
+		let target = engine_dir.join(&version);
+		(Some(version), release, target)
+	};
 
 	// Into a staging file, because the extractor wants a path and a
 	// half-written archive under `engine/` would look like an install. Dotted
 	// and suffixed so nothing scanning for engines mistakes it for one.
 	let staging = engine_dir.join(format!(".{}.part", release.filename));
-	let target = engine_dir.join(version);
 
 	// A transport failure leaves the staging file for the next attempt to
 	// resume; a checksum failure has already removed it.
@@ -148,7 +169,7 @@ async fn fetch(
 	let unpacked = tokio::task::spawn_blocking({
 		let staging = staging.clone();
 		let target = target.clone();
-		move || sevenz_rust2::decompress_file(&staging, &target)
+		move || unpack(&staging, &target)
 	})
 	.await
 	.map_err(|err| ApiError::new("io", format!("unpacking: {err}")))?;
@@ -163,8 +184,11 @@ async fn fetch(
 	recoil::mark_executable(&target)
 		.map_err(|err| ApiError::new("io", format!("marking the engine executable: {err}")))?;
 
-	recoil::find_engine(data_dir, version)
-		.map(|engine| engine.bin)
+	let version = version
+		.or_else(|| recoil::EngineLayout::at(&target)?.declared_version())
+		.ok_or_else(|| ApiError::new("archive", "the bundle does not say which engine it is"))?;
+	recoil::find_engine(&data_dir, &version)
+		.map(|engine| (engine.bin, version))
 		.ok_or_else(|| {
 			ApiError::new(
 				"archive",
@@ -174,6 +198,123 @@ async fn fetch(
 				),
 			)
 		})
+}
+
+/// The engine Beyond All Reason plays on today, from its launcher config.
+async fn newest_version(http: &reqwest::Client) -> Result<String> {
+	let config = text(
+		http,
+		content::release::LAUNCHER_CONFIG_URL,
+		"asking BAR which engine it plays on",
+	)
+	.await?;
+	content::release::newest_version(&config).ok_or_else(|| {
+		ApiError::new(
+			"notFound",
+			"BAR's launcher config names no engine for this machine",
+		)
+	})
+}
+
+/// The build of `version` for this machine, from BAR's file index.
+async fn index_release(http: &reqwest::Client, version: &str) -> Result<content::release::Release> {
+	let index = text(
+		http,
+		&content::release::find_url(version),
+		"asking BAR's file index",
+	)
+	.await?;
+	content::release::pick(&index).ok_or_else(|| {
+		ApiError::new(
+			"notFound",
+			format!(
+				"BAR's index has no {} build of engine {version}",
+				content::release::category()
+			),
+		)
+	})
+}
+
+/// The latest Apple Silicon build: its release tag and its zip.
+async fn apple_release(http: &reqwest::Client) -> Result<(String, content::release::Release)> {
+	let body = text(
+		http,
+		content::release::APPLE_LATEST_URL,
+		"asking GitHub for the Apple Silicon build",
+	)
+	.await?;
+	content::release::pick_apple(&body).ok_or_else(|| {
+		ApiError::new(
+			"notFound",
+			"the Apple Silicon build's latest release has no zip",
+		)
+	})
+}
+
+/// One small answer, read whole; `doing` says what was being asked in the error.
+async fn text(http: &reqwest::Client, url: &str, doing: &str) -> Result<String> {
+	http.get(url)
+		.send()
+		.await
+		.and_then(reqwest::Response::error_for_status)
+		.map_err(|err| ApiError::new("network", format!("{doing}: {err}")))?
+		.text()
+		.await
+		.map_err(|err| ApiError::new("network", format!("{doing}: reading the answer: {err}")))
+}
+
+/// Unpacks an engine archive into `target`, by what it is: BAR's index serves
+/// 7z, GitHub's release is a zip.
+fn unpack(archive: &Path, target: &Path) -> std::result::Result<(), String> {
+	let zipped = archive
+		.file_name()
+		.and_then(|name| name.to_str())
+		.is_some_and(|name| name.ends_with(".zip.part"));
+	if zipped {
+		unzip(archive, target).map_err(|err| err.to_string())
+	} else {
+		sevenz_rust2::decompress_file(archive, target).map_err(|err| err.to_string())
+	}
+}
+
+/// Unpacks a zip into `target`, keeping the executable bits and symlinks the
+/// archive carries -- an app bundle is nothing without either -- and leaving
+/// out the `__MACOSX/` resource forks a Mac's zip adds beside every file.
+fn unzip(archive: &Path, target: &Path) -> std::io::Result<()> {
+	let mut zip = zip::ZipArchive::new(std::fs::File::open(archive)?)?;
+	for index in 0..zip.len() {
+		let mut member = zip.by_index(index)?;
+		// `enclosed_name` refuses a member that would land outside `target`.
+		let Some(relative) = member.enclosed_name() else {
+			continue;
+		};
+		if relative.starts_with("__MACOSX") {
+			continue;
+		}
+		let path = target.join(relative);
+		if member.is_dir() {
+			std::fs::create_dir_all(&path)?;
+			continue;
+		}
+		if let Some(parent) = path.parent() {
+			std::fs::create_dir_all(parent)?;
+		}
+		#[cfg(unix)]
+		if member.is_symlink() {
+			let mut to = String::new();
+			std::io::Read::read_to_string(&mut member, &mut to)?;
+			std::os::unix::fs::symlink(to, &path)?;
+			continue;
+		}
+		let mut file = std::fs::File::create(&path)?;
+		std::io::copy(&mut member, &mut file)?;
+		#[cfg(unix)]
+		if let Some(mode) = member.unix_mode() {
+			use std::os::unix::fs::PermissionsExt;
+			std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode))?;
+		}
+	}
+	Ok(())
 }
 
 /// Tries every mirror the index named, in its order, and verifies what arrived.
@@ -186,7 +327,7 @@ async fn download(
 	let mut last = None;
 	for mirror in &release.mirrors {
 		match download_from(http, mirror, into, release.size, say).await {
-			Ok(()) => return verify(into, release.md5.as_deref()).await,
+			Ok(()) => return verify(into, release).await,
 			Err(err) => {
 				tracing::warn!(mirror, reason = %err.message, "engine mirror failed");
 				last = Some(err);
@@ -292,31 +433,29 @@ async fn download_from(
 	Ok(())
 }
 
-/// Checks the archive against the index's checksum, when it gave one.
+/// Checks the archive against the checksum its source gave, when it gave one:
+/// BAR's index an md5, GitHub a sha256.
 ///
 /// A mismatch discards the file: a resumed download that went wrong, or a
 /// mirror serving something else, and either way not something to unpack and
 /// then find out about at launch.
-async fn verify(path: &Path, expected: Option<&str>) -> Result<()> {
-	let Some(expected) = expected else {
-		tracing::info!("the index gave no checksum; unpacking unverified");
-		return Ok(());
+async fn verify(path: &Path, release: &content::release::Release) -> Result<()> {
+	let (expected, sha) = match (&release.sha256, &release.md5) {
+		(Some(sha256), _) => (sha256.as_str(), true),
+		(None, Some(md5)) => (md5.as_str(), false),
+		(None, None) => {
+			tracing::info!("the index gave no checksum; unpacking unverified");
+			return Ok(());
+		}
 	};
 	let actual = tokio::task::spawn_blocking({
 		let path = path.to_path_buf();
-		move || -> std::io::Result<String> {
-			use std::io::Read;
-			let mut file = std::fs::File::open(path)?;
-			let mut hasher = Md5::new();
-			let mut chunk = [0_u8; 64 * 1024];
-			loop {
-				let read = file.read(&mut chunk)?;
-				if read == 0 {
-					break;
-				}
-				hasher.update(&chunk[..read]);
+		move || {
+			if sha {
+				hash_file::<Sha256>(&path)
+			} else {
+				hash_file::<Md5>(&path)
 			}
-			Ok(hex(&hasher.finalize()))
 		}
 	})
 	.await
@@ -324,16 +463,31 @@ async fn verify(path: &Path, expected: Option<&str>) -> Result<()> {
 	.map_err(|err| ApiError::new("io", format!("reading the archive back: {err}")))?;
 
 	if actual.eq_ignore_ascii_case(expected) {
-		tracing::info!(md5 = actual, "engine archive verified");
+		tracing::info!(checksum = actual, "engine archive verified");
 		return Ok(());
 	}
 	let _ = std::fs::remove_file(path);
 	Err(ApiError::new(
 		"archive",
 		format!(
-			"the archive's checksum ({actual}) is not the index's ({expected}); it was discarded"
+			"the archive's checksum ({actual}) is not the source's ({expected}); it was discarded"
 		),
 	))
+}
+
+fn hash_file<D: Digest>(path: &Path) -> std::io::Result<String> {
+	use std::io::Read;
+	let mut file = std::fs::File::open(path)?;
+	let mut hasher = D::new();
+	let mut chunk = [0_u8; 64 * 1024];
+	loop {
+		let read = file.read(&mut chunk)?;
+		if read == 0 {
+			break;
+		}
+		hasher.update(&chunk[..read]);
+	}
+	Ok(hex(&hasher.finalize()))
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -383,10 +537,76 @@ mod tests {
 			mirrors,
 			size: 6,
 			md5: md5.map(str::to_owned),
+			sha256: None,
 		}
 	}
 
 	fn quiet(_: EngineProgress) {}
+
+	/// The shape GitHub's zip of the Apple Silicon build has: an app bundle,
+	/// whose binaries are only binaries with their mode, beside a `__MACOSX/`
+	/// tree of resource forks that would be junk on the disk.
+	#[test]
+	fn a_zip_unpacks_without_its_resource_forks_and_keeps_the_executable_bit() {
+		use std::io::Write;
+		use zip::write::SimpleFileOptions;
+		let dir = tempfile::tempdir().unwrap();
+		let archive = dir.path().join(".x.zip.part");
+		let mut zip = zip::ZipWriter::new(std::fs::File::create(&archive).unwrap());
+		let plain = SimpleFileOptions::default();
+		zip.add_directory("BAR Launcher.app/Contents/MacOS/", plain)
+			.unwrap();
+		zip.start_file(
+			"BAR Launcher.app/Contents/MacOS/spring",
+			plain.unix_permissions(0o755),
+		)
+		.unwrap();
+		zip.write_all(b"engine").unwrap();
+		zip.start_file("__MACOSX/BAR Launcher.app/._Contents", plain)
+			.unwrap();
+		zip.write_all(b"fork").unwrap();
+		zip.finish().unwrap();
+
+		let target = dir.path().join("v0.15.1");
+		unpack(&archive, &target).unwrap();
+		let spring = target.join("BAR Launcher.app/Contents/MacOS/spring");
+		assert_eq!(std::fs::read(&spring).unwrap(), b"engine");
+		assert!(!target.join("__MACOSX").exists());
+		#[cfg(unix)]
+		{
+			use std::os::unix::fs::PermissionsExt;
+			let mode = std::fs::metadata(&spring).unwrap().permissions().mode();
+			assert_eq!(
+				mode & 0o111,
+				0o111,
+				"an engine that cannot be run is no engine"
+			);
+		}
+	}
+
+	#[tokio::test]
+	async fn a_github_sha256_is_checked_the_way_the_indexs_md5_is() {
+		let server = MockServer::start().await;
+		Mock::given(method("GET"))
+			.respond_with(ResponseTemplate::new(200).set_body_bytes(b"abcdef".to_vec()))
+			.mount(&server)
+			.await;
+		let dir = tempfile::tempdir().unwrap();
+		let staging = dir.path().join(".x.zip.part");
+		let mut release = release(vec![format!("{}/x.zip", server.uri())], None);
+		release.sha256 = Some(hex(&Sha256::digest(b"abcdef")));
+		download(&content::http::client("test"), &release, &staging, &quiet)
+			.await
+			.unwrap();
+		assert!(staging.exists());
+
+		release.sha256 = Some(hex(&Sha256::digest(b"something else")));
+		let err = download(&content::http::client("test"), &release, &staging, &quiet)
+			.await
+			.unwrap_err();
+		assert_eq!(err.code, "archive");
+		assert!(!staging.exists());
+	}
 
 	#[tokio::test]
 	async fn a_broken_off_download_is_resumed_and_then_verified() {

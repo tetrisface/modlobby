@@ -54,6 +54,9 @@ const ALONE: RoomCaps = {
 	picksContent: true,
 	// A skirmish is this machine's own game; nothing about it reaches a server.
 	plays: true,
+	// The one room that can be: what you set up here is what the network
+	// would be invited to.
+	opensToLan: true,
 }
 
 /**

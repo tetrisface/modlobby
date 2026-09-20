@@ -7,6 +7,7 @@ mod commands;
 mod engine;
 mod flash;
 mod ingame;
+mod lan;
 mod logging;
 mod overlay;
 mod presets;
@@ -279,6 +280,7 @@ pub fn run() {
 			// Beside the settings and the preset book, because it is the same
 			// kind of thing: what this person has set up, kept for next time.
 			let skirmish_path = commands::skirmish_path(&app);
+			let from_host_handle = handle.clone();
 			tauri::async_runtime::spawn(async move {
 				// Whoever reads another server's rapid before games come
 				// from it; without one the runtime fetches from BAR's only.
@@ -288,6 +290,15 @@ pub fn run() {
 						Box::pin(
 							async move { vetter.vet(&master).await.map_err(|err| err.to_string()) },
 						)
+					}))
+					.await;
+				// And the last resort for a map: the room's own host, which
+				// is playing it and so has the file even where no search
+				// does. Only a room on the local network has such a host.
+				let _ = client
+					.set_from_host(std::sync::Arc::new(move |ask, say| {
+						let handle = from_host_handle.clone();
+						Box::pin(async move { lan::map_from_host(&handle, ask, say).await })
 					}))
 					.await;
 				push_settings(&client, &controller, &at_start).await;
@@ -394,6 +405,12 @@ pub fn run() {
 			boxes::encode_boxes,
 			boxes::describe_map_option,
 			engine::download_engine,
+			lan::lan_host,
+			lan::lan_start,
+			lan::lan_stop,
+			lan::lan_status,
+			lan::lan_join_address,
+			lan::lan_rooms,
 			update::app_version,
 			update::check_update,
 			update::install_update,
@@ -442,7 +459,7 @@ pub fn run() {
 			commands::clear_password,
 			commands::open_settings_file,
 			commands::open_data_dir,
-			commands::open_engine_dir,
+			commands::open_maps_dir,
 			commands::player_files,
 			commands::import_player_files,
 			commands::open_url,

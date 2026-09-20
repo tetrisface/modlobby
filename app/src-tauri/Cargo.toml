@@ -18,12 +18,15 @@ content = { workspace = true }
 md-5 = { workspace = true }
 percent-encoding = { workspace = true }
 recoil = { workspace = true }
+lan = { workspace = true }
 skirmish = { workspace = true }
 lobby-runtime = { workspace = true }
 news = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 sevenz-rust2 = { workspace = true }
+sha2 = { workspace = true }
+zip = { workspace = true }
 tokio = { workspace = true }
 lobby-ui = { workspace = true }
 serde = { workspace = true }

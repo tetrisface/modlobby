@@ -154,6 +154,7 @@ fn parse(path: &Path, text: &str) -> Result<Settings, Error> {
 	if !listed {
 		settings.migrate();
 	}
+	settings.ensure_lan();
 	Ok(settings)
 }
 
@@ -302,11 +303,15 @@ mod tests {
 		let settings = load(&path).unwrap();
 		assert_eq!(
 			settings.servers,
-			vec![crate::model::ServerEntry {
-				username: "tetrisface".into(),
-				channels: vec!["main".into(), "newbies".into()],
-				..crate::model::ServerEntry::bar()
-			}]
+			vec![
+				crate::model::ServerEntry {
+					username: "tetrisface".into(),
+					channels: vec!["main".into(), "newbies".into()],
+					..crate::model::ServerEntry::bar()
+				},
+				// No local network: it is off until it is asked for, and a
+				// file from before it existed never asked.
+			]
 		);
 		assert!(settings.account.remember_password && settings.account.auto_login);
 	}

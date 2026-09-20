@@ -14,12 +14,17 @@ recoil = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# A map archive is a .sd7 (7z) or .sdz (zip); its mapinfo.lua is the only
+# place its real name is written down. Both are already here for the engine
+# archive and the widget zips.
+sevenz-rust2 = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 # Only for the crypto provider reqwest's rustls needs installed before a client can be built.
 tokio-rustls = { workspace = true }
 tracing = { workspace = true }
 ts-rs = { workspace = true }
+zip = { workspace = true }
 
 [dev-dependencies]
 # Only for the example that reads a real install.

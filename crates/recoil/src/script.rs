@@ -93,6 +93,24 @@ impl Team {
 pub struct Player {
 	pub name: String,
 	pub team: Option<u8>,
+	/// What a hosted game admits this player by: the script password they
+	/// join with (`spring://name:password@…`). `None` for a game nobody joins.
+	pub password: Option<String>,
+}
+
+/// The factions by the number the lobby carries them as, and the name the
+/// script wants (`BYAR-Chobby/LuaMenu/configs/gameConfig/byar/sidedata.lua`).
+pub const SIDES: [&str; 4] = ["Armada", "Cortex", "Random", "Legion"];
+
+/// The faction by name, with Legion falling back where the game has not been
+/// told to include it — to Armada for a person and Random for an AI, which is
+/// what Chobby does (`interface_skirmish.lua:91-94`, `:161-164`).
+pub fn faction(side: u8, legion: bool, is_ai: bool) -> Option<String> {
+	let side = usize::from(side);
+	if side == 3 && !legion {
+		return Some(SIDES[if is_ai { 2 } else { 0 }].to_owned());
+	}
+	SIDES.get(side).map(|name| (*name).to_owned())
 }
 
 /// One AI opponent.
@@ -140,6 +158,11 @@ pub struct Skirmish {
 	pub teams: Vec<Team>,
 	pub players: Vec<Player>,
 	pub ais: Vec<Ai>,
+	/// Where the engine binds: `127.0.0.1` for a game nobody joins, `0.0.0.0`
+	/// for one hosted on the network.
+	pub host_ip: String,
+	/// `0` lets the engine pick; a hosted game names the port it announced.
+	pub host_port: u16,
 }
 
 impl Skirmish {
@@ -165,6 +188,7 @@ impl Skirmish {
 			players: vec![Player {
 				name: player.clone(),
 				team: Some(0),
+				password: None,
 			}],
 			ais: opponents
 				.into_iter()
@@ -172,6 +196,8 @@ impl Skirmish {
 				.map(|(index, (name, short_name))| Ai::new(name, short_name, index as u8 + 1))
 				.collect(),
 			player,
+			host_ip: "127.0.0.1".into(),
+			host_port: 0,
 		}
 	}
 
@@ -184,8 +210,8 @@ impl Skirmish {
 		let _ = writeln!(out, "\tmyplayername = {};", self.player);
 		// Chobby writes both, and the engine wants somewhere to bind even when
 		// nobody is joining (`interface_skirmish.lua:333-334`).
-		let _ = writeln!(out, "\thostip = 127.0.0.1;");
-		let _ = writeln!(out, "\thostport = 0;");
+		let _ = writeln!(out, "\thostip = {};", self.host_ip);
+		let _ = writeln!(out, "\thostport = {};", self.host_port);
 		let _ = writeln!(out, "\tnohelperais = 0;");
 		let _ = writeln!(out, "\tstartpostype = {};", self.start_pos as u8);
 		let _ = writeln!(out, "\tnumplayers = {};", self.players.len());
@@ -227,6 +253,9 @@ impl Skirmish {
 		for (index, player) in self.players.iter().enumerate() {
 			let _ = write!(out, "\n\t[player{index}] {{\n");
 			let _ = writeln!(out, "\t\tname = {};", player.name);
+			if let Some(password) = &player.password {
+				let _ = writeln!(out, "\t\tpassword = {password};");
+			}
 			let _ = writeln!(out, "\t\tisfromdemo = 0;");
 			match player.team {
 				Some(team) => {
@@ -360,13 +389,17 @@ mod tests {
 				Player {
 					name: "me".into(),
 					team: Some(0),
+					password: None,
 				},
 				Player {
 					name: "friend".into(),
 					team: Some(1),
+					password: Some("4242".into()),
 				},
 			],
 			ais: vec![Ai::new("BARbarian", "BARb", 2)],
+			host_ip: "0.0.0.0".into(),
+			host_port: 8452,
 		};
 		let script = skirmish.script();
 
@@ -378,6 +411,11 @@ mod tests {
 		assert!(!script.contains("[allyteam2]"));
 		assert!(script.contains("numplayers = 2;"));
 		assert!(script.contains("numusers = 3;"));
+		// A hosted game binds where it said it would and admits a joiner by
+		// the password they join with.
+		assert!(script.contains("hostip = 0.0.0.0;\n\thostport = 8452;"));
+		assert!(script.contains("name = friend;\n\t\tpassword = 4242;"));
+		assert!(!script.contains("name = me;\n\t\tpassword"));
 	}
 
 	#[test]

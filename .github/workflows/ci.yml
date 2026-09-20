@@ -66,15 +66,17 @@ jobs:
       - run: cargo test --workspace
 
       - name: Generated bindings are committed
-        # `cargo test` rewrites app/src/ipc/bindings from the Rust types, in
-        # ts-rs's own one-line layout; prettier then puts it in the house style,
-        # which is what is committed -- so the files stay readable and a stray
-        # `prettier --write` over them is harmless. A diff means a type changed
-        # and its TypeScript was not committed.
+        # `cargo test` above wrote these to a throwaway, which is what keeps a
+        # working tree clean after an ordinary test run (`.cargo/config.toml`).
+        # Regenerating them means naming the real directory; prettier then puts
+        # them in the house style, which is what is committed. A diff means a
+        # type changed and its TypeScript was not.
         if: runner.os == 'Windows'
-        working-directory: app
+        env:
+          TS_RS_EXPORT_DIR: app/src/ipc/bindings
         run: |
-          bunx prettier --log-level warn --write src/ipc/bindings
+          cargo test --workspace export_bindings
+          cd app && bunx prettier --log-level warn --write src/ipc/bindings
           git diff --exit-code src/ipc/bindings
 
       - run: bun run check

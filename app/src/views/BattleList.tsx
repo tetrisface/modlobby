@@ -21,6 +21,8 @@ import { RankIcon } from '../components/icons'
 import { MapPicture } from '../components/MapPicture'
 import { Thinking } from '../components/Thinking'
 import { api, describeError } from '../ipc/client'
+import { LAN } from '../lan/lan'
+import { heardRows, watchLan } from '../lan/store'
 import { elapsed } from '../lib/running'
 import {
 	asking as askingAbout,
@@ -101,9 +103,12 @@ export function BattleList() {
 		}
 	}
 
+	// Rooms on the network are heard for as long as this list is on screen.
+	onCleanup(watchLan())
+
 	/** Every server's rooms, each read against its own server's people. */
-	const all = createMemo<Row[]>(() =>
-		sessions().flatMap(([server, session]) => {
+	const all = createMemo<Row[]>(() => [
+		...sessions().flatMap(([server, session]) => {
 			const known = new Set(session.friends.friends)
 			return Object.values(session.battles).map((battle) => ({
 				server,
@@ -113,6 +118,20 @@ export function BattleList() {
 				hasFriend: battle.members.some((name) => known.has(name)),
 			}))
 		}),
+		...heardRows(),
+	])
+	/**
+	 * Every server there is something to leave out of: the ones logged in to,
+	 * and any other with a room in the list. The second half is the LAN, whose
+	 * rooms are heard off the network with no session behind them -- it had
+	 * rows here and no chip to hide them with. Read off `all`, before anything
+	 * is left out, so a server switched off keeps the chip that switches it
+	 * back on.
+	 */
+	const listed = createMemo(
+		() => [...new Set([...readyServers(), ...all().map((row) => row.server)])],
+		[],
+		{ equals: (a, b) => a.join('\n') === b.join('\n') },
 	)
 	const sorted = createMemo(() =>
 		arrange(
@@ -383,9 +402,9 @@ export function BattleList() {
 
 				{/* Only once there is a choice: with one server there is nothing
             to leave out. */}
-				<Show when={readyServers().length > 1}>
+				<Show when={listed().length > 1}>
 					<div class='filter-group' role='group' aria-label='Servers'>
-						<For each={readyServers()}>
+						<For each={listed()}>
 							{(server) => (
 								<Include
 									label={serverLabel(server)}
@@ -441,25 +460,31 @@ export function BattleList() {
 					<button
 						class='primary'
 						disabled={hostBusy()}
-						aria-expanded={readyServers().length > 1 ? choosing() : undefined}
-						title='Take over an empty autohost near you and become its boss'
-						onClick={() =>
-							readyServers().length > 1
-								? setChoosing(!choosing())
-								: void host(readyServers()[0])
-						}
+						aria-expanded={choosing()}
+						title='Take over an empty autohost near you and become its boss, or open a room on your network'
+						onClick={() => setChoosing(!choosing())}
 					>
 						Host battle
 					</button>
 					<Show when={choosing()}>
 						<div class='popover host-menu'>
-							<For each={readyServers()}>
+							{/* The LAN is a server you are on, not one you host on. */}
+							<For each={readyServers().filter((server) => server !== LAN)}>
 								{(server) => (
 									<button type='button' onClick={() => void host(server)}>
 										on {serverLabel(server)}
 									</button>
 								)}
 							</For>
+							<button
+								type='button'
+								onClick={() => {
+									setChoosing(false)
+									navigate('/lan/host')
+								}}
+							>
+								on the LAN
+							</button>
 						</div>
 					</Show>
 				</div>

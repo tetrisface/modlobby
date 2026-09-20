@@ -40,11 +40,46 @@ pub struct MapIndex {
 	/// Archive file name without its extension (`acidicquarry_5.17`) to the
 	/// spring name (`AcidicQuarry 5.17`), which nothing on disk records.
 	pub names: BTreeMap<String, String>,
+	/// By spring name: what a list of maps shows besides the picture.
+	#[serde(default)]
+	pub maps: BTreeMap<String, MapFacts>,
+}
+
+/// What the map list says about a map, out of the same published feed.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct MapFacts {
+	/// The name as its author writes it, where that differs from the spring
+	/// name a start script has to use.
+	pub display_name: String,
+	pub author: String,
+	/// In map units of 512 elmos a side, as every BAR lobby says it: `16 x
+	/// 16` is the usual medium.
+	pub width: u32,
+	pub height: u32,
+	pub players_min: u32,
+	pub players_max: u32,
+	/// One of the maps BAR vouches for, which is what its own rooms play.
+	pub certified: bool,
+	/// `ice`, `desert`, `metal` — as the feed spells them.
+	pub terrain: Vec<String>,
+	pub tags: Vec<String>,
 }
 
 impl MapIndex {
 	pub fn is_empty(&self) -> bool {
 		self.images.is_empty() && self.names.is_empty()
+	}
+
+	/// Whether this holds the facts as well as the pictures.
+	///
+	/// A cache written before the facts were kept has names and no facts.
+	/// That is not staleness -- the server would answer a 304 and it would
+	/// stay that way -- so it is neither trusted nor confirmed, but fetched
+	/// whole.
+	fn complete(&self) -> bool {
+		!self.maps.is_empty() || self.names.is_empty()
 	}
 }
 
@@ -67,12 +102,32 @@ impl Cached {
 }
 
 /// One entry of the feed; only the fields read are named, the rest may grow.
+/// Everything but the name is optional here whatever the schema says: a feed
+/// that drops a field should cost a column, not the whole index.
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Entry {
-	#[serde(rename = "springName")]
 	spring_name: Option<String>,
 	filename: Option<String>,
 	images: Option<Images>,
+	#[serde(default)]
+	display_name: Option<String>,
+	#[serde(default)]
+	author: Option<String>,
+	#[serde(default)]
+	certified: bool,
+	#[serde(default)]
+	map_width: u32,
+	#[serde(default)]
+	map_height: u32,
+	#[serde(default)]
+	player_count_min: u32,
+	#[serde(default)]
+	player_count_max: u32,
+	#[serde(default)]
+	terrain: Vec<String>,
+	#[serde(default)]
+	tags: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -92,8 +147,22 @@ pub fn trim(json: &str) -> Result<MapIndex, serde_json::Error> {
 			index.images.insert(name.clone(), preview);
 		}
 		if let Some(stem) = entry.filename.as_deref().map(archive_stem) {
-			index.names.insert(stem, name);
+			index.names.insert(stem, name.clone());
 		}
+		index.maps.insert(
+			name.clone(),
+			MapFacts {
+				display_name: entry.display_name.unwrap_or(name),
+				author: entry.author.unwrap_or_default(),
+				width: entry.map_width,
+				height: entry.map_height,
+				players_min: entry.player_count_min,
+				players_max: entry.player_count_max,
+				certified: entry.certified,
+				terrain: entry.terrain,
+				tags: entry.tags,
+			},
+		);
 	}
 	Ok(index)
 }
@@ -143,11 +212,17 @@ pub async fn load(
 	let cached = read(&path);
 	if let Some(held) = &cached
 		&& held.fresh(now)
+		&& held.index.complete()
 	{
 		return held.index.clone();
 	}
 
-	let etag = cached.as_ref().and_then(|held| held.etag.as_deref());
+	// No tag for an incomplete cache: asking about it invites the 304 that
+	// would keep it as it is.
+	let etag = cached
+		.as_ref()
+		.filter(|held| held.index.complete())
+		.and_then(|held| held.etag.as_deref());
 	match fetch(client, url, etag).await {
 		Ok(Fetched::Unchanged) => {
 			let Some(mut held) = cached else {
@@ -245,7 +320,10 @@ mod tests {
 
 	const FEED: &str = r#"[
         {"springName": "AcidicQuarry 5.17", "filename": "acidicquarry_5.17.sd7",
-         "images": {"preview": "https://maps.example/i/fit-in/1024x1024/a.jpg"}, "mapWidth": 12},
+         "images": {"preview": "https://maps.example/i/fit-in/1024x1024/a.jpg"},
+         "displayName": "Acidic Quarry", "author": "Somebody", "certified": true,
+         "mapWidth": 12, "mapHeight": 8, "playerCountMin": 2, "playerCountMax": 8,
+         "terrain": ["acid"], "tags": ["1v1"]},
         {"springName": "No Picture 1", "filename": "no_picture_1.sdz"},
         {"filename": "nameless.sd7", "images": {"preview": "https://maps.example/x"}}
     ]"#;
@@ -274,6 +352,24 @@ mod tests {
 		// An entry with no spring name is no use to anyone.
 		assert!(!index.images.values().any(|url| url.ends_with("/x")));
 		assert!(!index.names.contains_key("nameless"));
+	}
+
+	#[test]
+	fn what_the_list_shows_comes_off_the_same_entry() {
+		let index = trim(FEED).unwrap();
+		let facts = index.maps.get("AcidicQuarry 5.17").expect("the map");
+		assert_eq!(facts.display_name, "Acidic Quarry");
+		assert_eq!(facts.author, "Somebody");
+		assert_eq!((facts.width, facts.height), (12, 8));
+		assert_eq!((facts.players_min, facts.players_max), (2, 8));
+		assert!(facts.certified);
+		assert_eq!(facts.terrain, ["acid"]);
+		assert_eq!(facts.tags, ["1v1"]);
+		// A feed that says nothing past the name still lists the map, under
+		// the name it has -- a blank row beats a missing one.
+		let bare = index.maps.get("No Picture 1").expect("the bare map");
+		assert_eq!(bare.display_name, "No Picture 1");
+		assert_eq!((bare.width, bare.height), (0, 0));
 	}
 
 	#[test]

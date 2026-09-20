@@ -370,6 +370,28 @@ impl Room {
 		self.engine = engine.to_owned();
 	}
 
+	/// Fills in what the room was opened without, from what is installed now,
+	/// newest first. A room opened on a machine with nothing on it names
+	/// nothing, and the engine and game that arrive later are what it was
+	/// waiting for. A choice already made is never replaced. Says whether
+	/// anything changed.
+	pub fn adopt(&mut self, engines: &[String], games: &[String]) -> bool {
+		let mut changed = false;
+		if self.engine.is_empty()
+			&& let Some(engine) = engines.first()
+		{
+			self.engine = engine.clone();
+			changed = true;
+		}
+		if self.game.is_empty()
+			&& let Some(game) = games.first()
+		{
+			self.game = game.clone();
+			changed = true;
+		}
+		changed
+	}
+
 	pub fn set_layout(&mut self, teams: u32, team_size: u32) {
 		self.layout = Some(LayoutView { teams, team_size });
 	}
@@ -748,6 +770,22 @@ mod tests {
 			game: true,
 			map: true,
 		}
+	}
+
+	#[test]
+	fn a_room_opened_on_nothing_takes_what_arrives_and_keeps_what_it_chose() {
+		let mut empty = Room::new("me", "", "", "");
+		assert!(!empty.adopt(&[], &[]), "nothing installed changes nothing");
+		assert!(empty.adopt(&["2026.07.04".into()], &[]));
+		assert_eq!(empty.engine, "2026.07.04");
+		assert_eq!(empty.game, "");
+		assert!(empty.adopt(
+			&["2026.09.01".into()],
+			&["Beyond All Reason test-31134".into()]
+		));
+		assert_eq!(empty.engine, "2026.07.04", "a chosen engine stays");
+		assert_eq!(empty.game, "Beyond All Reason test-31134");
+		assert!(!empty.adopt(&["2026.09.01".into()], &["other".into()]));
 	}
 
 	#[test]

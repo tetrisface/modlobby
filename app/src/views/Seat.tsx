@@ -1,3 +1,4 @@
+import { useNavigate } from '@solidjs/router'
 import { Select } from '../components/Select'
 import {
 	For,
@@ -31,6 +32,21 @@ function nextTeam(room: RoomModel): number {
 	return battle ? freeTeam(battle, room.users(), room.me()) : 0
 }
 
+/**
+ * Turns the local network on, because somebody asked for it by pressing the
+ * button that needs it. Already on is not an error and writes nothing.
+ *
+ * The setting stays the way to turn it *off* -- this only ever says yes, so
+ * a press cannot quietly undo a deliberate no somewhere else.
+ */
+async function enableLan(): Promise<void> {
+	const held = settings()
+	if (!held || held.lan.enabled) return
+	applySettings(
+		await api.updateSettings({ ...held, lan: { ...held.lan, enabled: true } }),
+	)
+}
+
 /** What `remember` remembers, kept current by what you actually do. */
 async function remember(played: boolean) {
 	try {
@@ -60,6 +76,7 @@ export async function sitOn(room: RoomModel, ally: number): Promise<void> {
  */
 export function Seat() {
 	const [busy, setBusy] = createSignal(false)
+	const navigate = useNavigate()
 
 	const room = useRoom()
 	const battleOf = createMemo(room.battle)
@@ -346,6 +363,26 @@ export function Seat() {
 			</Show>
 
 			<span class='spacer' />
+			{/* The skirmish is a game set up and not yet played; this is that
+          same setup with a door in it. Kept off the online room's Host
+          buttons on purpose: somebody who only plays on the server should
+          never have to decide what a LAN is. */}
+			<Show when={room.caps.opensToLan}>
+				<button
+					disabled={busy()}
+					title='Open this game to people on your network'
+					onClick={() =>
+						act('host on the LAN', async () => {
+							// Turning it on is the point of pressing this: the
+							// switch in Settings is for turning it back off.
+							await enableLan()
+							navigate('/lan/host')
+						})
+					}
+				>
+					Host on LAN
+				</button>
+			</Show>
 			{/* Both halves of Chobby's Host button: an empty autohost is a listed
           room you boss, `!privatehost` is a passworded one made on request.
           Chobby asks for a region; the runtime measures instead, and says

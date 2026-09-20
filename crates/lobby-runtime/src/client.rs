@@ -78,6 +78,45 @@ pub type Connector = Arc<dyn Fn(Endpoint, ThrottlePolicy) -> ConnectFuture + Sen
 pub type Vet =
 	Arc<dyn Fn(String) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> + Send + Sync>;
 
+/// The last resort for a map: the room's own host, which is playing it and
+/// so has the file. Handed in for the same reason [`Vet`] is -- the runtime
+/// has no business knowing what a LAN room is -- and `None` from a room that
+/// has no such host, which is every room on a server.
+///
+/// Takes the map's name only to say what it is fetching; who is asked, and
+/// what is proved to them, is the business of whatever answers this.
+pub type FromHost = Arc<
+	dyn Fn(
+			Ask,
+			mpsc::Sender<recoil::Progress>,
+		) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>>
+		+ Send
+		+ Sync,
+>;
+
+/// What the room's host is asked for, and what proves the asking.
+///
+/// The credentials come from here rather than being looked up by whoever
+/// answers: the script password is the runtime's to keep -- it never reaches
+/// the front end or a view -- and this hands it to one caller for one fetch.
+#[derive(Debug, Clone)]
+pub struct Ask {
+	/// The room's server, so an answerer can tell the one room it serves
+	/// from every other.
+	pub server: Option<String>,
+	/// The map, as the room names it.
+	pub map: String,
+	/// Us, in that room.
+	pub me: String,
+	/// What we gave at `JOINBATTLE`; the host knows it and nobody else does.
+	pub script_password: String,
+}
+
+/// No host to ask, which is every room but one on the local network.
+fn no_host() -> FromHost {
+	Arc::new(|_, _| Box::pin(async { Err("this room has no host to ask".to_owned()) }))
+}
+
 /// With nobody to read another rapid server, only BAR's is fetched from.
 fn vet_bars_only() -> Vet {
 	Arc::new(|master| {
@@ -148,6 +187,17 @@ enum Command {
 	LaunchSkirmish {
 		reply: Reply<()>,
 	},
+	/// Starts the engine as the game server of the room we are in, on a
+	/// script somebody else wrote from that room, and tells the room so.
+	LaunchHosted {
+		dirs: DataDirs,
+		engine_version: String,
+		script: String,
+		reply: Reply<()>,
+	},
+	/// Whether idling is to be left alone: a hosted room is not idleness
+	/// even while its host waits for people to arrive.
+	KeepAwake(bool),
 	SkirmishDownload {
 		reply: Reply<()>,
 	},
@@ -299,9 +349,11 @@ enum Command {
 	SetRapidMasters(BTreeMap<String, String>),
 	/// Each server's own map search (`find`), by server id.
 	SetMapSearches(BTreeMap<String, String>),
-	/// The spring names of BAR's maps; see [`map_search_for`].
+	/// The spring names of BAR's maps; see [`map_searches_for`].
 	SetBarMaps(BTreeSet<String>),
 	SetVet(Vet),
+	/// Where a map comes from when no search had it; see [`FromHost`].
+	SetFromHost(FromHost),
 	/// The disk changed under us — an engine was installed — so the room's
 	/// content is worth asking about again.
 	RecheckContent,
@@ -738,6 +790,26 @@ impl Client {
 		self.ask(|reply| Command::LaunchSkirmish { reply }).await
 	}
 
+	/// Starts the engine as the host of the room we are in, on `script`.
+	pub async fn launch_hosted(
+		&self,
+		dirs: DataDirs,
+		engine_version: String,
+		script: String,
+	) -> Result<(), ClientError> {
+		self.ask(|reply| Command::LaunchHosted {
+			dirs,
+			engine_version,
+			script,
+			reply,
+		})
+		.await
+	}
+
+	pub async fn keep_awake(&self, on: bool) -> Result<(), ClientError> {
+		self.send(Command::KeepAwake(on)).await
+	}
+
 	/// Fetches whatever of that room's content this machine lacks.
 	pub async fn skirmish_download(&self) -> Result<(), ClientError> {
 		self.ask(|reply| Command::SkirmishDownload { reply }).await
@@ -840,6 +912,11 @@ impl Client {
 	/// from it. Until one is set, no such server is fetched from.
 	pub async fn set_vet(&self, vet: Vet) -> Result<(), ClientError> {
 		self.send(Command::SetVet(vet)).await
+	}
+
+	/// Who to ask for a map that no search had. See [`FromHost`].
+	pub async fn set_from_host(&self, from_host: FromHost) -> Result<(), ClientError> {
+		self.send(Command::SetFromHost(from_host)).await
 	}
 
 	/// Points the content check at a data directory; `None` uses the launcher's.
@@ -979,6 +1056,8 @@ struct Runtime {
 	join_reply: Option<(String, Reply<()>)>,
 	/// The server the running game was reported in-game on, to report its end to.
 	in_game_on: Option<String>,
+	/// Whether the idle limit is to be ignored, for as long as somebody says so.
+	keep_awake: bool,
 	/// When the room was asked for, until its state has all arrived: the
 	/// `join:` milestones in the log are measured from here.
 	join_asked: Option<Instant>,
@@ -991,6 +1070,7 @@ struct Runtime {
 	/// Maps a search said it does not have, kept beside the ways.
 	misses: Misses,
 	vet: Vet,
+	from_host: FromHost,
 	/// Where to put a config that gets the game borderless, when the user's
 	/// own would not let the overlay cover it. `None` leaves their settings
 	/// entirely alone, which is also what happens when they already work.
@@ -1211,36 +1291,47 @@ fn missed(run: &recoil::Download, tail: &[String]) -> Option<String> {
 	not_found.then(|| map.clone())
 }
 
-/// Who a map is asked of: BAR's search for one of BAR's maps, the room's
-/// server's own for any other — so neither is asked about the other's — and
-/// nobody where the map is not BAR's and the server names no search. With
-/// BAR's maps not known yet (`bar_maps` empty) the server's search is asked
-/// if there is one, else BAR's, as before servers had any.
+/// Who a map is asked of, in the order they are asked, until one answers.
 ///
-/// A third-party search is thereby never asked for one of BAR's names, so it
-/// cannot put its own map under one.
+/// BAR's search for one of BAR's maps; the room's server's own for any other,
+/// so neither is asked about the other's; then springfiles, which is nobody's
+/// server and has what no server publishes.
 ///
-/// ponytail: a map is trusted as far as the server naming its search is —
-/// pr-downloader checks the md5 that same search gave. https at least.
-fn map_search_for(
+/// A third-party search is still never asked for one of BAR's names, so it
+/// cannot put its own map under one -- springfiles included. That is why the
+/// fallback needs to *know* the name is not BAR's rather than merely not find
+/// it in the list: with `bar_maps` empty the list has not loaded, every name
+/// is unknown, and the old answer stands.
+///
+/// Never empty, so a map is always looked for somewhere. Before this, a
+/// custom map on a server naming no search was refused outright, which is
+/// every map in a room on the LAN.
+///
+/// ponytail: a map is trusted as far as the search that named it -- pr-
+/// downloader checks the md5 that same search gave, and nothing checks one
+/// search's answer against another's. https at least.
+fn map_searches_for(
 	bar_maps: &BTreeSet<String>,
 	searches: &BTreeMap<String, String>,
 	server: Option<&str>,
 	map: &str,
-) -> Result<String, String> {
+) -> Vec<String> {
 	let own = server.and_then(|server| searches.get(server));
 	if bar_maps.contains(map) || (own.is_none() && bar_maps.is_empty()) {
-		return Ok(recoil::HTTP_SEARCH_URL.to_owned());
+		return vec![recoil::HTTP_SEARCH_URL.to_owned()];
 	}
+	let mut asked = Vec::new();
 	match own {
-		Some(search) if search.starts_with("https://") => Ok(search.clone()),
-		Some(search) => Err(format!(
-			"{search} is not https, so {map} is not fetched from it"
-		)),
-		None => Err(format!(
-			"{map} is not one of BAR's maps, and this server names no map search to find it with"
-		)),
+		Some(search) if search.starts_with("https://") => asked.push(search.clone()),
+		Some(search) => tracing::warn!(%search, "map search is not https; not asked"),
+		None => {}
 	}
+	// Only for a name we know is not BAR's: an unloaded list is not evidence.
+	if !bar_maps.is_empty() {
+		asked.push(recoil::SPRINGFILES_SEARCH_URL.to_owned());
+	}
+	asked.dedup();
+	asked
 }
 
 /// A game run that ended at the search nobody answers: rapid did not know
@@ -1311,6 +1402,7 @@ impl Runtime {
 			content_ready: false,
 			join_reply: None,
 			in_game_on: None,
+			keep_awake: false,
 			join_asked: None,
 			data_dir: None,
 			rapid_masters: BTreeMap::new(),
@@ -1318,6 +1410,7 @@ impl Runtime {
 			bar_maps: BTreeSet::new(),
 			misses,
 			vet: vet_bars_only(),
+			from_host: no_host(),
 			engine_run: None,
 			overlay_config_dir: None,
 			menu_archive: None,
@@ -1374,6 +1467,65 @@ impl Runtime {
 		.map_err(ClientError::Engine)?;
 		self.started(launched, dirs.write);
 		Ok(())
+	}
+
+	/// Starts the engine as the game server of the room we are in.
+	///
+	/// The same script path a skirmish takes, with one thing first: the room
+	/// is told we are in game, because that bit going up is what starts every
+	/// guest's engine. It goes out before the spawn, as it does when joining,
+	/// and comes back down with the engine's exit either way.
+	async fn launch_hosted(
+		&mut self,
+		dirs: DataDirs,
+		engine_version: &str,
+		script: &str,
+	) -> Result<(), ClientError> {
+		if self.engine.is_some() {
+			return Err(ClientError::Engine("the engine is already running".into()));
+		}
+		let Some(server) = self.room() else {
+			return Err(ClientError::NotConnected);
+		};
+		let in_game = self
+			.servers
+			.get_mut(&server)
+			.and_then(|slot| slot.link.as_mut())
+			.map(|conn| conn.session.set_in_game(true))
+			.ok_or(ClientError::NotConnected)?;
+		for effect in in_game {
+			if let Effect::Send(envelope) = effect {
+				self.send_line(&server, envelope).await?;
+			}
+		}
+		self.in_game_on = Some(server);
+		let path = dirs.write.join("modlobby-hosted.txt");
+		std::fs::create_dir_all(&dirs.write)
+			.and_then(|()| std::fs::write(&path, script))
+			.map_err(|err| ClientError::Engine(format!("writing the start script: {err}")))?;
+		match launch::spawn(
+			&dirs,
+			engine_version,
+			path.to_string_lossy().into_owned(),
+			self.overlay_config_dir.as_deref(),
+			self.menu_archive.clone(),
+		) {
+			Ok(launched) => {
+				self.started(launched, dirs.write);
+				Ok(())
+			}
+			Err(reason) => {
+				// The bit went up for a game that never started; take it
+				// back down, or every guest's engine would try to join it.
+				if let Some(server) = self.in_game_on.take()
+					&& let Some(conn) = self.link_mut(&server)
+				{
+					let effects = conn.session.set_in_game(false);
+					self.apply_effects(&server, effects).await;
+				}
+				Err(ClientError::Engine(reason))
+			}
+		}
 	}
 
 	/// Starts the engine on a replay.
@@ -1451,25 +1603,42 @@ impl Runtime {
 		self.fetch(wanted, self.room(), by_hand).await
 	}
 
-	/// Who `map` is asked of, or why nobody is. A miss remembered from within
-	/// the day holds an unasked fetch back; asking by hand forgets it.
-	fn map_search(
+	/// Who `map` is asked of, or why nobody is.
+	///
+	/// A miss is remembered per search, so one that said no today drops out
+	/// of the chain and the rest are still asked; only when every one of them
+	/// has said no is the fetch held back. Asking by hand forgets them all,
+	/// which is what Download is for.
+	fn map_searches(
 		&mut self,
 		server: Option<&str>,
 		map: &str,
 		by_hand: bool,
-	) -> Result<String, String> {
-		let search = map_search_for(&self.bar_maps, &self.map_searches, server, map)?;
+	) -> Result<Vec<String>, String> {
+		let asked = map_searches_for(&self.bar_maps, &self.map_searches, server, map);
 		if by_hand {
-			if self.misses.forget(&search, map) {
+			// `count`, not `any`: every one is forgotten, and a short circuit
+			// would leave the rest remembered.
+			let forgot = asked
+				.iter()
+				.filter(|search| self.misses.forget(search, map))
+				.count();
+			if forgot > 0 {
 				self.save_misses();
 			}
-		} else if self.misses.holds(&search, map, latency::unix_now()) {
+			return Ok(asked);
+		}
+		let now = latency::unix_now();
+		let fresh: Vec<String> = asked
+			.into_iter()
+			.filter(|search| !self.misses.holds(search, map, now))
+			.collect();
+		if fresh.is_empty() {
 			return Err(format!(
 				"{map} was not found earlier today, so it is not looked for again unasked; Download asks again"
 			));
 		}
-		Ok(search)
+		Ok(fresh)
 	}
 
 	fn save_misses(&self) {
@@ -1513,16 +1682,24 @@ impl Runtime {
 		let library = content::Library::new(dirs.clone());
 		let mut wants = Vec::new();
 		if !library.has_game(&game) {
-			wants.push((recoil::Want::Game, game.clone()));
+			// A room that names no game yet -- a first run -- is asking for
+			// BAR; its name is adopted once the download has given it one.
+			let want = if game.is_empty() {
+				recoil::BAR_GAME_TAG.to_owned()
+			} else {
+				game.clone()
+			};
+			wants.push((recoil::Want::Game, want));
 		}
 		let rapid_master = self.rapid_master(server.as_deref());
 		// Why the map is not asked for, where it is missing and is not.
 		let mut map_refused = None;
-		let mut map_search = recoil::HTTP_SEARCH_URL.to_owned();
-		if !library.has_map(&map) {
-			match self.map_search(server.as_deref(), &map, by_hand) {
-				Ok(search) => {
-					map_search = search;
+		let mut map_searches = vec![recoil::HTTP_SEARCH_URL.to_owned()];
+		// No map named is no map to ask for; the picker fetches whichever is chosen.
+		if !map.is_empty() && !library.has_map(&map) {
+			match self.map_searches(server.as_deref(), &map, by_hand) {
+				Ok(searches) => {
+					map_searches = searches;
 					wants.push((recoil::Want::Map, map.clone()));
 				}
 				Err(reason) => map_refused = Some(reason),
@@ -1546,10 +1723,16 @@ impl Runtime {
 			.map(|(_, name)| name.as_str())
 			.collect::<Vec<_>>()
 			.join(", ");
-		let runs =
-			crate::launch::plan_download(&dirs, &engine_version, wants, &rapid_master, &map_search)
-				.map_err(ClientError::Refused)?;
+		let runs = crate::launch::plan_download(
+			&dirs,
+			&engine_version,
+			wants,
+			&rapid_master,
+			&map_searches,
+		)
+		.map_err(ClientError::Refused)?;
 		let vet = Arc::clone(&self.vet);
+		let from_host = Arc::clone(&self.from_host);
 
 		let (stop_tx, stop_rx) = oneshot::channel();
 		self.downloading = Some(what.clone());
@@ -1562,19 +1745,75 @@ impl Runtime {
 		}));
 
 		let events = self.download_tx.clone();
+		// Gathered before the runs move into the task, for the last resort:
+		// who we are in this room, and what the host will know us by.
+		let ask = server
+			.as_deref()
+			.and_then(|at| self.link(at))
+			.map(|conn| Ask {
+				server: server.clone(),
+				map: map.clone(),
+				me: conn.session.state.me.clone().unwrap_or_default(),
+				script_password: conn
+					.session
+					.state
+					.my_battle
+					.as_ref()
+					.map(|my| my.script_password.clone())
+					.unwrap_or_default(),
+			});
 		tokio::spawn(async move {
 			let progress = events.clone();
 			// The runs, one after the other, until one fails.
 			let work = async move {
+				// The map's runs are the same map from each search in turn:
+				// alternatives, not more work, so the first that answers ends
+				// it and only every one of them failing is a failure. A game
+				// has one source and must work.
+				let mut found_map = false;
+				let mut no_map = None;
 				for run in runs {
-					// Somebody else's rapid server is read before anything is
-					// fetched through it; BAR's own passes unread.
 					if run.has_games() {
+						// Somebody else's rapid server is read before anything
+						// is fetched through it; BAR's own passes unread.
 						vet(run.rapid_master.clone()).await?;
+						run_download(&run, &progress).await?;
+						continue;
 					}
-					run_download(&run, &progress).await?;
+					if found_map {
+						continue;
+					}
+					match run_download(&run, &progress).await {
+						Ok(()) => found_map = true,
+						Err(reason) => no_map = Some(reason),
+					}
 				}
-				Ok(())
+				match no_map {
+					// Every search said no. The room's own host is playing
+					// the map, so it has the file even where nobody else
+					// publishes it -- which is every custom map on a LAN.
+					Some(reason) if !found_map => match ask {
+						Some(ask) => {
+							// Its progress goes where pr-downloader's went, so
+							// a handover fills the same bar rather than
+							// leaving it stopped for a few hundred megabytes.
+							let (tx, mut rx) = mpsc::channel::<recoil::Progress>(8);
+							let pump = tokio::spawn({
+								let progress = progress.clone();
+								async move {
+									while let Some(step) = rx.recv().await {
+										let _ = progress.send(DownloadEvent::Progress(step)).await;
+									}
+								}
+							});
+							let outcome = from_host(ask, tx).await;
+							pump.abort();
+							outcome.map_err(|from| format!("{reason}; and {from}"))
+						}
+						None => Err(reason),
+					},
+					_ => Ok(()),
+				}
 			};
 			// The stop side owns a sender the runtime drops; either the work
 			// finishing or that drop ends the wait. Letting the work go is
@@ -1720,10 +1959,36 @@ impl Runtime {
 				};
 				self.batcher.push(Delta::Download(status));
 				// Whatever arrived changes the answer, so ask the disk again.
-				self.checked = None;
-				self.refresh_content().await;
+				self.look_again().await;
 			}
 		}
+	}
+
+	/// Asks the disk again for both rooms, because something arrived or
+	/// somebody asked.
+	///
+	/// The room with no server behind it keeps its own answer, keyed on the
+	/// same three names and cached for the same reason — and `refresh_content`
+	/// returns at once when there is no connection, so without the second half
+	/// an engine put in the folder by hand is found only by restarting the app.
+	/// A room opened on a machine with nothing on it names nothing, so it is
+	/// also given what has arrived since, and that is written down.
+	async fn look_again(&mut self) {
+		self.checked = None;
+		self.refresh_content().await;
+		let dirs = self.data_dirs();
+		let adopted = match (self.skirmish.as_mut(), dirs) {
+			(Some(room), Some(dirs)) => {
+				let library = content::Library::new(dirs);
+				room.adopt(&library.installed_engines(), &library.installed_games())
+			}
+			_ => false,
+		};
+		if adopted {
+			self.remember_skirmish();
+		}
+		self.skirmish_checked = None;
+		self.push_skirmish();
 	}
 
 	/// Re-checks the room's content when what it asks for changes, and tells
@@ -2062,6 +2327,16 @@ impl Runtime {
 				let result = self.launch_skirmish();
 				let _ = reply.send(result);
 			}
+			Command::LaunchHosted {
+				dirs,
+				engine_version,
+				script,
+				reply,
+			} => {
+				let result = self.launch_hosted(dirs, &engine_version, &script).await;
+				let _ = reply.send(result);
+			}
+			Command::KeepAwake(on) => self.keep_awake = on,
 			Command::SkirmishDownload { reply } => {
 				let result = self.start_skirmish_download().await;
 				let _ = reply.send(result);
@@ -2224,6 +2499,7 @@ impl Runtime {
 			Command::SetMapSearches(searches) => self.map_searches = searches,
 			Command::SetBarMaps(names) => self.bar_maps = names,
 			Command::SetVet(vet) => self.vet = vet,
+			Command::SetFromHost(from_host) => self.from_host = from_host,
 			Command::SetDataDir(data_dir) => {
 				// Told on every save of the settings, of which most change
 				// something else: the scan below is too slow to repeat for
@@ -2236,17 +2512,7 @@ impl Runtime {
 				self.checked = None;
 				self.refresh_content().await;
 			}
-			Command::RecheckContent => {
-				self.checked = None;
-				self.refresh_content().await;
-				// The room with no server behind it keeps its own answer,
-				// keyed on the same three names and cached for the same
-				// reason — and `refresh_content` above returns at once when
-				// there is no connection, so without this an engine put in the
-				// folder by hand is found only by restarting the app.
-				self.skirmish_checked = None;
-				self.push_skirmish();
-			}
+			Command::RecheckContent => self.look_again().await,
 			Command::ReleaseSeat => {
 				let Some(server) = self.room() else {
 					return;
@@ -2637,13 +2903,17 @@ impl Runtime {
 					// Nor where the engine may not join a hosted game at all:
 					// the launch would be refused, and refusing it once per
 					// game start is a notice nobody asked for.
+					let may_join = self
+						.game
+						.as_ref()
+						.is_some_and(|game| recoil::may_join_hosted_game_at(&game.view.ip));
 					let wanted = self.auto_launch.take().or_else(|| {
 						(just_started
 							&& self.auto_launch_always
 							&& self.content_ready && self.engine.is_none()
-							&& recoil::may_join_hosted_games())
-						.then(|| self.data_dirs())
-						.flatten()
+							&& may_join)
+							.then(|| self.data_dirs())
+							.flatten()
 					});
 					if let Some(dirs) = wanted
 						&& let Err(err) = self.launch_engine(dirs).await
@@ -2709,7 +2979,7 @@ impl Runtime {
 	/// game — so that only pushes the limit out by another period.
 	async fn on_idle(&mut self) {
 		let now = Instant::now();
-		if self.game.is_some() || self.engine.is_some() {
+		if self.game.is_some() || self.engine.is_some() || self.keep_awake {
 			self.idle.active(now);
 			return;
 		}
@@ -3295,41 +3565,62 @@ mod tests {
 			"mods.example".to_owned(),
 			"https://mods.example/find".to_owned(),
 		)]);
-		let ask = |bars: &BTreeSet<String>, server, map| map_search_for(bars, &theirs, server, map);
+		let ask =
+			|bars: &BTreeSet<String>, server, map| map_searches_for(bars, &theirs, server, map);
 		let mods = Some("mods.example");
+		let bar = recoil::HTTP_SEARCH_URL;
+		let files = recoil::SPRINGFILES_SEARCH_URL;
+
+		// One of BAR's names goes to BAR alone. Nowhere else is asked, so
+		// nowhere else can answer with its own map under that name.
+		assert_eq!(ask(&bars, mods, "Supreme Isthmus v2.1"), [bar]);
+		assert_eq!(ask(&bars, None, "Supreme Isthmus v2.1"), [bar]);
+
+		// A name that is not BAR's: the room's own server first, since it is
+		// the one that published the room, then the public index.
 		assert_eq!(
-			ask(&bars, mods, "Supreme Isthmus v2.1").as_deref(),
-			Ok(recoil::HTTP_SEARCH_URL),
-			"BAR's map is BAR's to serve, whatever server the room is on"
+			ask(&bars, mods, "Bathtub Brawl V2"),
+			["https://mods.example/find", files]
 		);
+		// BAR's own server names no map search, so only the fallback is left
+		// -- and BAR is still not asked for a map it does not have.
 		assert_eq!(
-			ask(&bars, mods, "Bathtub Brawl V2").as_deref(),
-			Ok("https://mods.example/find")
-		);
-		assert!(
 			ask(
 				&bars,
 				Some("server4.beyondallreason.info"),
 				"Bathtub Brawl V2"
-			)
-			.is_err(),
-			"BAR is not asked for a map it does not have"
+			),
+			[files]
 		);
-		// BAR's maps not known yet.
+		// A room on the LAN, whose server publishes nothing at all: the
+		// refusal this replaced is what a custom map used to get.
+		assert_eq!(ask(&bars, Some("lan"), "Frosty Cove v1.13"), [files]);
+
+		// BAR's maps not known yet: every name is unknown, which is not the
+		// same as known not to be BAR's, so the fallback stays out of it.
 		let unknown = BTreeSet::new();
 		assert_eq!(
-			ask(&unknown, mods, "Anything").as_deref(),
-			Ok("https://mods.example/find")
+			ask(&unknown, mods, "Anything"),
+			["https://mods.example/find"]
 		);
-		assert_eq!(
-			ask(&unknown, None, "Anything").as_deref(),
-			Ok(recoil::HTTP_SEARCH_URL)
-		);
+		assert_eq!(ask(&unknown, None, "Anything"), [bar]);
+
+		// A search that is not https is not asked; the fallback still is.
 		let plain = BTreeMap::from([(
 			"mods.example".to_owned(),
 			"http://mods.example/find".to_owned(),
 		)]);
-		assert!(map_search_for(&bars, &plain, mods, "Bathtub Brawl V2").is_err());
+		assert_eq!(
+			map_searches_for(&bars, &plain, mods, "Bathtub Brawl V2"),
+			[files]
+		);
+
+		// A server naming springfiles itself is not asked twice.
+		let same = BTreeMap::from([("mods.example".to_owned(), files.to_owned())]);
+		assert_eq!(
+			map_searches_for(&bars, &same, mods, "Bathtub Brawl V2"),
+			[files]
+		);
 	}
 
 	#[test]
@@ -3340,7 +3631,7 @@ mod tests {
 				std::path::Path::new("data"),
 				vec![(want, "Nowhere v1".into())],
 				recoil::RAPID_REPO_MASTER,
-				"https://mods.example/find",
+				&["https://mods.example/find".to_owned()],
 			)
 		};
 		let not_found =
@@ -3374,7 +3665,7 @@ mod tests {
 			std::path::Path::new("data"),
 			vec![(recoil::Want::Game, "Somebody's Mod v1".into())],
 			theirs,
-			recoil::HTTP_SEARCH_URL,
+			&[recoil::HTTP_SEARCH_URL.to_owned()],
 		);
 		let asked_nobody = format!(
 			"[Error] search():Error downloading {}?category=game&springname=x",
@@ -4284,6 +4575,72 @@ mod tests {
 		assert_eq!(
 			line_starting_with(&mut server_lines, "SAYBATTLE ").await,
 			"SAYBATTLE !preset custom"
+		);
+		client.shutdown().await;
+	}
+
+	/// Hosting a room's game: the in-game bit goes out before the engine is
+	/// started, since it is what starts every guest's engine — and comes
+	/// back down when ours could not start, or they would all be joining
+	/// nothing.
+	#[tokio::test]
+	async fn a_hosted_launch_says_in_game_first_and_takes_it_back_on_failure() {
+		let (connector, server) = in_memory();
+		let (server_read, mut server_write) = tokio::io::split(server);
+		let mut server_lines = BufReader::new(server_read).lines();
+		let client = Client::spawn_with(
+			ThrottlePolicy::default(),
+			Hardware::stub(),
+			connector,
+			Arc::new(latency::Unmeasured),
+			None,
+		);
+		let login = log_in(&client, "test");
+		server_write
+			.write_all(b"TASSERVER 0.38 * 8201 0\n")
+			.await
+			.unwrap();
+		line_starting_with(&mut server_lines, "LOGIN ").await;
+		server_write
+			.write_all(b"ACCEPTED me\nADDUSER me SE 1 LuaLobby Chobby\n")
+			.await
+			.unwrap();
+		server_write.write_all(ROOM).await.unwrap();
+		server_write.write_all(b"LOGININFOEND\n").await.unwrap();
+		login.await.unwrap().unwrap();
+
+		let join = tokio::spawn({
+			let client = client.clone();
+			async move { client.join_battle("test".into(), 5, None).await }
+		});
+		line_starting_with(&mut server_lines, "JOINBATTLE ").await;
+		server_write
+			.write_all(b"JOINBATTLE 5 h\nJOINEDBATTLE 5 me\nREQUESTBATTLESTATUS\n")
+			.await
+			.unwrap();
+		join.await.unwrap().unwrap();
+		line_starting_with(&mut server_lines, "MYBATTLESTATUS ").await;
+
+		let dir = tempfile::tempdir().unwrap();
+		let result = client
+			.launch_hosted(
+				DataDirs::only(dir.path()),
+				"0.0.0".into(),
+				"[game] {}\n".into(),
+			)
+			.await;
+		assert!(matches!(result, Err(ClientError::Engine(_))), "{result:?}");
+		assert_eq!(
+			line_starting_with(&mut server_lines, "MYSTATUS ").await,
+			"MYSTATUS 1"
+		);
+		assert_eq!(
+			line_starting_with(&mut server_lines, "MYSTATUS ").await,
+			"MYSTATUS 0"
+		);
+		assert_eq!(
+			std::fs::read_to_string(dir.path().join("modlobby-hosted.txt")).unwrap(),
+			"[game] {}\n"
 		);
 		client.shutdown().await;
 	}

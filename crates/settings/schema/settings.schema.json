@@ -46,6 +46,12 @@
         "idleDisconnectMinutes": 60
       }
     },
+    "lan": {
+      "$ref": "#/$defs/Lan",
+      "default": {
+        "enabled": false
+      }
+    },
     "logging": {
       "$ref": "#/$defs/Logging",
       "default": {
@@ -262,6 +268,17 @@
         "spectator",
         "player"
       ]
+    },
+    "Lan": {
+      "description": "Games with people on the local network, with no server between you.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Whether the lobby listens for rooms on the network, and offers to\nannounce one of yours.\n\nOff. Everything else the lobby does it does to a server you chose;\nthis listens on a multicast group and a broadcast address, and hosting\ntells the whole network your name and what you are playing. That is\nworth asking for rather than assuming, on a laptop that may be on a\nnetwork you do not own. Nothing about it starts until this is on.",
+          "type": "boolean",
+          "default": false
+        }
+      }
     },
     "Logging": {
       "type": "object",

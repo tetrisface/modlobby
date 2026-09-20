@@ -194,13 +194,43 @@ pub fn is_hosted_game(target: &str) -> bool {
 	target.starts_with(JOIN_SCHEME)
 }
 
+/// Whether the engine here may join a game hosted at `host`: anywhere, where
+/// it may join hosted games at all, and on this machine or its own network
+/// otherwise. The Apple build's author asks that it stay off the community
+/// servers; a game in the next room is nobody's server.
+pub fn may_join_hosted_game_at(host: &str) -> bool {
+	may_join_hosted_games() || is_local_network(host)
+}
+
+/// A loopback, private (RFC 1918) or link-local address, or `localhost`.
+fn is_local_network(host: &str) -> bool {
+	let host = host.trim_matches(['[', ']']);
+	if host.eq_ignore_ascii_case("localhost") {
+		return true;
+	}
+	match host.parse::<std::net::IpAddr>() {
+		Ok(std::net::IpAddr::V4(ip)) => ip.is_loopback() || ip.is_private() || ip.is_link_local(),
+		Ok(std::net::IpAddr::V6(ip)) => {
+			ip.is_loopback() || ip.is_unique_local() || ip.is_unicast_link_local()
+		}
+		Err(_) => false,
+	}
+}
+
+/// The host in `spring://user:password@host:port`.
+fn host_of(url: &str) -> &str {
+	let rest = url.strip_prefix(JOIN_SCHEME).unwrap_or(url);
+	let rest = rest.rsplit_once('@').map_or(rest, |(_, after)| after);
+	rest.rsplit_once(':').map_or(rest, |(host, _)| host)
+}
+
 /// Why the engine must not be started on `target`, when it must not.
 ///
 /// Split from the platform answer so it can be exercised both ways from any
 /// machine: an invariant only ever tested on the platform it fires on is one
 /// nobody notices breaking.
 pub fn refuse_target(target: &str, may_join: bool) -> Option<String> {
-	if !is_hosted_game(target) || may_join {
+	if !is_hosted_game(target) || may_join || is_local_network(host_of(target)) {
 		return None;
 	}
 	Some(
@@ -559,6 +589,40 @@ mod tests {
 		);
 	}
 
+	/// The author's ask is about the community servers. A game hosted by the
+	/// person across the table is refused nowhere.
+	#[test]
+	fn a_game_on_the_local_network_is_nobodys_server() {
+		for host in [
+			"192.168.1.5",
+			"10.0.0.2",
+			"172.16.4.4",
+			"127.0.0.1",
+			"localhost",
+			"fd12::1",
+		] {
+			let url = spring_url("me", "4242", host, 8452);
+			assert!(refuse_target(&url, false).is_none(), "{host}");
+			assert!(may_join_hosted_game_at(host), "{host}");
+		}
+		for host in [
+			"78.46.100.74",
+			"172.32.0.1",
+			"2001:db8::1",
+			"server4.beyondallreason.info",
+		] {
+			let url = spring_url("me", "4242", host, 8452);
+			assert!(refuse_target(&url, false).is_some(), "{host}");
+			assert_eq!(
+				may_join_hosted_game_at(host),
+				may_join_hosted_games(),
+				"{host}"
+			);
+		}
+		assert_eq!(host_of("spring://me:pw@1.2.3.4:8452"), "1.2.3.4");
+		assert_eq!(host_of("spring://me:p@ss@[fd12::1]:8452"), "[fd12::1]");
+	}
+
 	#[test]
 	fn a_skirmish_and_a_replay_are_this_machines_own_business() {
 		for target in [
@@ -854,6 +918,17 @@ pub struct Download {
 /// (`bar-lobby/src/main/json/model/config.ts`).
 pub const RAPID_REPO_MASTER: &str = "https://repos-cdn.beyondallreason.dev/repos.gz";
 pub const HTTP_SEARCH_URL: &str = "https://files-cdn.beyondallreason.dev/find";
+/// Springfiles: pr-downloader's own default search (`pr-downloader/src/Util.h`)
+/// and the oldest public index of Spring maps.
+///
+/// The last thing asked for a map nobody else has. It is nobody's server, so
+/// it is not asked first -- a room's own server knows its own maps, and BAR's
+/// knows BAR's -- but a map neither publishes has lived here for fifteen
+/// years, which is where a custom map on a LAN comes from.
+pub const SPRINGFILES_SEARCH_URL: &str = "https://springfiles.springrts.com/json.php";
+/// The game the launcher installs, as a rapid tag pr-downloader resolves: what
+/// a room that names no game yet is asking for.
+pub const BAR_GAME_TAG: &str = "byar:test";
 /// A search URL nothing answers on, for a run that must not ask anybody.
 ///
 /// pr-downloader asks its search URL, by name, for any game rapid does not
@@ -920,21 +995,32 @@ impl Download {
 		data_dir: &Path,
 		wants: Vec<(Want, String)>,
 		rapid_master: &str,
-		map_search: &str,
+		map_searches: &[String],
 	) -> Vec<Self> {
 		let (games, maps): (Vec<_>, Vec<_>) =
 			wants.into_iter().partition(|(want, _)| *want == Want::Game);
-		[(games, NO_SEARCH_URL), (maps, map_search)]
-			.into_iter()
-			.filter(|(wants, _)| !wants.is_empty())
-			.map(|(wants, search_url)| Self {
-				binary: binary.to_path_buf(),
-				data_dir: data_dir.to_path_buf(),
-				wants,
-				rapid_master: rapid_master.to_owned(),
-				search_url: search_url.to_owned(),
-			})
-			.collect()
+		let one = |wants: Vec<(Want, String)>, search_url: &str| Self {
+			binary: binary.to_path_buf(),
+			data_dir: data_dir.to_path_buf(),
+			wants,
+			rapid_master: rapid_master.to_owned(),
+			search_url: search_url.to_owned(),
+		};
+		let mut runs = Vec::new();
+		if !games.is_empty() {
+			runs.push(one(games, NO_SEARCH_URL));
+		}
+		// The same maps once per search, in the order they are to be asked.
+		// Each is an alternative to the last rather than more work: the
+		// caller stops at whichever answers. See [`Self::has_games`].
+		if !maps.is_empty() {
+			runs.extend(
+				map_searches
+					.iter()
+					.map(|search| one(maps.clone(), search.as_str())),
+			);
+		}
+		runs
 	}
 
 	/// Whether this run fetches games, and so reads a rapid index.
@@ -1032,7 +1118,7 @@ mod download_tests {
 				(Want::Game, "Somebody's Mod v1".into()),
 			],
 			theirs,
-			"https://maps.example/find",
+			&["https://maps.example/find".to_owned()],
 		);
 		let [games, maps] = runs.as_slice() else {
 			panic!("a run for the games, then one for the maps: {runs:?}");
@@ -1075,10 +1161,48 @@ mod download_tests {
 			Path::new("C:/bar"),
 			vec![(Want::Map, "Pinewood_Derby_V1".into())],
 			RAPID_REPO_MASTER,
-			HTTP_SEARCH_URL,
+			&[HTTP_SEARCH_URL.to_owned()],
 		);
 		assert_eq!(runs.len(), 1);
 		assert!(!runs[0].has_games());
+	}
+
+	/// The map is asked of each search in turn, as one run apiece: the caller
+	/// stops at whichever answers, so this is one download's worth of work
+	/// and not three.
+	#[test]
+	fn a_map_gets_a_run_per_search_and_a_game_still_gets_one() {
+		let searches = [
+			HTTP_SEARCH_URL.to_owned(),
+			"https://mods.example/find".to_owned(),
+			SPRINGFILES_SEARCH_URL.to_owned(),
+		];
+		let runs = Download::runs(
+			Path::new("prd"),
+			Path::new("C:/bar"),
+			vec![
+				(Want::Map, "Frosty Cove v1.13".into()),
+				(Want::Game, "Somebody's Mod v1".into()),
+			],
+			RAPID_REPO_MASTER,
+			&searches,
+		);
+		let asked: Vec<&str> = runs.iter().map(|run| run.search_url.as_str()).collect();
+		assert_eq!(
+			asked,
+			[
+				// The game's, which asks nobody by name.
+				NO_SEARCH_URL,
+				HTTP_SEARCH_URL,
+				"https://mods.example/find",
+				SPRINGFILES_SEARCH_URL,
+			]
+		);
+		assert_eq!(runs.iter().filter(|run| run.has_games()).count(), 1);
+		// Every map run wants the same map; they differ only in who is asked.
+		for run in runs.iter().filter(|run| !run.has_games()) {
+			assert_eq!(run.wants, [(Want::Map, "Frosty Cove v1.13".to_owned())]);
+		}
 	}
 
 	#[test]

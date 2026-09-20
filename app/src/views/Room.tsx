@@ -55,7 +55,6 @@ import {
 	writeWidth,
 } from '../lib/resize'
 import { readSkills, teamSkill, type Skill } from '../lib/skill'
-import { noPublishedEngine } from '../store/build'
 import { chat, pushNotice } from '../store/chat'
 import { joinMilestone } from '../store/join'
 import { lobby, roomServer, roomSession, severalServers } from '../store/lobby'
@@ -79,10 +78,6 @@ const START_POS = [
 	{ id: 0, label: "The map's own" },
 	{ id: 1, label: 'Random' },
 ]
-
-/** Where the only Beyond All Reason engine for Apple Silicon is published. */
-const APPLE_ENGINE =
-	'https://github.com/Vandomas/RecoilEngine-AppleSilicon/releases'
 
 /** Where the roster's dragged height is remembered. */
 const CAP_KEY = 'modlobby.rosterHeight'
@@ -390,24 +385,14 @@ export function Room() {
 	 *
 	 * A room that has not been told which it wants shows the invitation rather
 	 * than nothing: an empty link is a click target with no width, which reads
-	 * as dead text beside its label. The same hole opens on the other side — a
-	 * fact with no value is a label with nothing after it — which is what
-	 * `absent` fills where the caller has something to put there. The two do not
-	 * share one placeholder, because one of them is an invitation and the other
-	 * is news.
-	 *
-	 * `picks` is asked for rather than read here, because the room's permission
-	 * is only half of it: an engine this machine can only be given by hand is a
-	 * fact about the machine, and a list of the one engine on the disk is not a
-	 * choice.
+	 * as dead text beside its label.
 	 */
 	const Choice = (props: {
 		what: 'game' | 'engine'
 		shown: string
 		picks: boolean
-		absent?: string
 	}) => (
-		<Show when={props.picks} fallback={<b>{props.shown || props.absent}</b>}>
+		<Show when={props.picks} fallback={<b>{props.shown}</b>}>
 			<b
 				class='chat-link'
 				title={`Play a different ${props.what}`}
@@ -483,9 +468,14 @@ export function Room() {
 						<Show when={picking() === 'map'}>
 							<MapPicker
 								current={b().mapName}
-								onPick={(name) => {
+								onPick={(name, installed) => {
 									setPicking(null)
-									void picked(room.io.setMap, 'map', name)
+									// A map picked from the published list is a request for
+									// it, the way joining a room is.
+									void picked(room.io.setMap, 'map', name).then(() => {
+										if (!installed && (settings()?.play.autoDownload ?? true))
+											void room.io.downloadMissing().catch(() => {})
+									})
 								}}
 								onClose={() => setPicking(null)}
 							/>
@@ -518,37 +508,42 @@ export function Room() {
 							<div class='card-meta'>
 								<span>
 									Map{' '}
-									{/* Where the map is ours to choose, its name is the way to
-                      choose it. Where it is the host's, the name is a link to
-                      the page Chobby opens for a map, so it lands where people
-                      already expect it to. */}
-									<Show
-										when={room.caps.picksContent}
-										fallback={
-											<b
-												class='chat-link'
+									{/* The name opens the map list, in every room: where the
+                      room is ours that sets the map, and where it is the
+                      host's it asks for one with `!map`, which is how anyone
+                      asks. The page Chobby opens for a map is still here,
+                      behind the arrow, where it is a second thing to want
+                      rather than the only one on offer. */}
+									<b
+										class='chat-link'
+										title={
+											room.caps.picksContent
+												? 'Play a different map'
+												: 'Ask the host for a different map'
+										}
+										onClick={() => setPicking('map')}
+									>
+										{b().mapName || 'choose one'}
+									</b>
+									<Show when={b().mapName}>
+										{(name) => (
+											<button
+												class='card-act'
 												title='Open this map on beyondallreason.info'
+												aria-label={`Open ${name()} on beyondallreason.info`}
 												onClick={() =>
 													void api
 														.openUrl(
-															`https://www.beyondallreason.info/maps?mapname=${encodeURIComponent(b().mapName)}`,
+															`https://www.beyondallreason.info/maps?mapname=${encodeURIComponent(name())}`,
 														)
 														.catch((error) =>
 															pushNotice('warning', describeError(error)),
 														)
 												}
 											>
-												{b().mapName}
-											</b>
-										}
-									>
-										<b
-											class='chat-link'
-											title='Play a different map'
-											onClick={() => setPicking('map')}
-										>
-											{b().mapName || 'choose one'}
-										</b>
+												<Glyph id='act-external' />
+											</button>
+										)}
 									</Show>
 								</span>
 								{/* Whose room it is, which is only worth saying when it is
@@ -567,15 +562,10 @@ export function Room() {
 								</Show>
 								<span>
 									Engine{' '}
-									{/* Where nothing publishes an engine for this machine, the
-                      one on the disk is not a choice: it is the only one there
-                      is, and somebody put it there by hand. Said as a fact
-                      instead of offered as a list of one. */}
 									<Choice
 										what='engine'
 										shown={b().engineVersion}
-										picks={room.caps.picksContent && !noPublishedEngine()}
-										absent='none installed'
+										picks={room.caps.picksContent}
 									/>
 								</span>
 								<span>
@@ -588,7 +578,7 @@ export function Room() {
 									<Show when={newerGame()}>
 										{(version) => (
 											<button
-												class='card-upgrade'
+												class='card-act up'
 												title={`Update to ${version()}`}
 												aria-label={`Update the game to ${version()}`}
 												onClick={() => void upgradeGame(version())}
@@ -1146,70 +1136,9 @@ function Missing(props: { parts: readonly string[]; engineVersion: string }) {
 					</button>
 				</Match>
 				<Match when={!fetchable()}>
-					<Switch
-						fallback={<GetEngine version={props.engineVersion} auto={auto()} />}
-					>
-						{/* An index with no build for this machine is not a failure to
-                retry: it is the answer, and the way past it is not in this
-                app. Ahead of the empty-version arm because a first run here
-                has neither a version nor an engine, and "this room names no
-                engine" would blame the room for a fact about the machine.
-                Three buttons because the instruction has three steps and each
-                of them is a thing this app can do. */}
-						<Match when={noPublishedEngine()}>
-							{(why) => (
-								<>
-									<button
-										class='chip-choice'
-										onClick={() =>
-											void api
-												.openUrl(APPLE_ENGINE)
-												.catch((error) =>
-													pushNotice('warning', describeError(error)),
-												)
-										}
-									>
-										Get one
-									</button>
-									<button
-										class='chip-choice'
-										onClick={() =>
-											void api
-												.openEngineDir()
-												.catch((error) =>
-													pushNotice('warning', describeError(error)),
-												)
-										}
-									>
-										Engine folder
-									</button>
-									{/* What is installed is cached against the room's three
-                      names, and dropping a bundle into the folder changes none
-                      of them — so an engine that arrived from outside this app
-                      is found only by being asked for. */}
-									<button
-										class='chip-choice'
-										onClick={() =>
-											void api
-												.recheckContent()
-												.catch((error) =>
-													pushNotice('warning', describeError(error)),
-												)
-										}
-									>
-										Look again
-									</button>
-									<span class='muted chip-say'>{why()}</span>
-								</>
-							)}
-						</Match>
-						{/* Asking BAR's index for the engine called "" answers 404, and a
-                retry asks the same question again. Saying so is the honest end
-                of that road until the room is given a version. */}
-						<Match when={!props.engineVersion}>
-							<span class='chip warn'>This room names no engine to fetch</span>
-						</Match>
-					</Switch>
+					{/* A room that names no engine yet -- a first run -- asks for
+              the newest there is, and is given its name once it lands. */}
+					<GetEngine version={props.engineVersion} auto={auto()} />
 				</Match>
 			</Switch>
 		</>

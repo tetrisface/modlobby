@@ -89,11 +89,6 @@ export type RoomCaps = {
 	/**
 	 * The map, game and engine are chosen here rather than by whoever set the
 	 * room up. Off, they are shown as what they are and changed by asking.
-	 *
-	 * Whether there is anything to choose between is a second question, and not
-	 * one about the room: an engine can only be picked where an engine can be
-	 * fetched, which `store/build`'s `noPublishedEngine` answers. That one is
-	 * asked at the cell, because it is the same answer in every room here.
 	 */
 	picksContent: boolean
 	/**
@@ -104,6 +99,15 @@ export type RoomCaps = {
 	 * server, where the only engine available may not be used.
 	 */
 	plays: boolean
+	/**
+	 * This room could be opened to the local network as it stands.
+	 *
+	 * Only a skirmish: an online room is somebody else's to open, and one on
+	 * the LAN is already open. It is a capability rather than a question about
+	 * which room this is, so that the button asking for it does not have to
+	 * work that out from what the room is not.
+	 */
+	opensToLan: boolean
 }
 
 /**

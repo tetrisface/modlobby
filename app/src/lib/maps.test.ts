@@ -105,3 +105,17 @@ describe('warming the list ahead', () => {
 		).resolves.toBeUndefined()
 	})
 })
+
+describe('a map the index has never heard of', () => {
+	it('is named by its file, with the underscores put back to spaces', async () => {
+		const { mapNameFromFile } = await import('./maps')
+		// The bug: the room took `FrostyCove_v1.13` for the map's name, and the
+		// engine stopped with `Dependent archive "frostycove_v1.13" not found`
+		// — it splits a name on whitespace, so one underscored word matches
+		// nothing it scanned.
+		expect(mapNameFromFile('FrostyCove_v1.13')).toBe('FrostyCove v1.13')
+		expect(mapNameFromFile('supreme_isthmus_v2.1')).toBe('supreme isthmus v2.1')
+		// A name with no underscores is already one: left alone.
+		expect(mapNameFromFile('DeltaSiegeDry')).toBe('DeltaSiegeDry')
+	})
+})

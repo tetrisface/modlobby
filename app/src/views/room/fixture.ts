@@ -178,6 +178,7 @@ export const ALONE: RoomCaps = {
 	leave: false,
 	picksContent: true,
 	plays: true,
+	opensToLan: true,
 }
 
 /** A room on the server, as `onlineRoom()` describes one. */
@@ -187,6 +188,7 @@ export const SERVED: RoomCaps = {
 	ready: true,
 	startsGame: false,
 	leave: true,
+	opensToLan: false,
 	picksContent: false,
 	plays: true,
 }

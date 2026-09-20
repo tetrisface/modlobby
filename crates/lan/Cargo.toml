@@ -1,0 +1,24 @@
+[package]
+name = "lan"
+description = "A room on the local network: the lobby server a host runs in process, the beacon that announces it, and the script that starts its game"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+if-addrs = { workspace = true }
+mdns-sd = { workspace = true }
+recoil = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+socket2 = { workspace = true }
+spring-protocol = { workspace = true }
+startbox = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+lobby-runtime = { workspace = true }
+tempfile = { workspace = true }
+lobby-ui = { workspace = true }

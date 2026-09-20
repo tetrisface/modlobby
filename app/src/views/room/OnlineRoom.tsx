@@ -1,3 +1,5 @@
+import { LAN, lanRoom } from '../../lan/lan'
+import { roomServer } from '../../store/lobby'
 import { Room } from '../Room'
 import { RoomProvider } from './model'
 import { onlineRoom } from './online'
@@ -10,7 +12,7 @@ import { onlineRoom } from './online'
  */
 export function OnlineRoom() {
 	return (
-		<RoomProvider value={onlineRoom()}>
+		<RoomProvider value={roomServer() === LAN ? lanRoom() : onlineRoom()}>
 			<Room />
 		</RoomProvider>
 	)

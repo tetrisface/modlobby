@@ -18,7 +18,7 @@ use tweaks::{DiffView, Kind, Prepared, Slot, TweakView};
 use crate::state::App;
 use crate::transport::ChannelTransport;
 
-const LOBBY_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub(crate) const LOBBY_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -410,6 +410,15 @@ pub async fn join_battle(
 	id: u32,
 	password: Option<String>,
 ) -> Result<()> {
+	// A room on the LAN is reached first, then joined; and a room that will
+	// not be there after a restart is not one to offer back.
+	if server_id(&server) == lan::LAN_ID {
+		crate::lan::ensure_connected(&app, id).await?;
+		app.client
+			.join_battle(server, lan::BATTLE_ID, password)
+			.await?;
+		return Ok(());
+	}
 	app.client.join_battle(server.clone(), id, password).await?;
 	// Remembered only once the host has let us in, so a room that refused us
 	// is never offered back.
@@ -511,11 +520,23 @@ pub async fn list_channels(app: State<'_, App>, server: String) -> Result<()> {
 
 /// What this machine can start a game with.
 #[tauri::command]
-pub fn skirmish_options(app: State<'_, App>) -> Result<SkirmishOptions> {
+pub async fn skirmish_options(app: State<'_, App>) -> Result<SkirmishOptions> {
 	let library = content::Library::new(data_dirs(&app)?);
+	// Spring names, not file names: what a room, a start script and `!map`
+	// all want. The published index answers for BAR's maps and the archive
+	// for everyone else's, so a picker never has to guess one.
+	let index = app.map_index().await;
+	let maps = library
+		.installed_map_files()
+		.into_iter()
+		.map(|stem| match index.names.get(&stem) {
+			Some(known) => known.clone(),
+			None => library.map_spring_name(&stem),
+		})
+		.collect();
 	Ok(SkirmishOptions {
 		games: library.installed_games(),
-		maps: library.installed_map_files(),
+		maps,
 		engines: library.installed_engines(),
 		ais: library.installed_ais(),
 	})
@@ -584,24 +605,33 @@ fn remembered_skirmish(app: &State<'_, App>) -> Option<skirmish::Room> {
 
 /// A map's spring name, which is what a start script names it by.
 ///
-/// What is on disk is the archive's file name -- lowercased and underscored --
-/// and nothing there records the capitalisation, so it comes from BAR's
-/// published index, the same one the minimaps do. Offline the file name is
-/// used as-is: it is the best guess there is, and it is what the old skirmish
-/// form did.
+/// What is on disk is the archive's file name -- underscored, and lowercased
+/// if BAR put it there -- and nothing in it records the capitalisation, so
+/// the name comes from BAR's published index, the same one the minimaps do.
+/// A map the index has never heard of has its name read back out of the file
+/// name instead, which the engine can resolve; the file name itself, with its
+/// underscores, is a name it cannot.
 async fn spring_name(app: &State<'_, App>, map: String) -> String {
 	if map.is_empty() {
 		return map;
 	}
 	let index = app.map_index().await;
-	index.names.get(&map).cloned().unwrap_or(map)
+	if let Some(known) = index.names.get(&map) {
+		return known.clone();
+	}
+	// Not one BAR publishes: the archive is the only place its name is
+	// written down, and a map on the LAN is never anywhere else.
+	match data_dirs_of(app) {
+		Some(dirs) => content::Library::new(dirs).map_spring_name(&map),
+		None => content::map_name_from_stem(&map),
+	}
 }
 
 /// The name to play under.
 ///
 /// A skirmish needs no account, so someone who has never logged in still needs
 /// something to appear as.
-fn player_name(app: &State<'_, App>) -> String {
+pub(crate) fn player_name(app: &State<'_, App>) -> String {
 	app.settings
 		.get()
 		.servers
@@ -1311,19 +1341,18 @@ pub fn open_data_dir(app: State<'_, App>) -> Result<()> {
 	open(dirs.write)
 }
 
-/// The folder an engine is dropped into, for the machine where that is how one
-/// arrives.
+/// The folder maps are installed in, for a map that arrives by hand: one
+/// published nowhere pr-downloader can reach it, which is every map outside
+/// BAR's own pool.
 ///
-/// Made if it is not there, for the same reason [`open_data_dir`] makes its
-/// own: a message that names a folder and then opens nothing is worse than no
-/// button at all, and on a machine that has never had an engine nothing has
-/// created it yet.
+/// Made if it is not there, as [`open_data_dir`] makes its own: a button that
+/// names a folder and then opens nothing is worse than no button.
 #[tauri::command]
-pub fn open_engine_dir(app: State<'_, App>) -> Result<()> {
-	let engine = data_dirs(&app)?.write.join("engine");
-	std::fs::create_dir_all(&engine)
-		.map_err(|err| ApiError::new("io", format!("making the engine directory: {err}")))?;
-	open(engine)
+pub fn open_maps_dir(app: State<'_, App>) -> Result<()> {
+	let maps = data_dirs(&app)?.write.join("maps");
+	std::fs::create_dir_all(&maps)
+		.map_err(|err| ApiError::new("io", format!("making the maps directory: {err}")))?;
+	open(maps)
 }
 
 /// The player's files — engine settings, hotkeys, widget state — as the
@@ -1592,7 +1621,7 @@ fn safe_name(text: &str) -> String {
 
 /// The data directories, for the commands where having none is an empty
 /// answer rather than an error.
-fn data_dirs_of(app: &App) -> Option<content::DataDirs> {
+pub(crate) fn data_dirs_of(app: &App) -> Option<content::DataDirs> {
 	launch::data_dirs(app.settings.get().paths.data_dir)
 }
 

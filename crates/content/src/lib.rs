@@ -18,6 +18,7 @@ pub mod demo;
 pub mod game_cache;
 pub mod http;
 pub mod map_index;
+pub mod map_name;
 pub mod map_search;
 pub mod map_thumb;
 pub mod rapid;
@@ -193,13 +194,46 @@ impl Library {
 
 	/// The map archive named after its display name.
 	pub fn has_map(&self, display_name: &str) -> bool {
+		self.map_file(display_name, &ARCHIVES).is_some()
+	}
+
+	/// The map archive in any data directory whose file name is the one BAR
+	/// would give `display_name`, with an extension among `exts`.
+	///
+	/// Compared with the case folded away, because only BAR's own downloads
+	/// are lowercased: a map installed by hand keeps whatever capitalisation
+	/// its author gave the file. An exact comparison finds such a map on
+	/// Windows and macOS, whose file systems fold case for us, and misses it
+	/// on Linux -- where the room would then offer to download a map that is
+	/// sitting right there.
+	fn map_file(&self, display_name: &str, exts: &[&str]) -> Option<PathBuf> {
 		let stem = archive_stem(display_name);
 		if stem.is_empty() {
-			return false;
+			return None;
 		}
-		ARCHIVES
-			.iter()
-			.any(|ext| self.any_has(Path::new("maps").join(format!("{stem}.{ext}"))))
+		self.dirs.all().find_map(|dir| {
+			std::fs::read_dir(dir.join("maps"))
+				.ok()?
+				.filter_map(Result::ok)
+				.find_map(|entry| {
+					let path = entry.path();
+					let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+					if !exts.contains(&ext.as_str()) {
+						return None;
+					}
+					(path.file_stem()?.to_str()?.to_ascii_lowercase() == stem).then_some(path)
+				})
+		})
+	}
+
+	/// The archive a map's display name resolves to, where one is on the disk.
+	///
+	/// The same name-to-file rule [`Self::has_map`] asks with, so anything
+	/// that says it has a map can also hand over the file. `.sdd` is a
+	/// directory rather than a file and so is not offered.
+	pub fn map_archive(&self, display_name: &str) -> Option<PathBuf> {
+		self.map_file(display_name, &["sd7", "sdz"])
+			.filter(|path| path.is_file())
 	}
 
 	/// A rapid package whose display name matches, downloaded into `packages/`.
@@ -305,6 +339,43 @@ impl Library {
 			}
 		}
 		found
+	}
+}
+
+/// A map's spring name, guessed from its archive's file name.
+///
+/// As near an inverse of [`archive_stem`] as there is: the underscores were
+/// spaces. The capitalisation is gone unless the file happens to have kept
+/// it, and it does not have to be recovered -- the engine resolves a map name
+/// by splitting it on whitespace and looking for each word, case folded, in
+/// the names it scanned (`ArchiveNameResolver::GetMap`). What it cannot
+/// resolve is a name with the underscores still in it: that is one word,
+/// matching nothing, and the game stops before it starts with `Dependent
+/// archive "..." not found`.
+///
+/// Only for a map the published index has never heard of -- one installed by
+/// hand -- where there is nothing else to go on.
+///
+/// ponytail: a file named nothing like the map inside it (`mymap.sd7` holding
+/// `Totally Different`) is still unresolvable; reading `mapinfo.lua` out of
+/// the archive is what that would take.
+pub fn map_name_from_stem(stem: &str) -> String {
+	stem.replace('_', " ")
+}
+
+impl Library {
+	/// The name a map calls itself, which is the name a room has to use.
+	///
+	/// The archive is asked before the file name is guessed from, because the
+	/// guess is only right when the file was named after the map: most of
+	/// BAR's are lowercase on disk and their maps are not. A guess that is
+	/// wrong does not read oddly, it stops the game starting --
+	/// `content::map_name` has the engine's own words for it.
+	pub fn map_spring_name(&self, stem: &str) -> String {
+		self.map_archive(stem)
+			.as_deref()
+			.and_then(map_name::of_archive)
+			.unwrap_or_else(|| map_name_from_stem(stem))
 	}
 }
 
@@ -650,6 +721,72 @@ mod union_tests {
 			recoil::EngineLayout::flat(engine)
 		);
 		assert_eq!(library.installed_engines(), ["2026.07.04"], "listed once");
+	}
+}
+
+#[cfg(test)]
+mod hand_installed_tests {
+	use super::*;
+
+	/// A map nobody publishes: installed by hand, under the capitalisation
+	/// its author gave the file, and named by that file because the index has
+	/// never heard of it.
+	fn dropped_in(name: &str) -> (tempfile::TempDir, Library) {
+		let dir = tempfile::tempdir().unwrap();
+		let maps = dir.path().join("maps");
+		std::fs::create_dir_all(&maps).unwrap();
+		std::fs::write(maps.join(name), b"not really an archive").unwrap();
+		let library = Library::new(dir.path());
+		(dir, library)
+	}
+
+	/// The bug this fixes: the room took the file's name for the map's, and
+	/// the engine stopped with `Dependent archive "frostycove_v1.13" not
+	/// found` -- one word with an underscore in it resolves to nothing.
+	#[test]
+	fn a_file_name_becomes_a_name_the_engine_can_resolve() {
+		assert_eq!(
+			map_name_from_stem("FrostyCove_v1.13"),
+			"FrostyCove v1.13",
+			"the underscores were spaces"
+		);
+		// And it is the name the file is found by again, whichever case it
+		// came in: the round trip is what the room checks with.
+		assert_eq!(
+			archive_stem(&map_name_from_stem("FrostyCove_v1.13")),
+			"frostycove_v1.13"
+		);
+		assert_eq!(
+			map_name_from_stem("supreme_isthmus_v2.1"),
+			"supreme isthmus v2.1"
+		);
+	}
+
+	#[test]
+	fn a_map_keeping_its_own_capitalisation_is_found_on_every_file_system() {
+		let (_dir, library) = dropped_in("FrostyCove_v1.13.sd7");
+		let name = map_name_from_stem("FrostyCove_v1.13");
+		assert!(library.has_map(&name), "the room must not call it missing");
+		assert!(
+			library.map_archive(&name).is_some(),
+			"and the host must be able to hand the file over"
+		);
+		// The lowercased spelling BAR would have used finds it too.
+		assert!(library.has_map("frostycove v1.13"));
+		assert!(!library.has_map("Some Other Map v1"));
+	}
+
+	#[test]
+	fn a_directory_map_counts_as_installed_but_is_not_handed_over() {
+		let dir = tempfile::tempdir().unwrap();
+		std::fs::create_dir_all(dir.path().join("maps").join("Loose_Map_v1.sdd")).unwrap();
+		let library = Library::new(dir.path());
+		assert!(library.has_map("Loose Map v1"));
+		assert_eq!(
+			library.map_archive("Loose Map v1"),
+			None,
+			"not one file to send"
+		);
 	}
 }
 
