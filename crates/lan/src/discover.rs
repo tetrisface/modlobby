@@ -433,8 +433,25 @@ mod tests {
 
 	#[test]
 	fn a_shared_subnet_wins_over_a_stray_address_and_loopback_is_last() {
-		let mine = local_nets().first().map(|(ip, ..)| *ip);
-		let stray = Ipv4Addr::new(172, 17, 0, 2);
+		let nets = local_nets();
+		let mine = nets.first().map(|(ip, ..)| *ip);
+		// Not a fixed address: 172.17.0.0/16 is Docker's default bridge, so on
+		// any machine running Docker -- every CI runner -- the stray was on a
+		// local subnet and won the first `find` instead of losing it. RFC 5737's
+		// documentation ranges are never assigned to an interface, and the check
+		// covers the tunnel whose netmask is broad enough to swallow one anyway.
+		let stray = [
+			Ipv4Addr::new(192, 0, 2, 2),
+			Ipv4Addr::new(198, 51, 100, 2),
+			Ipv4Addr::new(203, 0, 113, 2),
+		]
+		.into_iter()
+		.find(|addr| {
+			!nets
+				.iter()
+				.any(|(ip, mask, _)| same_subnet(*addr, *ip, *mask))
+		})
+		.expect("a documentation address off every local subnet");
 		if let Some(mine) = mine {
 			assert_eq!(
 				address_to_dial(&[Ipv4Addr::LOCALHOST, stray, mine]),
