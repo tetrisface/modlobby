@@ -3,4 +3,8 @@
 /**
  * A channel we are in, as the front end needs it.
  */
-export type ChannelView = { name: string, members: Array<string>, topicAuthor: string | null, };
+export type ChannelView = {
+  name: string
+  members: Array<string>
+  topicAuthor: string | null
+}

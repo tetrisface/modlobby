@@ -4,4 +4,4 @@
  * Which shape a payload is: one of the two tweak kinds, or the start-box
  * override.
  */
-export type Kind = "defs" | "units" | "boxes";
+export type Kind = 'defs' | 'units' | 'boxes'

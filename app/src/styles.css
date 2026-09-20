@@ -565,11 +565,11 @@ textarea {
    fixed track it is pushed to the right of, the rest starts where that ends. */
 .col-players {
   display: grid;
-	grid-template-columns: 1.4rem auto auto;
-		/* Without this the auto tracks stretch to share the column's spare width,
+  grid-template-columns: 1.4rem auto auto;
+  /* Without this the auto tracks stretch to share the column's spare width,
 								     and the slash drifts away from the number after it. */
-		justify-content: start;
-		column-gap: 0.2rem;
+  justify-content: start;
+  column-gap: 0.2rem;
 }
 
 .col-players > :first-child {
@@ -3210,7 +3210,7 @@ input[type='checkbox'].v-edit {
 /* As tall as the row: the grid would centre it, so it asks to be stretched. */
 .col-thumb {
   width: 3.25rem;
-	height: stretch;
+  height: stretch;
   border: 1px solid var(--line-soft);
   border-radius: 2px;
   overflow: hidden;

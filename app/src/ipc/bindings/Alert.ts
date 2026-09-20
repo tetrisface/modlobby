@@ -3,4 +3,4 @@
 /**
  * How loudly to say that something happened.
  */
-export type Alert = "off" | "lobby" | "desktop";
+export type Alert = 'off' | 'lobby' | 'desktop'

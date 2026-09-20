@@ -4,4 +4,7 @@
  * One of the twenty tweak slots -- `0` is the unnumbered `tweakdefs` /
  * `tweakunits` -- or the start-box override.
  */
-export type Slot = { "kind": "defs", "index": number } | { "kind": "units", "index": number } | { "kind": "boxes" };
+export type Slot =
+  | { kind: 'defs'; index: number }
+  | { kind: 'units'; index: number }
+  | { kind: 'boxes' }

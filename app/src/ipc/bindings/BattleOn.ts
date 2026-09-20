@@ -3,4 +3,4 @@
 /**
  * A room, and the server it is on.
  */
-export type BattleOn = { server: string, id: number, };
+export type BattleOn = { server: string; id: number }

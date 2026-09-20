@@ -3,4 +3,4 @@
 /**
  * An arrangement as the wire carries it, with how long it was allowed to be.
  */
-export type Encoded = { value: string, limit: number, };
+export type Encoded = { value: string; limit: number }

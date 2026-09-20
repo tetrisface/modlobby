@@ -3,27 +3,28 @@
 /**
  * What the room scores.
  */
-export type Score = { 
-/**
- * 0-34, where 17 is an estimated even game for a representative team.
- * `None` when the service could not place this setup.
- */
-challenge: number | null, 
-/**
- * Where that sits among games actually played, 0-100.
- */
-percentile: number | null, 
-/**
- * Estimated chance a representative human team wins, 0-1.
- */
-winChance: number | null, 
-/**
- * Eligible games behind the model. Not a confidence score, and the widget
- * is at pains to say so.
- */
-evidenceGames: number | null, 
-/**
- * Set when the room uses settings the service has not catalogued, so the
- * numbers are best-effort rather than an exact match.
- */
-bestEffort: boolean, };
+export type Score = {
+  /**
+   * 0-34, where 17 is an estimated even game for a representative team.
+   * `None` when the service could not place this setup.
+   */
+  challenge: number | null
+  /**
+   * Where that sits among games actually played, 0-100.
+   */
+  percentile: number | null
+  /**
+   * Estimated chance a representative human team wins, 0-1.
+   */
+  winChance: number | null
+  /**
+   * Eligible games behind the model. Not a confidence score, and the widget
+   * is at pains to say so.
+   */
+  evidenceGames: number | null
+  /**
+   * Set when the room uses settings the service has not catalogued, so the
+   * numbers are best-effort rather than an exact match.
+   */
+  bestEffort: boolean
+}

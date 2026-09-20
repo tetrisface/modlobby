@@ -3,4 +3,4 @@
 /**
  * Something worth telling the user about a decoded payload.
  */
-export type Diagnostic = { "type": "underscoreCorruption", count: number, };
+export type Diagnostic = { type: 'underscoreCorruption'; count: number }

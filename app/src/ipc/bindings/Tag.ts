@@ -3,8 +3,14 @@
 /**
  * One tag the engine reads under `weapondefs`.
  */
-export type Tag = { name: string, 
-/**
- * The engine's type, in plain words: `float`, `bool`, `string`, `table`...
- */
-kind: string, default: string | null, description: string | null, min: string | null, max: string | null, };
+export type Tag = {
+  name: string
+  /**
+   * The engine's type, in plain words: `float`, `bool`, `string`, `table`...
+   */
+  kind: string
+  default: string | null
+  description: string | null
+  min: string | null
+  max: string | null
+}

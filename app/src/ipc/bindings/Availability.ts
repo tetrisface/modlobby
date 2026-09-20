@@ -3,4 +3,4 @@
 /**
  * What a room needs, and whether we have it.
  */
-export type Availability = { engine: boolean, game: boolean, map: boolean, };
+export type Availability = { engine: boolean; game: boolean; map: boolean }

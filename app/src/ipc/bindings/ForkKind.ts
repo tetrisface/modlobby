@@ -3,4 +3,4 @@
 /**
  * Whether a fork is one publisher's widget or the players nobody could trace.
  */
-export type ForkKind = "lineage" | "other";
+export type ForkKind = 'lineage' | 'other'

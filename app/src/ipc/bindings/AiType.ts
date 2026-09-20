@@ -6,4 +6,4 @@
  * The widget reads this from the LuaAI on each team; a lobby reads it from
  * the AI names in the room, which is the same string before the game starts.
  */
-export type AiType = "Raptors" | "Scavengers" | "Barbarian";
+export type AiType = 'Raptors' | 'Scavengers' | 'Barbarian'

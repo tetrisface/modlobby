@@ -3,4 +3,4 @@
 /**
  * A default, in the one of three shapes Lua wrote it in.
  */
-export type OptionValue = boolean | number | string;
+export type OptionValue = boolean | number | string

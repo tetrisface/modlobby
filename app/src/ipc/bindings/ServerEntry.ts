@@ -3,47 +3,48 @@
 /**
  * A lobby server, and the account on it.
  */
-export type ServerEntry = { 
-/**
- * Where it is. The server is known by this, trimmed and lowercased, so
- * changing it makes a different server: a new account, a new password.
- */
-host: string, 
-/**
- * What the app calls it; the host when empty.
- */
-name: string, 
-/**
- * Ports to try, each both encrypted ways (`STLS` and TLS) at once; the
- * way that answers first is remembered and tried first next time.
- */
-ports: Array<number>, 
-/**
- * Whether an unencrypted connection will do once every encrypted way has
- * failed. Off unless the server has nothing else: the password and every
- * message would cross the network readable.
- */
-allowUnencrypted: boolean, 
-/**
- * Where the server's web pages are — a forgotten password is reset
- * there — when that is not `https://<host>`.
- */
-website: string | null, 
-/**
- * The server's own rapid master index (`https://…/repos.gz`), where the
- * games its rooms run are published. Without one its games are looked
- * for in BAR's, which is right for a server running stock BAR. A game is
- * only ever looked for in its own server's index: a mod's name is never
- * sent to BAR's servers, nor to any other server's.
- */
-rapid: string | null, 
-/**
- * The account on this server.
- */
-username: string, 
-/**
- * Channels to rejoin at login. The server forgets you were in them the
- * moment you disconnect, so remembering is the client's job — and keeping
- * it here means you can also just write one in.
- */
-channels: Array<string>, };
+export type ServerEntry = {
+  /**
+   * Where it is. The server is known by this, trimmed and lowercased, so
+   * changing it makes a different server: a new account, a new password.
+   */
+  host: string
+  /**
+   * What the app calls it; the host when empty.
+   */
+  name: string
+  /**
+   * Ports to try, each both encrypted ways (`STLS` and TLS) at once; the
+   * way that answers first is remembered and tried first next time.
+   */
+  ports: Array<number>
+  /**
+   * Whether an unencrypted connection will do once every encrypted way has
+   * failed. Off unless the server has nothing else: the password and every
+   * message would cross the network readable.
+   */
+  allowUnencrypted: boolean
+  /**
+   * Where the server's web pages are — a forgotten password is reset
+   * there — when that is not `https://<host>`.
+   */
+  website: string | null
+  /**
+   * The server's own rapid master index (`https://…/repos.gz`), where the
+   * games its rooms run are published. Without one its games are looked
+   * for in BAR's, which is right for a server running stock BAR. A game is
+   * only ever looked for in its own server's index: a mod's name is never
+   * sent to BAR's servers, nor to any other server's.
+   */
+  rapid: string | null
+  /**
+   * The account on this server.
+   */
+  username: string
+  /**
+   * Channels to rejoin at login. The server forgets you were in them the
+   * moment you disconnect, so remembering is the client's job — and keeping
+   * it here means you can also just write one in.
+   */
+  channels: Array<string>
+}

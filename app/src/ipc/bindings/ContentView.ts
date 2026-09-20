@@ -3,4 +3,4 @@
 /**
  * What of a room's engine, game and map this machine already has.
  */
-export type ContentView = { engine: boolean, game: boolean, map: boolean, };
+export type ContentView = { engine: boolean; game: boolean; map: boolean }

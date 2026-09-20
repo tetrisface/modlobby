@@ -5,13 +5,19 @@
  * (`gui_optionpresets_panel.lua`), because wanting somebody's modoptions
  * without their map is the normal case.
  */
-export type Sections = { map: boolean, modoptions: boolean, battle: boolean, startBoxes: boolean, bots: boolean, 
-/**
- * Whether to reset the room to its SPADS preset first.
- *
- * `!preset <name>` is what clears everything the room already had, and
- * Chobby always sends it. Turning it off is what lets two presets be
- * applied one after the other and combine, rather than the second
- * wiping the first.
- */
-reset: boolean, };
+export type Sections = {
+  map: boolean
+  modoptions: boolean
+  battle: boolean
+  startBoxes: boolean
+  bots: boolean
+  /**
+   * Whether to reset the room to its SPADS preset first.
+   *
+   * `!preset <name>` is what clears everything the room already had, and
+   * Chobby always sends it. Turning it off is what lets two presets be
+   * applied one after the other and combine, rather than the second
+   * wiping the first.
+   */
+  reset: boolean
+}

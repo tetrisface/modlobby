@@ -3,29 +3,31 @@
 /**
  * The lobby raised over a running game by a hotkey.
  */
-export type Overlay = { enabled: boolean, 
-/**
- * A Tauri accelerator, e.g. `Alt+Shift+L`.
- *
- * A global hotkey beats the focused window, so a collision does not
- * merely conflict — it silently eats a game action for as long as a game
- * is running. The default was checked against BAR's shipped binds: `sc_l`
- * is taken plain and with Shift (cycling fire state), and the whole game
- * binds only two Alt+Shift combinations, neither of them this one.
- */
-hotkey: string, 
-/**
- * Whether hiding the overlay should put the game back in front.
- */
-returnFocusToGame: boolean, 
-/**
- * Whether Escape inside a game should raise the lobby.
- *
- * The engine gives an outside program no way to see Escape, so this is
- * the one feature that puts a file of ours in the BAR data directory: a
- * small widget in `LuaUI/Widgets/`. It draws nothing, it is removed when
- * modlobby exits, and it leaves the key alone unless modlobby answers —
- * so a game launched from Chobby behaves exactly as it always did. It is
- * still someone else's directory, which is why it is a setting.
- */
-inGameEscape: boolean, };
+export type Overlay = {
+  enabled: boolean
+  /**
+   * A Tauri accelerator, e.g. `Alt+Shift+L`.
+   *
+   * A global hotkey beats the focused window, so a collision does not
+   * merely conflict — it silently eats a game action for as long as a game
+   * is running. The default was checked against BAR's shipped binds: `sc_l`
+   * is taken plain and with Shift (cycling fire state), and the whole game
+   * binds only two Alt+Shift combinations, neither of them this one.
+   */
+  hotkey: string
+  /**
+   * Whether hiding the overlay should put the game back in front.
+   */
+  returnFocusToGame: boolean
+  /**
+   * Whether Escape inside a game should raise the lobby.
+   *
+   * The engine gives an outside program no way to see Escape, so this is
+   * the one feature that puts a file of ours in the BAR data directory: a
+   * small widget in `LuaUI/Widgets/`. It draws nothing, it is removed when
+   * modlobby exits, and it leaves the key alone unless modlobby answers —
+   * so a game launched from Chobby behaves exactly as it always did. It is
+   * still someone else's directory, which is why it is a setting.
+   */
+  inGameEscape: boolean
+}

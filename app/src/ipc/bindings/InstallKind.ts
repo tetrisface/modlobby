@@ -3,4 +3,4 @@
 /**
  * Where a widget's bytes live.
  */
-export type InstallKind = "hub" | "github" | "gist" | "discord" | "none";
+export type InstallKind = 'hub' | 'github' | 'gist' | 'discord' | 'none'

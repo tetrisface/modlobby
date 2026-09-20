@@ -3,4 +3,4 @@
 /**
  * One line of the server's channel directory.
  */
-export type ChannelSummaryView = { name: string, members: number, };
+export type ChannelSummaryView = { name: string; members: number }

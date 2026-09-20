@@ -2,9 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "The main window: IPC to the lobby runtime, opening local paths, OS notifications, flashing the taskbar entry, and the global shortcut that raises the lobby over a game.",
-  "windows": [
-    "main"
-  ],
+  "windows": ["main"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",

@@ -7,4 +7,13 @@
  * inside one. Anything BAR adds later arrives as `Other` rather than failing
  * the parse, so a new control type costs us a plain row, not a broken app.
  */
-export type OptionType = "bool" | "number" | "string" | "list" | "section" | "subheader" | "separator" | "link" | { "other": string };
+export type OptionType =
+  | 'bool'
+  | 'number'
+  | 'string'
+  | 'list'
+  | 'section'
+  | 'subheader'
+  | 'separator'
+  | 'link'
+  | { other: string }

@@ -7,4 +7,4 @@
  * (`gui_settings_window.lua:906`): remember what you did last time, or always
  * one or the other.
  */
-export type JoinAs = "remember" | "spectator" | "player";
+export type JoinAs = 'remember' | 'spectator' | 'player'

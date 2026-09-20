@@ -3,14 +3,15 @@
 /**
  * The two things a lobby needs from the index.
  */
-export type MapIndex = { 
-/**
- * Spring name, exactly as `BATTLEOPENED` reports it, to the published
- * preview URL.
- */
-images: { [key in string]: string }, 
-/**
- * Archive file name without its extension (`acidicquarry_5.17`) to the
- * spring name (`AcidicQuarry 5.17`), which nothing on disk records.
- */
-names: { [key in string]: string }, };
+export type MapIndex = {
+  /**
+   * Spring name, exactly as `BATTLEOPENED` reports it, to the published
+   * preview URL.
+   */
+  images: { [key in string]: string }
+  /**
+   * Archive file name without its extension (`acidicquarry_5.17`) to the
+   * spring name (`AcidicQuarry 5.17`), which nothing on disk records.
+   */
+  names: { [key in string]: string }
+}

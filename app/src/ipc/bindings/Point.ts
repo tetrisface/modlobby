@@ -6,8 +6,11 @@
  * `y` is the map's Z axis; the game reads these as `p.x, p.y` and scales both
  * by `mapSize / 200`.
  */
-export type Point = { x: number, y: number, 
-/**
- * Spline weight, when the box is a curve rather than straight edges.
- */
-strength: number | null, };
+export type Point = {
+  x: number
+  y: number
+  /**
+   * Spline weight, when the box is a curve rather than straight edges.
+   */
+  strength: number | null
+}

@@ -3,4 +3,10 @@
 /**
  * A modoption that changed while we watched — one side of a diff.
  */
-export type OptionChangeView = { seq: number, key: string, from: string, to: string, by: string | null, };
+export type OptionChangeView = {
+  seq: number
+  key: string
+  from: string
+  to: string
+  by: string | null
+}

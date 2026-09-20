@@ -3,4 +3,5 @@
 /**
  * What a vote would do, when the room can tell.
  */
-export type ProposalView = { "type": "setOption", key: string, value: string, } | { "type": "other" };
+export type ProposalView =
+  { type: 'setOption'; key: string; value: string } | { type: 'other' }

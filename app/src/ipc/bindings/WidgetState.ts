@@ -3,16 +3,17 @@
 /**
  * What a widget's presence in the config looks like.
  */
-export type WidgetState = { 
-/**
- * `GetInfo().name`, the same key the replay telemetry reports.
- */
-name: string, 
-/**
- * Load order. Zero means the player switched it off.
- */
-order: bigint, 
-/**
- * Whether the widget has saved settings in `data`.
- */
-has_settings: boolean, };
+export type WidgetState = {
+  /**
+   * `GetInfo().name`, the same key the replay telemetry reports.
+   */
+  name: string
+  /**
+   * Load order. Zero means the player switched it off.
+   */
+  order: bigint
+  /**
+   * Whether the widget has saved settings in `data`.
+   */
+  has_settings: boolean
+}

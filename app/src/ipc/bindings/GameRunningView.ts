@@ -3,4 +3,4 @@
 /**
  * The room's game is running; the script password stays in the runtime.
  */
-export type GameRunningView = { id: number, ip: string, port: number, };
+export type GameRunningView = { id: number; ip: string; port: number }

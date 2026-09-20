@@ -13,36 +13,47 @@
  * stepped the same for both stalled on the blobs. No time estimate: the
  * host's pace is not ours to know, and a wrong number is worse than none.
  */
-export type PasteStatus = { "state": "idle" } | { "state": "running", 
-/**
- * Lines handed to the scheduler, after skipping.
- */
-total: number, 
-/**
- * Lines that have left the socket.
- */
-sent: number, 
-/**
- * Lines the host will answer: the `!` and `$` commands among `total`.
- */
-commands: number, 
-/**
- * Commands the host has answered so far.
- */
-applied: number, 
-/**
- * Settings dropped because the room already had them.
- */
-skipped: number, 
-/**
- * Bytes across all the commands.
- */
-work: number, 
-/**
- * Bytes across the commands answered so far.
- */
-done: number, } | { "state": "done", total: number, commands: number, applied: number, skipped: number, 
-/**
- * Stopped by the reader; what had not left was dropped.
- */
-cancelled: boolean, };
+export type PasteStatus =
+  | { state: 'idle' }
+  | {
+      state: 'running'
+      /**
+       * Lines handed to the scheduler, after skipping.
+       */
+      total: number
+      /**
+       * Lines that have left the socket.
+       */
+      sent: number
+      /**
+       * Lines the host will answer: the `!` and `$` commands among `total`.
+       */
+      commands: number
+      /**
+       * Commands the host has answered so far.
+       */
+      applied: number
+      /**
+       * Settings dropped because the room already had them.
+       */
+      skipped: number
+      /**
+       * Bytes across all the commands.
+       */
+      work: number
+      /**
+       * Bytes across the commands answered so far.
+       */
+      done: number
+    }
+  | {
+      state: 'done'
+      total: number
+      commands: number
+      applied: number
+      skipped: number
+      /**
+       * Stopped by the reader; what had not left was dropped.
+       */
+      cancelled: boolean
+    }

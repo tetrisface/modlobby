@@ -3,4 +3,4 @@
 /**
  * The box a picture is made to fill, in pixels.
  */
-export type Tile = { width: number, height: number, };
+export type Tile = { width: number; height: number }

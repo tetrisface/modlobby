@@ -3,40 +3,41 @@
 /**
  * What an install put on disk, so a delete can undo exactly it.
  */
-export type InstalledWidget = { 
-/**
- * The usage document's key, so a row can find its own record.
- */
-key: string, 
-/**
- * `GetInfo().name` — how BAR's config refers to it.
- */
-name: string, 
-/**
- * Paths relative to the write directory.
- */
-files: Array<string>, 
-/**
- * Base64 MD5 per file, in the same order. An update compares against
- * these to know whether there is anything to do.
- */
-hashes: Array<string>, 
-/**
- * Where it came from, for the record and for an update.
- */
-source: string, 
-/**
- * Seconds since the epoch.
- */
-installed_at: bigint, 
-/**
- * Engine settings keys present *before* this widget was installed.
- *
- * The only honest basis for attribution there is. `springsettings.cfg` is
- * a flat list of engine settings with no record of what wrote each one, so
- * after the fact nothing distinguishes a key this widget added from one the
- * player set themselves. A key that was not there before the install and is
- * there now is at least a candidate — which is worth showing, and still not
- * worth deleting on.
- */
-settings_before: Array<string>, };
+export type InstalledWidget = {
+  /**
+   * The usage document's key, so a row can find its own record.
+   */
+  key: string
+  /**
+   * `GetInfo().name` — how BAR's config refers to it.
+   */
+  name: string
+  /**
+   * Paths relative to the write directory.
+   */
+  files: Array<string>
+  /**
+   * Base64 MD5 per file, in the same order. An update compares against
+   * these to know whether there is anything to do.
+   */
+  hashes: Array<string>
+  /**
+   * Where it came from, for the record and for an update.
+   */
+  source: string
+  /**
+   * Seconds since the epoch.
+   */
+  installed_at: bigint
+  /**
+   * Engine settings keys present *before* this widget was installed.
+   *
+   * The only honest basis for attribution there is. `springsettings.cfg` is
+   * a flat list of engine settings with no record of what wrote each one, so
+   * after the fact nothing distinguishes a key this widget added from one the
+   * player set themselves. A key that was not there before the install and is
+   * there now is at least a candidate — which is worth showing, and still not
+   * worth deleting on.
+   */
+  settings_before: Array<string>
+}

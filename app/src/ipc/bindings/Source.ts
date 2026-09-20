@@ -4,4 +4,4 @@
  * Which modoption an arrangement came from, which is worth showing: an
  * override is somebody's deliberate choice, a set entry is the map's own.
  */
-export type Source = "override" | "set";
+export type Source = 'override' | 'set'

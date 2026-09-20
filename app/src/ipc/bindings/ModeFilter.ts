@@ -4,4 +4,4 @@
  * Player-versus-what. Read off the room title, which is all the list has:
  * the server only sends a room's AI once you are in it.
  */
-export type ModeFilter = "all" | "pve" | "pvp";
+export type ModeFilter = 'all' | 'pve' | 'pvp'

@@ -4,4 +4,4 @@
  * Something named at the top level: a unit key in `tweakunits`, a local,
  * an assignment or a function in `tweakdefs`.
  */
-export type Symbol = { name: string, line: number, };
+export type Symbol = { name: string; line: number }

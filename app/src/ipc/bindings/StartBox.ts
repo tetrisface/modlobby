@@ -3,4 +3,9 @@
 /**
  * A start box in the coordinates `ADDSTARTRECT` uses: 0-200 on both axes.
  */
-export type StartBox = { left: number, top: number, right: number, bottom: number, };
+export type StartBox = {
+  left: number
+  top: number
+  right: number
+  bottom: number
+}

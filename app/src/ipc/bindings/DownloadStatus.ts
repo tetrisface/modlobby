@@ -3,8 +3,16 @@
 /**
  * A pr-downloader run, and how far along it is.
  */
-export type DownloadStatus = { "state": "idle" } | { "state": "running", 
-/**
- * What was asked for, for the label.
- */
-what: string, current: number, total: number, } | { "state": "failed", what: string, reason: string, } | { "state": "done", what: string, };
+export type DownloadStatus =
+  | { state: 'idle' }
+  | {
+      state: 'running'
+      /**
+       * What was asked for, for the label.
+       */
+      what: string
+      current: number
+      total: number
+    }
+  | { state: 'failed'; what: string; reason: string }
+  | { state: 'done'; what: string }

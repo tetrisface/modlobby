@@ -4,4 +4,10 @@
  * One place the Lua stops making sense. Lines and columns are 1-based, and
  * the end is exclusive, which is how an editor draws a marker.
  */
-export type Problem = { line: number, column: number, endLine: number, endColumn: number, message: string, };
+export type Problem = {
+  line: number
+  column: number
+  endLine: number
+  endColumn: number
+  message: string
+}
