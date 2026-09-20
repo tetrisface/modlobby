@@ -74,7 +74,7 @@ jobs:
         if: runner.os == 'Windows'
         working-directory: app
         run: |
-          bunx prettier --write src/ipc/bindings
+          bunx prettier --log-level warn --write src/ipc/bindings
           git diff --exit-code src/ipc/bindings
 
       - run: bun run check
