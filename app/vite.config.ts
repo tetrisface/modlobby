@@ -15,6 +15,11 @@ export default defineConfig(({ mode }) => ({
 		// every flag into the stylesheet the webview parses at each launch, for
 		// the handful a room actually shows; as files they are fetched on use.
 		assetsInlineLimit: (file) => (file.endsWith('.svg') ? false : undefined),
+		// The default 500 kB warns about Monaco, which is one deliberate chunk
+		// loaded from disk by a desktop webview -- there is no network to split
+		// it for. Kept as a limit rather than dropped, so a genuinely new bulk
+		// dependency still says so.
+		chunkSizeWarningLimit: 4096,
 	},
 	server: {
 		port: 1420,
