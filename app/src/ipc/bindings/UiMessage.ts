@@ -4,6 +4,6 @@ import type { ServerSnapshot } from './ServerSnapshot'
 import type { Snapshot } from './Snapshot'
 
 export type UiMessage =
-  | { type: 'snapshot'; data: Snapshot }
-  | { type: 'session'; data: ServerSnapshot }
-  | { type: 'deltas'; data: { server: string | null; deltas: Array<Delta> } }
+	| { type: 'snapshot'; data: Snapshot }
+	| { type: 'session'; data: ServerSnapshot }
+	| { type: 'deltas'; data: { server: string | null; deltas: Array<Delta> } }

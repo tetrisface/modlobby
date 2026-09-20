@@ -4,12 +4,12 @@
  * What a master index turned out to list, for whoever typed its address.
  */
 export type RapidSummary = {
-  /**
-   * Repos the server hosts itself.
-   */
-  own: number
-  /**
-   * Repos of BAR's it lists beside them.
-   */
-  bars: number
+	/**
+	 * Repos the server hosts itself.
+	 */
+	own: number
+	/**
+	 * Repos of BAR's it lists beside them.
+	 */
+	bars: number
 }

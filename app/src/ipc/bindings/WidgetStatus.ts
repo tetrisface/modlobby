@@ -14,24 +14,24 @@ import type { WidgetState } from './WidgetState'
  * once.
  */
 export type WidgetStatus = {
-  /**
-   * Usage keys modlobby installed, with what it wrote.
-   */
-  installed: Array<InstalledWidget>
-  /**
-   * Every widget named in `BYAR.lua`, ours or not.
-   */
-  configured: Array<WidgetState>
-  /**
-   * Whether a game is running, which is when config edits are refused.
-   */
-  locked: boolean
-  /**
-   * Where installs land, so the interface can say it rather than imply it.
-   */
-  writeDir: string
-  /**
-   * Every widget file BAR would load, whoever put it there.
-   */
-  local: Array<LocalWidget>
+	/**
+	 * Usage keys modlobby installed, with what it wrote.
+	 */
+	installed: Array<InstalledWidget>
+	/**
+	 * Every widget named in `BYAR.lua`, ours or not.
+	 */
+	configured: Array<WidgetState>
+	/**
+	 * Whether a game is running, which is when config edits are refused.
+	 */
+	locked: boolean
+	/**
+	 * Where installs land, so the interface can say it rather than imply it.
+	 */
+	writeDir: string
+	/**
+	 * Every widget file BAR would load, whoever put it there.
+	 */
+	local: Array<LocalWidget>
 }

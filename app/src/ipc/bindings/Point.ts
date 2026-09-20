@@ -7,10 +7,10 @@
  * by `mapSize / 200`.
  */
 export type Point = {
-  x: number
-  y: number
-  /**
-   * Spline weight, when the box is a curve rather than straight edges.
-   */
-  strength: number | null
+	x: number
+	y: number
+	/**
+	 * Spline weight, when the box is a curve rather than straight edges.
+	 */
+	strength: number | null
 }

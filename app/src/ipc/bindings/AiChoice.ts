@@ -4,13 +4,13 @@
  * An AI a room can be given.
  */
 export type AiChoice = {
-  /**
-   * What `ADDBOT` names it: an engine AI's directory, or a Lua AI's `name`.
-   */
-  name: string
-  /**
-   * Implemented by the game in Lua rather than shipped by the engine. Such
-   * an AI is a game mode -- one per room, and nothing to give a bonus to.
-   */
-  lua: boolean
+	/**
+	 * What `ADDBOT` names it: an engine AI's directory, or a Lua AI's `name`.
+	 */
+	name: string
+	/**
+	 * Implemented by the game in Lua rather than shipped by the engine. Such
+	 * an AI is a game mode -- one per room, and nothing to give a bonus to.
+	 */
+	lua: boolean
 }

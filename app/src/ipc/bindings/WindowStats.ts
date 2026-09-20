@@ -4,47 +4,47 @@
  * How a widget did over one window.
  */
 export type WindowStats = {
-  /**
-   * Position within this window, 1 is most used.
-   */
-  rank: number
-  /**
-   * Distinct players who reported it at all.
-   */
-  players: number
-  /**
-   * Distinct players who had it *enabled* at least once — "used once".
-   */
-  players_active: number
-  /**
-   * Distinct players whose *latest* replay had it enabled — "still using".
-   * Switching it off for one game and back on still counts; switching it
-   * off for good does not.
-   */
-  players_still_using: number
-  /**
-   * `players_active / players`: the used-once share.
-   */
-  retention: number
-  /**
-   * `players_still_using / players`: the still-using share.
-   */
-  still_using: number
-  /**
-   * A fork below the anonymity floor: listed, with every number zeroed.
-   * Always false for a row's own numbers.
-   */
-  withheld: boolean
-  sightings: number
-  replays: number
-  /**
-   * Days in this window that have actually been harvested.
-   */
-  days_covered: number
-  /**
-   * `days_covered` over the window length. Below 1.0 the window is a
-   * partial view — the pipeline backfills history a slice at a time, so a
-   * year window can legitimately hold a fortnight early on.
-   */
-  coverage: number
+	/**
+	 * Position within this window, 1 is most used.
+	 */
+	rank: number
+	/**
+	 * Distinct players who reported it at all.
+	 */
+	players: number
+	/**
+	 * Distinct players who had it *enabled* at least once — "used once".
+	 */
+	players_active: number
+	/**
+	 * Distinct players whose *latest* replay had it enabled — "still using".
+	 * Switching it off for one game and back on still counts; switching it
+	 * off for good does not.
+	 */
+	players_still_using: number
+	/**
+	 * `players_active / players`: the used-once share.
+	 */
+	retention: number
+	/**
+	 * `players_still_using / players`: the still-using share.
+	 */
+	still_using: number
+	/**
+	 * A fork below the anonymity floor: listed, with every number zeroed.
+	 * Always false for a row's own numbers.
+	 */
+	withheld: boolean
+	sightings: number
+	replays: number
+	/**
+	 * Days in this window that have actually been harvested.
+	 */
+	days_covered: number
+	/**
+	 * `days_covered` over the window length. Below 1.0 the window is a
+	 * partial view — the pipeline backfills history a slice at a time, so a
+	 * year window can legitimately hold a fortnight early on.
+	 */
+	coverage: number
 }

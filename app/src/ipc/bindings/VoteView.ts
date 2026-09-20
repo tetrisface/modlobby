@@ -2,12 +2,12 @@
 import type { ProposalView } from './ProposalView'
 
 export type VoteView = {
-  command: string
-  by: string | null
-  proposal: ProposalView
-  yes: number
-  yesNeeded: number
-  no: number
-  noNeeded: number
-  remainingSecs: number
+	command: string
+	by: string | null
+	proposal: ProposalView
+	yes: number
+	yesNeeded: number
+	no: number
+	noNeeded: number
+	remainingSecs: number
 }

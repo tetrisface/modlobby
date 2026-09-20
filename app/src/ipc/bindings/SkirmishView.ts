@@ -16,12 +16,12 @@ import type { UserView } from './UserView'
  * costs little and removes every question about what a partial update means.
  */
 export type SkirmishView = {
-  battle: BattleView
-  my: MyBattleView
-  /**
-   * The local player. The AIs are `battle.bots`, as they are online.
-   */
-  users: Array<UserView>
-  me: string
-  content: ContentView
+	battle: BattleView
+	my: MyBattleView
+	/**
+	 * The local player. The AIs are `battle.bots`, as they are online.
+	 */
+	users: Array<UserView>
+	me: string
+	content: ContentView
 }

@@ -6,17 +6,17 @@
  * taken before each launch.
  */
 export type PlayerFilesView = {
-  /**
-   * The data directory the engine writes, where the files live.
-   */
-  write: string
-  /**
-   * Other installs on this machine whose settings are worth copying.
-   */
-  sources: Array<string>
-  /**
-   * Snapshot directories, newest first; each is named for when it was
-   * taken, in UTC.
-   */
-  snapshots: Array<string>
+	/**
+	 * The data directory the engine writes, where the files live.
+	 */
+	write: string
+	/**
+	 * Other installs on this machine whose settings are worth copying.
+	 */
+	sources: Array<string>
+	/**
+	 * Snapshot directories, newest first; each is named for when it was
+	 * taken, in UTC.
+	 */
+	snapshots: Array<string>
 }

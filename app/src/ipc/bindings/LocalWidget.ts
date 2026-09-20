@@ -4,29 +4,29 @@
  * One widget file on disk.
  */
 export type LocalWidget = {
-  /**
-   * What its `GetInfo()` declares — the key BAR's config uses.
-   */
-  name: string
-  /**
-   * Relative to its data directory, with forward slashes.
-   */
-  file: string
-  /**
-   * The data directory it sits in.
-   */
-  dir: string
-  /**
-   * Whether that is modlobby's own write directory.
-   */
-  writable: boolean
-  /**
-   * `VFS.CalculateHash` of the bytes as they are on disk.
-   */
-  hash: string
-  /**
-   * The same with CRLF collapsed, which is what a Windows client reports.
-   * Equal to `hash` for a file with Unix line endings.
-   */
-  hash_text: string
+	/**
+	 * What its `GetInfo()` declares — the key BAR's config uses.
+	 */
+	name: string
+	/**
+	 * Relative to its data directory, with forward slashes.
+	 */
+	file: string
+	/**
+	 * The data directory it sits in.
+	 */
+	dir: string
+	/**
+	 * Whether that is modlobby's own write directory.
+	 */
+	writable: boolean
+	/**
+	 * `VFS.CalculateHash` of the bytes as they are on disk.
+	 */
+	hash: string
+	/**
+	 * The same with CRLF collapsed, which is what a Windows client reports.
+	 * Equal to `hash` for a file with Unix line endings.
+	 */
+	hash_text: string
 }

@@ -7,25 +7,25 @@ import type { OptionValue } from './OptionValue'
  * One row of BAR's table, in the order the file declares it.
  */
 export type ModOption = {
-  key: string
-  name?: string
-  desc?: string
-  type: OptionType
-  /**
-   * The tab this belongs to. Absent on `Kind::Section` itself.
-   */
-  section?: string | null
-  def?: OptionValue | null
-  min?: number | null
-  max?: number | null
-  step?: number | null
-  /**
-   * Tab order, descending. Only sections carry one.
-   */
-  weight?: number | null
-  items?: Array<OptionItem>
-  /**
-   * Declared `hidden = true`: Chobby draws neither the option nor the tab.
-   */
-  hidden?: boolean
+	key: string
+	name?: string
+	desc?: string
+	type: OptionType
+	/**
+	 * The tab this belongs to. Absent on `Kind::Section` itself.
+	 */
+	section?: string | null
+	def?: OptionValue | null
+	min?: number | null
+	max?: number | null
+	step?: number | null
+	/**
+	 * Tab order, descending. Only sections carry one.
+	 */
+	weight?: number | null
+	items?: Array<OptionItem>
+	/**
+	 * Declared `hidden = true`: Chobby draws neither the option nor the tab.
+	 */
+	hidden?: boolean
 }

@@ -3,14 +3,14 @@ import type { BattleStatusView } from './BattleStatusView'
 import type { UserStatusView } from './UserStatusView'
 
 export type UserView = {
-  name: string
-  country: string
-  userId: number | null
-  lobbyClient: string
-  status: UserStatusView
-  battleStatus: BattleStatusView | null
-  /**
-   * The room the user is in.
-   */
-  battleId: number | null
+	name: string
+	country: string
+	userId: number | null
+	lobbyClient: string
+	status: UserStatusView
+	battleStatus: BattleStatusView | null
+	/**
+	 * The room the user is in.
+	 */
+	battleId: number | null
 }

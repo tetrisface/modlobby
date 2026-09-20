@@ -8,31 +8,31 @@
  * TypeScript `{ type: 'setOption', key, value }` rather than a nesting.
  */
 export type Act =
-  | { type: 'setOption'; key: string; value: string }
-  | { type: 'setTitle'; title: string }
-  | { type: 'setMap'; map: string }
-  | { type: 'setGame'; game: string }
-  | { type: 'setEngine'; engine: string }
-  | { type: 'takeSeat'; team: number; allyTeam: number }
-  | { type: 'releaseSeat' }
-  | { type: 'setSide'; side: number }
-  | { type: 'setStartPos'; startPos: number }
-  | {
-      type: 'addBot'
-      name: string
-      ai: string
-      team: number
-      allyTeam: number
-      colour: number
-    }
-  | {
-      type: 'updateBot'
-      name: string
-      team: number
-      allyTeam: number
-      handicap: number
-      colour: number
-    }
-  | { type: 'removeBot'; name: string }
-  | { type: 'setBotOption'; name: string; key: string; value: string }
-  | { type: 'say'; text: string }
+	| { type: 'setOption'; key: string; value: string }
+	| { type: 'setTitle'; title: string }
+	| { type: 'setMap'; map: string }
+	| { type: 'setGame'; game: string }
+	| { type: 'setEngine'; engine: string }
+	| { type: 'takeSeat'; team: number; allyTeam: number }
+	| { type: 'releaseSeat' }
+	| { type: 'setSide'; side: number }
+	| { type: 'setStartPos'; startPos: number }
+	| {
+			type: 'addBot'
+			name: string
+			ai: string
+			team: number
+			allyTeam: number
+			colour: number
+	  }
+	| {
+			type: 'updateBot'
+			name: string
+			team: number
+			allyTeam: number
+			handicap: number
+			colour: number
+	  }
+	| { type: 'removeBot'; name: string }
+	| { type: 'setBotOption'; name: string; key: string; value: string }
+	| { type: 'say'; text: string }

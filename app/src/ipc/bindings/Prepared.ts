@@ -5,11 +5,11 @@ import type { Gauge } from './Gauge'
  * Everything needed to send a tweak, and to decide whether it will fit.
  */
 export type Prepared = {
-  minified: string
-  blob: string
-  /**
-   * The literal `!bSet <slot> <blob>`; only this form gets the server's 16 KB allowance.
-   */
-  command: string
-  gauge: Gauge
+	minified: string
+	blob: string
+	/**
+	 * The literal `!bSet <slot> <blob>`; only this form gets the server's 16 KB allowance.
+	 */
+	command: string
+	gauge: Gauge
 }

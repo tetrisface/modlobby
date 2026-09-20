@@ -4,12 +4,12 @@
  * What a delete actually took out.
  */
 export type Removed = {
-  /**
-   * Whether the widget was listed in `order`.
-   */
-  order_entry: boolean
-  /**
-   * Whether it had saved settings in `data`.
-   */
-  settings: boolean
+	/**
+	 * Whether the widget was listed in `order`.
+	 */
+	order_entry: boolean
+	/**
+	 * Whether it had saved settings in `data`.
+	 */
+	settings: boolean
 }

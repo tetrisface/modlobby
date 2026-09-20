@@ -11,30 +11,30 @@ import type { WindowStats } from './WindowStats'
  * is a fork of it, never an update to it.
  */
 export type Fork = {
-  /**
-   * `github:<owner>/<repo>:<name>`, `gist:<id>:<name>`,
-   * `discord:<poster>:<name>`, `hub:<id>`, or `other`.
-   */
-  key: string
-  kind: ForkKind
-  /**
-   * The lineage the row itself speaks for.
-   */
-  main: boolean
-  id: string
-  author: string
-  description: string
-  install: Install
-  image: string
-  /**
-   * Every picture, best first; `image` is the first. See `WidgetUsage::images`.
-   */
-  images: Array<string>
-  /**
-   * When this version's first and newest revisions were published, as
-   * `YYYY-MM-DDTHH:MM:SSZ`; empty when no source said.
-   */
-  first_published: string
-  last_updated: string
-  windows: { [key in string]: { [key in string]: WindowStats } }
+	/**
+	 * `github:<owner>/<repo>:<name>`, `gist:<id>:<name>`,
+	 * `discord:<poster>:<name>`, `hub:<id>`, or `other`.
+	 */
+	key: string
+	kind: ForkKind
+	/**
+	 * The lineage the row itself speaks for.
+	 */
+	main: boolean
+	id: string
+	author: string
+	description: string
+	install: Install
+	image: string
+	/**
+	 * Every picture, best first; `image` is the first. See `WidgetUsage::images`.
+	 */
+	images: Array<string>
+	/**
+	 * When this version's first and newest revisions were published, as
+	 * `YYYY-MM-DDTHH:MM:SSZ`; empty when no source said.
+	 */
+	first_published: string
+	last_updated: string
+	windows: { [key in string]: { [key in string]: WindowStats } }
 }

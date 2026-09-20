@@ -5,6 +5,6 @@
  * `tweakunits` -- or the start-box override.
  */
 export type Slot =
-  | { kind: 'defs'; index: number }
-  | { kind: 'units'; index: number }
-  | { kind: 'boxes' }
+	| { kind: 'defs'; index: number }
+	| { kind: 'units'; index: number }
+	| { kind: 'boxes' }

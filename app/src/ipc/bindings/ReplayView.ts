@@ -4,9 +4,9 @@
  * A replay as the front end lists it.
  */
 export type ReplayView = {
-  path: string
-  playedAt: string
-  map: string
-  engine: string
-  bytes: number
+	path: string
+	playedAt: string
+	map: string
+	engine: string
+	bytes: number
 }

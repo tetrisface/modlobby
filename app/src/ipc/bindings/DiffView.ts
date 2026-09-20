@@ -2,11 +2,11 @@
 import type { Hunk } from './Hunk'
 
 export type DiffView = {
-  hunks: Array<Hunk>
-  /**
-   * The same change as a patch, for copying out.
-   */
-  unified: string
-  added: number
-  removed: number
+	hunks: Array<Hunk>
+	/**
+	 * The same change as a patch, for copying out.
+	 */
+	unified: string
+	added: number
+	removed: number
 }

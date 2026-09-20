@@ -4,8 +4,8 @@
  * How far along the one download this module does is.
  */
 export type EngineProgress =
-  | { phase: 'finding' }
-  | { phase: 'downloading'; got: number; total: number }
-  | { phase: 'extracting' }
-  | { phase: 'done'; version: string }
-  | { phase: 'failed'; reason: string }
+	| { phase: 'finding' }
+	| { phase: 'downloading'; got: number; total: number }
+	| { phase: 'extracting' }
+	| { phase: 'done'; version: string }
+	| { phase: 'failed'; reason: string }

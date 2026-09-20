@@ -5,9 +5,9 @@ import type { Point } from './Point'
  * One team's box.
  */
 export type Box = {
-  /**
-   * Two points are opposite corners of a rectangle; three or more are a
-   * polygon in order.
-   */
-  poly: Array<Point>
+	/**
+	 * Two points are opposite corners of a rectangle; three or more are a
+	 * polygon in order.
+	 */
+	poly: Array<Point>
 }

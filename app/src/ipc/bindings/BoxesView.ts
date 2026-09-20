@@ -5,22 +5,22 @@
  * minimap uses.
  */
 export type BoxesView = {
-  /**
-   * One polygon per ally team, in ally-team order.
-   */
-  polys: Array<Array<[number, number]>>
-  /**
-   * `override` when somebody chose these for this room, `set` when they are
-   * the map's own for this many teams.
-   */
-  source: string
-  /**
-   * The team count they were resolved for.
-   */
-  teams: number
-  /**
-   * Whether the map offers arrangements for other team counts too, which is
-   * what makes a "boxes for N teams" choice meaningful.
-   */
-  available: Array<number>
+	/**
+	 * One polygon per ally team, in ally-team order.
+	 */
+	polys: Array<Array<[number, number]>>
+	/**
+	 * `override` when somebody chose these for this room, `set` when they are
+	 * the map's own for this many teams.
+	 */
+	source: string
+	/**
+	 * The team count they were resolved for.
+	 */
+	teams: number
+	/**
+	 * Whether the map offers arrangements for other team counts too, which is
+	 * what makes a "boxes for N teams" choice meaningful.
+	 */
+	available: Array<number>
 }

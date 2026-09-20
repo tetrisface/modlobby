@@ -5,21 +5,21 @@ import type { Removed } from './Removed'
  * What a delete actually did, and what it deliberately left behind.
  */
 export type Deleted = {
-  /**
-   * Files removed, relative to the write directory.
-   */
-  files: Array<string>
-  /**
-   * What came out of `BYAR.lua`.
-   */
-  config: Removed
-  /**
-   * Things this widget appears to have touched that were **not** removed,
-   * because nothing on disk records which widget wrote them.
-   *
-   * Shown, never acted on. `springsettings.cfg` keys are unattributed, so
-   * attributing one is a guess — and a guess that deletes is the kind of
-   * bug a player discovers weeks later.
-   */
-  residue: Array<string>
+	/**
+	 * Files removed, relative to the write directory.
+	 */
+	files: Array<string>
+	/**
+	 * What came out of `BYAR.lua`.
+	 */
+	config: Removed
+	/**
+	 * Things this widget appears to have touched that were **not** removed,
+	 * because nothing on disk records which widget wrote them.
+	 *
+	 * Shown, never acted on. `springsettings.cfg` keys are unattributed, so
+	 * attributing one is a guess — and a guess that deletes is the kind of
+	 * bug a player discovers weeks later.
+	 */
+	residue: Array<string>
 }

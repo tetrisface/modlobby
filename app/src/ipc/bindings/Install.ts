@@ -6,31 +6,31 @@ import type { InstallKind } from './InstallKind'
  * How to install one widget, or why it cannot be offered.
  */
 export type Install = {
-  kind: InstallKind
-  /**
-   * What to download. Empty when withheld or unknown.
-   */
-  url: string
-  /**
-   * Whether `url` is an archive to unpack rather than a single Lua file.
-   */
-  archive: boolean
-  /**
-   * A page a reader can open: repository, gist or Discord thread. Present
-   * far more often than `url`.
-   */
-  page: string
-  /**
-   * Verbatim from the widget's `GetInfo()`. Spelling varies wildly.
-   */
-  license: string
-  /**
-   * Whether that licence grants redistribution.
-   */
-  permissive: boolean
-  /**
-   * Why there is no download, when there is none.
-   */
-  reason: string
-  files: Array<InstallFile>
+	kind: InstallKind
+	/**
+	 * What to download. Empty when withheld or unknown.
+	 */
+	url: string
+	/**
+	 * Whether `url` is an archive to unpack rather than a single Lua file.
+	 */
+	archive: boolean
+	/**
+	 * A page a reader can open: repository, gist or Discord thread. Present
+	 * far more often than `url`.
+	 */
+	page: string
+	/**
+	 * Verbatim from the widget's `GetInfo()`. Spelling varies wildly.
+	 */
+	license: string
+	/**
+	 * Whether that licence grants redistribution.
+	 */
+	permissive: boolean
+	/**
+	 * Why there is no download, when there is none.
+	 */
+	reason: string
+	files: Array<InstallFile>
 }

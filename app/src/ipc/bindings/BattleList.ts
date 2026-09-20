@@ -8,26 +8,26 @@ import type { ModeFilter } from './ModeFilter'
  * positively, a toggle that is on means that kind of room is in the list.
  */
 export type BattleList = {
-  showPassworded: boolean
-  showLocked: boolean
-  /**
-   * Rooms nobody has joined yet.
-   */
-  showEmpty: boolean
-  /**
-   * Rooms whose game has already started.
-   */
-  showRunning: boolean
-  /**
-   * Narrow the list to rooms with a friend in them. Off by default: it
-   * empties the list for anyone who has not added anybody.
-   */
-  friendsOnly: boolean
-  mode: ModeFilter
-  sort: BattleSort
-  /**
-   * Largest or latest first. Ignored by `BattleSort::Relevance`, which has
-   * a fixed order of its own.
-   */
-  sortDescending: boolean
+	showPassworded: boolean
+	showLocked: boolean
+	/**
+	 * Rooms nobody has joined yet.
+	 */
+	showEmpty: boolean
+	/**
+	 * Rooms whose game has already started.
+	 */
+	showRunning: boolean
+	/**
+	 * Narrow the list to rooms with a friend in them. Off by default: it
+	 * empties the list for anyone who has not added anybody.
+	 */
+	friendsOnly: boolean
+	mode: ModeFilter
+	sort: BattleSort
+	/**
+	 * Largest or latest first. Ignored by `BattleSort::Relevance`, which has
+	 * a fixed order of its own.
+	 */
+	sortDescending: boolean
 }

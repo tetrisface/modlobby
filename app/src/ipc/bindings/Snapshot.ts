@@ -13,22 +13,22 @@ import type { SkirmishView } from './SkirmishView'
  * about one field wants and what a fresh start is.
  */
 export type Snapshot = {
-  /**
-   * One per server there is a session with, or a retry pending for.
-   */
-  servers: Array<ServerSnapshot>
-  engine: EngineStatus
-  download: DownloadStatus
-  paste: PasteStatus
-  /**
-   * The skirmish room, which outlives a session rather than belonging to
-   * one: it is still there after a logout, a dropped connection or a
-   * reloaded window.
-   */
-  skirmish: SkirmishView | null
-  /**
-   * The way into each server that worked last, by lowercased host. The
-   * machine's memory rather than a session's, so it is here logged out too.
-   */
-  ways: { [key in string]: string }
+	/**
+	 * One per server there is a session with, or a retry pending for.
+	 */
+	servers: Array<ServerSnapshot>
+	engine: EngineStatus
+	download: DownloadStatus
+	paste: PasteStatus
+	/**
+	 * The skirmish room, which outlives a session rather than belonging to
+	 * one: it is still there after a logout, a dropped connection or a
+	 * reloaded window.
+	 */
+	skirmish: SkirmishView | null
+	/**
+	 * The way into each server that worked last, by lowercased host. The
+	 * machine's memory rather than a session's, so it is here logged out too.
+	 */
+	ways: { [key in string]: string }
 }

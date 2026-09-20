@@ -1,47 +1,47 @@
 {
-  "$schema": "https://schema.tauri.app/config/2",
-  "productName": "modlobby",
-  "identifier": "dev.modlobby.app",
-  "build": {
-    "beforeDevCommand": "bun run vite:dev",
-    "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "bun run vite:build",
-    "frontendDist": "../dist"
-  },
-  "app": {
-    "windows": [
-      {
-        "title": "modlobby",
-        "width": 1280,
-        "height": 800,
-        "minWidth": 900,
-        "minHeight": 600,
-        "transparent": true,
-        "decorations": false
-      }
-    ],
-    "security": {
-      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: thumb: http://thumb.localhost; font-src 'self' data:; worker-src 'self' blob:; connect-src ipc: http://ipc.localhost"
-    }
-  },
-  "bundle": {
-    "active": true,
-    "targets": ["nsis"],
-    "createUpdaterArtifacts": true,
-    "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
-    ]
-  },
-  "plugins": {
-    "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY5MERFMjVERTcyRjcxM0IKUldRN2NTL25YZUlOK2EvRU55dCtrRklrckN3SHMxa00xTUQ0azl0K040bm8weGFxQ0hpUFhZeFEK",
-      "endpoints": [
-        "https://github.com/tetrisface/modlobby/releases/latest/download/latest.json"
-      ]
-    }
-  }
+	"$schema": "https://schema.tauri.app/config/2",
+	"productName": "modlobby",
+	"identifier": "dev.modlobby.app",
+	"build": {
+		"beforeDevCommand": "bun run vite:dev",
+		"devUrl": "http://localhost:1420",
+		"beforeBuildCommand": "bun run vite:build",
+		"frontendDist": "../dist"
+	},
+	"app": {
+		"windows": [
+			{
+				"title": "modlobby",
+				"width": 1280,
+				"height": 800,
+				"minWidth": 900,
+				"minHeight": 600,
+				"transparent": true,
+				"decorations": false
+			}
+		],
+		"security": {
+			"csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: thumb: http://thumb.localhost; font-src 'self' data:; worker-src 'self' blob:; connect-src ipc: http://ipc.localhost"
+		}
+	},
+	"bundle": {
+		"active": true,
+		"targets": ["nsis"],
+		"createUpdaterArtifacts": true,
+		"icon": [
+			"icons/32x32.png",
+			"icons/128x128.png",
+			"icons/128x128@2x.png",
+			"icons/icon.icns",
+			"icons/icon.ico"
+		]
+	},
+	"plugins": {
+		"updater": {
+			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY5MERFMjVERTcyRjcxM0IKUldRN2NTL25YZUlOK2EvRU55dCtrRklrckN3SHMxa00xTUQ0azl0K040bm8weGFxQ0hpUFhZeFEK",
+			"endpoints": [
+				"https://github.com/tetrisface/modlobby/releases/latest/download/latest.json"
+			]
+		}
+	}
 }

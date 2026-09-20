@@ -11,61 +11,61 @@ import type { WindowStats } from './WindowStats'
  * picture and install are its main lineage's.
  */
 export type WidgetUsage = {
-  /**
-   * Stable key for the name: `name:<hash>`.
-   */
-  key: string
-  /**
-   * Whether the reported hash was traced back to a distributable source.
-   *
-   * False does not mean unknown — the name, author and description below
-   * come from the widget's own `GetInfo()` either way. It means we cannot
-   * yet point at a file, so there is nothing to offer an install for.
-   */
-  resolved: boolean
-  /**
-   * Widget Hub id when resolved, empty otherwise.
-   */
-  id: string
-  name: string
-  author: string
-  description: string
-  /**
-   * Audience, then window. A document published before the split carries
-   * only `all`, which is why lookups fall back to it rather than blanking.
-   */
-  windows: { [key in string]: { [key in string]: WindowStats } }
-  /**
-   * Where to get it, or why it cannot be offered. Always present: a widget
-   * with no known source still says so, which is more use than a dead
-   * button.
-   */
-  install: Install
-  /**
-   * A picture of the widget, empty when none is known. Hub covers and
-   * repository pictures are their own hosts' URLs; Discord screenshots are
-   * served by pve.bar, for widgets whose licence lets it. Never fetched by
-   * the webview directly — see `thumbs.rs`.
-   */
-  image: string
-  /**
-   * Every picture of the widget, best first, at most eight. `image` is the
-   * first, kept for readers that show one. A document from before galleries
-   * has none, and `picture` falls back to `image`.
-   */
-  images: Array<string>
-  /**
-   * When the main version was first published and last updated, as
-   * `YYYY-MM-DDTHH:MM:SSZ`; empty when no source said.
-   */
-  first_published: string
-  last_updated: string
-  /**
-   * The lineage key the row speaks for; empty when nothing was traced.
-   */
-  main: string
-  /**
-   * Every version under this name, main first and "other versions" last.
-   */
-  forks: Array<Fork>
+	/**
+	 * Stable key for the name: `name:<hash>`.
+	 */
+	key: string
+	/**
+	 * Whether the reported hash was traced back to a distributable source.
+	 *
+	 * False does not mean unknown — the name, author and description below
+	 * come from the widget's own `GetInfo()` either way. It means we cannot
+	 * yet point at a file, so there is nothing to offer an install for.
+	 */
+	resolved: boolean
+	/**
+	 * Widget Hub id when resolved, empty otherwise.
+	 */
+	id: string
+	name: string
+	author: string
+	description: string
+	/**
+	 * Audience, then window. A document published before the split carries
+	 * only `all`, which is why lookups fall back to it rather than blanking.
+	 */
+	windows: { [key in string]: { [key in string]: WindowStats } }
+	/**
+	 * Where to get it, or why it cannot be offered. Always present: a widget
+	 * with no known source still says so, which is more use than a dead
+	 * button.
+	 */
+	install: Install
+	/**
+	 * A picture of the widget, empty when none is known. Hub covers and
+	 * repository pictures are their own hosts' URLs; Discord screenshots are
+	 * served by pve.bar, for widgets whose licence lets it. Never fetched by
+	 * the webview directly — see `thumbs.rs`.
+	 */
+	image: string
+	/**
+	 * Every picture of the widget, best first, at most eight. `image` is the
+	 * first, kept for readers that show one. A document from before galleries
+	 * has none, and `picture` falls back to `image`.
+	 */
+	images: Array<string>
+	/**
+	 * When the main version was first published and last updated, as
+	 * `YYYY-MM-DDTHH:MM:SSZ`; empty when no source said.
+	 */
+	first_published: string
+	last_updated: string
+	/**
+	 * The lineage key the row speaks for; empty when nothing was traced.
+	 */
+	main: string
+	/**
+	 * Every version under this name, main first and "other versions" last.
+	 */
+	forks: Array<Fork>
 }

@@ -2,8 +2,8 @@
 import type { ChangeOp } from './ChangeOp'
 
 export type Hunk = {
-  op: ChangeOp
-  oldLine: number | null
-  newLine: number | null
-  text: string
+	op: ChangeOp
+	oldLine: number | null
+	newLine: number | null
+	text: string
 }

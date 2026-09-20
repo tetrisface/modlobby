@@ -4,15 +4,15 @@
  * How large the interface is drawn.
  */
 export type Ui = {
-  /**
-   * Interface scale as a percentage, per screen size.
-   *
-   * Keyed by a coarse bucket of the display's pixel size, so a laptop and
-   * the monitor it is plugged into each keep their own answer instead of
-   * the last one used winning — Chobby remembers it the same way
-   * (`chobby/components/configuration.lua:593`). A screen with no entry is
-   * drawn at a size derived from it, which is what makes a large display
-   * legible without anyone opening this file.
-   */
-  scale: { [key in string]: number }
+	/**
+	 * Interface scale as a percentage, per screen size.
+	 *
+	 * Keyed by a coarse bucket of the display's pixel size, so a laptop and
+	 * the monitor it is plugged into each keep their own answer instead of
+	 * the last one used winning — Chobby remembers it the same way
+	 * (`chobby/components/configuration.lua:593`). A screen with no entry is
+	 * drawn at a size derived from it, which is what makes a large display
+	 * legible without anyone opening this file.
+	 */
+	scale: { [key in string]: number }
 }

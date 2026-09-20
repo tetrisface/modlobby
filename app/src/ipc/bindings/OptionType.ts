@@ -8,12 +8,12 @@
  * the parse, so a new control type costs us a plain row, not a broken app.
  */
 export type OptionType =
-  | 'bool'
-  | 'number'
-  | 'string'
-  | 'list'
-  | 'section'
-  | 'subheader'
-  | 'separator'
-  | 'link'
-  | { other: string }
+	| 'bool'
+	| 'number'
+	| 'string'
+	| 'list'
+	| 'section'
+	| 'subheader'
+	| 'separator'
+	| 'link'
+	| { other: string }

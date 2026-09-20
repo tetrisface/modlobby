@@ -4,11 +4,11 @@
  * What a skirmish can be built from on this machine.
  */
 export type SkirmishOptions = {
-  games: Array<string>
-  /**
-   * Archive file names, lowercased and underscored.
-   */
-  maps: Array<string>
-  engines: Array<string>
-  ais: Array<string>
+	games: Array<string>
+	/**
+	 * Archive file names, lowercased and underscored.
+	 */
+	maps: Array<string>
+	engines: Array<string>
+	ais: Array<string>
 }

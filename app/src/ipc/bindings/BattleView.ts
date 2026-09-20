@@ -4,31 +4,31 @@ import type { LayoutView } from './LayoutView'
 import type { StartRectView } from './StartRectView'
 
 export type BattleView = {
-  id: number
-  founder: string
-  ip: string
-  port: number
-  maxPlayers: number
-  passworded: boolean
-  locked: boolean
-  mapHash: string
-  mapName: string
-  engineName: string
-  engineVersion: string
-  title: string
-  gameName: string
-  /**
-   * Sorted; includes the host bot and spectators.
-   */
-  members: Array<string>
-  spectatorCount: number
-  playerCount: number
-  layout: LayoutView | null
-  bots: Array<BotView>
-  startRects: Array<StartRectView>
-  /**
-   * Spectators waiting for a seat, first in line first. Only our own
-   * room's is known; every other room's is empty.
-   */
-  queue: Array<string>
+	id: number
+	founder: string
+	ip: string
+	port: number
+	maxPlayers: number
+	passworded: boolean
+	locked: boolean
+	mapHash: string
+	mapName: string
+	engineName: string
+	engineVersion: string
+	title: string
+	gameName: string
+	/**
+	 * Sorted; includes the host bot and spectators.
+	 */
+	members: Array<string>
+	spectatorCount: number
+	playerCount: number
+	layout: LayoutView | null
+	bots: Array<BotView>
+	startRects: Array<StartRectView>
+	/**
+	 * Spectators waiting for a seat, first in line first. Only our own
+	 * room's is known; every other room's is empty.
+	 */
+	queue: Array<string>
 }

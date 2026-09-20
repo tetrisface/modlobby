@@ -5,21 +5,21 @@ import type { Diagnostic } from './Diagnostic'
  * A slot's current value, ready to show.
  */
 export type TweakView = {
-  /**
-   * The decoded payload, exactly as stored: Lua, or the override's JSON.
-   */
-  text: string
-  /**
-   * The same text formatted; equal to `text` when it does not parse.
-   */
-  formatted: string
-  /**
-   * The leading `--` comment, which is how BAR names a tweak.
-   */
-  name: string | null
-  /**
-   * What Chobby's modoptions panel shows: `<length>:<hash>`.
-   */
-  summary: string
-  diagnostics: Array<Diagnostic>
+	/**
+	 * The decoded payload, exactly as stored: Lua, or the override's JSON.
+	 */
+	text: string
+	/**
+	 * The same text formatted; equal to `text` when it does not parse.
+	 */
+	formatted: string
+	/**
+	 * The leading `--` comment, which is how BAR names a tweak.
+	 */
+	name: string | null
+	/**
+	 * What Chobby's modoptions panel shows: `<length>:<hash>`.
+	 */
+	summary: string
+	diagnostics: Array<Diagnostic>
 }

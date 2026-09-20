@@ -2,11 +2,11 @@
 import type { SyncView } from './SyncView'
 
 export type BattleStatusView = {
-  ready: boolean
-  team: number
-  allyTeam: number
-  player: boolean
-  handicap: number
-  sync: SyncView
-  side: number
+	ready: boolean
+	team: number
+	allyTeam: number
+	player: boolean
+	handicap: number
+	sync: SyncView
+	side: number
 }

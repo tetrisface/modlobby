@@ -14,25 +14,25 @@ import type { Ui } from './Ui'
 import type { Updates } from './Updates'
 
 export type Settings = {
-  /**
-   * Points editors at the schema next to the file.
-   */
-  $schema: string | null
-  /**
-   * The lobby servers, in the order the app lists them. A fresh install
-   * has BAR's.
-   */
-  servers: Array<ServerEntry>
-  account: Account
-  connection: Connection
-  paths: Paths
-  battleList: BattleList
-  chat: Chat
-  notifications: Notifications
-  overlay: Overlay
-  play: Play
-  tweaks: Tweaks
-  logging: Logging
-  updates: Updates
-  ui: Ui
+	/**
+	 * Points editors at the schema next to the file.
+	 */
+	$schema: string | null
+	/**
+	 * The lobby servers, in the order the app lists them. A fresh install
+	 * has BAR's.
+	 */
+	servers: Array<ServerEntry>
+	account: Account
+	connection: Connection
+	paths: Paths
+	battleList: BattleList
+	chat: Chat
+	notifications: Notifications
+	overlay: Overlay
+	play: Play
+	tweaks: Tweaks
+	logging: Logging
+	updates: Updates
+	ui: Ui
 }

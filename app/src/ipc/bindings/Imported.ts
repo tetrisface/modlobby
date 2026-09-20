@@ -2,9 +2,9 @@
 import type { Book } from './Book'
 
 export type Imported = {
-  book: Book
-  /**
-   * Presets in their file whose name we already had, and so left alone.
-   */
-  skipped: number
+	book: Book
+	/**
+	 * Presets in their file whose name we already had, and so left alone.
+	 */
+	skipped: number
 }

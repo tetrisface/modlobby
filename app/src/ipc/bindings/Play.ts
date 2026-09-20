@@ -5,39 +5,39 @@ import type { JoinAs } from './JoinAs'
  * Playing rather than watching.
  */
 export type Play = {
-  /**
-   * Whether joining a room seats you.
-   */
-  joinAs: JoinAs
-  /**
-   * Whether the engine starts on its own when your room's game does.
-   *
-   * On, as it is in Chobby (`gui_settings_window.lua:888`), because a game
-   * you are in starting is the moment you want to be in it — spectating
-   * included, which is the case that otherwise means watching the room and
-   * pressing a button. Only ever fires when the content is already on disk.
-   */
-  autoLaunch: boolean
-  /**
-   * Whether joining a room fetches what it needs: engine, game and map.
-   *
-   * On, as bar-lobby and the launcher do it: a room you cannot play is
-   * nothing until its content is here. Off leaves a button in the room for
-   * each fetch, for a metered connection or a disk being kept small.
-   */
-  autoDownload: boolean
-  /**
-   * Whether to ask the pve.bar stats service what a PvE room scores.
-   *
-   * On, because the number is the point of looking at a PvE room before
-   * joining it. It sends the map, the settings and the team size to a
-   * third-party service — never a name or an account — so it stays
-   * something that can be turned off.
-   */
-  pveStats: boolean
-  /**
-   * What [`JoinAs::Remember`] remembers: whether you played last time.
-   * Written when you take or leave a seat, never chosen directly.
-   */
-  lastWasPlayer: boolean
+	/**
+	 * Whether joining a room seats you.
+	 */
+	joinAs: JoinAs
+	/**
+	 * Whether the engine starts on its own when your room's game does.
+	 *
+	 * On, as it is in Chobby (`gui_settings_window.lua:888`), because a game
+	 * you are in starting is the moment you want to be in it — spectating
+	 * included, which is the case that otherwise means watching the room and
+	 * pressing a button. Only ever fires when the content is already on disk.
+	 */
+	autoLaunch: boolean
+	/**
+	 * Whether joining a room fetches what it needs: engine, game and map.
+	 *
+	 * On, as bar-lobby and the launcher do it: a room you cannot play is
+	 * nothing until its content is here. Off leaves a button in the room for
+	 * each fetch, for a metered connection or a disk being kept small.
+	 */
+	autoDownload: boolean
+	/**
+	 * Whether to ask the pve.bar stats service what a PvE room scores.
+	 *
+	 * On, because the number is the point of looking at a PvE room before
+	 * joining it. It sends the map, the settings and the team size to a
+	 * third-party service — never a name or an account — so it stays
+	 * something that can be turned off.
+	 */
+	pveStats: boolean
+	/**
+	 * What [`JoinAs::Remember`] remembers: whether you played last time.
+	 * Written when you take or leave a seat, never chosen directly.
+	 */
+	lastWasPlayer: boolean
 }
