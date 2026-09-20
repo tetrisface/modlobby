@@ -38,102 +38,102 @@ use crate::state::App;
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct VersionView {
-    /// The number the updater compares: `Cargo.toml`'s, via `CARGO_PKG_VERSION`.
-    pub version: &'static str,
-    /// The short commit hash, stamped by `build.rs`.
-    pub commit: &'static str,
-    /// Whether the engine here may be run against somebody's hosted game.
-    ///
-    /// False on macOS, where the only engine that exists is a third-party
-    /// build its author asks not be used on the community servers. Talking in
-    /// a room costs those servers nothing and is left alone; playing is what
-    /// stops. This is the front end's copy of the answer, so it can draw a
-    /// room you can watch rather than one whose buttons all fail —
-    /// `recoil::refuse_target` is what actually enforces it.
-    pub plays_online: bool,
-    /// Why no engine can be fetched onto this machine, when none can.
-    ///
-    /// `None` everywhere Beyond All Reason publishes a build. Where it does
-    /// not, it is `content::release::NOT_PUBLISHED_HERE` — the same fact
-    /// `download_engine` refuses with, carried here so the room can decline to
-    /// offer the download rather than offer it and be told. The engine that
-    /// runs there arrived by hand, so it is named rather than chosen: a picker
-    /// over it could only list what somebody had already put on the disk.
-    ///
-    /// The reason rather than a `bool`, so nothing can draw the refusal
-    /// without the words that explain it, and so the sentence is written once
-    /// instead of once per language.
-    ///
-    /// Not derived from `plays_online`: they are two facts with one cause
-    /// today, and they come apart the moment the Apple Silicon build's author
-    /// is approved — the servers would open while BAR's index still published
-    /// no Apple build, and a room deriving one from the other would go back to
-    /// offering a 404.
-    pub no_published_engine: Option<&'static str>,
+	/// The number the updater compares: `Cargo.toml`'s, via `CARGO_PKG_VERSION`.
+	pub version: &'static str,
+	/// The short commit hash, stamped by `build.rs`.
+	pub commit: &'static str,
+	/// Whether the engine here may be run against somebody's hosted game.
+	///
+	/// False on macOS, where the only engine that exists is a third-party
+	/// build its author asks not be used on the community servers. Talking in
+	/// a room costs those servers nothing and is left alone; playing is what
+	/// stops. This is the front end's copy of the answer, so it can draw a
+	/// room you can watch rather than one whose buttons all fail —
+	/// `recoil::refuse_target` is what actually enforces it.
+	pub plays_online: bool,
+	/// Why no engine can be fetched onto this machine, when none can.
+	///
+	/// `None` everywhere Beyond All Reason publishes a build. Where it does
+	/// not, it is `content::release::NOT_PUBLISHED_HERE` — the same fact
+	/// `download_engine` refuses with, carried here so the room can decline to
+	/// offer the download rather than offer it and be told. The engine that
+	/// runs there arrived by hand, so it is named rather than chosen: a picker
+	/// over it could only list what somebody had already put on the disk.
+	///
+	/// The reason rather than a `bool`, so nothing can draw the refusal
+	/// without the words that explain it, and so the sentence is written once
+	/// instead of once per language.
+	///
+	/// Not derived from `plays_online`: they are two facts with one cause
+	/// today, and they come apart the moment the Apple Silicon build's author
+	/// is approved — the servers would open while BAR's index still published
+	/// no Apple build, and a room deriving one from the other would go back to
+	/// offering a 404.
+	pub no_published_engine: Option<&'static str>,
 }
 
 #[tauri::command]
 pub fn app_version() -> VersionView {
-    VersionView {
-        version: env!("CARGO_PKG_VERSION"),
-        commit: env!("MODLOBBY_COMMIT"),
-        plays_online: recoil::may_join_hosted_games(),
-        no_published_engine: content::release::no_published_engine(),
-    }
+	VersionView {
+		version: env!("CARGO_PKG_VERSION"),
+		commit: env!("MODLOBBY_COMMIT"),
+		plays_online: recoil::may_join_hosted_games(),
+		no_published_engine: content::release::no_published_engine(),
+	}
 }
 
 /// How far along an update is. Emitted on the `app-update` event.
 #[derive(Debug, Clone, Serialize, ts_rs::TS)]
 #[serde(
-    rename_all = "camelCase",
-    rename_all_fields = "camelCase",
-    tag = "phase"
+	rename_all = "camelCase",
+	rename_all_fields = "camelCase",
+	tag = "phase"
 )]
 #[ts(export)]
 pub enum UpdateProgress {
-    Checking,
-    UpToDate,
-    /// A newer release exists and nothing has been fetched: the corner's offer
-    /// to download and install it.
-    Available {
-        version: String,
-    },
-    Downloading {
-        #[ts(type = "number")]
-        got: u64,
-        #[ts(type = "number")]
-        total: u64,
-    },
-    /// Downloaded and waiting. It installs on the next start; the corner
-    /// offers the restart before then, and says what stands in its way.
-    Ready {
-        version: String,
-        /// What restarting now would take away — a room, a running game —
-        /// while there is something; `None` once a click would install.
-        held_by: Option<String>,
-    },
-    Failed {
-        reason: String,
-    },
+	Checking,
+	UpToDate,
+	/// A newer release exists and nothing has been fetched: the corner's offer
+	/// to download and install it.
+	Available {
+		version: String,
+	},
+	Downloading {
+		#[ts(type = "number")]
+		got: u64,
+		#[ts(type = "number")]
+		total: u64,
+	},
+	/// Downloaded and waiting. It installs on the next start; the corner
+	/// offers the restart before then, and says what stands in its way.
+	Ready {
+		version: String,
+		/// What restarting now would take away — a room, a running game —
+		/// while there is something; `None` once a click would install.
+		held_by: Option<String>,
+	},
+	Failed {
+		reason: String,
+	},
 }
 
 /// An update the look found, and what has been done about it so far.
 enum Pending {
-    Found(Update),
-    Downloaded(Update, Vec<u8>),
-    /// An earlier run's download, on disk. No `Update` yet: the manifest has
-    /// to be asked again for one before it can be installed.
-    Stored {
-        version: String,
-        path: PathBuf,
-    },
+	Found(Update),
+	Downloaded(Update, Vec<u8>),
+	/// An earlier run's download, on disk. No `Update` yet: the manifest has
+	/// to be asked again for one before it can be installed.
+	Stored {
+		version: String,
+		path: PathBuf,
+	},
 }
 
 /// The update between the look and the install, and the directory a
 /// download waits in between runs.
 pub struct Staged {
-    dir: PathBuf,
-    held: Mutex<Option<Pending>>,
+	dir: PathBuf,
+	held: Mutex<Option<Pending>>,
 }
 
 /// What a kept download is called: the version, so a start can tell whether
@@ -142,99 +142,99 @@ const STORED_PREFIX: &str = "modlobby-";
 const STORED_SUFFIX: &str = ".update";
 
 impl Staged {
-    /// Opens `updates/` under the config directory and picks up a download an
-    /// earlier run left there. One for the version running now is what that
-    /// run installed, and is removed; anything else waits for the manifest
-    /// to say whether it is still the release to install.
-    pub fn open(config_dir: &Path) -> Self {
-        Self::open_as(config_dir, env!("CARGO_PKG_VERSION"))
-    }
+	/// Opens `updates/` under the config directory and picks up a download an
+	/// earlier run left there. One for the version running now is what that
+	/// run installed, and is removed; anything else waits for the manifest
+	/// to say whether it is still the release to install.
+	pub fn open(config_dir: &Path) -> Self {
+		Self::open_as(config_dir, env!("CARGO_PKG_VERSION"))
+	}
 
-    fn open_as(config_dir: &Path, running: &str) -> Self {
-        let dir = config_dir.join("updates");
-        let mut stored = None;
-        for path in stored_files(&dir) {
-            let version = stored_version(&path);
-            if version == running || stored.is_some() {
-                remove(&path);
-                continue;
-            }
-            tracing::info!(version, path = %path.display(), "update kept from an earlier run");
-            stored = Some(Pending::Stored { version, path });
-        }
-        Self {
-            dir,
-            held: Mutex::new(stored),
-        }
-    }
+	fn open_as(config_dir: &Path, running: &str) -> Self {
+		let dir = config_dir.join("updates");
+		let mut stored = None;
+		for path in stored_files(&dir) {
+			let version = stored_version(&path);
+			if version == running || stored.is_some() {
+				remove(&path);
+				continue;
+			}
+			tracing::info!(version, path = %path.display(), "update kept from an earlier run");
+			stored = Some(Pending::Stored { version, path });
+		}
+		Self {
+			dir,
+			held: Mutex::new(stored),
+		}
+	}
 
-    /// The version of a download waiting on disk, if one is.
-    pub fn stored_version(&self) -> Option<String> {
-        match self.held.lock().expect("staged update").as_ref() {
-            Some(Pending::Stored { version, .. }) => Some(version.clone()),
-            _ => None,
-        }
-    }
+	/// The version of a download waiting on disk, if one is.
+	pub fn stored_version(&self) -> Option<String> {
+		match self.held.lock().expect("staged update").as_ref() {
+			Some(Pending::Stored { version, .. }) => Some(version.clone()),
+			_ => None,
+		}
+	}
 
-    /// Keeps a download for a later run. Losable: a download that cannot be
-    /// written is still installable from memory this run, and is fetched
-    /// again next time, which is what happened before anything was kept.
-    fn keep(&self, version: &str, bytes: &[u8]) {
-        let path = self.dir.join(format!(
-            "{STORED_PREFIX}{}{STORED_SUFFIX}",
-            version.replace(['/', '\\'], "_")
-        ));
-        let tmp = path.with_extension("part");
-        let written = std::fs::create_dir_all(&self.dir)
-            .and_then(|()| std::fs::write(&tmp, bytes))
-            .and_then(|()| std::fs::rename(&tmp, &path));
-        match written {
-            Ok(()) => {
-                tracing::info!(version, path = %path.display(), "update kept for the next start")
-            }
-            Err(err) => tracing::warn!(%err, path = %path.display(), "could not keep the update"),
-        }
-    }
+	/// Keeps a download for a later run. Losable: a download that cannot be
+	/// written is still installable from memory this run, and is fetched
+	/// again next time, which is what happened before anything was kept.
+	fn keep(&self, version: &str, bytes: &[u8]) {
+		let path = self.dir.join(format!(
+			"{STORED_PREFIX}{}{STORED_SUFFIX}",
+			version.replace(['/', '\\'], "_")
+		));
+		let tmp = path.with_extension("part");
+		let written = std::fs::create_dir_all(&self.dir)
+			.and_then(|()| std::fs::write(&tmp, bytes))
+			.and_then(|()| std::fs::rename(&tmp, &path));
+		match written {
+			Ok(()) => {
+				tracing::info!(version, path = %path.display(), "update kept for the next start")
+			}
+			Err(err) => tracing::warn!(%err, path = %path.display(), "could not keep the update"),
+		}
+	}
 
-    /// Removes every kept download: installed, or no longer the release.
-    fn discard(&self) {
-        for path in stored_files(&self.dir) {
-            remove(&path);
-        }
-    }
+	/// Removes every kept download: installed, or no longer the release.
+	fn discard(&self) {
+		for path in stored_files(&self.dir) {
+			remove(&path);
+		}
+	}
 }
 
 fn stored_files(dir: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return Vec::new();
-    };
-    let mut paths: Vec<PathBuf> = entries
-        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
-        .filter(|path| {
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| {
-                    name.starts_with(STORED_PREFIX) && name.ends_with(STORED_SUFFIX)
-                })
-        })
-        .collect();
-    paths.sort();
-    paths
+	let Ok(entries) = std::fs::read_dir(dir) else {
+		return Vec::new();
+	};
+	let mut paths: Vec<PathBuf> = entries
+		.filter_map(|entry| entry.ok().map(|entry| entry.path()))
+		.filter(|path| {
+			path.file_name()
+				.and_then(|name| name.to_str())
+				.is_some_and(|name| {
+					name.starts_with(STORED_PREFIX) && name.ends_with(STORED_SUFFIX)
+				})
+		})
+		.collect();
+	paths.sort();
+	paths
 }
 
 fn stored_version(path: &Path) -> String {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .and_then(|name| name.strip_prefix(STORED_PREFIX))
-        .and_then(|name| name.strip_suffix(STORED_SUFFIX))
-        .unwrap_or_default()
-        .to_owned()
+	path.file_name()
+		.and_then(|name| name.to_str())
+		.and_then(|name| name.strip_prefix(STORED_PREFIX))
+		.and_then(|name| name.strip_suffix(STORED_SUFFIX))
+		.unwrap_or_default()
+		.to_owned()
 }
 
 fn remove(path: &Path) {
-    if let Err(err) = std::fs::remove_file(path) {
-        tracing::warn!(%err, path = %path.display(), "could not remove a kept update");
-    }
+	if let Err(err) = std::fs::remove_file(path) {
+		tracing::warn!(%err, path = %path.display(), "could not remove a kept update");
+	}
 }
 
 /// Whether this build may update itself. Unset means yes in a release and no
@@ -246,15 +246,15 @@ fn remove(path: &Path) {
 pub const AUTO_UPDATE_ENV: &str = "MODLOBBY_AUTO_UPDATE";
 
 pub fn enabled() -> bool {
-    allows(std::env::var_os(AUTO_UPDATE_ENV), !tauri::is_dev())
+	allows(std::env::var_os(AUTO_UPDATE_ENV), !tauri::is_dev())
 }
 
 fn allows(value: Option<std::ffi::OsString>, unset: bool) -> bool {
-    let Some(value) = value else {
-        return unset;
-    };
-    let value = value.to_string_lossy().trim().to_ascii_lowercase();
-    !matches!(value.as_str(), "0" | "false" | "off" | "no")
+	let Some(value) = value else {
+		return unset;
+	};
+	let value = value.to_string_lossy().trim().to_ascii_lowercase();
+	!matches!(value.as_str(), "0" | "false" | "off" | "no")
 }
 
 /// How much has to arrive before the front end is told again. An installer
@@ -262,10 +262,10 @@ fn allows(value: Option<std::ffi::OsString>, unset: bool) -> bool {
 const REPORT_EVERY: u64 = 1024 * 1024;
 
 fn disabled() -> ApiError {
-    ApiError::new(
-        "update",
-        format!("updates are off: {AUTO_UPDATE_ENV} says so, or is unset in a dev run"),
-    )
+	ApiError::new(
+		"update",
+		format!("updates are off: {AUTO_UPDATE_ENV} says so, or is unset in a dev run"),
+	)
 }
 
 /// Looks for a newer release. The answer is `Available` with the version,
@@ -275,86 +275,86 @@ fn disabled() -> ApiError {
 /// look is remembered so the daily one knows when it is due.
 #[tauri::command]
 pub async fn check_update(
-    app: State<'_, App>,
-    staged: State<'_, Staged>,
-    handle: AppHandle,
+	app: State<'_, App>,
+	staged: State<'_, Staged>,
+	handle: AppHandle,
 ) -> Result<UpdateProgress> {
-    if !enabled() {
-        return Err(disabled());
-    }
+	if !enabled() {
+		return Err(disabled());
+	}
 
-    let say = |progress: UpdateProgress| {
-        let _ = handle.emit("app-update", progress);
-    };
-    say(UpdateProgress::Checking);
+	let say = |progress: UpdateProgress| {
+		let _ = handle.emit("app-update", progress);
+	};
+	say(UpdateProgress::Checking);
 
-    let outcome = match look(&handle).await {
-        Ok(found) => {
-            app.update_memory.record(SystemTime::now());
-            let held_by = busy(&app).await;
-            Ok(settle(&staged, found, held_by))
-        }
-        Err(err) => Err(err),
-    };
-    // Answered as `Downloading` rather than `Available`, so the button is
-    // never offered enabled for the moment before the fetch says so itself: a
-    // click then would find the update already taken by `stage`.
-    let outcome = outcome.map(|progress| match progress {
-        UpdateProgress::Available { .. } if app.settings.get().updates.download => {
-            tauri::async_runtime::spawn(stage(handle.clone()));
-            UpdateProgress::Downloading { got: 0, total: 0 }
-        }
-        other => other,
-    });
+	let outcome = match look(&handle).await {
+		Ok(found) => {
+			app.update_memory.record(SystemTime::now());
+			let held_by = busy(&app).await;
+			Ok(settle(&staged, found, held_by))
+		}
+		Err(err) => Err(err),
+	};
+	// Answered as `Downloading` rather than `Available`, so the button is
+	// never offered enabled for the moment before the fetch says so itself: a
+	// click then would find the update already taken by `stage`.
+	let outcome = outcome.map(|progress| match progress {
+		UpdateProgress::Available { .. } if app.settings.get().updates.download => {
+			tauri::async_runtime::spawn(stage(handle.clone()));
+			UpdateProgress::Downloading { got: 0, total: 0 }
+		}
+		other => other,
+	});
 
-    match &outcome {
-        Ok(progress) => say(progress.clone()),
-        Err(err) => say(UpdateProgress::Failed {
-            reason: err.message.clone(),
-        }),
-    }
-    outcome
+	match &outcome {
+		Ok(progress) => say(progress.clone()),
+		Err(err) => say(UpdateProgress::Failed {
+			reason: err.message.clone(),
+		}),
+	}
+	outcome
 }
 
 /// Reconciles what the manifest says with what is held: the same version
 /// already downloaded stays downloaded and is `Ready`; anything else the
 /// look found replaces it as `Available`; nothing found clears it.
 fn settle(staged: &Staged, found: Option<Update>, held_by: Option<&str>) -> UpdateProgress {
-    let mut held = staged.held.lock().expect("staged update");
-    match (found, held.take()) {
-        (None, _) => {
-            staged.discard();
-            UpdateProgress::UpToDate
-        }
-        (Some(update), Some(Pending::Downloaded(done, bytes)))
-            if done.version == update.version =>
-        {
-            let version = done.version.clone();
-            *held = Some(Pending::Downloaded(done, bytes));
-            ready(version, held_by)
-        }
-        (Some(update), Some(Pending::Stored { version, path })) if version == update.version => {
-            *held = Some(Pending::Stored {
-                version: version.clone(),
-                path,
-            });
-            ready(version, held_by)
-        }
-        (Some(update), _) => {
-            // Whatever was kept is not this release.
-            staged.discard();
-            let version = update.version.clone();
-            *held = Some(Pending::Found(update));
-            UpdateProgress::Available { version }
-        }
-    }
+	let mut held = staged.held.lock().expect("staged update");
+	match (found, held.take()) {
+		(None, _) => {
+			staged.discard();
+			UpdateProgress::UpToDate
+		}
+		(Some(update), Some(Pending::Downloaded(done, bytes)))
+			if done.version == update.version =>
+		{
+			let version = done.version.clone();
+			*held = Some(Pending::Downloaded(done, bytes));
+			ready(version, held_by)
+		}
+		(Some(update), Some(Pending::Stored { version, path })) if version == update.version => {
+			*held = Some(Pending::Stored {
+				version: version.clone(),
+				path,
+			});
+			ready(version, held_by)
+		}
+		(Some(update), _) => {
+			// Whatever was kept is not this release.
+			staged.discard();
+			let version = update.version.clone();
+			*held = Some(Pending::Found(update));
+			UpdateProgress::Available { version }
+		}
+	}
 }
 
 fn ready(version: String, held_by: Option<&str>) -> UpdateProgress {
-    UpdateProgress::Ready {
-        version,
-        held_by: held_by.map(str::to_owned),
-    }
+	UpdateProgress::Ready {
+		version,
+		held_by: held_by.map(str::to_owned),
+	}
 }
 
 /// Takes the corner's offer: downloads what the look found and installs it,
@@ -364,107 +364,107 @@ fn ready(version: String, held_by: Option<&str>) -> UpdateProgress {
 /// the process.
 #[tauri::command]
 pub async fn install_update(
-    app: State<'_, App>,
-    staged: State<'_, Staged>,
-    handle: AppHandle,
+	app: State<'_, App>,
+	staged: State<'_, Staged>,
+	handle: AppHandle,
 ) -> Result<UpdateProgress> {
-    let taken = staged.held.lock().expect("staged update").take();
-    let Some(pending) = taken else {
-        return Err(ApiError::new(
-            "update",
-            "no update has been found; look for one first",
-        ));
-    };
+	let taken = staged.held.lock().expect("staged update").take();
+	let Some(pending) = taken else {
+		return Err(ApiError::new(
+			"update",
+			"no update has been found; look for one first",
+		));
+	};
 
-    let say = |progress: UpdateProgress| {
-        let _ = handle.emit("app-update", progress);
-    };
+	let say = |progress: UpdateProgress| {
+		let _ = handle.emit("app-update", progress);
+	};
 
-    let (update, bytes) = match pending {
-        Pending::Downloaded(update, bytes) => (update, bytes),
-        Pending::Found(update) => match download(&update, &say).await {
-            Ok(bytes) => {
-                staged.keep(&update.version, &bytes);
-                (update, bytes)
-            }
-            Err(err) => {
-                // Still found, still on offer; the next click tries again.
-                *staged.held.lock().expect("staged update") = Some(Pending::Found(update));
-                say(UpdateProgress::Failed {
-                    reason: err.message.clone(),
-                });
-                return Err(err);
-            }
-        },
-        Pending::Stored { version, path } => match reopen(&staged, &handle, version, path).await {
-            Ok(Reopened::Installable(update, bytes)) => (*update, bytes),
-            Ok(Reopened::Otherwise(progress)) => {
-                say(progress.clone());
-                return Ok(progress);
-            }
-            Err(err) => {
-                say(UpdateProgress::Failed {
-                    reason: err.message.clone(),
-                });
-                return Err(err);
-            }
-        },
-    };
+	let (update, bytes) = match pending {
+		Pending::Downloaded(update, bytes) => (update, bytes),
+		Pending::Found(update) => match download(&update, &say).await {
+			Ok(bytes) => {
+				staged.keep(&update.version, &bytes);
+				(update, bytes)
+			}
+			Err(err) => {
+				// Still found, still on offer; the next click tries again.
+				*staged.held.lock().expect("staged update") = Some(Pending::Found(update));
+				say(UpdateProgress::Failed {
+					reason: err.message.clone(),
+				});
+				return Err(err);
+			}
+		},
+		Pending::Stored { version, path } => match reopen(&staged, &handle, version, path).await {
+			Ok(Reopened::Installable(update, bytes)) => (*update, bytes),
+			Ok(Reopened::Otherwise(progress)) => {
+				say(progress.clone());
+				return Ok(progress);
+			}
+			Err(err) => {
+				say(UpdateProgress::Failed {
+					reason: err.message.clone(),
+				});
+				return Err(err);
+			}
+		},
+	};
 
-    if let Some(held_by) = busy(&app).await {
-        let version = update.version.clone();
-        *staged.held.lock().expect("staged update") = Some(Pending::Downloaded(update, bytes));
-        let progress = ready(version, Some(held_by));
-        say(progress.clone());
-        return Ok(progress);
-    }
+	if let Some(held_by) = busy(&app).await {
+		let version = update.version.clone();
+		*staged.held.lock().expect("staged update") = Some(Pending::Downloaded(update, bytes));
+		let progress = ready(version, Some(held_by));
+		say(progress.clone());
+		return Ok(progress);
+	}
 
-    let outcome = install(&handle, &staged, &update, &bytes);
-    if let Err(err) = &outcome {
-        say(UpdateProgress::Failed {
-            reason: err.message.clone(),
-        });
-    }
-    outcome
+	let outcome = install(&handle, &staged, &update, &bytes);
+	if let Err(err) = &outcome {
+		say(UpdateProgress::Failed {
+			reason: err.message.clone(),
+		});
+	}
+	outcome
 }
 
 /// Fetches what the look found and keeps it, without installing: fetching by
 /// itself stops at `Ready`, because the restart is the user's to ask for --
 /// or the next start's, which installs a kept download before logging in.
 async fn stage(handle: AppHandle) {
-    let app = handle.state::<App>();
-    let staged = handle.state::<Staged>();
-    let say = |progress: UpdateProgress| {
-        let _ = handle.emit("app-update", progress);
-    };
+	let app = handle.state::<App>();
+	let staged = handle.state::<Staged>();
+	let say = |progress: UpdateProgress| {
+		let _ = handle.emit("app-update", progress);
+	};
 
-    let update = {
-        let mut held = staged.held.lock().expect("staged update");
-        match held.take() {
-            Some(Pending::Found(update)) => update,
-            other => {
-                // A click took it first, or it is already here.
-                *held = other;
-                return;
-            }
-        }
-    };
+	let update = {
+		let mut held = staged.held.lock().expect("staged update");
+		match held.take() {
+			Some(Pending::Found(update)) => update,
+			other => {
+				// A click took it first, or it is already here.
+				*held = other;
+				return;
+			}
+		}
+	};
 
-    match download(&update, &say).await {
-        Ok(bytes) => {
-            staged.keep(&update.version, &bytes);
-            let version = update.version.clone();
-            *staged.held.lock().expect("staged update") = Some(Pending::Downloaded(update, bytes));
-            say(ready(version, busy(&app).await));
-        }
-        Err(err) => {
-            // Still found, still on offer: the button fetches it on a click.
-            tracing::warn!(reason = %err.message, "update: fetching ahead failed");
-            let version = update.version.clone();
-            *staged.held.lock().expect("staged update") = Some(Pending::Found(update));
-            say(UpdateProgress::Available { version });
-        }
-    }
+	match download(&update, &say).await {
+		Ok(bytes) => {
+			staged.keep(&update.version, &bytes);
+			let version = update.version.clone();
+			*staged.held.lock().expect("staged update") = Some(Pending::Downloaded(update, bytes));
+			say(ready(version, busy(&app).await));
+		}
+		Err(err) => {
+			// Still found, still on offer: the button fetches it on a click.
+			tracing::warn!(reason = %err.message, "update: fetching ahead failed");
+			let version = update.version.clone();
+			*staged.held.lock().expect("staged update") = Some(Pending::Found(update));
+			say(UpdateProgress::Available { version });
+		}
+	}
 }
 
 /// Installs the download an earlier run kept, before this one logs in.
@@ -474,27 +474,27 @@ async fn stage(handle: AppHandle) {
 /// on with the login.
 #[tauri::command]
 pub async fn resume_update(
-    app: State<'_, App>,
-    staged: State<'_, Staged>,
-    handle: AppHandle,
+	app: State<'_, App>,
+	staged: State<'_, Staged>,
+	handle: AppHandle,
 ) -> Result<Option<UpdateProgress>> {
-    if !enabled() || staged.stored_version().is_none() {
-        return Ok(None);
-    }
-    install_update(app, staged, handle).await.map(Some)
+	if !enabled() || staged.stored_version().is_none() {
+		return Ok(None);
+	}
+	install_update(app, staged, handle).await.map(Some)
 }
 
 /// The front end raised an error: the app's own failing, so the next start
 /// looks for a fix sooner. Kept locally, sent nowhere.
 #[tauri::command]
 pub fn note_trouble(app: State<'_, App>) {
-    app.update_memory.note_trouble();
+	app.update_memory.note_trouble();
 }
 
 enum Reopened {
-    /// Boxed for the size: an `Update` carries the whole manifest response.
-    Installable(Box<Update>, Vec<u8>),
-    Otherwise(UpdateProgress),
+	/// Boxed for the size: an `Update` carries the whole manifest response.
+	Installable(Box<Update>, Vec<u8>),
+	Otherwise(UpdateProgress),
 }
 
 /// Turns a kept download back into something installable: the manifest for
@@ -502,39 +502,39 @@ enum Reopened {
 /// manifest that has moved on makes the kept file worthless, and a file
 /// that cannot be read is fetched again as if never kept.
 async fn reopen(
-    staged: &Staged,
-    handle: &AppHandle,
-    version: String,
-    path: PathBuf,
+	staged: &Staged,
+	handle: &AppHandle,
+	version: String,
+	path: PathBuf,
 ) -> Result<Reopened> {
-    let found = match look(handle).await {
-        Ok(found) => found,
-        Err(err) => {
-            // Offline, most likely: the file keeps waiting.
-            *staged.held.lock().expect("staged update") = Some(Pending::Stored { version, path });
-            return Err(err);
-        }
-    };
-    let Some(update) = found else {
-        staged.discard();
-        return Ok(Reopened::Otherwise(UpdateProgress::UpToDate));
-    };
-    if update.version != version {
-        staged.discard();
-        let version = update.version.clone();
-        *staged.held.lock().expect("staged update") = Some(Pending::Found(update));
-        return Ok(Reopened::Otherwise(UpdateProgress::Available { version }));
-    }
-    match std::fs::read(&path) {
-        Ok(bytes) => Ok(Reopened::Installable(Box::new(update), bytes)),
-        Err(err) => {
-            tracing::warn!(%err, path = %path.display(), "kept update unreadable; fetching again");
-            staged.discard();
-            let version = update.version.clone();
-            *staged.held.lock().expect("staged update") = Some(Pending::Found(update));
-            Ok(Reopened::Otherwise(UpdateProgress::Available { version }))
-        }
-    }
+	let found = match look(handle).await {
+		Ok(found) => found,
+		Err(err) => {
+			// Offline, most likely: the file keeps waiting.
+			*staged.held.lock().expect("staged update") = Some(Pending::Stored { version, path });
+			return Err(err);
+		}
+	};
+	let Some(update) = found else {
+		staged.discard();
+		return Ok(Reopened::Otherwise(UpdateProgress::UpToDate));
+	};
+	if update.version != version {
+		staged.discard();
+		let version = update.version.clone();
+		*staged.held.lock().expect("staged update") = Some(Pending::Found(update));
+		return Ok(Reopened::Otherwise(UpdateProgress::Available { version }));
+	}
+	match std::fs::read(&path) {
+		Ok(bytes) => Ok(Reopened::Installable(Box::new(update), bytes)),
+		Err(err) => {
+			tracing::warn!(%err, path = %path.display(), "kept update unreadable; fetching again");
+			staged.discard();
+			let version = update.version.clone();
+			*staged.held.lock().expect("staged update") = Some(Pending::Found(update));
+			Ok(Reopened::Otherwise(UpdateProgress::Available { version }))
+		}
+	}
 }
 
 /// The look on opening, when it is due: daily, or sooner after a session
@@ -543,187 +543,187 @@ async fn reopen(
 /// for. Not while a download waits on disk: the start that found it is
 /// installing it.
 pub async fn daily(handle: AppHandle) {
-    let app = handle.state::<App>();
-    let staged = handle.state::<Staged>();
-    if staged.stored_version().is_some() {
-        tracing::debug!("update check: a kept download is being resumed, not looking");
-        return;
-    }
-    let every = app.update_memory.interval();
-    if !app.update_memory.due(SystemTime::now(), every) {
-        tracing::debug!(
-            ?every,
-            "update check: looked within the interval, not again"
-        );
-        return;
-    }
-    match check_update(app, staged, handle.clone()).await {
-        Ok(progress) => tracing::info!(?progress, "update check"),
-        Err(err) => tracing::info!(reason = %err.message, "update check"),
-    }
+	let app = handle.state::<App>();
+	let staged = handle.state::<Staged>();
+	if staged.stored_version().is_some() {
+		tracing::debug!("update check: a kept download is being resumed, not looking");
+		return;
+	}
+	let every = app.update_memory.interval();
+	if !app.update_memory.due(SystemTime::now(), every) {
+		tracing::debug!(
+			?every,
+			"update check: looked within the interval, not again"
+		);
+		return;
+	}
+	match check_update(app, staged, handle.clone()).await {
+		Ok(progress) => tracing::info!(?progress, "update check"),
+		Err(err) => tracing::info!(reason = %err.message, "update check"),
+	}
 }
 
 /// The release manifest, compared with this build. One small request.
 async fn look(handle: &AppHandle) -> Result<Option<Update>> {
-    let updater = handle
-        .updater()
-        .map_err(|err| ApiError::new("update", err.to_string()))?;
-    updater
-        .check()
-        .await
-        .map_err(|err| ApiError::new("update", format!("looking for a release: {err}")))
+	let updater = handle
+		.updater()
+		.map_err(|err| ApiError::new("update", err.to_string()))?;
+	updater
+		.check()
+		.await
+		.map_err(|err| ApiError::new("update", format!("looking for a release: {err}")))
 }
 
 async fn download(update: &Update, say: &impl Fn(UpdateProgress)) -> Result<Vec<u8>> {
-    let mut got = 0_u64;
-    let mut reported = 0_u64;
-    say(UpdateProgress::Downloading { got: 0, total: 0 });
-    update
-        .download(
-            |chunk, total| {
-                got += chunk as u64;
-                let total = total.unwrap_or(0);
-                if got - reported >= REPORT_EVERY {
-                    reported = got;
-                    say(UpdateProgress::Downloading { got, total });
-                }
-            },
-            || {},
-        )
-        .await
-        .map_err(|err| ApiError::new("update", format!("fetching {}: {err}", update.version)))
+	let mut got = 0_u64;
+	let mut reported = 0_u64;
+	say(UpdateProgress::Downloading { got: 0, total: 0 });
+	update
+		.download(
+			|chunk, total| {
+				got += chunk as u64;
+				let total = total.unwrap_or(0);
+				if got - reported >= REPORT_EVERY {
+					reported = got;
+					say(UpdateProgress::Downloading { got, total });
+				}
+			},
+			|| {},
+		)
+		.await
+		.map_err(|err| ApiError::new("update", format!("fetching {}: {err}", update.version)))
 }
 
 /// What restarting now would take away: a room we are in, a game that is
 /// running, or an engine we launched that is still alive. `None` when
 /// nothing would be lost. A runtime that cannot answer has nothing to lose.
 async fn busy(app: &App) -> Option<&'static str> {
-    if let Ok(snapshot) = app.client.snapshot().await {
-        if snapshot.servers.iter().any(|s| s.game_running.is_some()) {
-            return Some("the game that is running");
-        }
-        if snapshot.room().is_some() {
-            return Some("the room you are in");
-        }
-    }
-    matches!(app.client.engine_pid().await, Ok(Some(_)))
-        .then_some("the engine that is still running")
+	if let Ok(snapshot) = app.client.snapshot().await {
+		if snapshot.servers.iter().any(|s| s.game_running.is_some()) {
+			return Some("the game that is running");
+		}
+		if snapshot.room().is_some() {
+			return Some("the room you are in");
+		}
+	}
+	matches!(app.client.engine_pid().await, Ok(Some(_)))
+		.then_some("the engine that is still running")
 }
 
 /// Hands the installer its bytes. Does not return on success: the process
 /// exits and the new build comes up in its place.
 fn install(
-    handle: &AppHandle,
-    staged: &Staged,
-    update: &Update,
-    bytes: &[u8],
+	handle: &AppHandle,
+	staged: &Staged,
+	update: &Update,
+	bytes: &[u8],
 ) -> Result<UpdateProgress> {
-    // The exit that follows is not Tauri's, so the exit handler that takes the
-    // in-game widget back out of the user's data directory will not run --
-    // nor the one that marks the session as ended, without which every
-    // update would read as a crash and the updated client would look hourly.
-    if let Some(held) = handle.try_state::<crate::InGameHandle>() {
-        drop(held.lock().expect("in-game").take());
-    }
-    if let Some(app) = handle.try_state::<App>() {
-        app.update_memory.ended();
-    }
-    update
-        .install(bytes)
-        .map_err(|err| ApiError::new("update", format!("installing {}: {err}", update.version)))?;
-    // NSIS has exited this process by now; the kept file is for the next
-    // start to recognise as its own version and remove. The AppImage was
-    // rewritten under our feet and nothing relaunches anything, so that is
-    // done here, and the kept file has served.
-    #[cfg(not(windows))]
-    {
-        staged.discard();
-        handle.restart();
-    }
-    #[cfg(windows)]
-    {
-        let _ = staged;
-        Ok(UpdateProgress::Ready {
-            version: update.version.clone(),
-            held_by: None,
-        })
-    }
+	// The exit that follows is not Tauri's, so the exit handler that takes the
+	// in-game widget back out of the user's data directory will not run --
+	// nor the one that marks the session as ended, without which every
+	// update would read as a crash and the updated client would look hourly.
+	if let Some(held) = handle.try_state::<crate::InGameHandle>() {
+		drop(held.lock().expect("in-game").take());
+	}
+	if let Some(app) = handle.try_state::<App>() {
+		app.update_memory.ended();
+	}
+	update
+		.install(bytes)
+		.map_err(|err| ApiError::new("update", format!("installing {}: {err}", update.version)))?;
+	// NSIS has exited this process by now; the kept file is for the next
+	// start to recognise as its own version and remove. The AppImage was
+	// rewritten under our feet and nothing relaunches anything, so that is
+	// done here, and the kept file has served.
+	#[cfg(not(windows))]
+	{
+		staged.discard();
+		handle.restart();
+	}
+	#[cfg(windows)]
+	{
+		let _ = staged;
+		Ok(UpdateProgress::Ready {
+			version: update.version.clone(),
+			held_by: None,
+		})
+	}
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Staged, allows};
+	use super::{Staged, allows};
 
-    /// The two answers cannot drift on the one platform where either of them
-    /// is the uncommon one, which is the only platform nobody develops on.
-    #[test]
-    fn the_refusal_is_carried_exactly_where_there_is_no_category() {
-        let view = super::app_version();
-        assert_eq!(
-            view.no_published_engine.is_some(),
-            content::release::category().is_none()
-        );
-    }
+	/// The two answers cannot drift on the one platform where either of them
+	/// is the uncommon one, which is the only platform nobody develops on.
+	#[test]
+	fn the_refusal_is_carried_exactly_where_there_is_no_category() {
+		let view = super::app_version();
+		assert_eq!(
+			view.no_published_engine.is_some(),
+			content::release::category().is_none()
+		);
+	}
 
-    #[test]
-    fn unset_takes_the_build_default() {
-        assert!(allows(None, true));
-        assert!(!allows(None, false));
-    }
+	#[test]
+	fn unset_takes_the_build_default() {
+		assert!(allows(None, true));
+		assert!(!allows(None, false));
+	}
 
-    #[test]
-    fn anything_but_the_off_words_means_on_even_in_a_dev_run() {
-        for value in ["1", "true", "on", "yes", "", "whatever"] {
-            assert!(allows(Some(value.into()), false), "{value:?}");
-        }
-    }
+	#[test]
+	fn anything_but_the_off_words_means_on_even_in_a_dev_run() {
+		for value in ["1", "true", "on", "yes", "", "whatever"] {
+			assert!(allows(Some(value.into()), false), "{value:?}");
+		}
+	}
 
-    #[test]
-    fn the_four_off_words_mean_off_in_any_case() {
-        for value in ["0", "false", "off", "no", " OFF ", "False"] {
-            assert!(!allows(Some(value.into()), true), "{value:?}");
-        }
-    }
+	#[test]
+	fn the_four_off_words_mean_off_in_any_case() {
+		for value in ["0", "false", "off", "no", " OFF ", "False"] {
+			assert!(!allows(Some(value.into()), true), "{value:?}");
+		}
+	}
 
-    #[test]
-    fn a_kept_download_is_found_by_the_next_start() {
-        let dir = tempfile::tempdir().unwrap();
-        let staged = Staged::open_as(dir.path(), "0.1.10");
-        assert_eq!(staged.stored_version(), None, "nothing kept yet");
+	#[test]
+	fn a_kept_download_is_found_by_the_next_start() {
+		let dir = tempfile::tempdir().unwrap();
+		let staged = Staged::open_as(dir.path(), "0.1.10");
+		assert_eq!(staged.stored_version(), None, "nothing kept yet");
 
-        staged.keep("0.1.11", b"installer");
-        let restarted = Staged::open_as(dir.path(), "0.1.10");
-        assert_eq!(restarted.stored_version(), Some("0.1.11".into()));
-        assert!(!dir.path().join("updates/modlobby-0.1.11.part").exists());
-    }
+		staged.keep("0.1.11", b"installer");
+		let restarted = Staged::open_as(dir.path(), "0.1.10");
+		assert_eq!(restarted.stored_version(), Some("0.1.11".into()));
+		assert!(!dir.path().join("updates/modlobby-0.1.11.part").exists());
+	}
 
-    #[test]
-    fn the_start_that_installed_it_removes_it() {
-        let dir = tempfile::tempdir().unwrap();
-        Staged::open_as(dir.path(), "0.1.10").keep("0.1.11", b"installer");
-        let updated = Staged::open_as(dir.path(), "0.1.11");
-        assert_eq!(updated.stored_version(), None);
-        assert!(!dir.path().join("updates/modlobby-0.1.11.update").exists());
-    }
+	#[test]
+	fn the_start_that_installed_it_removes_it() {
+		let dir = tempfile::tempdir().unwrap();
+		Staged::open_as(dir.path(), "0.1.10").keep("0.1.11", b"installer");
+		let updated = Staged::open_as(dir.path(), "0.1.11");
+		assert_eq!(updated.stored_version(), None);
+		assert!(!dir.path().join("updates/modlobby-0.1.11.update").exists());
+	}
 
-    #[test]
-    fn discarding_leaves_nothing_for_the_next_start() {
-        let dir = tempfile::tempdir().unwrap();
-        let staged = Staged::open_as(dir.path(), "0.1.10");
-        staged.keep("0.1.11", b"installer");
-        staged.discard();
-        assert_eq!(Staged::open_as(dir.path(), "0.1.10").stored_version(), None);
-    }
+	#[test]
+	fn discarding_leaves_nothing_for_the_next_start() {
+		let dir = tempfile::tempdir().unwrap();
+		let staged = Staged::open_as(dir.path(), "0.1.10");
+		staged.keep("0.1.11", b"installer");
+		staged.discard();
+		assert_eq!(Staged::open_as(dir.path(), "0.1.10").stored_version(), None);
+	}
 
-    #[test]
-    fn a_name_that_is_not_a_kept_download_is_left_alone() {
-        let dir = tempfile::tempdir().unwrap();
-        let updates = dir.path().join("updates");
-        std::fs::create_dir_all(&updates).unwrap();
-        std::fs::write(updates.join("notes.txt"), "mine").unwrap();
-        let staged = Staged::open_as(dir.path(), "0.1.10");
-        assert_eq!(staged.stored_version(), None);
-        staged.discard();
-        assert!(updates.join("notes.txt").exists());
-    }
+	#[test]
+	fn a_name_that_is_not_a_kept_download_is_left_alone() {
+		let dir = tempfile::tempdir().unwrap();
+		let updates = dir.path().join("updates");
+		std::fs::create_dir_all(&updates).unwrap();
+		std::fs::write(updates.join("notes.txt"), "mine").unwrap();
+		let staged = Staged::open_as(dir.path(), "0.1.10");
+		assert_eq!(staged.stored_version(), None);
+		staged.discard();
+		assert!(updates.join("notes.txt").exists());
+	}
 }

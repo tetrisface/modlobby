@@ -52,65 +52,65 @@ pub const AT_ONCE: usize = 6;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Tile {
-    pub width: u32,
-    pub height: u32,
+	pub width: u32,
+	pub height: u32,
 }
 
 impl Tile {
-    /// `None` when a side is zero or beyond [`MAX_SIDE`].
-    pub fn new(width: u32, height: u32) -> Option<Self> {
-        let fits = |side: u32| (1..=MAX_SIDE).contains(&side);
-        (fits(width) && fits(height)).then_some(Self { width, height })
-    }
+	/// `None` when a side is zero or beyond [`MAX_SIDE`].
+	pub fn new(width: u32, height: u32) -> Option<Self> {
+		let fits = |side: u32| (1..=MAX_SIDE).contains(&side);
+		(fits(width) && fits(height)).then_some(Self { width, height })
+	}
 }
 
 /// One map to make ahead of time: its published picture, at these sizes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Job {
-    pub url: String,
-    pub tiles: Vec<Tile>,
+	pub url: String,
+	pub tiles: Vec<Tile>,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("{0}")]
-    Request(#[from] reqwest::Error),
-    #[error("the picture answered {0}")]
-    Status(u16),
-    #[error("the picture is not an image: {0}")]
-    Image(#[from] image::ImageError),
-    #[error("{0}")]
-    Io(#[from] std::io::Error),
-    /// A picture in a format this build does not decode: real, published, and
-    /// no use here.
-    #[error("the picture is a {0:?}, which this build cannot decode")]
-    Format(image::ImageFormat),
-    /// The answer this URL already got, given again without asking again.
-    #[error("{0}")]
-    Refused(String),
+	#[error("{0}")]
+	Request(#[from] reqwest::Error),
+	#[error("the picture answered {0}")]
+	Status(u16),
+	#[error("the picture is not an image: {0}")]
+	Image(#[from] image::ImageError),
+	#[error("{0}")]
+	Io(#[from] std::io::Error),
+	/// A picture in a format this build does not decode: real, published, and
+	/// no use here.
+	#[error("the picture is a {0:?}, which this build cannot decode")]
+	Format(image::ImageFormat),
+	/// The answer this URL already got, given again without asking again.
+	#[error("{0}")]
+	Refused(String),
 }
 
 impl Error {
-    /// Whether this says something about the URL or something about the moment.
-    ///
-    /// A 4xx is an answer about this URL, and the URL names the picture, so
-    /// asking again can only get the same answer back -- except the two that
-    /// exist to say "later": a 429 carries the server's own `Retry-After`, and
-    /// a 408 is the connection's, not the picture's. A format this build does
-    /// not decode is about the URL too; the picture will not change formats.
-    /// Everything else is about now, and now passes: a dropped connection, a
-    /// 5xx, a local IO failure, and a body that is not a picture at all, which
-    /// is what a captive portal or a maintenance page looks like from here --
-    /// every map asked for through a hotel's login page would otherwise stay
-    /// blank until the lobby restarts.
-    fn settled(&self) -> bool {
-        match self {
-            Self::Status(408 | 429) => false,
-            Self::Status(code) => (400..500).contains(code),
-            Self::Format(_) => true,
-            Self::Request(_) | Self::Image(_) | Self::Io(_) | Self::Refused(_) => false,
-        }
-    }
+	/// Whether this says something about the URL or something about the moment.
+	///
+	/// A 4xx is an answer about this URL, and the URL names the picture, so
+	/// asking again can only get the same answer back -- except the two that
+	/// exist to say "later": a 429 carries the server's own `Retry-After`, and
+	/// a 408 is the connection's, not the picture's. A format this build does
+	/// not decode is about the URL too; the picture will not change formats.
+	/// Everything else is about now, and now passes: a dropped connection, a
+	/// 5xx, a local IO failure, and a body that is not a picture at all, which
+	/// is what a captive portal or a maintenance page looks like from here --
+	/// every map asked for through a hotel's login page would otherwise stay
+	/// blank until the lobby restarts.
+	fn settled(&self) -> bool {
+		match self {
+			Self::Status(408 | 429) => false,
+			Self::Status(code) => (400..500).contains(code),
+			Self::Format(_) => true,
+			Self::Request(_) | Self::Image(_) | Self::Io(_) | Self::Refused(_) => false,
+		}
+	}
 }
 
 /// The pictures made this run, and where they are kept. Cheap to clone: a
@@ -119,256 +119,256 @@ impl Error {
 pub struct Service(Arc<Inner>);
 
 struct Inner {
-    client: reqwest::Client,
-    dir: PathBuf,
-    /// How many pictures may be in flight at once.
-    ///
-    /// The per-file lock joins callers asking for the *same* picture; a list
-    /// painting thirty rooms asks for thirty different ones in the same frame,
-    /// and those it does not join. Six is what a browser allows itself per
-    /// host, and the rest wait a moment rather than arriving all at once at
-    /// somebody else's image server.
-    gate: tokio::sync::Semaphore,
-    /// URLs that answered something about themselves, and what they answered.
-    ///
-    /// Kept for the run rather than on disk: a picture missing because it was
-    /// published late should come back on the next start, and a lobby that has
-    /// been open for hours should not still be asking for it.
-    refused: Mutex<HashMap<String, String>>,
-    /// One lock per file — the picture as published and each size made from
-    /// it — so a list showing the same map in twenty rooms fetches and
-    /// resizes it once and the other nineteen wait for the file. Kept for the
-    /// run: there are as many as files touched, which is few.
-    making: Mutex<HashMap<PathBuf, Arc<tokio::sync::Mutex<()>>>>,
-    /// What [`Service::warm`] was last asked for and has not made yet, in the
-    /// order asked.
-    queue: Mutex<VecDeque<Job>>,
-    /// Whether a worker is draining the queue. Changed only under `queue`'s
-    /// lock, so a job cannot slip in between the worker's last look at the
-    /// queue and its exit.
-    busy: watch::Sender<bool>,
+	client: reqwest::Client,
+	dir: PathBuf,
+	/// How many pictures may be in flight at once.
+	///
+	/// The per-file lock joins callers asking for the *same* picture; a list
+	/// painting thirty rooms asks for thirty different ones in the same frame,
+	/// and those it does not join. Six is what a browser allows itself per
+	/// host, and the rest wait a moment rather than arriving all at once at
+	/// somebody else's image server.
+	gate: tokio::sync::Semaphore,
+	/// URLs that answered something about themselves, and what they answered.
+	///
+	/// Kept for the run rather than on disk: a picture missing because it was
+	/// published late should come back on the next start, and a lobby that has
+	/// been open for hours should not still be asking for it.
+	refused: Mutex<HashMap<String, String>>,
+	/// One lock per file — the picture as published and each size made from
+	/// it — so a list showing the same map in twenty rooms fetches and
+	/// resizes it once and the other nineteen wait for the file. Kept for the
+	/// run: there are as many as files touched, which is few.
+	making: Mutex<HashMap<PathBuf, Arc<tokio::sync::Mutex<()>>>>,
+	/// What [`Service::warm`] was last asked for and has not made yet, in the
+	/// order asked.
+	queue: Mutex<VecDeque<Job>>,
+	/// Whether a worker is draining the queue. Changed only under `queue`'s
+	/// lock, so a job cannot slip in between the worker's last look at the
+	/// queue and its exit.
+	busy: watch::Sender<bool>,
 }
 
 impl Service {
-    pub fn new(client: reqwest::Client, cache_dir: &Path) -> Self {
-        Self(Arc::new(Inner {
-            client,
-            dir: cache_dir.join(CACHE_DIR),
-            gate: tokio::sync::Semaphore::new(AT_ONCE),
-            refused: Mutex::new(HashMap::new()),
-            making: Mutex::new(HashMap::new()),
-            queue: Mutex::new(VecDeque::new()),
-            busy: watch::Sender::new(false),
-        }))
-    }
+	pub fn new(client: reqwest::Client, cache_dir: &Path) -> Self {
+		Self(Arc::new(Inner {
+			client,
+			dir: cache_dir.join(CACHE_DIR),
+			gate: tokio::sync::Semaphore::new(AT_ONCE),
+			refused: Mutex::new(HashMap::new()),
+			making: Mutex::new(HashMap::new()),
+			queue: Mutex::new(VecDeque::new()),
+			busy: watch::Sender::new(false),
+		}))
+	}
 
-    /// The picture at `url` filling `tile`, as PNG bytes: from disk when it
-    /// has been made before, otherwise made from the published picture —
-    /// itself fetched only the first time — and kept.
-    pub async fn get(&self, url: &str, tile: Tile) -> Result<Vec<u8>, Error> {
-        self.make(url, tile, "", fill).await
-    }
+	/// The picture at `url` filling `tile`, as PNG bytes: from disk when it
+	/// has been made before, otherwise made from the published picture —
+	/// itself fetched only the first time — and kept.
+	pub async fn get(&self, url: &str, tile: Tile) -> Result<Vec<u8>, Error> {
+		self.make(url, tile, "", fill).await
+	}
 
-    /// The picture at `url` whole inside `tile`: scaled to fit, never cropped,
-    /// so the box it is drawn in pads it instead of cutting it. What a
-    /// screenshot of an interface wants — its edges are the part that says
-    /// which interface it is.
-    pub async fn get_whole(&self, url: &str, tile: Tile) -> Result<Vec<u8>, Error> {
-        self.make(url, tile, "-whole", fit).await
-    }
+	/// The picture at `url` whole inside `tile`: scaled to fit, never cropped,
+	/// so the box it is drawn in pads it instead of cutting it. What a
+	/// screenshot of an interface wants — its edges are the part that says
+	/// which interface it is.
+	pub async fn get_whole(&self, url: &str, tile: Tile) -> Result<Vec<u8>, Error> {
+		self.make(url, tile, "-whole", fit).await
+	}
 
-    async fn make(
-        &self,
-        url: &str,
-        tile: Tile,
-        kind: &str,
-        resize: fn(&[u8], Tile) -> Result<Vec<u8>, image::ImageError>,
-    ) -> Result<Vec<u8>, Error> {
-        let path = self.0.dir.join(format!(
-            "{}-{}x{}{kind}.png",
-            hash(url),
-            tile.width,
-            tile.height
-        ));
-        if let Ok(png) = tokio::fs::read(&path).await {
-            return Ok(png);
-        }
-        let lock = self.lock_for(&path);
-        let _making = lock.lock().await;
-        // Made by whoever held the lock before us.
-        if let Ok(png) = tokio::fs::read(&path).await {
-            return Ok(png);
-        }
-        let picture = self.published(url).await?;
-        // Decoding and resizing a 1024px picture is tens of milliseconds of
-        // CPU, which the async runtime should not sit through.
-        let png = tokio::task::spawn_blocking(move || resize(&picture, tile))
-            .await
-            .expect("resizing does not panic")?;
-        write(&path, &png).await?;
-        Ok(png)
-    }
+	async fn make(
+		&self,
+		url: &str,
+		tile: Tile,
+		kind: &str,
+		resize: fn(&[u8], Tile) -> Result<Vec<u8>, image::ImageError>,
+	) -> Result<Vec<u8>, Error> {
+		let path = self.0.dir.join(format!(
+			"{}-{}x{}{kind}.png",
+			hash(url),
+			tile.width,
+			tile.height
+		));
+		if let Ok(png) = tokio::fs::read(&path).await {
+			return Ok(png);
+		}
+		let lock = self.lock_for(&path);
+		let _making = lock.lock().await;
+		// Made by whoever held the lock before us.
+		if let Ok(png) = tokio::fs::read(&path).await {
+			return Ok(png);
+		}
+		let picture = self.published(url).await?;
+		// Decoding and resizing a 1024px picture is tens of milliseconds of
+		// CPU, which the async runtime should not sit through.
+		let png = tokio::task::spawn_blocking(move || resize(&picture, tile))
+			.await
+			.expect("resizing does not panic")?;
+		write(&path, &png).await?;
+		Ok(png)
+	}
 
-    /// Makes `jobs` ahead of time, in order, on one worker: the pictures at
-    /// the top of the list are the ones about to be looked at. What was
-    /// queued by an earlier call and not yet made is dropped — the newest
-    /// list is what is on screen. Anything that fails is skipped; the screen
-    /// will ask for it itself and see the error then.
-    ///
-    /// Must be called on the async runtime: the worker is spawned on it.
-    pub fn warm(&self, jobs: Vec<Job>) {
-        let mut queue = self.0.queue.lock().expect("the queue is never poisoned");
-        *queue = jobs.into();
-        if self.0.busy.send_replace(true) {
-            return;
-        }
-        let worker = self.clone();
-        tokio::spawn(worker.drain());
-    }
+	/// Makes `jobs` ahead of time, in order, on one worker: the pictures at
+	/// the top of the list are the ones about to be looked at. What was
+	/// queued by an earlier call and not yet made is dropped — the newest
+	/// list is what is on screen. Anything that fails is skipped; the screen
+	/// will ask for it itself and see the error then.
+	///
+	/// Must be called on the async runtime: the worker is spawned on it.
+	pub fn warm(&self, jobs: Vec<Job>) {
+		let mut queue = self.0.queue.lock().expect("the queue is never poisoned");
+		*queue = jobs.into();
+		if self.0.busy.send_replace(true) {
+			return;
+		}
+		let worker = self.clone();
+		tokio::spawn(worker.drain());
+	}
 
-    /// Resolves once no worker is running: what was warmed is on disk.
-    pub async fn settled(&self) {
-        let mut busy = self.0.busy.subscribe();
-        // A closed channel means the service is gone, which is settled too.
-        let _ = busy.wait_for(|busy| !busy).await;
-    }
+	/// Resolves once no worker is running: what was warmed is on disk.
+	pub async fn settled(&self) {
+		let mut busy = self.0.busy.subscribe();
+		// A closed channel means the service is gone, which is settled too.
+		let _ = busy.wait_for(|busy| !busy).await;
+	}
 
-    async fn drain(self) {
-        loop {
-            let next = {
-                let mut queue = self.0.queue.lock().expect("the queue is never poisoned");
-                match queue.pop_front() {
-                    Some(job) => job,
-                    None => {
-                        self.0.busy.send_replace(false);
-                        return;
-                    }
-                }
-            };
-            for tile in next.tiles {
-                if let Err(err) = self.get(&next.url, tile).await {
-                    tracing::debug!(url = next.url, ?tile, %err, "not warmed");
-                }
-            }
-        }
-    }
+	async fn drain(self) {
+		loop {
+			let next = {
+				let mut queue = self.0.queue.lock().expect("the queue is never poisoned");
+				match queue.pop_front() {
+					Some(job) => job,
+					None => {
+						self.0.busy.send_replace(false);
+						return;
+					}
+				}
+			};
+			for tile in next.tiles {
+				if let Err(err) = self.get(&next.url, tile).await {
+					tracing::debug!(url = next.url, ?tile, %err, "not warmed");
+				}
+			}
+		}
+	}
 
-    /// The picture as published, from disk after the first time — and from the
-    /// refusal it already got, if it got one.
-    pub async fn published(&self, url: &str) -> Result<Vec<u8>, Error> {
-        let path = self.0.dir.join(format!("{}.src", hash(url)));
-        if let Ok(picture) = tokio::fs::read(&path).await {
-            return Ok(picture);
-        }
-        if let Some(refused) = self.refused(url) {
-            return Err(Error::Refused(refused));
-        }
-        let lock = self.lock_for(&path);
-        let _fetching = lock.lock().await;
-        // Either could have happened while somebody else held the lock asking
-        // this same question, and both are answers.
-        if let Ok(picture) = tokio::fs::read(&path).await {
-            return Ok(picture);
-        }
-        if let Some(refused) = self.refused(url) {
-            return Err(Error::Refused(refused));
-        }
-        let picture = self
-            .fetch(url)
-            .await
-            .inspect_err(|err| self.refuse(url, err))?;
-        write(&path, &picture).await?;
-        Ok(picture)
-    }
+	/// The picture as published, from disk after the first time — and from the
+	/// refusal it already got, if it got one.
+	pub async fn published(&self, url: &str) -> Result<Vec<u8>, Error> {
+		let path = self.0.dir.join(format!("{}.src", hash(url)));
+		if let Ok(picture) = tokio::fs::read(&path).await {
+			return Ok(picture);
+		}
+		if let Some(refused) = self.refused(url) {
+			return Err(Error::Refused(refused));
+		}
+		let lock = self.lock_for(&path);
+		let _fetching = lock.lock().await;
+		// Either could have happened while somebody else held the lock asking
+		// this same question, and both are answers.
+		if let Ok(picture) = tokio::fs::read(&path).await {
+			return Ok(picture);
+		}
+		if let Some(refused) = self.refused(url) {
+			return Err(Error::Refused(refused));
+		}
+		let picture = self
+			.fetch(url)
+			.await
+			.inspect_err(|err| self.refuse(url, err))?;
+		write(&path, &picture).await?;
+		Ok(picture)
+	}
 
-    /// The answer this URL already got, when it got one worth keeping.
-    fn refused(&self, url: &str) -> Option<String> {
-        self.0
-            .refused
-            .lock()
-            .expect("the refusal map is never poisoned")
-            .get(url)
-            .cloned()
-    }
+	/// The answer this URL already got, when it got one worth keeping.
+	fn refused(&self, url: &str) -> Option<String> {
+		self.0
+			.refused
+			.lock()
+			.expect("the refusal map is never poisoned")
+			.get(url)
+			.cloned()
+	}
 
-    /// Keeps an answer that was about the URL, so it is not asked for twice.
-    fn refuse(&self, url: &str, err: &Error) {
-        if !err.settled() {
-            return;
-        }
-        tracing::debug!(url, %err, "picture refused; not asking again this run");
-        self.0
-            .refused
-            .lock()
-            .expect("the refusal map is never poisoned")
-            .insert(url.to_owned(), err.to_string());
-    }
+	/// Keeps an answer that was about the URL, so it is not asked for twice.
+	fn refuse(&self, url: &str, err: &Error) {
+		if !err.settled() {
+			return;
+		}
+		tracing::debug!(url, %err, "picture refused; not asking again this run");
+		self.0
+			.refused
+			.lock()
+			.expect("the refusal map is never poisoned")
+			.insert(url.to_owned(), err.to_string());
+	}
 
-    fn lock_for(&self, path: &Path) -> Arc<tokio::sync::Mutex<()>> {
-        self.0
-            .making
-            .lock()
-            .expect("the lock map is never poisoned")
-            .entry(path.to_owned())
-            .or_default()
-            .clone()
-    }
+	fn lock_for(&self, path: &Path) -> Arc<tokio::sync::Mutex<()>> {
+		self.0
+			.making
+			.lock()
+			.expect("the lock map is never poisoned")
+			.entry(path.to_owned())
+			.or_default()
+			.clone()
+	}
 
-    /// A body that is a picture, by its magic bytes: a maintenance page or an
-    /// error dressed as 200 must not be kept as if it were one.
-    async fn fetch(&self, url: &str) -> Result<Vec<u8>, Error> {
-        let _turn = self
-            .0
-            .gate
-            .acquire()
-            .await
-            .expect("the gate is never closed");
-        let response = self.0.client.get(url).send().await?;
-        if !response.status().is_success() {
-            return Err(Error::Status(response.status().as_u16()));
-        }
-        let picture = response.bytes().await?;
-        // Two questions, not one: the magic bytes know some twenty formats,
-        // the build decodes three. A real picture in one of the others must
-        // not be kept as if it could be drawn, or it is decoded and fails on
-        // every paint for good -- the files are kept forever, and this is the
-        // one place that decides what gets in.
-        let format = image::guess_format(&picture)?;
-        if !format.reading_enabled() {
-            return Err(Error::Format(format));
-        }
-        Ok(picture.to_vec())
-    }
+	/// A body that is a picture, by its magic bytes: a maintenance page or an
+	/// error dressed as 200 must not be kept as if it were one.
+	async fn fetch(&self, url: &str) -> Result<Vec<u8>, Error> {
+		let _turn = self
+			.0
+			.gate
+			.acquire()
+			.await
+			.expect("the gate is never closed");
+		let response = self.0.client.get(url).send().await?;
+		if !response.status().is_success() {
+			return Err(Error::Status(response.status().as_u16()));
+		}
+		let picture = response.bytes().await?;
+		// Two questions, not one: the magic bytes know some twenty formats,
+		// the build decodes three. A real picture in one of the others must
+		// not be kept as if it could be drawn, or it is decoded and fails on
+		// every paint for good -- the files are kept forever, and this is the
+		// one place that decides what gets in.
+		let format = image::guess_format(&picture)?;
+		if !format.reading_enabled() {
+			return Err(Error::Format(format));
+		}
+		Ok(picture.to_vec())
+	}
 }
 
 /// What to call a picture kept as it came: its format, by the magic bytes.
 pub fn mime(picture: &[u8]) -> &'static str {
-    image::guess_format(picture)
-        .map(|format| format.to_mime_type())
-        .unwrap_or("application/octet-stream")
+	image::guess_format(picture)
+		.map(|format| format.to_mime_type())
+		.unwrap_or("application/octet-stream")
 }
 
 /// What a picture's files are named after: the URL, which changes when the
 /// picture does, and which has characters a file name cannot.
 fn hash(url: &str) -> String {
-    Md5::digest(url.as_bytes())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+	Md5::digest(url.as_bytes())
+		.iter()
+		.map(|byte| format!("{byte:02x}"))
+		.collect()
 }
 
 /// `picture`, in any format the decoder knows, scaled to cover `tile` and
 /// cropped to it about the centre — what CSS `object-fit: cover` would have
 /// done — as a PNG of exactly that size. Pure.
 pub fn fill(picture: &[u8], tile: Tile) -> Result<Vec<u8>, image::ImageError> {
-    let image = ImageReader::new(Cursor::new(picture))
-        .with_guessed_format()?
-        .decode()?;
-    let small = image.resize_to_fill(tile.width, tile.height, FilterType::Lanczos3);
-    let mut png = Cursor::new(Vec::new());
-    // A map photo has no alpha worth keeping, and RGB halves the file.
-    small.into_rgb8().write_to(&mut png, ImageFormat::Png)?;
-    Ok(png.into_inner())
+	let image = ImageReader::new(Cursor::new(picture))
+		.with_guessed_format()?
+		.decode()?;
+	let small = image.resize_to_fill(tile.width, tile.height, FilterType::Lanczos3);
+	let mut png = Cursor::new(Vec::new());
+	// A map photo has no alpha worth keeping, and RGB halves the file.
+	small.into_rgb8().write_to(&mut png, ImageFormat::Png)?;
+	Ok(png.into_inner())
 }
 
 /// `picture`, scaled to fit *inside* `tile` with its shape kept and nothing
@@ -376,354 +376,354 @@ pub fn fill(picture: &[u8], tile: Tile) -> Result<Vec<u8>, image::ImageError> {
 /// bigger than the tile on either side. The padding is the box's, not the
 /// picture's, so a tall screenshot and a wide one both arrive whole. Pure.
 pub fn fit(picture: &[u8], tile: Tile) -> Result<Vec<u8>, image::ImageError> {
-    let image = ImageReader::new(Cursor::new(picture))
-        .with_guessed_format()?
-        .decode()?;
-    let small = image.resize(tile.width, tile.height, FilterType::Lanczos3);
-    let mut png = Cursor::new(Vec::new());
-    small.into_rgb8().write_to(&mut png, ImageFormat::Png)?;
-    Ok(png.into_inner())
+	let image = ImageReader::new(Cursor::new(picture))
+		.with_guessed_format()?
+		.decode()?;
+	let small = image.resize(tile.width, tile.height, FilterType::Lanczos3);
+	let mut png = Cursor::new(Vec::new());
+	small.into_rgb8().write_to(&mut png, ImageFormat::Png)?;
+	Ok(png.into_inner())
 }
 
 /// Temp file and rename, so a crash never leaves half a picture behind.
 async fn write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        tokio::fs::create_dir_all(parent).await?;
-    }
-    let tmp = path.with_extension("tmp");
-    tokio::fs::write(&tmp, bytes).await?;
-    tokio::fs::rename(&tmp, path).await
+	if let Some(parent) = path.parent() {
+		tokio::fs::create_dir_all(parent).await?;
+	}
+	let tmp = path.with_extension("tmp");
+	tokio::fs::write(&tmp, bytes).await?;
+	tokio::fs::rename(&tmp, path).await
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use image::{Rgb, RgbImage};
-    use wiremock::matchers::{method, path};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
+	use super::*;
+	use image::{Rgb, RgbImage};
+	use wiremock::matchers::{method, path};
+	use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    const RED: Rgb<u8> = Rgb([255, 0, 0]);
-    const BLUE: Rgb<u8> = Rgb([0, 0, 255]);
+	const RED: Rgb<u8> = Rgb([255, 0, 0]);
+	const BLUE: Rgb<u8> = Rgb([0, 0, 255]);
 
-    /// A 200×100 picture, red on the left and blue on the right, so a crop
-    /// shows where it was taken from.
-    fn halves(format: ImageFormat) -> Vec<u8> {
-        let picture = RgbImage::from_fn(200, 100, |x, _| if x < 100 { RED } else { BLUE });
-        let mut bytes = Cursor::new(Vec::new());
-        picture.write_to(&mut bytes, format).unwrap();
-        bytes.into_inner()
-    }
+	/// A 200×100 picture, red on the left and blue on the right, so a crop
+	/// shows where it was taken from.
+	fn halves(format: ImageFormat) -> Vec<u8> {
+		let picture = RgbImage::from_fn(200, 100, |x, _| if x < 100 { RED } else { BLUE });
+		let mut bytes = Cursor::new(Vec::new());
+		picture.write_to(&mut bytes, format).unwrap();
+		bytes.into_inner()
+	}
 
-    fn tile(width: u32, height: u32) -> Tile {
-        Tile::new(width, height).unwrap()
-    }
+	fn tile(width: u32, height: u32) -> Tile {
+		Tile::new(width, height).unwrap()
+	}
 
-    async fn serving(picture: Vec<u8>, times: u64) -> (MockServer, String) {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/map.png"))
-            .respond_with(ResponseTemplate::new(200).set_body_bytes(picture))
-            .expect(times)
-            .mount(&server)
-            .await;
-        let url = format!("{}/map.png", server.uri());
-        (server, url)
-    }
+	async fn serving(picture: Vec<u8>, times: u64) -> (MockServer, String) {
+		let server = MockServer::start().await;
+		Mock::given(method("GET"))
+			.and(path("/map.png"))
+			.respond_with(ResponseTemplate::new(200).set_body_bytes(picture))
+			.expect(times)
+			.mount(&server)
+			.await;
+		let url = format!("{}/map.png", server.uri());
+		(server, url)
+	}
 
-    fn service(dir: &Path) -> Service {
-        Service::new(crate::http::client("test"), dir)
-    }
+	fn service(dir: &Path) -> Service {
+		Service::new(crate::http::client("test"), dir)
+	}
 
-    fn kept(dir: &Path) -> Vec<String> {
-        let mut names: Vec<String> = std::fs::read_dir(dir.join(CACHE_DIR))
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
-            .collect();
-        names.sort();
-        names
-    }
+	fn kept(dir: &Path) -> Vec<String> {
+		let mut names: Vec<String> = std::fs::read_dir(dir.join(CACHE_DIR))
+			.unwrap()
+			.map(|entry| entry.unwrap().file_name().into_string().unwrap())
+			.collect();
+		names.sort();
+		names
+	}
 
-    #[test]
-    fn a_tile_has_sides_between_one_and_the_source() {
-        assert!(Tile::new(50, 32).is_some());
-        assert!(Tile::new(MAX_SIDE, 1).is_some());
-        assert!(Tile::new(0, 32).is_none());
-        assert!(Tile::new(50, MAX_SIDE + 1).is_none());
-    }
+	#[test]
+	fn a_tile_has_sides_between_one_and_the_source() {
+		assert!(Tile::new(50, 32).is_some());
+		assert!(Tile::new(MAX_SIDE, 1).is_some());
+		assert!(Tile::new(0, 32).is_none());
+		assert!(Tile::new(50, MAX_SIDE + 1).is_none());
+	}
 
-    #[test]
-    fn a_fill_covers_the_tile_and_crops_about_the_centre() {
-        // 200×100 into 50×50: scaled to 100×50, then the middle 50 kept, so
-        // the seam between the halves lands in the middle of the tile.
-        let png = fill(&halves(ImageFormat::Png), tile(50, 50)).unwrap();
-        let small = image::load_from_memory(&png).unwrap().into_rgb8();
-        assert_eq!((small.width(), small.height()), (50, 50));
-        assert_eq!(*small.get_pixel(5, 25), RED);
-        assert_eq!(*small.get_pixel(44, 25), BLUE);
-    }
+	#[test]
+	fn a_fill_covers_the_tile_and_crops_about_the_centre() {
+		// 200×100 into 50×50: scaled to 100×50, then the middle 50 kept, so
+		// the seam between the halves lands in the middle of the tile.
+		let png = fill(&halves(ImageFormat::Png), tile(50, 50)).unwrap();
+		let small = image::load_from_memory(&png).unwrap().into_rgb8();
+		assert_eq!((small.width(), small.height()), (50, 50));
+		assert_eq!(*small.get_pixel(5, 25), RED);
+		assert_eq!(*small.get_pixel(44, 25), BLUE);
+	}
 
-    #[test]
-    fn a_fit_keeps_the_whole_picture_and_its_shape() {
-        // 200×100 into 50×50: 50×25, both halves still there and neither side
-        // past the tile — the box pads what is left over.
-        let png = fit(&halves(ImageFormat::Png), tile(50, 50)).unwrap();
-        let small = image::load_from_memory(&png).unwrap().into_rgb8();
-        assert_eq!((small.width(), small.height()), (50, 25));
-        assert_eq!(*small.get_pixel(5, 12), RED);
-        assert_eq!(*small.get_pixel(44, 12), BLUE);
-    }
+	#[test]
+	fn a_fit_keeps_the_whole_picture_and_its_shape() {
+		// 200×100 into 50×50: 50×25, both halves still there and neither side
+		// past the tile — the box pads what is left over.
+		let png = fit(&halves(ImageFormat::Png), tile(50, 50)).unwrap();
+		let small = image::load_from_memory(&png).unwrap().into_rgb8();
+		assert_eq!((small.width(), small.height()), (50, 25));
+		assert_eq!(*small.get_pixel(5, 12), RED);
+		assert_eq!(*small.get_pixel(44, 12), BLUE);
+	}
 
-    #[test]
-    fn a_webp_is_decoded() {
-        let png = fill(&halves(ImageFormat::WebP), tile(20, 10)).unwrap();
-        let small = image::load_from_memory(&png).unwrap();
-        assert_eq!((small.width(), small.height()), (20, 10));
-    }
+	#[test]
+	fn a_webp_is_decoded() {
+		let png = fill(&halves(ImageFormat::WebP), tile(20, 10)).unwrap();
+		let small = image::load_from_memory(&png).unwrap();
+		assert_eq!((small.width(), small.height()), (20, 10));
+	}
 
-    #[test]
-    fn bytes_that_are_not_a_picture_are_refused() {
-        assert!(fill(b"<html>not found</html>", tile(20, 10)).is_err());
-    }
+	#[test]
+	fn bytes_that_are_not_a_picture_are_refused() {
+		assert!(fill(b"<html>not found</html>", tile(20, 10)).is_err());
+	}
 
-    #[tokio::test]
-    async fn a_picture_is_fetched_once_and_then_read_from_disk() {
-        let (_server, url) = serving(halves(ImageFormat::Png), 1).await;
-        let dir = tempfile::tempdir().unwrap();
-        let thumbs = service(dir.path());
+	#[tokio::test]
+	async fn a_picture_is_fetched_once_and_then_read_from_disk() {
+		let (_server, url) = serving(halves(ImageFormat::Png), 1).await;
+		let dir = tempfile::tempdir().unwrap();
+		let thumbs = service(dir.path());
 
-        let first = thumbs.get(&url, tile(50, 32)).await.unwrap();
-        let again = thumbs.get(&url, tile(50, 32)).await.unwrap();
-        assert_eq!(first, again);
-        let small = image::load_from_memory(&first).unwrap();
-        assert_eq!((small.width(), small.height()), (50, 32));
+		let first = thumbs.get(&url, tile(50, 32)).await.unwrap();
+		let again = thumbs.get(&url, tile(50, 32)).await.unwrap();
+		assert_eq!(first, again);
+		let small = image::load_from_memory(&first).unwrap();
+		assert_eq!((small.width(), small.height()), (50, 32));
 
-        // The picture as published, and the one size made from it.
-        let files = kept(dir.path());
-        assert_eq!(files.len(), 2, "{files:?}");
-        assert!(files[0].ends_with("-50x32.png"), "{files:?}");
-        assert!(files[1].ends_with(".src"), "{files:?}");
-    }
+		// The picture as published, and the one size made from it.
+		let files = kept(dir.path());
+		assert_eq!(files.len(), 2, "{files:?}");
+		assert!(files[0].ends_with("-50x32.png"), "{files:?}");
+		assert!(files[1].ends_with(".src"), "{files:?}");
+	}
 
-    #[tokio::test]
-    async fn the_same_picture_asked_for_together_is_fetched_once() {
-        let (_server, url) = serving(halves(ImageFormat::Png), 1).await;
-        let dir = tempfile::tempdir().unwrap();
-        let thumbs = service(dir.path());
+	#[tokio::test]
+	async fn the_same_picture_asked_for_together_is_fetched_once() {
+		let (_server, url) = serving(halves(ImageFormat::Png), 1).await;
+		let dir = tempfile::tempdir().unwrap();
+		let thumbs = service(dir.path());
 
-        let (one, two) = tokio::join!(
-            thumbs.get(&url, tile(50, 32)),
-            thumbs.get(&url, tile(50, 32))
-        );
-        assert_eq!(one.unwrap(), two.unwrap());
-    }
+		let (one, two) = tokio::join!(
+			thumbs.get(&url, tile(50, 32)),
+			thumbs.get(&url, tile(50, 32))
+		);
+		assert_eq!(one.unwrap(), two.unwrap());
+	}
 
-    #[tokio::test]
-    async fn a_second_size_is_made_from_the_kept_picture() {
-        let (_server, url) = serving(halves(ImageFormat::Png), 1).await;
-        let dir = tempfile::tempdir().unwrap();
-        let thumbs = service(dir.path());
+	#[tokio::test]
+	async fn a_second_size_is_made_from_the_kept_picture() {
+		let (_server, url) = serving(halves(ImageFormat::Png), 1).await;
+		let dir = tempfile::tempdir().unwrap();
+		let thumbs = service(dir.path());
 
-        thumbs.get(&url, tile(50, 32)).await.unwrap();
-        let bigger = thumbs.get(&url, tile(100, 64)).await.unwrap();
-        let small = image::load_from_memory(&bigger).unwrap();
-        assert_eq!((small.width(), small.height()), (100, 64));
-        assert_eq!(kept(dir.path()).len(), 3);
-    }
+		thumbs.get(&url, tile(50, 32)).await.unwrap();
+		let bigger = thumbs.get(&url, tile(100, 64)).await.unwrap();
+		let small = image::load_from_memory(&bigger).unwrap();
+		assert_eq!((small.width(), small.height()), (100, 64));
+		assert_eq!(kept(dir.path()).len(), 3);
+	}
 
-    #[tokio::test]
-    async fn two_sizes_asked_for_together_fetch_the_picture_once() {
-        let (_server, url) = serving(halves(ImageFormat::Png), 1).await;
-        let dir = tempfile::tempdir().unwrap();
-        let thumbs = service(dir.path());
+	#[tokio::test]
+	async fn two_sizes_asked_for_together_fetch_the_picture_once() {
+		let (_server, url) = serving(halves(ImageFormat::Png), 1).await;
+		let dir = tempfile::tempdir().unwrap();
+		let thumbs = service(dir.path());
 
-        let (one, two) = tokio::join!(
-            thumbs.get(&url, tile(50, 32)),
-            thumbs.get(&url, tile(100, 64))
-        );
-        one.unwrap();
-        two.unwrap();
-    }
+		let (one, two) = tokio::join!(
+			thumbs.get(&url, tile(50, 32)),
+			thumbs.get(&url, tile(100, 64))
+		);
+		one.unwrap();
+		two.unwrap();
+	}
 
-    #[tokio::test]
-    async fn a_missing_picture_is_an_error_and_leaves_nothing_behind() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .respond_with(ResponseTemplate::new(404))
-            .mount(&server)
-            .await;
-        let dir = tempfile::tempdir().unwrap();
-        let thumbs = service(dir.path());
+	#[tokio::test]
+	async fn a_missing_picture_is_an_error_and_leaves_nothing_behind() {
+		let server = MockServer::start().await;
+		Mock::given(method("GET"))
+			.respond_with(ResponseTemplate::new(404))
+			.mount(&server)
+			.await;
+		let dir = tempfile::tempdir().unwrap();
+		let thumbs = service(dir.path());
 
-        let err = thumbs
-            .get(&format!("{}/gone.png", server.uri()), tile(50, 32))
-            .await
-            .unwrap_err();
-        assert!(matches!(err, Error::Status(404)), "{err}");
-        assert!(!dir.path().join(CACHE_DIR).exists());
-    }
+		let err = thumbs
+			.get(&format!("{}/gone.png", server.uri()), tile(50, 32))
+			.await
+			.unwrap_err();
+		assert!(matches!(err, Error::Status(404)), "{err}");
+		assert!(!dir.path().join(CACHE_DIR).exists());
+	}
 
-    #[tokio::test]
-    async fn a_body_that_is_not_a_picture_is_an_error_and_is_not_kept() {
-        let (_server, url) = serving(b"<html>maintenance</html>".to_vec(), 1).await;
-        let dir = tempfile::tempdir().unwrap();
-        let thumbs = service(dir.path());
+	#[tokio::test]
+	async fn a_body_that_is_not_a_picture_is_an_error_and_is_not_kept() {
+		let (_server, url) = serving(b"<html>maintenance</html>".to_vec(), 1).await;
+		let dir = tempfile::tempdir().unwrap();
+		let thumbs = service(dir.path());
 
-        let err = thumbs.get(&url, tile(50, 32)).await.unwrap_err();
-        assert!(matches!(err, Error::Image(_)), "{err}");
-        assert!(!dir.path().join(CACHE_DIR).exists());
-    }
+		let err = thumbs.get(&url, tile(50, 32)).await.unwrap_err();
+		assert!(matches!(err, Error::Image(_)), "{err}");
+		assert!(!dir.path().join(CACHE_DIR).exists());
+	}
 
-    /// A room whose map has no published picture sits in the list like any
-    /// other, and the list repaints — on a new room, a filter, a scroll. Every
-    /// one of those used to be another 404 for BAR's image server.
-    #[tokio::test]
-    async fn a_picture_that_is_not_there_is_asked_for_once() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/gone.png"))
-            .respond_with(ResponseTemplate::new(404))
-            .expect(1)
-            .mount(&server)
-            .await;
-        let url = format!("{}/gone.png", server.uri());
-        let dir = tempfile::tempdir().unwrap();
-        let thumbs = service(dir.path());
+	/// A room whose map has no published picture sits in the list like any
+	/// other, and the list repaints — on a new room, a filter, a scroll. Every
+	/// one of those used to be another 404 for BAR's image server.
+	#[tokio::test]
+	async fn a_picture_that_is_not_there_is_asked_for_once() {
+		let server = MockServer::start().await;
+		Mock::given(method("GET"))
+			.and(path("/gone.png"))
+			.respond_with(ResponseTemplate::new(404))
+			.expect(1)
+			.mount(&server)
+			.await;
+		let url = format!("{}/gone.png", server.uri());
+		let dir = tempfile::tempdir().unwrap();
+		let thumbs = service(dir.path());
 
-        // The first answer is the server's, and every one after it is the
-        // same answer without the asking.
-        let first = thumbs.get(&url, tile(50, 32)).await.unwrap_err();
-        assert!(matches!(first, Error::Status(404)), "{first}");
-        for _ in 0..4 {
-            let again = thumbs.get(&url, tile(50, 32)).await.unwrap_err();
-            assert!(matches!(again, Error::Refused(_)), "{again}");
-            assert_eq!(again.to_string(), first.to_string());
-        }
-        // A size never asked for before goes through the same refusal rather
-        // than fetching the picture it would be cut from.
-        let other = thumbs.get(&url, tile(130, 130)).await.unwrap_err();
-        assert!(matches!(other, Error::Refused(_)), "{other}");
+		// The first answer is the server's, and every one after it is the
+		// same answer without the asking.
+		let first = thumbs.get(&url, tile(50, 32)).await.unwrap_err();
+		assert!(matches!(first, Error::Status(404)), "{first}");
+		for _ in 0..4 {
+			let again = thumbs.get(&url, tile(50, 32)).await.unwrap_err();
+			assert!(matches!(again, Error::Refused(_)), "{again}");
+			assert_eq!(again.to_string(), first.to_string());
+		}
+		// A size never asked for before goes through the same refusal rather
+		// than fetching the picture it would be cut from.
+		let other = thumbs.get(&url, tile(130, 130)).await.unwrap_err();
+		assert!(matches!(other, Error::Refused(_)), "{other}");
 
-        // Warming is the other way the same URL comes round again.
-        thumbs.warm(vec![Job {
-            url: url.clone(),
-            tiles: vec![tile(50, 32)],
-        }]);
-        thumbs.settled().await;
+		// Warming is the other way the same URL comes round again.
+		thumbs.warm(vec![Job {
+			url: url.clone(),
+			tiles: vec![tile(50, 32)],
+		}]);
+		thumbs.settled().await;
 
-        // The mock's own expectation is the assertion: one request, not seven.
-        server.verify().await;
-    }
+		// The mock's own expectation is the assertion: one request, not seven.
+		server.verify().await;
+	}
 
-    /// The magic-byte check knows some twenty formats and the build decodes
-    /// three. A picture in one of the others used to be kept as published and
-    /// then fail to decode on every paint, forever, since kept files are for
-    /// good. Now it is an answer about the URL: asked once, and nothing kept.
-    #[tokio::test]
-    async fn a_format_this_build_cannot_draw_is_asked_for_once_and_not_kept() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/anim.gif"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_bytes(b"GIF89a\x01\x00\x01\x00\x00".to_vec()),
-            )
-            .expect(1)
-            .mount(&server)
-            .await;
-        let url = format!("{}/anim.gif", server.uri());
-        let dir = tempfile::tempdir().unwrap();
-        let thumbs = service(dir.path());
+	/// The magic-byte check knows some twenty formats and the build decodes
+	/// three. A picture in one of the others used to be kept as published and
+	/// then fail to decode on every paint, forever, since kept files are for
+	/// good. Now it is an answer about the URL: asked once, and nothing kept.
+	#[tokio::test]
+	async fn a_format_this_build_cannot_draw_is_asked_for_once_and_not_kept() {
+		let server = MockServer::start().await;
+		Mock::given(method("GET"))
+			.and(path("/anim.gif"))
+			.respond_with(
+				ResponseTemplate::new(200).set_body_bytes(b"GIF89a\x01\x00\x01\x00\x00".to_vec()),
+			)
+			.expect(1)
+			.mount(&server)
+			.await;
+		let url = format!("{}/anim.gif", server.uri());
+		let dir = tempfile::tempdir().unwrap();
+		let thumbs = service(dir.path());
 
-        let first = thumbs.get(&url, tile(50, 32)).await.unwrap_err();
-        assert!(
-            matches!(first, Error::Format(image::ImageFormat::Gif)),
-            "{first}"
-        );
-        let again = thumbs.get(&url, tile(50, 32)).await.unwrap_err();
-        assert!(matches!(again, Error::Refused(_)), "{again}");
-        assert!(!dir.path().join(CACHE_DIR).exists());
-        server.verify().await;
-    }
+		let first = thumbs.get(&url, tile(50, 32)).await.unwrap_err();
+		assert!(
+			matches!(first, Error::Format(image::ImageFormat::Gif)),
+			"{first}"
+		);
+		let again = thumbs.get(&url, tile(50, 32)).await.unwrap_err();
+		assert!(matches!(again, Error::Refused(_)), "{again}");
+		assert!(!dir.path().join(CACHE_DIR).exists());
+		server.verify().await;
+	}
 
-    /// The other half of the rule: a server having a bad minute is asked again,
-    /// or one 500 would cost the picture until the lobby is restarted. So is
-    /// one that said "later" in so many words -- a 429 is the one 4xx that is
-    /// about the moment by definition -- and so is a login page dressed as a
-    /// picture, which is what every URL looks like from behind a hotel's Wi-Fi.
-    #[tokio::test]
-    async fn a_moment_of_bad_luck_is_not_held_against_the_url() {
-        let server = MockServer::start().await;
-        for (name, answer) in [
-            ("/later.png", ResponseTemplate::new(503)),
-            ("/slower.png", ResponseTemplate::new(429)),
-            (
-                "/portal.png",
-                ResponseTemplate::new(200).set_body_bytes(b"<html>sign in</html>".to_vec()),
-            ),
-        ] {
-            Mock::given(method("GET"))
-                .and(path(name))
-                .respond_with(answer)
-                .expect(3)
-                .mount(&server)
-                .await;
-        }
-        let dir = tempfile::tempdir().unwrap();
-        let thumbs = service(dir.path());
+	/// The other half of the rule: a server having a bad minute is asked again,
+	/// or one 500 would cost the picture until the lobby is restarted. So is
+	/// one that said "later" in so many words -- a 429 is the one 4xx that is
+	/// about the moment by definition -- and so is a login page dressed as a
+	/// picture, which is what every URL looks like from behind a hotel's Wi-Fi.
+	#[tokio::test]
+	async fn a_moment_of_bad_luck_is_not_held_against_the_url() {
+		let server = MockServer::start().await;
+		for (name, answer) in [
+			("/later.png", ResponseTemplate::new(503)),
+			("/slower.png", ResponseTemplate::new(429)),
+			(
+				"/portal.png",
+				ResponseTemplate::new(200).set_body_bytes(b"<html>sign in</html>".to_vec()),
+			),
+		] {
+			Mock::given(method("GET"))
+				.and(path(name))
+				.respond_with(answer)
+				.expect(3)
+				.mount(&server)
+				.await;
+		}
+		let dir = tempfile::tempdir().unwrap();
+		let thumbs = service(dir.path());
 
-        for name in ["/later.png", "/slower.png", "/portal.png"] {
-            let url = format!("{}{name}", server.uri());
-            for _ in 0..3 {
-                let err = thumbs.get(&url, tile(50, 32)).await.unwrap_err();
-                assert!(!matches!(err, Error::Refused(_)), "{name}: {err}");
-            }
-        }
-        server.verify().await;
-    }
+		for name in ["/later.png", "/slower.png", "/portal.png"] {
+			let url = format!("{}{name}", server.uri());
+			for _ in 0..3 {
+				let err = thumbs.get(&url, tile(50, 32)).await.unwrap_err();
+				assert!(!matches!(err, Error::Refused(_)), "{name}: {err}");
+			}
+		}
+		server.verify().await;
+	}
 
-    #[tokio::test]
-    async fn warming_makes_every_size_ahead_so_a_look_costs_no_fetch() {
-        let (_server, url) = serving(halves(ImageFormat::Png), 1).await;
-        let dir = tempfile::tempdir().unwrap();
-        let thumbs = service(dir.path());
+	#[tokio::test]
+	async fn warming_makes_every_size_ahead_so_a_look_costs_no_fetch() {
+		let (_server, url) = serving(halves(ImageFormat::Png), 1).await;
+		let dir = tempfile::tempdir().unwrap();
+		let thumbs = service(dir.path());
 
-        thumbs.warm(vec![Job {
-            url: url.clone(),
-            tiles: vec![tile(50, 32), tile(130, 130)],
-        }]);
-        thumbs.settled().await;
-        assert_eq!(kept(dir.path()).len(), 3);
+		thumbs.warm(vec![Job {
+			url: url.clone(),
+			tiles: vec![tile(50, 32), tile(130, 130)],
+		}]);
+		thumbs.settled().await;
+		assert_eq!(kept(dir.path()).len(), 3);
 
-        let room = thumbs.get(&url, tile(130, 130)).await.unwrap();
-        let small = image::load_from_memory(&room).unwrap();
-        assert_eq!((small.width(), small.height()), (130, 130));
-    }
+		let room = thumbs.get(&url, tile(130, 130)).await.unwrap();
+		let small = image::load_from_memory(&room).unwrap();
+		assert_eq!((small.width(), small.height()), (130, 130));
+	}
 
-    #[tokio::test]
-    async fn a_map_that_fails_does_not_stop_the_ones_after_it() {
-        let (server, url) = serving(halves(ImageFormat::Png), 1).await;
-        let dir = tempfile::tempdir().unwrap();
-        let thumbs = service(dir.path());
+	#[tokio::test]
+	async fn a_map_that_fails_does_not_stop_the_ones_after_it() {
+		let (server, url) = serving(halves(ImageFormat::Png), 1).await;
+		let dir = tempfile::tempdir().unwrap();
+		let thumbs = service(dir.path());
 
-        thumbs.warm(vec![
-            Job {
-                url: format!("{}/gone.png", server.uri()),
-                tiles: vec![tile(50, 32)],
-            },
-            Job {
-                url,
-                tiles: vec![tile(50, 32)],
-            },
-        ]);
-        thumbs.settled().await;
-        assert_eq!(kept(dir.path()).len(), 2);
-    }
+		thumbs.warm(vec![
+			Job {
+				url: format!("{}/gone.png", server.uri()),
+				tiles: vec![tile(50, 32)],
+			},
+			Job {
+				url,
+				tiles: vec![tile(50, 32)],
+			},
+		]);
+		thumbs.settled().await;
+		assert_eq!(kept(dir.path()).len(), 2);
+	}
 
-    #[tokio::test]
-    async fn nothing_to_warm_is_settled_already() {
-        let dir = tempfile::tempdir().unwrap();
-        let thumbs = service(dir.path());
-        thumbs.warm(Vec::new());
-        thumbs.settled().await;
-        assert!(!dir.path().join(CACHE_DIR).exists());
-    }
+	#[tokio::test]
+	async fn nothing_to_warm_is_settled_already() {
+		let dir = tempfile::tempdir().unwrap();
+		let thumbs = service(dir.path());
+		thumbs.warm(Vec::new());
+		thumbs.settled().await;
+		assert!(!dir.path().join(CACHE_DIR).exists());
+	}
 }

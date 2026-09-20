@@ -13,28 +13,28 @@ use crate::commands::{ApiError, Result};
 use crate::state::App;
 
 impl From<presets::Error> for ApiError {
-    fn from(err: presets::Error) -> Self {
-        let code = match err {
-            presets::Error::Unknown(_) => "missing",
-            presets::Error::Duplicate(_) => "duplicate",
-            presets::Error::Invalid { .. } => "invalid",
-            presets::Error::Io { .. } => "io",
-        };
-        ApiError::new(code, err.to_string())
-    }
+	fn from(err: presets::Error) -> Self {
+		let code = match err {
+			presets::Error::Unknown(_) => "missing",
+			presets::Error::Duplicate(_) => "duplicate",
+			presets::Error::Invalid { .. } => "invalid",
+			presets::Error::Io { .. } => "io",
+		};
+		ApiError::new(code, err.to_string())
+	}
 }
 
 impl From<content::demo::Error> for ApiError {
-    fn from(err: content::demo::Error) -> Self {
-        ApiError::new("replay", err.to_string())
-    }
+	fn from(err: content::demo::Error) -> Self {
+		ApiError::new("replay", err.to_string())
+	}
 }
 
 fn now() -> Stamp {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|since| since.as_secs())
-        .unwrap_or_default()
+	std::time::SystemTime::now()
+		.duration_since(std::time::UNIX_EPOCH)
+		.map(|since| since.as_secs())
+		.unwrap_or_default()
 }
 
 /// Where Chobby keeps its presets: the file wherever one already exists, so
@@ -44,23 +44,23 @@ fn now() -> Stamp {
 /// This is the one place modlobby writes into another lobby's directory, and
 /// only on an explicit export: the file is the hand-over.
 fn chobby_file(app: &App) -> Option<PathBuf> {
-    let dirs = lobby_runtime::launch::data_dirs(app.settings.get().paths.data_dir)?;
-    let existing = dirs
-        .all()
-        .map(|dir| dir.join("optionsPresets.json"))
-        .find(|path| path.is_file());
-    Some(existing.unwrap_or_else(|| dirs.write.join("optionsPresets.json")))
+	let dirs = lobby_runtime::launch::data_dirs(app.settings.get().paths.data_dir)?;
+	let existing = dirs
+		.all()
+		.map(|dir| dir.join("optionsPresets.json"))
+		.find(|path| path.is_file());
+	Some(existing.unwrap_or_else(|| dirs.write.join("optionsPresets.json")))
 }
 
 #[tauri::command]
 pub fn list_presets(app: State<'_, App>) -> Result<Book> {
-    Ok(app.presets.load()?)
+	Ok(app.presets.load()?)
 }
 
 /// Where the Chobby file is, so the front end can say so before touching it.
 #[tauri::command]
 pub fn chobby_presets_path(app: State<'_, App>) -> Option<String> {
-    chobby_file(&app).map(|path| path.display().to_string())
+	chobby_file(&app).map(|path| path.display().to_string())
 }
 
 /// The current room, as a preset.
@@ -69,105 +69,105 @@ pub fn chobby_presets_path(app: State<'_, App>) -> Option<String> {
 /// statement of what it is set to — not from anything we remember sending.
 #[tauri::command]
 pub async fn save_preset(app: State<'_, App>, name: String) -> Result<Book> {
-    let snapshot = app.client.snapshot().await?;
-    let Some((session, my)) = snapshot.room() else {
-        return Err(ApiError::new("not in a room", "join a room to save it"));
-    };
-    let room = session
-        .battles
-        .iter()
-        .find(|battle| battle.id == my.id)
-        .ok_or_else(|| ApiError::new("not in a room", "the room is not in the list"))?;
+	let snapshot = app.client.snapshot().await?;
+	let Some((session, my)) = snapshot.room() else {
+		return Err(ApiError::new("not in a room", "join a room to save it"));
+	};
+	let room = session
+		.battles
+		.iter()
+		.find(|battle| battle.id == my.id)
+		.ok_or_else(|| ApiError::new("not in a room", "the room is not in the list"))?;
 
-    let mut preset = Preset::new(name, now());
-    preset.map = Some(room.map_name.clone());
-    preset.modoptions = my
-        .script_tags
-        .iter()
-        .filter_map(|(key, value)| {
-            Some((
-                key.strip_prefix("game/modoptions/")?.to_owned(),
-                value.clone(),
-            ))
-        })
-        .collect();
-    if let Some(layout) = &room.layout {
-        preset
-            .battle
-            .insert("teamSize".into(), layout.team_size.to_string());
-        preset
-            .battle
-            .insert("nbTeams".into(), layout.teams.to_string());
-    }
-    preset
-        .battle
-        .insert("locked".into(), u8::from(room.locked).to_string());
-    preset.start_boxes = room
-        .start_rects
-        .iter()
-        .map(|rect| {
-            (
-                rect.ally_team,
-                presets::StartBox {
-                    left: rect.left,
-                    top: rect.top,
-                    right: rect.right,
-                    bottom: rect.bottom,
-                },
-            )
-        })
-        .collect();
+	let mut preset = Preset::new(name, now());
+	preset.map = Some(room.map_name.clone());
+	preset.modoptions = my
+		.script_tags
+		.iter()
+		.filter_map(|(key, value)| {
+			Some((
+				key.strip_prefix("game/modoptions/")?.to_owned(),
+				value.clone(),
+			))
+		})
+		.collect();
+	if let Some(layout) = &room.layout {
+		preset
+			.battle
+			.insert("teamSize".into(), layout.team_size.to_string());
+		preset
+			.battle
+			.insert("nbTeams".into(), layout.teams.to_string());
+	}
+	preset
+		.battle
+		.insert("locked".into(), u8::from(room.locked).to_string());
+	preset.start_boxes = room
+		.start_rects
+		.iter()
+		.map(|rect| {
+			(
+				rect.ally_team,
+				presets::StartBox {
+					left: rect.left,
+					top: rect.top,
+					right: rect.right,
+					bottom: rect.bottom,
+				},
+			)
+		})
+		.collect();
 
-    Ok(app.presets.put(preset, now())?)
+	Ok(app.presets.put(preset, now())?)
 }
 
 /// A preset made from the game a replay recorded.
 #[tauri::command]
 pub fn preset_from_replay(app: State<'_, App>, path: String, name: String) -> Result<Book> {
-    let text = content::demo::script(&path)?;
-    let script = recoil::script_read::parse(&text);
+	let text = content::demo::script(&path)?;
+	let script = recoil::script_read::parse(&text);
 
-    let mut preset = Preset::new(name, now());
-    preset.map = script.map().map(str::to_owned);
-    preset.modoptions = script.modoptions.clone();
-    preset.start_boxes = script
-        .boxes_out_of_200()
-        .into_iter()
-        .map(|(ally, (left, top, right, bottom))| {
-            (
-                ally,
-                presets::StartBox {
-                    left,
-                    top,
-                    right,
-                    bottom,
-                },
-            )
-        })
-        .collect();
+	let mut preset = Preset::new(name, now());
+	preset.map = script.map().map(str::to_owned);
+	preset.modoptions = script.modoptions.clone();
+	preset.start_boxes = script
+		.boxes_out_of_200()
+		.into_iter()
+		.map(|(ally, (left, top, right, bottom))| {
+			(
+				ally,
+				presets::StartBox {
+					left,
+					top,
+					right,
+					bottom,
+				},
+			)
+		})
+		.collect();
 
-    Ok(app.presets.put(preset, now())?)
+	Ok(app.presets.put(preset, now())?)
 }
 
 #[tauri::command]
 pub fn delete_preset(app: State<'_, App>, name: String) -> Result<Book> {
-    Ok(app.presets.remove(&name)?)
+	Ok(app.presets.remove(&name)?)
 }
 
 #[tauri::command]
 pub fn rename_preset(app: State<'_, App>, from: String, to: String) -> Result<Book> {
-    Ok(app.presets.rename(&from, &to)?)
+	Ok(app.presets.rename(&from, &to)?)
 }
 
 /// What applying a preset would send, without sending it.
 #[tauri::command]
 pub async fn plan_preset(
-    app: State<'_, App>,
-    name: String,
-    sections: Sections,
+	app: State<'_, App>,
+	name: String,
+	sections: Sections,
 ) -> Result<presets::Plan> {
-    let preset = one(&app, &name)?;
-    Ok(presets::plan(&preset, &current_room(&app).await?, sections))
+	let preset = one(&app, &name)?;
+	Ok(presets::plan(&preset, &current_room(&app).await?, sections))
 }
 
 /// Sends a preset to the room.
@@ -177,19 +177,19 @@ pub async fn plan_preset(
 /// eight seconds, so a big preset takes the couple of minutes it takes.
 #[tauri::command]
 pub async fn apply_preset(
-    app: State<'_, App>,
-    name: String,
-    sections: Sections,
+	app: State<'_, App>,
+	name: String,
+	sections: Sections,
 ) -> Result<presets::Plan> {
-    let preset = one(&app, &name)?;
-    let plan = presets::plan(&preset, &current_room(&app).await?, sections);
+	let preset = one(&app, &name)?;
+	let plan = presets::plan(&preset, &current_room(&app).await?, sections);
 
-    for line in &plan.lines {
-        app.client.say(line.clone()).await?;
-    }
+	for line in &plan.lines {
+		app.client.say(line.clone()).await?;
+	}
 
-    app.presets.touch(&name, now())?;
-    Ok(plan)
+	app.presets.touch(&name, now())?;
+	Ok(plan)
 }
 
 /// The room with no server behind it, as a preset.
@@ -198,11 +198,11 @@ pub async fn apply_preset(
 /// server rarely has any, and a skirmish is mostly its AIs.
 #[tauri::command]
 pub async fn skirmish_save_preset(app: State<'_, App>, name: String) -> Result<Book> {
-    let Some(room) = app.client.skirmish_room().await? else {
-        return Err(ApiError::new("no room", "open a skirmish to save it"));
-    };
-    let preset = skirmish::preset::to_preset(&room, name, now());
-    Ok(app.presets.put(preset, now())?)
+	let Some(room) = app.client.skirmish_room().await? else {
+		return Err(ApiError::new("no room", "open a skirmish to save it"));
+	};
+	let preset = skirmish::preset::to_preset(&room, name, now());
+	Ok(app.presets.put(preset, now())?)
 }
 
 /// Puts one back into it.
@@ -213,29 +213,29 @@ pub async fn skirmish_save_preset(app: State<'_, App>, name: String) -> Result<B
 /// happened either way; the list of lines is simply empty.
 #[tauri::command]
 pub async fn skirmish_apply_preset(
-    app: State<'_, App>,
-    name: String,
-    sections: Sections,
+	app: State<'_, App>,
+	name: String,
+	sections: Sections,
 ) -> Result<presets::Plan> {
-    let preset = one(&app, &name)?;
-    let done = app.client.skirmish_preset(preset.clone(), sections).await?;
-    app.presets.touch(&name, now())?;
-    Ok(presets::Plan {
-        lines: Vec::new(),
-        start_boxes: preset
-            .start_boxes
-            .iter()
-            .map(|(ally, held)| presets::PlannedBox {
-                ally_team: *ally,
-                left: held.left,
-                top: held.top,
-                right: held.right,
-                bottom: held.bottom,
-            })
-            .collect(),
-        start_boxes_unsent: sections.start_boxes && !done.boxes && !preset.start_boxes.is_empty(),
-        already_set: done.already_set,
-    })
+	let preset = one(&app, &name)?;
+	let done = app.client.skirmish_preset(preset.clone(), sections).await?;
+	app.presets.touch(&name, now())?;
+	Ok(presets::Plan {
+		lines: Vec::new(),
+		start_boxes: preset
+			.start_boxes
+			.iter()
+			.map(|(ally, held)| presets::PlannedBox {
+				ally_team: *ally,
+				left: held.left,
+				top: held.top,
+				right: held.right,
+				bottom: held.bottom,
+			})
+			.collect(),
+		start_boxes_unsent: sections.start_boxes && !done.boxes && !preset.start_boxes.is_empty(),
+		already_set: done.already_set,
+	})
 }
 
 /// What the pve.bar stats service says the current room scores.
@@ -245,25 +245,25 @@ pub async fn skirmish_apply_preset(
 /// right outcome for both.
 #[tauri::command]
 pub async fn pve_score(app: State<'_, App>) -> Result<Option<pve::Score>> {
-    if !app.settings.get().play.pve_stats {
-        return Ok(None);
-    }
-    let snapshot = app.client.snapshot().await?;
-    let Some((session, my)) = snapshot.room() else {
-        return Ok(None);
-    };
-    let Some(room) = session.battles.iter().find(|battle| battle.id == my.id) else {
-        return Ok(None);
-    };
-    // What lists the room as a game being played. Answers the service already
-    // gave are memoised by body, so a room that stops changing stops
-    // refreshing its row; the row expires on the service's own clock, which is
-    // what a lobby that went quiet should do.
-    let listed = pve::lobby_game_id(&session.server, room.id, &room.founder);
-    let Some(ask) = pve_ask(my, room, &session.users, Some(listed)) else {
-        return Ok(None);
-    };
-    ask_pve(&app, ask).await
+	if !app.settings.get().play.pve_stats {
+		return Ok(None);
+	}
+	let snapshot = app.client.snapshot().await?;
+	let Some((session, my)) = snapshot.room() else {
+		return Ok(None);
+	};
+	let Some(room) = session.battles.iter().find(|battle| battle.id == my.id) else {
+		return Ok(None);
+	};
+	// What lists the room as a game being played. Answers the service already
+	// gave are memoised by body, so a room that stops changing stops
+	// refreshing its row; the row expires on the service's own clock, which is
+	// what a lobby that went quiet should do.
+	let listed = pve::lobby_game_id(&session.server, room.id, &room.founder);
+	let Some(ask) = pve_ask(my, room, &session.users, Some(listed)) else {
+		return Ok(None);
+	};
+	ask_pve(&app, ask).await
 }
 
 /// The same question for a room with no server behind it.
@@ -273,159 +273,159 @@ pub async fn pve_score(app: State<'_, App>) -> Result<Option<pve::Score>> {
 /// service whose whole job is saying what is being played.
 #[tauri::command]
 pub async fn skirmish_pve_score(app: State<'_, App>) -> Result<Option<pve::Score>> {
-    if !app.settings.get().play.pve_stats {
-        return Ok(None);
-    }
-    let snapshot = app.client.snapshot().await?;
-    let Some(room) = snapshot.skirmish.as_ref() else {
-        return Ok(None);
-    };
-    let Some(ask) = pve_ask(&room.my, &room.battle, &room.users, None) else {
-        return Ok(None);
-    };
-    ask_pve(&app, ask).await
+	if !app.settings.get().play.pve_stats {
+		return Ok(None);
+	}
+	let snapshot = app.client.snapshot().await?;
+	let Some(room) = snapshot.skirmish.as_ref() else {
+		return Ok(None);
+	};
+	let Some(ask) = pve_ask(&room.my, &room.battle, &room.users, None) else {
+		return Ok(None);
+	};
+	ask_pve(&app, ask).await
 }
 
 /// What the service is told about a room, whichever kind it is.
 fn pve_ask(
-    my: &lobby_ui::MyBattleView,
-    room: &lobby_ui::BattleView,
-    users: &[lobby_ui::UserView],
-    game_id: Option<String>,
+	my: &lobby_ui::MyBattleView,
+	room: &lobby_ui::BattleView,
+	users: &[lobby_ui::UserView],
+	game_id: Option<String>,
 ) -> Option<pve::Ask> {
-    let ai_names: Vec<String> = room.bots.iter().map(|bot| bot.ai.clone()).collect();
-    let kind = pve::ai_type(&ai_names)?;
+	let ai_names: Vec<String> = room.bots.iter().map(|bot| bot.ai.clone()).collect();
+	let kind = pve::ai_type(&ai_names)?;
 
-    Some(pve::Ask {
-        game_id,
-        ai_type: kind.as_str(),
-        map: room.map_name.clone(),
-        game_settings: my
-            .script_tags
-            .iter()
-            .filter_map(|(key, value)| {
-                Some((
-                    key.strip_prefix("game/modoptions/")?.to_owned(),
-                    value.clone(),
-                ))
-            })
-            .collect(),
-        encounter_context: pve::Encounter {
-            human_team_size: room.player_count,
-            enemy_ai_count: matches!(kind, pve::AiType::Barbarian)
-                .then_some(room.bots.len() as u32),
-            // Each BARbarian is its own opponent with its own handicap, and
-            // the service will not place a Barbarian room without hearing
-            // them. Raptors and scavengers are one controller however many
-            // slots they take, so for them this stays empty.
-            enemy_ai_income_multipliers: matches!(kind, pve::AiType::Barbarian)
-                .then(|| {
-                    room.bots
-                        .iter()
-                        .map(|bot| pve::income_multiplier(bot.status.handicap))
-                        .collect()
-                })
-                .unwrap_or_default(),
-            // One per seated human. The service derives its `Player Handicap`
-            // column from the average of these, and a governed column it
-            // cannot derive counts as missing rather than defaulted — which is
-            // what makes it decline to score the room at all.
-            human_player_income_multipliers: room
-                .members
-                .iter()
-                .filter_map(|name| users.iter().find(|user| &user.name == name))
-                .filter_map(|user| user.battle_status.as_ref())
-                .filter(|status| status.player)
-                .map(|status| pve::income_multiplier(status.handicap))
-                .collect(),
-        },
-        player_filter_requested: true,
-    })
+	Some(pve::Ask {
+		game_id,
+		ai_type: kind.as_str(),
+		map: room.map_name.clone(),
+		game_settings: my
+			.script_tags
+			.iter()
+			.filter_map(|(key, value)| {
+				Some((
+					key.strip_prefix("game/modoptions/")?.to_owned(),
+					value.clone(),
+				))
+			})
+			.collect(),
+		encounter_context: pve::Encounter {
+			human_team_size: room.player_count,
+			enemy_ai_count: matches!(kind, pve::AiType::Barbarian)
+				.then_some(room.bots.len() as u32),
+			// Each BARbarian is its own opponent with its own handicap, and
+			// the service will not place a Barbarian room without hearing
+			// them. Raptors and scavengers are one controller however many
+			// slots they take, so for them this stays empty.
+			enemy_ai_income_multipliers: matches!(kind, pve::AiType::Barbarian)
+				.then(|| {
+					room.bots
+						.iter()
+						.map(|bot| pve::income_multiplier(bot.status.handicap))
+						.collect()
+				})
+				.unwrap_or_default(),
+			// One per seated human. The service derives its `Player Handicap`
+			// column from the average of these, and a governed column it
+			// cannot derive counts as missing rather than defaulted — which is
+			// what makes it decline to score the room at all.
+			human_player_income_multipliers: room
+				.members
+				.iter()
+				.filter_map(|name| users.iter().find(|user| &user.name == name))
+				.filter_map(|user| user.battle_status.as_ref())
+				.filter(|status| status.player)
+				.map(|status| pve::income_multiplier(status.handicap))
+				.collect(),
+		},
+		player_filter_requested: true,
+	})
 }
 
 /// Puts the question, and keeps the reason for a refusal out of the panel.
 async fn ask_pve(app: &State<'_, App>, ask: pve::Ask) -> Result<Option<pve::Score>> {
-    tracing::debug!(
-        ai = ask.ai_type,
-        map = %ask.map,
-        settings = ask.game_settings.len(),
-        seats = ask.encounter_context.human_team_size,
-        "pve stats: asking"
-    );
-    match app.pve.score(&ask).await {
-        Ok(score) => Ok(Some(score)),
-        Err(err) => {
-            // The panel says "unavailable" and no more; the reason lives here.
-            tracing::warn!(error = %err, "pve stats: no answer");
-            Err(ApiError::new("pve", err.to_string()))
-        }
-    }
+	tracing::debug!(
+		ai = ask.ai_type,
+		map = %ask.map,
+		settings = ask.game_settings.len(),
+		seats = ask.encounter_context.human_team_size,
+		"pve stats: asking"
+	);
+	match app.pve.score(&ask).await {
+		Ok(score) => Ok(Some(score)),
+		Err(err) => {
+			// The panel says "unavailable" and no more; the reason lives here.
+			tracing::warn!(error = %err, "pve stats: no answer");
+			Err(ApiError::new("pve", err.to_string()))
+		}
+	}
 }
 
 /// Brings in everything from Chobby's file.
 #[tauri::command]
 pub fn import_presets(app: State<'_, App>, path: Option<String>) -> Result<Imported> {
-    let path = path
-        .map(PathBuf::from)
-        .or_else(|| chobby_file(&app))
-        .ok_or_else(|| ApiError::new("no path", "no BAR data directory to look in"))?;
-    let (book, skipped) = app.presets.import_chobby(&path, now())?;
-    Ok(Imported { book, skipped })
+	let path = path
+		.map(PathBuf::from)
+		.or_else(|| chobby_file(&app))
+		.ok_or_else(|| ApiError::new("no path", "no BAR data directory to look in"))?;
+	let (book, skipped) = app.presets.import_chobby(&path, now())?;
+	Ok(Imported { book, skipped })
 }
 
 #[derive(serde::Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct Imported {
-    pub book: Book,
-    /// Presets in their file whose name we already had, and so left alone.
-    pub skipped: usize,
+	pub book: Book,
+	/// Presets in their file whose name we already had, and so left alone.
+	pub skipped: usize,
 }
 
 /// Writes presets back into Chobby's file, leaving its other entries alone.
 #[tauri::command]
 pub fn export_presets(
-    app: State<'_, App>,
-    path: Option<String>,
-    names: Vec<String>,
+	app: State<'_, App>,
+	path: Option<String>,
+	names: Vec<String>,
 ) -> Result<usize> {
-    let path = path
-        .map(PathBuf::from)
-        .or_else(|| chobby_file(&app))
-        .ok_or_else(|| ApiError::new("no path", "no BAR data directory to write to"))?;
-    Ok(app.presets.export_chobby(&path, &names)?)
+	let path = path
+		.map(PathBuf::from)
+		.or_else(|| chobby_file(&app))
+		.ok_or_else(|| ApiError::new("no path", "no BAR data directory to write to"))?;
+	Ok(app.presets.export_chobby(&path, &names)?)
 }
 
 fn one(app: &App, name: &str) -> Result<Preset> {
-    app.presets
-        .load()?
-        .presets
-        .into_iter()
-        .find(|preset| preset.name == name)
-        .ok_or_else(|| ApiError::new("missing", format!("no preset called {name}")))
+	app.presets
+		.load()?
+		.presets
+		.into_iter()
+		.find(|preset| preset.name == name)
+		.ok_or_else(|| ApiError::new("missing", format!("no preset called {name}")))
 }
 
 /// The room as it stands, so a plan can leave out what is already true.
 async fn current_room(app: &App) -> Result<presets::Room> {
-    let snapshot = app.client.snapshot().await?;
-    let Some((session, my)) = snapshot.room() else {
-        return Ok(presets::Room::default());
-    };
-    Ok(presets::Room {
-        map: session
-            .battles
-            .iter()
-            .find(|battle| battle.id == my.id)
-            .map(|battle| battle.map_name.clone()),
-        modoptions: my
-            .script_tags
-            .iter()
-            .filter_map(|(key, value)| {
-                Some((
-                    key.strip_prefix("game/modoptions/")?.to_owned(),
-                    value.clone(),
-                ))
-            })
-            .collect(),
-    })
+	let snapshot = app.client.snapshot().await?;
+	let Some((session, my)) = snapshot.room() else {
+		return Ok(presets::Room::default());
+	};
+	Ok(presets::Room {
+		map: session
+			.battles
+			.iter()
+			.find(|battle| battle.id == my.id)
+			.map(|battle| battle.map_name.clone()),
+		modoptions: my
+			.script_tags
+			.iter()
+			.filter_map(|(key, value)| {
+				Some((
+					key.strip_prefix("game/modoptions/")?.to_owned(),
+					value.clone(),
+				))
+			})
+			.collect(),
+	})
 }

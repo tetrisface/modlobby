@@ -47,10 +47,10 @@ const ARCHIVE_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Built rather than written out, so the string on the command line and the
 /// one in `modinfo.lua` cannot drift apart.
 pub fn menu_name() -> String {
-    if ARCHIVE_NAME.contains(ARCHIVE_VERSION) {
-        return ARCHIVE_NAME.to_owned();
-    }
-    format!("{ARCHIVE_NAME} {ARCHIVE_VERSION}")
+	if ARCHIVE_NAME.contains(ARCHIVE_VERSION) {
+		return ARCHIVE_NAME.to_owned();
+	}
+	format!("{ARCHIVE_NAME} {ARCHIVE_VERSION}")
 }
 
 /// The directory name under `games/`.
@@ -64,14 +64,14 @@ const DIR_NAME: &str = "modlobby-chobby-shim.sdd";
 /// scanned, and `--menu` naming an archive the scanner never found throws
 /// during startup and the engine does not come up at all.
 pub fn dir(data_dir: &Path) -> PathBuf {
-    data_dir.join("games").join(DIR_NAME)
+	data_dir.join("games").join(DIR_NAME)
 }
 
 /// `modtype = 5` is a menu, and `onlyLocal` keeps it out of the game list.
 /// Both taken from Chobby's own `modinfo.lua`.
 fn modinfo() -> String {
-    format!(
-        "return {{\n\
+	format!(
+		"return {{\n\
          \x20 name = '{ARCHIVE_NAME}',\n\
          \x20 shortName = 'MODLOBBY_SHIM',\n\
          \x20 description = 'Makes BAR offer Lobby instead of Quit, and raises modlobby.',\n\
@@ -79,7 +79,7 @@ fn modinfo() -> String {
          \x20 modtype = 5,\n\
          \x20 onlyLocal = true,\n\
          }}\n"
-    )
+	)
 }
 
 /// The menu itself: no window, no drawing, two messages.
@@ -87,8 +87,8 @@ fn modinfo() -> String {
 /// `LuaMenu/main.lua` is the entry point the engine loads (`LuaMenu.cpp:59`),
 /// and its call-ins are plain globals rather than methods on a table.
 fn main_lua(port: u16, token: &str) -> String {
-    format!(
-        r#"-- modlobby: BAR's in-game Lobby button.
+	format!(
+		r#"-- modlobby: BAR's in-game Lobby button.
 --
 -- Written by modlobby when it launches a game and removed when it exits. It
 -- has no interface of its own. BAR offers a "Lobby" button in place of "Quit"
@@ -154,75 +154,75 @@ function AllowDraw()
 	return false
 end
 "#
-    )
+	)
 }
 
 /// Writes the archive, replacing any older one. The archive's name, for `--menu`.
 pub fn install(data_dir: &Path, port: u16, token: &str) -> std::io::Result<PathBuf> {
-    let root = dir(data_dir);
-    std::fs::create_dir_all(root.join("LuaMenu"))?;
-    std::fs::write(root.join("modinfo.lua"), modinfo())?;
-    std::fs::write(root.join("LuaMenu").join("main.lua"), main_lua(port, token))?;
-    Ok(root)
+	let root = dir(data_dir);
+	std::fs::create_dir_all(root.join("LuaMenu"))?;
+	std::fs::write(root.join("modinfo.lua"), modinfo())?;
+	std::fs::write(root.join("LuaMenu").join("main.lua"), main_lua(port, token))?;
+	Ok(root)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+	use super::*;
 
-    #[test]
-    fn the_name_is_what_bar_looks_for() {
-        // `gui_top_bar.lua:3574` lowercases the menu name and searches it for
-        // "chobby". Ours has to survive that or the button says Quit.
-        assert!(ARCHIVE_NAME.to_lowercase().contains("chobby"));
-        assert!(menu_name().to_lowercase().contains("chobby"));
-    }
+	#[test]
+	fn the_name_is_what_bar_looks_for() {
+		// `gui_top_bar.lua:3574` lowercases the menu name and searches it for
+		// "chobby". Ours has to survive that or the button says Quit.
+		assert!(ARCHIVE_NAME.to_lowercase().contains("chobby"));
+		assert!(menu_name().to_lowercase().contains("chobby"));
+	}
 
-    /// The bug that stopped the engine starting: `--menu` was handed the bare
-    /// name, and the scanner indexes the versioned one.
-    #[test]
-    fn the_menu_argument_carries_the_version_the_scanner_indexes() {
-        assert_eq!(menu_name(), format!("{ARCHIVE_NAME} {ARCHIVE_VERSION}"));
-    }
+	/// The bug that stopped the engine starting: `--menu` was handed the bare
+	/// name, and the scanner indexes the versioned one.
+	#[test]
+	fn the_menu_argument_carries_the_version_the_scanner_indexes() {
+		assert_eq!(menu_name(), format!("{ARCHIVE_NAME} {ARCHIVE_VERSION}"));
+	}
 
-    /// Whatever goes on the command line is what `modinfo.lua` declares.
-    #[test]
-    fn modinfo_agrees_with_the_menu_argument() {
-        let info = modinfo();
-        assert!(info.contains(&format!("name = '{ARCHIVE_NAME}'")));
-        assert!(info.contains(&format!("version = '{ARCHIVE_VERSION}'")));
-    }
+	/// Whatever goes on the command line is what `modinfo.lua` declares.
+	#[test]
+	fn modinfo_agrees_with_the_menu_argument() {
+		let info = modinfo();
+		assert!(info.contains(&format!("name = '{ARCHIVE_NAME}'")));
+		assert!(info.contains(&format!("version = '{ARCHIVE_VERSION}'")));
+	}
 
-    #[test]
-    fn it_is_written_where_the_scanner_looks() {
-        let root = std::env::temp_dir().join("modlobby-menu-test");
-        let _ = std::fs::remove_dir_all(&root);
+	#[test]
+	fn it_is_written_where_the_scanner_looks() {
+		let root = std::env::temp_dir().join("modlobby-menu-test");
+		let _ = std::fs::remove_dir_all(&root);
 
-        let written = install(&root, 1234, "secret").unwrap();
+		let written = install(&root, 1234, "secret").unwrap();
 
-        // `games/` is one of the four roots `GetDataDirRoots` returns.
-        assert_eq!(written.parent().unwrap().file_name().unwrap(), "games");
-        // `modinfo.lua` is what the scanner indexes, and `recoil::MenuArchive`
-        // refuses to pass `--menu` without one.
-        assert!(written.join("modinfo.lua").is_file());
+		// `games/` is one of the four roots `GetDataDirRoots` returns.
+		assert_eq!(written.parent().unwrap().file_name().unwrap(), "games");
+		// `modinfo.lua` is what the scanner indexes, and `recoil::MenuArchive`
+		// refuses to pass `--menu` without one.
+		assert!(written.join("modinfo.lua").is_file());
 
-        let lua = std::fs::read_to_string(written.join("LuaMenu").join("main.lua")).unwrap();
-        assert!(lua.contains("local PORT = 1234"));
-        assert!(lua.contains(r#"local TOKEN = "secret""#));
-        assert!(lua.contains("function RecvLuaMsg"));
-        assert!(lua.contains("function ActivateMenu"));
-        // The dead-lobby way out: nobody is listening, so the player is told
-        // through LuaUI, which can open the engine's quit box.
-        assert!(lua.contains(r#"Spring.SendLuaUIMsg("modlobbyGone")"#));
-        // The one quit call a LuaMenu has. `SendCommands` is not in its
-        // environment, and the engine sat black on the error.
-        assert!(lua.contains("Spring.Quit()"));
-        assert!(!lua.contains("SendCommands("));
+		let lua = std::fs::read_to_string(written.join("LuaMenu").join("main.lua")).unwrap();
+		assert!(lua.contains("local PORT = 1234"));
+		assert!(lua.contains(r#"local TOKEN = "secret""#));
+		assert!(lua.contains("function RecvLuaMsg"));
+		assert!(lua.contains("function ActivateMenu"));
+		// The dead-lobby way out: nobody is listening, so the player is told
+		// through LuaUI, which can open the engine's quit box.
+		assert!(lua.contains(r#"Spring.SendLuaUIMsg("modlobbyGone")"#));
+		// The one quit call a LuaMenu has. `SendCommands` is not in its
+		// environment, and the engine sat black on the error.
+		assert!(lua.contains("Spring.Quit()"));
+		assert!(!lua.contains("SendCommands("));
 
-        let info = std::fs::read_to_string(written.join("modinfo.lua")).unwrap();
-        assert!(info.contains("modtype = 5"), "a menu, not a game");
-        assert!(info.contains(ARCHIVE_NAME));
+		let info = std::fs::read_to_string(written.join("modinfo.lua")).unwrap();
+		assert!(info.contains("modtype = 5"), "a menu, not a game");
+		assert!(info.contains(ARCHIVE_NAME));
 
-        std::fs::remove_dir_all(&root).unwrap();
-    }
+		std::fs::remove_dir_all(&root).unwrap();
+	}
 }

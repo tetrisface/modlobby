@@ -28,163 +28,163 @@ const FLOOD_SPREAD: Duration = Duration::from_secs(4);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Waiting {
-    /// The earliest a first attempt may be made.
-    first_allowed: Instant,
-    /// When the last attempt went out, if one has.
-    attempted: Option<Instant>,
+	/// The earliest a first attempt may be made.
+	first_allowed: Instant,
+	/// When the last attempt went out, if one has.
+	attempted: Option<Instant>,
 }
 
 /// Whether and when to try again.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Reconnect {
-    waiting: Option<Waiting>,
+	waiting: Option<Waiting>,
 }
 
 impl Reconnect {
-    /// Arms the policy after a drop. `jitter` is a fresh number in `0.0..1.0`,
-    /// drawn once per disconnect so two clients dropped together come back at
-    /// different moments.
-    pub fn disconnected(&mut self, now: Instant, in_game: bool, jitter: f64) {
-        let (floor, spread) = if in_game {
-            (GAME_FLOOR, GAME_SPREAD)
-        } else {
-            (LOBBY_FLOOR, LOBBY_SPREAD)
-        };
-        self.arm(now, floor, spread, jitter);
-    }
+	/// Arms the policy after a drop. `jitter` is a fresh number in `0.0..1.0`,
+	/// drawn once per disconnect so two clients dropped together come back at
+	/// different moments.
+	pub fn disconnected(&mut self, now: Instant, in_game: bool, jitter: f64) {
+		let (floor, spread) = if in_game {
+			(GAME_FLOOR, GAME_SPREAD)
+		} else {
+			(LOBBY_FLOOR, LOBBY_SPREAD)
+		};
+		self.arm(now, floor, spread, jitter);
+	}
 
-    /// Arms the policy after a login the server refused as flooding: a short
-    /// wait, sized to the server's counter rather than to a server that
-    /// dropped everyone at once.
-    pub fn flooded(&mut self, now: Instant, jitter: f64) {
-        self.arm(now, FLOOD_FLOOR, FLOOD_SPREAD, jitter);
-    }
+	/// Arms the policy after a login the server refused as flooding: a short
+	/// wait, sized to the server's counter rather than to a server that
+	/// dropped everyone at once.
+	pub fn flooded(&mut self, now: Instant, jitter: f64) {
+		self.arm(now, FLOOD_FLOOR, FLOOD_SPREAD, jitter);
+	}
 
-    fn arm(&mut self, now: Instant, floor: Duration, spread: Duration, jitter: f64) {
-        let jitter = jitter.clamp(0.0, 1.0);
-        self.waiting = Some(Waiting {
-            first_allowed: now + floor + spread.mul_f64(jitter),
-            attempted: None,
-        });
-    }
+	fn arm(&mut self, now: Instant, floor: Duration, spread: Duration, jitter: f64) {
+		let jitter = jitter.clamp(0.0, 1.0);
+		self.waiting = Some(Waiting {
+			first_allowed: now + floor + spread.mul_f64(jitter),
+			attempted: None,
+		});
+	}
 
-    /// Stops trying: we are connected, or the user asked us to stop.
-    pub fn stop(&mut self) {
-        self.waiting = None;
-    }
+	/// Stops trying: we are connected, or the user asked us to stop.
+	pub fn stop(&mut self) {
+		self.waiting = None;
+	}
 
-    pub fn is_armed(&self) -> bool {
-        self.waiting.is_some()
-    }
+	pub fn is_armed(&self) -> bool {
+		self.waiting.is_some()
+	}
 
-    /// How long until the next attempt is due, or `None` when none is wanted.
-    pub fn until_due(&self, now: Instant) -> Option<Duration> {
-        let waiting = self.waiting.as_ref()?;
-        let due = match waiting.attempted {
-            Some(attempted) => waiting.first_allowed.max(attempted + RETRY_EVERY),
-            None => waiting.first_allowed,
-        };
-        Some(due.saturating_duration_since(now))
-    }
+	/// How long until the next attempt is due, or `None` when none is wanted.
+	pub fn until_due(&self, now: Instant) -> Option<Duration> {
+		let waiting = self.waiting.as_ref()?;
+		let due = match waiting.attempted {
+			Some(attempted) => waiting.first_allowed.max(attempted + RETRY_EVERY),
+			None => waiting.first_allowed,
+		};
+		Some(due.saturating_duration_since(now))
+	}
 
-    /// Whether an attempt should go out now.
-    pub fn due(&self, now: Instant) -> bool {
-        self.until_due(now) == Some(Duration::ZERO)
-    }
+	/// Whether an attempt should go out now.
+	pub fn due(&self, now: Instant) -> bool {
+		self.until_due(now) == Some(Duration::ZERO)
+	}
 
-    /// Records that an attempt has just been made, so the next waits again.
-    pub fn attempted(&mut self, now: Instant) {
-        if let Some(waiting) = self.waiting.as_mut() {
-            waiting.attempted = Some(now);
-        }
-    }
+	/// Records that an attempt has just been made, so the next waits again.
+	pub fn attempted(&mut self, now: Instant) {
+		if let Some(waiting) = self.waiting.as_mut() {
+			waiting.attempted = Some(now);
+		}
+	}
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+	use super::*;
 
-    fn at(base: Instant, secs: u64) -> Instant {
-        base + Duration::from_secs(secs)
-    }
+	fn at(base: Instant, secs: u64) -> Instant {
+		base + Duration::from_secs(secs)
+	}
 
-    #[test]
-    fn nothing_is_due_until_it_has_been_armed() {
-        let now = Instant::now();
-        let policy = Reconnect::default();
-        assert!(!policy.is_armed());
-        assert_eq!(policy.until_due(now), None);
-        assert!(!policy.due(now));
-    }
+	#[test]
+	fn nothing_is_due_until_it_has_been_armed() {
+		let now = Instant::now();
+		let policy = Reconnect::default();
+		assert!(!policy.is_armed());
+		assert_eq!(policy.until_due(now), None);
+		assert!(!policy.due(now));
+	}
 
-    #[test]
-    fn a_lobby_drop_waits_between_twenty_five_and_sixty_seconds() {
-        let now = Instant::now();
+	#[test]
+	fn a_lobby_drop_waits_between_twenty_five_and_sixty_seconds() {
+		let now = Instant::now();
 
-        let mut soonest = Reconnect::default();
-        soonest.disconnected(now, false, 0.0);
-        assert!(!soonest.due(at(now, 24)));
-        assert!(soonest.due(at(now, 25)));
+		let mut soonest = Reconnect::default();
+		soonest.disconnected(now, false, 0.0);
+		assert!(!soonest.due(at(now, 24)));
+		assert!(soonest.due(at(now, 25)));
 
-        let mut latest = Reconnect::default();
-        latest.disconnected(now, true, 1.0);
-        // In game the window is 60-300s, so the longest wait is five minutes.
-        assert!(!latest.due(at(now, 299)));
-        assert!(latest.due(at(now, 300)));
-    }
+		let mut latest = Reconnect::default();
+		latest.disconnected(now, true, 1.0);
+		// In game the window is 60-300s, so the longest wait is five minutes.
+		assert!(!latest.due(at(now, 299)));
+		assert!(latest.due(at(now, 300)));
+	}
 
-    #[test]
-    fn a_flood_refusal_waits_for_the_counter_not_for_a_storm() {
-        let now = Instant::now();
-        let mut soonest = Reconnect::default();
-        soonest.flooded(now, 0.0);
-        assert!(!soonest.due(at(now, 20)));
-        assert!(soonest.due(at(now, 21)));
+	#[test]
+	fn a_flood_refusal_waits_for_the_counter_not_for_a_storm() {
+		let now = Instant::now();
+		let mut soonest = Reconnect::default();
+		soonest.flooded(now, 0.0);
+		assert!(!soonest.due(at(now, 20)));
+		assert!(soonest.due(at(now, 21)));
 
-        let mut latest = Reconnect::default();
-        latest.flooded(now, 1.0);
-        assert!(!latest.due(at(now, 24)));
-        assert!(latest.due(at(now, 25)));
-    }
+		let mut latest = Reconnect::default();
+		latest.flooded(now, 1.0);
+		assert!(!latest.due(at(now, 24)));
+		assert!(latest.due(at(now, 25)));
+	}
 
-    #[test]
-    fn two_clients_dropped_together_do_not_come_back_together() {
-        let now = Instant::now();
-        let mut first = Reconnect::default();
-        let mut second = Reconnect::default();
-        first.disconnected(now, false, 0.1);
-        second.disconnected(now, false, 0.9);
-        assert_ne!(first.until_due(now), second.until_due(now));
-    }
+	#[test]
+	fn two_clients_dropped_together_do_not_come_back_together() {
+		let now = Instant::now();
+		let mut first = Reconnect::default();
+		let mut second = Reconnect::default();
+		first.disconnected(now, false, 0.1);
+		second.disconnected(now, false, 0.9);
+		assert_ne!(first.until_due(now), second.until_due(now));
+	}
 
-    #[test]
-    fn after_an_attempt_the_next_one_waits_again() {
-        let now = Instant::now();
-        let mut policy = Reconnect::default();
-        policy.disconnected(now, false, 0.0);
+	#[test]
+	fn after_an_attempt_the_next_one_waits_again() {
+		let now = Instant::now();
+		let mut policy = Reconnect::default();
+		policy.disconnected(now, false, 0.0);
 
-        assert!(policy.due(at(now, 25)));
-        policy.attempted(at(now, 25));
-        assert!(!policy.due(at(now, 30)), "not immediately after trying");
-        assert!(policy.due(at(now, 55)), "thirty seconds later");
-    }
+		assert!(policy.due(at(now, 25)));
+		policy.attempted(at(now, 25));
+		assert!(!policy.due(at(now, 30)), "not immediately after trying");
+		assert!(policy.due(at(now, 55)), "thirty seconds later");
+	}
 
-    #[test]
-    fn connecting_disarms_it() {
-        let now = Instant::now();
-        let mut policy = Reconnect::default();
-        policy.disconnected(now, false, 0.0);
-        policy.stop();
-        assert!(!policy.is_armed());
-        assert!(!policy.due(at(now, 600)));
-    }
+	#[test]
+	fn connecting_disarms_it() {
+		let now = Instant::now();
+		let mut policy = Reconnect::default();
+		policy.disconnected(now, false, 0.0);
+		policy.stop();
+		assert!(!policy.is_armed());
+		assert!(!policy.due(at(now, 600)));
+	}
 
-    #[test]
-    fn a_jitter_outside_its_range_cannot_shorten_the_floor() {
-        let now = Instant::now();
-        let mut policy = Reconnect::default();
-        policy.disconnected(now, false, -5.0);
-        assert!(!policy.due(at(now, 24)));
-        assert!(policy.due(at(now, 25)));
-    }
+	#[test]
+	fn a_jitter_outside_its_range_cannot_shorten_the_floor() {
+		let now = Instant::now();
+		let mut policy = Reconnect::default();
+		policy.disconnected(now, false, -5.0);
+		assert!(!policy.due(at(now, 24)));
+		assert!(policy.due(at(now, 25)));
+	}
 }

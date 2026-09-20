@@ -15,7 +15,7 @@ use tracing_subscriber::{EnvFilter, Layer, fmt};
 
 /// Dropping this stops the background writer, so it lives as long as the app.
 pub struct Logging {
-    _guard: WorkerGuard,
+	_guard: WorkerGuard,
 }
 
 /// How many daily files are kept. A fortnight covers "it broke last week"
@@ -24,28 +24,28 @@ pub const KEEP_DAYS: usize = 14;
 
 /// `RUST_LOG` wins when set; otherwise the `logging.filter` setting does.
 pub fn start(dir: &Path, filter: &str) -> Logging {
-    let file = rolling::RollingFileAppender::builder()
-        .rotation(rolling::Rotation::DAILY)
-        .filename_prefix("modlobby.jsonl")
-        .max_log_files(KEEP_DAYS)
-        .build(dir.join("logs"))
-        .expect("a logs directory beside the settings");
-    let (file, guard) = tracing_appender::non_blocking(file);
+	let file = rolling::RollingFileAppender::builder()
+		.rotation(rolling::Rotation::DAILY)
+		.filename_prefix("modlobby.jsonl")
+		.max_log_files(KEEP_DAYS)
+		.build(dir.join("logs"))
+		.expect("a logs directory beside the settings");
+	let (file, guard) = tracing_appender::non_blocking(file);
 
-    let env = |fallback: &str| {
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(fallback))
-    };
-    tracing_subscriber::registry()
-        .with(fmt::layer().with_target(true).with_filter(env(filter)))
-        .with(
-            fmt::layer()
-                .json()
-                .with_current_span(false)
-                .with_writer(file)
-                .with_filter(env(filter)),
-        )
-        .init();
+	let env = |fallback: &str| {
+		EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(fallback))
+	};
+	tracing_subscriber::registry()
+		.with(fmt::layer().with_target(true).with_filter(env(filter)))
+		.with(
+			fmt::layer()
+				.json()
+				.with_current_span(false)
+				.with_writer(file)
+				.with_filter(env(filter)),
+		)
+		.init();
 
-    tracing::info!(dir = %dir.join("logs").display(), "logging to file");
-    Logging { _guard: guard }
+	tracing::info!(dir = %dir.join("logs").display(), "logging to file");
+	Logging { _guard: guard }
 }

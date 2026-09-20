@@ -8,71 +8,71 @@
 use crate::policy::{Area, Envelope};
 
 fn command(verb: &str, user: &str) -> Envelope {
-    Envelope::queue(Area::ChannelChat, format!("{verb} userName={user}"))
+	Envelope::queue(Area::ChannelChat, format!("{verb} userName={user}"))
 }
 
 /// Asks for the friend list, answered between `FRIENDLISTBEGIN` and `FRIENDLISTEND`.
 pub fn list() -> Envelope {
-    Envelope::queue(Area::ChannelChat, "FRIENDLIST")
+	Envelope::queue(Area::ChannelChat, "FRIENDLIST")
 }
 
 /// Asks for incoming friend requests.
 pub fn list_requests() -> Envelope {
-    Envelope::queue(Area::ChannelChat, "FRIENDREQUESTLIST")
+	Envelope::queue(Area::ChannelChat, "FRIENDREQUESTLIST")
 }
 
 pub fn request(user: &str) -> Envelope {
-    command("FRIENDREQUEST", user)
+	command("FRIENDREQUEST", user)
 }
 
 pub fn accept(user: &str) -> Envelope {
-    command("ACCEPTFRIENDREQUEST", user)
+	command("ACCEPTFRIENDREQUEST", user)
 }
 
 pub fn decline(user: &str) -> Envelope {
-    command("DECLINEFRIENDREQUEST", user)
+	command("DECLINEFRIENDREQUEST", user)
 }
 
 pub fn remove(user: &str) -> Envelope {
-    command("UNFRIEND", user)
+	command("UNFRIEND", user)
 }
 
 /// Asks for the ignore list, answered between `IGNORELISTBEGIN` and `IGNORELISTEND`.
 pub fn list_ignored() -> Envelope {
-    Envelope::queue(Area::ChannelChat, "IGNORELIST")
+	Envelope::queue(Area::ChannelChat, "IGNORELIST")
 }
 
 /// Stops the server relaying anything from someone.
 pub fn ignore(user: &str) -> Envelope {
-    command("IGNORE", user)
+	command("IGNORE", user)
 }
 
 pub fn unignore(user: &str) -> Envelope {
-    command("UNIGNORE", user)
+	command("UNIGNORE", user)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+	use super::*;
 
-    #[test]
-    fn every_command_names_its_target_the_same_way() {
-        assert_eq!(request("alice").line, "FRIENDREQUEST userName=alice");
-        assert_eq!(accept("alice").line, "ACCEPTFRIENDREQUEST userName=alice");
-        assert_eq!(decline("bob").line, "DECLINEFRIENDREQUEST userName=bob");
-        assert_eq!(remove("bob").line, "UNFRIEND userName=bob");
-    }
+	#[test]
+	fn every_command_names_its_target_the_same_way() {
+		assert_eq!(request("alice").line, "FRIENDREQUEST userName=alice");
+		assert_eq!(accept("alice").line, "ACCEPTFRIENDREQUEST userName=alice");
+		assert_eq!(decline("bob").line, "DECLINEFRIENDREQUEST userName=bob");
+		assert_eq!(remove("bob").line, "UNFRIEND userName=bob");
+	}
 
-    #[test]
-    fn the_listings_are_asked_for_without_arguments() {
-        assert_eq!(list().line, "FRIENDLIST");
-        assert_eq!(list_requests().line, "FRIENDREQUESTLIST");
-        assert_eq!(list_ignored().line, "IGNORELIST");
-    }
+	#[test]
+	fn the_listings_are_asked_for_without_arguments() {
+		assert_eq!(list().line, "FRIENDLIST");
+		assert_eq!(list_requests().line, "FRIENDREQUESTLIST");
+		assert_eq!(list_ignored().line, "IGNORELIST");
+	}
 
-    #[test]
-    fn ignoring_uses_the_same_shape_as_friending() {
-        assert_eq!(ignore("nuisance").line, "IGNORE userName=nuisance");
-        assert_eq!(unignore("nuisance").line, "UNIGNORE userName=nuisance");
-    }
+	#[test]
+	fn ignoring_uses_the_same_shape_as_friending() {
+		assert_eq!(ignore("nuisance").line, "IGNORE userName=nuisance");
+		assert_eq!(unignore("nuisance").line, "UNIGNORE userName=nuisance");
+	}
 }

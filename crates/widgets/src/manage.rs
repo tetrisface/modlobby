@@ -57,67 +57,67 @@ pub const SETTINGS_FILE: &str = "springsettings.cfg";
 
 #[derive(Debug, thiserror::Error)]
 pub enum ManageError {
-    #[error("a game is running; BAR rewrites its widget config on exit and would discard this")]
-    GameRunning,
-    #[error("{0} cannot be installed: {1}")]
-    NotInstallable(String, String),
-    #[error("downloading {0}: {1}")]
-    Download(String, String),
-    #[error("{0} did not match its published hash and was not installed")]
-    Corrupt(String),
-    #[error("{0} is {1} bytes, over the limit")]
-    TooLarge(String, usize),
-    #[error("{0} names a place outside the widget folder and was not installed")]
-    UnsafePath(String),
-    #[error("the archive could not be read: {0}")]
-    Archive(String),
-    #[error("nothing in the archive looked like a widget")]
-    EmptyArchive,
-    #[error("widget config: {0}")]
-    Config(#[from] ConfigError),
-    #[error("{0}: {1}")]
-    Io(String, String),
+	#[error("a game is running; BAR rewrites its widget config on exit and would discard this")]
+	GameRunning,
+	#[error("{0} cannot be installed: {1}")]
+	NotInstallable(String, String),
+	#[error("downloading {0}: {1}")]
+	Download(String, String),
+	#[error("{0} did not match its published hash and was not installed")]
+	Corrupt(String),
+	#[error("{0} is {1} bytes, over the limit")]
+	TooLarge(String, usize),
+	#[error("{0} names a place outside the widget folder and was not installed")]
+	UnsafePath(String),
+	#[error("the archive could not be read: {0}")]
+	Archive(String),
+	#[error("nothing in the archive looked like a widget")]
+	EmptyArchive,
+	#[error("widget config: {0}")]
+	Config(#[from] ConfigError),
+	#[error("{0}: {1}")]
+	Io(String, String),
 }
 
 /// What an install put on disk, so a delete can undo exactly it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct InstalledWidget {
-    /// The usage document's key, so a row can find its own record.
-    pub key: String,
-    /// `GetInfo().name` — how BAR's config refers to it.
-    pub name: String,
-    /// Paths relative to the write directory.
-    pub files: Vec<String>,
-    /// Base64 MD5 per file, in the same order. An update compares against
-    /// these to know whether there is anything to do.
-    pub hashes: Vec<String>,
-    /// Where it came from, for the record and for an update.
-    pub source: String,
-    /// Seconds since the epoch.
-    pub installed_at: u64,
-    /// Engine settings keys present *before* this widget was installed.
-    ///
-    /// The only honest basis for attribution there is. `springsettings.cfg` is
-    /// a flat list of engine settings with no record of what wrote each one, so
-    /// after the fact nothing distinguishes a key this widget added from one the
-    /// player set themselves. A key that was not there before the install and is
-    /// there now is at least a candidate — which is worth showing, and still not
-    /// worth deleting on.
-    #[serde(default)]
-    pub settings_before: Vec<String>,
+	/// The usage document's key, so a row can find its own record.
+	pub key: String,
+	/// `GetInfo().name` — how BAR's config refers to it.
+	pub name: String,
+	/// Paths relative to the write directory.
+	pub files: Vec<String>,
+	/// Base64 MD5 per file, in the same order. An update compares against
+	/// these to know whether there is anything to do.
+	pub hashes: Vec<String>,
+	/// Where it came from, for the record and for an update.
+	pub source: String,
+	/// Seconds since the epoch.
+	pub installed_at: u64,
+	/// Engine settings keys present *before* this widget was installed.
+	///
+	/// The only honest basis for attribution there is. `springsettings.cfg` is
+	/// a flat list of engine settings with no record of what wrote each one, so
+	/// after the fact nothing distinguishes a key this widget added from one the
+	/// player set themselves. A key that was not there before the install and is
+	/// there now is at least a candidate — which is worth showing, and still not
+	/// worth deleting on.
+	#[serde(default)]
+	pub settings_before: Vec<String>,
 }
 
 impl InstalledWidget {
-    /// Whether the published files differ from what is on disk.
-    pub fn is_outdated(&self, install: &Install) -> bool {
-        let published: Vec<&str> = install
-            .files
-            .iter()
-            .map(|file| file.content_hash.as_str())
-            .collect();
-        published.is_empty() || published != self.hashes
-    }
+	/// Whether the published files differ from what is on disk.
+	pub fn is_outdated(&self, install: &Install) -> bool {
+		let published: Vec<&str> = install
+			.files
+			.iter()
+			.map(|file| file.content_hash.as_str())
+			.collect();
+		published.is_empty() || published != self.hashes
+	}
 }
 
 /// What modlobby has installed, and what BAR's own config says about it.
@@ -132,69 +132,69 @@ impl InstalledWidget {
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct WidgetStatus {
-    /// Usage keys modlobby installed, with what it wrote.
-    pub installed: Vec<InstalledWidget>,
-    /// Every widget named in `BYAR.lua`, ours or not.
-    pub configured: Vec<WidgetState>,
-    /// Whether a game is running, which is when config edits are refused.
-    pub locked: bool,
-    /// Where installs land, so the interface can say it rather than imply it.
-    pub write_dir: String,
-    /// Every widget file BAR would load, whoever put it there.
-    #[serde(default)]
-    pub local: Vec<crate::local::LocalWidget>,
+	/// Usage keys modlobby installed, with what it wrote.
+	pub installed: Vec<InstalledWidget>,
+	/// Every widget named in `BYAR.lua`, ours or not.
+	pub configured: Vec<WidgetState>,
+	/// Whether a game is running, which is when config edits are refused.
+	pub locked: bool,
+	/// Where installs land, so the interface can say it rather than imply it.
+	pub write_dir: String,
+	/// Every widget file BAR would load, whoever put it there.
+	#[serde(default)]
+	pub local: Vec<crate::local::LocalWidget>,
 }
 
 /// Everything modlobby has installed, keyed by usage key.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Ledger {
-    #[serde(default)]
-    pub widgets: BTreeMap<String, InstalledWidget>,
+	#[serde(default)]
+	pub widgets: BTreeMap<String, InstalledWidget>,
 }
 
 impl Ledger {
-    pub fn read(write_dir: &Path) -> Self {
-        let path = write_dir.join(LEDGER_FILE);
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            return Self::default();
-        };
-        serde_json::from_str(&text).unwrap_or_else(|err| {
-            // A ledger we cannot read is worse than none: it would make delete
-            // claim ownership of nothing while the files stay. Say so loudly
-            // and carry on with an empty one rather than failing the page.
-            tracing::warn!(?path, %err, "widget ledger unreadable; treating as empty");
-            Self::default()
-        })
-    }
+	pub fn read(write_dir: &Path) -> Self {
+		let path = write_dir.join(LEDGER_FILE);
+		let Ok(text) = std::fs::read_to_string(&path) else {
+			return Self::default();
+		};
+		serde_json::from_str(&text).unwrap_or_else(|err| {
+			// A ledger we cannot read is worse than none: it would make delete
+			// claim ownership of nothing while the files stay. Say so loudly
+			// and carry on with an empty one rather than failing the page.
+			tracing::warn!(?path, %err, "widget ledger unreadable; treating as empty");
+			Self::default()
+		})
+	}
 
-    pub fn write(&self, write_dir: &Path) -> Result<(), ManageError> {
-        let path = write_dir.join(LEDGER_FILE);
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|err| ManageError::Io(parent.display().to_string(), err.to_string()))?;
-        }
-        let text = serde_json::to_string_pretty(self)
-            .map_err(|err| ManageError::Io(LEDGER_FILE.to_owned(), err.to_string()))?;
-        std::fs::write(&path, text)
-            .map_err(|err| ManageError::Io(path.display().to_string(), err.to_string()))
-    }
+	pub fn write(&self, write_dir: &Path) -> Result<(), ManageError> {
+		let path = write_dir.join(LEDGER_FILE);
+		if let Some(parent) = path.parent() {
+			std::fs::create_dir_all(parent)
+				.map_err(|err| ManageError::Io(parent.display().to_string(), err.to_string()))?;
+		}
+		let text = serde_json::to_string_pretty(self)
+			.map_err(|err| ManageError::Io(LEDGER_FILE.to_owned(), err.to_string()))?;
+		std::fs::write(&path, text)
+			.map_err(|err| ManageError::Io(path.display().to_string(), err.to_string()))
+	}
 }
 
 /// What a delete actually did, and what it deliberately left behind.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Deleted {
-    /// Files removed, relative to the write directory.
-    pub files: Vec<String>,
-    /// What came out of `BYAR.lua`.
-    pub config: Removed,
-    /// Things this widget appears to have touched that were **not** removed,
-    /// because nothing on disk records which widget wrote them.
-    ///
-    /// Shown, never acted on. `springsettings.cfg` keys are unattributed, so
-    /// attributing one is a guess — and a guess that deletes is the kind of
-    /// bug a player discovers weeks later.
-    pub residue: Vec<String>,
+	/// Files removed, relative to the write directory.
+	pub files: Vec<String>,
+	/// What came out of `BYAR.lua`.
+	pub config: Removed,
+	/// Things this widget appears to have touched that were **not** removed,
+	/// because nothing on disk records which widget wrote them.
+	///
+	/// Shown, never acted on. `springsettings.cfg` keys are unattributed, so
+	/// attributing one is a guess — and a guess that deletes is the kind of
+	/// bug a player discovers weeks later.
+	pub residue: Vec<String>,
 }
 
 /// Fetch, verify and write one widget's files.
@@ -202,56 +202,56 @@ pub struct Deleted {
 /// Returns the ledger entry rather than writing it, so a caller can record the
 /// install and the config change together or not at all.
 pub async fn install(
-    http: &reqwest::Client,
-    key: &str,
-    name: &str,
-    install: &Install,
-    write_dir: &Path,
-    now: u64,
+	http: &reqwest::Client,
+	key: &str,
+	name: &str,
+	install: &Install,
+	write_dir: &Path,
+	now: u64,
 ) -> Result<InstalledWidget, ManageError> {
-    if !install.is_installable() {
-        return Err(ManageError::NotInstallable(
-            name.to_owned(),
-            install
-                .unavailable_because()
-                .unwrap_or("no download available")
-                .to_owned(),
-        ));
-    }
-    let fetched = if install.archive {
-        from_archive(http, &install.url, &install.files).await?
-    } else {
-        from_files(http, install).await?
-    };
-    if fetched.is_empty() {
-        return Err(ManageError::EmptyArchive);
-    }
+	if !install.is_installable() {
+		return Err(ManageError::NotInstallable(
+			name.to_owned(),
+			install
+				.unavailable_because()
+				.unwrap_or("no download available")
+				.to_owned(),
+		));
+	}
+	let fetched = if install.archive {
+		from_archive(http, &install.url, &install.files).await?
+	} else {
+		from_files(http, install).await?
+	};
+	if fetched.is_empty() {
+		return Err(ManageError::EmptyArchive);
+	}
 
-    // Every file is downloaded and verified before any is written, so a
-    // failure part-way leaves nothing half-installed behind.
-    let dir = write_dir.join(WIDGETS_DIR);
-    let mut files = Vec::new();
-    let mut hashes = Vec::new();
-    for (relative, data, hash) in fetched {
-        let path = dir.join(&relative);
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|err| ManageError::Io(parent.display().to_string(), err.to_string()))?;
-        }
-        std::fs::write(&path, &data)
-            .map_err(|err| ManageError::Io(path.display().to_string(), err.to_string()))?;
-        files.push(format!("{WIDGETS_DIR}/{relative}"));
-        hashes.push(hash);
-    }
-    Ok(InstalledWidget {
-        key: key.to_owned(),
-        name: name.to_owned(),
-        files,
-        hashes,
-        source: install.url.clone(),
-        installed_at: now,
-        settings_before: settings_keys(write_dir),
-    })
+	// Every file is downloaded and verified before any is written, so a
+	// failure part-way leaves nothing half-installed behind.
+	let dir = write_dir.join(WIDGETS_DIR);
+	let mut files = Vec::new();
+	let mut hashes = Vec::new();
+	for (relative, data, hash) in fetched {
+		let path = dir.join(&relative);
+		if let Some(parent) = path.parent() {
+			std::fs::create_dir_all(parent)
+				.map_err(|err| ManageError::Io(parent.display().to_string(), err.to_string()))?;
+		}
+		std::fs::write(&path, &data)
+			.map_err(|err| ManageError::Io(path.display().to_string(), err.to_string()))?;
+		files.push(format!("{WIDGETS_DIR}/{relative}"));
+		hashes.push(hash);
+	}
+	Ok(InstalledWidget {
+		key: key.to_owned(),
+		name: name.to_owned(),
+		files,
+		hashes,
+		source: install.url.clone(),
+		installed_at: now,
+		settings_before: settings_keys(write_dir),
+	})
 }
 
 /// The keys `springsettings.cfg` holds right now.
@@ -260,23 +260,23 @@ pub async fn install(
 /// the engine on every run, so comparing contents would report the whole file
 /// as changed every time. What matters is which settings exist.
 pub fn settings_keys(write_dir: &Path) -> Vec<String> {
-    let Ok(text) = std::fs::read_to_string(write_dir.join(SETTINGS_FILE)) else {
-        return Vec::new();
-    };
-    let mut keys: Vec<String> = text
-        .lines()
-        .filter_map(|line| {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with('#') || line.starts_with("//") {
-                return None;
-            }
-            let (key, _) = line.split_once('=')?;
-            Some(key.trim().to_owned())
-        })
-        .collect();
-    keys.sort();
-    keys.dedup();
-    keys
+	let Ok(text) = std::fs::read_to_string(write_dir.join(SETTINGS_FILE)) else {
+		return Vec::new();
+	};
+	let mut keys: Vec<String> = text
+		.lines()
+		.filter_map(|line| {
+			let line = line.trim();
+			if line.is_empty() || line.starts_with('#') || line.starts_with("//") {
+				return None;
+			}
+			let (key, _) = line.split_once('=')?;
+			Some(key.trim().to_owned())
+		})
+		.collect();
+	keys.sort();
+	keys.dedup();
+	keys
 }
 
 /// Engine settings that appeared since a widget was installed.
@@ -285,12 +285,12 @@ pub fn settings_keys(write_dir: &Path) -> Vec<String> {
 /// written any of these, and so could the player. It is the closest thing to
 /// evidence that exists, which is why delete shows it and leaves it alone.
 pub fn settings_since(entry: &InstalledWidget, write_dir: &Path) -> Vec<String> {
-    let before: std::collections::BTreeSet<&str> =
-        entry.settings_before.iter().map(String::as_str).collect();
-    settings_keys(write_dir)
-        .into_iter()
-        .filter(|key| !before.contains(key.as_str()))
-        .collect()
+	let before: std::collections::BTreeSet<&str> =
+		entry.settings_before.iter().map(String::as_str).collect();
+	settings_keys(write_dir)
+		.into_iter()
+		.filter(|key| !before.contains(key.as_str()))
+		.collect()
 }
 
 /// Remove a widget's files and its config entries, reporting what is left.
@@ -299,43 +299,43 @@ pub fn settings_since(entry: &InstalledWidget, write_dir: &Path) -> Vec<String> 
 /// It is reported and not touched: nothing on disk says which widget wrote a
 /// given `springsettings.cfg` key, so removing one is a guess.
 pub fn delete(
-    entry: &InstalledWidget,
-    write_dir: &Path,
-    config: &mut WidgetConfig,
-    residue: Vec<String>,
+	entry: &InstalledWidget,
+	write_dir: &Path,
+	config: &mut WidgetConfig,
+	residue: Vec<String>,
 ) -> Result<Deleted, ManageError> {
-    let mut removed = Vec::new();
-    for relative in &entry.files {
-        let path = write_dir.join(relative);
-        match std::fs::remove_file(&path) {
-            Ok(()) => removed.push(relative.clone()),
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-            Err(err) => return Err(ManageError::Io(path.display().to_string(), err.to_string())),
-        }
-        remove_empty_parents(&path, &write_dir.join(WIDGETS_DIR));
-    }
-    let config_removed = config.remove(&entry.name)?;
-    Ok(Deleted {
-        files: removed,
-        config: config_removed,
-        residue,
-    })
+	let mut removed = Vec::new();
+	for relative in &entry.files {
+		let path = write_dir.join(relative);
+		match std::fs::remove_file(&path) {
+			Ok(()) => removed.push(relative.clone()),
+			Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+			Err(err) => return Err(ManageError::Io(path.display().to_string(), err.to_string())),
+		}
+		remove_empty_parents(&path, &write_dir.join(WIDGETS_DIR));
+	}
+	let config_removed = config.remove(&entry.name)?;
+	Ok(Deleted {
+		files: removed,
+		config: config_removed,
+		residue,
+	})
 }
 
 /// Folders an install created and a delete emptied, up to but not including
 /// the widget folder itself. A folder holding anything else is left alone —
 /// `remove_dir` refuses a non-empty one, which is the whole safety here.
 fn remove_empty_parents(file: &Path, stop_at: &Path) {
-    let mut current = file.parent();
-    while let Some(folder) = current {
-        if folder == stop_at || !folder.starts_with(stop_at) {
-            break;
-        }
-        if std::fs::remove_dir(folder).is_err() {
-            break;
-        }
-        current = folder.parent();
-    }
+	let mut current = file.parent();
+	while let Some(folder) = current {
+		if folder == stop_at || !folder.starts_with(stop_at) {
+			break;
+		}
+		if std::fs::remove_dir(folder).is_err() {
+			break;
+		}
+		current = folder.parent();
+	}
 }
 
 type Fetched = Vec<(String, Vec<u8>, String)>;
@@ -345,16 +345,16 @@ type Fetched = Vec<(String, Vec<u8>, String)>;
 /// All or nothing: a widget written without a helper it loads by path fails as
 /// soon as BAR starts it, which is worse than not installing it.
 async fn from_files(http: &reqwest::Client, install: &Install) -> Result<Fetched, ManageError> {
-    let mut fetched = Vec::new();
-    for file in install.downloadable_files() {
-        let Some(relative) = file.install_path() else {
-            return Err(ManageError::UnsafePath(file.path.clone()));
-        };
-        let data = get(http, &file.url, FILE_LIMIT).await?;
-        verify(&relative, &data, &file.content_hash)?;
-        fetched.push((relative, data, file.content_hash.clone()));
-    }
-    Ok(fetched)
+	let mut fetched = Vec::new();
+	for file in install.downloadable_files() {
+		let Some(relative) = file.install_path() else {
+			return Err(ManageError::UnsafePath(file.path.clone()));
+		};
+		let data = get(http, &file.url, FILE_LIMIT).await?;
+		verify(&relative, &data, &file.content_hash)?;
+		fetched.push((relative, data, file.content_hash.clone()));
+	}
+	Ok(fetched)
 }
 
 /// Unpack a hub distribution, keeping only members the document vouches for.
@@ -364,108 +364,108 @@ async fn from_files(http: &reqwest::Client, install: &Install) -> Result<Fetched
 /// by its *hash*, and installs under that file's name. A member the document
 /// does not list is not written, whatever it claims to be.
 async fn from_archive(
-    http: &reqwest::Client,
-    url: &str,
-    files: &[InstallFile],
+	http: &reqwest::Client,
+	url: &str,
+	files: &[InstallFile],
 ) -> Result<Fetched, ManageError> {
-    let data = get(http, url, ARCHIVE_LIMIT).await?;
-    let mut archive = zip::ZipArchive::new(Cursor::new(data))
-        .map_err(|err| ManageError::Archive(err.to_string()))?;
-    let wanted: BTreeMap<&str, &InstallFile> = files
-        .iter()
-        .map(|file| (file.content_hash.as_str(), file))
-        .collect();
+	let data = get(http, url, ARCHIVE_LIMIT).await?;
+	let mut archive = zip::ZipArchive::new(Cursor::new(data))
+		.map_err(|err| ManageError::Archive(err.to_string()))?;
+	let wanted: BTreeMap<&str, &InstallFile> = files
+		.iter()
+		.map(|file| (file.content_hash.as_str(), file))
+		.collect();
 
-    let mut fetched = Vec::new();
-    for index in 0..archive.len() {
-        let mut member = archive
-            .by_index(index)
-            .map_err(|err| ManageError::Archive(err.to_string()))?;
-        if !member.is_file() || member.size() as usize > FILE_LIMIT {
-            continue;
-        }
-        let mut bytes = Vec::new();
-        member
-            .read_to_end(&mut bytes)
-            .map_err(|err| ManageError::Archive(err.to_string()))?;
-        let hash = hash_of(&bytes);
-        let Some(file) = wanted.get(hash.as_str()) else {
-            continue;
-        };
-        let Some(relative) = file.install_path() else {
-            return Err(ManageError::UnsafePath(file.path.clone()));
-        };
-        fetched.push((relative, bytes, hash));
-    }
-    Ok(fetched)
+	let mut fetched = Vec::new();
+	for index in 0..archive.len() {
+		let mut member = archive
+			.by_index(index)
+			.map_err(|err| ManageError::Archive(err.to_string()))?;
+		if !member.is_file() || member.size() as usize > FILE_LIMIT {
+			continue;
+		}
+		let mut bytes = Vec::new();
+		member
+			.read_to_end(&mut bytes)
+			.map_err(|err| ManageError::Archive(err.to_string()))?;
+		let hash = hash_of(&bytes);
+		let Some(file) = wanted.get(hash.as_str()) else {
+			continue;
+		};
+		let Some(relative) = file.install_path() else {
+			return Err(ManageError::UnsafePath(file.path.clone()));
+		};
+		fetched.push((relative, bytes, hash));
+	}
+	Ok(fetched)
 }
 
 async fn get(http: &reqwest::Client, url: &str, limit: usize) -> Result<Vec<u8>, ManageError> {
-    let response = http
-        .get(url)
-        .send()
-        .await
-        .map_err(|err| ManageError::Download(url.to_owned(), err.to_string()))?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(ManageError::Download(
-            url.to_owned(),
-            format!("HTTP {}", status.as_u16()),
-        ));
-    }
-    if let Some(length) = response.content_length()
-        && length as usize > limit
-    {
-        return Err(ManageError::TooLarge(url.to_owned(), length as usize));
-    }
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|err| ManageError::Download(url.to_owned(), err.to_string()))?;
-    if bytes.len() > limit {
-        return Err(ManageError::TooLarge(url.to_owned(), bytes.len()));
-    }
-    Ok(bytes.to_vec())
+	let response = http
+		.get(url)
+		.send()
+		.await
+		.map_err(|err| ManageError::Download(url.to_owned(), err.to_string()))?;
+	let status = response.status();
+	if !status.is_success() {
+		return Err(ManageError::Download(
+			url.to_owned(),
+			format!("HTTP {}", status.as_u16()),
+		));
+	}
+	if let Some(length) = response.content_length()
+		&& length as usize > limit
+	{
+		return Err(ManageError::TooLarge(url.to_owned(), length as usize));
+	}
+	let bytes = response
+		.bytes()
+		.await
+		.map_err(|err| ManageError::Download(url.to_owned(), err.to_string()))?;
+	if bytes.len() > limit {
+		return Err(ManageError::TooLarge(url.to_owned(), bytes.len()));
+	}
+	Ok(bytes.to_vec())
 }
 
 /// `VFS.CalculateHash(data, 0)`: base64 of the MD5 digest.
 pub fn hash_of(data: &[u8]) -> String {
-    BASE64.encode(Md5::digest(data))
+	BASE64.encode(Md5::digest(data))
 }
 
 fn verify(name: &str, data: &[u8], expected: &str) -> Result<(), ManageError> {
-    // A published hash may be of the text-mode form -- BAR reads with
-    // `io.open(f, "r")`, so Windows collapses CRLF before hashing -- while the
-    // bytes on the server are the raw ones. Both are the same widget.
-    let raw = hash_of(data);
-    if raw == expected {
-        return Ok(());
-    }
-    let unix: Vec<u8> = collapse_crlf(data);
-    if unix != data && hash_of(&unix) == expected {
-        return Ok(());
-    }
-    tracing::warn!(name, expected, got = %raw, "widget file failed verification");
-    Err(ManageError::Corrupt(name.to_owned()))
+	// A published hash may be of the text-mode form -- BAR reads with
+	// `io.open(f, "r")`, so Windows collapses CRLF before hashing -- while the
+	// bytes on the server are the raw ones. Both are the same widget.
+	let raw = hash_of(data);
+	if raw == expected {
+		return Ok(());
+	}
+	let unix: Vec<u8> = collapse_crlf(data);
+	if unix != data && hash_of(&unix) == expected {
+		return Ok(());
+	}
+	tracing::warn!(name, expected, got = %raw, "widget file failed verification");
+	Err(ManageError::Corrupt(name.to_owned()))
 }
 
 pub(crate) fn collapse_crlf(data: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(data.len());
-    let mut at = 0;
-    while at < data.len() {
-        if data[at] == b'\r' && data.get(at + 1) == Some(&b'\n') {
-            at += 1;
-            continue;
-        }
-        out.push(data[at]);
-        at += 1;
-    }
-    out
+	let mut out = Vec::with_capacity(data.len());
+	let mut at = 0;
+	while at < data.len() {
+		if data[at] == b'\r' && data.get(at + 1) == Some(&b'\n') {
+			at += 1;
+			continue;
+		}
+		out.push(data[at]);
+		at += 1;
+	}
+	out
 }
 
 /// Where a widget's files would be installed, for a caller that needs the path.
 pub fn widget_path(write_dir: &Path, file_name: &str) -> PathBuf {
-    write_dir.join(WIDGETS_DIR).join(file_name)
+	write_dir.join(WIDGETS_DIR).join(file_name)
 }
 
 /// Files outside modlobby's ownership that mention a widget by name.
@@ -476,27 +476,27 @@ pub fn widget_path(write_dir: &Path, file_name: &str) -> PathBuf {
 /// kind of bug a player discovers weeks later. Naming what was left behind lets
 /// them decide; removing it on their behalf does not.
 pub fn residue_of(entry: &InstalledWidget, write_dir: &Path) -> Vec<String> {
-    const WATCHED: [&str; 2] = [SETTINGS_FILE, "LuaUI/Config/BYAR_ui.lua"];
-    let mut found: Vec<String> = WATCHED
-        .iter()
-        .filter(|relative| {
-            std::fs::read_to_string(write_dir.join(relative))
-                .is_ok_and(|text| text.contains(&entry.name))
-        })
-        .map(|relative| format!("{relative} mentions this widget by name"))
-        .collect();
-    // Weaker evidence than a name match but wider: a widget that writes a key
-    // named nothing like itself shows up here and nowhere else.
-    let appeared = settings_since(entry, write_dir);
-    if !appeared.is_empty() {
-        found.push(format!(
-            "{} engine setting{} appeared since it was installed: {}",
-            appeared.len(),
-            if appeared.len() == 1 { "" } else { "s" },
-            appeared.join(", ")
-        ));
-    }
-    found
+	const WATCHED: [&str; 2] = [SETTINGS_FILE, "LuaUI/Config/BYAR_ui.lua"];
+	let mut found: Vec<String> = WATCHED
+		.iter()
+		.filter(|relative| {
+			std::fs::read_to_string(write_dir.join(relative))
+				.is_ok_and(|text| text.contains(&entry.name))
+		})
+		.map(|relative| format!("{relative} mentions this widget by name"))
+		.collect();
+	// Weaker evidence than a name match but wider: a widget that writes a key
+	// named nothing like itself shows up here and nowhere else.
+	let appeared = settings_since(entry, write_dir);
+	if !appeared.is_empty() {
+		found.push(format!(
+			"{} engine setting{} appeared since it was installed: {}",
+			appeared.len(),
+			if appeared.len() == 1 { "" } else { "s" },
+			appeared.join(", ")
+		));
+	}
+	found
 }
 
 /// Write the widget config through a temporary file in the same directory.
@@ -506,20 +506,20 @@ pub fn residue_of(entry: &InstalledWidget, write_dir: &Path) -> Vec<String> {
 /// A rename within one directory is atomic on both platforms, so the file on
 /// disk is either wholly the old one or wholly the new one.
 pub fn write_config(path: &Path, text: &str) -> Result<(), ManageError> {
-    let io = |err: std::io::Error| ManageError::Io(path.display().to_string(), err.to_string());
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(io)?;
-    }
-    let temporary = path.with_extension("lua.modlobby-new");
-    std::fs::write(&temporary, text).map_err(io)?;
-    std::fs::rename(&temporary, path).map_err(io)
+	let io = |err: std::io::Error| ManageError::Io(path.display().to_string(), err.to_string());
+	if let Some(parent) = path.parent() {
+		std::fs::create_dir_all(parent).map_err(io)?;
+	}
+	let temporary = path.with_extension("lua.modlobby-new");
+	std::fs::write(&temporary, text).map_err(io)?;
+	std::fs::rename(&temporary, path).map_err(io)
 }
 
 /// Read the widget config, or `None` when BAR has not written one yet.
 pub fn read_config(write_dir: &Path) -> Option<WidgetConfig> {
-    std::fs::read_to_string(write_dir.join(crate::config::CONFIG_PATH))
-        .ok()
-        .map(WidgetConfig::parse)
+	std::fs::read_to_string(write_dir.join(crate::config::CONFIG_PATH))
+		.ok()
+		.map(WidgetConfig::parse)
 }
 
 /// Whether a widget in the ledger still has every file it was installed with.
@@ -528,8 +528,8 @@ pub fn read_config(write_dir: &Path) -> Option<WidgetConfig> {
 /// longer describes the disk, and an update is the honest answer rather than a
 /// delete that reports files it never found.
 pub fn is_intact(entry: &InstalledWidget, write_dir: &Path) -> bool {
-    entry
-        .files
-        .iter()
-        .all(|relative| write_dir.join(relative).exists())
+	entry
+		.files
+		.iter()
+		.all(|relative| write_dir.join(relative).exists())
 }

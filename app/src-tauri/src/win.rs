@@ -12,30 +12,30 @@ use std::ffi::c_void;
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, TRUE};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetForegroundWindow, GetWindowThreadProcessId, IsWindowVisible,
+	EnumWindows, GetForegroundWindow, GetWindowThreadProcessId, IsWindowVisible,
 };
 use windows_sys::core::BOOL;
 
 struct Hunt {
-    wanted: u32,
-    found: Vec<HWND>,
+	wanted: u32,
+	found: Vec<HWND>,
 }
 
 unsafe extern "system" fn visit(window: HWND, state: LPARAM) -> BOOL {
-    // SAFETY: `state` is the `&mut Hunt` handed to `EnumWindows` below, which
-    // outlives the enumeration — it is synchronous.
-    let hunt = unsafe { &mut *(state as *mut Hunt) };
+	// SAFETY: `state` is the `&mut Hunt` handed to `EnumWindows` below, which
+	// outlives the enumeration — it is synchronous.
+	let hunt = unsafe { &mut *(state as *mut Hunt) };
 
-    let mut owner = 0_u32;
-    // SAFETY: `window` comes from the enumeration and `owner` is ours.
-    unsafe { GetWindowThreadProcessId(window, &mut owner) };
-    // SAFETY: a window handle from the enumeration.
-    if owner == hunt.wanted && unsafe { IsWindowVisible(window) } != 0 {
-        hunt.found.push(window);
-    }
-    // Keep going: a process may own several, and the first is not always the
-    // one anybody means.
-    TRUE
+	let mut owner = 0_u32;
+	// SAFETY: `window` comes from the enumeration and `owner` is ours.
+	unsafe { GetWindowThreadProcessId(window, &mut owner) };
+	// SAFETY: a window handle from the enumeration.
+	if owner == hunt.wanted && unsafe { IsWindowVisible(window) } != 0 {
+		hunt.found.push(window);
+	}
+	// Keep going: a process may own several, and the first is not always the
+	// one anybody means.
+	TRUE
 }
 
 /// Every visible top-level window belonging to `pid`, in z-order.
@@ -43,23 +43,23 @@ unsafe extern "system" fn visit(window: HWND, state: LPARAM) -> BOOL {
 /// Empty is an ordinary answer, not a failure: a game that is still loading
 /// has no window yet, and one that has exited has none any more.
 pub fn visible_windows_of(pid: u32) -> Vec<HWND> {
-    let mut hunt = Hunt {
-        wanted: pid,
-        found: Vec::new(),
-    };
-    // SAFETY: `visit` matches the expected signature and `hunt` outlives this
-    // synchronous call.
-    unsafe {
-        EnumWindows(Some(visit), &raw mut hunt as *mut c_void as LPARAM);
-    }
-    hunt.found
+	let mut hunt = Hunt {
+		wanted: pid,
+		found: Vec::new(),
+	};
+	// SAFETY: `visit` matches the expected signature and `hunt` outlives this
+	// synchronous call.
+	unsafe {
+		EnumWindows(Some(visit), &raw mut hunt as *mut c_void as LPARAM);
+	}
+	hunt.found
 }
 
 /// Whether the window in front belongs to `pid`.
 pub fn owns_foreground(pid: u32) -> bool {
-    let mut owner = 0_u32;
-    // SAFETY: both calls accept a null window, which leaves `owner` at 0 and
-    // so matches no process we spawned.
-    unsafe { GetWindowThreadProcessId(GetForegroundWindow(), &mut owner) };
-    owner == pid
+	let mut owner = 0_u32;
+	// SAFETY: both calls accept a null window, which leaves `owner` at 0 and
+	// so matches no process we spawned.
+	unsafe { GetWindowThreadProcessId(GetForegroundWindow(), &mut owner) };
+	owner == pid
 }

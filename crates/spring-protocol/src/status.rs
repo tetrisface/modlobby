@@ -8,20 +8,20 @@
 //! mid-game joiner to the engine only after seeing it (`spads.pl` `cbClientStatus`).
 
 pub fn my_status(in_game: bool, away: bool) -> String {
-    format!("MYSTATUS {}", u32::from(in_game) | (u32::from(away) << 1))
+	format!("MYSTATUS {}", u32::from(in_game) | (u32::from(away) << 1))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::UserStatus;
+	use super::*;
+	use crate::UserStatus;
 
-    #[test]
-    fn bits_round_trip_through_the_clientstatus_layout() {
-        assert_eq!(my_status(true, false), "MYSTATUS 1");
-        assert_eq!(my_status(false, true), "MYSTATUS 2");
-        assert_eq!(my_status(false, false), "MYSTATUS 0");
-        let decoded = UserStatus::from_bits(3);
-        assert!(decoded.in_game && decoded.away);
-    }
+	#[test]
+	fn bits_round_trip_through_the_clientstatus_layout() {
+		assert_eq!(my_status(true, false), "MYSTATUS 1");
+		assert_eq!(my_status(false, true), "MYSTATUS 2");
+		assert_eq!(my_status(false, false), "MYSTATUS 0");
+		let decoded = UserStatus::from_bits(3);
+		assert!(decoded.in_game && decoded.away);
+	}
 }

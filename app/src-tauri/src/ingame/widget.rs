@@ -7,10 +7,10 @@ use std::path::{Path, PathBuf};
 /// `barwidgets.lua:447` scans `LuaUI/Widgets/` in `VFS.RAW`, which is the
 /// write directory — the same one we pass as `--write-dir`.
 pub fn path(data_dir: &Path) -> PathBuf {
-    data_dir
-        .join("LuaUI")
-        .join("Widgets")
-        .join("modlobby_escape.lua")
+	data_dir
+		.join("LuaUI")
+		.join("Widgets")
+		.join("modlobby_escape.lua")
 }
 
 /// The widget, with this run's port and token in it.
@@ -19,10 +19,10 @@ pub fn path(data_dir: &Path) -> PathBuf {
 /// every run: a widget left behind by a crash is not merely inert, it is
 /// talking to a port that no longer answers with a secret that no longer works.
 pub fn source(port: u16, token: &str) -> String {
-    // `{port}` and `{token}` are the only things interpolated; the rest is
-    // literal Lua, kept readable so anyone can see what we put in their game.
-    format!(
-        r#"-- modlobby: Escape opens the lobby.
+	// `{port}` and `{token}` are the only things interpolated; the rest is
+	// literal Lua, kept readable so anyone can see what we put in their game.
+	format!(
+		r#"-- modlobby: Escape opens the lobby.
 --
 -- Written by modlobby when it launches a game and removed when it exits. It
 -- draws nothing and sends nothing but a keypress notification to a loopback
@@ -159,51 +159,51 @@ function widget:KeyPress(key, mods, isRepeat)
 	return ask("raise")
 end
 "#
-    )
+	)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+	use super::*;
 
-    #[test]
-    fn it_lands_where_bar_looks_for_user_widgets() {
-        let path = path(Path::new("C:/bar"));
-        assert!(path.ends_with("LuaUI/Widgets/modlobby_escape.lua"));
-    }
+	#[test]
+	fn it_lands_where_bar_looks_for_user_widgets() {
+		let path = path(Path::new("C:/bar"));
+		assert!(path.ends_with("LuaUI/Widgets/modlobby_escape.lua"));
+	}
 
-    #[test]
-    fn the_port_and_token_are_this_runs() {
-        let source = source(51234, "cafebabe");
-        assert!(source.contains("local PORT = 51234"));
-        assert!(source.contains(r#"local TOKEN = "cafebabe""#));
-    }
+	#[test]
+	fn the_port_and_token_are_this_runs() {
+		let source = source(51234, "cafebabe");
+		assert!(source.contains("local PORT = 51234"));
+		assert!(source.contains(r#"local TOKEN = "cafebabe""#));
+	}
 
-    #[test]
-    fn the_braces_survive_being_a_format_string() {
-        // `GetInfo` returns a table, and a `{` that did not make it through
-        // would be a Lua syntax error the game reports and we never see.
-        let source = source(1, "x");
-        assert!(source.contains("return {\n\t\tname = \"modlobby Escape\""));
-        assert!(!source.contains("{{"), "no doubled braces left over");
-    }
+	#[test]
+	fn the_braces_survive_being_a_format_string() {
+		// `GetInfo` returns a table, and a `{` that did not make it through
+		// would be a Lua syntax error the game reports and we never see.
+		let source = source(1, "x");
+		assert!(source.contains("return {\n\t\tname = \"modlobby Escape\""));
+		assert!(!source.contains("{{"), "no doubled braces left over");
+	}
 
-    #[test]
-    fn escape_is_only_taken_when_it_would_do_nothing_else() {
-        let source = source(1, "x");
-        // The three guards that keep this from stealing the game's own key.
-        assert!(source.contains("GetSelectedUnitsCount() > 0"));
-        assert!(source.contains("isRepeat"));
-        assert!(source.contains("return ask(\"raise\")"));
-    }
+	#[test]
+	fn escape_is_only_taken_when_it_would_do_nothing_else() {
+		let source = source(1, "x");
+		// The three guards that keep this from stealing the game's own key.
+		assert!(source.contains("GetSelectedUnitsCount() > 0"));
+		assert!(source.contains("isRepeat"));
+		assert!(source.contains("return ask(\"raise\")"));
+	}
 
-    /// The way out of a game whose lobby died: BAR hides its own quit screen
-    /// while a menu is loaded, so the engine's quit box is all that is left.
-    #[test]
-    fn a_dead_lobby_still_leaves_a_way_out_of_the_game() {
-        let source = source(1, "x");
-        assert!(source.contains("function widget:RecvLuaMsg"));
-        assert!(source.contains(r#"msg ~= "modlobbyGone""#));
-        assert!(source.contains(r#"Spring.SendCommands("QuitMenu")"#));
-    }
+	/// The way out of a game whose lobby died: BAR hides its own quit screen
+	/// while a menu is loaded, so the engine's quit box is all that is left.
+	#[test]
+	fn a_dead_lobby_still_leaves_a_way_out_of_the_game() {
+		let source = source(1, "x");
+		assert!(source.contains("function widget:RecvLuaMsg"));
+		assert!(source.contains(r#"msg ~= "modlobbyGone""#));
+		assert!(source.contains(r#"Spring.SendCommands("QuitMenu")"#));
+	}
 }

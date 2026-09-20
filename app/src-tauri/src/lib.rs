@@ -22,11 +22,11 @@ use tauri::{Emitter, Manager};
 
 /// The overlay's slice of the settings file.
 fn overlay_settings(settings: &settings::Settings) -> overlay::OverlaySettings {
-    overlay::OverlaySettings {
-        enabled: settings.overlay.enabled,
-        hotkey: settings.overlay.hotkey.clone(),
-        return_focus_to_game: settings.overlay.return_focus_to_game,
-    }
+	overlay::OverlaySettings {
+		enabled: settings.overlay.enabled,
+		hotkey: settings.overlay.hotkey.clone(),
+		return_focus_to_game: settings.overlay.return_focus_to_game,
+	}
 }
 
 /// Where a borderless copy of the engine config may be kept, or `None` to
@@ -37,17 +37,17 @@ fn overlay_settings(settings: &settings::Settings) -> overlay::OverlaySettings {
 /// configured, and nothing of ours should appear on disk.
 /// The setting's `0` is the runtime's "never".
 fn idle_timeout(settings: &settings::Settings) -> Option<std::time::Duration> {
-    match settings.connection.idle_disconnect_minutes {
-        0 => None,
-        minutes => Some(std::time::Duration::from_secs(u64::from(minutes) * 60)),
-    }
+	match settings.connection.idle_disconnect_minutes {
+		0 => None,
+		minutes => Some(std::time::Duration::from_secs(u64::from(minutes) * 60)),
+	}
 }
 
 fn overlay_config_dir(settings: &settings::Settings) -> Option<std::path::PathBuf> {
-    settings
-        .overlay
-        .enabled
-        .then(|| settings::config_dir().join("engine"))
+	settings
+		.overlay
+		.enabled
+		.then(|| settings::config_dir().join("engine"))
 }
 
 /// Tells the runtime and the overlay what the settings now say. The one way
@@ -56,33 +56,33 @@ fn overlay_config_dir(settings: &settings::Settings) -> Option<std::path::PathBu
 /// write the watcher skips, so without this a box ticked on the Settings page
 /// took hold only at the next start.
 pub(crate) async fn push_settings(
-    client: &lobby_runtime::Client,
-    overlay: &overlay::Controller,
-    settings: &settings::Settings,
+	client: &lobby_runtime::Client,
+	overlay: &overlay::Controller,
+	settings: &settings::Settings,
 ) {
-    // The content check needs to know where BAR keeps its files.
-    let _ = client.set_data_dir(settings.paths.data_dir.clone()).await;
-    let _ = client.set_auto_launch(settings.play.auto_launch).await;
-    let _ = client.set_auto_download(settings.play.auto_download).await;
-    let _ = client
-        .set_overlay_config_dir(overlay_config_dir(settings))
-        .await;
-    let _ = client.set_idle_timeout(idle_timeout(settings)).await;
-    let _ = client.set_rapid_masters(rapid_masters(settings)).await;
-    overlay.settings_changed(overlay_settings(settings));
+	// The content check needs to know where BAR keeps its files.
+	let _ = client.set_data_dir(settings.paths.data_dir.clone()).await;
+	let _ = client.set_auto_launch(settings.play.auto_launch).await;
+	let _ = client.set_auto_download(settings.play.auto_download).await;
+	let _ = client
+		.set_overlay_config_dir(overlay_config_dir(settings))
+		.await;
+	let _ = client.set_idle_timeout(idle_timeout(settings)).await;
+	let _ = client.set_rapid_masters(rapid_masters(settings)).await;
+	overlay.settings_changed(overlay_settings(settings));
 }
 
 /// Each server's own rapid master index, by server id. A server without one
 /// is left out, and its games are looked for in BAR's.
 fn rapid_masters(settings: &settings::Settings) -> std::collections::BTreeMap<String, String> {
-    settings
-        .servers
-        .iter()
-        .filter_map(|entry| {
-            let rapid = entry.rapid.as_deref()?.trim();
-            (!rapid.is_empty()).then(|| (spring_protocol::server_id(&entry.host), rapid.to_owned()))
-        })
-        .collect()
+	settings
+		.servers
+		.iter()
+		.filter_map(|entry| {
+			let rapid = entry.rapid.as_deref()?.trim();
+			(!rapid.is_empty()).then(|| (spring_protocol::server_id(&entry.host), rapid.to_owned()))
+		})
+		.collect()
 }
 
 /// The live in-game socket, or nothing if it could not be bound.
@@ -97,27 +97,27 @@ pub(crate) type InGameHandle = std::sync::Arc<std::sync::Mutex<Option<ingame::In
 /// The overlay controller answers "is this our game", so a game launched from
 /// another lobby while modlobby is open is told `no` and keeps its own Escape.
 struct InGameActions {
-    overlay: std::sync::Arc<overlay::Controller>,
-    client: lobby_runtime::Client,
+	overlay: std::sync::Arc<overlay::Controller>,
+	client: lobby_runtime::Client,
 }
 
 impl ingame::Actions for InGameActions {
-    fn raise(&self) -> bool {
-        self.overlay.raise()
-    }
+	fn raise(&self) -> bool {
+		self.overlay.raise()
+	}
 
-    fn quit_game(&self) -> bool {
-        if !self.overlay.armed_for_game() {
-            return false;
-        }
-        // The widget is waiting on a reply, so this cannot block on the
-        // runtime; the answer is "yes, this is ours and the stop is on its way".
-        let client = self.client.clone();
-        tauri::async_runtime::spawn(async move {
-            let _ = client.stop_engine().await;
-        });
-        true
-    }
+	fn quit_game(&self) -> bool {
+		if !self.overlay.armed_for_game() {
+			return false;
+		}
+		// The widget is waiting on a reply, so this cannot block on the
+		// runtime; the answer is "yes, this is ours and the stop is on its way".
+		let client = self.client.clone();
+		tauri::async_runtime::spawn(async move {
+			let _ = client.stop_engine().await;
+		});
+		true
+	}
 }
 
 /// When `run` began, for the `startup:` milestones in the log.
@@ -125,368 +125,368 @@ static STARTED: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::n
 
 /// Milliseconds since the process began starting up.
 pub(crate) fn since_start() -> u128 {
-    STARTED
-        .get()
-        .map(|started| started.elapsed().as_millis())
-        .unwrap_or(0)
+	STARTED
+		.get()
+		.map(|started| started.elapsed().as_millis())
+		.unwrap_or(0)
 }
 
 pub fn run() {
-    let started = *STARTED.get_or_init(std::time::Instant::now);
-    // Before anything reads the environment: the config dir and the update
-    // switch both come from it. A dev run finds the repo's `.env` by walking
-    // up from the working directory; an installed app has none and skips it.
-    let dotenv = dotenvy::dotenv();
-    let app = state::App::open().unwrap_or_else(|err| panic!("starting modlobby: {err}"));
-    let opened = started.elapsed().as_millis();
-    // Held for the life of the process: dropping it stops the file writer.
-    let _logging = logging::start(app.settings.dir(), &app.settings.get().logging.filter);
-    tracing::debug!(ms = opened, "startup: app opened");
-    tracing::debug!(ms = since_start(), "startup: logging up");
-    match dotenv {
-        Ok(path) => tracing::info!(path = %path.display(), "loaded .env"),
-        Err(err) if err.not_found() => {}
-        Err(err) => tracing::warn!(%err, "ignoring .env"),
-    }
+	let started = *STARTED.get_or_init(std::time::Instant::now);
+	// Before anything reads the environment: the config dir and the update
+	// switch both come from it. A dev run finds the repo's `.env` by walking
+	// up from the working directory; an installed app has none and skips it.
+	let dotenv = dotenvy::dotenv();
+	let app = state::App::open().unwrap_or_else(|err| panic!("starting modlobby: {err}"));
+	let opened = started.elapsed().as_millis();
+	// Held for the life of the process: dropping it stops the file writer.
+	let _logging = logging::start(app.settings.dir(), &app.settings.get().logging.filter);
+	tracing::debug!(ms = opened, "startup: app opened");
+	tracing::debug!(ms = since_start(), "startup: logging up");
+	match dotenv {
+		Ok(path) => tracing::info!(path = %path.display(), "loaded .env"),
+		Err(err) if err.not_found() => {}
+		Err(err) => tracing::warn!(%err, "ignoring .env"),
+	}
 
-    tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        // Where the window was and how big it was, kept between runs — a lobby
-        // is a window you arrange once and then live with. Fullscreen is
-        // deliberately not part of it: the lobby's fullscreen is its own
-        // (`screen.rs`), and an OS-level fullscreen restored at startup is
-        // exactly the stuck state that made the toggle look dead.
-        .plugin(
-            tauri_plugin_window_state::Builder::default()
-                .with_state_flags(
-                    // Neither the frame nor fullscreen is something this
-                    // window remembers: it is frameless by design (the nav
-                    // is its title bar), and a saved `decorated: true` --
-                    // which one buggy build wrote -- would put the OS bar
-                    // over the page's own on every start after.
-                    tauri_plugin_window_state::StateFlags::all()
-                        - tauri_plugin_window_state::StateFlags::FULLSCREEN
-                        - tauri_plugin_window_state::StateFlags::DECORATIONS,
-                )
-                .build(),
-        )
-        .plugin(
-            // The handler fires on press and release; only one of those is an
-            // instruction.
-            tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _shortcut, event| {
-                    use tauri_plugin_global_shortcut::ShortcutState;
-                    if event.state() != ShortcutState::Pressed {
-                        return;
-                    }
-                    if let Some(overlay) = app.try_state::<std::sync::Arc<overlay::Controller>>() {
-                        overlay.hotkey();
-                    }
-                })
-                .build(),
-        )
-        .setup(move |tauri_app| {
-            // The overlay needs a window, so it is built here rather than in
-            // `App::open`, and Tauri holds it beside the app state.
-            let controller = std::sync::Arc::new(overlay::Controller::new(
-                overlay_settings(&app.settings.get()),
-                std::sync::Arc::new(overlay::surface::TauriSurface::new(
-                    overlay::surface::main_window(tauri_app.handle())
-                        .ok_or("the main window is missing")?,
-                )),
-                std::sync::Arc::new(overlay::foreground::Windows),
-                std::sync::Arc::new(overlay::hotkey::GlobalHotkey::new(
-                    tauri_app.handle().clone(),
-                )),
-            ));
-            tauri_app.manage(controller.clone());
-            tauri_app.manage(screen::Screen::default());
+	tauri::Builder::default()
+		.plugin(tauri_plugin_opener::init())
+		.plugin(tauri_plugin_notification::init())
+		.plugin(tauri_plugin_updater::Builder::new().build())
+		// Where the window was and how big it was, kept between runs — a lobby
+		// is a window you arrange once and then live with. Fullscreen is
+		// deliberately not part of it: the lobby's fullscreen is its own
+		// (`screen.rs`), and an OS-level fullscreen restored at startup is
+		// exactly the stuck state that made the toggle look dead.
+		.plugin(
+			tauri_plugin_window_state::Builder::default()
+				.with_state_flags(
+					// Neither the frame nor fullscreen is something this
+					// window remembers: it is frameless by design (the nav
+					// is its title bar), and a saved `decorated: true` --
+					// which one buggy build wrote -- would put the OS bar
+					// over the page's own on every start after.
+					tauri_plugin_window_state::StateFlags::all()
+						- tauri_plugin_window_state::StateFlags::FULLSCREEN
+						- tauri_plugin_window_state::StateFlags::DECORATIONS,
+				)
+				.build(),
+		)
+		.plugin(
+			// The handler fires on press and release; only one of those is an
+			// instruction.
+			tauri_plugin_global_shortcut::Builder::new()
+				.with_handler(|app, _shortcut, event| {
+					use tauri_plugin_global_shortcut::ShortcutState;
+					if event.state() != ShortcutState::Pressed {
+						return;
+					}
+					if let Some(overlay) = app.try_state::<std::sync::Arc<overlay::Controller>>() {
+						overlay.hotkey();
+					}
+				})
+				.build(),
+		)
+		.setup(move |tauri_app| {
+			// The overlay needs a window, so it is built here rather than in
+			// `App::open`, and Tauri holds it beside the app state.
+			let controller = std::sync::Arc::new(overlay::Controller::new(
+				overlay_settings(&app.settings.get()),
+				std::sync::Arc::new(overlay::surface::TauriSurface::new(
+					overlay::surface::main_window(tauri_app.handle())
+						.ok_or("the main window is missing")?,
+				)),
+				std::sync::Arc::new(overlay::foreground::Windows),
+				std::sync::Arc::new(overlay::hotkey::GlobalHotkey::new(
+					tauri_app.handle().clone(),
+				)),
+			));
+			tauri_app.manage(controller.clone());
+			tauri_app.manage(screen::Screen::default());
 
-            // Escape inside a game. The listener is bound before anything is
-            // written, so the widget always names a port that answers.
-            let actions = std::sync::Arc::new(InGameActions {
-                overlay: controller.clone(),
-                client: app.client.clone(),
-            });
-            // The widget goes in the directory we write; the engine reads
-            // `LuaUI/Widgets` from every data directory it is given.
-            let widget_dir = lobby_runtime::launch::data_dirs(app.settings.get().paths.data_dir)
-                .map(|dirs| dirs.write);
-            let want_widget = app.settings.get().overlay.in_game_escape;
-            // The menu archive buys BAR's in-game "Lobby" button, and what
-            // that button does is raise the overlay -- so it is only worth
-            // writing where the overlay is on to be raised.
-            let want_menu = app.settings.get().overlay.enabled;
-            let menu_client = app.client.clone();
-            // Held by the app so it lives as long as the process, and so the
-            // exit handler can drop it — dropping is what removes the widget.
-            let held: InGameHandle = std::sync::Arc::new(std::sync::Mutex::new(None));
-            tauri_app.manage(held.clone());
-            tauri::async_runtime::spawn(async move {
-                match ingame::InGame::start(actions).await {
-                    Ok(mut ingame) => {
-                        if let (true, Some(dir)) = (want_widget, widget_dir.as_deref()) {
-                            match ingame.install(dir) {
-                                Ok(path) => tracing::info!(
-                                    path = %path.display(),
-                                    port = ingame.port,
-                                    "in-game Escape widget installed"
-                                ),
-                                Err(err) => tracing::warn!(%err, "could not install the widget"),
-                            }
-                        }
-                        if let (true, Some(dir)) = (want_menu, widget_dir.as_deref()) {
-                            match ingame.install_menu(dir) {
-                                Ok(path) => {
-                                    tracing::info!(
-                                        path = %path.display(),
-                                        "in-game lobby menu installed"
-                                    );
-                                    let _ = menu_client
-                                        .set_menu_archive(Some(recoil::MenuArchive {
-                                            name: ingame::menu::menu_name(),
-                                            dir: path,
-                                        }))
-                                        .await;
-                                }
-                                Err(err) => {
-                                    tracing::warn!(%err, "could not install the lobby menu");
-                                }
-                            }
-                        }
-                        *held.lock().expect("in-game") = Some(ingame);
-                    }
-                    Err(err) => tracing::warn!(%err, "no in-game control socket"),
-                }
-            });
+			// Escape inside a game. The listener is bound before anything is
+			// written, so the widget always names a port that answers.
+			let actions = std::sync::Arc::new(InGameActions {
+				overlay: controller.clone(),
+				client: app.client.clone(),
+			});
+			// The widget goes in the directory we write; the engine reads
+			// `LuaUI/Widgets` from every data directory it is given.
+			let widget_dir = lobby_runtime::launch::data_dirs(app.settings.get().paths.data_dir)
+				.map(|dirs| dirs.write);
+			let want_widget = app.settings.get().overlay.in_game_escape;
+			// The menu archive buys BAR's in-game "Lobby" button, and what
+			// that button does is raise the overlay -- so it is only worth
+			// writing where the overlay is on to be raised.
+			let want_menu = app.settings.get().overlay.enabled;
+			let menu_client = app.client.clone();
+			// Held by the app so it lives as long as the process, and so the
+			// exit handler can drop it — dropping is what removes the widget.
+			let held: InGameHandle = std::sync::Arc::new(std::sync::Mutex::new(None));
+			tauri_app.manage(held.clone());
+			tauri::async_runtime::spawn(async move {
+				match ingame::InGame::start(actions).await {
+					Ok(mut ingame) => {
+						if let (true, Some(dir)) = (want_widget, widget_dir.as_deref()) {
+							match ingame.install(dir) {
+								Ok(path) => tracing::info!(
+									path = %path.display(),
+									port = ingame.port,
+									"in-game Escape widget installed"
+								),
+								Err(err) => tracing::warn!(%err, "could not install the widget"),
+							}
+						}
+						if let (true, Some(dir)) = (want_menu, widget_dir.as_deref()) {
+							match ingame.install_menu(dir) {
+								Ok(path) => {
+									tracing::info!(
+										path = %path.display(),
+										"in-game lobby menu installed"
+									);
+									let _ = menu_client
+										.set_menu_archive(Some(recoil::MenuArchive {
+											name: ingame::menu::menu_name(),
+											dir: path,
+										}))
+										.await;
+								}
+								Err(err) => {
+									tracing::warn!(%err, "could not install the lobby menu");
+								}
+							}
+						}
+						*held.lock().expect("in-game") = Some(ingame);
+					}
+					Err(err) => tracing::warn!(%err, "no in-game control socket"),
+				}
+			});
 
-            let mut watch = app.settings.watch()?;
-            let handle = tauri_app.handle().clone();
-            let client = app.client.clone();
-            let vetter = std::sync::Arc::clone(&app.rapid);
-            let at_start = app.settings.get();
-            // Beside the settings and the preset book, because it is the same
-            // kind of thing: what this person has set up, kept for next time.
-            let skirmish_path = commands::skirmish_path(&app);
-            tauri::async_runtime::spawn(async move {
-                // Whoever reads another server's rapid before games come
-                // from it; without one the runtime fetches from BAR's only.
-                let _ = client
-                    .set_vet(std::sync::Arc::new(move |master: String| {
-                        let vetter = std::sync::Arc::clone(&vetter);
-                        Box::pin(
-                            async move { vetter.vet(&master).await.map_err(|err| err.to_string()) },
-                        )
-                    }))
-                    .await;
-                push_settings(&client, &controller, &at_start).await;
-                let _ = client.set_skirmish_path(Some(skirmish_path)).await;
-                while let Some(event) = watch.recv().await {
-                    if let settings::SettingsEvent::Changed(settings) = &event {
-                        push_settings(&client, &controller, settings).await;
-                    }
-                    let _ = handle.emit("settings", &event);
-                }
-            });
-            let check_updates = app.settings.get().updates.automatic && update::enabled();
-            // Whether the last session went wrong decides how soon the look
-            // is due. A panic counts as going wrong too: one in a spawned task
-            // unwinds without taking the process, which would then end
-            // cleanly and look like a session that did not.
-            if app.update_memory.began() {
-                tracing::info!("the last session went wrong; the next look comes sooner");
-            }
-            let memory = app.update_memory.clone();
-            let previous = std::panic::take_hook();
-            std::panic::set_hook(Box::new(move |info| {
-                memory.note_trouble();
-                previous(info);
-            }));
-            // Picks up a download an earlier run left waiting; the front end
-            // asks for it to be installed before it logs in.
-            tauri_app.manage(update::Staged::open(app.settings.dir()));
-            tauri_app.manage(app);
-            // One small request when it is due, and the nav says what it
-            // found -- fetching it too when `updates.download` says so.
-            if check_updates {
-                tauri::async_runtime::spawn(update::daily(tauri_app.handle().clone()));
-            }
-            tracing::debug!(ms = since_start(), "startup: setup done");
-            Ok(())
-        })
-        .register_asynchronous_uri_scheme_protocol(thumbs::SCHEME, thumbs::serve)
-        .invoke_handler(tauri::generate_handler![
-            widgets::widget_usage,
-            widgets::widget_installed,
-            widgets::widget_install,
-            widgets::widget_update,
-            widgets::widget_disable,
-            widgets::widget_enable,
-            widgets::widget_delete,
-            commands::subscribe,
-            commands::login,
-            commands::logout,
-            commands::forget_way,
-            commands::check_rapid,
-            commands::reconnect,
-            commands::register,
-            commands::confirm_agreement,
-            commands::name_problem,
-            commands::login_wait,
-            commands::log_message,
-            commands::open_log_dir,
-            commands::join_battle,
-            commands::leave_battle,
-            commands::remembered_battle,
-            commands::forget_battle,
-            commands::launch,
-            commands::say_battle,
-            commands::vote,
-            commands::set_option,
-            commands::join_channel,
-            commands::leave_channel,
-            commands::say_channel,
-            commands::say_private,
-            commands::list_channels,
-            commands::download_missing,
-            commands::recheck_content,
-            commands::map_index,
-            commands::news,
-            commands::mark_news_read,
-            commands::warm_map_pictures,
-            commands::stop_download,
-            commands::cancel_paste,
-            commands::ring,
-            commands::add_bot,
-            commands::update_bot,
-            commands::remove_bot,
-            commands::set_away,
-            commands::activity,
-            commands::overlay_active,
-            commands::overlay_toggle,
-            commands::overlay_painted,
-            commands::stop_game,
-            commands::quit_all,
-            commands::shutdown,
-            screen::is_fullscreen,
-            screen::toggle_fullscreen,
-            boxes::start_boxes,
-            boxes::decode_boxes,
-            boxes::current_arrangement,
-            boxes::encode_boxes,
-            boxes::describe_map_option,
-            engine::download_engine,
-            update::app_version,
-            update::check_update,
-            update::install_update,
-            update::resume_update,
-            update::note_trouble,
-            commands::flash_engine,
-            commands::engine_in_front,
-            commands::remember_played,
-            commands::game_modoptions,
-            presets::pve_score,
-            presets::list_presets,
-            presets::chobby_presets_path,
-            presets::save_preset,
-            presets::preset_from_replay,
-            presets::delete_preset,
-            presets::rename_preset,
-            presets::plan_preset,
-            presets::apply_preset,
-            presets::import_presets,
-            presets::export_presets,
-            commands::request_game_status,
-            commands::remember_channels,
-            commands::skirmish_options,
-            commands::game_ais,
-            commands::skirmish_open,
-            commands::skirmish_close,
-            commands::skirmish_act,
-            commands::skirmish_launch,
-            commands::ai_options,
-            commands::skirmish_download_missing,
-            commands::skirmish_tweak_send,
-            commands::skirmish_tweak_clear,
-            boxes::skirmish_start_boxes,
-            boxes::skirmish_current_arrangement,
-            presets::skirmish_pve_score,
-            presets::skirmish_save_preset,
-            presets::skirmish_apply_preset,
-            commands::list_replays,
-            commands::play_replay,
-            commands::refresh_friends,
-            commands::friend_action,
-            commands::get_settings,
-            commands::update_settings,
-            commands::has_password,
-            commands::clear_password,
-            commands::open_settings_file,
-            commands::open_data_dir,
-            commands::open_engine_dir,
-            commands::player_files,
-            commands::import_player_files,
-            commands::open_url,
-            commands::take_seat,
-            commands::set_ready,
-            commands::set_side,
-            commands::release_seat,
-            commands::request_private_host,
-            commands::host_public,
-            commands::tweak_decode,
-            commands::tweak_format,
-            commands::tweak_prepare,
-            commands::tweak_send,
-            commands::tweak_clear,
-            commands::tweak_diff,
-            commands::tweak_check,
-            commands::game_unit_names,
-            commands::engine_def_tags,
-            commands::tweak_diff_text,
-            commands::list_drafts,
-            commands::read_draft,
-            commands::save_draft,
-            commands::delete_draft,
-        ])
-        .build(tauri::generate_context!())
-        .expect("building modlobby")
-        .run(|handle, event| {
-            // Before the window-state plugin looks at the window, which it
-            // does on `Exit`: closed over a game, the window is in the
-            // overlay's shape, and that is not the shape to open in next time.
-            if matches!(event, tauri::RunEvent::ExitRequested { .. })
-                && let Some(overlay) = handle.try_state::<std::sync::Arc<overlay::Controller>>()
-            {
-                overlay.shut_down();
-            }
-            if !matches!(event, tauri::RunEvent::Exit) {
-                return;
-            }
-            let game_running = engine_running(handle);
-            tracing::info!(game_running, "exiting");
-            if let Some(app) = handle.try_state::<state::App>() {
-                app.update_memory.ended();
-            }
-            let Some(held) = handle.try_state::<InGameHandle>() else {
-                return;
-            };
-            let Some(mut ingame) = held.lock().expect("in-game").take() else {
-                return;
-            };
-            // Leaving a widget behind that talks to a port nobody answers is
-            // harmless — it stops consuming Escape — but tidying up is the
-            // whole promise, so it is done on the way out. Not from under a
-            // running game, though: the engine asks for the menu archive
-            // again when the player quits to it, and finding it gone is a
-            // content error in their face.
-            if game_running {
-                ingame.leave_behind();
-            }
-            // Dropping is what removes whatever is still tracked.
-            drop(ingame);
-        });
+			let mut watch = app.settings.watch()?;
+			let handle = tauri_app.handle().clone();
+			let client = app.client.clone();
+			let vetter = std::sync::Arc::clone(&app.rapid);
+			let at_start = app.settings.get();
+			// Beside the settings and the preset book, because it is the same
+			// kind of thing: what this person has set up, kept for next time.
+			let skirmish_path = commands::skirmish_path(&app);
+			tauri::async_runtime::spawn(async move {
+				// Whoever reads another server's rapid before games come
+				// from it; without one the runtime fetches from BAR's only.
+				let _ = client
+					.set_vet(std::sync::Arc::new(move |master: String| {
+						let vetter = std::sync::Arc::clone(&vetter);
+						Box::pin(
+							async move { vetter.vet(&master).await.map_err(|err| err.to_string()) },
+						)
+					}))
+					.await;
+				push_settings(&client, &controller, &at_start).await;
+				let _ = client.set_skirmish_path(Some(skirmish_path)).await;
+				while let Some(event) = watch.recv().await {
+					if let settings::SettingsEvent::Changed(settings) = &event {
+						push_settings(&client, &controller, settings).await;
+					}
+					let _ = handle.emit("settings", &event);
+				}
+			});
+			let check_updates = app.settings.get().updates.automatic && update::enabled();
+			// Whether the last session went wrong decides how soon the look
+			// is due. A panic counts as going wrong too: one in a spawned task
+			// unwinds without taking the process, which would then end
+			// cleanly and look like a session that did not.
+			if app.update_memory.began() {
+				tracing::info!("the last session went wrong; the next look comes sooner");
+			}
+			let memory = app.update_memory.clone();
+			let previous = std::panic::take_hook();
+			std::panic::set_hook(Box::new(move |info| {
+				memory.note_trouble();
+				previous(info);
+			}));
+			// Picks up a download an earlier run left waiting; the front end
+			// asks for it to be installed before it logs in.
+			tauri_app.manage(update::Staged::open(app.settings.dir()));
+			tauri_app.manage(app);
+			// One small request when it is due, and the nav says what it
+			// found -- fetching it too when `updates.download` says so.
+			if check_updates {
+				tauri::async_runtime::spawn(update::daily(tauri_app.handle().clone()));
+			}
+			tracing::debug!(ms = since_start(), "startup: setup done");
+			Ok(())
+		})
+		.register_asynchronous_uri_scheme_protocol(thumbs::SCHEME, thumbs::serve)
+		.invoke_handler(tauri::generate_handler![
+			widgets::widget_usage,
+			widgets::widget_installed,
+			widgets::widget_install,
+			widgets::widget_update,
+			widgets::widget_disable,
+			widgets::widget_enable,
+			widgets::widget_delete,
+			commands::subscribe,
+			commands::login,
+			commands::logout,
+			commands::forget_way,
+			commands::check_rapid,
+			commands::reconnect,
+			commands::register,
+			commands::confirm_agreement,
+			commands::name_problem,
+			commands::login_wait,
+			commands::log_message,
+			commands::open_log_dir,
+			commands::join_battle,
+			commands::leave_battle,
+			commands::remembered_battle,
+			commands::forget_battle,
+			commands::launch,
+			commands::say_battle,
+			commands::vote,
+			commands::set_option,
+			commands::join_channel,
+			commands::leave_channel,
+			commands::say_channel,
+			commands::say_private,
+			commands::list_channels,
+			commands::download_missing,
+			commands::recheck_content,
+			commands::map_index,
+			commands::news,
+			commands::mark_news_read,
+			commands::warm_map_pictures,
+			commands::stop_download,
+			commands::cancel_paste,
+			commands::ring,
+			commands::add_bot,
+			commands::update_bot,
+			commands::remove_bot,
+			commands::set_away,
+			commands::activity,
+			commands::overlay_active,
+			commands::overlay_toggle,
+			commands::overlay_painted,
+			commands::stop_game,
+			commands::quit_all,
+			commands::shutdown,
+			screen::is_fullscreen,
+			screen::toggle_fullscreen,
+			boxes::start_boxes,
+			boxes::decode_boxes,
+			boxes::current_arrangement,
+			boxes::encode_boxes,
+			boxes::describe_map_option,
+			engine::download_engine,
+			update::app_version,
+			update::check_update,
+			update::install_update,
+			update::resume_update,
+			update::note_trouble,
+			commands::flash_engine,
+			commands::engine_in_front,
+			commands::remember_played,
+			commands::game_modoptions,
+			presets::pve_score,
+			presets::list_presets,
+			presets::chobby_presets_path,
+			presets::save_preset,
+			presets::preset_from_replay,
+			presets::delete_preset,
+			presets::rename_preset,
+			presets::plan_preset,
+			presets::apply_preset,
+			presets::import_presets,
+			presets::export_presets,
+			commands::request_game_status,
+			commands::remember_channels,
+			commands::skirmish_options,
+			commands::game_ais,
+			commands::skirmish_open,
+			commands::skirmish_close,
+			commands::skirmish_act,
+			commands::skirmish_launch,
+			commands::ai_options,
+			commands::skirmish_download_missing,
+			commands::skirmish_tweak_send,
+			commands::skirmish_tweak_clear,
+			boxes::skirmish_start_boxes,
+			boxes::skirmish_current_arrangement,
+			presets::skirmish_pve_score,
+			presets::skirmish_save_preset,
+			presets::skirmish_apply_preset,
+			commands::list_replays,
+			commands::play_replay,
+			commands::refresh_friends,
+			commands::friend_action,
+			commands::get_settings,
+			commands::update_settings,
+			commands::has_password,
+			commands::clear_password,
+			commands::open_settings_file,
+			commands::open_data_dir,
+			commands::open_engine_dir,
+			commands::player_files,
+			commands::import_player_files,
+			commands::open_url,
+			commands::take_seat,
+			commands::set_ready,
+			commands::set_side,
+			commands::release_seat,
+			commands::request_private_host,
+			commands::host_public,
+			commands::tweak_decode,
+			commands::tweak_format,
+			commands::tweak_prepare,
+			commands::tweak_send,
+			commands::tweak_clear,
+			commands::tweak_diff,
+			commands::tweak_check,
+			commands::game_unit_names,
+			commands::engine_def_tags,
+			commands::tweak_diff_text,
+			commands::list_drafts,
+			commands::read_draft,
+			commands::save_draft,
+			commands::delete_draft,
+		])
+		.build(tauri::generate_context!())
+		.expect("building modlobby")
+		.run(|handle, event| {
+			// Before the window-state plugin looks at the window, which it
+			// does on `Exit`: closed over a game, the window is in the
+			// overlay's shape, and that is not the shape to open in next time.
+			if matches!(event, tauri::RunEvent::ExitRequested { .. })
+				&& let Some(overlay) = handle.try_state::<std::sync::Arc<overlay::Controller>>()
+			{
+				overlay.shut_down();
+			}
+			if !matches!(event, tauri::RunEvent::Exit) {
+				return;
+			}
+			let game_running = engine_running(handle);
+			tracing::info!(game_running, "exiting");
+			if let Some(app) = handle.try_state::<state::App>() {
+				app.update_memory.ended();
+			}
+			let Some(held) = handle.try_state::<InGameHandle>() else {
+				return;
+			};
+			let Some(mut ingame) = held.lock().expect("in-game").take() else {
+				return;
+			};
+			// Leaving a widget behind that talks to a port nobody answers is
+			// harmless — it stops consuming Escape — but tidying up is the
+			// whole promise, so it is done on the way out. Not from under a
+			// running game, though: the engine asks for the menu archive
+			// again when the player quits to it, and finding it gone is a
+			// content error in their face.
+			if game_running {
+				ingame.leave_behind();
+			}
+			// Dropping is what removes whatever is still tracked.
+			drop(ingame);
+		});
 }
 
 /// Whether a game we launched is still running, asked of the runtime on the
@@ -496,16 +496,16 @@ pub fn run() {
 /// harmful when taken from under an engine, so a runtime that has stopped or
 /// does not answer in time gets the safe reading.
 fn engine_running(handle: &tauri::AppHandle) -> bool {
-    let Some(app) = handle.try_state::<state::App>() else {
-        return false;
-    };
-    let client = app.client.clone();
-    tauri::async_runtime::block_on(async move {
-        let asked =
-            tokio::time::timeout(std::time::Duration::from_millis(500), client.engine_pid());
-        match asked.await {
-            Ok(Ok(pid)) => pid.is_some(),
-            Ok(Err(_)) | Err(_) => true,
-        }
-    })
+	let Some(app) = handle.try_state::<state::App>() else {
+		return false;
+	};
+	let client = app.client.clone();
+	tauri::async_runtime::block_on(async move {
+		let asked =
+			tokio::time::timeout(std::time::Duration::from_millis(500), client.engine_pid());
+		match asked.await {
+			Ok(Ok(pid)) => pid.is_some(),
+			Ok(Err(_)) | Err(_) => true,
+		}
+	})
 }

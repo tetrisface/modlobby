@@ -14,13 +14,13 @@ use tauri::ipc::Channel;
 use crate::overlay::Controller;
 
 pub struct ChannelTransport {
-    pub channel: Channel<UiMessage>,
-    pub overlay: Arc<Controller>,
+	pub channel: Channel<UiMessage>,
+	pub overlay: Arc<Controller>,
 }
 
 impl UiTransport for ChannelTransport {
-    fn send(&self, message: UiMessage) -> Result<(), UiClosed> {
-        self.overlay.observe(&message);
-        self.channel.send(message).map_err(|_| UiClosed)
-    }
+	fn send(&self, message: UiMessage) -> Result<(), UiClosed> {
+		self.overlay.observe(&message);
+		self.channel.send(message).map_err(|_| UiClosed)
+	}
 }

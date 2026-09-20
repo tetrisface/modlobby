@@ -21,7 +21,7 @@
 use std::collections::BTreeMap;
 
 use lobby_core::{
-    Battle, Bot, LobbyState, MyBattle, OptionChange, Proposal, StartRect, User, VoteState,
+	Battle, Bot, LobbyState, MyBattle, OptionChange, Proposal, StartRect, User, VoteState,
 };
 use serde::{Deserialize, Serialize};
 use spring_protocol::{BattleStatus, Sync, UserStatus};
@@ -31,247 +31,247 @@ use ts_rs::TS;
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub enum Phase {
-    Connecting,
-    AwaitingLogin,
-    Loading,
-    Ready,
+	Connecting,
+	AwaitingLogin,
+	Loading,
+	Ready,
 }
 
 impl From<lobby_core::Phase> for Phase {
-    fn from(phase: lobby_core::Phase) -> Self {
-        match phase {
-            lobby_core::Phase::Connecting => Self::Connecting,
-            lobby_core::Phase::AwaitingLogin => Self::AwaitingLogin,
-            lobby_core::Phase::Loading => Self::Loading,
-            lobby_core::Phase::Ready => Self::Ready,
-        }
-    }
+	fn from(phase: lobby_core::Phase) -> Self {
+		match phase {
+			lobby_core::Phase::Connecting => Self::Connecting,
+			lobby_core::Phase::AwaitingLogin => Self::AwaitingLogin,
+			lobby_core::Phase::Loading => Self::Loading,
+			lobby_core::Phase::Ready => Self::Ready,
+		}
+	}
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub enum SyncView {
-    Bot,
-    Synced,
-    Unsynced,
+	Bot,
+	Synced,
+	Unsynced,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct BattleStatusView {
-    pub ready: bool,
-    pub team: u8,
-    pub ally_team: u8,
-    pub player: bool,
-    pub handicap: u8,
-    pub sync: SyncView,
-    pub side: u8,
+	pub ready: bool,
+	pub team: u8,
+	pub ally_team: u8,
+	pub player: bool,
+	pub handicap: u8,
+	pub sync: SyncView,
+	pub side: u8,
 }
 
 impl From<BattleStatus> for BattleStatusView {
-    fn from(s: BattleStatus) -> Self {
-        Self {
-            ready: s.ready,
-            team: s.team,
-            ally_team: s.ally_team,
-            player: s.player,
-            handicap: s.handicap,
-            sync: match s.sync {
-                Sync::Bot => SyncView::Bot,
-                Sync::Synced => SyncView::Synced,
-                Sync::Unsynced => SyncView::Unsynced,
-            },
-            side: s.side,
-        }
-    }
+	fn from(s: BattleStatus) -> Self {
+		Self {
+			ready: s.ready,
+			team: s.team,
+			ally_team: s.ally_team,
+			player: s.player,
+			handicap: s.handicap,
+			sync: match s.sync {
+				Sync::Bot => SyncView::Bot,
+				Sync::Synced => SyncView::Synced,
+				Sync::Unsynced => SyncView::Unsynced,
+			},
+			side: s.side,
+		}
+	}
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct UserStatusView {
-    pub in_game: bool,
-    pub away: bool,
-    pub rank: u8,
-    pub moderator: bool,
-    pub bot: bool,
+	pub in_game: bool,
+	pub away: bool,
+	pub rank: u8,
+	pub moderator: bool,
+	pub bot: bool,
 }
 
 impl From<UserStatus> for UserStatusView {
-    fn from(s: UserStatus) -> Self {
-        Self {
-            in_game: s.in_game,
-            away: s.away,
-            rank: s.rank,
-            moderator: s.moderator,
-            bot: s.bot,
-        }
-    }
+	fn from(s: UserStatus) -> Self {
+		Self {
+			in_game: s.in_game,
+			away: s.away,
+			rank: s.rank,
+			moderator: s.moderator,
+			bot: s.bot,
+		}
+	}
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct UserView {
-    pub name: String,
-    pub country: String,
-    #[ts(type = "number | null")]
-    pub user_id: Option<u64>,
-    pub lobby_client: String,
-    pub status: UserStatusView,
-    pub battle_status: Option<BattleStatusView>,
-    /// The room the user is in.
-    pub battle_id: Option<u32>,
+	pub name: String,
+	pub country: String,
+	#[ts(type = "number | null")]
+	pub user_id: Option<u64>,
+	pub lobby_client: String,
+	pub status: UserStatusView,
+	pub battle_status: Option<BattleStatusView>,
+	/// The room the user is in.
+	pub battle_id: Option<u32>,
 }
 
 impl UserView {
-    pub fn new(user: &User, battle_id: Option<u32>) -> Self {
-        Self {
-            name: user.name.clone(),
-            country: user.country.clone(),
-            user_id: user.user_id,
-            lobby_client: user.lobby_client.clone(),
-            status: user.status.into(),
-            battle_status: user.battle_status.map(Into::into),
-            battle_id,
-        }
-    }
+	pub fn new(user: &User, battle_id: Option<u32>) -> Self {
+		Self {
+			name: user.name.clone(),
+			country: user.country.clone(),
+			user_id: user.user_id,
+			lobby_client: user.lobby_client.clone(),
+			status: user.status.into(),
+			battle_status: user.battle_status.map(Into::into),
+			battle_id,
+		}
+	}
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct BotView {
-    pub name: String,
-    pub owner: String,
-    pub status: BattleStatusView,
-    pub team_colour: u32,
-    pub ai: String,
-    /// What the AI has been told about itself, where a room can tell it
-    /// anything. A room on the server keeps this nowhere, so it is empty
-    /// there rather than absent.
-    pub options: BTreeMap<String, String>,
+	pub name: String,
+	pub owner: String,
+	pub status: BattleStatusView,
+	pub team_colour: u32,
+	pub ai: String,
+	/// What the AI has been told about itself, where a room can tell it
+	/// anything. A room on the server keeps this nowhere, so it is empty
+	/// there rather than absent.
+	pub options: BTreeMap<String, String>,
 }
 
 impl From<&Bot> for BotView {
-    fn from(bot: &Bot) -> Self {
-        Self {
-            name: bot.name.clone(),
-            owner: bot.owner.clone(),
-            status: bot.status.into(),
-            team_colour: bot.team_colour,
-            ai: bot.ai.clone(),
-            // `ADDBOT` carries no options, so a room on the server has none
-            // to report.
-            options: BTreeMap::new(),
-        }
-    }
+	fn from(bot: &Bot) -> Self {
+		Self {
+			name: bot.name.clone(),
+			owner: bot.owner.clone(),
+			status: bot.status.into(),
+			team_colour: bot.team_colour,
+			ai: bot.ai.clone(),
+			// `ADDBOT` carries no options, so a room on the server has none
+			// to report.
+			options: BTreeMap::new(),
+		}
+	}
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct StartRectView {
-    pub ally_team: u8,
-    pub left: u16,
-    pub top: u16,
-    pub right: u16,
-    pub bottom: u16,
+	pub ally_team: u8,
+	pub left: u16,
+	pub top: u16,
+	pub right: u16,
+	pub bottom: u16,
 }
 
 impl StartRectView {
-    pub fn new(ally_team: u8, rect: StartRect) -> Self {
-        Self {
-            ally_team,
-            left: rect.left,
-            top: rect.top,
-            right: rect.right,
-            bottom: rect.bottom,
-        }
-    }
+	pub fn new(ally_team: u8, rect: StartRect) -> Self {
+		Self {
+			ally_team,
+			left: rect.left,
+			top: rect.top,
+			right: rect.right,
+			bottom: rect.bottom,
+		}
+	}
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct LayoutView {
-    pub teams: u32,
-    pub team_size: u32,
+	pub teams: u32,
+	pub team_size: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct BattleView {
-    pub id: u32,
-    pub founder: String,
-    pub ip: String,
-    pub port: u16,
-    pub max_players: u32,
-    pub passworded: bool,
-    pub locked: bool,
-    pub map_hash: String,
-    pub map_name: String,
-    pub engine_name: String,
-    pub engine_version: String,
-    pub title: String,
-    pub game_name: String,
-    /// Sorted; includes the host bot and spectators.
-    pub members: Vec<String>,
-    pub spectator_count: u32,
-    pub player_count: u32,
-    pub layout: Option<LayoutView>,
-    pub bots: Vec<BotView>,
-    pub start_rects: Vec<StartRectView>,
-    /// Spectators waiting for a seat, first in line first. Only our own
-    /// room's is known; every other room's is empty.
-    pub queue: Vec<String>,
+	pub id: u32,
+	pub founder: String,
+	pub ip: String,
+	pub port: u16,
+	pub max_players: u32,
+	pub passworded: bool,
+	pub locked: bool,
+	pub map_hash: String,
+	pub map_name: String,
+	pub engine_name: String,
+	pub engine_version: String,
+	pub title: String,
+	pub game_name: String,
+	/// Sorted; includes the host bot and spectators.
+	pub members: Vec<String>,
+	pub spectator_count: u32,
+	pub player_count: u32,
+	pub layout: Option<LayoutView>,
+	pub bots: Vec<BotView>,
+	pub start_rects: Vec<StartRectView>,
+	/// Spectators waiting for a seat, first in line first. Only our own
+	/// room's is known; every other room's is empty.
+	pub queue: Vec<String>,
 }
 
 impl From<&Battle> for BattleView {
-    fn from(b: &Battle) -> Self {
-        Self {
-            id: b.id,
-            founder: b.founder.clone(),
-            ip: b.ip.clone(),
-            port: b.port,
-            max_players: b.max_players,
-            passworded: b.passworded,
-            locked: b.locked,
-            map_hash: b.map_hash.clone(),
-            map_name: b.map_name.clone(),
-            engine_name: b.engine_name.clone(),
-            engine_version: b.engine_version.clone(),
-            title: b.title.clone(),
-            game_name: b.game_name.clone(),
-            members: b.members.iter().cloned().collect(),
-            spectator_count: b.spectator_count,
-            player_count: b.player_count() as u32,
-            layout: b.layout.map(|l| LayoutView {
-                teams: l.teams,
-                team_size: l.team_size,
-            }),
-            bots: b.bots.values().map(BotView::from).collect(),
-            start_rects: b
-                .start_rects
-                .iter()
-                .map(|(ally, rect)| StartRectView::new(*ally, *rect))
-                .collect(),
-            queue: b.queue.clone(),
-        }
-    }
+	fn from(b: &Battle) -> Self {
+		Self {
+			id: b.id,
+			founder: b.founder.clone(),
+			ip: b.ip.clone(),
+			port: b.port,
+			max_players: b.max_players,
+			passworded: b.passworded,
+			locked: b.locked,
+			map_hash: b.map_hash.clone(),
+			map_name: b.map_name.clone(),
+			engine_name: b.engine_name.clone(),
+			engine_version: b.engine_version.clone(),
+			title: b.title.clone(),
+			game_name: b.game_name.clone(),
+			members: b.members.iter().cloned().collect(),
+			spectator_count: b.spectator_count,
+			player_count: b.player_count() as u32,
+			layout: b.layout.map(|l| LayoutView {
+				teams: l.teams,
+				team_size: l.team_size,
+			}),
+			bots: b.bots.values().map(BotView::from).collect(),
+			start_rects: b
+				.start_rects
+				.iter()
+				.map(|(ally, rect)| StartRectView::new(*ally, *rect))
+				.collect(),
+			queue: b.queue.clone(),
+		}
+	}
 }
 
 impl From<&LobbyState> for FriendsView {
-    fn from(state: &LobbyState) -> Self {
-        Self {
-            friends: state.friends.iter().cloned().collect(),
-            requests: state.friend_requests.iter().cloned().collect(),
-            ignored: state.ignored.iter().cloned().collect(),
-        }
-    }
+	fn from(state: &LobbyState) -> Self {
+		Self {
+			friends: state.friends.iter().cloned().collect(),
+			requests: state.friend_requests.iter().cloned().collect(),
+			ignored: state.ignored.iter().cloned().collect(),
+		}
+	}
 }
 
 /// What a vote would do, when the room can tell.
@@ -279,53 +279,53 @@ impl From<&LobbyState> for FriendsView {
 #[serde(tag = "type", rename_all = "camelCase")]
 #[ts(export)]
 pub enum ProposalView {
-    /// A modoption change — this is what the tweak diff hangs off.
-    SetOption {
-        key: String,
-        value: String,
-    },
-    Other,
+	/// A modoption change — this is what the tweak diff hangs off.
+	SetOption {
+		key: String,
+		value: String,
+	},
+	Other,
 }
 
 impl From<&Proposal> for ProposalView {
-    fn from(proposal: &Proposal) -> Self {
-        match proposal {
-            Proposal::SetOption { key, value } => ProposalView::SetOption {
-                key: key.clone(),
-                value: value.clone(),
-            },
-            Proposal::Other => ProposalView::Other,
-        }
-    }
+	fn from(proposal: &Proposal) -> Self {
+		match proposal {
+			Proposal::SetOption { key, value } => ProposalView::SetOption {
+				key: key.clone(),
+				value: value.clone(),
+			},
+			Proposal::Other => ProposalView::Other,
+		}
+	}
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct VoteView {
-    pub command: String,
-    pub by: Option<String>,
-    pub proposal: ProposalView,
-    pub yes: u32,
-    pub yes_needed: u32,
-    pub no: u32,
-    pub no_needed: u32,
-    pub remaining_secs: u32,
+	pub command: String,
+	pub by: Option<String>,
+	pub proposal: ProposalView,
+	pub yes: u32,
+	pub yes_needed: u32,
+	pub no: u32,
+	pub no_needed: u32,
+	pub remaining_secs: u32,
 }
 
 impl From<&VoteState> for VoteView {
-    fn from(vote: &VoteState) -> Self {
-        Self {
-            command: vote.command.clone(),
-            by: vote.by.clone(),
-            proposal: (&vote.proposal).into(),
-            yes: vote.yes,
-            yes_needed: vote.yes_needed,
-            no: vote.no,
-            no_needed: vote.no_needed,
-            remaining_secs: vote.remaining_secs,
-        }
-    }
+	fn from(vote: &VoteState) -> Self {
+		Self {
+			command: vote.command.clone(),
+			by: vote.by.clone(),
+			proposal: (&vote.proposal).into(),
+			yes: vote.yes,
+			yes_needed: vote.yes_needed,
+			no: vote.no,
+			no_needed: vote.no_needed,
+			remaining_secs: vote.remaining_secs,
+		}
+	}
 }
 
 /// A modoption that changed while we watched — one side of a diff.
@@ -333,61 +333,61 @@ impl From<&VoteState> for VoteView {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct OptionChangeView {
-    #[ts(type = "number")]
-    pub seq: u64,
-    pub key: String,
-    pub from: String,
-    pub to: String,
-    pub by: Option<String>,
+	#[ts(type = "number")]
+	pub seq: u64,
+	pub key: String,
+	pub from: String,
+	pub to: String,
+	pub by: Option<String>,
 }
 
 impl From<&OptionChange> for OptionChangeView {
-    fn from(change: &OptionChange) -> Self {
-        Self {
-            seq: change.seq,
-            key: change.key.clone(),
-            from: change.from.clone(),
-            to: change.to.clone(),
-            by: change.by.clone(),
-        }
-    }
+	fn from(change: &OptionChange) -> Self {
+		Self {
+			seq: change.seq,
+			key: change.key.clone(),
+			from: change.from.clone(),
+			to: change.to.clone(),
+			by: change.by.clone(),
+		}
+	}
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct MyBattleView {
-    /// Who SPADS says is bossing the room, when it has said.
-    pub boss: Option<String>,
-    /// How the room balances itself: `off`, `on`, `advanced`. `null` where the
-    /// room has not said, which is not the same as `off`: a host without BAR's
-    /// BarManager plugin never reports it.
-    pub auto_balance: Option<String>,
-    /// The SPADS preset the room runs under (`team`, `ffa`, `coop`, `duel`,
-    /// `tourney`, `custom`), `null` where the room has not said.
-    pub preset: Option<String>,
-    pub id: u32,
-    pub game_hash: String,
-    /// Lowercase script-tag keys (`game/modoptions/tweakdefs`, `game/hosttype`, …).
-    pub script_tags: BTreeMap<String, String>,
-    pub vote: Option<VoteView>,
-    /// Modoption changes seen this session, oldest first.
-    pub history: Vec<OptionChangeView>,
+	/// Who SPADS says is bossing the room, when it has said.
+	pub boss: Option<String>,
+	/// How the room balances itself: `off`, `on`, `advanced`. `null` where the
+	/// room has not said, which is not the same as `off`: a host without BAR's
+	/// BarManager plugin never reports it.
+	pub auto_balance: Option<String>,
+	/// The SPADS preset the room runs under (`team`, `ffa`, `coop`, `duel`,
+	/// `tourney`, `custom`), `null` where the room has not said.
+	pub preset: Option<String>,
+	pub id: u32,
+	pub game_hash: String,
+	/// Lowercase script-tag keys (`game/modoptions/tweakdefs`, `game/hosttype`, …).
+	pub script_tags: BTreeMap<String, String>,
+	pub vote: Option<VoteView>,
+	/// Modoption changes seen this session, oldest first.
+	pub history: Vec<OptionChangeView>,
 }
 
 impl From<&MyBattle> for MyBattleView {
-    fn from(my: &MyBattle) -> Self {
-        Self {
-            boss: my.boss.clone(),
-            auto_balance: my.auto_balance.clone(),
-            preset: my.preset.clone(),
-            id: my.id,
-            game_hash: my.game_hash.clone(),
-            script_tags: my.script_tags.clone(),
-            vote: my.vote.as_ref().map(VoteView::from),
-            history: my.history.iter().map(OptionChangeView::from).collect(),
-        }
-    }
+	fn from(my: &MyBattle) -> Self {
+		Self {
+			boss: my.boss.clone(),
+			auto_balance: my.auto_balance.clone(),
+			preset: my.preset.clone(),
+			id: my.id,
+			game_hash: my.game_hash.clone(),
+			script_tags: my.script_tags.clone(),
+			vote: my.vote.as_ref().map(VoteView::from),
+			history: my.history.iter().map(OptionChangeView::from).collect(),
+		}
+	}
 }
 
 /// What of a room's engine, game and map this machine already has.
@@ -395,9 +395,9 @@ impl From<&MyBattle> for MyBattleView {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct ContentView {
-    pub engine: bool,
-    pub game: bool,
-    pub map: bool,
+	pub engine: bool,
+	pub game: bool,
+	pub map: bool,
 }
 
 /// A room with nobody else in it.
@@ -413,12 +413,12 @@ pub struct ContentView {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct SkirmishView {
-    pub battle: BattleView,
-    pub my: MyBattleView,
-    /// The local player. The AIs are `battle.bots`, as they are online.
-    pub users: Vec<UserView>,
-    pub me: String,
-    pub content: ContentView,
+	pub battle: BattleView,
+	pub my: MyBattleView,
+	/// The local player. The AIs are `battle.bots`, as they are online.
+	pub users: Vec<UserView>,
+	pub me: String,
+	pub content: ContentView,
 }
 
 /// The room's game is running; the script password stays in the runtime.
@@ -426,29 +426,29 @@ pub struct SkirmishView {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct GameRunningView {
-    pub id: u32,
-    pub ip: String,
-    pub port: u16,
+	pub id: u32,
+	pub ip: String,
+	pub port: u16,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "state", rename_all = "camelCase")]
 #[ts(export)]
 pub enum EngineStatus {
-    #[default]
-    Idle,
-    Running {
-        /// The engine's process id, when it still has one.
-        ///
-        /// `Option` because a reaped child has none, and because it is only
-        /// ever a hint: what it is for is finding the game's window, which may
-        /// not exist yet while the engine is loading.
-        #[ts(type = "number | null")]
-        pid: Option<u32>,
-    },
-    Exited {
-        code: Option<i32>,
-    },
+	#[default]
+	Idle,
+	Running {
+		/// The engine's process id, when it still has one.
+		///
+		/// `Option` because a reaped child has none, and because it is only
+		/// ever a hint: what it is for is finding the game's window, which may
+		/// not exist yet while the engine is loading.
+		#[ts(type = "number | null")]
+		pid: Option<u32>,
+	},
+	Exited {
+		code: Option<i32>,
+	},
 }
 
 /// Why an alert was raised, so the front end can honour the setting for it.
@@ -456,13 +456,13 @@ pub enum EngineStatus {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub enum AlertKind {
-    PrivateMessage,
-    Mention,
-    FriendOnline,
-    GameEnded,
-    Vote,
-    GameStarting,
-    Ring,
+	PrivateMessage,
+	Mention,
+	FriendOnline,
+	GameEnded,
+	Vote,
+	GameStarting,
+	Ring,
 }
 
 /// A pr-downloader run, and how far along it is.
@@ -470,23 +470,23 @@ pub enum AlertKind {
 #[serde(tag = "state", rename_all = "camelCase")]
 #[ts(export)]
 pub enum DownloadStatus {
-    #[default]
-    Idle,
-    Running {
-        /// What was asked for, for the label.
-        what: String,
-        #[ts(type = "number")]
-        current: u64,
-        #[ts(type = "number")]
-        total: u64,
-    },
-    Failed {
-        what: String,
-        reason: String,
-    },
-    Done {
-        what: String,
-    },
+	#[default]
+	Idle,
+	Running {
+		/// What was asked for, for the label.
+		what: String,
+		#[ts(type = "number")]
+		current: u64,
+		#[ts(type = "number")]
+		total: u64,
+	},
+	Failed {
+		what: String,
+		reason: String,
+	},
+	Done {
+		what: String,
+	},
 }
 
 /// A multi-line battle-room paste, and how far it has got. Worth a banner
@@ -504,32 +504,32 @@ pub enum DownloadStatus {
 #[serde(tag = "state", rename_all = "camelCase")]
 #[ts(export)]
 pub enum PasteStatus {
-    #[default]
-    Idle,
-    Running {
-        /// Lines handed to the scheduler, after skipping.
-        total: u32,
-        /// Lines that have left the socket.
-        sent: u32,
-        /// Lines the host will answer: the `!` and `$` commands among `total`.
-        commands: u32,
-        /// Commands the host has answered so far.
-        applied: u32,
-        /// Settings dropped because the room already had them.
-        skipped: u32,
-        /// Bytes across all the commands.
-        work: u32,
-        /// Bytes across the commands answered so far.
-        done: u32,
-    },
-    Done {
-        total: u32,
-        commands: u32,
-        applied: u32,
-        skipped: u32,
-        /// Stopped by the reader; what had not left was dropped.
-        cancelled: bool,
-    },
+	#[default]
+	Idle,
+	Running {
+		/// Lines handed to the scheduler, after skipping.
+		total: u32,
+		/// Lines that have left the socket.
+		sent: u32,
+		/// Lines the host will answer: the `!` and `$` commands among `total`.
+		commands: u32,
+		/// Commands the host has answered so far.
+		applied: u32,
+		/// Settings dropped because the room already had them.
+		skipped: u32,
+		/// Bytes across all the commands.
+		work: u32,
+		/// Bytes across the commands answered so far.
+		done: u32,
+	},
+	Done {
+		total: u32,
+		commands: u32,
+		applied: u32,
+		skipped: u32,
+		/// Stopped by the reader; what had not left was dropped.
+		cancelled: bool,
+	},
 }
 
 /// Everything the front end mirrors, whole: each server's session, and what
@@ -541,18 +541,18 @@ pub enum PasteStatus {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct Snapshot {
-    /// One per server there is a session with, or a retry pending for.
-    pub servers: Vec<ServerSnapshot>,
-    pub engine: EngineStatus,
-    pub download: DownloadStatus,
-    pub paste: PasteStatus,
-    /// The skirmish room, which outlives a session rather than belonging to
-    /// one: it is still there after a logout, a dropped connection or a
-    /// reloaded window.
-    pub skirmish: Option<Box<SkirmishView>>,
-    /// The way into each server that worked last, by lowercased host. The
-    /// machine's memory rather than a session's, so it is here logged out too.
-    pub ways: BTreeMap<String, String>,
+	/// One per server there is a session with, or a retry pending for.
+	pub servers: Vec<ServerSnapshot>,
+	pub engine: EngineStatus,
+	pub download: DownloadStatus,
+	pub paste: PasteStatus,
+	/// The skirmish room, which outlives a session rather than belonging to
+	/// one: it is still there after a logout, a dropped connection or a
+	/// reloaded window.
+	pub skirmish: Option<Box<SkirmishView>>,
+	/// The way into each server that worked last, by lowercased host. The
+	/// machine's memory rather than a session's, so it is here logged out too.
+	pub ways: BTreeMap<String, String>,
 }
 
 /// One server's session.
@@ -560,25 +560,25 @@ pub struct Snapshot {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct ServerSnapshot {
-    /// Which server: its host, lowercased.
-    pub server: String,
-    pub phase: Option<Phase>,
-    /// Seconds until the runtime tries the last credentials again on its
-    /// own, while it means to; `None` when it does not — connected, logged
-    /// out, or never logged in. A count, not a moment: the runtime's clock
-    /// is not the window's.
-    #[ts(type = "number | null")]
-    pub retry_in: Option<u64>,
-    pub me: Option<String>,
-    pub users: Vec<UserView>,
-    pub battles: Vec<BattleView>,
-    pub my_battle: Option<MyBattleView>,
-    pub game_running: Option<GameRunningView>,
-    /// Channels we are in. Chat lines are not replayed — a reload keeps
-    /// whichever backlog the front end still holds — but membership is, so the
-    /// channel list is right the moment the window comes back.
-    pub channels: Vec<ChannelView>,
-    pub friends: FriendsView,
+	/// Which server: its host, lowercased.
+	pub server: String,
+	pub phase: Option<Phase>,
+	/// Seconds until the runtime tries the last credentials again on its
+	/// own, while it means to; `None` when it does not — connected, logged
+	/// out, or never logged in. A count, not a moment: the runtime's clock
+	/// is not the window's.
+	#[ts(type = "number | null")]
+	pub retry_in: Option<u64>,
+	pub me: Option<String>,
+	pub users: Vec<UserView>,
+	pub battles: Vec<BattleView>,
+	pub my_battle: Option<MyBattleView>,
+	pub game_running: Option<GameRunningView>,
+	/// Channels we are in. Chat lines are not replayed — a reload keeps
+	/// whichever backlog the front end still holds — but membership is, so the
+	/// channel list is right the moment the window comes back.
+	pub channels: Vec<ChannelView>,
+	pub friends: FriendsView,
 }
 
 /// Who we are friends with, and who is waiting on an answer.
@@ -586,120 +586,120 @@ pub struct ServerSnapshot {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct FriendsView {
-    pub friends: Vec<String>,
-    pub requests: Vec<String>,
-    /// Who the server no longer relays anything from.
-    pub ignored: Vec<String>,
+	pub friends: Vec<String>,
+	pub requests: Vec<String>,
+	/// Who the server no longer relays anything from.
+	pub ignored: Vec<String>,
 }
 
 impl Snapshot {
-    /// The room we are in, with the session it is on. There is one at most,
-    /// across every server.
-    pub fn room(&self) -> Option<(&ServerSnapshot, &MyBattleView)> {
-        self.servers
-            .iter()
-            .find_map(|server| Some((server, server.my_battle.as_ref()?)))
-    }
+	/// The room we are in, with the session it is on. There is one at most,
+	/// across every server.
+	pub fn room(&self) -> Option<(&ServerSnapshot, &MyBattleView)> {
+		self.servers
+			.iter()
+			.find_map(|server| Some((server, server.my_battle.as_ref()?)))
+	}
 
-    /// The session a caller from before there were several servers means by
-    /// "the" session: the one whose room we are in, else the first.
-    pub fn session(&self) -> Option<&ServerSnapshot> {
-        self.room()
-            .map(|(server, _)| server)
-            .or_else(|| self.servers.first())
-    }
+	/// The session a caller from before there were several servers means by
+	/// "the" session: the one whose room we are in, else the first.
+	pub fn session(&self) -> Option<&ServerSnapshot> {
+		self.room()
+			.map(|(server, _)| server)
+			.or_else(|| self.servers.first())
+	}
 }
 
 impl ServerSnapshot {
-    /// A server there is no session with (yet), under its id.
-    pub fn disconnected(server: impl Into<String>) -> Self {
-        Self {
-            server: server.into(),
-            ..Self::default()
-        }
-    }
+	/// A server there is no session with (yet), under its id.
+	pub fn disconnected(server: impl Into<String>) -> Self {
+		Self {
+			server: server.into(),
+			..Self::default()
+		}
+	}
 
-    /// Users sorted by name and battles by id, so two snapshots of one state are equal.
-    pub fn from_state(
-        server: impl Into<String>,
-        state: &LobbyState,
-        game_running: Option<GameRunningView>,
-    ) -> Self {
-        let mut users: Vec<UserView> = state
-            .users
-            .values()
-            .map(|u| UserView::new(u, state.user_battle.get(&u.name).copied()))
-            .collect();
-        users.sort_by(|a, b| a.name.cmp(&b.name));
-        let mut battles: Vec<BattleView> = state.battles.values().map(BattleView::from).collect();
-        battles.sort_by_key(|b| b.id);
-        Self {
-            server: server.into(),
-            phase: state.phase.map(Into::into),
-            // Only the runtime knows; it fills this in.
-            retry_in: None,
-            me: state.me.clone(),
-            users,
-            battles,
-            my_battle: state.my_battle.as_ref().map(MyBattleView::from),
-            game_running,
-            channels: state
-                .channels
-                .values()
-                .map(|channel| ChannelView {
-                    name: channel.name.clone(),
-                    members: channel.members.iter().cloned().collect(),
-                    topic_author: channel.topic_author.clone(),
-                })
-                .collect(),
-            friends: FriendsView::from(state),
-        }
-    }
+	/// Users sorted by name and battles by id, so two snapshots of one state are equal.
+	pub fn from_state(
+		server: impl Into<String>,
+		state: &LobbyState,
+		game_running: Option<GameRunningView>,
+	) -> Self {
+		let mut users: Vec<UserView> = state
+			.users
+			.values()
+			.map(|u| UserView::new(u, state.user_battle.get(&u.name).copied()))
+			.collect();
+		users.sort_by(|a, b| a.name.cmp(&b.name));
+		let mut battles: Vec<BattleView> = state.battles.values().map(BattleView::from).collect();
+		battles.sort_by_key(|b| b.id);
+		Self {
+			server: server.into(),
+			phase: state.phase.map(Into::into),
+			// Only the runtime knows; it fills this in.
+			retry_in: None,
+			me: state.me.clone(),
+			users,
+			battles,
+			my_battle: state.my_battle.as_ref().map(MyBattleView::from),
+			game_running,
+			channels: state
+				.channels
+				.values()
+				.map(|channel| ChannelView {
+					name: channel.name.clone(),
+					members: channel.members.iter().cloned().collect(),
+					topic_author: channel.topic_author.clone(),
+				})
+				.collect(),
+			friends: FriendsView::from(state),
+		}
+	}
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub enum ChatKind {
-    Chat,
-    /// `SAIDBATTLEEX`: host announcements and `/me` lines.
-    Announcement,
-    Private,
-    /// `SAIDEX`: an emote, written as an action rather than speech.
-    Emote,
-    /// Said by the app rather than by anyone on the server.
-    System,
-    /// The server's message of the day: the same greeting on every connect,
-    /// so it is there to scroll back to but never counts as unread.
-    Motd,
-    /// A host line written for a program to read, not a person: the
-    /// `BarManager|{…}` side-channel. Already parsed into room state by the
-    /// time it gets here, so showing it is a debugging choice.
-    Machine,
+	Chat,
+	/// `SAIDBATTLEEX`: host announcements and `/me` lines.
+	Announcement,
+	Private,
+	/// `SAIDEX`: an emote, written as an action rather than speech.
+	Emote,
+	/// Said by the app rather than by anyone on the server.
+	System,
+	/// The server's message of the day: the same greeting on every connect,
+	/// so it is there to scroll back to but never counts as unread.
+	Motd,
+	/// A host line written for a program to read, not a person: the
+	/// `BarManager|{…}` side-channel. Already parsed into room state by the
+	/// time it gets here, so showing it is a debugging choice.
+	Machine,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct ChatLine {
-    #[ts(type = "number")]
-    pub seq: u64,
-    /// Where this was said. `#battle` is the room we are in, `@name` is a
-    /// private conversation, and anything else is a channel — which cannot
-    /// collide, because teiserver only accepts `\w+` as a channel name.
-    pub room: String,
-    pub from: String,
-    pub text: String,
-    pub kind: ChatKind,
-    /// Whether this line names us. Decided here rather than in the front end
-    /// because this is where we know who we are, and because a name match is
-    /// the kind of thing that deserves a test.
-    pub mention: bool,
-    /// Unix seconds when this reached us. The protocol carries no time of its
-    /// own, so it is stamped on arrival — near enough for reading a backlog,
-    /// and honest about being our clock rather than the sender's.
-    #[ts(type = "number")]
-    pub at: u64,
+	#[ts(type = "number")]
+	pub seq: u64,
+	/// Where this was said. `#battle` is the room we are in, `@name` is a
+	/// private conversation, and anything else is a channel — which cannot
+	/// collide, because teiserver only accepts `\w+` as a channel name.
+	pub room: String,
+	pub from: String,
+	pub text: String,
+	pub kind: ChatKind,
+	/// Whether this line names us. Decided here rather than in the front end
+	/// because this is where we know who we are, and because a name match is
+	/// the kind of thing that deserves a test.
+	pub mention: bool,
+	/// Unix seconds when this reached us. The protocol carries no time of its
+	/// own, so it is stamped on arrival — near enough for reading a backlog,
+	/// and honest about being our clock rather than the sender's.
+	#[ts(type = "number")]
+	pub at: u64,
 }
 
 /// The room key for the battle we are in.
@@ -717,7 +717,7 @@ pub const SKIRMISH_ROOM: &str = "#skirmish";
 
 /// The room key for a private conversation with someone.
 pub fn private_room(user: &str) -> String {
-    format!("@{user}")
+	format!("@{user}")
 }
 
 /// A channel we are in, as the front end needs it.
@@ -725,9 +725,9 @@ pub fn private_room(user: &str) -> String {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct ChannelView {
-    pub name: String,
-    pub members: Vec<String>,
-    pub topic_author: Option<String>,
+	pub name: String,
+	pub members: Vec<String>,
+	pub topic_author: Option<String>,
 }
 
 /// One line of the server's channel directory.
@@ -735,157 +735,157 @@ pub struct ChannelView {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct ChannelSummaryView {
-    pub name: String,
-    pub members: u32,
+	pub name: String,
+	pub members: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub enum NoticeLevel {
-    Info,
-    Warning,
-    Error,
+	Info,
+	Warning,
+	Error,
 }
 
 /// One change to apply to the mirrored state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(
-    tag = "type",
-    content = "data",
-    rename_all = "camelCase",
-    rename_all_fields = "camelCase"
+	tag = "type",
+	content = "data",
+	rename_all = "camelCase",
+	rename_all_fields = "camelCase"
 )]
 #[ts(export)]
 pub enum Delta {
-    Phase(Option<Phase>),
-    /// The runtime's next attempt at the last credentials moved: armed after
-    /// a drop or a refusal, or called off. See `Snapshot::retry_in`.
-    RetryIn(#[ts(type = "number | null")] Option<u64>),
-    UserAdded(UserView),
-    UserRemoved {
-        name: String,
-    },
-    UserStatus {
-        name: String,
-        status: UserStatusView,
-    },
-    BattleOpened(BattleView),
-    BattleClosed {
-        id: u32,
-    },
-    BattleInfo {
-        id: u32,
-        spectator_count: u32,
-        locked: bool,
-        map_hash: String,
-        map_name: String,
-    },
-    BattleTitle {
-        id: u32,
-        title: String,
-    },
-    BattleLayout {
-        id: u32,
-        layout: LayoutView,
-    },
-    /// The room's join queue, whole, first in line first.
-    BattleQueue {
-        id: u32,
-        names: Vec<String>,
-    },
-    Member {
-        id: u32,
-        name: String,
-        joined: bool,
-    },
-    MemberStatus {
-        name: String,
-        status: BattleStatusView,
-        team_colour: u32,
-    },
-    /// `bot == None` removes it.
-    Bot {
-        id: u32,
-        name: String,
-        bot: Option<BotView>,
-    },
-    /// `rect == None` removes it.
-    StartRect {
-        ally_team: u8,
-        rect: Option<StartRectView>,
-    },
-    ScriptTags {
-        set: Vec<(String, String)>,
-        removed: Vec<String>,
-    },
-    /// One modoption's current value, plus the change that produced it.
-    ModOption {
-        key: String,
-        value: String,
-        change: Option<OptionChangeView>,
-    },
-    Vote(Option<VoteView>),
-    /// Whether the room's engine, game and map are installed here.
-    Content {
-        engine: bool,
-        game: bool,
-        map: bool,
-    },
-    MyBattle(Option<MyBattleView>),
-    /// The room with no server behind it, whole. `None` when there is none.
-    Skirmish(Option<Box<SkirmishView>>),
-    GameRunning(Option<GameRunningView>),
-    /// How long a room's game had already been going when we walked into it.
-    /// The only statement of a game's age this protocol carries.
-    GameStartedAgo {
-        id: u32,
-        #[ts(type = "number")]
-        seconds: u64,
-    },
-    Engine(EngineStatus),
-    Chat(ChatLine),
-    /// A channel we are in was added, changed, or removed (`None`).
-    Channel {
-        name: String,
-        channel: Option<ChannelView>,
-    },
-    /// The server's channel directory, replaced whole.
-    Directory(Vec<ChannelSummaryView>),
-    /// The friend list and pending requests, replaced whole.
-    Friends(FriendsView),
-    /// How a content download is going.
-    Download(DownloadStatus),
-    /// How a multi-line paste is going.
-    Paste(PasteStatus),
-    /// Every remembered way into a server, replaced whole. See `Snapshot::ways`.
-    Ways(BTreeMap<String, String>),
-    /// Something worth interrupting the reader for. The front end decides
-    /// whether to raise it, since only it knows whether anyone is looking.
-    Alert {
-        kind: AlertKind,
-        text: String,
-    },
-    Notice {
-        level: NoticeLevel,
-        text: String,
-    },
+	Phase(Option<Phase>),
+	/// The runtime's next attempt at the last credentials moved: armed after
+	/// a drop or a refusal, or called off. See `Snapshot::retry_in`.
+	RetryIn(#[ts(type = "number | null")] Option<u64>),
+	UserAdded(UserView),
+	UserRemoved {
+		name: String,
+	},
+	UserStatus {
+		name: String,
+		status: UserStatusView,
+	},
+	BattleOpened(BattleView),
+	BattleClosed {
+		id: u32,
+	},
+	BattleInfo {
+		id: u32,
+		spectator_count: u32,
+		locked: bool,
+		map_hash: String,
+		map_name: String,
+	},
+	BattleTitle {
+		id: u32,
+		title: String,
+	},
+	BattleLayout {
+		id: u32,
+		layout: LayoutView,
+	},
+	/// The room's join queue, whole, first in line first.
+	BattleQueue {
+		id: u32,
+		names: Vec<String>,
+	},
+	Member {
+		id: u32,
+		name: String,
+		joined: bool,
+	},
+	MemberStatus {
+		name: String,
+		status: BattleStatusView,
+		team_colour: u32,
+	},
+	/// `bot == None` removes it.
+	Bot {
+		id: u32,
+		name: String,
+		bot: Option<BotView>,
+	},
+	/// `rect == None` removes it.
+	StartRect {
+		ally_team: u8,
+		rect: Option<StartRectView>,
+	},
+	ScriptTags {
+		set: Vec<(String, String)>,
+		removed: Vec<String>,
+	},
+	/// One modoption's current value, plus the change that produced it.
+	ModOption {
+		key: String,
+		value: String,
+		change: Option<OptionChangeView>,
+	},
+	Vote(Option<VoteView>),
+	/// Whether the room's engine, game and map are installed here.
+	Content {
+		engine: bool,
+		game: bool,
+		map: bool,
+	},
+	MyBattle(Option<MyBattleView>),
+	/// The room with no server behind it, whole. `None` when there is none.
+	Skirmish(Option<Box<SkirmishView>>),
+	GameRunning(Option<GameRunningView>),
+	/// How long a room's game had already been going when we walked into it.
+	/// The only statement of a game's age this protocol carries.
+	GameStartedAgo {
+		id: u32,
+		#[ts(type = "number")]
+		seconds: u64,
+	},
+	Engine(EngineStatus),
+	Chat(ChatLine),
+	/// A channel we are in was added, changed, or removed (`None`).
+	Channel {
+		name: String,
+		channel: Option<ChannelView>,
+	},
+	/// The server's channel directory, replaced whole.
+	Directory(Vec<ChannelSummaryView>),
+	/// The friend list and pending requests, replaced whole.
+	Friends(FriendsView),
+	/// How a content download is going.
+	Download(DownloadStatus),
+	/// How a multi-line paste is going.
+	Paste(PasteStatus),
+	/// Every remembered way into a server, replaced whole. See `Snapshot::ways`.
+	Ways(BTreeMap<String, String>),
+	/// Something worth interrupting the reader for. The front end decides
+	/// whether to raise it, since only it knows whether anyone is looking.
+	Alert {
+		kind: AlertKind,
+		text: String,
+	},
+	Notice {
+		level: NoticeLevel,
+		text: String,
+	},
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "data", rename_all = "camelCase")]
 #[ts(export)]
 pub enum UiMessage {
-    /// Boxed: a snapshot dwarfs a delta batch, and this enum is moved per message.
-    Snapshot(Box<Snapshot>),
-    /// One server's session over again, in place of whatever was held of it:
-    /// what a login ends in. Every other server's is left as it was, so one
-    /// server coming back does not send a second one's two thousand users.
-    Session(Box<ServerSnapshot>),
-    /// A run of changes from one source: `server`'s session, or with `None`
-    /// this machine's own — the engine, a download, a skirmish.
-    Deltas {
-        server: Option<String>,
-        deltas: Vec<Delta>,
-    },
+	/// Boxed: a snapshot dwarfs a delta batch, and this enum is moved per message.
+	Snapshot(Box<Snapshot>),
+	/// One server's session over again, in place of whatever was held of it:
+	/// what a login ends in. Every other server's is left as it was, so one
+	/// server coming back does not send a second one's two thousand users.
+	Session(Box<ServerSnapshot>),
+	/// A run of changes from one source: `server`'s session, or with `None`
+	/// this machine's own — the engine, a download, a skirmish.
+	Deltas {
+		server: Option<String>,
+		deltas: Vec<Delta>,
+	},
 }

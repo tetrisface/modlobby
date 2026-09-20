@@ -9,7 +9,7 @@ use crate::model::UiMessage;
 pub struct UiClosed;
 
 pub trait UiTransport: Send + 'static {
-    fn send(&self, message: UiMessage) -> Result<(), UiClosed>;
+	fn send(&self, message: UiMessage) -> Result<(), UiClosed>;
 }
 
 /// Test double: keeps every message.
@@ -17,14 +17,14 @@ pub trait UiTransport: Send + 'static {
 pub struct Collector(Arc<Mutex<Vec<UiMessage>>>);
 
 impl Collector {
-    pub fn take(&self) -> Vec<UiMessage> {
-        std::mem::take(&mut self.0.lock().expect("collector lock"))
-    }
+	pub fn take(&self) -> Vec<UiMessage> {
+		std::mem::take(&mut self.0.lock().expect("collector lock"))
+	}
 }
 
 impl UiTransport for Collector {
-    fn send(&self, message: UiMessage) -> Result<(), UiClosed> {
-        self.0.lock().expect("collector lock").push(message);
-        Ok(())
-    }
+	fn send(&self, message: UiMessage) -> Result<(), UiClosed> {
+		self.0.lock().expect("collector lock").push(message);
+		Ok(())
+	}
 }

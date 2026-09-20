@@ -16,25 +16,25 @@
 /// so it can fall back to flashing the lobby.
 #[cfg(windows)]
 pub fn flash_process(pid: u32) -> bool {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        FLASHW_ALL, FLASHW_TIMERNOFG, FLASHWINFO, FlashWindowEx,
-    };
+	use windows_sys::Win32::UI::WindowsAndMessaging::{
+		FLASHW_ALL, FLASHW_TIMERNOFG, FLASHWINFO, FlashWindowEx,
+	};
 
-    let windows = crate::win::visible_windows_of(pid);
-    for window in &windows {
-        let flash = FLASHWINFO {
-            cbSize: size_of::<FLASHWINFO>() as u32,
-            hwnd: *window,
-            // Caption and tray, and no stopping until it is looked at: the same
-            // pair Chobby asks for as the literal 15.
-            dwFlags: FLASHW_ALL | FLASHW_TIMERNOFG,
-            uCount: 0,
-            dwTimeout: 0,
-        };
-        // SAFETY: `flash` is fully initialised and lives across the call.
-        unsafe { FlashWindowEx(&flash) };
-    }
-    !windows.is_empty()
+	let windows = crate::win::visible_windows_of(pid);
+	for window in &windows {
+		let flash = FLASHWINFO {
+			cbSize: size_of::<FLASHWINFO>() as u32,
+			hwnd: *window,
+			// Caption and tray, and no stopping until it is looked at: the same
+			// pair Chobby asks for as the literal 15.
+			dwFlags: FLASHW_ALL | FLASHW_TIMERNOFG,
+			uCount: 0,
+			dwTimeout: 0,
+		};
+		// SAFETY: `flash` is fully initialised and lives across the call.
+		unsafe { FlashWindowEx(&flash) };
+	}
+	!windows.is_empty()
 }
 
 /// Nothing to flash: the caller falls back to the lobby's own window.
@@ -44,5 +44,5 @@ pub fn flash_process(pid: u32) -> bool {
 /// reachable for a child process the way `FlashWindowEx` is.
 #[cfg(not(windows))]
 pub fn flash_process(_pid: u32) -> bool {
-    false
+	false
 }

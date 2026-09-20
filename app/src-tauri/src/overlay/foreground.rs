@@ -14,36 +14,36 @@ pub struct Windows;
 
 #[cfg(windows)]
 impl ForegroundControl for Windows {
-    fn focus(&self, pid: u32) {
-        use windows_sys::Win32::UI::WindowsAndMessaging::{
-            SW_RESTORE, SetForegroundWindow, ShowWindow,
-        };
+	fn focus(&self, pid: u32) {
+		use windows_sys::Win32::UI::WindowsAndMessaging::{
+			SW_RESTORE, SetForegroundWindow, ShowWindow,
+		};
 
-        let Some(window) = crate::win::visible_windows_of(pid).into_iter().next() else {
-            // A game still loading has no window yet. Not an error, and not
-            // worth interrupting anyone over.
-            tracing::debug!(pid, "no window to bring forward yet");
-            return;
-        };
+		let Some(window) = crate::win::visible_windows_of(pid).into_iter().next() else {
+			// A game still loading has no window yet. Not an error, and not
+			// worth interrupting anyone over.
+			tracing::debug!(pid, "no window to bring forward yet");
+			return;
+		};
 
-        // SAFETY: a live handle from the enumeration.
-        let raised = unsafe { SetForegroundWindow(window) };
-        if raised == 0 {
-            // Windows refuses this from a process it does not consider
-            // foreground. Restoring is the weaker request it usually grants.
-            tracing::warn!(pid, "could not raise the game; restoring instead");
-            // SAFETY: same handle.
-            unsafe { ShowWindow(window, SW_RESTORE) };
-        }
-    }
+		// SAFETY: a live handle from the enumeration.
+		let raised = unsafe { SetForegroundWindow(window) };
+		if raised == 0 {
+			// Windows refuses this from a process it does not consider
+			// foreground. Restoring is the weaker request it usually grants.
+			tracing::warn!(pid, "could not raise the game; restoring instead");
+			// SAFETY: same handle.
+			unsafe { ShowWindow(window, SW_RESTORE) };
+		}
+	}
 }
 
 #[cfg(not(windows))]
 impl ForegroundControl for Windows {
-    fn focus(&self, pid: u32) {
-        tracing::debug!(
-            pid,
-            "raising another process's window is not available here"
-        );
-    }
+	fn focus(&self, pid: u32) {
+		tracing::debug!(
+			pid,
+			"raising another process's window is not available here"
+		);
+	}
 }

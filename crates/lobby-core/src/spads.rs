@@ -9,44 +9,44 @@
 /// One thing the host told the room.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Announcement {
-    /// `* <user> called a vote for command "<cmd>" [!vote y, !vote n, !vote b]` (`spads.pl:8419`).
-    VoteCalled { by: String, command: String },
-    /// `* Vote in progress: "<cmd>" [y:1/2, n:0/1(2)] (25s remaining)` (`spads.pl:4015`).
-    VoteProgress {
-        command: String,
-        yes: u32,
-        yes_needed: u32,
-        no: u32,
-        no_needed: u32,
-        remaining_secs: u32,
-    },
-    /// `* Vote for command "<cmd>" passed.|failed.` (`spads.pl:3603-3653`).
-    VoteEnded { command: String, passed: bool },
-    /// `* Vote cancelled by <user>` (`:8700`), or the vote's command being run
-    /// directly (`:3244`), or the game starting.
-    VoteCancelled,
-    /// `* Battle setting changed by <user> (<key>=<value>)` (`spads.pl:8236`).
-    /// The only signal when a slot is cleared: SPADS suppresses the
-    /// `SETSCRIPTTAGS` for an empty value (`spads.pl:2625-2628`).
-    SettingChanged {
-        by: String,
-        key: String,
-        value: String,
-    },
-    /// `* BarManager|{…}`: the structured side-channel the BAR plugin adds.
-    BarManager { json: String },
-    /// `* A game is in progress since 28 minutes and 4 seconds.`
-    ///
-    /// Part of SPADS's welcome message, sent to you alone as you walk into a
-    /// room whose game is already going (`welcomeMsg`, whose default is
-    /// `Hi %u (%d), welcome to %n …|!A game is in progress since %t.|!…`).
-    /// One of the two places a game's age can be had. The other is asking the
-    /// host outright — see [`GAME_STATUS_REQUEST`] — which works for a room
-    /// you have not joined. What does *not* carry it is the battle list:
-    /// `BATTLEOPENED` has no such field, and Chobby's `runningSince` is dead
-    /// code here, commented out in liblobby (`lobby.lua:1208,1383`) as a
-    /// Zero-K leftover.
-    GameInProgress { elapsed_secs: u64 },
+	/// `* <user> called a vote for command "<cmd>" [!vote y, !vote n, !vote b]` (`spads.pl:8419`).
+	VoteCalled { by: String, command: String },
+	/// `* Vote in progress: "<cmd>" [y:1/2, n:0/1(2)] (25s remaining)` (`spads.pl:4015`).
+	VoteProgress {
+		command: String,
+		yes: u32,
+		yes_needed: u32,
+		no: u32,
+		no_needed: u32,
+		remaining_secs: u32,
+	},
+	/// `* Vote for command "<cmd>" passed.|failed.` (`spads.pl:3603-3653`).
+	VoteEnded { command: String, passed: bool },
+	/// `* Vote cancelled by <user>` (`:8700`), or the vote's command being run
+	/// directly (`:3244`), or the game starting.
+	VoteCancelled,
+	/// `* Battle setting changed by <user> (<key>=<value>)` (`spads.pl:8236`).
+	/// The only signal when a slot is cleared: SPADS suppresses the
+	/// `SETSCRIPTTAGS` for an empty value (`spads.pl:2625-2628`).
+	SettingChanged {
+		by: String,
+		key: String,
+		value: String,
+	},
+	/// `* BarManager|{…}`: the structured side-channel the BAR plugin adds.
+	BarManager { json: String },
+	/// `* A game is in progress since 28 minutes and 4 seconds.`
+	///
+	/// Part of SPADS's welcome message, sent to you alone as you walk into a
+	/// room whose game is already going (`welcomeMsg`, whose default is
+	/// `Hi %u (%d), welcome to %n …|!A game is in progress since %t.|!…`).
+	/// One of the two places a game's age can be had. The other is asking the
+	/// host outright — see [`GAME_STATUS_REQUEST`] — which works for a room
+	/// you have not joined. What does *not* carry it is the battle list:
+	/// `BATTLEOPENED` has no such field, and Chobby's `runningSince` is dead
+	/// code here, commented out in liblobby (`lobby.lua:1208,1383`) as a
+	/// Zero-K leftover.
+	GameInProgress { elapsed_secs: u64 },
 }
 
 /// Seconds from the way SPADS writes a duration out in words.
@@ -57,27 +57,27 @@ pub enum Announcement {
 /// shape, this picks out every `<number> <unit>` pair and adds them up. An
 /// unknown unit contributes nothing instead of poisoning the whole line.
 fn spoken_duration(text: &str) -> Option<u64> {
-    let words: Vec<&str> = text.split_whitespace().collect();
-    let mut total = 0_u64;
-    let mut found = false;
+	let words: Vec<&str> = text.split_whitespace().collect();
+	let mut total = 0_u64;
+	let mut found = false;
 
-    for pair in words.windows(2) {
-        let Ok(count) = pair[0].parse::<u64>() else {
-            continue;
-        };
-        let unit = pair[1].trim_end_matches([',', '.']);
-        let seconds = match unit.trim_end_matches('s') {
-            "second" => 1,
-            "minute" => 60,
-            "hour" => 3_600,
-            "day" => 86_400,
-            _ => continue,
-        };
-        total += count * seconds;
-        found = true;
-    }
+	for pair in words.windows(2) {
+		let Ok(count) = pair[0].parse::<u64>() else {
+			continue;
+		};
+		let unit = pair[1].trim_end_matches([',', '.']);
+		let seconds = match unit.trim_end_matches('s') {
+			"second" => 1,
+			"minute" => 60,
+			"hour" => 3_600,
+			"day" => 86_400,
+			_ => continue,
+		};
+		total += count * seconds;
+		found = true;
+	}
 
-    found.then_some(total)
+	found.then_some(total)
 }
 
 /// Who SPADS says is bossing the room, from a `BattleStateChanged` payload.
@@ -87,15 +87,15 @@ fn spoken_duration(text: &str) -> Option<u64> {
 /// to speak up its boss, and a boss may change every setting in it. An empty
 /// string means nobody.
 pub fn boss(json: &str) -> Option<String> {
-    state_field(json, "boss")
+	state_field(json, "boss")
 }
 
 /// One string out of a `BattleStateChanged` payload, trimmed. `None` where
 /// the payload is not one, lacks the key, or has it empty.
 fn state_field(json: &str, key: &str) -> Option<String> {
-    let value: serde_json::Value = serde_json::from_str(json).ok()?;
-    let text = value.get("BattleStateChanged")?.get(key)?.as_str()?.trim();
-    (!text.is_empty()).then(|| text.to_owned())
+	let value: serde_json::Value = serde_json::from_str(json).ok()?;
+	let text = value.get("BattleStateChanged")?.get(key)?.as_str()?.trim();
+	(!text.is_empty()).then(|| text.to_owned())
 }
 
 /// What the room says about balancing itself, from the same payload.
@@ -111,7 +111,7 @@ fn state_field(json: &str, key: &str) -> Option<String> {
 /// being asked. `None` means a host that does not run that plugin at all, and
 /// is "not said" rather than "off".
 pub fn auto_balance(json: &str) -> Option<String> {
-    state_field(json, "autoBalance").map(|mode| mode.to_ascii_lowercase())
+	state_field(json, "autoBalance").map(|mode| mode.to_ascii_lowercase())
 }
 
 /// The SPADS preset the room runs under, from the same payload: `team`,
@@ -119,7 +119,7 @@ pub fn auto_balance(json: &str) -> Option<String> {
 /// is the list Chobby offers (`gui_battle_room_window.lua:3490`). Changed
 /// with `!preset <name>`.
 pub fn preset(json: &str) -> Option<String> {
-    state_field(json, "preset").map(|name| name.to_ascii_lowercase())
+	state_field(json, "preset").map(|name| name.to_ascii_lowercase())
 }
 
 /// Whether an announcement names `who` as the one who acted. SPADS writes
@@ -127,21 +127,21 @@ pub fn preset(json: &str) -> Option<String> {
 /// vote" for a vote (`spads.pl`, `broadcastMsg` callers). Word-bounded, so
 /// `Sky` is not `Skywalker`; case-insensitive, as names are typed.
 pub fn acted_by(text: &str, who: &str) -> bool {
-    if who.is_empty() {
-        return false;
-    }
-    let body = text.strip_prefix("* ").unwrap_or(text).to_lowercase();
-    let name = who.to_lowercase();
-    let ends_name = |rest: &str| {
-        rest.starts_with(&name)
-            && !rest[name.len()..]
-                .chars()
-                .next()
-                .is_some_and(|c| c.is_alphanumeric() || c == '_')
-    };
-    body.match_indices("by ")
-        .any(|(at, hit)| ends_name(&body[at + hit.len()..]))
-        || (ends_name(&body) && body[name.len()..].starts_with(" called a vote"))
+	if who.is_empty() {
+		return false;
+	}
+	let body = text.strip_prefix("* ").unwrap_or(text).to_lowercase();
+	let name = who.to_lowercase();
+	let ends_name = |rest: &str| {
+		rest.starts_with(&name)
+			&& !rest[name.len()..]
+				.chars()
+				.next()
+				.is_some_and(|c| c.is_alphanumeric() || c == '_')
+	};
+	body.match_indices("by ")
+		.any(|(at, hit)| ends_name(&body[at + hit.len()..]))
+		|| (ends_name(&body) && body[name.len()..].starts_with(" called a vote"))
 }
 
 /// Whether an announcement is the host answering a command, as opposed to
@@ -151,37 +151,36 @@ pub fn acted_by(text: &str, who: &str) -> bool {
 /// paste's commands as the host gets through them; the count is capped by
 /// the caller, so an extra match costs nothing worse than a bar a step ahead.
 pub fn answers_command(text: &str, me: &str) -> bool {
-    let Some(body) = text.strip_prefix("* ") else {
-        return false;
-    };
-    if is_machine(text)
-        || matches!(
-            parse(text),
-            Some(
-                Announcement::VoteProgress { .. }
-                    | Announcement::VoteEnded { .. }
-                    | Announcement::VoteCancelled
-                    | Announcement::GameInProgress { .. }
-            )
-        )
-    {
-        return false;
-    }
-    const OUTCOMES: [&str; 8] = [
-        "Battle setting",
-        "Global setting",
-        "Hosting setting",
-        "Invalid command",
-        "Map is already",
-        "Map changed",
-        "Preset ",
-        "Unable to",
-    ];
-    let addressed = !me.is_empty()
-        && body
-            .to_lowercase()
-            .starts_with(&format!("{}, ", me.to_lowercase()));
-    acted_by(text, me) || addressed || OUTCOMES.iter().any(|prefix| body.starts_with(prefix))
+	let Some(body) = text.strip_prefix("* ") else {
+		return false;
+	};
+	if is_machine(text)
+		|| matches!(
+			parse(text),
+			Some(
+				Announcement::VoteProgress { .. }
+					| Announcement::VoteEnded { .. }
+					| Announcement::VoteCancelled
+					| Announcement::GameInProgress { .. }
+			)
+		) {
+		return false;
+	}
+	const OUTCOMES: [&str; 8] = [
+		"Battle setting",
+		"Global setting",
+		"Hosting setting",
+		"Invalid command",
+		"Map is already",
+		"Map changed",
+		"Preset ",
+		"Unable to",
+	];
+	let addressed = !me.is_empty()
+		&& body
+			.to_lowercase()
+			.starts_with(&format!("{}, ", me.to_lowercase()));
+	acted_by(text, me) || addressed || OUTCOMES.iter().any(|prefix| body.starts_with(prefix))
 }
 
 /// Parses one `SAIDBATTLEEX` line from the founder. Everything SPADS says is
@@ -189,10 +188,10 @@ pub fn answers_command(text: &str, me: &str) -> bool {
 /// Whether a line is machine-readable rather than something a person is meant
 /// to read. Cheap enough to ask on every line.
 pub fn is_machine(text: &str) -> bool {
-    text.starts_with(RPC_PREFIX)
-        || text
-            .strip_prefix("* ")
-            .is_some_and(|body| body.starts_with("BarManager|"))
+	text.starts_with(RPC_PREFIX)
+		|| text
+			.strip_prefix("* ")
+			.is_some_and(|body| body.starts_with("BarManager|"))
 }
 
 /// How SPADS marks a JSON-RPC request or answer on a private message.
@@ -206,16 +205,16 @@ pub const RPC_PREFIX: &str = "!#JSONRPC ";
 /// (`liblobby/lobby/lobby.lua:1399`), which is how a tooltip can say "running
 /// for 23m 52s" about a room nobody has joined.
 pub const GAME_STATUS_REQUEST: &str =
-    r#"!#JSONRPC {"jsonrpc": "2.0", "method": "status", "params": ["game"], "id": 1}"#;
+	r#"!#JSONRPC {"jsonrpc": "2.0", "method": "status", "params": ["game"], "id": 1}"#;
 
 /// What a host answered about itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RpcStatus {
-    /// A game is up. `waiting` is SPADS choosing start positions rather than
-    /// playing yet, which it still counts as time on the clock.
-    Game { seconds: u64, waiting: bool },
-    /// No game running, and how long since the last one ended when it says.
-    Lobby { since_last_game: Option<u64> },
+	/// A game is up. `waiting` is SPADS choosing start positions rather than
+	/// playing yet, which it still counts as time on the clock.
+	Game { seconds: u64, waiting: bool },
+	/// No game running, and how long since the last one ended when it says.
+	Lobby { since_last_game: Option<u64> },
 }
 
 /// Reads one `!#JSONRPC` answer.
@@ -225,431 +224,431 @@ pub enum RpcStatus {
 /// `result.game.status` carries `gameTime`, `result.battleLobby.status`
 /// carries `delaySinceLastGame`.
 pub fn parse_rpc(text: &str) -> Option<RpcStatus> {
-    let json = text.strip_prefix(RPC_PREFIX)?;
-    let rpc: serde_json::Value = serde_json::from_str(json).ok()?;
-    let result = rpc.get("result")?;
+	let json = text.strip_prefix(RPC_PREFIX)?;
+	let rpc: serde_json::Value = serde_json::from_str(json).ok()?;
+	let result = rpc.get("result")?;
 
-    if let Some(status) = result.get("game").and_then(|game| game.get("status"))
-        && let Some(seconds) = status.get("gameTime").and_then(serde_json::Value::as_u64)
-    {
-        return Some(RpcStatus::Game {
-            seconds,
-            waiting: status.get("gameStatus").and_then(serde_json::Value::as_str)
-                == Some("waiting"),
-        });
-    }
+	if let Some(status) = result.get("game").and_then(|game| game.get("status"))
+		&& let Some(seconds) = status.get("gameTime").and_then(serde_json::Value::as_u64)
+	{
+		return Some(RpcStatus::Game {
+			seconds,
+			waiting: status.get("gameStatus").and_then(serde_json::Value::as_str)
+				== Some("waiting"),
+		});
+	}
 
-    let status = result
-        .get("battleLobby")
-        .and_then(|lobby| lobby.get("status"))?;
-    status.get("battleStatus")?;
-    Some(RpcStatus::Lobby {
-        since_last_game: status
-            .get("delaySinceLastGame")
-            .and_then(serde_json::Value::as_u64),
-    })
+	let status = result
+		.get("battleLobby")
+		.and_then(|lobby| lobby.get("status"))?;
+	status.get("battleStatus")?;
+	Some(RpcStatus::Lobby {
+		since_last_game: status
+			.get("delaySinceLastGame")
+			.and_then(serde_json::Value::as_u64),
+	})
 }
 
 pub fn parse(text: &str) -> Option<Announcement> {
-    let body = text.strip_prefix("* ")?;
+	let body = text.strip_prefix("* ")?;
 
-    if let Some(json) = body.strip_prefix("BarManager|") {
-        return Some(Announcement::BarManager { json: json.into() });
-    }
-    if let Some(since) = body.strip_prefix("A game is in progress since ")
-        && let Some(elapsed_secs) = spoken_duration(since)
-    {
-        return Some(Announcement::GameInProgress { elapsed_secs });
-    }
-    if let Some(rest) = body.strip_prefix("Vote in progress: ") {
-        return parse_progress(rest);
-    }
-    if let Some(rest) = body.strip_prefix("Vote for command ") {
-        let (command, rest) = quoted(rest)?;
-        let passed = rest.trim_start().starts_with("passed");
-        let failed = rest.trim_start().starts_with("failed");
-        return (passed || failed).then_some(Announcement::VoteEnded { command, passed });
-    }
-    if let Some(rest) = body.strip_prefix("Battle setting changed by ") {
-        let (by, rest) = rest.split_once(" (")?;
-        let (key, value) = rest.strip_suffix(')')?.split_once('=')?;
-        return Some(Announcement::SettingChanged {
-            by: by.into(),
-            key: key.to_ascii_lowercase(),
-            value: value.into(),
-        });
-    }
-    if body.starts_with("Vote cancelled by ")
-        || body.starts_with("Cancelling ")
-        || body.starts_with("Game starting, cancelling")
-    {
-        return Some(Announcement::VoteCancelled);
-    }
-    if let Some((by, rest)) = body.split_once(" called a vote for command ") {
-        let (command, _) = quoted(rest)?;
-        return Some(Announcement::VoteCalled {
-            by: by.into(),
-            command,
-        });
-    }
-    None
+	if let Some(json) = body.strip_prefix("BarManager|") {
+		return Some(Announcement::BarManager { json: json.into() });
+	}
+	if let Some(since) = body.strip_prefix("A game is in progress since ")
+		&& let Some(elapsed_secs) = spoken_duration(since)
+	{
+		return Some(Announcement::GameInProgress { elapsed_secs });
+	}
+	if let Some(rest) = body.strip_prefix("Vote in progress: ") {
+		return parse_progress(rest);
+	}
+	if let Some(rest) = body.strip_prefix("Vote for command ") {
+		let (command, rest) = quoted(rest)?;
+		let passed = rest.trim_start().starts_with("passed");
+		let failed = rest.trim_start().starts_with("failed");
+		return (passed || failed).then_some(Announcement::VoteEnded { command, passed });
+	}
+	if let Some(rest) = body.strip_prefix("Battle setting changed by ") {
+		let (by, rest) = rest.split_once(" (")?;
+		let (key, value) = rest.strip_suffix(')')?.split_once('=')?;
+		return Some(Announcement::SettingChanged {
+			by: by.into(),
+			key: key.to_ascii_lowercase(),
+			value: value.into(),
+		});
+	}
+	if body.starts_with("Vote cancelled by ")
+		|| body.starts_with("Cancelling ")
+		|| body.starts_with("Game starting, cancelling")
+	{
+		return Some(Announcement::VoteCancelled);
+	}
+	if let Some((by, rest)) = body.split_once(" called a vote for command ") {
+		let (command, _) = quoted(rest)?;
+		return Some(Announcement::VoteCalled {
+			by: by.into(),
+			command,
+		});
+	}
+	None
 }
 
 /// `"<cmd>" [y:1/2, n:0/1(2)] (25s remaining)`, where the `(max)` after a
 /// required count only appears while it can still fall.
 fn parse_progress(rest: &str) -> Option<Announcement> {
-    let (command, rest) = quoted(rest)?;
-    let counts = between(rest, '[', ']')?;
-    let (yes_part, no_part) = counts.split_once(", n:")?;
-    let (yes, yes_needed) = fraction(yes_part.trim().strip_prefix("y:")?)?;
-    let (no, no_needed) = fraction(no_part)?;
-    let remaining_secs = rest
-        .rsplit_once('(')
-        .and_then(|(_, tail)| tail.split('s').next()?.trim().parse().ok())
-        .unwrap_or(0);
-    Some(Announcement::VoteProgress {
-        command,
-        yes,
-        yes_needed,
-        no,
-        no_needed,
-        remaining_secs,
-    })
+	let (command, rest) = quoted(rest)?;
+	let counts = between(rest, '[', ']')?;
+	let (yes_part, no_part) = counts.split_once(", n:")?;
+	let (yes, yes_needed) = fraction(yes_part.trim().strip_prefix("y:")?)?;
+	let (no, no_needed) = fraction(no_part)?;
+	let remaining_secs = rest
+		.rsplit_once('(')
+		.and_then(|(_, tail)| tail.split('s').next()?.trim().parse().ok())
+		.unwrap_or(0);
+	Some(Announcement::VoteProgress {
+		command,
+		yes,
+		yes_needed,
+		no,
+		no_needed,
+		remaining_secs,
+	})
 }
 
 /// `1/2` or `0/1(2)` — the parenthesised ceiling is not what we count against.
 fn fraction(text: &str) -> Option<(u32, u32)> {
-    let (have, needed) = text.trim().split_once('/')?;
-    let needed = needed.split('(').next()?;
-    Some((have.trim().parse().ok()?, needed.trim().parse().ok()?))
+	let (have, needed) = text.trim().split_once('/')?;
+	let needed = needed.split('(').next()?;
+	Some((have.trim().parse().ok()?, needed.trim().parse().ok()?))
 }
 
 /// The first `"…"` and whatever follows it.
 fn quoted(text: &str) -> Option<(String, &str)> {
-    let start = text.find('"')? + 1;
-    let end = start + text[start..].find('"')?;
-    Some((text[start..end].to_owned(), &text[end + 1..]))
+	let start = text.find('"')? + 1;
+	let end = start + text[start..].find('"')?;
+	Some((text[start..end].to_owned(), &text[end + 1..]))
 }
 
 fn between(text: &str, open: char, close: char) -> Option<&str> {
-    let start = text.find(open)? + open.len_utf8();
-    let end = start + text[start..].find(close)?;
-    Some(&text[start..end])
+	let start = text.find(open)? + open.len_utf8();
+	let end = start + text[start..].find(close)?;
+	Some(&text[start..end])
 }
 
 /// What a vote would do if it passed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Proposal {
-    /// `bSet <key> <value>`: the modoption a vote wants to change.
-    SetOption { key: String, value: String },
-    /// Anything else — a map change, `forcestart`, and so on.
-    Other,
+	/// `bSet <key> <value>`: the modoption a vote wants to change.
+	SetOption { key: String, value: String },
+	/// Anything else — a map change, `forcestart`, and so on.
+	Other,
 }
 
 impl Proposal {
-    /// SPADS echoes the command with the caller's own casing (`spads.pl:3026`).
-    pub fn parse(command: &str) -> Proposal {
-        let mut parts = command.split_whitespace();
-        let is_bset = parts.next().is_some_and(|w| w.eq_ignore_ascii_case("bset"));
-        let (Some(key), true) = (parts.next(), is_bset) else {
-            return Proposal::Other;
-        };
-        Proposal::SetOption {
-            key: key.to_ascii_lowercase(),
-            value: parts.next().unwrap_or_default().to_owned(),
-        }
-    }
+	/// SPADS echoes the command with the caller's own casing (`spads.pl:3026`).
+	pub fn parse(command: &str) -> Proposal {
+		let mut parts = command.split_whitespace();
+		let is_bset = parts.next().is_some_and(|w| w.eq_ignore_ascii_case("bset"));
+		let (Some(key), true) = (parts.next(), is_bset) else {
+			return Proposal::Other;
+		};
+		Proposal::SetOption {
+			key: key.to_ascii_lowercase(),
+			value: parts.next().unwrap_or_default().to_owned(),
+		}
+	}
 }
 
 /// A vote the room is holding right now.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VoteState {
-    pub command: String,
-    pub by: Option<String>,
-    pub proposal: Proposal,
-    pub yes: u32,
-    pub yes_needed: u32,
-    pub no: u32,
-    pub no_needed: u32,
-    pub remaining_secs: u32,
+	pub command: String,
+	pub by: Option<String>,
+	pub proposal: Proposal,
+	pub yes: u32,
+	pub yes_needed: u32,
+	pub no: u32,
+	pub no_needed: u32,
+	pub remaining_secs: u32,
 }
 
 impl VoteState {
-    pub fn called(by: String, command: String) -> Self {
-        Self {
-            proposal: Proposal::parse(&command),
-            command,
-            by: Some(by),
-            yes: 1,
-            yes_needed: 0,
-            no: 0,
-            no_needed: 0,
-            remaining_secs: 0,
-        }
-    }
+	pub fn called(by: String, command: String) -> Self {
+		Self {
+			proposal: Proposal::parse(&command),
+			command,
+			by: Some(by),
+			yes: 1,
+			yes_needed: 0,
+			no: 0,
+			no_needed: 0,
+			remaining_secs: 0,
+		}
+	}
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+	use super::*;
 
-    #[test]
-    fn the_actor_of_an_announcement_is_read_off_by_or_called() {
-        assert!(acted_by(
-            "* Battle setting changed by Sky (startmetal=1000)",
-            "Sky"
-        ));
-        assert!(acted_by(
-            "* Preset \"custom\" (Custom Battle) applied by sky",
-            "Sky"
-        ));
-        assert!(acted_by(
-            "* Sky called a vote for command \"bSet a 1\"",
-            "Sky"
-        ));
-        assert!(!acted_by(
-            "* Battle setting changed by Skywalker (a=1)",
-            "Sky"
-        ));
-        assert!(!acted_by("* Sky, you are not allowed to do that", "Sky"));
-        assert!(!acted_by("* Battle setting changed by Sky (a=1)", ""));
-    }
+	#[test]
+	fn the_actor_of_an_announcement_is_read_off_by_or_called() {
+		assert!(acted_by(
+			"* Battle setting changed by Sky (startmetal=1000)",
+			"Sky"
+		));
+		assert!(acted_by(
+			"* Preset \"custom\" (Custom Battle) applied by sky",
+			"Sky"
+		));
+		assert!(acted_by(
+			"* Sky called a vote for command \"bSet a 1\"",
+			"Sky"
+		));
+		assert!(!acted_by(
+			"* Battle setting changed by Skywalker (a=1)",
+			"Sky"
+		));
+		assert!(!acted_by("* Sky, you are not allowed to do that", "Sky"));
+		assert!(!acted_by("* Battle setting changed by Sky (a=1)", ""));
+	}
 
-    #[test]
-    fn a_hosts_answer_to_a_command_is_told_from_its_chatter() {
-        for answer in [
-            "* Battle setting changed by Sky (startmetal=1000)",
-            "* Battle setting \"debugcommands\" is already set to value \"\"",
-            "* Global setting changed by Sky (nbTeams=1)",
-            "* Invalid command \"pip\"",
-            "* Map is already set to \"Full Metal Plate 1.7\"",
-            "* Preset \"custom\" (Custom Battle) applied by Sky",
-            "* Sky, you must specify a user to boss.",
-        ] {
-            assert!(answers_command(answer, "Sky"), "{answer}");
-        }
-        for chatter in [
-            "* Vote in progress: \"bSet a 1\" [y:1/2, n:0/1(2)] (25s remaining)",
-            "* A game is in progress since 5 min.",
-            r#"* BarManager|{"BattleStateChanged": {"boss": "Sky"}}"#,
-            "Sky: hello",
-            "* Boss mode enabled for Sky",
-        ] {
-            assert!(!answers_command(chatter, "Sky"), "{chatter}");
-        }
-    }
+	#[test]
+	fn a_hosts_answer_to_a_command_is_told_from_its_chatter() {
+		for answer in [
+			"* Battle setting changed by Sky (startmetal=1000)",
+			"* Battle setting \"debugcommands\" is already set to value \"\"",
+			"* Global setting changed by Sky (nbTeams=1)",
+			"* Invalid command \"pip\"",
+			"* Map is already set to \"Full Metal Plate 1.7\"",
+			"* Preset \"custom\" (Custom Battle) applied by Sky",
+			"* Sky, you must specify a user to boss.",
+		] {
+			assert!(answers_command(answer, "Sky"), "{answer}");
+		}
+		for chatter in [
+			"* Vote in progress: \"bSet a 1\" [y:1/2, n:0/1(2)] (25s remaining)",
+			"* A game is in progress since 5 min.",
+			r#"* BarManager|{"BattleStateChanged": {"boss": "Sky"}}"#,
+			"Sky: hello",
+			"* Boss mode enabled for Sky",
+		] {
+			assert!(!answers_command(chatter, "Sky"), "{chatter}");
+		}
+	}
 
-    #[test]
-    fn a_host_answers_how_long_its_game_has_been_going() {
-        let answer = r#"!#JSONRPC {"jsonrpc":"2.0","result":{"game":{"status":{"gameTime":1432,"gameStatus":"running"}}},"id":1}"#;
-        assert_eq!(
-            parse_rpc(answer),
-            Some(RpcStatus::Game {
-                seconds: 1432,
-                waiting: false
-            })
-        );
-    }
+	#[test]
+	fn a_host_answers_how_long_its_game_has_been_going() {
+		let answer = r#"!#JSONRPC {"jsonrpc":"2.0","result":{"game":{"status":{"gameTime":1432,"gameStatus":"running"}}},"id":1}"#;
+		assert_eq!(
+			parse_rpc(answer),
+			Some(RpcStatus::Game {
+				seconds: 1432,
+				waiting: false
+			})
+		);
+	}
 
-    #[test]
-    fn choosing_start_positions_is_still_time_on_the_clock() {
-        let answer = r#"!#JSONRPC {"jsonrpc":"2.0","result":{"game":{"status":{"gameTime":12,"gameStatus":"waiting"}}},"id":1}"#;
-        assert_eq!(
-            parse_rpc(answer),
-            Some(RpcStatus::Game {
-                seconds: 12,
-                waiting: true
-            })
-        );
-    }
+	#[test]
+	fn choosing_start_positions_is_still_time_on_the_clock() {
+		let answer = r#"!#JSONRPC {"jsonrpc":"2.0","result":{"game":{"status":{"gameTime":12,"gameStatus":"waiting"}}},"id":1}"#;
+		assert_eq!(
+			parse_rpc(answer),
+			Some(RpcStatus::Game {
+				seconds: 12,
+				waiting: true
+			})
+		);
+	}
 
-    #[test]
-    fn a_room_with_no_game_says_how_long_since_the_last_one() {
-        let answer = r#"!#JSONRPC {"jsonrpc":"2.0","result":{"battleLobby":{"status":{"battleStatus":"waiting","delaySinceLastGame":300}}},"id":1}"#;
-        assert_eq!(
-            parse_rpc(answer),
-            Some(RpcStatus::Lobby {
-                since_last_game: Some(300)
-            })
-        );
-        // A host that has never run one answers null, which is not a failure.
-        let fresh = r#"!#JSONRPC {"jsonrpc":"2.0","result":{"battleLobby":{"status":{"battleStatus":"waiting","delaySinceLastGame":null}}},"id":1}"#;
-        assert_eq!(
-            parse_rpc(fresh),
-            Some(RpcStatus::Lobby {
-                since_last_game: None
-            })
-        );
-    }
+	#[test]
+	fn a_room_with_no_game_says_how_long_since_the_last_one() {
+		let answer = r#"!#JSONRPC {"jsonrpc":"2.0","result":{"battleLobby":{"status":{"battleStatus":"waiting","delaySinceLastGame":300}}},"id":1}"#;
+		assert_eq!(
+			parse_rpc(answer),
+			Some(RpcStatus::Lobby {
+				since_last_game: Some(300)
+			})
+		);
+		// A host that has never run one answers null, which is not a failure.
+		let fresh = r#"!#JSONRPC {"jsonrpc":"2.0","result":{"battleLobby":{"status":{"battleStatus":"waiting","delaySinceLastGame":null}}},"id":1}"#;
+		assert_eq!(
+			parse_rpc(fresh),
+			Some(RpcStatus::Lobby {
+				since_last_game: None
+			})
+		);
+	}
 
-    #[test]
-    fn anything_else_on_that_channel_is_not_an_answer() {
-        assert_eq!(parse_rpc("hello"), None);
-        assert_eq!(parse_rpc("!#JSONRPC not json"), None);
-        // The request we sent, echoed back to us.
-        assert_eq!(parse_rpc(GAME_STATUS_REQUEST), None);
-        // Machine either way, so neither belongs in the chat log.
-        assert!(is_machine(GAME_STATUS_REQUEST));
-    }
+	#[test]
+	fn anything_else_on_that_channel_is_not_an_answer() {
+		assert_eq!(parse_rpc("hello"), None);
+		assert_eq!(parse_rpc("!#JSONRPC not json"), None);
+		// The request we sent, echoed back to us.
+		assert_eq!(parse_rpc(GAME_STATUS_REQUEST), None);
+		// Machine either way, so neither belongs in the chat log.
+		assert!(is_machine(GAME_STATUS_REQUEST));
+	}
 
-    #[test]
-    fn a_game_in_progress_is_read_out_of_the_welcome() {
-        // The line as it arrives, from SPADS's `welcomeMsg` default.
-        assert_eq!(
-            parse("* A game is in progress since 28 minutes and 4 seconds."),
-            Some(Announcement::GameInProgress {
-                elapsed_secs: 28 * 60 + 4
-            })
-        );
-    }
+	#[test]
+	fn a_game_in_progress_is_read_out_of_the_welcome() {
+		// The line as it arrives, from SPADS's `welcomeMsg` default.
+		assert_eq!(
+			parse("* A game is in progress since 28 minutes and 4 seconds."),
+			Some(Announcement::GameInProgress {
+				elapsed_secs: 28 * 60 + 4
+			})
+		);
+	}
 
-    #[test]
-    fn however_many_units_it_happens_to_use() {
-        // SPADS assembles the phrase from whichever units are non-zero, so the
-        // shape is not fixed and the parse does not depend on it.
-        assert_eq!(spoken_duration("45 seconds"), Some(45));
-        assert_eq!(spoken_duration("1 minute and 1 second"), Some(61));
-        assert_eq!(
-            spoken_duration("1 hour, 5 minutes and 3 seconds"),
-            Some(3_600 + 300 + 3)
-        );
-        assert_eq!(
-            spoken_duration("2 days and 1 hour"),
-            Some(2 * 86_400 + 3_600)
-        );
-    }
+	#[test]
+	fn however_many_units_it_happens_to_use() {
+		// SPADS assembles the phrase from whichever units are non-zero, so the
+		// shape is not fixed and the parse does not depend on it.
+		assert_eq!(spoken_duration("45 seconds"), Some(45));
+		assert_eq!(spoken_duration("1 minute and 1 second"), Some(61));
+		assert_eq!(
+			spoken_duration("1 hour, 5 minutes and 3 seconds"),
+			Some(3_600 + 300 + 3)
+		);
+		assert_eq!(
+			spoken_duration("2 days and 1 hour"),
+			Some(2 * 86_400 + 3_600)
+		);
+	}
 
-    #[test]
-    fn a_line_with_no_duration_in_it_is_not_one() {
-        assert_eq!(spoken_duration("ages"), None);
-        assert_eq!(spoken_duration("7 parsecs"), None);
-        // A sentence that merely resembles it stays chat.
-        assert_eq!(parse("* A game is in progress since ages ago."), None);
-    }
+	#[test]
+	fn a_line_with_no_duration_in_it_is_not_one() {
+		assert_eq!(spoken_duration("ages"), None);
+		assert_eq!(spoken_duration("7 parsecs"), None);
+		// A sentence that merely resembles it stays chat.
+		assert_eq!(parse("* A game is in progress since ages ago."), None);
+	}
 
-    #[test]
-    fn the_boss_is_read_off_the_state_payload() {
-        use super::boss;
-        // What a live room actually sends.
-        let json = r#"{"BattleStateChanged": {"locked": "unlocked", "teamSize": "4", "boss": "idifixnl"}}"#;
-        assert_eq!(boss(json), Some("idifixnl".into()));
+	#[test]
+	fn the_boss_is_read_off_the_state_payload() {
+		use super::boss;
+		// What a live room actually sends.
+		let json = r#"{"BattleStateChanged": {"locked": "unlocked", "teamSize": "4", "boss": "idifixnl"}}"#;
+		assert_eq!(boss(json), Some("idifixnl".into()));
 
-        // A room with nobody in charge says so with an empty string.
-        assert_eq!(boss(r#"{"BattleStateChanged": {"boss": ""}}"#), None);
+		// A room with nobody in charge says so with an empty string.
+		assert_eq!(boss(r#"{"BattleStateChanged": {"boss": ""}}"#), None);
 
-        // Anything else is not a claim about who is in charge.
-        assert_eq!(boss(r#"{"onVoteStart": {}}"#), None);
-        assert_eq!(boss("not json"), None);
-    }
+		// Anything else is not a claim about who is in charge.
+		assert_eq!(boss(r#"{"onVoteStart": {}}"#), None);
+		assert_eq!(boss("not json"), None);
+	}
 
-    #[test]
-    fn the_preset_is_read_off_the_state_payload_the_same_way() {
-        use super::{auto_balance, preset};
-        let json =
-            r#"{"BattleStateChanged": {"preset": "Coop", "autoBalance": "Advanced", "boss": ""}}"#;
-        assert_eq!(preset(json), Some("coop".into()));
-        assert_eq!(auto_balance(json), Some("advanced".into()));
-        // A host that does not say has not said; that is not `custom`.
-        assert_eq!(preset(r#"{"BattleStateChanged": {"boss": "me"}}"#), None);
-    }
+	#[test]
+	fn the_preset_is_read_off_the_state_payload_the_same_way() {
+		use super::{auto_balance, preset};
+		let json =
+			r#"{"BattleStateChanged": {"preset": "Coop", "autoBalance": "Advanced", "boss": ""}}"#;
+		assert_eq!(preset(json), Some("coop".into()));
+		assert_eq!(auto_balance(json), Some("advanced".into()));
+		// A host that does not say has not said; that is not `custom`.
+		assert_eq!(preset(r#"{"BattleStateChanged": {"boss": "me"}}"#), None);
+	}
 
-    #[test]
-    fn the_vote_lifecycle_spads_actually_prints() {
-        let blob = "bG9jYWwgZm9v";
-        assert_eq!(
-            parse(&format!(
-                "* Bob called a vote for command \"bSet tweakdefs1 {blob}\" [!vote y, !vote n, !vote b]"
-            )),
-            Some(Announcement::VoteCalled {
-                by: "Bob".into(),
-                command: format!("bSet tweakdefs1 {blob}")
-            })
-        );
-        assert_eq!(
-            parse("* Vote in progress: \"set map DSDR 4.0\" [y:1/2, n:0/1(2)] (25s remaining)"),
-            Some(Announcement::VoteProgress {
-                command: "set map DSDR 4.0".into(),
-                yes: 1,
-                yes_needed: 2,
-                no: 0,
-                no_needed: 1,
-                remaining_secs: 25
-            })
-        );
-        assert_eq!(
-            parse("* Vote for command \"forcestart\" passed."),
-            Some(Announcement::VoteEnded {
-                command: "forcestart".into(),
-                passed: true
-            })
-        );
-        assert_eq!(
-            parse("* Vote for command \"forcestart\" failed (delay expired)."),
-            Some(Announcement::VoteEnded {
-                command: "forcestart".into(),
-                passed: false
-            })
-        );
-        for cancelled in [
-            "* Vote cancelled by Bob",
-            "* Cancelling \"set map x\" vote (command executed directly by Bob)",
-            "* Game starting, cancelling \"set map x\" vote",
-        ] {
-            assert_eq!(
-                parse(cancelled),
-                Some(Announcement::VoteCancelled),
-                "{cancelled}"
-            );
-        }
-    }
+	#[test]
+	fn the_vote_lifecycle_spads_actually_prints() {
+		let blob = "bG9jYWwgZm9v";
+		assert_eq!(
+			parse(&format!(
+				"* Bob called a vote for command \"bSet tweakdefs1 {blob}\" [!vote y, !vote n, !vote b]"
+			)),
+			Some(Announcement::VoteCalled {
+				by: "Bob".into(),
+				command: format!("bSet tweakdefs1 {blob}")
+			})
+		);
+		assert_eq!(
+			parse("* Vote in progress: \"set map DSDR 4.0\" [y:1/2, n:0/1(2)] (25s remaining)"),
+			Some(Announcement::VoteProgress {
+				command: "set map DSDR 4.0".into(),
+				yes: 1,
+				yes_needed: 2,
+				no: 0,
+				no_needed: 1,
+				remaining_secs: 25
+			})
+		);
+		assert_eq!(
+			parse("* Vote for command \"forcestart\" passed."),
+			Some(Announcement::VoteEnded {
+				command: "forcestart".into(),
+				passed: true
+			})
+		);
+		assert_eq!(
+			parse("* Vote for command \"forcestart\" failed (delay expired)."),
+			Some(Announcement::VoteEnded {
+				command: "forcestart".into(),
+				passed: false
+			})
+		);
+		for cancelled in [
+			"* Vote cancelled by Bob",
+			"* Cancelling \"set map x\" vote (command executed directly by Bob)",
+			"* Game starting, cancelling \"set map x\" vote",
+		] {
+			assert_eq!(
+				parse(cancelled),
+				Some(Announcement::VoteCancelled),
+				"{cancelled}"
+			);
+		}
+	}
 
-    #[test]
-    fn setting_changes_and_the_bar_side_channel() {
-        assert_eq!(
-            parse("* Battle setting changed by Bob (TweakDefs1=QUJD)"),
-            Some(Announcement::SettingChanged {
-                by: "Bob".into(),
-                key: "tweakdefs1".into(),
-                value: "QUJD".into()
-            })
-        );
-        // Clearing a slot: the only place this shows up.
-        assert!(matches!(
-            parse("* Battle setting changed by Bob (tweakdefs1=)"),
-            Some(Announcement::SettingChanged { value, .. }) if value.is_empty()
-        ));
-        assert_eq!(
-            parse("* BarManager|{\"onVoteStart\": {}}"),
-            Some(Announcement::BarManager {
-                json: "{\"onVoteStart\": {}}".into()
-            })
-        );
-    }
+	#[test]
+	fn setting_changes_and_the_bar_side_channel() {
+		assert_eq!(
+			parse("* Battle setting changed by Bob (TweakDefs1=QUJD)"),
+			Some(Announcement::SettingChanged {
+				by: "Bob".into(),
+				key: "tweakdefs1".into(),
+				value: "QUJD".into()
+			})
+		);
+		// Clearing a slot: the only place this shows up.
+		assert!(matches!(
+			parse("* Battle setting changed by Bob (tweakdefs1=)"),
+			Some(Announcement::SettingChanged { value, .. }) if value.is_empty()
+		));
+		assert_eq!(
+			parse("* BarManager|{\"onVoteStart\": {}}"),
+			Some(Announcement::BarManager {
+				json: "{\"onVoteStart\": {}}".into()
+			})
+		);
+	}
 
-    #[test]
-    fn ordinary_chat_is_not_an_announcement() {
-        assert_eq!(parse("* Hi tetrisface! Current battle type is coop."), None);
-        assert_eq!(parse("hello"), None);
-        assert_eq!(parse("* Vote in progress: nonsense"), None);
-    }
+	#[test]
+	fn ordinary_chat_is_not_an_announcement() {
+		assert_eq!(parse("* Hi tetrisface! Current battle type is coop."), None);
+		assert_eq!(parse("hello"), None);
+		assert_eq!(parse("* Vote in progress: nonsense"), None);
+	}
 
-    #[test]
-    fn a_tweak_vote_is_recognised_whatever_the_caller_typed() {
-        assert_eq!(
-            Proposal::parse("bSet TweakDefs1 QUJD"),
-            Proposal::SetOption {
-                key: "tweakdefs1".into(),
-                value: "QUJD".into()
-            }
-        );
-        assert_eq!(Proposal::parse("set map DSDR"), Proposal::Other);
-        assert_eq!(
-            Proposal::parse("bset tweakdefs1"),
-            Proposal::SetOption {
-                key: "tweakdefs1".into(),
-                value: String::new()
-            },
-            "clearing a slot"
-        );
-    }
+	#[test]
+	fn a_tweak_vote_is_recognised_whatever_the_caller_typed() {
+		assert_eq!(
+			Proposal::parse("bSet TweakDefs1 QUJD"),
+			Proposal::SetOption {
+				key: "tweakdefs1".into(),
+				value: "QUJD".into()
+			}
+		);
+		assert_eq!(Proposal::parse("set map DSDR"), Proposal::Other);
+		assert_eq!(
+			Proposal::parse("bset tweakdefs1"),
+			Proposal::SetOption {
+				key: "tweakdefs1".into(),
+				value: String::new()
+			},
+			"clearing a slot"
+		);
+	}
 }
