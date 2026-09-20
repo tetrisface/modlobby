@@ -171,6 +171,12 @@ pub async fn lan_host(
 	game: String,
 	map: String,
 ) -> Result<LanHostView> {
+	if !lan_on(&app) {
+		return Err(ApiError::new(
+			"off",
+			"games on the local network are switched off",
+		));
+	}
 	let name = lan_name(&app);
 	let password = password.filter(|p| !p.trim().is_empty());
 	let policy = match (&password, approve) {
@@ -302,9 +308,24 @@ pub async fn lan_join_address(
 	Ok(())
 }
 
+/// Whether the local network is switched on.
+///
+/// Every socket this file opens is behind this, and not merely behind the
+/// front end declining to ask: the first `lan_rooms` is what starts
+/// listening, and a listener is what the firewall asks about. Off, modlobby
+/// binds nothing and nobody is asked anything.
+fn lan_on(app: &App) -> bool {
+	app.settings.get().lan.enabled
+}
+
 /// Rooms found on the network right now, this machine's own left out.
 #[tauri::command]
 pub async fn lan_rooms(app: State<'_, App>) -> Result<Vec<LanRoomView>> {
+	// Nothing heard rather than a refusal: this is polled, and a poll that
+	// answers with an error while the answer is simply "none" is noise.
+	if !lan_on(&app) {
+		return Ok(Vec::new());
+	}
 	let mine = app.lan.host.lock().await.as_ref().map(|hosted| hosted.id);
 	let mut held = app.lan.browser.lock().await;
 	let browser = held.get_or_insert_with(lan::discover::Browser::start);
@@ -330,6 +351,12 @@ pub async fn lan_rooms(app: State<'_, App>) -> Result<Vec<LanRoomView>> {
 /// Points `lan` at the room announced as `id` and logs in there, for a join
 /// from the battle list. The join itself is the ordinary one that follows.
 pub async fn ensure_connected(app: &State<'_, App>, id: u32) -> Result<()> {
+	if !lan_on(app) {
+		return Err(ApiError::new(
+			"off",
+			"games on the local network are switched off",
+		));
+	}
 	let found = {
 		let mut held = app.lan.browser.lock().await;
 		let browser = held.get_or_insert_with(lan::discover::Browser::start);
