@@ -21,6 +21,8 @@ import { RankIcon } from '../components/icons'
 import { MapPicture } from '../components/MapPicture'
 import { Thinking } from '../components/Thinking'
 import { api, describeError } from '../ipc/client'
+import { LAN } from '../lan/lan'
+import { heardRows, watchLan } from '../lan/store'
 import { elapsed } from '../lib/running'
 import {
 	asking as askingAbout,
@@ -101,9 +103,12 @@ export function BattleList() {
 		}
 	}
 
+	// Rooms on the network are heard for as long as this list is on screen.
+	onCleanup(watchLan())
+
 	/** Every server's rooms, each read against its own server's people. */
-	const all = createMemo<Row[]>(() =>
-		sessions().flatMap(([server, session]) => {
+	const all = createMemo<Row[]>(() => [
+		...sessions().flatMap(([server, session]) => {
 			const known = new Set(session.friends.friends)
 			return Object.values(session.battles).map((battle) => ({
 				server,
@@ -113,7 +118,8 @@ export function BattleList() {
 				hasFriend: battle.members.some((name) => known.has(name)),
 			}))
 		}),
-	)
+		...heardRows(),
+	])
 	const sorted = createMemo(() =>
 		arrange(
 			all().filter((row) => !leftOut().has(row.server)),
@@ -441,25 +447,31 @@ export function BattleList() {
 					<button
 						class='primary'
 						disabled={hostBusy()}
-						aria-expanded={readyServers().length > 1 ? choosing() : undefined}
-						title='Take over an empty autohost near you and become its boss'
-						onClick={() =>
-							readyServers().length > 1
-								? setChoosing(!choosing())
-								: void host(readyServers()[0])
-						}
+						aria-expanded={choosing()}
+						title='Take over an empty autohost near you and become its boss, or open a room on your network'
+						onClick={() => setChoosing(!choosing())}
 					>
 						Host battle
 					</button>
 					<Show when={choosing()}>
 						<div class='popover host-menu'>
-							<For each={readyServers()}>
+							{/* The LAN is a server you are on, not one you host on. */}
+							<For each={readyServers().filter((server) => server !== LAN)}>
 								{(server) => (
 									<button type='button' onClick={() => void host(server)}>
 										on {serverLabel(server)}
 									</button>
 								)}
 							</For>
+							<button
+								type='button'
+								onClick={() => {
+									setChoosing(false)
+									navigate('/lan/host')
+								}}
+							>
+								on the LAN
+							</button>
 						</div>
 					</Show>
 				</div>

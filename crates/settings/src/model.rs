@@ -13,6 +13,11 @@ pub const SCHEMA_FILE: &str = "settings.schema.json";
 /// BAR's lobby server: the one every install starts with.
 pub const DEFAULT_HOST: &str = "server4.beyondallreason.info";
 
+/// The host of the servers entry that is not a server: whoever on the local
+/// network is hosting a room. Nothing resolves it; the app points it at an
+/// address when a room is hosted or joined. The same string as `lan::LAN_ID`.
+pub const LAN_HOST: &str = "lan";
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS, Default)]
 #[serde(default, rename_all = "camelCase")]
 #[ts(export)]
@@ -48,8 +53,19 @@ impl Settings {
 	pub fn initial() -> Self {
 		Self {
 			schema: Some(format!("./{SCHEMA_FILE}")),
-			servers: vec![ServerEntry::bar()],
+			servers: vec![ServerEntry::bar(), ServerEntry::lan()],
 			..Self::default()
+		}
+	}
+
+	/// Gives a list from before there was a LAN its row. A list emptied on
+	/// purpose is left empty.
+	///
+	/// ponytail: put back on every load, so removing just this row does not
+	/// stick; a `lan: false` setting if anyone asks for that.
+	pub(crate) fn ensure_lan(&mut self) {
+		if !self.servers.is_empty() && !self.servers.iter().any(ServerEntry::is_lan) {
+			self.servers.push(ServerEntry::lan());
 		}
 	}
 
@@ -121,6 +137,25 @@ impl ServerEntry {
 			name: "BAR".into(),
 			..Self::default()
 		}
+	}
+
+	/// The local network. Unencrypted on purpose: the host is in the same
+	/// room, and there is no certificate anyone could check. `username` is
+	/// the name to appear as; no channels, since there is no server to have
+	/// them.
+	pub fn lan() -> Self {
+		Self {
+			host: LAN_HOST.into(),
+			name: "LAN".into(),
+			ports: vec![8200],
+			allow_unencrypted: true,
+			channels: Vec::new(),
+			..Self::default()
+		}
+	}
+
+	pub fn is_lan(&self) -> bool {
+		self.host.trim().eq_ignore_ascii_case(LAN_HOST)
 	}
 }
 

@@ -67,6 +67,7 @@ import {
 	waiting,
 	watchUpdates,
 } from './store/update'
+import { LanHostForm } from './lan/LanHostForm'
 import { BattleList } from './views/BattleList'
 import { Chat } from './views/Chat'
 import { Home } from './views/Home'
@@ -604,6 +605,7 @@ export function App() {
 			<Route path='/' component={Home} />
 			<Route path='/login' component={Login} />
 			<Route path='/battles' component={BattleList} />
+			<Route path='/lan/host' component={LanHostForm} />
 			<Route path='/chat' component={Chat} />
 			<Route path='/news' component={News} />
 			<Route path='/widgets' component={Widgets} />

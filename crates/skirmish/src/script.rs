@@ -8,7 +8,7 @@
 
 use std::collections::BTreeMap;
 
-use recoil::script::{self, AllyTeam, Player, Rect, Skirmish, StartPos, Team};
+use recoil::script::{self, AllyTeam, Player, Rect, Skirmish, StartPos, Team, faction};
 
 use crate::Room;
 
@@ -18,10 +18,6 @@ const OVERRIDE: &str = "mapmetadata_startbox_override";
 const SET: &str = "mapmetadata_startboxes_set";
 /// Legion is not in the game until this is on (`sidedata.lua:21`).
 const LEGION: &str = "experimentallegionfaction";
-
-/// The factions by the number the lobby carries them as, and the name the
-/// script wants (`BYAR-Chobby/LuaMenu/configs/gameConfig/byar/sidedata.lua`).
-const SIDES: [&str; 4] = ["Armada", "Cortex", "Random", "Legion"];
 
 impl Room {
 	/// The script this room would play.
@@ -58,6 +54,7 @@ impl Room {
 		players.push(Player {
 			name: self.player.clone(),
 			team: mine,
+			password: None,
 		});
 
 		for ai in self.ais() {
@@ -93,6 +90,8 @@ impl Room {
 			teams,
 			players,
 			ais,
+			host_ip: "127.0.0.1".into(),
+			host_port: 0,
 		}
 	}
 
@@ -142,17 +141,6 @@ fn ally_teams(boxes: Option<&startbox::Arrangement>, sides: usize) -> Vec<AllyTe
 				}),
 		})
 		.collect()
-}
-
-/// The faction by name, with Legion falling back where the game has not been
-/// told to include it — to Armada for a person and Random for an AI, which is
-/// what Chobby does (`interface_skirmish.lua:91-94`, `:161-164`).
-fn faction(side: u8, legion: bool, is_ai: bool) -> Option<String> {
-	let side = usize::from(side);
-	if side == 3 && !legion {
-		return Some(SIDES[if is_ai { 2 } else { 0 }].to_owned());
-	}
-	SIDES.get(side).map(|name| (*name).to_owned())
 }
 
 /// The map's own arrangements, encoded as the modoption carries them. Only

@@ -18,7 +18,7 @@ use tweaks::{DiffView, Kind, Prepared, Slot, TweakView};
 use crate::state::App;
 use crate::transport::ChannelTransport;
 
-const LOBBY_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub(crate) const LOBBY_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -410,6 +410,15 @@ pub async fn join_battle(
 	id: u32,
 	password: Option<String>,
 ) -> Result<()> {
+	// A room on the LAN is reached first, then joined; and a room that will
+	// not be there after a restart is not one to offer back.
+	if server_id(&server) == lan::LAN_ID {
+		crate::lan::ensure_connected(&app, id).await?;
+		app.client
+			.join_battle(server, lan::BATTLE_ID, password)
+			.await?;
+		return Ok(());
+	}
 	app.client.join_battle(server.clone(), id, password).await?;
 	// Remembered only once the host has let us in, so a room that refused us
 	// is never offered back.
@@ -601,7 +610,7 @@ async fn spring_name(app: &State<'_, App>, map: String) -> String {
 ///
 /// A skirmish needs no account, so someone who has never logged in still needs
 /// something to appear as.
-fn player_name(app: &State<'_, App>) -> String {
+pub(crate) fn player_name(app: &State<'_, App>) -> String {
 	app.settings
 		.get()
 		.servers

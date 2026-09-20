@@ -194,13 +194,43 @@ pub fn is_hosted_game(target: &str) -> bool {
 	target.starts_with(JOIN_SCHEME)
 }
 
+/// Whether the engine here may join a game hosted at `host`: anywhere, where
+/// it may join hosted games at all, and on this machine or its own network
+/// otherwise. The Apple build's author asks that it stay off the community
+/// servers; a game in the next room is nobody's server.
+pub fn may_join_hosted_game_at(host: &str) -> bool {
+	may_join_hosted_games() || is_local_network(host)
+}
+
+/// A loopback, private (RFC 1918) or link-local address, or `localhost`.
+fn is_local_network(host: &str) -> bool {
+	let host = host.trim_matches(['[', ']']);
+	if host.eq_ignore_ascii_case("localhost") {
+		return true;
+	}
+	match host.parse::<std::net::IpAddr>() {
+		Ok(std::net::IpAddr::V4(ip)) => ip.is_loopback() || ip.is_private() || ip.is_link_local(),
+		Ok(std::net::IpAddr::V6(ip)) => {
+			ip.is_loopback() || ip.is_unique_local() || ip.is_unicast_link_local()
+		}
+		Err(_) => false,
+	}
+}
+
+/// The host in `spring://user:password@host:port`.
+fn host_of(url: &str) -> &str {
+	let rest = url.strip_prefix(JOIN_SCHEME).unwrap_or(url);
+	let rest = rest.rsplit_once('@').map_or(rest, |(_, after)| after);
+	rest.rsplit_once(':').map_or(rest, |(host, _)| host)
+}
+
 /// Why the engine must not be started on `target`, when it must not.
 ///
 /// Split from the platform answer so it can be exercised both ways from any
 /// machine: an invariant only ever tested on the platform it fires on is one
 /// nobody notices breaking.
 pub fn refuse_target(target: &str, may_join: bool) -> Option<String> {
-	if !is_hosted_game(target) || may_join {
+	if !is_hosted_game(target) || may_join || is_local_network(host_of(target)) {
 		return None;
 	}
 	Some(
@@ -557,6 +587,40 @@ mod tests {
 			refuse_target(&url, true).is_none(),
 			"allowed everywhere else"
 		);
+	}
+
+	/// The author's ask is about the community servers. A game hosted by the
+	/// person across the table is refused nowhere.
+	#[test]
+	fn a_game_on_the_local_network_is_nobodys_server() {
+		for host in [
+			"192.168.1.5",
+			"10.0.0.2",
+			"172.16.4.4",
+			"127.0.0.1",
+			"localhost",
+			"fd12::1",
+		] {
+			let url = spring_url("me", "4242", host, 8452);
+			assert!(refuse_target(&url, false).is_none(), "{host}");
+			assert!(may_join_hosted_game_at(host), "{host}");
+		}
+		for host in [
+			"78.46.100.74",
+			"172.32.0.1",
+			"2001:db8::1",
+			"server4.beyondallreason.info",
+		] {
+			let url = spring_url("me", "4242", host, 8452);
+			assert!(refuse_target(&url, false).is_some(), "{host}");
+			assert_eq!(
+				may_join_hosted_game_at(host),
+				may_join_hosted_games(),
+				"{host}"
+			);
+		}
+		assert_eq!(host_of("spring://me:pw@1.2.3.4:8452"), "1.2.3.4");
+		assert_eq!(host_of("spring://me:p@ss@[fd12::1]:8452"), "[fd12::1]");
 	}
 
 	#[test]

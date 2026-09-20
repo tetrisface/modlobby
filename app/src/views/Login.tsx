@@ -2,6 +2,7 @@ import { useNavigate } from '@solidjs/router'
 import { For, Show, createSignal } from 'solid-js'
 import { LoginForm } from '../components/LoginForm'
 import { Select } from '../components/Select'
+import { isLan } from '../lan/lan'
 import { serverId, serverName } from '../lib/servers'
 import { mainServer } from '../store/lobby'
 import { settings } from '../store/settings'
@@ -12,7 +13,8 @@ import { settings } from '../store/settings'
  */
 export function Login() {
 	const navigate = useNavigate()
-	const servers = () => settings()?.servers ?? []
+	// The LAN has no accounts; it is joined from the battle list.
+	const servers = () => (settings()?.servers ?? []).filter((e) => !isLan(e))
 	const [picked, setPicked] = createSignal<string | null>(null)
 	const server = () =>
 		picked() ??

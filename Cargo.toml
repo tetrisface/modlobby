@@ -16,6 +16,7 @@ members = [
     "crates/widgets",
     "crates/news",
     "crates/recoil",
+    "crates/lan",
     "crates/modlobby-cli",
     "app/src-tauri",
 ]
@@ -54,6 +55,7 @@ news = { path = "crates/news" }
 tweaks = { path = "crates/tweaks" }
 modoptions = { path = "crates/modoptions" }
 recoil = { path = "crates/recoil" }
+lan = { path = "crates/lan" }
 
 anyhow = "=1.0.104"
 base64 = "=0.23.1"
@@ -70,6 +72,12 @@ httpdate = "=1.0.3"
 jsonc-parser = { version = "=0.33.1", features = ["cst", "serde"] }
 keyring = "=4.1.6"
 md-5 = "=0.11.0"
+# Rooms on the local network: DNS-SD over mDNS (its own responder, so nothing
+# has to be installed), the interface list for subnet broadcasts, and the
+# socket options for a shared multicast listener that std does not expose.
+mdns-sd = "=0.21.1"
+if-addrs = "=0.15.0"
+socket2 = { version = "=0.6.5", features = ["all"] }
 percent-encoding = "=2.3.2"
 # The news feed, read as events rather than through serde: RSS is flat, and
 # CDATA and escaped entities are each one explicit case this way.

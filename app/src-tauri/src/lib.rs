@@ -7,6 +7,7 @@ mod commands;
 mod engine;
 mod flash;
 mod ingame;
+mod lan;
 mod logging;
 mod overlay;
 mod presets;
@@ -394,6 +395,12 @@ pub fn run() {
 			boxes::encode_boxes,
 			boxes::describe_map_option,
 			engine::download_engine,
+			lan::lan_host,
+			lan::lan_start,
+			lan::lan_stop,
+			lan::lan_status,
+			lan::lan_join_address,
+			lan::lan_rooms,
 			update::app_version,
 			update::check_update,
 			update::install_update,

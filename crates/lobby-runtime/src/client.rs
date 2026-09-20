@@ -148,6 +148,17 @@ enum Command {
 	LaunchSkirmish {
 		reply: Reply<()>,
 	},
+	/// Starts the engine as the game server of the room we are in, on a
+	/// script somebody else wrote from that room, and tells the room so.
+	LaunchHosted {
+		dirs: DataDirs,
+		engine_version: String,
+		script: String,
+		reply: Reply<()>,
+	},
+	/// Whether idling is to be left alone: a hosted room is not idleness
+	/// even while its host waits for people to arrive.
+	KeepAwake(bool),
 	SkirmishDownload {
 		reply: Reply<()>,
 	},
@@ -738,6 +749,26 @@ impl Client {
 		self.ask(|reply| Command::LaunchSkirmish { reply }).await
 	}
 
+	/// Starts the engine as the host of the room we are in, on `script`.
+	pub async fn launch_hosted(
+		&self,
+		dirs: DataDirs,
+		engine_version: String,
+		script: String,
+	) -> Result<(), ClientError> {
+		self.ask(|reply| Command::LaunchHosted {
+			dirs,
+			engine_version,
+			script,
+			reply,
+		})
+		.await
+	}
+
+	pub async fn keep_awake(&self, on: bool) -> Result<(), ClientError> {
+		self.send(Command::KeepAwake(on)).await
+	}
+
 	/// Fetches whatever of that room's content this machine lacks.
 	pub async fn skirmish_download(&self) -> Result<(), ClientError> {
 		self.ask(|reply| Command::SkirmishDownload { reply }).await
@@ -979,6 +1010,8 @@ struct Runtime {
 	join_reply: Option<(String, Reply<()>)>,
 	/// The server the running game was reported in-game on, to report its end to.
 	in_game_on: Option<String>,
+	/// Whether the idle limit is to be ignored, for as long as somebody says so.
+	keep_awake: bool,
 	/// When the room was asked for, until its state has all arrived: the
 	/// `join:` milestones in the log are measured from here.
 	join_asked: Option<Instant>,
@@ -1311,6 +1344,7 @@ impl Runtime {
 			content_ready: false,
 			join_reply: None,
 			in_game_on: None,
+			keep_awake: false,
 			join_asked: None,
 			data_dir: None,
 			rapid_masters: BTreeMap::new(),
@@ -1374,6 +1408,65 @@ impl Runtime {
 		.map_err(ClientError::Engine)?;
 		self.started(launched, dirs.write);
 		Ok(())
+	}
+
+	/// Starts the engine as the game server of the room we are in.
+	///
+	/// The same script path a skirmish takes, with one thing first: the room
+	/// is told we are in game, because that bit going up is what starts every
+	/// guest's engine. It goes out before the spawn, as it does when joining,
+	/// and comes back down with the engine's exit either way.
+	async fn launch_hosted(
+		&mut self,
+		dirs: DataDirs,
+		engine_version: &str,
+		script: &str,
+	) -> Result<(), ClientError> {
+		if self.engine.is_some() {
+			return Err(ClientError::Engine("the engine is already running".into()));
+		}
+		let Some(server) = self.room() else {
+			return Err(ClientError::NotConnected);
+		};
+		let in_game = self
+			.servers
+			.get_mut(&server)
+			.and_then(|slot| slot.link.as_mut())
+			.map(|conn| conn.session.set_in_game(true))
+			.ok_or(ClientError::NotConnected)?;
+		for effect in in_game {
+			if let Effect::Send(envelope) = effect {
+				self.send_line(&server, envelope).await?;
+			}
+		}
+		self.in_game_on = Some(server);
+		let path = dirs.write.join("modlobby-hosted.txt");
+		std::fs::create_dir_all(&dirs.write)
+			.and_then(|()| std::fs::write(&path, script))
+			.map_err(|err| ClientError::Engine(format!("writing the start script: {err}")))?;
+		match launch::spawn(
+			&dirs,
+			engine_version,
+			path.to_string_lossy().into_owned(),
+			self.overlay_config_dir.as_deref(),
+			self.menu_archive.clone(),
+		) {
+			Ok(launched) => {
+				self.started(launched, dirs.write);
+				Ok(())
+			}
+			Err(reason) => {
+				// The bit went up for a game that never started; take it
+				// back down, or every guest's engine would try to join it.
+				if let Some(server) = self.in_game_on.take()
+					&& let Some(conn) = self.link_mut(&server)
+				{
+					let effects = conn.session.set_in_game(false);
+					self.apply_effects(&server, effects).await;
+				}
+				Err(ClientError::Engine(reason))
+			}
+		}
 	}
 
 	/// Starts the engine on a replay.
@@ -2096,6 +2189,16 @@ impl Runtime {
 				let result = self.launch_skirmish();
 				let _ = reply.send(result);
 			}
+			Command::LaunchHosted {
+				dirs,
+				engine_version,
+				script,
+				reply,
+			} => {
+				let result = self.launch_hosted(dirs, &engine_version, &script).await;
+				let _ = reply.send(result);
+			}
+			Command::KeepAwake(on) => self.keep_awake = on,
 			Command::SkirmishDownload { reply } => {
 				let result = self.start_skirmish_download().await;
 				let _ = reply.send(result);
@@ -2661,13 +2764,17 @@ impl Runtime {
 					// Nor where the engine may not join a hosted game at all:
 					// the launch would be refused, and refusing it once per
 					// game start is a notice nobody asked for.
+					let may_join = self
+						.game
+						.as_ref()
+						.is_some_and(|game| recoil::may_join_hosted_game_at(&game.view.ip));
 					let wanted = self.auto_launch.take().or_else(|| {
 						(just_started
 							&& self.auto_launch_always
 							&& self.content_ready && self.engine.is_none()
-							&& recoil::may_join_hosted_games())
-						.then(|| self.data_dirs())
-						.flatten()
+							&& may_join)
+							.then(|| self.data_dirs())
+							.flatten()
 					});
 					if let Some(dirs) = wanted
 						&& let Err(err) = self.launch_engine(dirs).await
@@ -2733,7 +2840,7 @@ impl Runtime {
 	/// game — so that only pushes the limit out by another period.
 	async fn on_idle(&mut self) {
 		let now = Instant::now();
-		if self.game.is_some() || self.engine.is_some() {
+		if self.game.is_some() || self.engine.is_some() || self.keep_awake {
 			self.idle.active(now);
 			return;
 		}
@@ -4308,6 +4415,72 @@ mod tests {
 		assert_eq!(
 			line_starting_with(&mut server_lines, "SAYBATTLE ").await,
 			"SAYBATTLE !preset custom"
+		);
+		client.shutdown().await;
+	}
+
+	/// Hosting a room's game: the in-game bit goes out before the engine is
+	/// started, since it is what starts every guest's engine — and comes
+	/// back down when ours could not start, or they would all be joining
+	/// nothing.
+	#[tokio::test]
+	async fn a_hosted_launch_says_in_game_first_and_takes_it_back_on_failure() {
+		let (connector, server) = in_memory();
+		let (server_read, mut server_write) = tokio::io::split(server);
+		let mut server_lines = BufReader::new(server_read).lines();
+		let client = Client::spawn_with(
+			ThrottlePolicy::default(),
+			Hardware::stub(),
+			connector,
+			Arc::new(latency::Unmeasured),
+			None,
+		);
+		let login = log_in(&client, "test");
+		server_write
+			.write_all(b"TASSERVER 0.38 * 8201 0\n")
+			.await
+			.unwrap();
+		line_starting_with(&mut server_lines, "LOGIN ").await;
+		server_write
+			.write_all(b"ACCEPTED me\nADDUSER me SE 1 LuaLobby Chobby\n")
+			.await
+			.unwrap();
+		server_write.write_all(ROOM).await.unwrap();
+		server_write.write_all(b"LOGININFOEND\n").await.unwrap();
+		login.await.unwrap().unwrap();
+
+		let join = tokio::spawn({
+			let client = client.clone();
+			async move { client.join_battle("test".into(), 5, None).await }
+		});
+		line_starting_with(&mut server_lines, "JOINBATTLE ").await;
+		server_write
+			.write_all(b"JOINBATTLE 5 h\nJOINEDBATTLE 5 me\nREQUESTBATTLESTATUS\n")
+			.await
+			.unwrap();
+		join.await.unwrap().unwrap();
+		line_starting_with(&mut server_lines, "MYBATTLESTATUS ").await;
+
+		let dir = tempfile::tempdir().unwrap();
+		let result = client
+			.launch_hosted(
+				DataDirs::only(dir.path()),
+				"0.0.0".into(),
+				"[game] {}\n".into(),
+			)
+			.await;
+		assert!(matches!(result, Err(ClientError::Engine(_))), "{result:?}");
+		assert_eq!(
+			line_starting_with(&mut server_lines, "MYSTATUS ").await,
+			"MYSTATUS 1"
+		);
+		assert_eq!(
+			line_starting_with(&mut server_lines, "MYSTATUS ").await,
+			"MYSTATUS 0"
+		);
+		assert_eq!(
+			std::fs::read_to_string(dir.path().join("modlobby-hosted.txt")).unwrap(),
+			"[game] {}\n"
 		);
 		client.shutdown().await;
 	}

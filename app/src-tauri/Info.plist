@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Finding and announcing rooms on the local network (macOS 14 asks). -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>modlobby looks for Beyond All Reason games hosted on your local network, and announces yours.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_modlobby._tcp</string>
+	</array>
+</dict>
+</plist>

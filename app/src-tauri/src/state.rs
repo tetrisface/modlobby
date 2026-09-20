@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use lobby_runtime::{Client, Hardware, platform};
+use lobby_runtime::{Client, Hardware, IcmpEcho, platform};
 use settings::{
 	CredentialStore, KeyringStore, LoginGuard, MemoryStore, RejoinMemory, Store, UpdateMemory,
 };
@@ -75,6 +75,8 @@ pub struct App {
 	pub game_files: Arc<content::game_cache::GameFileCache>,
 	/// Held for the length of an engine download, so two never overlap.
 	pub engine_downloads: tokio::sync::Mutex<()>,
+	/// The local network: where the `lan` server points, and the room hosted.
+	pub lan: crate::lan::Lan,
 }
 
 impl App {
@@ -87,10 +89,13 @@ impl App {
 		let settings = Store::open(settings::config_dir())?;
 		let cache_dir = settings.dir().join("cache");
 		let hardware = platform::detect();
+		let lan = crate::lan::Lan::default();
 		let client = tauri::async_runtime::block_on(async {
-			Client::spawn(
+			Client::spawn_with(
 				ThrottlePolicy::default(),
 				hardware.clone(),
+				crate::lan::connector(lan.target()),
+				Arc::new(IcmpEcho),
 				Some(settings.dir().to_path_buf()),
 			)
 		});
@@ -113,6 +118,7 @@ impl App {
 			widget_usage: tokio::sync::Mutex::new(WidgetUsageHeld::default()),
 			game_files: Arc::new(content::game_cache::GameFileCache::new()),
 			engine_downloads: tokio::sync::Mutex::new(()),
+			lan,
 		})
 	}
 

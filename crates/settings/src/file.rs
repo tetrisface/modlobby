@@ -154,6 +154,7 @@ fn parse(path: &Path, text: &str) -> Result<Settings, Error> {
 	if !listed {
 		settings.migrate();
 	}
+	settings.ensure_lan();
 	Ok(settings)
 }
 
@@ -302,11 +303,15 @@ mod tests {
 		let settings = load(&path).unwrap();
 		assert_eq!(
 			settings.servers,
-			vec![crate::model::ServerEntry {
-				username: "tetrisface".into(),
-				channels: vec!["main".into(), "newbies".into()],
-				..crate::model::ServerEntry::bar()
-			}]
+			vec![
+				crate::model::ServerEntry {
+					username: "tetrisface".into(),
+					channels: vec!["main".into(), "newbies".into()],
+					..crate::model::ServerEntry::bar()
+				},
+				// Every list gets the local network, this one included.
+				crate::model::ServerEntry::lan(),
+			]
 		);
 		assert!(settings.account.remember_password && settings.account.auto_login);
 	}
@@ -357,7 +362,13 @@ mod tests {
 		)
 		.unwrap();
 		let reloaded = store.reload().unwrap().unwrap();
-		assert_eq!(reloaded.servers, vec![crate::model::ServerEntry::bar()]);
+		assert_eq!(
+			reloaded.servers,
+			vec![
+				crate::model::ServerEntry::bar(),
+				crate::model::ServerEntry::lan()
+			]
+		);
 	}
 
 	#[test]
