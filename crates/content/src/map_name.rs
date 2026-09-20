@@ -18,11 +18,87 @@ use std::path::Path;
 /// past this it is something else wearing the name.
 const MOST: usize = 256 * 1024;
 
-/// The map's own name, as the engine would compose it, or `None` when the
-/// archive does not say.
+/// What an archive says about itself, in the two places a map ever says it.
+pub struct Says {
+	/// `mapinfo.lua`, where a map made this century writes its name.
+	pub mapinfo: Option<String>,
+	/// The base name of its `.smf`, which is the name of a map made before
+	/// `mapinfo.lua` existed -- every classic still on springfiles.
+	pub smf: Option<String>,
+}
+
+/// The map's own name, as the engine would arrive at it, or `None` when the
+/// archive says neither.
+///
+/// `mapinfo.lua` first (`ArchiveScanner.cpp:192`), then the `.smf` file's
+/// base name, which is what the scanner falls back to for an archive with no
+/// `mapinfo.lua` at all (`ArchiveScanner.cpp:788`). Case included: a name
+/// that differs from the real one only in case is as unusable as one that
+/// differs entirely.
 pub fn of_archive(path: &Path) -> Option<String> {
-	let lua = read_mapinfo(path)?;
-	compose(&lua)
+	let says = read(path)?;
+	says.mapinfo
+		.as_deref()
+		.and_then(compose)
+		.or_else(|| says.smf.clone())
+}
+
+/// What the map says it needs loaded beside it, as `mapinfo.lua` lists them.
+///
+/// Worth looking at because the engine takes the list literally: an entry of
+/// `""`, which a common template ships and which at least one custom map is
+/// still carrying, becomes a dependency on an archive with no name
+/// (`ArchiveScanner.cpp:169`). The game then stops with `Dependent archive ""
+/// (resolved to "") not found`, which names nothing and blames nobody.
+pub fn dependencies(path: &Path) -> Option<Vec<String>> {
+	let says = read(path)?;
+	// A map old enough to have no `mapinfo.lua` declares no dependencies,
+	// which is not the same as saying nothing about them.
+	Some(says.mapinfo.as_deref().map(depends).unwrap_or_default())
+}
+
+/// The strings of a `depend = { … }` table, in the order they are written.
+///
+/// Read from the text rather than by running the Lua: every real one is a
+/// list of literals on one line or a few, and a map that writes its
+/// dependencies some cleverer way is one this says nothing about rather than
+/// one it guesses at.
+pub fn depends(mapinfo: &str) -> Vec<String> {
+	let Some(at) = find_key(mapinfo, "depend") else {
+		return Vec::new();
+	};
+	let rest = &mapinfo[at..];
+	let Some(open) = rest.find('{') else {
+		return Vec::new();
+	};
+	let Some(close) = rest[open..].find('}') else {
+		return Vec::new();
+	};
+	let body = &rest[open + 1..open + close];
+	body.split(',')
+		.filter_map(|item| {
+			let item = item.trim();
+			let quote = item.chars().next().filter(|c| *c == '"' || *c == '\'')?;
+			let inner = &item[1..];
+			Some(inner[..inner.find(quote)?].to_owned())
+		})
+		.collect()
+}
+
+/// Where a `<key> =` sits at the head of a line, ignoring what a comment says.
+fn find_key(mapinfo: &str, key: &str) -> Option<usize> {
+	let mut at = 0;
+	for line in mapinfo.lines() {
+		let code = line.split("--").next().unwrap_or(line);
+		let trimmed = code.trim_start();
+		if let Some(rest) = trimmed.strip_prefix(key)
+			&& rest.trim_start().starts_with('=')
+		{
+			return Some(at + (line.len() - trimmed.len()));
+		}
+		at += line.len() + 1;
+	}
+	None
 }
 
 /// `name` and `version` put together the way `ArchiveScanner.cpp:192` does:
@@ -56,49 +132,83 @@ fn field(mapinfo: &str, key: &str) -> Option<String> {
 }
 
 /// `mapinfo.lua` out of a `.sd7` (7z) or `.sdz` (zip), whichever this is.
-fn read_mapinfo(path: &Path) -> Option<String> {
-	let extension = path.extension()?.to_str()?.to_ascii_lowercase();
-	let raw = match extension.as_str() {
+/// One pass over a `.sd7` (7z), `.sdz` (zip) or unpacked `.sdd`.
+pub fn read(path: &Path) -> Option<Says> {
+	match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
 		"sd7" => from_sd7(path),
 		"sdz" => from_sdz(path),
-		// An unpacked map is a directory, and its mapinfo.lua is just a file.
-		"sdd" => std::fs::read(path.join("mapinfo.lua")).ok(),
+		"sdd" => from_directory(path),
 		_ => None,
-	}?;
-	String::from_utf8(raw).ok()
+	}
 }
 
-fn from_sd7(path: &Path) -> Option<Vec<u8>> {
-	let mut found = None;
+/// Whether an entry is the `mapinfo.lua`, wherever in the archive it sits.
+fn is_mapinfo(name: &str) -> bool {
+	base(name).eq_ignore_ascii_case("mapinfo.lua")
+}
+
+/// The `.smf`'s name without its directory or extension, which is the map's.
+fn smf_name(name: &str) -> Option<String> {
+	let file = base(name);
+	let stem = file.get(..file.len().checked_sub(4)?)?;
+	let is_smf = file[file.len() - 4..].eq_ignore_ascii_case(".smf");
+	(is_smf && !stem.is_empty()).then(|| stem.to_owned())
+}
+
+/// The last segment of a path as an archive spells it, either separator.
+fn base(name: &str) -> &str {
+	name.rsplit(['/', '\\']).next().unwrap_or(name)
+}
+
+fn from_sd7(path: &Path) -> Option<Says> {
+	let mut says = Says {
+		mapinfo: None,
+		smf: None,
+	};
 	sevenz_rust2::decompress_file_with_extract_fn(path, "", |entry, reader, _| {
-		if !entry.name().eq_ignore_ascii_case("mapinfo.lua") {
-			return Ok(true);
+		let name = entry.name().to_owned();
+		if says.smf.is_none() {
+			says.smf = smf_name(&name);
 		}
-		let mut held = Vec::new();
-		reader.take(MOST as u64).read_to_end(&mut held)?;
-		found = Some(held);
-		// Nothing else in the archive is wanted, and a map is a large thing
-		// to keep reading past the one file that was.
-		Ok(false)
+		if is_mapinfo(&name) {
+			let mut held = Vec::new();
+			reader.take(MOST as u64).read_to_end(&mut held)?;
+			says.mapinfo = String::from_utf8(held).ok();
+		}
+		// Keep walking: the `.smf` may come after the `mapinfo.lua`, or
+		// instead of it on a map old enough to have none.
+		Ok(true)
 	})
 	.ok()?;
-	found
+	Some(says)
 }
 
-fn from_sdz(path: &Path) -> Option<Vec<u8>> {
+fn from_sdz(path: &Path) -> Option<Says> {
 	let file = std::fs::File::open(path).ok()?;
 	let mut zip = zip::ZipArchive::new(file).ok()?;
-	let at = (0..zip.len()).find(|index| {
-		zip.by_index(*index)
-			.is_ok_and(|entry| entry.name().eq_ignore_ascii_case("mapinfo.lua"))
-	})?;
-	let mut held = Vec::new();
-	zip.by_index(at)
-		.ok()?
-		.take(MOST as u64)
-		.read_to_end(&mut held)
-		.ok()?;
-	Some(held)
+	let names: Vec<String> = zip.file_names().map(str::to_owned).collect();
+	let smf = names.iter().find_map(|name| smf_name(name));
+	let mapinfo = names.iter().find(|name| is_mapinfo(name)).and_then(|name| {
+		let mut held = Vec::new();
+		zip.by_name(name)
+			.ok()?
+			.take(MOST as u64)
+			.read_to_end(&mut held)
+			.ok()?;
+		String::from_utf8(held).ok()
+	});
+	Some(Says { mapinfo, smf })
+}
+
+/// An unpacked map is a directory, and its files are just files.
+fn from_directory(path: &Path) -> Option<Says> {
+	let mapinfo = std::fs::read_to_string(path.join("mapinfo.lua")).ok();
+	let smf = std::fs::read_dir(path.join("maps"))
+		.into_iter()
+		.flatten()
+		.filter_map(Result::ok)
+		.find_map(|entry| smf_name(entry.file_name().to_str()?));
+	Some(Says { mapinfo, smf })
 }
 
 #[cfg(test)]
@@ -151,6 +261,46 @@ version = "1.8""#;
 		assert_eq!(compose(r#"name = """#), None);
 		// No version is a name on its own, which is legal.
 		assert_eq!(compose(r#"name = "Bare""#).as_deref(), Some("Bare"));
+	}
+
+	/// The one that cost an evening: a table holding an empty string is a
+	/// dependency on an archive with no name, and the engine says so in
+	/// words that name neither the map nor the mistake.
+	#[test]
+	fn an_empty_dependency_is_read_as_the_empty_name_it_is() {
+		assert_eq!(depends(r#"depend = {""},"#), [""]);
+		assert_eq!(depends("depend = {},"), [] as [String; 0]);
+		assert_eq!(depends(r#"depend = {"Map Helper v1"},"#), ["Map Helper v1"]);
+		assert_eq!(
+			depends(r#"	depend      = {"Map Helper v1", "Other v2"},"#),
+			["Map Helper v1", "Other v2"]
+		);
+		// A map that says nothing depends on nothing.
+		assert_eq!(depends("name = \"Bare\""), [] as [String; 0]);
+		// And the commented-out line in every template is not a declaration.
+		assert_eq!(depends(r#"--depend = {"Ghost"},"#), [] as [String; 0]);
+	}
+
+	/// Every classic on springfiles predates `mapinfo.lua` and is named
+	/// after its `.smf` instead -- `SpeedMetal`, not `speedmetal`, which is
+	/// what the file is called and what a guess would have produced.
+	#[test]
+	fn a_map_older_than_mapinfo_is_named_by_its_smf() {
+		assert_eq!(
+			smf_name("maps/SpeedMetal.smf").as_deref(),
+			Some("SpeedMetal")
+		);
+		assert_eq!(
+			smf_name(concat!("maps", "\\", "TitanDuel.SMF")).as_deref(),
+			Some("TitanDuel"),
+			"either separator, either spelling of the extension"
+		);
+		// Everything else in such an archive is not its name.
+		assert_eq!(smf_name("maps/SpeedMetal.smd"), None);
+		assert_eq!(smf_name("maps/SpeedMetal.smt"), None);
+		assert_eq!(smf_name("maps/mini.bmp"), None);
+		assert_eq!(smf_name(".smf"), None, "no name at all is not a name");
+		assert!(is_mapinfo("mapinfo.lua") && !is_mapinfo("notmapinfo.lua"));
 	}
 
 	#[test]
