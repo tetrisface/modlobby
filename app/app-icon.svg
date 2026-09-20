@@ -8,7 +8,7 @@
       <stop offset="1" stop-color="#1d4d6b" stop-opacity="0"/>
     </linearGradient>
   </defs>
-  <rect x="1" y="1" width="126" height="126" rx="28" fill="#11151b" stroke="#272e39" stroke-width="2"/>
+  <rect width="128" height="128" rx="28" fill="#11151b"/>
   <path d="M40 48H56V96H40ZM72 48H88V96H72Z" fill="url(#door)"/>
   <path d="M24 96V32H92L104 44V96H88V48H72V96H56V48H40V96Z" fill="#58c4ff"/>
 </svg>
