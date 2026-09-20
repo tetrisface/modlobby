@@ -60,7 +60,11 @@ done
 # Nothing built yet is nothing to prune, not a failure -- `just dev` runs this
 # on a fresh clone too.
 [ -d "$target_dir" ] || { echo "prune-target: no target directory at $target_dir, nothing to do" && exit 0; }
-find . -maxdepth 0 -printf '' 2>/dev/null || { echo "prune-target: needs GNU find (-printf)" >&2 && exit 1; }
+# macOS ships BSD find/du, which have neither -printf nor --files0-from; homebrew's
+# GNU ones are prefixed with g.
+find=$(command -v gfind || command -v find)
+du=$(command -v gdu || command -v du)
+"$find" . -maxdepth 0 -printf "" 2>/dev/null || { echo "prune-target: needs GNU find (-printf): brew install findutils" >&2 && exit 1; }
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
@@ -70,7 +74,7 @@ trap 'rm -rf "$work"' EXIT
 # every unit past the newest `$1`.
 doom() {
 	local entries
-	entries=$(mktemp -p "$work")
+	entries=$(mktemp "$work/XXXXXXXX")
 	cat >"$entries"
 	awk -F'\t' -v OFS='\t' '
 		{ if ($2 > mtime[$1]) mtime[$1] = $2; crate[$1] = $3 }
@@ -90,7 +94,7 @@ doom() {
 # list cargo emitted together all carry the same hash and live or die together.
 for dir in "$target_dir"/*/deps "$target_dir"/*/examples "$target_dir"/*/build; do
 	[ -d "$dir" ] || continue
-	find "$dir" -mindepth 1 -maxdepth 1 -printf '%T@\t%f\t%p\n'
+	"$find" "$dir" -mindepth 1 -maxdepth 1 -printf '%T@\t%f\t%p\n'
 done | awk -F'\t' -v OFS='\t' '
 	{
 		name = $2
@@ -110,7 +114,7 @@ done | awk -F'\t' -v OFS='\t' '
 # its top two levels dates it.
 for dir in "$target_dir"/*/incremental; do
 	[ -d "$dir" ] || continue
-	find "$dir" -mindepth 1 -maxdepth 2 -printf '%T@\t%P\t%h\n'
+	"$find" "$dir" -mindepth 1 -maxdepth 2 -printf '%T@\t%P\t%h\n'
 done | awk -F'\t' -v OFS='\t' '
 	{
 		unit = $2
@@ -125,7 +129,7 @@ done | awk -F'\t' -v OFS='\t' '
 
 for dir in "$target_dir"/*/deps "$target_dir"/*/examples; do
 	[ -d "$dir" ] || continue
-	find "$dir" -mindepth 1 -maxdepth 1 -mmin +60 \
+	"$find" "$dir" -mindepth 1 -maxdepth 1 -mmin +60 \
 		\( \( -type f -name '*.rcgu.o' \) -o \( -type d \( -name '.tmp*' -o -name 'rustc*' -o -name 'rmeta*' \) \) \) \
 		-print
 done >>"$work/doomed"
@@ -135,7 +139,7 @@ sort -u -o "$work/doomed" "$work/doomed"
 count=$(wc -l <"$work/doomed" | tr -d ' ')
 [ "$count" -gt 0 ] || { echo "prune-target: nothing superseded, $target_dir is already lean" && exit 0; }
 
-bytes=$(du -scb --files0-from=<(tr '\n' '\0' <"$work/doomed") 2>/dev/null | tail -1 | cut -f1)
+bytes=$("$du" -scb --files0-from=<(tr '\n' '\0' <"$work/doomed") 2>/dev/null | tail -1 | cut -f1)
 printf 'prune-target: %s entries, %.1f GB, keeping the %d newest hashes and %d incremental directories per crate\n' \
 	"$count" "$(echo "$bytes" | awk '{ print $1 / 1073741824 }')" "$keep" "$keep_incremental"
 
