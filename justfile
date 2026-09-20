@@ -1,8 +1,11 @@
 dev:
 	(cd app && bun run dev)
+
+fmt: format
 format:
 	(cd app && bun run fmt)
 	cargo fmt --all
+
 # What CI checks, in CI's order -- prettier after `cargo test`, which regenerates the bindings.
 check:
 	cargo fmt --all --check

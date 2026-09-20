@@ -433,6 +433,14 @@
           "type": "string",
           "default": ""
         },
+        "maps": {
+          "description": "The server's own map search (`https://…/find`, the springfiles API\npr-downloader speaks), for maps of its own. Asked only for a map that\nis not one of BAR's; BAR's search is asked only for those that are.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
         "name": {
           "description": "What the app calls it; the host when empty.",
           "type": "string",

@@ -68,19 +68,28 @@ pub(crate) async fn push_settings(
 		.set_overlay_config_dir(overlay_config_dir(settings))
 		.await;
 	let _ = client.set_idle_timeout(idle_timeout(settings)).await;
-	let _ = client.set_rapid_masters(rapid_masters(settings)).await;
+	let _ = client
+		.set_rapid_masters(per_server(settings, |entry| entry.rapid.as_deref()))
+		.await;
+	let _ = client
+		.set_map_searches(per_server(settings, |entry| entry.maps.as_deref()))
+		.await;
 	overlay.settings_changed(overlay_settings(settings));
 }
 
-/// Each server's own rapid master index, by server id. A server without one
-/// is left out, and its games are looked for in BAR's.
-fn rapid_masters(settings: &settings::Settings) -> std::collections::BTreeMap<String, String> {
+/// One of a server's own addresses — its rapid index, its map search — by
+/// server id. A server without one is left out, and BAR's is used for it.
+fn per_server(
+	settings: &settings::Settings,
+	address: impl Fn(&settings::model::ServerEntry) -> Option<&str>,
+) -> std::collections::BTreeMap<String, String> {
 	settings
 		.servers
 		.iter()
 		.filter_map(|entry| {
-			let rapid = entry.rapid.as_deref()?.trim();
-			(!rapid.is_empty()).then(|| (spring_protocol::server_id(&entry.host), rapid.to_owned()))
+			let address = address(entry)?.trim();
+			(!address.is_empty())
+				.then(|| (spring_protocol::server_id(&entry.host), address.to_owned()))
 		})
 		.collect()
 }
@@ -283,6 +292,12 @@ pub fn run() {
 					.await;
 				push_settings(&client, &controller, &at_start).await;
 				let _ = client.set_skirmish_path(Some(skirmish_path)).await;
+				// BAR's maps decide who a map is asked of, so they are had
+				// before a room is, and not only once the battle list wants
+				// its pictures. From the disk cache on all but a first run.
+				if let Some(app) = handle.try_state::<state::App>() {
+					let _ = app.map_index().await;
+				}
 				while let Some(event) = watch.recv().await {
 					if let settings::SettingsEvent::Changed(settings) = &event {
 						push_settings(&client, &controller, settings).await;
@@ -330,6 +345,7 @@ pub fn run() {
 			commands::logout,
 			commands::forget_way,
 			commands::check_rapid,
+			commands::check_map_search,
 			commands::reconnect,
 			commands::register,
 			commands::confirm_agreement,

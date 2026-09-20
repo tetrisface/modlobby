@@ -38,6 +38,12 @@ export type ServerEntry = {
 	 */
 	rapid: string | null
 	/**
+	 * The server's own map search (`https://…/find`, the springfiles API
+	 * pr-downloader speaks), for maps of its own. Asked only for a map that
+	 * is not one of BAR's; BAR's search is asked only for those that are.
+	 */
+	maps: string | null
+	/**
 	 * The account on this server.
 	 */
 	username: string

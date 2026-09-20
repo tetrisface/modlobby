@@ -179,7 +179,7 @@ describe('the servers section', () => {
 		const rapidOf = (card: Element) =>
 			[
 				...card.querySelectorAll<HTMLInputElement>('.server-connection input'),
-			].at(-1)!
+			].at(-2)!
 
 		typeHost(container, 'mods.example')
 		fireEvent.click(button(container, 'Add'))
@@ -214,7 +214,7 @@ describe('the servers section', () => {
 		const card = cards(container)[0]!
 		const field = [
 			...card.querySelectorAll<HTMLInputElement>('.server-connection input'),
-		].at(-1)!
+		].at(-2)!
 		fireEvent.input(field, {
 			target: { value: 'http://mods.example/repos.gz' },
 		})
@@ -224,6 +224,49 @@ describe('the servers section', () => {
 					card.querySelector('.server-connection .error')?.textContent,
 				).toBe(
 					'http://mods.example/repos.gz is not served over https. Nothing is fetched from it.',
+				),
+			{ timeout: 3000 },
+		)
+	})
+
+	test('a map search is kept as typed, and has to be https', () => {
+		const { container } = open()
+		const card = cards(container)[0]!
+		const field = [
+			...card.querySelectorAll<HTMLInputElement>('.server-connection input'),
+		].at(-1)!
+		expect(field.placeholder).toBe(`https://${BAR}/find`)
+		fireEvent.input(field, { target: { value: 'https://maps.example/find' } })
+		expect(field.value).toBe('https://maps.example/find')
+	})
+
+	test('a map search is asked whether it is one, and the answer shown', async () => {
+		asked.mockImplementation(async (command: string, args?: unknown) => {
+			if (command !== 'check_map_search') return null
+			const { url } = args as { url: string }
+			if (url === 'https://maps.example/find') return null
+			throw {
+				code: 'input',
+				message: `${url} answers with a page, not a map search`,
+			}
+		})
+		const { container } = open()
+		const card = cards(container)[0]!
+		const field = [
+			...card.querySelectorAll<HTMLInputElement>('.server-connection input'),
+		].at(-1)!
+		fireEvent.input(field, { target: { value: 'https://maps.example/find' } })
+		await vi.waitFor(
+			() => expect(card.textContent).toContain('Answers like a map search'),
+			{ timeout: 3000 },
+		)
+		fireEvent.input(field, { target: { value: 'https://maps.example/' } })
+		await vi.waitFor(
+			() =>
+				expect(
+					card.querySelector('.server-connection .error')?.textContent,
+				).toBe(
+					'https://maps.example/ answers with a page, not a map search. No map is fetched from it.',
 				),
 			{ timeout: 3000 },
 		)

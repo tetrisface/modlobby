@@ -68,6 +68,7 @@ impl Settings {
 			allow_unencrypted: server.encryption == Encryption::None,
 			website: None,
 			rapid: None,
+			maps: None,
 			username: self.account.username.clone(),
 			channels: self.chat.channels.clone(),
 		}];
@@ -100,6 +101,10 @@ pub struct ServerEntry {
 	/// only ever looked for in its own server's index: a mod's name is never
 	/// sent to BAR's servers, nor to any other server's.
 	pub rapid: Option<String>,
+	/// The server's own map search (`https://…/find`, the springfiles API
+	/// pr-downloader speaks), for maps of its own. Asked only for a map that
+	/// is not one of BAR's; BAR's search is asked only for those that are.
+	pub maps: Option<String>,
 	/// The account on this server.
 	pub username: String,
 	/// Channels to rejoin at login. The server forgets you were in them the
@@ -129,6 +134,7 @@ impl Default for ServerEntry {
 			allow_unencrypted: false,
 			website: None,
 			rapid: None,
+			maps: None,
 			username: String::new(),
 			// Where the server puts everyone, and where the announcements are.
 			channels: vec!["main".into()],

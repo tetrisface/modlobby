@@ -4,7 +4,7 @@
 //! already queued becomes one `Deltas` message.
 
 use std::collections::VecDeque;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::future::Future;
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
@@ -32,6 +32,7 @@ use tokio::sync::{mpsc, oneshot};
 use crate::idle;
 use crate::latency::{self, Latency};
 use crate::launch;
+use crate::misses::{self, Misses};
 use crate::platform::Hardware;
 use crate::player_files;
 use crate::reconnect;
@@ -296,6 +297,10 @@ enum Command {
 	SetDataDir(Option<PathBuf>),
 	/// Each server's rapid master index, by server id; one without is BAR's.
 	SetRapidMasters(BTreeMap<String, String>),
+	/// Each server's own map search (`find`), by server id.
+	SetMapSearches(BTreeMap<String, String>),
+	/// The spring names of BAR's maps; see [`map_search_for`].
+	SetBarMaps(BTreeSet<String>),
 	SetVet(Vet),
 	/// The disk changed under us — an engine was installed — so the room's
 	/// content is worth asking about again.
@@ -816,6 +821,21 @@ impl Client {
 		self.send(Command::SetRapidMasters(masters)).await
 	}
 
+	/// Where each server's own maps are asked for: its `find`, by server id.
+	/// Asked only for a map BAR does not have.
+	pub async fn set_map_searches(
+		&self,
+		searches: BTreeMap<String, String>,
+	) -> Result<(), ClientError> {
+		self.send(Command::SetMapSearches(searches)).await
+	}
+
+	/// BAR's maps by spring name, which decide who a map is asked of. Until
+	/// they are known a map is asked of its server's search, else of BAR's.
+	pub async fn set_bar_maps(&self, names: BTreeSet<String>) -> Result<(), ClientError> {
+		self.send(Command::SetBarMaps(names)).await
+	}
+
 	/// Who reads a rapid server that is not BAR's before games are fetched
 	/// from it. Until one is set, no such server is fetched from.
 	pub async fn set_vet(&self, vet: Vet) -> Result<(), ClientError> {
@@ -966,6 +986,10 @@ struct Runtime {
 	data_dir: Option<PathBuf>,
 	/// Each server's rapid master index, by server id; see [`Self::rapid_master`].
 	rapid_masters: BTreeMap<String, String>,
+	map_searches: BTreeMap<String, String>,
+	bar_maps: BTreeSet<String>,
+	/// Maps a search said it does not have, kept beside the ways.
+	misses: Misses,
 	vet: Vet,
 	/// Where to put a config that gets the game borderless, when the user's
 	/// own would not let the overlay cover it. `None` leaves their settings
@@ -1026,6 +1050,11 @@ struct Runtime {
 #[derive(Debug)]
 enum DownloadEvent {
 	Progress(recoil::Progress),
+	/// `search` answered that it has no `map`.
+	Missed {
+		search: String,
+		map: String,
+	},
 	/// `failure` is why it did not finish, for a person to read; `None` is
 	/// done. Empty for a download that was stopped, which nobody is told.
 	Finished {
@@ -1166,7 +1195,52 @@ async fn run_download(
 	if matches!(child.wait().await, Ok(status) if status.success()) {
 		return Ok(());
 	}
+	if let Some(map) = missed(run, &tail) {
+		let search = run.search_url.clone();
+		let _ = progress.send(DownloadEvent::Missed { search, map }).await;
+	}
 	Err(unpublished(run, &tail).unwrap_or_else(|| failure_reason(&tail)))
+}
+
+/// The map a map run's search answered "no such thing" for: a 404, which is
+/// an answer. Anything else — no network, a server down — is not, and is not
+/// remembered as one.
+fn missed(run: &recoil::Download, tail: &[String]) -> Option<String> {
+	let not_found = !run.has_games() && tail.iter().any(|line| line.contains("error: 404"));
+	let (_, map) = run.wants.first()?;
+	not_found.then(|| map.clone())
+}
+
+/// Who a map is asked of: BAR's search for one of BAR's maps, the room's
+/// server's own for any other — so neither is asked about the other's — and
+/// nobody where the map is not BAR's and the server names no search. With
+/// BAR's maps not known yet (`bar_maps` empty) the server's search is asked
+/// if there is one, else BAR's, as before servers had any.
+///
+/// A third-party search is thereby never asked for one of BAR's names, so it
+/// cannot put its own map under one.
+///
+/// ponytail: a map is trusted as far as the server naming its search is —
+/// pr-downloader checks the md5 that same search gave. https at least.
+fn map_search_for(
+	bar_maps: &BTreeSet<String>,
+	searches: &BTreeMap<String, String>,
+	server: Option<&str>,
+	map: &str,
+) -> Result<String, String> {
+	let own = server.and_then(|server| searches.get(server));
+	if bar_maps.contains(map) || (own.is_none() && bar_maps.is_empty()) {
+		return Ok(recoil::HTTP_SEARCH_URL.to_owned());
+	}
+	match own {
+		Some(search) if search.starts_with("https://") => Ok(search.clone()),
+		Some(search) => Err(format!(
+			"{search} is not https, so {map} is not fetched from it"
+		)),
+		None => Err(format!(
+			"{map} is not one of BAR's maps, and this server names no map search to find it with"
+		)),
+	}
 }
 
 /// A game run that ended at the search nobody answers: rapid did not know
@@ -1211,6 +1285,9 @@ impl Runtime {
 			.map_or_else(latency::Cache::default, |dir| {
 				latency::Cache::load(&dir.join(latency::FILE))
 			});
+		let misses = state_dir
+			.as_deref()
+			.map_or_else(Misses::default, |dir| Misses::load(&dir.join(misses::FILE)));
 		let ways = state_dir
 			.as_deref()
 			.map_or_else(Ways::default, |dir| Ways::load(&dir.join(ways::FILE)));
@@ -1237,6 +1314,9 @@ impl Runtime {
 			join_asked: None,
 			data_dir: None,
 			rapid_masters: BTreeMap::new(),
+			map_searches: BTreeMap::new(),
+			bar_maps: BTreeSet::new(),
+			misses,
 			vet: vet_bars_only(),
 			engine_run: None,
 			overlay_config_dir: None,
@@ -1350,7 +1430,9 @@ impl Runtime {
 	/// The child is not awaited here: progress is streamed to the front end as
 	/// it arrives, and the content check runs again when it exits, so a room
 	/// that was short a map becomes joinable without anyone asking twice.
-	async fn start_download(&mut self) -> Result<(), ClientError> {
+	///
+	/// `by_hand` is a person asking, which a remembered miss never holds back.
+	async fn start_download(&mut self, by_hand: bool) -> Result<(), ClientError> {
 		let Some(conn) = self.room().and_then(|room| self.link(&room)) else {
 			return Err(ClientError::Refused("not in a room".into()));
 		};
@@ -1366,8 +1448,34 @@ impl Runtime {
 			room.game_name.clone(),
 			room.map_name.clone(),
 		);
-		let master = self.rapid_master(self.room().as_deref());
-		self.fetch(wanted, master).await
+		self.fetch(wanted, self.room(), by_hand).await
+	}
+
+	/// Who `map` is asked of, or why nobody is. A miss remembered from within
+	/// the day holds an unasked fetch back; asking by hand forgets it.
+	fn map_search(
+		&mut self,
+		server: Option<&str>,
+		map: &str,
+		by_hand: bool,
+	) -> Result<String, String> {
+		let search = map_search_for(&self.bar_maps, &self.map_searches, server, map)?;
+		if by_hand {
+			if self.misses.forget(&search, map) {
+				self.save_misses();
+			}
+		} else if self.misses.holds(&search, map, latency::unix_now()) {
+			return Err(format!(
+				"{map} was not found earlier today, so it is not looked for again unasked; Download asks again"
+			));
+		}
+		Ok(search)
+	}
+
+	fn save_misses(&self) {
+		if let Some(dir) = self.state_dir.as_deref() {
+			self.misses.save(&dir.join(misses::FILE));
+		}
 	}
 
 	fn rapid_master(&self, server: Option<&str>) -> String {
@@ -1381,19 +1489,20 @@ impl Runtime {
 			.as_ref()
 			.ok_or_else(|| ClientError::Refused("there is no skirmish room".into()))?;
 		let wanted = (room.engine.clone(), room.game.clone(), room.map.clone());
-		let master = self.rapid_master(None);
-		self.fetch(wanted, master).await
+		self.fetch(wanted, None, true).await
 	}
 
-	/// Fetches whatever of an (engine, game, map) this machine lacks, the
-	/// game through `rapid_master`.
+	/// Fetches whatever of an (engine, game, map) this machine lacks, for a
+	/// room on `server`: the game through that server's rapid, the map from
+	/// whoever can have it.
 	///
 	/// One run at a time: pr-downloader rewrites rapid's repo index on every
 	/// run, so two at once corrupt each other's view of it.
 	async fn fetch(
 		&mut self,
 		(engine_version, game, map): (String, String, String),
-		rapid_master: String,
+		server: Option<String>,
+		by_hand: bool,
 	) -> Result<(), ClientError> {
 		if self.downloading.is_some() {
 			return Err(ClientError::Refused("a download is already running".into()));
@@ -1406,11 +1515,30 @@ impl Runtime {
 		if !library.has_game(&game) {
 			wants.push((recoil::Want::Game, game.clone()));
 		}
+		let rapid_master = self.rapid_master(server.as_deref());
+		// Why the map is not asked for, where it is missing and is not.
+		let mut map_refused = None;
+		let mut map_search = recoil::HTTP_SEARCH_URL.to_owned();
 		if !library.has_map(&map) {
-			wants.push((recoil::Want::Map, map.clone()));
+			match self.map_search(server.as_deref(), &map, by_hand) {
+				Ok(search) => {
+					map_search = search;
+					wants.push((recoil::Want::Map, map.clone()));
+				}
+				Err(reason) => map_refused = Some(reason),
+			}
 		}
 		if wants.is_empty() {
-			return Err(ClientError::Refused("nothing is missing".into()));
+			return Err(ClientError::Refused(
+				map_refused.unwrap_or_else(|| "nothing is missing".into()),
+			));
+		}
+		// The game still comes; the map's refusal is said beside it.
+		if let Some(reason) = map_refused {
+			self.batcher.push(Delta::Notice {
+				level: lobby_ui::NoticeLevel::Warning,
+				text: reason,
+			});
 		}
 
 		let what = wants
@@ -1418,8 +1546,9 @@ impl Runtime {
 			.map(|(_, name)| name.as_str())
 			.collect::<Vec<_>>()
 			.join(", ");
-		let runs = crate::launch::plan_download(&dirs, &engine_version, wants, &rapid_master)
-			.map_err(ClientError::Refused)?;
+		let runs =
+			crate::launch::plan_download(&dirs, &engine_version, wants, &rapid_master, &map_search)
+				.map_err(ClientError::Refused)?;
 		let vet = Arc::clone(&self.vet);
 
 		let (stop_tx, stop_rx) = oneshot::channel();
@@ -1569,6 +1698,10 @@ impl Runtime {
 					total: progress.total,
 				}));
 			}
+			DownloadEvent::Missed { search, map } => {
+				self.misses.remember(&search, &map, latency::unix_now());
+				self.save_misses();
+			}
 			DownloadEvent::Finished { what, failure } => {
 				self.downloading = None;
 				self.download_stop = None;
@@ -1654,7 +1787,7 @@ impl Runtime {
 			self.auto_fetched = Some(key);
 			// A room that cannot fetch its own content is stuck until the
 			// user does something, so they hear why.
-			if let Err(error) = self.start_download().await {
+			if let Err(error) = self.start_download(false).await {
 				tracing::warn!(%error, "not fetching the room's content");
 				self.batcher.push(Delta::Notice {
 					level: lobby_ui::NoticeLevel::Warning,
@@ -1949,7 +2082,7 @@ impl Runtime {
 				let _ = reply.send(result);
 			}
 			Command::DownloadMissing { reply } => {
-				let result = self.start_download().await;
+				let result = self.start_download(true).await;
 				let _ = reply.send(result);
 			}
 			Command::CancelPaste { reply } => {
@@ -2088,6 +2221,8 @@ impl Runtime {
 			Command::SetMenuArchive(menu) => self.menu_archive = menu,
 			Command::SetSkirmishPath(path) => self.skirmish_path = path,
 			Command::SetRapidMasters(masters) => self.rapid_masters = masters,
+			Command::SetMapSearches(searches) => self.map_searches = searches,
+			Command::SetBarMaps(names) => self.bar_maps = names,
 			Command::SetVet(vet) => self.vet = vet,
 			Command::SetDataDir(data_dir) => {
 				// Told on every save of the settings, of which most change
@@ -3153,6 +3288,77 @@ mod tests {
 		assert_eq!(master_for(&masters, None), recoil::RAPID_REPO_MASTER);
 	}
 
+	#[test]
+	fn a_map_is_asked_only_of_whoever_can_have_it() {
+		let bars = BTreeSet::from(["Supreme Isthmus v2.1".to_owned()]);
+		let theirs = BTreeMap::from([(
+			"mods.example".to_owned(),
+			"https://mods.example/find".to_owned(),
+		)]);
+		let ask = |bars: &BTreeSet<String>, server, map| map_search_for(bars, &theirs, server, map);
+		let mods = Some("mods.example");
+		assert_eq!(
+			ask(&bars, mods, "Supreme Isthmus v2.1").as_deref(),
+			Ok(recoil::HTTP_SEARCH_URL),
+			"BAR's map is BAR's to serve, whatever server the room is on"
+		);
+		assert_eq!(
+			ask(&bars, mods, "Bathtub Brawl V2").as_deref(),
+			Ok("https://mods.example/find")
+		);
+		assert!(
+			ask(
+				&bars,
+				Some("server4.beyondallreason.info"),
+				"Bathtub Brawl V2"
+			)
+			.is_err(),
+			"BAR is not asked for a map it does not have"
+		);
+		// BAR's maps not known yet.
+		let unknown = BTreeSet::new();
+		assert_eq!(
+			ask(&unknown, mods, "Anything").as_deref(),
+			Ok("https://mods.example/find")
+		);
+		assert_eq!(
+			ask(&unknown, None, "Anything").as_deref(),
+			Ok(recoil::HTTP_SEARCH_URL)
+		);
+		let plain = BTreeMap::from([(
+			"mods.example".to_owned(),
+			"http://mods.example/find".to_owned(),
+		)]);
+		assert!(map_search_for(&bars, &plain, mods, "Bathtub Brawl V2").is_err());
+	}
+
+	#[test]
+	fn only_a_404_from_a_map_search_is_a_miss() {
+		let runs = |want| {
+			recoil::Download::runs(
+				std::path::Path::new("prd"),
+				std::path::Path::new("data"),
+				vec![(want, "Nowhere v1".into())],
+				recoil::RAPID_REPO_MASTER,
+				"https://mods.example/find",
+			)
+		};
+		let not_found =
+			["DownloadUrl():Error in curl (The requested URL returned error: 404)".to_owned()];
+		assert_eq!(
+			missed(&runs(recoil::Want::Map)[0], &not_found).as_deref(),
+			Some("Nowhere v1")
+		);
+		assert_eq!(
+			missed(
+				&runs(recoil::Want::Map)[0],
+				&["Could not resolve host".into()]
+			),
+			None
+		);
+		assert_eq!(missed(&runs(recoil::Want::Game)[0], &not_found), None);
+	}
+
 	#[tokio::test]
 	async fn with_nobody_to_read_another_rapid_server_only_bars_is_used() {
 		let vet = vet_bars_only();
@@ -3168,6 +3374,7 @@ mod tests {
 			std::path::Path::new("data"),
 			vec![(recoil::Want::Game, "Somebody's Mod v1".into())],
 			theirs,
+			recoil::HTTP_SEARCH_URL,
 		);
 		let asked_nobody = format!(
 			"[Error] search():Error downloading {}?category=game&springname=x",

@@ -109,8 +109,36 @@ export function ServerRows(props: {
 	)
 }
 
-/** How long a rapid address goes unedited before it is read. */
+/** How long an address goes unedited before it is asked about. */
 const CHECK_AFTER = 800
+
+/**
+ * What an address typed into a field turned out to be, asked once typing has
+ * stopped — it is a request to somebody's server, not something to send per
+ * keystroke. A refusal is an answer here, not a failure: a resource that
+ * rejects with anything but an `Error` reports "Unknown error", and what Rust
+ * sends is a plain object with the reason in it.
+ */
+function checked<T>(
+	typed: () => string | null,
+	ask: (url: string) => Promise<T>,
+) {
+	const [settled, setSettled] = createSignal(typed())
+	createEffect(() => {
+		const now = typed()
+		const timer = setTimeout(() => setSettled(now), CHECK_AFTER)
+		onCleanup(() => clearTimeout(timer))
+	})
+	const [answer] = createResource(
+		() => settled() || null,
+		(url) =>
+			ask(url).then(
+				(found) => ({ found, refused: null }),
+				(error: unknown) => ({ found: null, refused: describeError(error) }),
+			),
+	)
+	return answer
+}
 
 /** How long a Remove waits for its second click before it stands down. */
 const CONFIRM_FOR = 4000
@@ -126,26 +154,14 @@ function ServerCard(props: {
 	const way = () => lobby.ways[id()]
 	const [portsText, setPortsText] = createSignal(props.entry.ports.join(', '))
 	const [removing, setRemoving] = createSignal(false)
-	/**
-	 * What the rapid address lists, read once typing has stopped — it is a
-	 * request to somebody's server, not something to send per keystroke.
-	 */
-	const [settled, setSettled] = createSignal(props.entry.rapid)
-	createEffect(() => {
-		const typed = props.entry.rapid
-		const timer = setTimeout(() => setSettled(typed), CHECK_AFTER)
-		onCleanup(() => clearTimeout(timer))
-	})
-	// A refusal is an answer here, not a failure: a resource that rejects
-	// with anything but an `Error` reports "Unknown error", and what Rust
-	// sends is a plain object with the reason in it.
-	const [rapid] = createResource(
-		() => settled() || null,
-		(url) =>
-			api.checkRapid(url).then(
-				(found) => ({ found, refused: null }),
-				(error: unknown) => ({ found: null, refused: describeError(error) }),
-			),
+	// What each address turned out to be, asked once typing has stopped.
+	const rapid = checked(
+		() => props.entry.rapid,
+		(url) => api.checkRapid(url),
+	)
+	const maps = checked(
+		() => props.entry.maps,
+		(url) => api.checkMapSearch(url).then(() => true),
 	)
 	/**
 	 * Read once: open for a server that has needed it, and after that the
@@ -288,6 +304,37 @@ function ServerCard(props: {
 								Lists {found().own} of its own and {found().bars} of BAR's.
 							</p>
 						)}
+					</Match>
+				</Switch>
+				<label>
+					Map search, where this server's own maps are found
+					<input
+						value={props.entry.maps ?? ''}
+						placeholder={`https://${props.entry.host}/find`}
+						onInput={(event) =>
+							props.change('maps', event.currentTarget.value.trim() || null)
+						}
+					/>
+				</label>
+				<Switch
+					fallback={
+						<p class='muted'>
+							Asked only for a map that is not one of BAR's; BAR is asked only
+							for those that are.
+						</p>
+					}
+				>
+					<Match when={props.entry.maps && maps.loading}>
+						<p class='muted'>Asking it…</p>
+					</Match>
+					<Match when={props.entry.maps && maps()?.refused}>
+						{(why) => <p class='error'>{why()}. No map is fetched from it.</p>}
+					</Match>
+					<Match when={props.entry.maps && maps()?.found}>
+						<p class='muted'>
+							Answers like a map search. Asked only for a map that is not one of
+							BAR's.
+						</p>
 					</Match>
 				</Switch>
 			</details>

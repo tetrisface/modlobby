@@ -65,6 +65,8 @@ export const api = {
 	logout: (server: string | null = null) => invoke<void>('logout', { server }),
 	/** What the rapid master index at `url` lists; refused if it is not one. */
 	checkRapid: (url: string) => invoke<RapidSummary>('check_rapid', { url }),
+	/** Resolves if `url` answers like a map search; refused with why if not. */
+	checkMapSearch: (url: string) => invoke<void>('check_map_search', { url }),
 	/** Forgets which way into `host` worked, so the next connect tries every way. */
 	forgetWay: (host: string) => invoke<void>('forget_way', { host }),
 	/** Tries the last login again, under `server`'s login limit. */

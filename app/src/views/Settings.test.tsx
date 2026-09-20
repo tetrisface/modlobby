@@ -24,6 +24,7 @@ function loaded(): Settings {
 				allowUnencrypted: false,
 				website: null,
 				rapid: null,
+				maps: null,
 				username: 'me',
 				channels: ['main'],
 			},

@@ -383,6 +383,14 @@ pub async fn check_rapid(app: State<'_, App>, url: String) -> Result<content::ra
 	app.rapid.summary(url).await.map_err(rapid_refusal)
 }
 
+/// Whether `url` answers like a map search, for the person typing one in.
+#[tauri::command]
+pub async fn check_map_search(app: State<'_, App>, url: String) -> Result<()> {
+	content::map_search::check(&app.http, url.trim())
+		.await
+		.map_err(|reason| ApiError::new("input", reason))
+}
+
 /// Wrong input, not the app's failing: the address is the user's.
 fn rapid_refusal(err: content::rapid::Error) -> ApiError {
 	ApiError::new("input", err.to_string())

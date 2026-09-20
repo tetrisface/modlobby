@@ -147,6 +147,9 @@ impl App {
 			held.failed_at = Some(std::time::Instant::now());
 		} else {
 			held.index = Some(index.clone());
+			// Whose maps are BAR's decides who a map is asked of.
+			let names = index.names.values().cloned().collect();
+			let _ = self.client.set_bar_maps(names).await;
 		}
 		index
 	}

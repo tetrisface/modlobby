@@ -233,6 +233,7 @@ pub fn plan_download(
 	engine_version: &str,
 	wants: Vec<(recoil::Want, String)>,
 	rapid_master: &str,
+	map_search: &str,
 ) -> Result<Vec<recoil::Download>, String> {
 	let binary = content::Library::new(dirs.clone())
 		.find_downloader(engine_version)
@@ -248,6 +249,7 @@ pub fn plan_download(
 		&dirs.write,
 		wants,
 		rapid_master,
+		map_search,
 	))
 }
 

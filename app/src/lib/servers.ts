@@ -75,6 +75,7 @@ export function newServer(host: string): ServerEntry {
 		allowUnencrypted: false,
 		website: null,
 		rapid: null,
+		maps: null,
 		username: '',
 		channels: ['main'],
 	}

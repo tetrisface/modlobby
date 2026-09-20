@@ -910,7 +910,9 @@ pub fn max_reqs_per_sec(existing: Option<&str>) -> u32 {
 
 impl Download {
 	/// The runs that fetch `wants`, in order: the games from `rapid_master`
-	/// with nobody to ask by name, then the maps, which only a search finds.
+	/// with nobody to ask by name, then the maps, which only a search finds —
+	/// `map_search`, which the caller picks so that a map's name goes only to
+	/// whoever can have it.
 	/// Two runs because the search URL is one setting for a whole run, and
 	/// the two kinds need opposite answers to "whom may a name be sent to".
 	pub fn runs(
@@ -918,10 +920,11 @@ impl Download {
 		data_dir: &Path,
 		wants: Vec<(Want, String)>,
 		rapid_master: &str,
+		map_search: &str,
 	) -> Vec<Self> {
 		let (games, maps): (Vec<_>, Vec<_>) =
 			wants.into_iter().partition(|(want, _)| *want == Want::Game);
-		[(games, NO_SEARCH_URL), (maps, HTTP_SEARCH_URL)]
+		[(games, NO_SEARCH_URL), (maps, map_search)]
 			.into_iter()
 			.filter(|(wants, _)| !wants.is_empty())
 			.map(|(wants, search_url)| Self {
@@ -1029,6 +1032,7 @@ mod download_tests {
 				(Want::Game, "Somebody's Mod v1".into()),
 			],
 			theirs,
+			"https://maps.example/find",
 		);
 		let [games, maps] = runs.as_slice() else {
 			panic!("a run for the games, then one for the maps: {runs:?}");
@@ -1060,7 +1064,7 @@ mod download_tests {
 		);
 		assert_eq!(
 			env_of(maps, "PRD_HTTP_SEARCH_URL").as_deref(),
-			Some(HTTP_SEARCH_URL)
+			Some("https://maps.example/find")
 		);
 	}
 
@@ -1071,6 +1075,7 @@ mod download_tests {
 			Path::new("C:/bar"),
 			vec![(Want::Map, "Pinewood_Derby_V1".into())],
 			RAPID_REPO_MASTER,
+			HTTP_SEARCH_URL,
 		);
 		assert_eq!(runs.len(), 1);
 		assert!(!runs[0].has_games());
