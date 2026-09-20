@@ -203,6 +203,11 @@ export const api = {
 	gameModOptions: (game: string) =>
 		invoke<ModOption[]>('game_modoptions', { game }),
 	gameAis: (game: string) => invoke<AiChoice[]>('game_ais', { game }),
+	/**
+	 * A newer version of this game than the room is set to, from BAR's rapid,
+	 * or `null` when it is current. For the room nobody else keeps up to date.
+	 */
+	newerGame: (game: string) => invoke<string | null>('newer_game', { game }),
 	/** What an engine AI declares it can be told; empty when it declares none. */
 	aiOptions: (engine: string, ai: string) =>
 		invoke<ModOption[]>('ai_options', { engine, ai }),

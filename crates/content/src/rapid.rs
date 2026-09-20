@@ -198,6 +198,13 @@ impl Vetter {
 		Ok(published)
 	}
 
+	/// Every game name BAR's rapid publishes, newest nowhere in particular:
+	/// the caller orders them. What a room with no host to keep it current
+	/// checks itself against.
+	pub async fn bar_names(&self) -> Result<Vec<String>, Error> {
+		Ok(self.bars().await?.1.keys().cloned().collect())
+	}
+
 	/// What `master` lists, for the person setting a server up.
 	pub async fn summary(&self, master: &str) -> Result<RapidSummary, Error> {
 		let listed = self.repos(master).await?;

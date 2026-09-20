@@ -8,6 +8,10 @@ import { onCleanup } from 'solid-js'
  * On the document rather than stopped at the menu: Solid delegates
  * `onMouseDown` to the document too, and stopping propagation there does not
  * reach a listener on the same node.
+ *
+ * `pointerdown`, not `mousedown`: a roster row cancels its press so that a
+ * drag does not select text, and a cancelled press fires no mouse events at
+ * all -- which would leave a menu open behind the row being dragged.
  */
 export function dismiss(root: () => Node | undefined, close: () => void) {
 	const onDown = (event: MouseEvent) => {
@@ -17,10 +21,10 @@ export function dismiss(root: () => Node | undefined, close: () => void) {
 	const onKey = (event: KeyboardEvent) => {
 		if (event.key === 'Escape') close()
 	}
-	document.addEventListener('mousedown', onDown)
+	document.addEventListener('pointerdown', onDown)
 	document.addEventListener('keydown', onKey)
 	onCleanup(() => {
-		document.removeEventListener('mousedown', onDown)
+		document.removeEventListener('pointerdown', onDown)
 		document.removeEventListener('keydown', onKey)
 	})
 }

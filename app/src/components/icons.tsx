@@ -319,6 +319,28 @@ export function IconSprite() {
 						stroke-linejoin='round'
 					/>
 				</symbol>
+				{/* An arrow up in a box: there is a newer version of this than what
+            the room is set to, and this moves it up to it. */}
+				<symbol id='act-upgrade' viewBox='0 0 20 20'>
+					<rect
+						x='3'
+						y='3'
+						width='14'
+						height='14'
+						rx='2.5'
+						fill='none'
+						stroke='currentColor'
+						stroke-width='1.6'
+					/>
+					<path
+						d='M10 13.8 V6.6 M7 9.6 L10 6.4 L13 9.6'
+						fill='none'
+						stroke='currentColor'
+						stroke-width='1.7'
+						stroke-linecap='round'
+						stroke-linejoin='round'
+					/>
+				</symbol>
 				{/* A chevron that turns: the row it sits on opens to its versions. */}
 				<symbol id='act-expand' viewBox='0 0 20 20'>
 					<path

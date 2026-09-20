@@ -69,7 +69,9 @@ describe('the bonus, from the row menu', () => {
 	test('an AI of ours offers it, and the panel sets it', async () => {
 		const given: number[] = []
 		const { container } = render(() => <PlayerMenu />)
-		showBotMenu(BOT, () => Promise.resolve(), press(), moves(given))
+		showBotMenu(BOT, () => Promise.resolve(), press(), {
+			moves: moves(given),
+		})
 		await settle()
 		expect(labels(container)).toEqual(['Move to team 1', 'Bonus', 'Remove'])
 
@@ -90,6 +92,32 @@ describe('the bonus, from the row menu', () => {
 		fireEvent.submit(panel as HTMLFormElement)
 		await settle()
 		expect(given).toEqual([40])
+		expect(container.querySelector('.player-menu')).toBeNull()
+	})
+
+	test('Edit opens the AI sheet, and is absent where there is none', async () => {
+		let opened = 0
+		const { container } = render(() => <PlayerMenu />)
+		showBotMenu(BOT, () => Promise.resolve(), press(), {
+			moves: moves([]),
+			edit: () => {
+				opened += 1
+			},
+		})
+		await settle()
+		expect(labels(container)).toEqual([
+			'Move to team 1',
+			'Bonus',
+			'Edit',
+			'Remove',
+		])
+		click(
+			[...container.querySelectorAll('button')].find(
+				(b) => b.textContent === 'Edit',
+			) as HTMLElement,
+		)
+		await settle()
+		expect(opened).toBe(1)
 		expect(container.querySelector('.player-menu')).toBeNull()
 	})
 

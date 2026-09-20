@@ -64,6 +64,13 @@ export function rowGesture(options: {
 		// control's, not a press on the row.
 		if ((event.target as Element | null)?.closest('button, input, select'))
 			return
+		// The rows are `user-select: none`, which stops their own text being
+		// selected but not a selection anchored at them: Chromium falls back to
+		// the nearest selectable position, so a drag across the roster paints
+		// the chat blue. Cancelling the press is what never starts one -- and
+		// it takes `mousedown` with it, which is why `dismiss` listens for the
+		// pointer instead.
+		event.preventDefault()
 		const row = event.currentTarget as HTMLElement
 		const fromX = event.clientX
 		const fromY = event.clientY

@@ -637,7 +637,11 @@ impl Room {
 			spectator_count: u32::from(!seated),
 			player_count: u32::from(seated),
 			layout: self.layout,
-			bots: self.ais.iter().map(bot_view).collect(),
+			bots: self
+				.ais
+				.iter()
+				.map(|ai| bot_view(ai, &self.player))
+				.collect(),
 			// The engine's own rectangles are not how this room carries its
 			// boxes; the `mapmetadata_*` modoptions are, and they are already
 			// in `script_tags` where every reader looks for them.
@@ -682,10 +686,13 @@ impl Room {
 	}
 }
 
-fn bot_view(ai: &Ai) -> BotView {
+/// `owner` is the one person here: an AI in this room is always ours, and the
+/// room's controls -- move, bonus, copy, remove -- are drawn for the AIs whose
+/// owner is you. An empty name is nobody's, and left them all read-only.
+fn bot_view(ai: &Ai, owner: &str) -> BotView {
 	BotView {
 		name: ai.name.clone(),
-		owner: String::new(),
+		owner: owner.to_owned(),
 		status: status_view(Some(ai.seat), false),
 		team_colour: ai.colour,
 		ai: ai.ai.clone(),
@@ -826,6 +833,20 @@ mod tests {
 		assert_eq!(room.unused_name("BARb"), "BARb2");
 		assert!(room.add_ai("BARb2", "BARb", 2, 1, 0));
 		assert_eq!(room.unused_name("BARb"), "BARb3");
+	}
+
+	/// The room's controls -- move, bonus, copy, remove -- are drawn for the
+	/// AIs you own, and here you own all of them.
+	#[test]
+	fn an_ai_here_belongs_to_the_one_person_here() {
+		let mut room = room();
+		room.add_ai("BARb", "BARb", 1, 1, 0);
+		let view = room.view(lobby_ui::ContentView {
+			engine: true,
+			game: true,
+			map: true,
+		});
+		assert_eq!(view.battle.bots[0].owner, view.me);
 	}
 
 	#[test]

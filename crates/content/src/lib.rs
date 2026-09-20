@@ -454,6 +454,31 @@ pub fn newest_first(names: &mut [String]) {
 	});
 }
 
+/// The newest of `published` in the same line as `current`, when there is one
+/// newer than `current` itself.
+///
+/// A game's line is its name up to where its version starts, which is what
+/// keeps `Beyond All Reason test-31232` from being offered as an update to
+/// `BYAR Chobby test-4627`. `current` is sorted along with the rest rather
+/// than looked up among them, so a version nothing publishes -- a local
+/// build, one rapid has dropped -- is compared and not assumed stale.
+pub fn newer_than(current: &str, published: &[String]) -> Option<String> {
+	fn line(name: &str) -> &str {
+		name.split(|c: char| c.is_ascii_digit())
+			.next()
+			.unwrap_or("")
+	}
+	let ours = line(current);
+	let mut same: Vec<String> = published
+		.iter()
+		.filter(|name| line(name) == ours)
+		.cloned()
+		.collect();
+	same.push(current.to_owned());
+	newest_first(&mut same);
+	same.into_iter().next().filter(|newest| newest != current)
+}
+
 fn has_digit(name: &str) -> bool {
 	name.chars().any(|c| c.is_ascii_digit())
 }
@@ -691,6 +716,35 @@ mod listing_tests {
 				"Beyond All Reason test-9999-aaa",
 			]
 		);
+	}
+
+	fn published() -> Vec<String> {
+		[
+			"Beyond All Reason test-31232-ccc",
+			"BYAR Chobby test-4627-9d0",
+		]
+		.iter()
+		.map(|n| (*n).to_owned())
+		.collect()
+	}
+
+	#[test]
+	fn a_newer_version_is_offered_only_from_the_games_own_line() {
+		assert_eq!(
+			newer_than("Beyond All Reason test-31115-aaa", &published()).as_deref(),
+			Some("Beyond All Reason test-31232-ccc")
+		);
+		// Current, and ahead of everything rapid lists, both mean no offer.
+		assert_eq!(
+			newer_than("Beyond All Reason test-31232-ccc", &published()),
+			None
+		);
+		assert_eq!(
+			newer_than("Beyond All Reason test-99999-zzz", &published()),
+			None
+		);
+		// Nothing of this game's is published, so there is nothing to say.
+		assert_eq!(newer_than("Zero-K v1.2", &published()), None);
 	}
 
 	#[test]

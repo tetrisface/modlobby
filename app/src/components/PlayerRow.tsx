@@ -5,6 +5,7 @@ import type { UserView } from '../ipc/bindings/UserView'
 import { type Skill, skillText, skillTier, skillTitle } from '../lib/skill'
 import { Flag, Glyph, Marks, RankIcon, SideIcon, StatusIcon } from './icons'
 import { rowGesture } from '../lib/drag'
+import { isGameMode } from '../lib/roster'
 import { type Moves, showBotMenu, showPlayerMenu } from './PlayerMenu'
 
 /**
@@ -84,19 +85,18 @@ export function BotRow(props: {
 }) {
 	const menu = (event: MouseEvent) => {
 		const remove = props.onRemove
-		if (remove) showBotMenu(props.bot, remove, event, props.moves)
+		if (remove)
+			showBotMenu(props.bot, remove, event, {
+				moves: props.moves,
+				edit: props.onOptions,
+			})
 	}
 	const press = rowGesture({
 		canMove: () => props.moves !== undefined,
 		onMove: (ally) => void props.moves?.to(ally),
 		onMenu: menu,
 	})
-	/**
-	 * Scavengers and Raptors are game modes rather than opponents: the room
-	 * holds one, so there is no second to copy. Known by name, since a row is
-	 * not told what the game's `luaai.lua` declares.
-	 */
-	const gameMode = () => /raptor|scav/i.test(props.bot.ai)
+	const gameMode = () => isGameMode(props.bot.ai)
 	const showSideIcon = () =>
 		!gameMode() && !props.bot.ai.toLowerCase().includes('barb')
 	const botRowClass = () => ({

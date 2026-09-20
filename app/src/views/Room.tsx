@@ -27,7 +27,7 @@ import {
 	PlayerRow,
 } from '../components/PlayerRow'
 import { ResizeHandle } from '../components/ResizeHandle'
-import { SyncIcon } from '../components/icons'
+import { Glyph, SyncIcon } from '../components/icons'
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { BotView } from '../ipc/bindings/BotView'
 import type { ChatLine } from '../ipc/bindings/ChatLine'
@@ -317,6 +317,29 @@ export function Room() {
 		</Show>
 	)
 
+	/**
+	 * A newer version of the room's game than it is set to, where the room is
+	 * ours to set. A room on the server is kept current by its host; a
+	 * skirmish is the one room nobody updates, and it goes stale between the
+	 * games where somebody else chose.
+	 */
+	const [newerGame] = createResource(
+		() => (room.caps.picksContent ? (battle()?.gameName ?? '') : ''),
+		(game) => (game === '' ? null : api.newerGame(game).catch(() => null)),
+	)
+
+	/** Takes it, and fetches it: the offer is to be playing on it. */
+	async function upgradeGame(version: string) {
+		await picked((name) => room.io.sayBattle(`!game ${name}`), 'game', version)
+		try {
+			await room.io.downloadMissing()
+		} catch (error) {
+			// Already running, or nothing missing -- neither is news after a
+			// version was picked by hand.
+			console.debug('download after upgrade', error)
+		}
+	}
+
 	async function send(line: string) {
 		try {
 			await room.io.sayBattle(line.trim())
@@ -461,6 +484,18 @@ export function Room() {
 										shown={b().gameName}
 										picks={room.caps.picksContent}
 									/>
+									<Show when={newerGame()}>
+										{(version) => (
+											<button
+												class='card-upgrade'
+												title={`Update to ${version()}`}
+												aria-label={`Update the game to ${version()}`}
+												onClick={() => void upgradeGame(version())}
+											>
+												<Glyph id='act-upgrade' />
+											</button>
+										)}
+									</Show>
 								</span>
 								{/* A `[game]` key rather than a modoption, so it has no row in
                     the settings table and belongs here with the rest of what

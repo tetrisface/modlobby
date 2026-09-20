@@ -109,10 +109,12 @@ export function arrange(
 		}
 	}
 
-	const shape = room.layout
-	const count = shape?.teams ?? Math.max(teams.size, DEFAULT_TEAMS)
+	const count = room.layout?.teams ?? Math.max(teams.size, DEFAULT_TEAMS)
 	for (let allyTeam = 0; allyTeam < count; allyTeam++) team(allyTeam)
-	const perTeam = shape?.teamSize ?? Math.ceil(room.playerCount / count)
+	// `teamSize` is the room's cap, not its roll call: an event host sets it to
+	// 100 to mean "no limit", and a hundred empty seats a side is not the shape
+	// of an 8v8. How many are really coming is the list's own player count.
+	const perTeam = Math.ceil(room.playerCount / count)
 	for (const t of teams.values())
 		t.expected = Math.max(t.users.length + t.bots.length, perTeam)
 
@@ -217,6 +219,18 @@ export function unusedBotName(
 	let n = 2
 	while (taken.has(`${base}${n}`)) n += 1
 	return `${base}${n}`
+}
+
+/**
+ * Whether an AI is a game mode rather than an opponent.
+ *
+ * Scavengers and Raptors are a side the game runs, not a player: the room
+ * holds one of them, there is no second to copy, and a resource bonus means
+ * nothing to a side that has no economy of its own. Known by name, because a
+ * row is not told what the game's `luaai.lua` declares.
+ */
+export function isGameMode(ai: string): boolean {
+	return /raptor|scav/i.test(ai)
 }
 
 export function emptySeats(team: Team): number {

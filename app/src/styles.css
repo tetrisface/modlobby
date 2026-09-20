@@ -673,6 +673,32 @@ textarea {
 	font-weight: 500;
 }
 
+/* A game newer than the room is set to. Beside the name because it is about
+   the name, and gone the moment it is taken -- so it never sits here as
+   decoration. */
+.card-upgrade {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 1.125rem;
+	height: 1.125rem;
+	padding: 0;
+	margin-left: 0.3125rem;
+	vertical-align: -0.1875rem;
+	border-radius: 0.25rem;
+	color: var(--accent);
+}
+
+.card-upgrade:hover,
+.card-upgrade:focus-visible {
+	background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.card-upgrade .icon {
+	width: 1rem;
+	height: 1rem;
+}
+
 .card-actions {
 	display: flex;
 	flex-direction: column;
@@ -3069,6 +3095,24 @@ input[type='checkbox'].v-edit {
 .bot-options .setup-detail {
 	overflow-y: auto;
 	min-height: 0;
+}
+
+/* The one thing every AI can be told, above the ones only some declare. */
+.bot-bonus-set {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	font-size: 0.9rem;
+}
+
+.bot-bonus-set input[type='range'] {
+	flex: 1;
+	min-width: 7.5rem;
+	max-width: 20rem;
+}
+
+.bot-bonus-set input[type='number'] {
+	width: 3.25rem;
 }
 
 /* A choice made in the room's meta line: the map, the game, the engine, and

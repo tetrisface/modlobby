@@ -418,6 +418,7 @@ pub fn run() {
 			commands::remember_channels,
 			commands::skirmish_options,
 			commands::game_ais,
+			commands::newer_game,
 			commands::skirmish_open,
 			commands::skirmish_close,
 			commands::skirmish_act,

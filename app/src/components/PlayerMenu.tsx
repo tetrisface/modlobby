@@ -42,11 +42,13 @@ type Target =
 			x: number
 			y: number
 	  }
-	/** One of our own AIs; `remove` is the one thing there is to do about it. */
+	/** One of our own AIs: what may be done about it, where it may be done. */
 	| {
 			kind: 'bot'
 			bot: BotView
 			remove: () => Promise<void>
+			/** Opens what the AI is told about itself; absent where nothing is. */
+			edit?: () => void
 			moves?: Moves
 			x: number
 			y: number
@@ -80,7 +82,7 @@ export function showBotMenu(
 	bot: BotView,
 	remove: () => Promise<void>,
 	event: MouseEvent,
-	moves?: Moves,
+	what: { moves?: Moves; edit?: () => void } = {},
 ): void {
 	event.preventDefault()
 	event.stopPropagation()
@@ -88,7 +90,7 @@ export function showBotMenu(
 		kind: 'bot',
 		bot,
 		remove,
-		moves,
+		...what,
 		x: event.clientX,
 		y: event.clientY,
 	})
@@ -201,8 +203,10 @@ export function PlayerMenu() {
 				const items = () => {
 					const ai = bot()
 					if (ai) {
+						const edit = ai.edit
 						return [
 							...placings(openFor()?.moves),
+							...(edit ? [['Edit', edit] as Entry] : []),
 							['Remove', ai.remove] as Entry,
 						]
 					}

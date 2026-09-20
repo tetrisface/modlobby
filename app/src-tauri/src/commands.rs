@@ -521,6 +521,23 @@ pub fn skirmish_options(app: State<'_, App>) -> Result<SkirmishOptions> {
 	})
 }
 
+/// The newest version of `game`'s own line that BAR's rapid publishes, when
+/// it is newer than `game` itself.
+///
+/// A room on the server is kept current by its host; a skirmish is the one
+/// room nobody updates, so it asks. BAR's master index is the one asked
+/// because a skirmish has no server whose rapid it would use instead.
+///
+/// A rapid server that cannot be reached is not news: there is simply no
+/// newer version to report.
+#[tauri::command]
+pub async fn newer_game(app: State<'_, App>, game: String) -> Result<Option<String>> {
+	let Ok(names) = app.rapid.bar_names().await else {
+		return Ok(None);
+	};
+	Ok(content::newer_than(&game, &names))
+}
+
 /// What an engine AI declares it can be told.
 ///
 /// `AIOptions.lua` is the same `local options = { … }` table a game's

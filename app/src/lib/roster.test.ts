@@ -279,6 +279,27 @@ describe('arrange', () => {
 		expect(roster.spectatorCount).toBe(100)
 	})
 
+	test('a no-limit teamSize is a cap, not a hundred seats to draw', () => {
+		// An event host sets `teamSize` to 100 to mean "no limit". The room is an
+		// 8v8: sixteen seats, not two hundred.
+		const members = Array.from({ length: 16 }, (_, i) => `p${i}`)
+		const roster = arrange(
+			room({
+				members,
+				playerCount: 16,
+				spectatorCount: 0,
+				layout: { teams: 2, teamSize: 100 },
+			}),
+			byName(
+				...members.map((name, i) => user(name, i < 12 ? seat(i % 2) : null)),
+			),
+		)
+		expect(roster.teams.map((t) => t.expected)).toEqual([8, 8])
+		expect(roster.teams.map((t) => t.guessed.length)).toEqual([2, 2])
+		expect(roster.teams.map(emptySeats)).toEqual([0, 0])
+		expect(roster.pending).toEqual([])
+	})
+
 	test('a team fuller than the layout says grows rather than hides anyone', () => {
 		const roster = arrange(
 			room({ layout: { teams: 2, teamSize: 1 }, playerCount: 2 }),
