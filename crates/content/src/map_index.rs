@@ -71,6 +71,16 @@ impl MapIndex {
 	pub fn is_empty(&self) -> bool {
 		self.images.is_empty() && self.names.is_empty()
 	}
+
+	/// Whether this holds the facts as well as the pictures.
+	///
+	/// A cache written before the facts were kept has names and no facts.
+	/// That is not staleness -- the server would answer a 304 and it would
+	/// stay that way -- so it is neither trusted nor confirmed, but fetched
+	/// whole.
+	fn complete(&self) -> bool {
+		!self.maps.is_empty() || self.names.is_empty()
+	}
 }
 
 /// What the cache file holds: the trimmed index, when it was confirmed, and
@@ -202,20 +212,16 @@ pub async fn load(
 	let cached = read(&path);
 	if let Some(held) = &cached
 		&& held.fresh(now)
-		&& !(held.index.maps.is_empty() && !held.index.names.is_empty())
+		&& held.index.complete()
 	{
 		return held.index.clone();
 	}
 
-	// A cache written before the facts were kept would be confirmed by a 304
-	// and stay factless forever, so it is refetched whole rather than asked
-	// about: no tag, no 304.
-	let complete = cached
-		.as_ref()
-		.is_none_or(|held| !held.index.maps.is_empty() || held.index.names.is_empty());
+	// No tag for an incomplete cache: asking about it invites the 304 that
+	// would keep it as it is.
 	let etag = cached
 		.as_ref()
-		.filter(|_| complete)
+		.filter(|held| held.index.complete())
 		.and_then(|held| held.etag.as_deref());
 	match fetch(client, url, etag).await {
 		Ok(Fetched::Unchanged) => {

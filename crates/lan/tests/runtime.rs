@@ -158,3 +158,70 @@ async fn a_guest_logs_in_joins_talks_and_hears_the_game_start() {
 	client.shutdown().await;
 	drop(host);
 }
+
+/// A peer that will not behave cannot make the host hold more and more on its
+/// account. Three ways to try it, one test: the bounds are one policy.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_peer_cannot_spend_the_host_without_limit() {
+	let host = Host::start(config(), 0).await.unwrap();
+	let port = host.port();
+	let at = format!("127.0.0.1:{port}");
+
+	// A line that never ends: the host reads its fill and hangs up, rather
+	// than buffering whatever arrives until there is no memory left.
+	let mut flood = TcpStream::connect(&at).await.unwrap();
+	let chunk = vec![b'x'; 8 * 1024];
+	let mut sent = 0usize;
+	let hung_up = loop {
+		if flood.write_all(&chunk).await.is_err() {
+			break true;
+		}
+		sent += chunk.len();
+		// Well past the 64 KiB a line may be; a host that took this is one
+		// that would take anything.
+		if sent > 4 * 1024 * 1024 {
+			break false;
+		}
+	};
+	assert!(hung_up, "an endless line was read forever");
+
+	// Sixty-four sockets at once is the most; the next is dropped on the
+	// floor, and the room is still there for everyone already in it.
+	let mut held = Vec::new();
+	for _ in 0..80 {
+		if let Ok(socket) = TcpStream::connect(&at).await {
+			held.push(socket);
+		}
+	}
+	let mut greeted = 0;
+	for socket in &mut held {
+		let mut line = String::new();
+		let read = tokio::time::timeout(
+			Duration::from_millis(200),
+			BufReader::new(socket).read_line(&mut line),
+		)
+		.await;
+		if matches!(read, Ok(Ok(n)) if n > 0) {
+			greeted += 1;
+		}
+	}
+	assert!(
+		greeted <= 64,
+		"every one of {} sockets was served",
+		held.len()
+	);
+	assert!(greeted > 0, "nobody was served at all");
+	drop(held);
+	drop(flood);
+
+	// And the room still works for a client that behaves.
+	tokio::time::sleep(Duration::from_millis(200)).await;
+	let mut fresh = TcpStream::connect(&at).await.unwrap();
+	let mut hello = String::new();
+	let mut reader = BufReader::new(&mut fresh);
+	tokio::time::timeout(Duration::from_secs(2), reader.read_line(&mut hello))
+		.await
+		.expect("the host still answers")
+		.unwrap();
+	assert!(hello.starts_with("TASSERVER"), "got {hello:?}");
+}

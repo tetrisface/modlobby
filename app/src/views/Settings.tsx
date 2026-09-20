@@ -724,15 +724,8 @@ export function SettingsView() {
 										setDraft('lan', 'enabled', e.currentTarget.checked)
 									}
 								/>
-								Games on the local network
+								Enable LAN games
 							</label>
-							<p class='muted'>
-								Play with people on your network with no server in between.
-								Everything else here talks to a server you chose; this listens
-								for rooms announced nearby, and hosting one tells the network
-								your name and what you are playing. Off, nothing of it runs and
-								the row below does not appear.
-							</p>
 						</Row>
 						<ServerRows draft={draft} setDraft={setDraft} settle={settle} />
 					</Section>
