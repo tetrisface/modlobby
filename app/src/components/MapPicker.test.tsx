@@ -34,6 +34,7 @@ function about(some: Partial<MapFacts>): MapFacts {
 
 vi.mock('../lib/maps', () => ({
 	CARD_TILE: { width: 180, height: 180 },
+	ROW_TILE: { width: 44, height: 28 },
 	mapThumb: () => null,
 	mapPicture: () => null,
 	mapNames: () =>
@@ -57,6 +58,16 @@ vi.mock('../lib/maps', () => ({
 				height: 8,
 				playersMin: 2,
 				playersMax: 4,
+			}),
+			// Longer on one side than Big Steppe is on either, and less than
+			// half the ground: what tells a product apart from a side.
+			'Long Valley 1.0': about({
+				displayName: 'Long Valley',
+				author: 'Bo',
+				width: 8,
+				height: 40,
+				playersMin: 4,
+				playersMax: 16,
 			}),
 		}),
 }))
@@ -94,6 +105,7 @@ describe('the map picker', () => {
 		expect(shown(container)).toEqual([
 			'Big Steppe',
 			'homemade_0.1',
+			'Long Valley',
 			'Tiny Isle',
 		])
 
@@ -122,10 +134,13 @@ describe('the map picker', () => {
 		const sort = container.querySelector('select') as HTMLSelectElement
 		fireEvent.change(sort, { target: { value: 'size' } })
 		await settle()
-		// A map the index says nothing about has no size, so it sorts last
-		// rather than first.
+		// By area, not by a side: Long Valley is longer than Big Steppe is on
+		// either axis and still has less than half the ground.
+		// A map the index says nothing about has no size at all, so it sorts
+		// last rather than first.
 		expect(shown(container)).toEqual([
 			'Big Steppe',
+			'Long Valley',
 			'Tiny Isle',
 			'homemade_0.1',
 		])
@@ -136,6 +151,55 @@ describe('the map picker', () => {
 		fireEvent.click(onDisk)
 		await settle()
 		expect(shown(container)).toEqual(['Big Steppe', 'homemade_0.1'])
+	})
+
+	test('the list sorts by a clicked column, and turns round on a second click', async () => {
+		const { container } = open()
+		await settle()
+		fireEvent.click(
+			[...container.querySelectorAll('button')].find(
+				(b) => b.textContent === 'List',
+			) as HTMLElement,
+		)
+		await settle()
+
+		const header = (label: string) =>
+			[...container.querySelectorAll('.map-col')].find((col) =>
+				col.textContent?.startsWith(label),
+			) as HTMLElement
+		const rows = () =>
+			[...container.querySelectorAll('.map-cell.name')].map(
+				(c) => c.textContent,
+			)
+
+		// A number column opens on its largest, which is what it is asked for.
+		fireEvent.click(header('Size'))
+		await settle()
+		expect(rows()).toEqual([
+			'Big Steppe',
+			'Long Valley',
+			'Tiny Isle',
+			'homemade_0.1',
+		])
+		expect(header('Size').getAttribute('aria-sort')).toBe('descending')
+
+		// Clicking it again turns it round -- but the map with no size known
+		// stays at the bottom, since unknown is not "smallest".
+		fireEvent.click(header('Size'))
+		await settle()
+		expect(rows()).toEqual([
+			'Tiny Isle',
+			'Long Valley',
+			'Big Steppe',
+			'homemade_0.1',
+		])
+		expect(header('Size').getAttribute('aria-sort')).toBe('ascending')
+
+		// The cells say the sides; the order said the product.
+		const size = [...container.querySelectorAll('.map-cell.size')].map(
+			(cell) => cell.textContent,
+		)
+		expect(size).toEqual(['8 × 8', '8 × 40', '24 × 24', ''])
 	})
 
 	test('the search reaches the author, not just the name', async () => {

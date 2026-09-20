@@ -1,13 +1,27 @@
 import { For, Show, createMemo, createResource, createSignal } from 'solid-js'
 import type { MapFacts } from '../ipc/bindings/MapFacts'
 import { api, describeError } from '../ipc/client'
-import { CARD_TILE, mapFacts, mapNames } from '../lib/maps'
+import { CARD_TILE, ROW_TILE, mapFacts, mapNames } from '../lib/maps'
+import { localStore, readFlag, writeFlag } from '../lib/resize'
 import { pushNotice } from '../store/chat'
 import { MapPicture } from './MapPicture'
 import { Select } from './Select'
 
 /** As many as the grid draws before searching is the faster way to find one. */
 const SHOWN = 300
+
+/** Where the layout you last chose is kept, per viewer, not per room. */
+const LIST_KEY = 'modlobby.maps.list'
+
+/** Whether the index says nothing here: 0 for a number, empty for a name. */
+const blank = (value: string | number): number =>
+	value === 0 || value === '' ? 1 : 0
+
+/** Numbers as numbers, names as names. */
+function compare(a: string | number, b: string | number): number {
+	if (typeof a === 'number' && typeof b === 'number') return a - b
+	return String(a).localeCompare(String(b), undefined, { numeric: true })
+}
 
 /** One map as the grid draws it. */
 type Entry = {
@@ -22,22 +36,64 @@ type Entry = {
 }
 
 /**
- * How the grid is ordered. Name is the one that never surprises; the others
- * are the two questions people actually open this asking -- how big, and how
- * many -- with the name breaking every tie so the order is stable.
+ * A column: what it is called, what it shows, and what it sorts on.
+ *
+ * One set for both layouts. The grid has no headers to click, so its Sort
+ * picker offers these same columns -- otherwise "sorted by size" would mean
+ * two different orders depending on how you were looking.
+ *
+ * `of` is the sort key. Size is the area, width times height, because that is
+ * what "bigger map" means: 8 x 24 and 24 x 8 are the same amount of ground,
+ * and neither side alone says so. Numbers sort largest first by default,
+ * names A to Z, which is what each is usually wanted as.
  */
-const SORTS = {
-	name: { label: 'Name', of: () => 0 },
-	size: { label: 'Largest', of: (e: Entry) => -area(e) },
-	small: { label: 'Smallest', of: (e: Entry) => area(e) },
-	players: {
-		label: 'Most players',
-		of: (e: Entry) => -(e.facts?.playersMax ?? 0),
+type Column = {
+	key: string
+	label: string
+	/** What the list's cell reads, and nothing where the index does not say. */
+	cell: (entry: Entry) => string | null
+	of: (entry: Entry) => string | number
+	/** Biggest or most first, the way a number is usually asked for. */
+	numeric: boolean
+}
+
+const COLUMNS = [
+	{
+		key: 'name',
+		label: 'Name',
+		cell: (entry) => entry.label,
+		of: (entry) => entry.label.toLowerCase(),
+		numeric: false,
 	},
-} as const
+	{
+		key: 'size',
+		label: 'Size',
+		cell: (entry) => size(entry.facts),
+		of: area,
+		numeric: true,
+	},
+	{
+		key: 'players',
+		label: 'Players',
+		cell: (entry) => players(entry.facts),
+		of: (entry) => entry.facts?.playersMax ?? 0,
+		numeric: true,
+	},
+	{
+		key: 'author',
+		label: 'Author',
+		cell: (entry) => entry.facts?.author || null,
+		of: (entry) => (entry.facts?.author ?? '').toLowerCase(),
+		numeric: false,
+	},
+] as const satisfies readonly Column[]
 
-type SortKey = keyof typeof SORTS
+type SortKey = (typeof COLUMNS)[number]['key']
 
+const columnOf = (key: SortKey): Column =>
+	COLUMNS.find((column) => column.key === key) ?? COLUMNS[0]
+
+/** The area of a map, in the units the feed gives its sides in. */
 function area(entry: Entry): number {
 	const facts = entry.facts
 	return facts ? facts.width * facts.height : 0
@@ -91,7 +147,22 @@ export function MapPicker(props: {
 
 	const [search, setSearch] = createSignal('')
 	const [sort, setSort] = createSignal<SortKey>('name')
+	const [down, setDown] = createSignal(false)
 	const [heldOnly, setHeldOnly] = createSignal(false)
+	/** Which way you were last looking at these, kept for the next time. */
+	const [asList, setAsList] = createSignal(readFlag(localStore(), LIST_KEY))
+
+	function showAs(list: boolean) {
+		setAsList(list)
+		writeFlag(localStore(), LIST_KEY, list)
+	}
+
+	/** Sorting by what you are already sorted by turns it round, as a table does. */
+	function sortBy(key: SortKey) {
+		if (key === sort()) return setDown(!down())
+		setSort(key)
+		setDown(columnOf(key).numeric)
+	}
 
 	const entries = createMemo((): Entry[] => {
 		const index = names() ?? {}
@@ -121,18 +192,27 @@ export function MapPicker(props: {
 
 	const shown = createMemo(() => {
 		const needle = search().trim().toLowerCase()
-		const order = SORTS[sort()]
+		const column = columnOf(sort())
+		const way = down() ? -1 : 1
 		const matching = entries().filter((entry) => {
 			if (heldOnly() && !entry.held) return false
 			if (!needle) return true
 			return haystack(entry).includes(needle)
 		})
 		return matching
-			.sort(
-				(a, b) =>
-					order.of(a) - order.of(b) ||
-					a.label.localeCompare(b.label, undefined, { numeric: true }),
-			)
+			.sort((a, b) => {
+				const [x, y] = [column.of(a), column.of(b)]
+				// A map the index says nothing about is not the smallest one,
+				// it is unknown -- so it sits at the bottom whichever way
+				// round the column is, outside the reversal.
+				return (
+					blank(x) - blank(y) ||
+					way * compare(x, y) ||
+					// The name breaks every tie, so the order never flickers
+					// between two maps the sorted column cannot tell apart.
+					a.label.localeCompare(b.label, undefined, { numeric: true })
+				)
+			})
 			.slice(0, SHOWN)
 	})
 
@@ -155,15 +235,23 @@ export function MapPicker(props: {
 						value={search()}
 						onInput={(event) => setSearch(event.currentTarget.value)}
 					/>
-					<Select
-						value={sort()}
-						title='How the maps are ordered'
-						onChange={(event) => setSort(event.currentTarget.value as SortKey)}
-					>
-						<For each={Object.entries(SORTS)}>
-							{([key, how]) => <option value={key}>{how.label}</option>}
-						</For>
-					</Select>
+					{/* The list has headers to click, so it needs no picker; the
+              grid has none, and gets the same columns here. */}
+					<Show when={!asList()}>
+						<Select
+							value={sort()}
+							title='How the maps are ordered'
+							onChange={(event) => sortBy(event.currentTarget.value as SortKey)}
+						>
+							<For each={COLUMNS}>
+								{(column) => (
+									<option value={column.key}>
+										{column.label} {down() && sort() === column.key ? '↓' : '↑'}
+									</option>
+								)}
+							</For>
+						</Select>
+					</Show>
 					<label class='map-held' title='Only the maps already on this machine'>
 						<input
 							type='checkbox'
@@ -172,6 +260,30 @@ export function MapPicker(props: {
 						/>
 						On disk
 					</label>
+					{/* Pictures to browse by, or columns to compare by. Both draw
+              the same maps in the same order; only the shape differs. */}
+					<div class='map-layout' role='group' aria-label='Layout'>
+						<button
+							type='button'
+							class='chip-choice'
+							classList={{ on: !asList() }}
+							aria-pressed={!asList()}
+							title='Pictures'
+							onClick={() => showAs(false)}
+						>
+							Grid
+						</button>
+						<button
+							type='button'
+							class='chip-choice'
+							classList={{ on: asList() }}
+							aria-pressed={asList()}
+							title='Columns you can sort by'
+							onClick={() => showAs(true)}
+						>
+							List
+						</button>
+					</div>
 					<button type='button' onClick={props.onClose}>
 						Close
 					</button>
@@ -181,45 +293,112 @@ export function MapPicker(props: {
 					{(said) => <p class='muted setup-note'>{said()}</p>}
 				</Show>
 
-				<div class='map-grid'>
-					<For
-						each={shown()}
-						fallback={<p class='muted setup-empty'>Nothing matches.</p>}
-					>
-						{(entry) => (
-							<button
-								class='map-card'
-								classList={{
-									on: props.current === entry.value,
-									absent: !entry.held,
-								}}
-								title={cardTitle(entry)}
-								onClick={() => props.onPick(entry.value, entry.held)}
+				<Show when={asList()}>
+					<div class='map-table'>
+						<div class='map-row head'>
+							<span class='map-row-pic' />
+							<For each={COLUMNS}>
+								{(column) => (
+									<button
+										type='button'
+										class={`map-col ${column.key}`}
+										classList={{ on: sort() === column.key }}
+										aria-sort={
+											sort() === column.key
+												? down()
+													? 'descending'
+													: 'ascending'
+												: 'none'
+										}
+										onClick={() => sortBy(column.key)}
+									>
+										{column.label}
+										<Show when={sort() === column.key}>
+											<span class='map-col-way'>{down() ? '↓' : '↑'}</span>
+										</Show>
+									</button>
+								)}
+							</For>
+							<span class='map-col disk'>Disk</span>
+						</div>
+						<div class='map-rows'>
+							<For
+								each={shown()}
+								fallback={<p class='muted setup-empty'>Nothing matches.</p>}
 							>
-								<MapPicture
-									mapName={entry.value}
-									width={CARD_TILE.width}
-									height={CARD_TILE.height}
-									lazy
-								/>
-								<span class='map-card-name'>{entry.label}</span>
-								<span class='map-card-facts'>
-									<Show when={size(entry.facts)}>
-										{(dims) => <span class='map-dim'>{dims()}</span>}
-									</Show>
-									<Show when={players(entry.facts)}>
-										{(many) => <span class='map-players'>{many()}p</span>}
-									</Show>
-									{/* Said only where it is news: a map you do not have is
+								{(entry) => (
+									<button
+										class='map-row'
+										classList={{
+											on: props.current === entry.value,
+											absent: !entry.held,
+										}}
+										title={cardTitle(entry)}
+										onClick={() => props.onPick(entry.value, entry.held)}
+									>
+										<MapPicture
+											class='map-row-pic'
+											mapName={entry.value}
+											width={ROW_TILE.width}
+											height={ROW_TILE.height}
+											lazy
+										/>
+										<For each={COLUMNS}>
+											{(column) => (
+												<span class={`map-cell ${column.key}`}>
+													{column.cell(entry) ?? ''}
+												</span>
+											)}
+										</For>
+										<span class='map-cell disk'>{entry.held ? '✓' : ''}</span>
+									</button>
+								)}
+							</For>
+						</div>
+					</div>
+				</Show>
+
+				<Show when={!asList()}>
+					<div class='map-grid'>
+						<For
+							each={shown()}
+							fallback={<p class='muted setup-empty'>Nothing matches.</p>}
+						>
+							{(entry) => (
+								<button
+									class='map-card'
+									classList={{
+										on: props.current === entry.value,
+										absent: !entry.held,
+									}}
+									title={cardTitle(entry)}
+									onClick={() => props.onPick(entry.value, entry.held)}
+								>
+									<MapPicture
+										mapName={entry.value}
+										width={CARD_TILE.width}
+										height={CARD_TILE.height}
+										lazy
+									/>
+									<span class='map-card-name'>{entry.label}</span>
+									<span class='map-card-facts'>
+										<Show when={size(entry.facts)}>
+											{(dims) => <span class='map-dim'>{dims()}</span>}
+										</Show>
+										<Show when={players(entry.facts)}>
+											{(many) => <span class='map-players'>{many()}p</span>}
+										</Show>
+										{/* Said only where it is news: a map you do not have is
                       one the room has to fetch before it can be played. */}
-									<Show when={!entry.held}>
-										<span class='map-absent'>not on disk</span>
-									</Show>
-								</span>
-							</button>
-						)}
-					</For>
-				</div>
+										<Show when={!entry.held}>
+											<span class='map-absent'>not on disk</span>
+										</Show>
+									</span>
+								</button>
+							)}
+						</For>
+					</div>
+				</Show>
 			</div>
 		</div>
 	)

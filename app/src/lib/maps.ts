@@ -51,6 +51,9 @@ export const TILES = {
  */
 export const CARD_TILE = { width: 180, height: 180 } as const satisfies Tile
 
+/** `.map-row .map-pic` in the picker's list layout: a thumbnail beside a name. */
+export const ROW_TILE = { width: 44, height: 28 } as const satisfies Tile
+
 /** Where an earlier version kept its own copy; shed once, then never seen. */
 const OLD_CACHE_KEY = 'modlobby.mapImages'
 

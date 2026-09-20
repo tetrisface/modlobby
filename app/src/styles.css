@@ -3228,6 +3228,129 @@ input[type='checkbox'].v-edit {
 	color: var(--warn, var(--muted));
 }
 
+/* The other way to look at the same maps: columns you can sort by, for when
+   the question is "which is biggest" rather than "which looks good".
+   One grid template on the header and every row, so the columns line up
+   without a table's layout rules. */
+.map-table {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	--map-cols: 2.75rem minmax(6rem, 1fr) 5.5rem 4.5rem minmax(4rem, 10rem) 2.5rem;
+}
+
+.map-row {
+	display: grid;
+	grid-template-columns: var(--map-cols);
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.125rem 0.375rem;
+	text-align: left;
+	background: none;
+	border: 1px solid transparent;
+	border-radius: 2px;
+	font-size: 0.75rem;
+}
+
+.map-row.head {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+	background: var(--panel);
+	border-bottom: 1px solid var(--line);
+	border-radius: 0;
+}
+
+.map-rows {
+	overflow-y: auto;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.0625rem;
+}
+
+.map-row:not(.head):hover {
+	border-color: var(--accent);
+	background: var(--sunken);
+}
+
+.map-row.on {
+	border-color: var(--accent);
+	background: var(--raised);
+}
+
+.map-row .map-row-pic {
+	width: 2.75rem;
+	height: 1.75rem;
+	border-radius: 2px;
+	background-color: var(--sunken);
+}
+
+.map-row.absent .map-row-pic {
+	opacity: 0.55;
+}
+
+/* A header is the control that sorts by it, so it looks like one. */
+.map-col {
+	padding: 0.25rem 0;
+	text-align: left;
+	background: none;
+	border: none;
+	font-size: 0.6875rem;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	color: var(--muted);
+}
+
+.map-col:hover {
+	color: var(--text);
+}
+
+.map-col.on {
+	color: var(--accent);
+}
+
+.map-col-way {
+	margin-left: 0.25rem;
+}
+
+.map-cell {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.map-cell.name {
+	color: var(--text);
+}
+
+.map-cell.author {
+	color: var(--faint);
+}
+
+/* The two that are read as quantities, lined up on their digits. */
+.map-cell.size,
+.map-cell.players {
+	font-family: var(--mono);
+	font-variant-numeric: tabular-nums;
+	color: var(--faint);
+}
+
+.map-col.disk,
+.map-cell.disk {
+	text-align: center;
+	color: var(--ok);
+}
+
+.map-col.disk {
+	color: var(--muted);
+}
+
+.map-layout {
+	display: flex;
+	gap: 0.25rem;
+}
+
 /* The picker's header carries a search, a sort and a filter, so it wraps
    rather than squeezing the search to nothing. */
 .map-picker .ed-head {
