@@ -1320,6 +1320,20 @@ pub fn open_data_dir(app: State<'_, App>) -> Result<()> {
 	open(dirs.write)
 }
 
+/// The folder maps are installed in, for a map that arrives by hand: one
+/// published nowhere pr-downloader can reach it, which is every map outside
+/// BAR's own pool.
+///
+/// Made if it is not there, as [`open_data_dir`] makes its own: a button that
+/// names a folder and then opens nothing is worse than no button.
+#[tauri::command]
+pub fn open_maps_dir(app: State<'_, App>) -> Result<()> {
+	let maps = data_dirs(&app)?.write.join("maps");
+	std::fs::create_dir_all(&maps)
+		.map_err(|err| ApiError::new("io", format!("making the maps directory: {err}")))?;
+	open(maps)
+}
+
 /// The player's files — engine settings, hotkeys, widget state — as the
 /// Settings page shows them: where they can be copied from, and the copies
 /// taken before each launch.

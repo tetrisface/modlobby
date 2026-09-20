@@ -284,6 +284,21 @@ export function MapPicker(props: {
 							List
 						</button>
 					</div>
+					{/* A map nobody publishes -- anything outside BAR's pool --
+              arrives by hand, and this is where it goes. */}
+					<button
+						type='button'
+						title='Open the folder maps are installed in'
+						onClick={() =>
+							void api
+								.openMapsDir()
+								.catch((error) =>
+									pushNotice('warning', `maps folder: ${describeError(error)}`),
+								)
+						}
+					>
+						Maps folder
+					</button>
 					<button type='button' onClick={props.onClose}>
 						Close
 					</button>
