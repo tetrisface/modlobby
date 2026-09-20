@@ -2,6 +2,7 @@ import { createSignal } from 'solid-js'
 import type { LanRoomView } from '../ipc/bindings/LanRoomView'
 import type { Row } from '../lib/battles'
 import { lobby } from '../store/lobby'
+import { settings } from '../store/settings'
 import { lanApi } from './api'
 import { LAN, lanRows } from './lan'
 
@@ -15,6 +16,14 @@ let listeners = 0
 let timer: ReturnType<typeof setInterval> | undefined
 
 async function poll() {
+	// Switched off, nothing is asked -- and asking is what starts listening
+	// on the network at all, since Rust opens the browser on the first call.
+	// Read here rather than at `watchLan`, so turning it on fills the list
+	// without reopening the page.
+	if (!(settings()?.lan.enabled ?? false)) {
+		setHeard([])
+		return
+	}
 	try {
 		setHeard(await lanApi.rooms())
 	} catch {

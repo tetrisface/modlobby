@@ -16,6 +16,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 function loaded(): Settings {
 	return {
 		$schema: null,
+		lan: { enabled: false },
 		servers: [
 			{
 				host: 'server4.beyondallreason.info',

@@ -46,6 +46,23 @@ pub struct Settings {
 	pub logging: Logging,
 	pub updates: Updates,
 	pub ui: Ui,
+	pub lan: Lan,
+}
+
+/// Games with people on the local network, with no server between you.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(default, rename_all = "camelCase")]
+#[ts(export)]
+pub struct Lan {
+	/// Whether the lobby listens for rooms on the network, and offers to
+	/// announce one of yours.
+	///
+	/// Off. Everything else the lobby does it does to a server you chose;
+	/// this listens on a multicast group and a broadcast address, and hosting
+	/// tells the whole network your name and what you are playing. That is
+	/// worth asking for rather than assuming, on a laptop that may be on a
+	/// network you do not own. Nothing about it starts until this is on.
+	pub enabled: bool,
 }
 
 impl Settings {
@@ -53,19 +70,29 @@ impl Settings {
 	pub fn initial() -> Self {
 		Self {
 			schema: Some(format!("./{SCHEMA_FILE}")),
-			servers: vec![ServerEntry::bar(), ServerEntry::lan()],
+			// No LAN row: `lan.enabled` is off, and `ensure_lan` adds one the
+			// moment it is turned on.
+			servers: vec![ServerEntry::bar()],
 			..Self::default()
 		}
 	}
 
-	/// Gives a list from before there was a LAN its row. A list emptied on
-	/// purpose is left empty.
+	/// Keeps the server list's LAN row in step with `lan.enabled`: a row
+	/// while it is on, none while it is off, so the card is not offered for
+	/// something that is switched off. A list emptied on purpose stays empty.
 	///
-	/// ponytail: put back on every load, so removing just this row does not
-	/// stick; a `lan: false` setting if anyone asks for that.
+	/// The row is rebuilt rather than remembered, so the name you appear as
+	/// on the network is the one thing a switch off and on again forgets.
 	pub(crate) fn ensure_lan(&mut self) {
-		if !self.servers.is_empty() && !self.servers.iter().any(ServerEntry::is_lan) {
-			self.servers.push(ServerEntry::lan());
+		if self.servers.is_empty() {
+			return;
+		}
+		match self.lan.enabled {
+			true if !self.servers.iter().any(ServerEntry::is_lan) => {
+				self.servers.push(ServerEntry::lan());
+			}
+			false => self.servers.retain(|entry| !entry.is_lan()),
+			true => {}
 		}
 	}
 
@@ -674,6 +701,40 @@ pub fn schema_json() -> String {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	/// The network row follows the switch, so the card is never offered for
+	/// something that is off -- and turning it off takes the row away again.
+	#[test]
+	fn the_lan_row_comes_and_goes_with_the_setting() {
+		let mut settings = Settings::initial();
+		assert!(!settings.lan.enabled, "off until it is asked for");
+		assert!(!settings.servers.iter().any(ServerEntry::is_lan));
+
+		settings.lan.enabled = true;
+		settings.ensure_lan();
+		assert!(settings.servers.iter().any(ServerEntry::is_lan));
+		// Twice on does not make two rows.
+		settings.ensure_lan();
+		assert_eq!(
+			settings.servers.iter().filter(|e| e.is_lan()).count(),
+			1,
+			"one row, however often it is asked for"
+		);
+
+		settings.lan.enabled = false;
+		settings.ensure_lan();
+		assert!(!settings.servers.iter().any(ServerEntry::is_lan));
+		assert!(!settings.servers.is_empty(), "the real servers stay");
+
+		// A list emptied on purpose is left alone either way.
+		let mut bare = Settings {
+			servers: Vec::new(),
+			lan: Lan { enabled: true },
+			..Settings::default()
+		};
+		bare.ensure_lan();
+		assert!(bare.servers.is_empty());
+	}
 
 	#[test]
 	fn partial_file_fills_in_defaults() {

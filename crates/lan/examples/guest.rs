@@ -31,9 +31,14 @@ async fn main() {
 			}
 			"REQUESTBATTLESTATUS" => {
 				// A seat on team 1, ally 1, synced, and a word.
-				let bits = spring_protocol::MyBattleStatus::player(spring_protocol::Sync::Synced, 1, 1).bits();
+				let bits =
+					spring_protocol::MyBattleStatus::player(spring_protocol::Sync::Synced, 1, 1)
+						.bits();
 				write
-					.write_all(format!("MYBATTLESTATUS {bits} 255\nSAYBATTLE hello from the terminal\n").as_bytes())
+					.write_all(
+						format!("MYBATTLESTATUS {bits} 255\nSAYBATTLE hello from the terminal\n")
+							.as_bytes(),
+					)
 					.await
 					.unwrap();
 			}

@@ -715,6 +715,25 @@ export function SettingsView() {
 					</Section>
 
 					<Section id='servers'>
+						<Row>
+							<label class='row'>
+								<input
+									type='checkbox'
+									checked={draft.lan.enabled}
+									onChange={(e) =>
+										setDraft('lan', 'enabled', e.currentTarget.checked)
+									}
+								/>
+								Games on the local network
+							</label>
+							<p class='muted'>
+								Play with people on your network with no server in between.
+								Everything else here talks to a server you chose; this listens
+								for rooms announced nearby, and hosting one tells the network
+								your name and what you are playing. Off, nothing of it runs and
+								the row below does not appear.
+							</p>
+						</Row>
 						<ServerRows draft={draft} setDraft={setDraft} settle={settle} />
 					</Section>
 
@@ -837,6 +856,7 @@ export function SettingsView() {
 export function blankSettings(): Settings {
 	return {
 		$schema: null,
+		lan: { enabled: false },
 		servers: [],
 		account: { rememberPassword: false, autoLogin: false },
 		connection: { idleDisconnectMinutes: 60 },

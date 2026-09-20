@@ -21,12 +21,16 @@ export const isLan = (entry: { host: string }): boolean =>
  * the game and picks what it is played on, since it is their engine that
  * runs it. Two readings are live, because who the founder is arrives with
  * the room.
+ *
+ * Nobody is waiting on a ready flag either -- the founder presses Start when
+ * they like -- so there is no button for one, and the room reports everyone
+ * ready rather than leaving a red mark beside every name.
  */
 export function lanCaps(founder: () => boolean): RoomCaps {
 	return {
 		spads: false,
 		chat: true,
-		ready: true,
+		ready: false,
 		get startsGame() {
 			return founder()
 		},

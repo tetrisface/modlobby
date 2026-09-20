@@ -45,6 +45,9 @@ describe('what a LAN room may do', () => {
 		const caps = lanCaps(() => founder)
 		expect(caps.spads).toBe(false)
 		expect(caps.plays).toBe(true)
+		// Nobody is waiting on a flag here, so no button offers one; the room
+		// reports every seat ready instead.
+		expect(caps.ready).toBe(false)
 		expect(caps.startsGame).toBe(false)
 		expect(caps.picksContent).toBe(false)
 		founder = true

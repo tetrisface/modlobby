@@ -120,6 +120,19 @@ export function BattleList() {
 		}),
 		...heardRows(),
 	])
+	/**
+	 * Every server there is something to leave out of: the ones logged in to,
+	 * and any other with a room in the list. The second half is the LAN, whose
+	 * rooms are heard off the network with no session behind them -- it had
+	 * rows here and no chip to hide them with. Read off `all`, before anything
+	 * is left out, so a server switched off keeps the chip that switches it
+	 * back on.
+	 */
+	const listed = createMemo(
+		() => [...new Set([...readyServers(), ...all().map((row) => row.server)])],
+		[],
+		{ equals: (a, b) => a.join('\n') === b.join('\n') },
+	)
 	const sorted = createMemo(() =>
 		arrange(
 			all().filter((row) => !leftOut().has(row.server)),
@@ -389,9 +402,9 @@ export function BattleList() {
 
 				{/* Only once there is a choice: with one server there is nothing
             to leave out. */}
-				<Show when={readyServers().length > 1}>
+				<Show when={listed().length > 1}>
 					<div class='filter-group' role='group' aria-label='Servers'>
-						<For each={readyServers()}>
+						<For each={listed()}>
 							{(server) => (
 								<Include
 									label={serverLabel(server)}

@@ -468,7 +468,7 @@ impl Room {
 			Member {
 				peer,
 				script_password: script_password.clone(),
-				bits: 0,
+				bits: READY,
 				colour: 0,
 			},
 		));
@@ -532,6 +532,9 @@ impl Room {
 		let Some(member) = self.member(name) else {
 			return Vec::new();
 		};
+		// `force` reads these back and writes them out again, so setting it
+		// here is also what keeps a moved or bonused seat ready.
+		let bits = bits | READY;
 		member.bits = bits;
 		member.colour = colour;
 		vec![
@@ -752,6 +755,15 @@ impl Room {
 	}
 }
 
+/// The ready bit, which a room on the LAN keeps set for everyone.
+///
+/// There is nothing here to be ready *for*: the founder starts the game when
+/// they choose, and no host, vote or countdown is reading the flag. Left to a
+/// client that never sets it, the mark sits red beside every name all evening
+/// and means nothing. So the room says what is true of it instead, and it
+/// says it once, for every client that joins rather than only for ours.
+const READY: u32 = 1 << 1;
+
 /// The bits of a decoded status, the mirror of `BattleStatus::from_bits`.
 pub(crate) fn bits_of(status: BattleStatus) -> u32 {
 	let team = u32::from(status.team);
@@ -836,6 +848,27 @@ mod tests {
 		assert!(to(&out, HOST).contains(&"ADDUSER bob ?? 2 modlobby:0.1".to_owned()));
 	}
 
+	/// Nothing on the LAN waits for a ready flag, so the room keeps it set:
+	/// the mark beside a name says "here", not "still deciding".
+	#[test]
+	fn every_seat_is_ready_whatever_the_client_sent() {
+		let mut room = Room::new(config(Policy::Open));
+		seated(&mut room, HOST, "ann", "1111");
+		seated(&mut room, GUEST, "bob", "4242");
+		let bits = MyBattleStatus::player(Sync::Synced, 1, 1).bits();
+		assert!(!BattleStatus::from_bits(bits).ready, "the client says no");
+		let out = room.apply(GUEST, &format!("MYBATTLESTATUS {bits} 255"), IP);
+		let said = to(&out, GUEST)
+			.into_iter()
+			.find(|line| line.starts_with("CLIENTBATTLESTATUS"))
+			.expect("the room says so");
+		let sent: u32 = said.split(' ').nth(2).unwrap().parse().unwrap();
+		let status = BattleStatus::from_bits(sent);
+		assert!(status.ready, "the room says yes");
+		// And nothing else about the seat was touched on the way through.
+		assert_eq!((status.team, status.ally_team, status.player), (1, 1, true));
+	}
+
 	#[test]
 	fn a_name_already_here_is_refused_with_a_free_one() {
 		let mut room = Room::new(config(Policy::Open));
@@ -866,6 +899,7 @@ mod tests {
 	fn the_join_replay_is_in_the_order_the_client_reads_it() {
 		let mut room = Room::new(config(Policy::Open));
 		seated(&mut room, HOST, "ann", "1111");
+		// 4195328 is a synced player on team 0; the room adds ready (2) to it.
 		room.apply(HOST, "MYBATTLESTATUS 4195328 255", IP);
 		room.apply(HOST, "SAYBATTLE !bSet startmetal 1000", IP);
 		room.apply(HOST, "ADDBOT Bot1 4194304 16 BARb", IP);
@@ -876,7 +910,7 @@ mod tests {
 			[
 				"JOINBATTLE 1 0",
 				"SETSCRIPTTAGS game/modoptions/startmetal=1000",
-				"CLIENTBATTLESTATUS ann 4195328 255",
+				"CLIENTBATTLESTATUS ann 4195330 255",
 				"ADDBOT 1 Bot1 ann 4194304 16 BARb",
 				"REQUESTBATTLESTATUS",
 				"JOINEDBATTLE 1 bob",
@@ -936,11 +970,14 @@ mod tests {
 		seated(&mut room, HOST, "ann", "1111");
 		seated(&mut room, GUEST, "bob", "4242");
 		let bits = MyBattleStatus::player(Sync::Synced, 0, 0).bits();
+		// What comes back is what was sent plus the ready bit the room keeps
+		// set; `every_seat_is_ready_whatever_the_client_sent` is about that.
+		let echoed = bits | READY;
 		let out = room.apply(GUEST, &format!("MYBATTLESTATUS {bits} 255"), IP);
 		assert_eq!(
 			to(&out, HOST),
 			[
-				format!("CLIENTBATTLESTATUS bob {bits} 255"),
+				format!("CLIENTBATTLESTATUS bob {echoed} 255"),
 				"UPDATEBATTLEINFO 1 1 0 0 Supreme Isthmus v2.1".to_owned()
 			]
 		);

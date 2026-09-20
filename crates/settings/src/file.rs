@@ -309,8 +309,8 @@ mod tests {
 					channels: vec!["main".into(), "newbies".into()],
 					..crate::model::ServerEntry::bar()
 				},
-				// Every list gets the local network, this one included.
-				crate::model::ServerEntry::lan(),
+				// No local network: it is off until it is asked for, and a
+				// file from before it existed never asked.
 			]
 		);
 		assert!(settings.account.remember_password && settings.account.auto_login);
@@ -362,13 +362,7 @@ mod tests {
 		)
 		.unwrap();
 		let reloaded = store.reload().unwrap().unwrap();
-		assert_eq!(
-			reloaded.servers,
-			vec![
-				crate::model::ServerEntry::bar(),
-				crate::model::ServerEntry::lan()
-			]
-		);
+		assert_eq!(reloaded.servers, vec![crate::model::ServerEntry::bar()]);
 	}
 
 	#[test]
