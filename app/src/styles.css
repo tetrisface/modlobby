@@ -676,7 +676,7 @@ textarea {
 /* A game newer than the room is set to. Beside the name because it is about
    the name, and gone the moment it is taken -- so it never sits here as
    decoration. */
-.card-upgrade {
+.card-act {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
@@ -686,15 +686,20 @@ textarea {
 	margin-left: 0.3125rem;
 	vertical-align: -0.1875rem;
 	border-radius: 0.25rem;
+	color: var(--muted);
+}
+
+/* A newer version is news; a link out to the map's page is not. */
+.card-act.up {
 	color: var(--accent);
 }
 
-.card-upgrade:hover,
-.card-upgrade:focus-visible {
+.card-act:hover,
+.card-act:focus-visible {
 	background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
-.card-upgrade .icon {
+.card-act .icon {
 	width: 1rem;
 	height: 1rem;
 }
@@ -3075,7 +3080,7 @@ input[type='checkbox'].v-edit {
    The skirmish is a room now, so what is left of its own styles is the list of
    installed maps, in a sheet over the room rather than a column beside it. */
 .sheet-card.map-picker {
-	width: min(45rem, calc(100vw - 40px));
+	width: min(60rem, calc(100vw - 40px));
 	max-height: calc(100vh - 80px);
 	gap: 0.625rem;
 	overflow: hidden;
@@ -3145,6 +3150,97 @@ input[type='checkbox'].v-edit {
 	display: flex;
 	flex-direction: column;
 	gap: 0.0625rem;
+}
+
+/* Maps are chosen by looking at them, so the list is their pictures. As many
+   columns as the sheet fits, each card the width the tile is cut at. */
+.map-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(9.375rem, 1fr));
+	gap: 0.5rem;
+	overflow-y: auto;
+	min-height: 0;
+	padding-right: 0.25rem;
+}
+
+.map-grid > .muted {
+	grid-column: 1 / -1;
+}
+
+.map-card {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+	padding: 0.25rem;
+	text-align: left;
+	background: var(--sunken);
+	border: 1px solid var(--line);
+	border-radius: 3px;
+}
+
+.map-card:hover {
+	border-color: var(--accent);
+}
+
+.map-card.on {
+	border-color: var(--accent);
+	background: var(--raised);
+}
+
+.map-card .map-pic {
+	width: 100%;
+	aspect-ratio: 1;
+	border-radius: 2px;
+	background-color: var(--panel);
+}
+
+/* A map this machine does not have is offered all the same -- the room
+   fetches it, or the host already has it -- but it is not the same offer. */
+.map-card.absent .map-pic {
+	opacity: 0.55;
+}
+
+.map-card-name {
+	font-size: 0.75rem;
+	color: var(--text);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.map-card-facts {
+	display: flex;
+	align-items: baseline;
+	gap: 0.375rem;
+	font-family: var(--mono);
+	font-size: 0.6875rem;
+	color: var(--faint);
+	font-variant-numeric: tabular-nums;
+}
+
+.map-card-facts .map-players {
+	margin-left: auto;
+}
+
+.map-card-facts .map-absent {
+	margin-left: auto;
+	font-family: var(--sans, inherit);
+	color: var(--warn, var(--muted));
+}
+
+/* The picker's header carries a search, a sort and a filter, so it wraps
+   rather than squeezing the search to nothing. */
+.map-picker .ed-head {
+	flex-wrap: wrap;
+}
+
+.map-held {
+	display: flex;
+	align-items: center;
+	gap: 0.3125rem;
+	font-size: 0.75rem;
+	color: var(--muted);
+	white-space: nowrap;
 }
 
 /* ---- what you can do about a person ---- */

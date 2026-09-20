@@ -508,37 +508,42 @@ export function Room() {
 							<div class='card-meta'>
 								<span>
 									Map{' '}
-									{/* Where the map is ours to choose, its name is the way to
-                      choose it. Where it is the host's, the name is a link to
-                      the page Chobby opens for a map, so it lands where people
-                      already expect it to. */}
-									<Show
-										when={room.caps.picksContent}
-										fallback={
-											<b
-												class='chat-link'
+									{/* The name opens the map list, in every room: where the
+                      room is ours that sets the map, and where it is the
+                      host's it asks for one with `!map`, which is how anyone
+                      asks. The page Chobby opens for a map is still here,
+                      behind the arrow, where it is a second thing to want
+                      rather than the only one on offer. */}
+									<b
+										class='chat-link'
+										title={
+											room.caps.picksContent
+												? 'Play a different map'
+												: 'Ask the host for a different map'
+										}
+										onClick={() => setPicking('map')}
+									>
+										{b().mapName || 'choose one'}
+									</b>
+									<Show when={b().mapName}>
+										{(name) => (
+											<button
+												class='card-act'
 												title='Open this map on beyondallreason.info'
+												aria-label={`Open ${name()} on beyondallreason.info`}
 												onClick={() =>
 													void api
 														.openUrl(
-															`https://www.beyondallreason.info/maps?mapname=${encodeURIComponent(b().mapName)}`,
+															`https://www.beyondallreason.info/maps?mapname=${encodeURIComponent(name())}`,
 														)
 														.catch((error) =>
 															pushNotice('warning', describeError(error)),
 														)
 												}
 											>
-												{b().mapName}
-											</b>
-										}
-									>
-										<b
-											class='chat-link'
-											title='Play a different map'
-											onClick={() => setPicking('map')}
-										>
-											{b().mapName || 'choose one'}
-										</b>
+												<Glyph id='act-external' />
+											</button>
+										)}
 									</Show>
 								</span>
 								{/* Whose room it is, which is only worth saying when it is
@@ -573,7 +578,7 @@ export function Room() {
 									<Show when={newerGame()}>
 										{(version) => (
 											<button
-												class='card-upgrade'
+												class='card-act up'
 												title={`Update to ${version()}`}
 												aria-label={`Update the game to ${version()}`}
 												onClick={() => void upgradeGame(version())}

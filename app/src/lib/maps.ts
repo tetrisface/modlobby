@@ -41,6 +41,16 @@ export const TILES = {
 	nav: { width: 40, height: 28 },
 } as const satisfies Record<string, Tile>
 
+/**
+ * `.map-card .map-pic` in the map picker's grid, which stretches from its
+ * 150px minimum; asked for at the wide end so it is never scaled up much.
+ *
+ * Apart from `TILES` because that is the list of sizes warmed ahead, and a
+ * thousand map cards are not worth making for a picker nobody has opened.
+ * The grid asks as it scrolls instead.
+ */
+export const CARD_TILE = { width: 180, height: 180 } as const satisfies Tile
+
 /** Where an earlier version kept its own copy; shed once, then never seen. */
 const OLD_CACHE_KEY = 'modlobby.mapImages'
 
@@ -75,6 +85,15 @@ async function index(): Promise<MapIndex | null> {
  */
 export async function mapNames(): Promise<MapIndex['names']> {
 	return (await index())?.names ?? {}
+}
+
+/**
+ * What the map list shows about each map, by spring name: its author's name
+ * for it, how big it is, how many it takes. Empty where the index could not
+ * be read, which leaves a list of names and no columns.
+ */
+export async function mapFacts(): Promise<MapIndex['maps']> {
+	return (await index())?.maps ?? {}
 }
 
 /**
