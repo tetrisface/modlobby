@@ -593,17 +593,22 @@ fn remembered_skirmish(app: &State<'_, App>) -> Option<skirmish::Room> {
 
 /// A map's spring name, which is what a start script names it by.
 ///
-/// What is on disk is the archive's file name -- lowercased and underscored --
-/// and nothing there records the capitalisation, so it comes from BAR's
-/// published index, the same one the minimaps do. Offline the file name is
-/// used as-is: it is the best guess there is, and it is what the old skirmish
-/// form did.
+/// What is on disk is the archive's file name -- underscored, and lowercased
+/// if BAR put it there -- and nothing in it records the capitalisation, so
+/// the name comes from BAR's published index, the same one the minimaps do.
+/// A map the index has never heard of has its name read back out of the file
+/// name instead, which the engine can resolve; the file name itself, with its
+/// underscores, is a name it cannot.
 async fn spring_name(app: &State<'_, App>, map: String) -> String {
 	if map.is_empty() {
 		return map;
 	}
 	let index = app.map_index().await;
-	index.names.get(&map).cloned().unwrap_or(map)
+	index
+		.names
+		.get(&map)
+		.cloned()
+		.unwrap_or_else(|| content::map_name_from_stem(&map))
 }
 
 /// The name to play under.

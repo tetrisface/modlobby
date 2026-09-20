@@ -81,6 +81,20 @@ async function index(): Promise<MapIndex | null> {
 }
 
 /**
+ * A map's spring name, read back out of its archive's file name.
+ *
+ * For a map the published index has never heard of — installed by hand —
+ * where there is nothing else to go on. The underscores were spaces, and the
+ * engine resolves a name by splitting it on whitespace and looking for each
+ * word case-folded; a name with the underscores left in is one word matching
+ * nothing, and the game stops with `Dependent archive "..." not found`
+ * before it opens a window. The mirror of Rust's `map_name_from_stem`.
+ */
+export function mapNameFromFile(file: string): string {
+	return file.replace(/_/g, ' ')
+}
+
+/**
  * Archive file name (without extension) to the map's spring name.
  *
  * A start script needs the spring name, and nothing on disk records the

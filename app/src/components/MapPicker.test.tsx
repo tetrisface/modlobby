@@ -12,7 +12,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 vi.mock('../ipc/client', () => ({
 	api: {
 		skirmishOptions: () =>
-			Promise.resolve({ maps: ['bigsteppe_1.2', 'homemade_0.1'] }),
+			Promise.resolve({ maps: ['bigsteppe_1.2', 'homemade 0.1'] }),
 	},
 	describeError: (error: unknown) => String(error),
 }))
@@ -32,7 +32,11 @@ function about(some: Partial<MapFacts>): MapFacts {
 	}
 }
 
-vi.mock('../lib/maps', () => ({
+// The pictures and the index are Tauri's to answer; everything pure —
+// `mapNameFromFile` above all — is the real thing, so a mock cannot go on
+// agreeing with a rule the app has since changed.
+vi.mock('../lib/maps', async (actual) => ({
+	...(await actual<typeof import('../lib/maps')>()),
 	CARD_TILE: { width: 180, height: 180 },
 	ROW_TILE: { width: 44, height: 28 },
 	mapThumb: () => null,
@@ -101,10 +105,12 @@ describe('the map picker', () => {
 		await settle()
 		// Published maps by their author's name for them; a map on the disk the
 		// index has never heard of by its file name, because nothing else
-		// would list it at all.
+		// would list it at all -- with the underscores read back as the spaces
+		// they were, since `frostycove_v1.13` is a name the engine resolves to
+		// nothing and stops the game over.
 		expect(shown(container)).toEqual([
 			'Big Steppe',
-			'homemade_0.1',
+			'homemade 0.1',
 			'Long Valley',
 			'Tiny Isle',
 		])
@@ -142,7 +148,7 @@ describe('the map picker', () => {
 			'Big Steppe',
 			'Long Valley',
 			'Tiny Isle',
-			'homemade_0.1',
+			'homemade 0.1',
 		])
 
 		const onDisk = container.querySelector(
@@ -150,7 +156,7 @@ describe('the map picker', () => {
 		) as HTMLInputElement
 		fireEvent.click(onDisk)
 		await settle()
-		expect(shown(container)).toEqual(['Big Steppe', 'homemade_0.1'])
+		expect(shown(container)).toEqual(['Big Steppe', 'homemade 0.1'])
 	})
 
 	test('the list sorts by a clicked column, and turns round on a second click', async () => {
@@ -179,7 +185,7 @@ describe('the map picker', () => {
 			'Big Steppe',
 			'Long Valley',
 			'Tiny Isle',
-			'homemade_0.1',
+			'homemade 0.1',
 		])
 		expect(header('Size').getAttribute('aria-sort')).toBe('descending')
 
@@ -191,7 +197,7 @@ describe('the map picker', () => {
 			'Tiny Isle',
 			'Long Valley',
 			'Big Steppe',
-			'homemade_0.1',
+			'homemade 0.1',
 		])
 		expect(header('Size').getAttribute('aria-sort')).toBe('ascending')
 

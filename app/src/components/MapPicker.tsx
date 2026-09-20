@@ -1,7 +1,13 @@
 import { For, Show, createMemo, createResource, createSignal } from 'solid-js'
 import type { MapFacts } from '../ipc/bindings/MapFacts'
 import { api, describeError } from '../ipc/client'
-import { CARD_TILE, ROW_TILE, mapFacts, mapNames } from '../lib/maps'
+import {
+	CARD_TILE,
+	ROW_TILE,
+	mapFacts,
+	mapNameFromFile,
+	mapNames,
+} from '../lib/maps'
 import { localStore, readFlag, writeFlag } from '../lib/resize'
 import { pushNotice } from '../store/chat'
 import { MapPicture } from './MapPicture'
@@ -168,7 +174,11 @@ export function MapPicker(props: {
 		const index = names() ?? {}
 		const known = facts() ?? {}
 		const files = options()?.maps ?? []
-		const held = new Set(files.map((file) => index[file] ?? file))
+		// A map nothing publishes is named by its file, which is a name the
+		// engine cannot resolve until its underscores are spaces again.
+		const held = new Set(
+			files.map((file) => index[file] ?? mapNameFromFile(file)),
+		)
 		const listed = new Map<string, Entry>()
 
 		for (const [spring, about] of Object.entries(known))
