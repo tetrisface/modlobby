@@ -7,7 +7,8 @@ import { pushNotice } from '../store/chat'
 const SHOWN = 400
 
 /**
- * The maps on this machine, to pick one to play.
+ * The maps on this machine, then every other map BAR publishes, to pick one
+ * to play. A map not here yet is a download away, and a first run has none.
  *
  * Installed maps are archive file names — lowercased and underscored — and a
  * room names its map the way the engine does. Nothing on disk records the
@@ -19,7 +20,7 @@ const SHOWN = 400
 export function MapPicker(props: {
 	/** The room's map, so the one already chosen is marked. */
 	current: string
-	onPick: (springName: string) => void
+	onPick: (springName: string, installed: boolean) => void
 	onClose: () => void
 }) {
 	const [options] = createResource(() =>
@@ -27,14 +28,26 @@ export function MapPicker(props: {
 	)
 	const [names] = createResource(mapNames)
 
-	const maps = createMemo(() => {
+	const maps = createMemo((): Item[] => {
 		const files = options()?.maps ?? []
 		const index = names() ?? {}
-		return files.map((file) => ({
+		const installed = files.map((file) => ({
 			value: index[file] ?? file,
 			label: index[file] ?? file,
 			known: index[file] !== undefined,
+			installed: true,
 		}))
+		const have = new Set(installed.map((entry) => entry.value))
+		const published = Object.values(index)
+			.filter((name) => !have.has(name))
+			.sort((a, b) => a.localeCompare(b))
+			.map((name) => ({
+				value: name,
+				label: name,
+				known: true,
+				installed: false,
+			}))
+		return [...installed, ...published]
 	})
 
 	return (
@@ -47,7 +60,12 @@ export function MapPicker(props: {
 					? 'The map index could not be reached, so some of these are listed by file name. Picking one still works; the engine may not find it.'
 					: null
 			}
-			onPick={props.onPick}
+			onPick={(value) =>
+				props.onPick(
+					value,
+					maps().find((entry) => entry.value === value)?.installed ?? false,
+				)
+			}
 			onClose={props.onClose}
 		/>
 	)
@@ -89,7 +107,13 @@ export function VersionPicker(props: {
 	)
 }
 
-type Item = { value: string; label: string; known: boolean }
+type Item = {
+	value: string
+	label: string
+	known: boolean
+	/** On this machine already; else picking it asks for a download. */
+	installed?: boolean
+}
 
 /** One list, searchable, over the room. */
 function Picker(props: {
@@ -146,6 +170,9 @@ function Picker(props: {
 								onClick={() => props.onPick(entry.value)}
 							>
 								<span class='room-name'>{entry.label}</span>
+								<Show when={entry.installed === false}>
+									<span class='muted'>download</span>
+								</Show>
 							</button>
 						)}
 					</For>

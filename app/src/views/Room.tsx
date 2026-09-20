@@ -468,9 +468,14 @@ export function Room() {
 						<Show when={picking() === 'map'}>
 							<MapPicker
 								current={b().mapName}
-								onPick={(name) => {
+								onPick={(name, installed) => {
 									setPicking(null)
-									void picked(room.io.setMap, 'map', name)
+									// A map picked from the published list is a request for
+									// it, the way joining a room is.
+									void picked(room.io.setMap, 'map', name).then(() => {
+										if (!installed && (settings()?.play.autoDownload ?? true))
+											void room.io.downloadMissing().catch(() => {})
+									})
 								}}
 								onClose={() => setPicking(null)}
 							/>
