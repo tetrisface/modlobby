@@ -1,3 +1,12 @@
-# ts-rs writes the TypeScript bindings here on `cargo test` (lobby-ui).
+# ts-rs writes the TypeScript bindings on `cargo test`, and it writes them on
+# *every* test run rather than only when a type changed. Pointed at the repo,
+# that left a hundred-odd generated files showing as modified after any
+# `cargo test -p ...` -- in ts-rs's own quoting, until something put them back
+# in the house style.
+#
+# So the default is a throwaway under `target/`, and the one step that means
+# to regenerate them says so by setting this to `app/src/ipc/bindings`
+# (`just bindings`, and the same line in CI). Cargo's `[env]` yields to a
+# variable already in the environment, so naming it is the whole override.
 [env]
-TS_RS_EXPORT_DIR = { value = "app/src/ipc/bindings", relative = true }
+TS_RS_EXPORT_DIR = { value = "target/ts-bindings", relative = true }

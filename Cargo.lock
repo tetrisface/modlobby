@@ -872,6 +872,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "sevenz-rust2",
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
@@ -879,6 +880,7 @@ dependencies = [
  "tracing",
  "ts-rs",
  "wiremock",
+ "zip 6.0.0",
 ]
 
 [[package]]

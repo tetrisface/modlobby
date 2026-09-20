@@ -1,13 +1,7 @@
 import { For, Show, createMemo, createResource, createSignal } from 'solid-js'
 import type { MapFacts } from '../ipc/bindings/MapFacts'
 import { api, describeError } from '../ipc/client'
-import {
-	CARD_TILE,
-	ROW_TILE,
-	mapFacts,
-	mapNameFromFile,
-	mapNames,
-} from '../lib/maps'
+import { CARD_TILE, ROW_TILE, mapFacts } from '../lib/maps'
 import { localStore, readFlag, writeFlag } from '../lib/resize'
 import { pushNotice } from '../store/chat'
 import { MapPicture } from './MapPicture'
@@ -148,7 +142,6 @@ export function MapPicker(props: {
 	const [options] = createResource(() =>
 		api.skirmishOptions().catch(() => null),
 	)
-	const [names] = createResource(mapNames)
 	const [facts] = createResource(mapFacts)
 
 	const [search, setSearch] = createSignal('')
@@ -171,14 +164,11 @@ export function MapPicker(props: {
 	}
 
 	const entries = createMemo((): Entry[] => {
-		const index = names() ?? {}
 		const known = facts() ?? {}
-		const files = options()?.maps ?? []
-		// A map nothing publishes is named by its file, which is a name the
-		// engine cannot resolve until its underscores are spaces again.
-		const held = new Set(
-			files.map((file) => index[file] ?? mapNameFromFile(file)),
-		)
+		// Spring names already: Rust reads the archive of a map the index
+		// does not know rather than anybody guessing one off its file name,
+		// which is only right when the file was named after the map.
+		const held = new Set(options()?.maps ?? [])
 		const listed = new Map<string, Entry>()
 
 		for (const [spring, about] of Object.entries(known))

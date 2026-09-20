@@ -8,11 +8,15 @@ vi.mock('@tauri-apps/api/core', () => ({
 	convertFileSrc: (path: string) => path,
 }))
 
-/** What this machine has, as `skirmishOptions` reports it: archive stems. */
+/**
+ * What this machine has, as `skirmish_options` answers: spring names, not
+ * file names. Rust reads the archive of a map the published index does not
+ * know, so nothing on this side guesses one.
+ */
 vi.mock('../ipc/client', () => ({
 	api: {
 		skirmishOptions: () =>
-			Promise.resolve({ maps: ['bigsteppe_1.2', 'homemade 0.1'] }),
+			Promise.resolve({ maps: ['Big Steppe 1.2', 'homemade 0.1'] }),
 	},
 	describeError: (error: unknown) => String(error),
 }))

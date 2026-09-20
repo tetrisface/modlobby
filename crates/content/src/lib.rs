@@ -18,6 +18,7 @@ pub mod demo;
 pub mod game_cache;
 pub mod http;
 pub mod map_index;
+pub mod map_name;
 pub mod map_search;
 pub mod map_thumb;
 pub mod rapid;
@@ -360,6 +361,22 @@ impl Library {
 /// the archive is what that would take.
 pub fn map_name_from_stem(stem: &str) -> String {
 	stem.replace('_', " ")
+}
+
+impl Library {
+	/// The name a map calls itself, which is the name a room has to use.
+	///
+	/// The archive is asked before the file name is guessed from, because the
+	/// guess is only right when the file was named after the map: most of
+	/// BAR's are lowercase on disk and their maps are not. A guess that is
+	/// wrong does not read oddly, it stops the game starting --
+	/// `content::map_name` has the engine's own words for it.
+	pub fn map_spring_name(&self, stem: &str) -> String {
+		self.map_archive(stem)
+			.as_deref()
+			.and_then(map_name::of_archive)
+			.unwrap_or_else(|| map_name_from_stem(stem))
+	}
 }
 
 /// `Supreme Isthmus v2.1` → `supreme_isthmus_v2.1`, the archive naming BAR uses.

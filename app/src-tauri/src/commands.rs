@@ -520,11 +520,23 @@ pub async fn list_channels(app: State<'_, App>, server: String) -> Result<()> {
 
 /// What this machine can start a game with.
 #[tauri::command]
-pub fn skirmish_options(app: State<'_, App>) -> Result<SkirmishOptions> {
+pub async fn skirmish_options(app: State<'_, App>) -> Result<SkirmishOptions> {
 	let library = content::Library::new(data_dirs(&app)?);
+	// Spring names, not file names: what a room, a start script and `!map`
+	// all want. The published index answers for BAR's maps and the archive
+	// for everyone else's, so a picker never has to guess one.
+	let index = app.map_index().await;
+	let maps = library
+		.installed_map_files()
+		.into_iter()
+		.map(|stem| match index.names.get(&stem) {
+			Some(known) => known.clone(),
+			None => library.map_spring_name(&stem),
+		})
+		.collect();
 	Ok(SkirmishOptions {
 		games: library.installed_games(),
-		maps: library.installed_map_files(),
+		maps,
 		engines: library.installed_engines(),
 		ais: library.installed_ais(),
 	})
@@ -604,11 +616,15 @@ async fn spring_name(app: &State<'_, App>, map: String) -> String {
 		return map;
 	}
 	let index = app.map_index().await;
-	index
-		.names
-		.get(&map)
-		.cloned()
-		.unwrap_or_else(|| content::map_name_from_stem(&map))
+	if let Some(known) = index.names.get(&map) {
+		return known.clone();
+	}
+	// Not one BAR publishes: the archive is the only place its name is
+	// written down, and a map on the LAN is never anywhere else.
+	match data_dirs_of(app) {
+		Some(dirs) => content::Library::new(dirs).map_spring_name(&map),
+		None => content::map_name_from_stem(&map),
+	}
 }
 
 /// The name to play under.
