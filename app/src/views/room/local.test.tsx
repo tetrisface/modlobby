@@ -237,11 +237,14 @@ describe('the room with no server behind it', () => {
 	test('what needs somebody else is not drawn', async () => {
 		const { container, queryByText } = await open()
 		expect(queryByText('Balance')).toBeNull()
-		expect(queryByText('Host a public room')).toBeNull()
 		expect(queryByText('Leave room')).toBeNull()
-		// Nobody to host it for, and nobody to read its name.
-		expect(container.textContent).not.toContain('Host')
+		// No server to ask for a room on, and nobody to read its name.
+		expect(queryByText('Host a public room')).toBeNull()
+		expect(queryByText('Private room')).toBeNull()
 		expect(container.querySelector('.room-title button')).toBeNull()
+		// The one kind of hosting a room of your own can offer: this same
+		// game, with a door in it. The setting it needs is off until pressed.
+		expect(queryByText('Host on LAN')).not.toBeNull()
 		// A preset, though, this room can carry.
 		expect(localRoom().presets()).not.toBeNull()
 	})

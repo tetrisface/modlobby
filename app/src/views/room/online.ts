@@ -26,6 +26,8 @@ const ONLINE: RoomCaps = {
 	get plays() {
 		return playsOnline()
 	},
+	// Somebody else's room; there is nothing of ours here to open.
+	opensToLan: false,
 }
 
 /**

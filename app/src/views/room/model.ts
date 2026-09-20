@@ -99,6 +99,15 @@ export type RoomCaps = {
 	 * server, where the only engine available may not be used.
 	 */
 	plays: boolean
+	/**
+	 * This room could be opened to the local network as it stands.
+	 *
+	 * Only a skirmish: an online room is somebody else's to open, and one on
+	 * the LAN is already open. It is a capability rather than a question about
+	 * which room this is, so that the button asking for it does not have to
+	 * work that out from what the room is not.
+	 */
+	opensToLan: boolean
 }
 
 /**

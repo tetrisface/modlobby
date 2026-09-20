@@ -48,6 +48,9 @@ describe('what a LAN room may do', () => {
 		// Nobody is waiting on a flag here, so no button offers one; the room
 		// reports every seat ready instead.
 		expect(caps.ready).toBe(false)
+		// Already open to the network: the button that opens one belongs to
+		// the skirmish, not to a room that is one.
+		expect(caps.opensToLan).toBe(false)
 		expect(caps.startsGame).toBe(false)
 		expect(caps.picksContent).toBe(false)
 		founder = true

@@ -39,6 +39,8 @@ export function lanCaps(founder: () => boolean): RoomCaps {
 			return founder()
 		},
 		plays: true,
+		// Already open; this is what the button makes.
+		opensToLan: false,
 	}
 }
 

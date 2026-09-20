@@ -5,6 +5,7 @@ import { Select } from '../components/Select'
 import { api, describeError } from '../ipc/client'
 import { mapNames } from '../lib/maps'
 import { pushNotice } from '../store/chat'
+import { lobby } from '../store/lobby'
 import { lanApi } from './api'
 
 type Policy = 'open' | 'password' | 'approve'
@@ -18,6 +19,9 @@ export function LanHostForm() {
 	const navigate = useNavigate()
 	const [options] = createResource(() => api.skirmishOptions())
 	const [names] = createResource(mapNames)
+	// The room's own title, which a skirmish calls itself "Skirmish"; a room
+	// on the network wants your name on it, so an untouched one is left blank
+	// for the placeholder to speak.
 	const [title, setTitle] = createSignal('')
 	const [policy, setPolicy] = createSignal<Policy>('open')
 	const [password, setPassword] = createSignal('')
@@ -28,12 +32,22 @@ export function LanHostForm() {
 	const [pickingMap, setPickingMap] = createSignal(false)
 	const [busy, setBusy] = createSignal(false)
 
-	// The newest of each is the useful guess, as a skirmish guesses it.
-	const engineChosen = () => engine() ?? options()?.engines[0] ?? ''
-	const gameChosen = () => game() ?? options()?.games[0] ?? ''
+	/**
+	 * The skirmish room, which is where Host on LAN is pressed: the game you
+	 * just set up is the one you mean to open, so it is what this opens on.
+	 * It outlives the room being closed, so coming here from the Servers card
+	 * lands on the last thing you played rather than on nothing.
+	 */
+	const from = () => lobby.skirmish?.battle
+
+	// Then the newest of each, the way a skirmish guesses it from cold.
+	const engineChosen = () =>
+		engine() ?? from()?.engineVersion ?? options()?.engines[0] ?? ''
+	const gameChosen = () =>
+		game() ?? from()?.gameName ?? options()?.games[0] ?? ''
 	const mapChosen = () => {
-		const chosen = map()
-		if (chosen !== null) return chosen
+		const chosen = map() ?? from()?.mapName
+		if (chosen) return chosen
 		const first = options()?.maps[0]
 		return first === undefined ? '' : (names()?.[first] ?? first)
 	}
