@@ -53,6 +53,27 @@ type Target =
 			x: number
 			y: number
 	  }
+	/**
+	 * A whole team: the same menu, run over everybody on it in turn.
+	 *
+	 * The rows are gathered by whoever opened it, already filtered to the ones
+	 * we may act on -- which is the same question a single row asks, asked
+	 * once per row.
+	 */
+	| {
+			kind: 'team'
+			/** `Team 2`: the heading, and what `name()` reads off a target. */
+			name: string
+			/** What the actions would touch, said under the heading. */
+			holds: string
+			moves?: Moves
+			/** Opens the Add AI sheet on this team. */
+			addAi?: () => void
+			/** Our own AIs on it, cleared in one go. */
+			removeBots?: () => Promise<void>
+			x: number
+			y: number
+	  }
 
 const [openFor, setOpenFor] = createSignal<Target | null>(null)
 
@@ -96,6 +117,34 @@ export function showBotMenu(
 	})
 }
 
+/**
+ * Opens the menu for a whole team at the pointer.
+ *
+ * `holds` says what the actions would touch -- `2 players · 3 AIs` -- because
+ * a batch that names no size is one you have to count yourself.
+ */
+export function showTeamMenu(
+	allyTeam: number,
+	holds: string,
+	event: MouseEvent,
+	what: {
+		moves?: Moves
+		addAi?: () => void
+		removeBots?: () => Promise<void>
+	} = {},
+): void {
+	event.preventDefault()
+	event.stopPropagation()
+	setOpenFor({
+		kind: 'team',
+		name: `Team ${allyTeam + 1}`,
+		holds,
+		...what,
+		x: event.clientX,
+		y: event.clientY,
+	})
+}
+
 export function PlayerMenu() {
 	/** Whether the menu shows the bonus panel in place of its entries. */
 	const [picking, setPicking] = createSignal(false)
@@ -128,6 +177,10 @@ export function PlayerMenu() {
 				const bot = () => {
 					const t = target()
 					return t.kind === 'bot' ? t : undefined
+				}
+				const team = () => {
+					const t = target()
+					return t.kind === 'team' ? t : undefined
 				}
 				const name = () => {
 					const t = target()
@@ -201,6 +254,16 @@ export function PlayerMenu() {
 				}
 
 				const items = () => {
+					const whole = team()
+					if (whole) {
+						const add = whole.addAi
+						const clear = whole.removeBots
+						return [
+							...placings(openFor()?.moves),
+							...(add ? [['Add AI', add] as Entry] : []),
+							...(clear ? [['Remove the AIs', clear] as Entry] : []),
+						]
+					}
 					const ai = bot()
 					if (ai) {
 						const edit = ai.edit
@@ -270,6 +333,16 @@ export function PlayerMenu() {
 					return entries
 				}
 
+				/**
+				 * One order, whoever the menu is for: a place you can learn once
+				 * rather than a list that changes shape with what is on the row.
+				 * Numeric, so `team 10` comes after `team 9` and not after `team 1`.
+				 */
+				const sorted = () =>
+					[...items()].sort(([a], [b]) =>
+						a.localeCompare(b, undefined, { numeric: true }),
+					)
+
 				return (
 					<div
 						ref={root}
@@ -282,6 +355,11 @@ export function PlayerMenu() {
 								<div class='player-menu-about muted'>
 									{ai().bot.ai} · {ai().bot.owner}
 								</div>
+							)}
+						</Show>
+						<Show when={team()}>
+							{(whole) => (
+								<div class='player-menu-about muted'>{whole().holds}</div>
 							)}
 						</Show>
 						<Show when={user()}>
@@ -322,7 +400,7 @@ export function PlayerMenu() {
 								/>
 							}
 						>
-							<For each={items()}>
+							<For each={sorted()}>
 								{([label, run, stay]) => (
 									<button
 										onClick={() =>

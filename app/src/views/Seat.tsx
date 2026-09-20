@@ -1,5 +1,12 @@
 import { Select } from '../components/Select'
-import { For, Show, createEffect, createMemo, createSignal } from 'solid-js'
+import {
+	For,
+	Show,
+	createEffect,
+	createMemo,
+	createSignal,
+	onCleanup,
+} from 'solid-js'
 import { SideIcon } from '../components/icons'
 import type { AiChoice } from '../ipc/bindings/AiChoice'
 import { api, describeError } from '../ipc/client'
@@ -385,6 +392,25 @@ export function Seat() {
 	)
 }
 
+/**
+ * Asking for an AI from somewhere other than the seat bar: a team's own menu
+ * asks for one on that team.
+ *
+ * A signal rather than a prop because the sheet lives inside the seat bar and
+ * the team headers are three components away, with nothing else to say to
+ * each other -- the same arrangement `PlayerMenu` uses for the row menus.
+ */
+const [addTo, setAddTo] = createSignal<number | null>(null)
+const [offered, setOffered] = createSignal(false)
+
+/** Whether there is an Add AI sheet on screen to open at all. */
+export const canAddAi = offered
+
+/** Opens it, set to `allyTeam`. */
+export function showAddAi(allyTeam: number): void {
+	setAddTo(allyTeam)
+}
+
 /** Colours the engine can tell apart at a glance, as 0xBBGGRR. */
 const BOT_COLOURS = [0x4b73f2, 0x3fd07f, 0x2fb8f0, 0x9e5ce8, 0x50a0ff, 0x8fd04b]
 
@@ -430,6 +456,19 @@ function AddAi(props: {
 			})
 			// No data directory means no AIs to run; the control just stays away.
 			.catch(() => setAis([]))
+	})
+
+	// What the team menus have to know: whether asking for one would open
+	// anything. False again the moment the room -- and this -- goes away.
+	createEffect(() => setOffered(ais().length > 0))
+	onCleanup(() => setOffered(false))
+
+	createEffect(() => {
+		const wanted = addTo()
+		if (wanted === null) return
+		setAlly(wanted)
+		setOpen(true)
+		setAddTo(null)
 	})
 
 	const chosen = () => ais().find((choice) => choice.name === ai())
@@ -481,7 +520,7 @@ function AddAi(props: {
 			<Show when={open()}>
 				<div class='sheet' onMouseDown={() => setOpen(false)}>
 					<form
-						class='sheet-card'
+						class='sheet-card add-ai'
 						onMouseDown={(event) => event.stopPropagation()}
 						onSubmit={(event) => {
 							event.preventDefault()

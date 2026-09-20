@@ -19,7 +19,8 @@ import { MapEditor } from '../components/MapEditor'
 import { MapPicker, VersionPicker, picked } from '../components/MapPicker'
 import { BotOptions } from '../components/BotOptions'
 import { MapPicture } from '../components/MapPicture'
-import { showPlayerMenu } from '../components/PlayerMenu'
+import { showPlayerMenu, showTeamMenu } from '../components/PlayerMenu'
+import type { Moves } from '../components/PlayerMenu'
 import {
 	BotRow,
 	EmptySeat,
@@ -44,6 +45,7 @@ import {
 	emptySeats,
 	freeTeam,
 	unusedBotName,
+	type Team,
 } from '../lib/roster'
 import {
 	dragHeight,
@@ -65,7 +67,7 @@ import { RoomTitle } from './RoomTitle'
 import { useRoom, type RoomModel } from './room/model'
 import { WatcherStack } from './room/Watchers'
 import { dragging } from '../lib/drag'
-import { Seat, sitOn } from './Seat'
+import { Seat, canAddAi, showAddAi, sitOn } from './Seat'
 import { movable, moveTo, setBonus, type Target } from './room/move'
 import { StartBoxes } from './StartBoxes'
 import { Setup } from './Setup'
@@ -166,8 +168,6 @@ export function Room() {
 	 */
 	const movesFor = (target: Target, on: number | null) => {
 		if (!movable(room, target)) return undefined
-		const say = (work: Promise<void>) =>
-			work.catch((error) => pushNotice('warning', describeError(error)))
 		return {
 			teams: allyTeams(),
 			on,
@@ -178,13 +178,114 @@ export function Room() {
 				? {
 						bonus: (percent: number) =>
 							say(setBonus(room, target, percent, on ?? 0)),
-						bonusNow:
-							target.kind === 'bot'
-								? target.handicap
-								: (room.users()[target.name]?.battleStatus?.handicap ?? 0),
+						bonusNow: bonusOf(target),
 					}
 				: {}),
 		}
+	}
+
+	/** One action, with its refusal said where it can be read. */
+	const say = (work: Promise<void>) =>
+		work.catch((error) => pushNotice('warning', describeError(error)))
+
+	/** What a row is already given, whoever is on it. */
+	const bonusOf = (target: Target): number => {
+		if (target.kind === 'bot') return target.handicap
+		const who = target.kind === 'me' ? room.me() : target.name
+		return (who === null ? 0 : room.users()[who]?.battleStatus?.handicap) ?? 0
+	}
+
+	/**
+	 * Everybody on a team we may act on, as the targets their own rows give.
+	 *
+	 * A row we could not move on its own is left out rather than refusing the
+	 * batch: a team with one stranger standing in it is still a team whose AIs
+	 * can be sent somewhere.
+	 */
+	const teamTargets = (team: Team): Target[] =>
+		[
+			...team.users.map((user): Target =>
+				user.name === room.me()
+					? { kind: 'me' }
+					: { kind: 'player', name: user.name },
+			),
+			...team.bots.map((bot): Target => ({
+				kind: 'bot',
+				name: bot.name,
+				mine: bot.owner === room.me(),
+				team: bot.status.team,
+				handicap: bot.status.handicap,
+				colour: bot.teamColour,
+			})),
+		].filter((target) => movable(room, target))
+
+	/** The row menu's own actions, over everybody on the team in turn. */
+	const teamMoves = (team: Team): Moves | undefined => {
+		const targets = teamTargets(team)
+		if (targets.length === 0) return undefined
+		// In turn, not at once: online every one of these is a line of chat,
+		// and the first refusal is the answer for all of them.
+		const each = async (run: (target: Target) => Promise<void>) => {
+			for (const target of targets) await run(target)
+		}
+		const given = targets.map(bonusOf)
+		const theirs = targets.filter((target) => target.kind !== 'me')
+		return {
+			teams: allyTeams(),
+			on: team.allyTeam,
+			to: (ally: number) => say(each((target) => moveTo(room, target, ally))),
+			// Nobody gives themselves a bonus, so our own seat sits this one out.
+			...(theirs.length > 0
+				? {
+						bonus: (percent: number) =>
+							say(
+								each((target) =>
+									target.kind === 'me'
+										? Promise.resolve()
+										: setBonus(room, target, percent, team.allyTeam),
+								),
+							),
+						// What they all have, or nothing when they differ: there is no
+						// one number to open the panel on.
+						bonusNow: given.every((n) => n === given[0]) ? (given[0] ?? 0) : 0,
+					}
+				: {}),
+		}
+	}
+
+	/** Our own AIs on a team, cleared in one go. */
+	const clearBots = (team: Team) => {
+		const mine = team.bots.filter((bot) => bot.owner === room.me())
+		if (mine.length === 0) return undefined
+		return async () => {
+			for (const bot of mine) await room.io.removeBot(bot.name)
+		}
+	}
+
+	/** `2 players · 3 AIs`: the size of what the team menu would change. */
+	const holds = (team: Team): string =>
+		[
+			team.users.length > 0 ? count(team.users.length, 'player') : null,
+			team.bots.length > 0 ? count(team.bots.length, 'AI') : null,
+		]
+			.filter((part) => part !== null)
+			.join(' · ')
+
+	/**
+	 * The team menu, from a press on the header. A press on the button in it
+	 * is that button's, exactly as it is on a row.
+	 */
+	const teamMenu = (team: Team, event: MouseEvent) => {
+		if ((event.target as Element | null)?.closest('button')) return
+		const moves = teamMoves(team)
+		const removeBots = clearBots(team)
+		const addAi = canAddAi() ? () => showAddAi(team.allyTeam) : undefined
+		if (!moves && !removeBots && !addAi) return
+		showTeamMenu(team.allyTeam, holds(team), event, {
+			moves,
+			addAi,
+			removeBots,
+		})
 	}
 
 	/**
@@ -628,7 +729,11 @@ export function Room() {
 												classList={{ tall: team().expected > TALL }}
 												data-ally={team().allyTeam}
 											>
-												<header class='team-head'>
+												<header
+													class='team-head'
+													onClick={(event) => teamMenu(team(), event)}
+													onContextMenu={(event) => teamMenu(team(), event)}
+												>
 													<span class='name'>Team {team().allyTeam + 1}</span>
 													<span class='count'>{team().expected}</span>
 													{/* Nothing to say where nobody is rated, which is

@@ -5,6 +5,7 @@ import {
 	PlayerMenu,
 	showBotMenu,
 	showPlayerMenu,
+	showTeamMenu,
 	type Moves,
 } from './PlayerMenu'
 
@@ -73,7 +74,7 @@ describe('the bonus, from the row menu', () => {
 			moves: moves(given),
 		})
 		await settle()
-		expect(labels(container)).toEqual(['Move to team 1', 'Bonus', 'Remove'])
+		expect(labels(container)).toEqual(['Bonus', 'Move to team 1', 'Remove'])
 
 		click(
 			[...container.querySelectorAll('button')].find(
@@ -106,9 +107,9 @@ describe('the bonus, from the row menu', () => {
 		})
 		await settle()
 		expect(labels(container)).toEqual([
-			'Move to team 1',
 			'Bonus',
 			'Edit',
+			'Move to team 1',
 			'Remove',
 		])
 		click(
@@ -119,6 +120,43 @@ describe('the bonus, from the row menu', () => {
 		await settle()
 		expect(opened).toBe(1)
 		expect(container.querySelector('.player-menu')).toBeNull()
+	})
+
+	test('a whole team offers the same menu, and says how big it is', async () => {
+		const given: number[] = []
+		const cleared: string[] = []
+		const { container } = render(() => <PlayerMenu />)
+		const added: number[] = []
+		showTeamMenu(1, '2 players · 3 AIs', press(), {
+			moves: moves(given),
+			addAi: () => added.push(1),
+			removeBots: () => {
+				cleared.push('all')
+				return Promise.resolve()
+			},
+		})
+		await settle()
+		expect(labels(container)).toEqual([
+			'Add AI',
+			'Bonus',
+			'Move to team 1',
+			'Remove the AIs',
+		])
+		expect(container.querySelector('.player-menu-name')?.textContent).toBe(
+			'Team 2',
+		)
+		expect(container.querySelector('.player-menu-about')?.textContent).toBe(
+			'2 players · 3 AIs',
+		)
+
+		click(
+			[...container.querySelectorAll('button')].find(
+				(b) => b.textContent === 'Remove the AIs',
+			) as HTMLElement,
+		)
+		await settle()
+		expect(cleared).toEqual(['all'])
+		expect(added, 'the entries left alone did not run').toEqual([])
 	})
 
 	test('a person offers it too, where the room lets us', async () => {
