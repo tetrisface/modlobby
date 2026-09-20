@@ -50,13 +50,13 @@ describe('sizing the interface', () => {
 		on(2560, 1440)
 		setScale(200)
 		resetScale()
-		expect(uiScale()).toBe(110)
+		expect(uiScale()).toBe(130)
 	})
 
-	test('which on an ordinary screen is full size', () => {
+	test('which on an ordinary screen is a notch above full size', () => {
 		on(1920, 1080)
 		setScale(180)
 		resetScale()
-		expect(uiScale()).toBe(100)
+		expect(uiScale()).toBe(120)
 	})
 })

@@ -31,16 +31,16 @@ describe('the range worth offering', () => {
 })
 
 describe('a screen nobody has chosen a size for', () => {
-	test('1080p is drawn as it is', () => {
-		expect(derived(1920, 1080)).toBe(100)
+	test('1080p is drawn a little larger', () => {
+		expect(derived(1920, 1080)).toBe(120)
 	})
 
 	test('a 2.5k screen is drawn larger without anyone asking', () => {
-		expect(derived(2560, 1440)).toBe(110)
+		expect(derived(2560, 1440)).toBe(130)
 	})
 
 	test('4k larger still', () => {
-		expect(derived(3840, 2160)).toBe(125)
+		expect(derived(3840, 2160)).toBe(150)
 	})
 })
 

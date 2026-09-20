@@ -48,13 +48,14 @@ export function bounds(
  *
  * Screen height in CSS pixels already accounts for the operating system's own
  * scaling, so a tall screen here really does mean physically smaller text.
- * Deliberately gentle: the nav is sized up on every display already, and
- * multiplying that again on a large one overshoots.
+ * A 1080p screen starts above 100% because the window is read from a desk
+ * chair, not a browser; the steps above it stay gentle, since the nav is
+ * sized up on every display already and multiplying that again overshoots.
  */
 export function derived(_width: number, height: number): number {
-	if (height >= 1800) return 125
-	if (height >= 1300) return 110
-	return 100
+	if (height >= 1800) return 150
+	if (height >= 1300) return 130
+	return 120
 }
 
 export function clamp(percent: number, width: number, height: number): number {
