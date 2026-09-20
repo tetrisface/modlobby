@@ -133,6 +133,26 @@ impl Room {
 	}
 
 	/// Names waiting for the founder's word, oldest first.
+	/// The map to hand over to a member asking for it, or `None` for anyone
+	/// else.
+	///
+	/// The name is the room's own -- whatever it is hosting this minute --
+	/// and never the caller's, so there is nothing in the request that could
+	/// name another file. Membership is proved with the script password that
+	/// member gave at `JOINBATTLE`: a secret the two of us share already,
+	/// which is what the game server will admit them by in a moment.
+	pub fn map_for(&self, name: &str, script_password: &str) -> Option<&str> {
+		let member = self
+			.members
+			.iter()
+			.find(|(held, _)| held == name)
+			.map(|(_, member)| member)?;
+		// Not `==` on the empty string: a room that admitted somebody with no
+		// password must not admit everybody.
+		let ours = member.script_password.as_str();
+		(!ours.is_empty() && ours == script_password).then_some(self.config.map.as_str())
+	}
+
 	pub fn pending(&self) -> Vec<String> {
 		self.pending.iter().map(|p| p.name.clone()).collect()
 	}
@@ -867,6 +887,35 @@ mod tests {
 		assert!(status.ready, "the room says yes");
 		// And nothing else about the seat was touched on the way through.
 		assert_eq!((status.team, status.ally_team, status.player), (1, 1, true));
+	}
+
+	/// Who the room will hand its map to, and who it will not. The password
+	/// is the one the member gave at `JOINBATTLE`; a room that let somebody
+	/// in with none must not thereby let everybody in.
+	#[test]
+	fn the_map_goes_to_a_member_who_proves_it_and_to_nobody_else() {
+		let mut room = Room::new(config(Policy::Open));
+		seated(&mut room, HOST, "ann", "1111");
+		seated(&mut room, GUEST, "bob", "4242");
+		assert_eq!(room.map_for("bob", "4242"), Some("Supreme Isthmus v2.1"));
+		assert_eq!(room.map_for("ann", "1111"), Some("Supreme Isthmus v2.1"));
+		assert_eq!(room.map_for("bob", "1111"), None, "somebody else's word");
+		assert_eq!(room.map_for("bob", ""), None);
+		assert_eq!(room.map_for("mallory", "4242"), None, "not in the room");
+
+		// It is the room's own map, whatever that is now -- never a name the
+		// asker chose, because the asker names nothing.
+		room.apply(HOST, "SAYBATTLE !map Comet Catcher Remake 1.8", IP);
+		assert_eq!(
+			room.map_for("bob", "4242"),
+			Some("Comet Catcher Remake 1.8")
+		);
+
+		// A member who joined with no password of their own proves nothing,
+		// so an empty one is never a match.
+		let mut open = Room::new(config(Policy::Open));
+		seated(&mut open, HOST, "ann", "");
+		assert_eq!(open.map_for("ann", ""), None);
 	}
 
 	#[test]

@@ -15,6 +15,11 @@ use spring_protocol::{Endpoint, LoginRequest, ThrottlePolicy};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 
+/// A host with no map files to hand over, which is most of these tests.
+fn no_maps() -> lan::serve::MapFiles {
+	std::sync::Arc::new(|_| None)
+}
+
 fn config() -> Config {
 	Config {
 		founder: "ann".into(),
@@ -41,7 +46,7 @@ async fn until(client: &Client, what: &str, want: impl Fn(&Snapshot) -> bool) ->
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_guest_logs_in_joins_talks_and_hears_the_game_start() {
-	let host = Host::start(config(), 0).await.unwrap();
+	let host = Host::start(config(), 0, no_maps()).await.unwrap();
 	let port = host.port();
 
 	// The founder, by hand.
@@ -163,7 +168,7 @@ async fn a_guest_logs_in_joins_talks_and_hears_the_game_start() {
 /// account. Three ways to try it, one test: the bounds are one policy.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_peer_cannot_spend_the_host_without_limit() {
-	let host = Host::start(config(), 0).await.unwrap();
+	let host = Host::start(config(), 0, no_maps()).await.unwrap();
 	let port = host.port();
 	let at = format!("127.0.0.1:{port}");
 
@@ -224,4 +229,92 @@ async fn a_peer_cannot_spend_the_host_without_limit() {
 		.expect("the host still answers")
 		.unwrap();
 	assert!(hello.starts_with("TASSERVER"), "got {hello:?}");
+}
+
+/// The last resort: the map nobody publishes, from the one machine that
+/// demonstrably has it.
+///
+/// The request names no file. It says who is asking and proves it with the
+/// script password that member gave at `JOINBATTLE`, and the host answers
+/// with whatever its own room is hosting — so there is nothing in it that
+/// could reach another file, and nobody outside the room gets an answer.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_host_hands_its_map_to_a_member_and_to_nobody_else() {
+	let held = tempfile::tempdir().unwrap();
+	let maps = held.path().join("maps");
+	std::fs::create_dir_all(&maps).unwrap();
+	// Big enough to cross the chunk boundary, so the streaming is exercised.
+	let body: Vec<u8> = (0..200_000_u32).map(|n| (n % 251) as u8).collect();
+	std::fs::write(maps.join("supreme_isthmus_v2.1.sd7"), &body).unwrap();
+
+	let owned = maps.clone();
+	let files: lan::serve::MapFiles = std::sync::Arc::new(move |map: &str| {
+		let stem = map.trim().to_lowercase().replace(' ', "_");
+		let path = owned.join(format!("{stem}.sd7"));
+		path.is_file().then_some(path)
+	});
+	let host = Host::start(config(), 0, files).await.unwrap();
+	let at: std::net::SocketAddr = format!("127.0.0.1:{}", host.port()).parse().unwrap();
+
+	// A member of the room, joined the way a guest joins.
+	let mut guest = TcpStream::connect(at).await.unwrap();
+	let mut lines = BufReader::new(&mut guest);
+	let mut greeting = String::new();
+	lines.read_line(&mut greeting).await.unwrap();
+	guest
+		.write_all(b"LOGIN bob * 0 * modlobby:0.1\tx y\tb sp\nJOINBATTLE 1 empty 4242\n")
+		.await
+		.unwrap();
+	tokio::time::sleep(Duration::from_millis(200)).await;
+
+	let into = tempfile::tempdir().unwrap();
+	let quiet: &lan::getmap::Progress = &|_, _| {};
+
+	// A stranger, and a member with the wrong password, are told the same
+	// thing: which of the two it was is not the asker's business.
+	for (name, password) in [("bob", "wrong"), ("mallory", "4242")] {
+		let refused = lan::getmap::fetch(at, name, password, into.path(), quiet)
+			.await
+			.expect_err("served a stranger");
+		assert!(refused.contains("not in this room"), "{name}: {refused}");
+	}
+	// Saying nothing at all does not get in either.
+	assert!(
+		lan::getmap::fetch(at, "bob", "", into.path(), quiet)
+			.await
+			.is_err(),
+		"served a request that proved nothing"
+	);
+	assert_eq!(
+		std::fs::read_dir(into.path()).unwrap().count(),
+		0,
+		"a refusal left something behind"
+	);
+
+	// The member, who gets the file the room is playing, byte for byte.
+	let seen = std::sync::Arc::new(std::sync::Mutex::new((0_u64, 0_u64)));
+	let noted = std::sync::Arc::clone(&seen);
+	let watch: &lan::getmap::Progress = &move |done, total| {
+		*noted.lock().unwrap() = (done, total);
+	};
+	let archive = lan::getmap::fetch(at, "bob", "4242", into.path(), watch)
+		.await
+		.unwrap();
+	assert_eq!(archive, "supreme_isthmus_v2.1.sd7");
+	assert_eq!(std::fs::read(into.path().join(&archive)).unwrap(), body);
+	assert_eq!(
+		*seen.lock().unwrap(),
+		(body.len() as u64, body.len() as u64)
+	);
+	// Nothing half-written left over.
+	assert!(!into.path().join(format!("{archive}.part")).exists());
+
+	// And the room is as it was: four file connections came and went, and
+	// not one of them became a member of it.
+	assert_eq!(
+		host.room().counts().0,
+		1,
+		"a connection that came for the map joined the room"
+	);
+	drop(host);
 }

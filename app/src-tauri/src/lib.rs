@@ -280,6 +280,7 @@ pub fn run() {
 			// Beside the settings and the preset book, because it is the same
 			// kind of thing: what this person has set up, kept for next time.
 			let skirmish_path = commands::skirmish_path(&app);
+			let from_host_handle = handle.clone();
 			tauri::async_runtime::spawn(async move {
 				// Whoever reads another server's rapid before games come
 				// from it; without one the runtime fetches from BAR's only.
@@ -289,6 +290,15 @@ pub fn run() {
 						Box::pin(
 							async move { vetter.vet(&master).await.map_err(|err| err.to_string()) },
 						)
+					}))
+					.await;
+				// And the last resort for a map: the room's own host, which
+				// is playing it and so has the file even where no search
+				// does. Only a room on the local network has such a host.
+				let _ = client
+					.set_from_host(std::sync::Arc::new(move |ask, say| {
+						let handle = from_host_handle.clone();
+						Box::pin(async move { lan::map_from_host(&handle, ask, say).await })
 					}))
 					.await;
 				push_settings(&client, &controller, &at_start).await;

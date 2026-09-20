@@ -202,6 +202,25 @@ impl Library {
 			.any(|ext| self.any_has(Path::new("maps").join(format!("{stem}.{ext}"))))
 	}
 
+	/// The archive a map's display name resolves to, where one is on the disk.
+	///
+	/// The same name-to-file rule [`Self::has_map`] asks with, so anything
+	/// that says it has a map can also hand over the file. `.sdd` is a
+	/// directory rather than a file and so is not offered.
+	pub fn map_archive(&self, display_name: &str) -> Option<PathBuf> {
+		let stem = archive_stem(display_name);
+		if stem.is_empty() {
+			return None;
+		}
+		["sd7", "sdz"].iter().find_map(|ext| {
+			let name = format!("{stem}.{ext}");
+			self.dirs
+				.all()
+				.map(|dir| dir.join("maps").join(&name))
+				.find(|path| path.is_file())
+		})
+	}
+
 	/// A rapid package whose display name matches, downloaded into `packages/`.
 	///
 	/// Unpacked `games/*.sdd` are deliberately not matched by name: their

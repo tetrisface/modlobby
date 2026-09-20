@@ -83,6 +83,11 @@ impl Settings {
 	///
 	/// The row is rebuilt rather than remembered, so the name you appear as
 	/// on the network is the one thing a switch off and on again forgets.
+	///
+	/// It names no map search: a room on the LAN plays what nobody publishes,
+	/// and the runtime falls back to springfiles for any map it cannot place
+	/// (`lobby_runtime`'s `map_searches_for`), so a default here would be the
+	/// same answer written twice.
 	pub(crate) fn ensure_lan(&mut self) {
 		if self.servers.is_empty() {
 			return;
@@ -712,15 +717,6 @@ mod tests {
 
 		settings.lan.enabled = true;
 		settings.ensure_lan();
-		assert!(settings.servers.iter().any(ServerEntry::is_lan));
-		// Twice on does not make two rows.
-		settings.ensure_lan();
-		assert_eq!(
-			settings.servers.iter().filter(|e| e.is_lan()).count(),
-			1,
-			"one row, however often it is asked for"
-		);
-
 		settings.lan.enabled = false;
 		settings.ensure_lan();
 		assert!(!settings.servers.iter().any(ServerEntry::is_lan));

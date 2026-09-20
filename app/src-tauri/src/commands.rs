@@ -1600,7 +1600,7 @@ fn safe_name(text: &str) -> String {
 
 /// The data directories, for the commands where having none is an empty
 /// answer rather than an error.
-fn data_dirs_of(app: &App) -> Option<content::DataDirs> {
+pub(crate) fn data_dirs_of(app: &App) -> Option<content::DataDirs> {
 	launch::data_dirs(app.settings.get().paths.data_dir)
 }
 

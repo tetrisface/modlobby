@@ -78,6 +78,45 @@ pub type Connector = Arc<dyn Fn(Endpoint, ThrottlePolicy) -> ConnectFuture + Sen
 pub type Vet =
 	Arc<dyn Fn(String) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> + Send + Sync>;
 
+/// The last resort for a map: the room's own host, which is playing it and
+/// so has the file. Handed in for the same reason [`Vet`] is -- the runtime
+/// has no business knowing what a LAN room is -- and `None` from a room that
+/// has no such host, which is every room on a server.
+///
+/// Takes the map's name only to say what it is fetching; who is asked, and
+/// what is proved to them, is the business of whatever answers this.
+pub type FromHost = Arc<
+	dyn Fn(
+			Ask,
+			mpsc::Sender<recoil::Progress>,
+		) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>>
+		+ Send
+		+ Sync,
+>;
+
+/// What the room's host is asked for, and what proves the asking.
+///
+/// The credentials come from here rather than being looked up by whoever
+/// answers: the script password is the runtime's to keep -- it never reaches
+/// the front end or a view -- and this hands it to one caller for one fetch.
+#[derive(Debug, Clone)]
+pub struct Ask {
+	/// The room's server, so an answerer can tell the one room it serves
+	/// from every other.
+	pub server: Option<String>,
+	/// The map, as the room names it.
+	pub map: String,
+	/// Us, in that room.
+	pub me: String,
+	/// What we gave at `JOINBATTLE`; the host knows it and nobody else does.
+	pub script_password: String,
+}
+
+/// No host to ask, which is every room but one on the local network.
+fn no_host() -> FromHost {
+	Arc::new(|_, _| Box::pin(async { Err("this room has no host to ask".to_owned()) }))
+}
+
 /// With nobody to read another rapid server, only BAR's is fetched from.
 fn vet_bars_only() -> Vet {
 	Arc::new(|master| {
@@ -310,9 +349,11 @@ enum Command {
 	SetRapidMasters(BTreeMap<String, String>),
 	/// Each server's own map search (`find`), by server id.
 	SetMapSearches(BTreeMap<String, String>),
-	/// The spring names of BAR's maps; see [`map_search_for`].
+	/// The spring names of BAR's maps; see [`map_searches_for`].
 	SetBarMaps(BTreeSet<String>),
 	SetVet(Vet),
+	/// Where a map comes from when no search had it; see [`FromHost`].
+	SetFromHost(FromHost),
 	/// The disk changed under us — an engine was installed — so the room's
 	/// content is worth asking about again.
 	RecheckContent,
@@ -873,6 +914,11 @@ impl Client {
 		self.send(Command::SetVet(vet)).await
 	}
 
+	/// Who to ask for a map that no search had. See [`FromHost`].
+	pub async fn set_from_host(&self, from_host: FromHost) -> Result<(), ClientError> {
+		self.send(Command::SetFromHost(from_host)).await
+	}
+
 	/// Points the content check at a data directory; `None` uses the launcher's.
 	pub async fn set_data_dir(&self, data_dir: Option<PathBuf>) -> Result<(), ClientError> {
 		self.send(Command::SetDataDir(data_dir)).await
@@ -1024,6 +1070,7 @@ struct Runtime {
 	/// Maps a search said it does not have, kept beside the ways.
 	misses: Misses,
 	vet: Vet,
+	from_host: FromHost,
 	/// Where to put a config that gets the game borderless, when the user's
 	/// own would not let the overlay cover it. `None` leaves their settings
 	/// entirely alone, which is also what happens when they already work.
@@ -1244,36 +1291,47 @@ fn missed(run: &recoil::Download, tail: &[String]) -> Option<String> {
 	not_found.then(|| map.clone())
 }
 
-/// Who a map is asked of: BAR's search for one of BAR's maps, the room's
-/// server's own for any other — so neither is asked about the other's — and
-/// nobody where the map is not BAR's and the server names no search. With
-/// BAR's maps not known yet (`bar_maps` empty) the server's search is asked
-/// if there is one, else BAR's, as before servers had any.
+/// Who a map is asked of, in the order they are asked, until one answers.
 ///
-/// A third-party search is thereby never asked for one of BAR's names, so it
-/// cannot put its own map under one.
+/// BAR's search for one of BAR's maps; the room's server's own for any other,
+/// so neither is asked about the other's; then springfiles, which is nobody's
+/// server and has what no server publishes.
 ///
-/// ponytail: a map is trusted as far as the server naming its search is —
-/// pr-downloader checks the md5 that same search gave. https at least.
-fn map_search_for(
+/// A third-party search is still never asked for one of BAR's names, so it
+/// cannot put its own map under one -- springfiles included. That is why the
+/// fallback needs to *know* the name is not BAR's rather than merely not find
+/// it in the list: with `bar_maps` empty the list has not loaded, every name
+/// is unknown, and the old answer stands.
+///
+/// Never empty, so a map is always looked for somewhere. Before this, a
+/// custom map on a server naming no search was refused outright, which is
+/// every map in a room on the LAN.
+///
+/// ponytail: a map is trusted as far as the search that named it -- pr-
+/// downloader checks the md5 that same search gave, and nothing checks one
+/// search's answer against another's. https at least.
+fn map_searches_for(
 	bar_maps: &BTreeSet<String>,
 	searches: &BTreeMap<String, String>,
 	server: Option<&str>,
 	map: &str,
-) -> Result<String, String> {
+) -> Vec<String> {
 	let own = server.and_then(|server| searches.get(server));
 	if bar_maps.contains(map) || (own.is_none() && bar_maps.is_empty()) {
-		return Ok(recoil::HTTP_SEARCH_URL.to_owned());
+		return vec![recoil::HTTP_SEARCH_URL.to_owned()];
 	}
+	let mut asked = Vec::new();
 	match own {
-		Some(search) if search.starts_with("https://") => Ok(search.clone()),
-		Some(search) => Err(format!(
-			"{search} is not https, so {map} is not fetched from it"
-		)),
-		None => Err(format!(
-			"{map} is not one of BAR's maps, and this server names no map search to find it with"
-		)),
+		Some(search) if search.starts_with("https://") => asked.push(search.clone()),
+		Some(search) => tracing::warn!(%search, "map search is not https; not asked"),
+		None => {}
 	}
+	// Only for a name we know is not BAR's: an unloaded list is not evidence.
+	if !bar_maps.is_empty() {
+		asked.push(recoil::SPRINGFILES_SEARCH_URL.to_owned());
+	}
+	asked.dedup();
+	asked
 }
 
 /// A game run that ended at the search nobody answers: rapid did not know
@@ -1352,6 +1410,7 @@ impl Runtime {
 			bar_maps: BTreeSet::new(),
 			misses,
 			vet: vet_bars_only(),
+			from_host: no_host(),
 			engine_run: None,
 			overlay_config_dir: None,
 			menu_archive: None,
@@ -1544,25 +1603,42 @@ impl Runtime {
 		self.fetch(wanted, self.room(), by_hand).await
 	}
 
-	/// Who `map` is asked of, or why nobody is. A miss remembered from within
-	/// the day holds an unasked fetch back; asking by hand forgets it.
-	fn map_search(
+	/// Who `map` is asked of, or why nobody is.
+	///
+	/// A miss is remembered per search, so one that said no today drops out
+	/// of the chain and the rest are still asked; only when every one of them
+	/// has said no is the fetch held back. Asking by hand forgets them all,
+	/// which is what Download is for.
+	fn map_searches(
 		&mut self,
 		server: Option<&str>,
 		map: &str,
 		by_hand: bool,
-	) -> Result<String, String> {
-		let search = map_search_for(&self.bar_maps, &self.map_searches, server, map)?;
+	) -> Result<Vec<String>, String> {
+		let asked = map_searches_for(&self.bar_maps, &self.map_searches, server, map);
 		if by_hand {
-			if self.misses.forget(&search, map) {
+			// `count`, not `any`: every one is forgotten, and a short circuit
+			// would leave the rest remembered.
+			let forgot = asked
+				.iter()
+				.filter(|search| self.misses.forget(search, map))
+				.count();
+			if forgot > 0 {
 				self.save_misses();
 			}
-		} else if self.misses.holds(&search, map, latency::unix_now()) {
+			return Ok(asked);
+		}
+		let now = latency::unix_now();
+		let fresh: Vec<String> = asked
+			.into_iter()
+			.filter(|search| !self.misses.holds(search, map, now))
+			.collect();
+		if fresh.is_empty() {
 			return Err(format!(
 				"{map} was not found earlier today, so it is not looked for again unasked; Download asks again"
 			));
 		}
-		Ok(search)
+		Ok(fresh)
 	}
 
 	fn save_misses(&self) {
@@ -1618,12 +1694,12 @@ impl Runtime {
 		let rapid_master = self.rapid_master(server.as_deref());
 		// Why the map is not asked for, where it is missing and is not.
 		let mut map_refused = None;
-		let mut map_search = recoil::HTTP_SEARCH_URL.to_owned();
+		let mut map_searches = vec![recoil::HTTP_SEARCH_URL.to_owned()];
 		// No map named is no map to ask for; the picker fetches whichever is chosen.
 		if !map.is_empty() && !library.has_map(&map) {
-			match self.map_search(server.as_deref(), &map, by_hand) {
-				Ok(search) => {
-					map_search = search;
+			match self.map_searches(server.as_deref(), &map, by_hand) {
+				Ok(searches) => {
+					map_searches = searches;
 					wants.push((recoil::Want::Map, map.clone()));
 				}
 				Err(reason) => map_refused = Some(reason),
@@ -1647,10 +1723,16 @@ impl Runtime {
 			.map(|(_, name)| name.as_str())
 			.collect::<Vec<_>>()
 			.join(", ");
-		let runs =
-			crate::launch::plan_download(&dirs, &engine_version, wants, &rapid_master, &map_search)
-				.map_err(ClientError::Refused)?;
+		let runs = crate::launch::plan_download(
+			&dirs,
+			&engine_version,
+			wants,
+			&rapid_master,
+			&map_searches,
+		)
+		.map_err(ClientError::Refused)?;
 		let vet = Arc::clone(&self.vet);
+		let from_host = Arc::clone(&self.from_host);
 
 		let (stop_tx, stop_rx) = oneshot::channel();
 		self.downloading = Some(what.clone());
@@ -1663,19 +1745,75 @@ impl Runtime {
 		}));
 
 		let events = self.download_tx.clone();
+		// Gathered before the runs move into the task, for the last resort:
+		// who we are in this room, and what the host will know us by.
+		let ask = server
+			.as_deref()
+			.and_then(|at| self.link(at))
+			.map(|conn| Ask {
+				server: server.clone(),
+				map: map.clone(),
+				me: conn.session.state.me.clone().unwrap_or_default(),
+				script_password: conn
+					.session
+					.state
+					.my_battle
+					.as_ref()
+					.map(|my| my.script_password.clone())
+					.unwrap_or_default(),
+			});
 		tokio::spawn(async move {
 			let progress = events.clone();
 			// The runs, one after the other, until one fails.
 			let work = async move {
+				// The map's runs are the same map from each search in turn:
+				// alternatives, not more work, so the first that answers ends
+				// it and only every one of them failing is a failure. A game
+				// has one source and must work.
+				let mut found_map = false;
+				let mut no_map = None;
 				for run in runs {
-					// Somebody else's rapid server is read before anything is
-					// fetched through it; BAR's own passes unread.
 					if run.has_games() {
+						// Somebody else's rapid server is read before anything
+						// is fetched through it; BAR's own passes unread.
 						vet(run.rapid_master.clone()).await?;
+						run_download(&run, &progress).await?;
+						continue;
 					}
-					run_download(&run, &progress).await?;
+					if found_map {
+						continue;
+					}
+					match run_download(&run, &progress).await {
+						Ok(()) => found_map = true,
+						Err(reason) => no_map = Some(reason),
+					}
 				}
-				Ok(())
+				match no_map {
+					// Every search said no. The room's own host is playing
+					// the map, so it has the file even where nobody else
+					// publishes it -- which is every custom map on a LAN.
+					Some(reason) if !found_map => match ask {
+						Some(ask) => {
+							// Its progress goes where pr-downloader's went, so
+							// a handover fills the same bar rather than
+							// leaving it stopped for a few hundred megabytes.
+							let (tx, mut rx) = mpsc::channel::<recoil::Progress>(8);
+							let pump = tokio::spawn({
+								let progress = progress.clone();
+								async move {
+									while let Some(step) = rx.recv().await {
+										let _ = progress.send(DownloadEvent::Progress(step)).await;
+									}
+								}
+							});
+							let outcome = from_host(ask, tx).await;
+							pump.abort();
+							outcome.map_err(|from| format!("{reason}; and {from}"))
+						}
+						None => Err(reason),
+					},
+					_ => Ok(()),
+				}
 			};
 			// The stop side owns a sender the runtime drops; either the work
 			// finishing or that drop ends the wait. Letting the work go is
@@ -2361,6 +2499,7 @@ impl Runtime {
 			Command::SetMapSearches(searches) => self.map_searches = searches,
 			Command::SetBarMaps(names) => self.bar_maps = names,
 			Command::SetVet(vet) => self.vet = vet,
+			Command::SetFromHost(from_host) => self.from_host = from_host,
 			Command::SetDataDir(data_dir) => {
 				// Told on every save of the settings, of which most change
 				// something else: the scan below is too slow to repeat for
@@ -3426,41 +3565,62 @@ mod tests {
 			"mods.example".to_owned(),
 			"https://mods.example/find".to_owned(),
 		)]);
-		let ask = |bars: &BTreeSet<String>, server, map| map_search_for(bars, &theirs, server, map);
+		let ask =
+			|bars: &BTreeSet<String>, server, map| map_searches_for(bars, &theirs, server, map);
 		let mods = Some("mods.example");
+		let bar = recoil::HTTP_SEARCH_URL;
+		let files = recoil::SPRINGFILES_SEARCH_URL;
+
+		// One of BAR's names goes to BAR alone. Nowhere else is asked, so
+		// nowhere else can answer with its own map under that name.
+		assert_eq!(ask(&bars, mods, "Supreme Isthmus v2.1"), [bar]);
+		assert_eq!(ask(&bars, None, "Supreme Isthmus v2.1"), [bar]);
+
+		// A name that is not BAR's: the room's own server first, since it is
+		// the one that published the room, then the public index.
 		assert_eq!(
-			ask(&bars, mods, "Supreme Isthmus v2.1").as_deref(),
-			Ok(recoil::HTTP_SEARCH_URL),
-			"BAR's map is BAR's to serve, whatever server the room is on"
+			ask(&bars, mods, "Bathtub Brawl V2"),
+			["https://mods.example/find", files]
 		);
+		// BAR's own server names no map search, so only the fallback is left
+		// -- and BAR is still not asked for a map it does not have.
 		assert_eq!(
-			ask(&bars, mods, "Bathtub Brawl V2").as_deref(),
-			Ok("https://mods.example/find")
-		);
-		assert!(
 			ask(
 				&bars,
 				Some("server4.beyondallreason.info"),
 				"Bathtub Brawl V2"
-			)
-			.is_err(),
-			"BAR is not asked for a map it does not have"
+			),
+			[files]
 		);
-		// BAR's maps not known yet.
+		// A room on the LAN, whose server publishes nothing at all: the
+		// refusal this replaced is what a custom map used to get.
+		assert_eq!(ask(&bars, Some("lan"), "Frosty Cove v1.13"), [files]);
+
+		// BAR's maps not known yet: every name is unknown, which is not the
+		// same as known not to be BAR's, so the fallback stays out of it.
 		let unknown = BTreeSet::new();
 		assert_eq!(
-			ask(&unknown, mods, "Anything").as_deref(),
-			Ok("https://mods.example/find")
+			ask(&unknown, mods, "Anything"),
+			["https://mods.example/find"]
 		);
-		assert_eq!(
-			ask(&unknown, None, "Anything").as_deref(),
-			Ok(recoil::HTTP_SEARCH_URL)
-		);
+		assert_eq!(ask(&unknown, None, "Anything"), [bar]);
+
+		// A search that is not https is not asked; the fallback still is.
 		let plain = BTreeMap::from([(
 			"mods.example".to_owned(),
 			"http://mods.example/find".to_owned(),
 		)]);
-		assert!(map_search_for(&bars, &plain, mods, "Bathtub Brawl V2").is_err());
+		assert_eq!(
+			map_searches_for(&bars, &plain, mods, "Bathtub Brawl V2"),
+			[files]
+		);
+
+		// A server naming springfiles itself is not asked twice.
+		let same = BTreeMap::from([("mods.example".to_owned(), files.to_owned())]);
+		assert_eq!(
+			map_searches_for(&bars, &same, mods, "Bathtub Brawl V2"),
+			[files]
+		);
 	}
 
 	#[test]
@@ -3471,7 +3631,7 @@ mod tests {
 				std::path::Path::new("data"),
 				vec![(want, "Nowhere v1".into())],
 				recoil::RAPID_REPO_MASTER,
-				"https://mods.example/find",
+				&["https://mods.example/find".to_owned()],
 			)
 		};
 		let not_found =
@@ -3505,7 +3665,7 @@ mod tests {
 			std::path::Path::new("data"),
 			vec![(recoil::Want::Game, "Somebody's Mod v1".into())],
 			theirs,
-			recoil::HTTP_SEARCH_URL,
+			&[recoil::HTTP_SEARCH_URL.to_owned()],
 		);
 		let asked_nobody = format!(
 			"[Error] search():Error downloading {}?category=game&springname=x",

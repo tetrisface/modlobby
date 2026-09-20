@@ -12,6 +12,7 @@
 //! started, and writes the script it starts on.
 
 pub mod discover;
+pub mod getmap;
 pub mod room;
 pub mod script;
 pub mod serve;

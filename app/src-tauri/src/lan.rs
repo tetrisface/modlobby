@@ -19,7 +19,7 @@ use serde::Serialize;
 use spring_protocol::{Endpoint, LoginRequest, Security, Transport, TransportError, Way};
 use tauri::State;
 
-use crate::commands::{ApiError, LOBBY_VERSION, Result, data_dirs};
+use crate::commands::{ApiError, LOBBY_VERSION, Result, data_dirs, data_dirs_of};
 use crate::state::App;
 
 /// Where `lan` points, the room being hosted, and the ear on the network.
@@ -192,11 +192,20 @@ pub async fn lan_host(
 		policy,
 	};
 	lan_stop(app.clone()).await?;
+	// Where this machine keeps its maps, so the room can hand its own over to
+	// a member whose search found it nowhere. Resolved per request, because
+	// the room's map can change while it is open.
+	let files: lan::serve::MapFiles = match data_dirs_of(&app) {
+		Some(dirs) => std::sync::Arc::new(move |map: &str| {
+			content::Library::new(dirs.clone()).map_archive(map)
+		}),
+		None => std::sync::Arc::new(|_: &str| None),
+	};
 	// The usual port first, so a guest typing an address can leave it off;
 	// any port when another room on this machine already has it.
-	let host = match lan::Host::start(config.clone(), lan::DEFAULT_PORT).await {
+	let host = match lan::Host::start(config.clone(), lan::DEFAULT_PORT, files.clone()).await {
 		Ok(host) => host,
-		Err(_) => lan::Host::start(config, 0)
+		Err(_) => lan::Host::start(config, 0, files)
 			.await
 			.map_err(|err| ApiError::new("io", format!("opening the room: {err}")))?,
 	};
@@ -429,4 +438,39 @@ mod tests {
 			"{refused}"
 		);
 	}
+}
+
+/// The map from the room's own host, when no search on the internet had it.
+///
+/// The one room this answers for is the one on the local network: anywhere
+/// else there is no host holding the file, and a server's rooms are served by
+/// the searches that came first. What proves the asking is `ask`'s own
+/// credentials, which the runtime keeps and hands over for this one fetch.
+pub async fn map_from_host(
+	app: &tauri::AppHandle,
+	ask: lobby_runtime::Ask,
+	say: tokio::sync::mpsc::Sender<recoil::Progress>,
+) -> std::result::Result<(), String> {
+	use tauri::Manager;
+	if ask.server.as_deref() != Some(settings::model::LAN_HOST) {
+		return Err("this room has no host to ask".into());
+	}
+	let state = app
+		.try_state::<App>()
+		.ok_or_else(|| "the app is not up".to_owned())?;
+	let addr = (*state.lan.target.lock().unwrap_or_else(|e| e.into_inner()))
+		.ok_or_else(|| "there is no host to ask".to_owned())?;
+	let dirs = crate::commands::data_dirs_of(&state)
+		.ok_or_else(|| "there is no BAR data directory to write the map into".to_owned())?;
+	let maps = dirs.write.join("maps");
+
+	// Blocking sends would hold the transfer up behind the bar; a step lost
+	// because the last one has not been drawn yet costs nothing.
+	let tell: Box<lan::getmap::Progress> = Box::new(move |current, total| {
+		let _ = say.try_send(recoil::Progress { current, total });
+	});
+	let archive =
+		lan::getmap::fetch(addr, &ask.me, &ask.script_password, &maps, tell.as_ref()).await?;
+	tracing::info!(%archive, from = %addr, "lan: the host handed over the map");
+	Ok(())
 }

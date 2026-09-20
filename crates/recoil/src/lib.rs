@@ -918,6 +918,14 @@ pub struct Download {
 /// (`bar-lobby/src/main/json/model/config.ts`).
 pub const RAPID_REPO_MASTER: &str = "https://repos-cdn.beyondallreason.dev/repos.gz";
 pub const HTTP_SEARCH_URL: &str = "https://files-cdn.beyondallreason.dev/find";
+/// Springfiles: pr-downloader's own default search (`pr-downloader/src/Util.h`)
+/// and the oldest public index of Spring maps.
+///
+/// The last thing asked for a map nobody else has. It is nobody's server, so
+/// it is not asked first -- a room's own server knows its own maps, and BAR's
+/// knows BAR's -- but a map neither publishes has lived here for fifteen
+/// years, which is where a custom map on a LAN comes from.
+pub const SPRINGFILES_SEARCH_URL: &str = "https://springfiles.springrts.com/json.php";
 /// The game the launcher installs, as a rapid tag pr-downloader resolves: what
 /// a room that names no game yet is asking for.
 pub const BAR_GAME_TAG: &str = "byar:test";
@@ -987,21 +995,32 @@ impl Download {
 		data_dir: &Path,
 		wants: Vec<(Want, String)>,
 		rapid_master: &str,
-		map_search: &str,
+		map_searches: &[String],
 	) -> Vec<Self> {
 		let (games, maps): (Vec<_>, Vec<_>) =
 			wants.into_iter().partition(|(want, _)| *want == Want::Game);
-		[(games, NO_SEARCH_URL), (maps, map_search)]
-			.into_iter()
-			.filter(|(wants, _)| !wants.is_empty())
-			.map(|(wants, search_url)| Self {
-				binary: binary.to_path_buf(),
-				data_dir: data_dir.to_path_buf(),
-				wants,
-				rapid_master: rapid_master.to_owned(),
-				search_url: search_url.to_owned(),
-			})
-			.collect()
+		let one = |wants: Vec<(Want, String)>, search_url: &str| Self {
+			binary: binary.to_path_buf(),
+			data_dir: data_dir.to_path_buf(),
+			wants,
+			rapid_master: rapid_master.to_owned(),
+			search_url: search_url.to_owned(),
+		};
+		let mut runs = Vec::new();
+		if !games.is_empty() {
+			runs.push(one(games, NO_SEARCH_URL));
+		}
+		// The same maps once per search, in the order they are to be asked.
+		// Each is an alternative to the last rather than more work: the
+		// caller stops at whichever answers. See [`Self::has_games`].
+		if !maps.is_empty() {
+			runs.extend(
+				map_searches
+					.iter()
+					.map(|search| one(maps.clone(), search.as_str())),
+			);
+		}
+		runs
 	}
 
 	/// Whether this run fetches games, and so reads a rapid index.
@@ -1099,7 +1118,7 @@ mod download_tests {
 				(Want::Game, "Somebody's Mod v1".into()),
 			],
 			theirs,
-			"https://maps.example/find",
+			&["https://maps.example/find".to_owned()],
 		);
 		let [games, maps] = runs.as_slice() else {
 			panic!("a run for the games, then one for the maps: {runs:?}");
@@ -1142,10 +1161,48 @@ mod download_tests {
 			Path::new("C:/bar"),
 			vec![(Want::Map, "Pinewood_Derby_V1".into())],
 			RAPID_REPO_MASTER,
-			HTTP_SEARCH_URL,
+			&[HTTP_SEARCH_URL.to_owned()],
 		);
 		assert_eq!(runs.len(), 1);
 		assert!(!runs[0].has_games());
+	}
+
+	/// The map is asked of each search in turn, as one run apiece: the caller
+	/// stops at whichever answers, so this is one download's worth of work
+	/// and not three.
+	#[test]
+	fn a_map_gets_a_run_per_search_and_a_game_still_gets_one() {
+		let searches = [
+			HTTP_SEARCH_URL.to_owned(),
+			"https://mods.example/find".to_owned(),
+			SPRINGFILES_SEARCH_URL.to_owned(),
+		];
+		let runs = Download::runs(
+			Path::new("prd"),
+			Path::new("C:/bar"),
+			vec![
+				(Want::Map, "Frosty Cove v1.13".into()),
+				(Want::Game, "Somebody's Mod v1".into()),
+			],
+			RAPID_REPO_MASTER,
+			&searches,
+		);
+		let asked: Vec<&str> = runs.iter().map(|run| run.search_url.as_str()).collect();
+		assert_eq!(
+			asked,
+			[
+				// The game's, which asks nobody by name.
+				NO_SEARCH_URL,
+				HTTP_SEARCH_URL,
+				"https://mods.example/find",
+				SPRINGFILES_SEARCH_URL,
+			]
+		);
+		assert_eq!(runs.iter().filter(|run| run.has_games()).count(), 1);
+		// Every map run wants the same map; they differ only in who is asked.
+		for run in runs.iter().filter(|run| !run.has_games()) {
+			assert_eq!(run.wants, [(Want::Map, "Frosty Cove v1.13".to_owned())]);
+		}
 	}
 
 	#[test]
