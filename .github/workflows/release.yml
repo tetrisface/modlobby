@@ -8,9 +8,11 @@
 #
 # Four jobs: `gate` decides whether this run releases and which version;
 # `tag` bumps, tags and opens the GitHub release; `build` runs once
-# per platform (Windows NSIS; Linux AppImage, .deb and .rpm; mac waits for a
-# Recoil build) and each attaches its bundles, .sig files and latest.json to
-# that release as soon as it finishes, then versionless copies of the bundles. tauri-action merges the `platforms` map of an existing
+# per platform (Windows NSIS; Linux AppImage, .deb and .rpm; macOS .app and
+# .dmg, unsigned -- a Developer ID certificate carries its holder's name, so
+# there is nothing here to sign with) and each attaches its bundles, .sig
+# files and latest.json to that release as soon as it finishes, then
+# versionless copies of the bundles. tauri-action merges the `platforms` map of an existing
 # latest.json rather than replacing it, so the manifest fills in one platform
 # at a time. A client whose platform is not in the manifest yet sees a
 # transient "no update for this target" — the same class of window as the 404
@@ -146,7 +148,10 @@ jobs:
       fail-fast: false
       matrix:
         # 22.04 is the oldest glibc the runners offer: widest AppImage reach.
-        os: [windows-2022, ubuntu-22.04]
+        # macos-15 is Apple Silicon, which is the only architecture the engine
+        # modlobby fetches exists for: an Intel slice would ship a lobby that
+        # cannot start a game.
+        os: [windows-2022, ubuntu-22.04, macos-15]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -175,7 +180,8 @@ jobs:
         working-directory: app
 
       # Builds the platform's bundle (tauri.conf.json names nsis,
-      # tauri.linux.conf.json overrides that with appimage, deb and rpm), signs the updater
+      # tauri.linux.conf.json overrides that with appimage, deb and rpm, and
+      # tauri.macos.conf.json with app and dmg), signs the updater
       # artifact, and attaches bundle, .sig and latest.json to the release. No
       # submodule is needed: the one file compiled in from external/ is only
       # read under #[cfg(test)].
@@ -208,6 +214,7 @@ jobs:
               *.AppImage) name=modlobby_amd64.AppImage ;;
               *.deb) name=modlobby_amd64.deb ;;
               *.rpm) name=modlobby.x86_64.rpm ;;
+              *.dmg) name=modlobby_aarch64.dmg ;;
               *) continue ;;
             esac
             cp "$path" "latest/$name"

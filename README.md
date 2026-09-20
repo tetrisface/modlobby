@@ -7,14 +7,22 @@ A Beyond All Reason lobby focused on modding, experiments and performance that u
 ## Packages
 
 Packages are available at [releases](https://github.com/tetrisface/modlobby/releases) as
-[.exe][exe], [.AppImage][appimage], [.deb][deb] and [.rpm][rpm], all of which update themselves
-from the next release. There is no macOS package yet; built from source, a Mac plays skirmish
-and replays on the Apple Silicon engine, which modlobby fetches by itself.
+[.exe][exe], [.AppImage][appimage], [.deb][deb], [.rpm][rpm] and [.dmg][dmg] and updates automatically.
 
 [exe]: https://github.com/tetrisface/modlobby/releases/latest/download/modlobby_x64-setup.exe
 [appimage]: https://github.com/tetrisface/modlobby/releases/latest/download/modlobby_amd64.AppImage
 [deb]: https://github.com/tetrisface/modlobby/releases/latest/download/modlobby_amd64.deb
 [rpm]: https://github.com/tetrisface/modlobby/releases/latest/download/modlobby.x86_64.rpm
+[dmg]: https://github.com/tetrisface/modlobby/releases/latest/download/modlobby_aarch64.dmg
+
+## macOS
+
+Apple Silicon only, and skirmish, LAN and replays only. Uses 3rd party [build](https://github.com/vandomas/RecoilEngine-AppleSilicon).
+
+The first launch is refused. Open **System
+Settings → Privacy & Security**, scroll to the bottom and press **Open Anyway** (macOS 15
+removed the older Control-click shortcut). `xattr -dr com.apple.quarantine
+/Applications/modlobby.app` does the same from a terminal.
 
 ## From source
 
