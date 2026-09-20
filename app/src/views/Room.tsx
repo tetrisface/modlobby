@@ -967,49 +967,30 @@ function Minimap(props: {
 						</g>
 					)}
 				</For>
-				<For each={props.rects}>
-					{(rect) => (
-						<g class='mm-box'>
-							<rect
-								x={rect.left}
-								y={rect.top}
-								width={rect.right - rect.left}
-								height={rect.bottom - rect.top}
-							/>
-							<text
-								x={(rect.left + rect.right) / 2}
-								y={(rect.top + rect.bottom) / 2 + 6}
-							>
-								{rect.allyTeam + 1}
-							</text>
-						</g>
-					)}
-				</For>
+				{/* The protocol's own rects repeat the arrangement above wherever both
+            are there, so they are drawn only where it is not -- a map whose
+            metadata says nothing. */}
+				<Show when={!boxes()}>
+					<For each={props.rects}>
+						{(rect) => (
+							<g class='mm-box'>
+								<rect
+									x={rect.left}
+									y={rect.top}
+									width={rect.right - rect.left}
+									height={rect.bottom - rect.top}
+								/>
+								<text
+									x={(rect.left + rect.right) / 2}
+									y={(rect.top + rect.bottom) / 2 + 6}
+								>
+									{rect.allyTeam + 1}
+								</text>
+							</g>
+						)}
+					</For>
+				</Show>
 			</svg>
-			{/* Which system the game will actually read, since a room can carry
-          both and they need not agree. */}
-			<Show
-				when={boxes()}
-				fallback={
-					<Show when={props.rects.length > 0}>
-						<span class='mm-tag'>start boxes · {props.rects.length}</span>
-					</Show>
-				}
-			>
-				{(resolved) => (
-					<span
-						class='mm-tag'
-						title={
-							resolved().source === 'override'
-								? 'Set for this room, overriding the map'
-								: `The map's own boxes for ${resolved().teams} teams`
-						}
-					>
-						{resolved().source === 'override' ? 'custom' : 'map'} boxes ·{' '}
-						{resolved().polys.length}
-					</span>
-				)}
-			</Show>
 		</div>
 	)
 }

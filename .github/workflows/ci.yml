@@ -73,7 +73,8 @@ jobs:
         # type changed and its TypeScript was not.
         if: runner.os == 'Windows'
         env:
-          TS_RS_EXPORT_DIR: app/src/ipc/bindings
+          # Absolute: each crate's tests run with that crate as their cwd.
+          TS_RS_EXPORT_DIR: ${{ github.workspace }}/app/src/ipc/bindings
         run: |
           cargo test --workspace export_bindings
           cd app && bunx prettier --log-level warn --write src/ipc/bindings
