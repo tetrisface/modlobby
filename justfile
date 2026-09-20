@@ -1,5 +1,5 @@
 dev:
 	(cd app && bun run dev)
 format:
-	prettier --write app
+	(cd app && bun run fmt)
 	cargo fmt --all

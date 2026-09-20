@@ -130,6 +130,13 @@ export function SettingsView() {
 	const searching = () => query().trim() !== ''
 	const [reading, setReading] = createSignal<SectionId>(TOP)
 	let page: HTMLFormElement | undefined
+	/**
+	 * The notification rows while Do not disturb is on: shown as off, since
+	 * nothing they say happens, yet still set as they were and still theirs to
+	 * change for when it is switched back.
+	 */
+	const silenced = () =>
+		draft.notifications.doNotDisturb ? 'silenced' : undefined
 
 	const sectionOf = (id: SectionId) =>
 		page?.querySelector<HTMLElement>(`#${anchor(id)}`)
@@ -382,7 +389,7 @@ export function SettingsView() {
 								download — since that is an answer to something you did.
 							</p>
 						</Row>
-						<Row>
+						<Row class={silenced()}>
 							<p class='muted'>
 								<b>In lobby</b> puts a line in the corner of this window.{' '}
 								<b>Desktop</b> raises a notification from your operating system
@@ -433,7 +440,7 @@ export function SettingsView() {
 							}
 						>
 							{([key, label, hint]) => (
-								<Row>
+								<Row class={silenced()}>
 									<div class='choice-row'>
 										<span>{label}</span>
 										<div class='choice'>

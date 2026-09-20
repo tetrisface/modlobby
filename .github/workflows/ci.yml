@@ -66,10 +66,16 @@ jobs:
       - run: cargo test --workspace
 
       - name: Generated bindings are committed
-        # `cargo test` rewrites app/src/ipc/bindings from the Rust types; a
-        # diff means a type changed and its TypeScript was not committed.
+        # `cargo test` rewrites app/src/ipc/bindings from the Rust types, in
+        # ts-rs's own one-line layout; prettier then puts it in the house style,
+        # which is what is committed -- so the files stay readable and a stray
+        # `prettier --write` over them is harmless. A diff means a type changed
+        # and its TypeScript was not committed.
         if: runner.os == 'Windows'
-        run: git diff --exit-code app/src/ipc/bindings
+        working-directory: app
+        run: |
+          bunx prettier --write src/ipc/bindings
+          git diff --exit-code src/ipc/bindings
 
       - run: bun run check
         if: runner.os == 'Windows'
