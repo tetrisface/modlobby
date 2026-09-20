@@ -1311,21 +1311,6 @@ pub fn open_data_dir(app: State<'_, App>) -> Result<()> {
 	open(dirs.write)
 }
 
-/// The folder an engine is dropped into, for the machine where that is how one
-/// arrives.
-///
-/// Made if it is not there, for the same reason [`open_data_dir`] makes its
-/// own: a message that names a folder and then opens nothing is worse than no
-/// button at all, and on a machine that has never had an engine nothing has
-/// created it yet.
-#[tauri::command]
-pub fn open_engine_dir(app: State<'_, App>) -> Result<()> {
-	let engine = data_dirs(&app)?.write.join("engine");
-	std::fs::create_dir_all(&engine)
-		.map_err(|err| ApiError::new("io", format!("making the engine directory: {err}")))?;
-	open(engine)
-}
-
 /// The player's files — engine settings, hotkeys, widget state — as the
 /// Settings page shows them: where they can be copied from, and the copies
 /// taken before each launch.

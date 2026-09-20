@@ -3088,6 +3088,7 @@ dependencies = [
  "serde_json",
  "settings",
  "sevenz-rust2",
+ "sha2 0.11.0",
  "skirmish",
  "spring-protocol",
  "startbox",
@@ -3108,6 +3109,7 @@ dependencies = [
  "widgets",
  "windows-sys 0.61.2",
  "wiremock",
+ "zip 6.0.0",
 ]
 
 [[package]]

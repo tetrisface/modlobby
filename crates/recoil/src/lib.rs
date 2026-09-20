@@ -854,6 +854,9 @@ pub struct Download {
 /// (`bar-lobby/src/main/json/model/config.ts`).
 pub const RAPID_REPO_MASTER: &str = "https://repos-cdn.beyondallreason.dev/repos.gz";
 pub const HTTP_SEARCH_URL: &str = "https://files-cdn.beyondallreason.dev/find";
+/// The game the launcher installs, as a rapid tag pr-downloader resolves: what
+/// a room that names no game yet is asking for.
+pub const BAR_GAME_TAG: &str = "byar:test";
 /// A search URL nothing answers on, for a run that must not ask anybody.
 ///
 /// pr-downloader asks its search URL, by name, for any game rapid does not

@@ -2,7 +2,6 @@ import { listen } from '@tauri-apps/api/event'
 import { Show, createEffect, createSignal, onCleanup, onMount } from 'solid-js'
 import type { EngineProgress } from '../ipc/bindings/EngineProgress'
 import { api, describeError, errorCode } from '../ipc/client'
-import { build } from '../store/build'
 import { pushNotice } from '../store/chat'
 
 /** Bytes as something a person reads, which for this is always whole MB. */
@@ -35,7 +34,7 @@ const ASKED_KEY = 'modlobby.engines-asked'
 const askedFor = recall()
 
 /** Error codes that are answers about the version, not about the network. */
-const SETTLED = new Set(['notFound', 'version', 'platform'])
+const SETTLED = new Set(['notFound'])
 
 /** `sessionStorage`, when the webview lets us at it. */
 function session(): Storage | null {
@@ -81,13 +80,8 @@ export function forgetAskedEngines() {
  * a request for that engine, as bar-lobby and the launcher both treat it.
  * Without `auto` it says the size and waits for the click.
  *
- * Whether this machine has an engine to fetch at all is one local round trip
- * behind the window, so `auto` waits for that answer rather than asking on
- * mount: a reload straight into a room used to ask before it knew, and on a
- * machine Beyond All Reason publishes nothing for that is a red notice
- * carrying instructions nobody asked for. The button stays live either way — a
- * click is a question somebody meant to ask, and it gets the whole refusal
- * back rather than being quietly ignored.
+ * A room that names no version — the first run, on a machine with nothing —
+ * asks for the newest there is, and Rust decides what that means here.
  */
 export function GetEngine(props: {
 	version: string
@@ -105,23 +99,18 @@ export function GetEngine(props: {
 	})
 
 	// A version we do not have is a question the index answers 404 to, and
-	// firing it on mount is what turned an empty room into a retry loop. So is
-	// a machine no build is published for, which the shell answers a moment
-	// after the window: waiting for it costs a frame, and asking without it
-	// costs an error nobody can act on.
+	// firing it on mount is what turned an empty room into a retry loop.
 	createEffect(() => {
-		const known = build()
 		const version = props.version
-		if (!known || !props.auto || !version || askedFor.has(version)) return
+		if (!props.auto || askedFor.has(version)) return
 		// In before the answer, so a second mount during the download does not
 		// ask too; taken out again if the answer turns out to be about the moment.
 		askedFor.add(version)
 		keep(askedFor)
-		if (!known.noPublishedEngine) void get(version)
+		void get(version)
 	})
 
 	async function get(version: string) {
-		if (!version) return
 		setBusy(true)
 		try {
 			await api.downloadEngine(version)

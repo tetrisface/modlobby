@@ -1,17 +1,13 @@
 import { cleanup, fireEvent, render } from '@solidjs/testing-library'
 import { invoke } from '@tauri-apps/api/core'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
-import type { VersionView } from '../ipc/bindings/VersionView'
-import { setBuild } from '../store/build'
 import { GetEngine, forgetAskedEngines } from './GetEngine'
 
 /**
- * The one download modlobby does itself, and the one it must not.
+ * The one download modlobby does itself.
  *
- * A fresh machine opens its room with no engine version at all, and this
- * component used to fire on mount regardless: `find?category=engine_linux64&
- * springname=` answers 404, whose text reads like the network is broken, and
- * the button offered to ask again.
+ * A fresh machine opens its room with no engine version at all, and that is
+ * the version it asks for: Rust reads it as the newest there is.
  */
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
 vi.mock('@tauri-apps/api/event', () => ({
@@ -30,26 +26,14 @@ function sent(command: string) {
 		.map(([, args]) => args)
 }
 
-/** What the shell says about this machine, which is what `auto` waits for. */
-const BUILD = (why: string | null = null): VersionView => ({
-	version: '0.0.0',
-	commit: 'abc1234',
-	playsOnline: true,
-	noPublishedEngine: why,
-})
-
 beforeEach(() => {
 	vi.mocked(invoke).mockResolvedValue(null)
-	// A machine with an engine to fetch, which is every machine but one. The
-	// signal is module state shared across this file, hence the reset below.
-	setBuild(BUILD())
 })
 
 afterEach(() => {
 	cleanup()
-	setBuild(null)
 	// What `auto` has already asked for outlives a mount on purpose, so it has
-	// to be forgotten between tests the way the build signal is.
+	// to be forgotten between tests.
 	forgetAskedEngines()
 	vi.clearAllMocks()
 })
@@ -61,43 +45,16 @@ describe('getting the first engine onto a machine', () => {
 		expect(sent('download_engine')).toEqual([{ version: '2026.07.04' }])
 	})
 
-	test('nothing is asked for before the shell has answered', async () => {
-		// A reload straight into a room mounts this in the same tick as the
-		// window, one round trip ahead of knowing whether there is an engine to
-		// fetch at all. It used to ask anyway.
-		setBuild(null)
-		render(() => <GetEngine version='2026.07.04' auto />)
-		await settle()
-		expect(sent('download_engine')).toEqual([])
-
-		setBuild(BUILD())
-		await settle()
-		expect(sent('download_engine')).toEqual([{ version: '2026.07.04' }])
-	})
-
-	test('a machine nothing is published for is never asked on its own', async () => {
-		setBuild(BUILD('Beyond All Reason publishes no engine for this machine.'))
-		const { getByText } = render(() => <GetEngine version='2026.07.04' auto />)
-		await settle()
-		expect(sent('download_engine')).toEqual([])
-
-		// The button stays live, and deliberately: a click is a question somebody
-		// meant to ask, and Rust answers it with the whole instruction rather than
-		// with silence.
-		fireEvent.click(getByText('Download the engine'))
-		await settle()
-		expect(sent('download_engine')).toEqual([{ version: '2026.07.04' }])
-	})
-
-	test('an engine with no version is never asked for', async () => {
+	test('a room with no version asks for the newest engine, once', async () => {
+		// The first run: nothing installed, so the room names nothing. That is
+		// a question with an answer -- whatever BAR plays on today -- not a 404.
 		const { getByText } = render(() => <GetEngine version='' auto />)
 		await settle()
-		expect(sent('download_engine')).toEqual([])
+		expect(sent('download_engine')).toEqual([{ version: '' }])
 
-		// Nor by hand: the same question would get the same 404.
 		fireEvent.click(getByText('Download the engine'))
 		await settle()
-		expect(sent('download_engine')).toEqual([])
+		expect(sent('download_engine')).toHaveLength(2)
 	})
 
 	test('a room that remounts does not ask the index again', async () => {
@@ -157,9 +114,7 @@ describe('getting the first engine onto a machine', () => {
 	test('a page reload remembers what was asked', async () => {
 		// A reload is a fresh module: the variable starts empty. The window is
 		// the same, though, and so is its sessionStorage, which is what carries
-		// the answer across. The reloaded module gets the same build signal set
-		// on its own store instance, or its effect would never fire at all and
-		// the test would pass by saying nothing.
+		// the answer across.
 		render(() => <GetEngine version='2026.07.04' auto />)
 		await settle()
 		expect(sent('download_engine')).toHaveLength(1)
@@ -167,8 +122,6 @@ describe('getting the first engine onto a machine', () => {
 
 		vi.resetModules()
 		const reloaded = await import('./GetEngine')
-		const store = await import('../store/build')
-		store.setBuild(BUILD())
 		render(() => <reloaded.GetEngine version='2026.07.04' auto />)
 		await settle()
 		expect(sent('download_engine')).toHaveLength(1)
@@ -177,7 +130,6 @@ describe('getting the first engine onto a machine', () => {
 		render(() => <reloaded.GetEngine version='2026.09.01' auto />)
 		await settle()
 		expect(sent('download_engine')).toHaveLength(2)
-		store.setBuild(null)
 		reloaded.forgetAskedEngines()
 	})
 

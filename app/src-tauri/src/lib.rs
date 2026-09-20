@@ -442,7 +442,6 @@ pub fn run() {
 			commands::clear_password,
 			commands::open_settings_file,
 			commands::open_data_dir,
-			commands::open_engine_dir,
 			commands::player_files,
 			commands::import_player_files,
 			commands::open_url,

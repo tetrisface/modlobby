@@ -70,11 +70,10 @@ function sent(command: string) {
 }
 
 /** What the shell says about this machine. */
-const BUILD = (why: string | null = null): VersionView => ({
+const BUILD = (): VersionView => ({
 	version: '0.0.0',
 	commit: 'abc1234',
 	playsOnline: true,
-	noPublishedEngine: why,
 })
 
 beforeEach(() => {
@@ -263,12 +262,15 @@ describe('a room whose content is not all here', () => {
 		expect(getByText('Download')).toBeTruthy()
 	})
 
-	test('says so rather than asking for the engine called nothing', async () => {
+	test('asks for the newest engine when the room names none', async () => {
+		// The real first-run shape: `newest()` ends in `unwrap_or_default()`, so a
+		// machine with no engine opens its room with no version either. That is
+		// the machine the download is for.
 		setLobby('skirmish', 'content', { engine: false, game: false, map: false })
 		setLobby('skirmish', 'battle', 'engineVersion', '')
 		const { getByText } = await open()
-		expect(getByText('This room names no engine to fetch')).toBeTruthy()
-		expect(sent('download_engine')).toEqual([])
+		expect(getByText('The engine is not installed.')).toBeTruthy()
+		expect(sent('download_engine')).toEqual([{ version: '' }])
 	})
 
 	test('fetches the engine the room does name', async () => {
@@ -288,78 +290,6 @@ describe('a room whose content is not all here', () => {
 		) as HTMLButtonElement
 		expect(start.textContent).toBe('Start')
 		expect(start.disabled).toBe(true)
-	})
-})
-
-/**
- * What the room offers a machine Beyond All Reason publishes no engine for.
- *
- * The only one that will ever be here is a bundle somebody dropped into the
- * data directory, so every offer to fetch one, choose between them or try
- * again is an offer that ends in a 404. What is left is saying where an engine
- * comes from, and the three steps of doing it.
- */
-describe('a room on a machine no engine is published for', () => {
-	const WHY =
-		'Beyond All Reason publishes no engine for this machine, so modlobby cannot fetch one. An Apple Silicon build goes into the engine folder by hand.'
-
-	beforeEach(() => setBuild(BUILD(WHY)))
-
-	test('says where an engine comes from rather than asking for one', async () => {
-		setLobby('skirmish', 'content', { engine: false, game: false, map: false })
-		// The real first-run shape: `newest()` ends in `unwrap_or_default()`, so a
-		// machine with no engine opens its room with no version either.
-		setLobby('skirmish', 'battle', 'engineVersion', '')
-		const { container, getByText, queryByText } = await open()
-
-		expect(sent('download_engine')).toEqual([])
-		// The older sentence is the wrong answer here: it blames the room for a
-		// fact about the machine.
-		expect(queryByText('This room names no engine to fetch')).toBeNull()
-		expect(getByText('Get one')).toBeTruthy()
-		expect(getByText('Engine folder')).toBeTruthy()
-		expect(container.textContent).toContain(
-			'publishes no engine for this machine',
-		)
-	})
-
-	test('and no Download either, since pr-downloader is inside the engine', async () => {
-		setLobby('skirmish', 'content', { engine: false, game: false, map: false })
-		setLobby('skirmish', 'battle', 'engineVersion', '')
-		const { queryByText } = await open()
-		expect(queryByText('Download')).toBeNull()
-	})
-
-	test('names the engine rather than offering a choice of one', async () => {
-		const { container } = await open()
-		expect(
-			container.querySelector('b.chat-link[title="Play a different engine"]'),
-		).toBeNull()
-		// The pair is the assertion: the game is still pickable here, because
-		// pr-downloader lives inside the hand-installed bundle and fetches games
-		// and maps normally. Anything that reached for `picksContent` would take
-		// both.
-		expect(
-			container.querySelector('b.chat-link[title="Play a different game"]'),
-		).toBeTruthy()
-	})
-
-	test('a room with nothing installed says none is installed', async () => {
-		setLobby('skirmish', 'battle', 'engineVersion', '')
-		const { getByText } = await open()
-		// Rather than the word "Engine" with a gap after it.
-		expect(getByText('none installed')).toBeTruthy()
-	})
-
-	test('asks the runtime to look again once something is in the folder', async () => {
-		setLobby('skirmish', 'content', { engine: false, game: false, map: false })
-		setLobby('skirmish', 'battle', 'engineVersion', '')
-		const { getByText } = await open()
-		fireEvent.click(getByText('Look again'))
-		await settle()
-		// Nothing about the room changes when a bundle is dropped in by hand, so
-		// being asked is the only way it is found.
-		expect(sent('recheck_content').length).toBe(1)
 	})
 })
 

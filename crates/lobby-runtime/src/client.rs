@@ -1513,13 +1513,21 @@ impl Runtime {
 		let library = content::Library::new(dirs.clone());
 		let mut wants = Vec::new();
 		if !library.has_game(&game) {
-			wants.push((recoil::Want::Game, game.clone()));
+			// A room that names no game yet -- a first run -- is asking for
+			// BAR; its name is adopted once the download has given it one.
+			let want = if game.is_empty() {
+				recoil::BAR_GAME_TAG.to_owned()
+			} else {
+				game.clone()
+			};
+			wants.push((recoil::Want::Game, want));
 		}
 		let rapid_master = self.rapid_master(server.as_deref());
 		// Why the map is not asked for, where it is missing and is not.
 		let mut map_refused = None;
 		let mut map_search = recoil::HTTP_SEARCH_URL.to_owned();
-		if !library.has_map(&map) {
+		// No map named is no map to ask for; the picker fetches whichever is chosen.
+		if !map.is_empty() && !library.has_map(&map) {
 			match self.map_search(server.as_deref(), &map, by_hand) {
 				Ok(search) => {
 					map_search = search;
@@ -1720,10 +1728,36 @@ impl Runtime {
 				};
 				self.batcher.push(Delta::Download(status));
 				// Whatever arrived changes the answer, so ask the disk again.
-				self.checked = None;
-				self.refresh_content().await;
+				self.look_again().await;
 			}
 		}
+	}
+
+	/// Asks the disk again for both rooms, because something arrived or
+	/// somebody asked.
+	///
+	/// The room with no server behind it keeps its own answer, keyed on the
+	/// same three names and cached for the same reason — and `refresh_content`
+	/// returns at once when there is no connection, so without the second half
+	/// an engine put in the folder by hand is found only by restarting the app.
+	/// A room opened on a machine with nothing on it names nothing, so it is
+	/// also given what has arrived since, and that is written down.
+	async fn look_again(&mut self) {
+		self.checked = None;
+		self.refresh_content().await;
+		let dirs = self.data_dirs();
+		let adopted = match (self.skirmish.as_mut(), dirs) {
+			(Some(room), Some(dirs)) => {
+				let library = content::Library::new(dirs);
+				room.adopt(&library.installed_engines(), &library.installed_games())
+			}
+			_ => false,
+		};
+		if adopted {
+			self.remember_skirmish();
+		}
+		self.skirmish_checked = None;
+		self.push_skirmish();
 	}
 
 	/// Re-checks the room's content when what it asks for changes, and tells
@@ -2236,17 +2270,7 @@ impl Runtime {
 				self.checked = None;
 				self.refresh_content().await;
 			}
-			Command::RecheckContent => {
-				self.checked = None;
-				self.refresh_content().await;
-				// The room with no server behind it keeps its own answer,
-				// keyed on the same three names and cached for the same
-				// reason — and `refresh_content` above returns at once when
-				// there is no connection, so without this an engine put in the
-				// folder by hand is found only by restarting the app.
-				self.skirmish_checked = None;
-				self.push_skirmish();
-			}
+			Command::RecheckContent => self.look_again().await,
 			Command::ReleaseSeat => {
 				let Some(server) = self.room() else {
 					return;
