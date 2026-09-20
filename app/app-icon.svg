@@ -1,0 +1,14 @@
+<!-- Source for every file in src-tauri/icons/. Regenerate with: bun tauri icon app-icon.svg
+     Drawn on a 16 px grid (8 units = 1 px): stems and doorways are 2 px wide, so edges
+     land on whole pixels at 16, 32, 48 and 64. At 24 px the side edges fall on half pixels. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="door" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1d4d6b"/>
+      <stop offset="1" stop-color="#1d4d6b" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="#11151b"/>
+  <path d="M40 48H56V96H40ZM72 48H88V96H72Z" fill="url(#door)"/>
+  <path d="M24 96V32H92L104 44V96H88V48H72V96H56V48H40V96Z" fill="#58c4ff"/>
+</svg>
