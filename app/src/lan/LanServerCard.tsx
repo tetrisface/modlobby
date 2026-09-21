@@ -68,7 +68,7 @@ export function LanServerCard(props: {
 		<div class='server-card'>
 			<div class='server-head'>
 				<input
-					class='server-name'
+					class='lan-name'
 					aria-label='Your name on the LAN'
 					value={entry()?.username ?? ''}
 					placeholder='Your name on the LAN'

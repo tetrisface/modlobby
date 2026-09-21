@@ -165,7 +165,7 @@ function checked<T>(
 /** How long a Remove waits for its second click before it stands down. */
 const CONFIRM_FOR = 4000
 
-/** What `auto` on a card does, and whose answer that is. */
+/** What Auto login on a card does, and whose answer that is. */
 function autoTitle(entry: ServerEntry, account: Account): string {
 	if (!account.rememberPassword)
 		return 'Log in at startup: needs Remember passwords, under Account'
@@ -273,7 +273,7 @@ function ServerCard(props: {
 					title={autoTitle(props.entry, props.account)}
 					onClick={() => props.change('autoLogin', !logsIn())}
 				>
-					auto
+					Auto login
 				</button>
 				<span class={`chip ${status().tone}`}>{status().text}</span>
 			</div>
@@ -339,7 +339,7 @@ function ServerCard(props: {
 						Port numbers, separated by commas — not saved until they are.
 					</p>
 				</Show>
-				<label class='row' title={UNENCRYPTED_TIP}>
+				<label class='row server-plain' title={UNENCRYPTED_TIP}>
 					<input
 						type='checkbox'
 						checked={props.entry.allowUnencrypted}

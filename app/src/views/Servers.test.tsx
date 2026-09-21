@@ -307,7 +307,7 @@ describe('the servers section', () => {
 		})
 	})
 
-	test("auto shows the account's answer until pressed, then its own", async () => {
+	test("Auto login shows the account's answer until pressed, then its own", async () => {
 		asked.mockImplementation(async (command: string, args?: unknown) => {
 			if (command === 'update_settings')
 				return structuredClone((args as { settings: Settings }).settings)
@@ -318,7 +318,7 @@ describe('the servers section', () => {
 			account: { rememberPassword: true, autoLogin: true },
 		})
 		const { container } = open()
-		const auto = button(cards(container)[0]!, 'auto')
+		const auto = button(cards(container)[0]!, 'Auto login')
 		expect(auto.getAttribute('aria-pressed')).toBe('true')
 		fireEvent.click(auto)
 		expect(auto.getAttribute('aria-pressed')).toBe('false')

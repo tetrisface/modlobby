@@ -1620,6 +1620,13 @@ body.resizing-y {
 	border-color: var(--line);
 }
 
+/* The LAN's card has no name of its own to title it: this is the one you
+   appear as, a field like any other. */
+.lan-name {
+	flex: 1;
+	min-width: 0;
+}
+
 /* Kept to the right, on whichever line the row's wrapping leaves it. */
 .server-remove {
 	margin-left: auto;
@@ -1635,6 +1642,11 @@ body.resizing-y {
 	display: flex;
 	flex-direction: column;
 	gap: 0.5rem;
+}
+
+/* Set apart from the ports above and the addresses below it. */
+.server-connection .server-plain {
+	margin-block: 0.5rem;
 }
 
 /* An address field level with what it is for, out at the card's right. */
