@@ -54,6 +54,11 @@ export function LoginForm(props: {
 	 * second place to change it.
 	 */
 	asksFlags?: boolean
+	/**
+	 * Logs in straight away when the account's password is remembered: opened
+	 * over a page by somebody who pressed Log in, there is nothing to ask.
+	 */
+	startsAtOnce?: boolean
 }) {
 	/** The server as the settings list it. */
 	const entry = () =>
@@ -84,13 +89,24 @@ export function LoginForm(props: {
 	 */
 	const [remember, setRemember] = createSignal(false)
 	const [autoLogin, setAutoLogin] = createSignal(false)
-	const [hasStored, setHasStored] = createSignal(false)
+	/** The username whose password this machine remembers, if it does. */
+	const [storedFor, setStoredFor] = createSignal<string | null>(null)
+	const hasStored = () =>
+		mode() === 'login' &&
+		storedFor() !== null &&
+		storedFor() === username().trim()
+	/** Whether the password field has the focus, to type over what it holds. */
+	const [typing, setTyping] = createSignal(false)
+	/** The remembered password drawn as one, until the field is taken up. */
+	const showsStored = () => hasStored() && !typing() && !password()
 	/** Why this username cannot be had, answered without asking the server. */
 	const [nameProblem, setNameProblem] = createSignal<string | null>(null)
 	const [error, setError] = createSignal<string | null>(null)
 	const [busy, setBusy] = createSignal(false)
 	/** Seconds teiserver's login limit still needs; 0 when clear. */
 	const [wait, setWait] = createSignal(0)
+	/** Whether `wait` has been asked yet: before then, 0 means nothing. */
+	const [waitKnown, setWaitKnown] = createSignal(false)
 
 	// The server refuses a login within twenty seconds of the account's last,
 	// and the clock is kept across restarts — a rebuild loop reaches it easily,
@@ -100,6 +116,7 @@ export function LoginForm(props: {
 			.loginWait(props.server)
 			.then(setWait)
 			.catch(() => setWait(0))
+			.finally(() => setWaitKnown(true))
 	})
 	createEffect(() => {
 		if (wait() <= 0) return
@@ -117,9 +134,19 @@ export function LoginForm(props: {
 		if (s.account.rememberPassword && known) {
 			void api
 				.hasPassword(props.server, known)
-				.then(setHasStored)
-				.catch(() => setHasStored(false))
+				.then((stored) => setStoredFor(stored ? known : null))
+				.catch(() => setStoredFor(null))
 		}
+	})
+
+	// Once, and only once the server's login limit is known to be clear: a
+	// login it refuses starts the limit's twenty seconds again.
+	let started = false
+	createEffect(() => {
+		if (started || !props.startsAtOnce || !hasStored() || password()) return
+		if (!waitKnown() || wait() > 0) return
+		started = true
+		void login()
 	})
 
 	// Logging in anywhere lands here as a phase change, including the login that
@@ -289,9 +316,11 @@ export function LoginForm(props: {
 						// would not catch the typo it exists to catch — it would only be
 						// found on the next launch, out of the keyring.
 						type={reveal() ? 'text' : 'password'}
-						value={password()}
+						value={showsStored() ? MASKED : password()}
 						onInput={(e) => setPassword(e.currentTarget.value)}
-						placeholder={hasStored() && mode() === 'login' ? MASKED : ''}
+						onFocus={() => setTyping(true)}
+						onBlur={() => setTyping(false)}
+						placeholder={hasStored() ? MASKED : ''}
 						disabled={awaitingCode()}
 						autocomplete={
 							mode() === 'register' ? 'new-password' : 'current-password'
@@ -309,9 +338,9 @@ export function LoginForm(props: {
 					</button>
 				</span>
 			</label>
-			{/* The field is empty and the login still works: say so, rather than
-          leaving a row of dots to be read as a password already typed. */}
-			<Show when={hasStored() && mode() === 'login' && !password()}>
+			{/* Taken up and still empty, the field falls back to the remembered
+          password, and says so while that is not what it looks like. */}
+			<Show when={hasStored() && typing() && !password()}>
 				<p class='muted'>
 					Leave it empty to use the password this machine remembers.
 				</p>
@@ -484,6 +513,7 @@ export function LoginSheet(props: {
 						server={props.server}
 						mode={props.mode}
 						onDone={() => props.close()}
+						startsAtOnce
 					/>
 					<div class='sheet-actions'>
 						<button type='button' onClick={() => props.close()}>

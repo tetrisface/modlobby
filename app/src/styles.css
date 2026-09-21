@@ -1541,7 +1541,7 @@ body.resizing-y {
 	display: flex;
 	flex-direction: column;
 	gap: 0.875rem;
-	max-width: 35rem;
+	max-width: 52.5rem;
 	margin-inline: auto;
 	width: 100%;
 }
@@ -1635,6 +1635,19 @@ body.resizing-y {
 	display: flex;
 	flex-direction: column;
 	gap: 0.5rem;
+}
+
+/* An address field level with what it is for, out at the card's right. */
+.server-connection label.split {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+}
+
+.server-connection label.split input {
+	flex: 0 1 26rem;
+	min-width: 0;
 }
 
 .server-actions {

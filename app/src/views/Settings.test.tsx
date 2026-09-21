@@ -28,6 +28,7 @@ function loaded(): Settings {
 				maps: null,
 				username: 'me',
 				channels: ['main'],
+				autoLogin: null,
 			},
 		],
 		account: { rememberPassword: false, autoLogin: false },

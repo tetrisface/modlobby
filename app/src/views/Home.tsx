@@ -1,5 +1,6 @@
 import { Navigate } from '@solidjs/router'
 import { Show } from 'solid-js'
+import { logsInAtStart } from '../lib/servers'
 import { anyReady } from '../store/lobby'
 import { settings } from '../store/settings'
 
@@ -26,9 +27,9 @@ export function Home() {
 	return (
 		<Show when={settings()}>
 			{(loaded) => {
-				const account = loaded().account
+				const { account, servers } = loaded()
 				const expectSession =
-					anyReady() || (account.autoLogin && account.rememberPassword)
+					anyReady() || servers.some((entry) => logsInAtStart(entry, account))
 				return <Navigate href={expectSession ? '/battles' : '/skirmish'} />
 			}}
 		</Show>

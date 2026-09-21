@@ -360,8 +360,10 @@ export function SettingsView() {
 							<p class='muted'>
 								For every server at once: each keeps its own account and
 								password, and these decide whether any of them are kept and used
-								at startup. A password never goes in the settings file.
-								Forgettable on the server's setting.
+								at startup. A server's own <b>auto</b>, under Servers, logs it
+								in at startup or not whatever this says; set the same as this,
+								it follows this again once this changes. A password never goes
+								in the settings file. Forgettable on the server's setting.
 							</p>
 						</Row>
 					</Section>

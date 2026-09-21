@@ -45,11 +45,23 @@ describe('adding a server', () => {
 
 	test('refuses nothing, a port or a path, and a server already listed', () => {
 		expect(hostProblem('  ', [])).toBe('a host is needed')
-		expect(hostProblem('example.org:8200', [])).toContain('ports')
-		expect(hostProblem('https://example.org', [])).toContain('ports')
+		expect(hostProblem('example.org:0', [])).toBe('0 is not a port')
+		expect(hostProblem('https://example.org', [])).toContain('host name')
 		expect(hostProblem('Server4', ['server4'])).toBe(
 			'that server is already listed',
 		)
+		expect(hostProblem('server4:8200', ['server4'])).toBe(
+			'that server is already listed',
+		)
+	})
+
+	test('take a port typed after the host as their only one', () => {
+		expect(hostProblem('asdf.asdf.com:4000', [])).toBeNull()
+		expect(newServer('asdf.asdf.com:4000')).toMatchObject({
+			host: 'asdf.asdf.com',
+			ports: [4000],
+		})
+		expect(newServer('asdf.asdf.com').ports).toEqual([8200, 8201])
 	})
 })
 

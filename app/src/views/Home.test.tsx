@@ -2,6 +2,7 @@ import { cleanup, render, waitFor } from '@solidjs/testing-library'
 import { reconcile } from 'solid-js/store'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { Settings } from '../ipc/bindings/Settings'
+import { BAR_HOST, newServer } from '../lib/servers'
 import { emptyLobby, setLobby } from '../store/lobby'
 import { seedSession } from '../store/testing'
 import { setSettingsSignal } from '../store/settings'
@@ -13,8 +14,12 @@ vi.mock('@solidjs/router', () => ({
 	Navigate: (props: { href: string }) => <i data-to={props.href} />,
 }))
 
-function account(over: Partial<Settings['account']> = {}) {
+function account(
+	over: Partial<Settings['account']> = {},
+	own: boolean | null = null,
+) {
 	setSettingsSignal({
+		servers: [{ ...newServer(BAR_HOST), autoLogin: own }],
 		account: {
 			username: 'me',
 			rememberPassword: false,
@@ -63,6 +68,12 @@ describe('where a launch lands', () => {
 		account({ autoLogin: true, rememberPassword: false })
 		const { container } = render(() => <Home />)
 		expect(landsOn(container)).toBe('/skirmish')
+	})
+
+	test("a server's own answer outranks the account's", () => {
+		account({ autoLogin: false, rememberPassword: true }, true)
+		const { container } = render(() => <Home />)
+		expect(landsOn(container)).toBe('/battles')
 	})
 
 	test('already logged in goes to the lobby whatever the settings say', () => {

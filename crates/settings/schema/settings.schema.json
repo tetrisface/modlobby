@@ -440,6 +440,14 @@
           "type": "boolean",
           "default": false
         },
+        "autoLogin": {
+          "description": "Whether this server is logged in to at startup; `null` follows\n`account.autoLogin`. A value that matches that one follows it again\nthe next time it changes: until then it was agreeing, not overriding.",
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "default": null
+        },
         "channels": {
           "description": "Channels to rejoin at login. The server forgets you were in them the\nmoment you disconnect, so remembering is the client's job — and keeping\nit here means you can also just write one in.",
           "type": "array",

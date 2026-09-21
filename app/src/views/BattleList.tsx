@@ -472,7 +472,12 @@ export function BattleList() {
 						disabled={hostBusy() || (hostable().length === 0 && !lanOn())}
 						aria-expanded={choosing()}
 						title='Take over an empty autohost near you and become its boss, or open a room on your network'
-						onClick={() => setChoosing(!choosing())}
+						onClick={() => {
+							// One server and no LAN on offer: there is nothing to choose.
+							const only = hostable()
+							if (only.length === 1 && !lanOn()) return void host(only[0])
+							setChoosing(!choosing())
+						}}
 					>
 						Host battle
 					</button>

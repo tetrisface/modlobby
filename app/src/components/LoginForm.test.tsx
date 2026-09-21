@@ -130,6 +130,33 @@ describe('the login form', () => {
 		)
 	})
 
+	test('a remembered password shows as one, and opened to log in, logs in at once', async () => {
+		serve({ has_password: true })
+		const kept = settingsWith()
+		kept.servers = [{ ...newServer(SERVER), username: 'me' }]
+		kept.account = { rememberPassword: true, autoLogin: false }
+		setSettingsSignal(kept)
+		const { container } = render(() => (
+			<LoginForm server={SERVER} startsAtOnce />
+		))
+		const field = container.querySelector<HTMLInputElement>(
+			'input[autocomplete="current-password"]',
+		)!
+		await waitFor(() => expect(field.value).toBe('••••••••'))
+		// Taken up, the field is empty to type another into.
+		fireEvent.focus(field)
+		expect(field.value).toBe('')
+		await waitFor(() =>
+			expect(asked).toHaveBeenCalledWith('login', {
+				server: SERVER,
+				username: 'me',
+				password: null,
+				remember: true,
+				autoLogin: false,
+			}),
+		)
+	})
+
 	test('the way to register sits under the button, and the error above it', () => {
 		const { container } = render(() => <Login />)
 		const children = [...container.querySelector('form')!.children]

@@ -307,6 +307,50 @@ describe('the servers section', () => {
 		})
 	})
 
+	test("auto shows the account's answer until pressed, then its own", async () => {
+		asked.mockImplementation(async (command: string, args?: unknown) => {
+			if (command === 'update_settings')
+				return structuredClone((args as { settings: Settings }).settings)
+			return null
+		})
+		applySettings({
+			...loaded(),
+			account: { rememberPassword: true, autoLogin: true },
+		})
+		const { container } = open()
+		const auto = button(cards(container)[0]!, 'auto')
+		expect(auto.getAttribute('aria-pressed')).toBe('true')
+		fireEvent.click(auto)
+		expect(auto.getAttribute('aria-pressed')).toBe('false')
+		await vi.waitFor(
+			() =>
+				expect(asked).toHaveBeenCalledWith('update_settings', {
+					settings: expect.objectContaining({
+						servers: [expect.objectContaining({ autoLogin: false })],
+					}),
+				}),
+			{ timeout: 2000 },
+		)
+	})
+
+	test('the pen changes the host, a port typed after it included', async () => {
+		const { container } = open()
+		const card = cards(container)[0]!
+		fireEvent.click(card.querySelector('button[title="Change the host"]')!)
+		const field = document.querySelector<HTMLInputElement>('.sheet-card input')!
+		fireEvent.input(field, { target: { value: 'https://other.example' } })
+		expect(document.querySelector('.sheet-card .error')).not.toBeNull()
+
+		fireEvent.input(field, { target: { value: 'other.example:4000' } })
+		fireEvent.submit(field.form!)
+		await vi.waitFor(() => expect(card.textContent).toContain('other.example'))
+		expect(
+			card.querySelector<HTMLInputElement>('.server-connection input')?.value,
+		).toBe('4000')
+		// Another host is another server: what was kept for the old one goes.
+		expect(asked).toHaveBeenCalledWith('forget_way', { host: BAR })
+	})
+
 	test("reset password opens the server's own page", async () => {
 		const { container } = open()
 		fireEvent.click(button(cards(container)[0]!, 'Reset password'))

@@ -91,6 +91,10 @@ impl Store {
 		let before = self.get();
 		let mut after = before.clone();
 		change(&mut after);
+		// What a change implies, whoever made it: the LAN's row for its switch,
+		// a server's startup login for the account's.
+		after.ensure_lan();
+		after.follow_auto_login(&before);
 		if after == before {
 			return Ok(after);
 		}

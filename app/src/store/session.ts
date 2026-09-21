@@ -1,7 +1,7 @@
 import { createSignal } from 'solid-js'
 import type { Settings } from '../ipc/bindings/Settings'
 import { api, describeError } from '../ipc/client'
-import { serverId } from '../lib/servers'
+import { logsInAtStart, serverId } from '../lib/servers'
 import { pushNotice } from './chat'
 import { applySettings } from './settings'
 
@@ -32,26 +32,29 @@ let attempted = false
 
 export async function autoLogin(settings: Settings): Promise<void> {
 	if (attempted) return
-	// Without a remembered password there is nothing to log in with, and
-	// `autoLogin` is only ever saved alongside `rememberPassword`.
-	const { account } = settings
-	if (!account.autoLogin || !account.rememberPassword) return
+	const due = settings.servers.filter(
+		(entry) => entry.username.trim() && logsInAtStart(entry, settings.account),
+	)
+	if (due.length === 0) return
 	attempted = true
 
-	// Every server with an account and a remembered password, side by side:
-	// each waits out its own login limit, and one being slow holds up none.
+	// Every server due, with a remembered password, side by side: each waits
+	// out its own login limit, and one being slow holds up none.
 	await Promise.all(
-		settings.servers.map(async (entry) => {
+		due.map(async (entry) => {
 			const username = entry.username.trim()
 			const server = serverId(entry.host)
-			if (!username) return
 			const stored = await api.hasPassword(server, username).catch(() => false)
-			if (stored) await loginTo(server, username)
+			if (stored) await loginTo(server, username, settings.account.autoLogin)
 		}),
 	)
 }
 
-async function loginTo(server: string, username: string): Promise<void> {
+async function loginTo(
+	server: string,
+	username: string,
+	autoLogin: boolean,
+): Promise<void> {
 	// teiserver refuses a login within twenty seconds of the account's last,
 	// and Rust keeps that clock across restarts — so the start after an update
 	// or a rebuild arrives here already throttled. Waiting it out beats being
@@ -64,8 +67,10 @@ async function loginTo(server: string, username: string): Promise<void> {
 	}
 
 	try {
-		// No password given: Rust falls back to the one in the keyring.
-		applySettings(await api.login(server, username, null, true, true))
+		// No password given: Rust falls back to the one in the keyring. The
+		// account's own answer goes back as it was, since a login writes it: a
+		// server that logs in at startup on its own say turns it on for no other.
+		applySettings(await api.login(server, username, null, true, autoLogin))
 	} catch (error) {
 		pushNotice('warning', `could not log in: ${describeError(error)}`)
 	}

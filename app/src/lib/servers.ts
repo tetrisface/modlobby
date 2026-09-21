@@ -1,3 +1,4 @@
+import type { Account } from '../ipc/bindings/Account'
 import type { Phase } from '../ipc/bindings/Phase'
 import type { ServerEntry } from '../ipc/bindings/ServerEntry'
 
@@ -29,18 +30,33 @@ export function forgotPasswordUrl(entry: ServerEntry): string {
 }
 
 /**
- * Why a host cannot be added, or `null` when it can. Just the name: ports
- * have their own field, and a scheme or a path is not somewhere a lobby
- * connects to.
+ * A host as typed, and the port after it if one was: `host:4000` is how a
+ * server's address is usually written down.
+ */
+export function splitHost(typed: string): {
+	host: string
+	port: number | null
+} {
+	const found = /^(.+):(\d+)$/.exec(typed.trim())
+	if (!found) return { host: typed.trim(), port: null }
+	return { host: found[1]!, port: Number(found[2]) }
+}
+
+/**
+ * Why a host cannot be added, or `null` when it can. The name, and a port
+ * after it at most: a scheme or a path is not somewhere a lobby connects to.
  */
 export function hostProblem(
-	host: string,
+	typed: string,
 	listed: readonly string[],
 ): string | null {
+	const { host, port } = splitHost(typed)
 	const id = serverId(host)
 	if (!id) return 'a host is needed'
+	if (port !== null && (port < 1 || port > 65535))
+		return `${port} is not a port`
 	if (/[\s/:@]/.test(id))
-		return 'just the host name — ports have their own field'
+		return 'just the host name, and a port after a colon if it needs one'
 	if (listed.some((held) => serverId(held) === id))
 		return 'that server is already listed'
 	return null
@@ -66,19 +82,32 @@ export function guessedRapid(host: string): string {
 	return `https://${host.trim()}/repos.gz`
 }
 
-/** A server just added by its host: teiserver's ports, encrypted only, no account yet. */
-export function newServer(host: string): ServerEntry {
+/**
+ * A server just added by its host: teiserver's ports unless one was typed
+ * after it, encrypted only, no account yet.
+ */
+export function newServer(typed: string): ServerEntry {
+	const { host, port } = splitHost(typed)
 	return {
-		host: host.trim(),
+		host,
 		name: '',
-		ports: [8200, 8201],
+		ports: port === null ? [8200, 8201] : [port],
 		allowUnencrypted: false,
 		website: null,
 		rapid: null,
 		maps: null,
 		username: '',
 		channels: ['main'],
+		autoLogin: null,
 	}
+}
+
+/**
+ * Whether `entry` is logged in to at startup: its own answer, else the
+ * account's — and never without a remembered password to do it with.
+ */
+export function logsInAtStart(entry: ServerEntry, account: Account): boolean {
+	return account.rememberPassword && (entry.autoLogin ?? account.autoLogin)
 }
 
 /** What server `id` is called among `listed`: its entry's name, else the id. */

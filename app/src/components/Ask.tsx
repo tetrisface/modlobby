@@ -12,10 +12,13 @@ export function Ask(props: {
 	hint?: string
 	initial?: string
 	confirm?: string
+	/** Why the text as typed will not do, or `null` when it will. */
+	problem?: (text: string) => string | null
 	onAnswer: (text: string) => void
 	onCancel: () => void
 }) {
 	const [text, setText] = createSignal(props.initial ?? '')
+	const problem = () => props.problem?.(text()) ?? null
 	let field: HTMLInputElement | undefined
 
 	onMount(() => {
@@ -31,7 +34,7 @@ export function Ask(props: {
 				onSubmit={(event) => {
 					event.preventDefault()
 					const answer = text().trim()
-					if (answer) props.onAnswer(answer)
+					if (answer && !problem()) props.onAnswer(answer)
 				}}
 			>
 				<h2>{props.title}</h2>
@@ -44,11 +47,18 @@ export function Ask(props: {
 						if (event.key === 'Escape') props.onCancel()
 					}}
 				/>
+				<Show when={text().trim() && problem()}>
+					{(why) => <p class='error'>{why()}</p>}
+				</Show>
 				<div class='sheet-actions'>
 					<button type='button' onClick={props.onCancel}>
 						Cancel
 					</button>
-					<button class='primary' type='submit' disabled={!text().trim()}>
+					<button
+						class='primary'
+						type='submit'
+						disabled={!text().trim() || problem() !== null}
+					>
 						{props.confirm ?? 'OK'}
 					</button>
 				</div>

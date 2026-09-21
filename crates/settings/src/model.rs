@@ -101,6 +101,21 @@ impl Settings {
 		}
 	}
 
+	/// Lets a server's own startup login follow the account's again once the
+	/// account's changes, where the two agreed until then (see
+	/// `ServerEntry::auto_login`). `before` is the settings as they were.
+	pub(crate) fn follow_auto_login(&mut self, before: &Settings) {
+		let was = before.account.auto_login;
+		if self.account.auto_login == was {
+			return;
+		}
+		for entry in &mut self.servers {
+			if entry.auto_login == Some(was) {
+				entry.auto_login = None;
+			}
+		}
+	}
+
 	/// The server list a file from before there was one meant: its one
 	/// server, with the account and the channels that went with it.
 	pub(crate) fn migrate(&mut self) {
@@ -119,6 +134,7 @@ impl Settings {
 			maps: None,
 			username: self.account.username.clone(),
 			channels: self.chat.channels.clone(),
+			auto_login: None,
 		}];
 	}
 }
@@ -159,6 +175,10 @@ pub struct ServerEntry {
 	/// moment you disconnect, so remembering is the client's job — and keeping
 	/// it here means you can also just write one in.
 	pub channels: Vec<String>,
+	/// Whether this server is logged in to at startup; `null` follows
+	/// `account.autoLogin`. A value that matches that one follows it again
+	/// the next time it changes: until then it was agreeing, not overriding.
+	pub auto_login: Option<bool>,
 }
 
 impl ServerEntry {
@@ -205,6 +225,7 @@ impl Default for ServerEntry {
 			username: String::new(),
 			// Where the server puts everyone, and where the announcements are.
 			channels: vec!["main".into()],
+			auto_login: None,
 		}
 	}
 }
@@ -733,6 +754,40 @@ mod tests {
 		};
 		bare.ensure_lan();
 		assert!(bare.servers.is_empty());
+	}
+
+	/// A server set the same as the account follows the account's next
+	/// change; one set otherwise keeps its own answer.
+	#[test]
+	fn a_server_that_agreed_with_the_account_follows_its_change() {
+		let mut before = Settings::initial();
+		before.account.auto_login = true;
+		before.servers = vec![
+			ServerEntry {
+				host: "same".into(),
+				auto_login: Some(true),
+				..ServerEntry::default()
+			},
+			ServerEntry {
+				host: "own".into(),
+				auto_login: Some(false),
+				..ServerEntry::default()
+			},
+			ServerEntry {
+				host: "follows".into(),
+				..ServerEntry::default()
+			},
+		];
+		let mut after = before.clone();
+		after.account.auto_login = false;
+		after.follow_auto_login(&before);
+		let own: Vec<_> = after.servers.iter().map(|entry| entry.auto_login).collect();
+		assert_eq!(own, vec![None, Some(false), None]);
+
+		// Unchanged, nothing is touched.
+		let mut again = before.clone();
+		again.follow_auto_login(&before);
+		assert_eq!(again, before);
 	}
 
 	#[test]

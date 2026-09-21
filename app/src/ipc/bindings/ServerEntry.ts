@@ -53,4 +53,10 @@ export type ServerEntry = {
 	 * it here means you can also just write one in.
 	 */
 	channels: Array<string>
+	/**
+	 * Whether this server is logged in to at startup; `null` follows
+	 * `account.autoLogin`. A value that matches that one follows it again
+	 * the next time it changes: until then it was agreeing, not overriding.
+	 */
+	autoLogin: boolean | null
 }

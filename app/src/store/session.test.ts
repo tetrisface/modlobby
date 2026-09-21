@@ -86,6 +86,25 @@ describe('logging back in on startup', () => {
 		expect(login).not.toHaveBeenCalled()
 	})
 
+	test("follows a server's own answer over the account's", async () => {
+		const session = await fresh()
+		await session.autoLogin(
+			remembered({ autoLogin: false }, [
+				{ ...newServer(BAR), username: 'me', autoLogin: true },
+				{ ...newServer(RAPID), username: 'other' },
+			]),
+		)
+		expect(login).toHaveBeenCalledTimes(1)
+		// Sent back off: this server's answer is not the account's to change.
+		expect(login).toHaveBeenCalledWith(BAR, 'me', null, true, false)
+
+		const kept = await fresh()
+		await kept.autoLogin(
+			remembered({}, [{ ...newServer(BAR), username: 'me', autoLogin: false }]),
+		)
+		expect(login).toHaveBeenCalledTimes(1)
+	})
+
 	test('goes to every server whose password is kept', async () => {
 		const session = await fresh()
 

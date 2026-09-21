@@ -9,9 +9,13 @@ import {
 	onCleanup,
 } from 'solid-js'
 import type { SetStoreFunction } from 'solid-js/store'
+import { Portal } from 'solid-js/web'
+import { ActionCell, CellButton } from '../components/ActionCell'
+import { Ask } from '../components/Ask'
 import { LoginSheet } from '../components/LoginForm'
 import { openExternal } from '../components/Linkify'
 import { Row } from '../components/SettingRow'
+import type { Account } from '../ipc/bindings/Account'
 import type { ServerEntry } from '../ipc/bindings/ServerEntry'
 import type { Settings } from '../ipc/bindings/Settings'
 import { api, describeError } from '../ipc/client'
@@ -24,6 +28,7 @@ import {
 	serverId,
 	serverName,
 	sessionStatus,
+	splitHost,
 } from '../lib/servers'
 import { LanServerCard } from '../lan/LanServerCard'
 import { isLan } from '../lan/lan'
@@ -54,14 +59,15 @@ export function ServerRows(props: {
 	 * something of the server's own in it: a guess that is wrong leaves the
 	 * field empty, and the server on BAR's games.
 	 */
-	async function add(host: string) {
-		props.setDraft('servers', (servers) => [...servers, newServer(host)])
-		const guess = guessedRapid(host)
+	async function add(typed: string) {
+		const added = newServer(typed)
+		props.setDraft('servers', (servers) => [...servers, added])
+		const guess = guessedRapid(added.host)
 		const found = await api.checkRapid(guess).catch(() => null)
 		if (!found || found.own === 0) return
 		props.setDraft(
 			'servers',
-			(entry) => serverId(entry.host) === serverId(host) && !entry.rapid,
+			(entry) => serverId(entry.host) === serverId(added.host) && !entry.rapid,
 			'rapid',
 			guess,
 		)
@@ -80,6 +86,10 @@ export function ServerRows(props: {
 						<Row>
 							<ServerCard
 								entry={entry}
+								account={props.draft.account}
+								others={props.draft.servers
+									.filter((_, at) => at !== index())
+									.map((other) => other.host)}
 								change={(field, value) =>
 									props.setDraft('servers', index(), field, value)
 								}
@@ -105,7 +115,7 @@ export function ServerRows(props: {
 			<Row>
 				<AddServer
 					listed={props.draft.servers.map((entry) => entry.host)}
-					add={(host) => void add(host)}
+					add={(typed) => void add(typed)}
 				/>
 			</Row>
 			<Show when={asking()} keyed>
@@ -155,8 +165,25 @@ function checked<T>(
 /** How long a Remove waits for its second click before it stands down. */
 const CONFIRM_FOR = 4000
 
+/** What `auto` on a card does, and whose answer that is. */
+function autoTitle(entry: ServerEntry, account: Account): string {
+	if (!account.rememberPassword)
+		return 'Log in at startup: needs Remember passwords, under Account'
+	const on = entry.autoLogin ?? account.autoLogin
+	const whose = entry.autoLogin === null ? 'as Account says' : 'for this server'
+	return `Log in at startup: ${on ? 'on' : 'off'}, ${whose}`
+}
+
+const PORTS_TIP =
+	'Every port is tried encrypted both ways at once, and the first to answer is remembered.'
+const UNENCRYPTED_TIP =
+	'Only for a server with nothing else: your password and every message cross the network readable. Never raced against encryption.'
+
 function ServerCard(props: {
 	entry: ServerEntry
+	account: Account
+	/** Every other server's host, which this one may not be changed to. */
+	others: string[]
 	change: <K extends keyof ServerEntry>(field: K, value: ServerEntry[K]) => void
 	remove: () => void
 	ask: (mode: 'login' | 'register') => void
@@ -166,6 +193,7 @@ function ServerCard(props: {
 	const way = () => lobby.ways[id()]
 	const [portsText, setPortsText] = createSignal(props.entry.ports.join(', '))
 	const [removing, setRemoving] = createSignal(false)
+	const [rehosting, setRehosting] = createSignal(false)
 	// What each address turned out to be, asked once typing has stopped.
 	const rapid = checked(
 		() => props.entry.rapid,
@@ -183,6 +211,7 @@ function ServerCard(props: {
 
 	const status = () => sessionStatus(session())
 	const connected = () => (session()?.phase ?? null) !== null
+	const logsIn = () => props.entry.autoLogin ?? props.account.autoLogin
 
 	async function act(what: string, run: () => Promise<unknown>) {
 		try {
@@ -198,14 +227,31 @@ function ServerCard(props: {
 			setTimeout(() => setRemoving(false), CONFIRM_FOR)
 			return
 		}
-		// A server that is gone from the list is not one to stay logged in to,
-		// nor one to go on keeping a password and a way in for.
-		void act('remove', async () => {
-			if (connected()) await api.logout(id())
-			if (props.entry.username)
-				await api.clearPassword(id(), props.entry.username)
-			await api.forgetWay(props.entry.host)
-		}).then(props.remove)
+		void act('remove', forget).then(props.remove)
+	}
+
+	/**
+	 * A server that is gone from the list is not one to stay logged in to,
+	 * nor one to go on keeping a password and a way in for -- and a changed
+	 * host is a server gone, since the host is what it is known by.
+	 */
+	async function forget() {
+		if (connected()) await api.logout(id())
+		if (props.entry.username)
+			await api.clearPassword(id(), props.entry.username)
+		await api.forgetWay(props.entry.host)
+	}
+
+	/** A port typed after the host is its one port, as when it was added. */
+	function rehost(typed: string) {
+		setRehosting(false)
+		const { host, port } = splitHost(typed)
+		if (port !== null) {
+			props.change('ports', [port])
+			setPortsText(String(port))
+		}
+		if (serverId(host) === id()) return props.change('host', host)
+		void act('change the host', forget).then(() => props.change('host', host))
 	}
 
 	return (
@@ -218,10 +264,28 @@ function ServerCard(props: {
 					placeholder={props.entry.host}
 					onInput={(event) => props.change('name', event.currentTarget.value)}
 				/>
+				<button
+					type='button'
+					class='chip-choice'
+					classList={{ on: logsIn() }}
+					aria-pressed={logsIn()}
+					disabled={!props.account.rememberPassword}
+					title={autoTitle(props.entry, props.account)}
+					onClick={() => props.change('autoLogin', !logsIn())}
+				>
+					auto
+				</button>
 				<span class={`chip ${status().tone}`}>{status().text}</span>
 			</div>
 			<p class='muted'>
-				{props.entry.host}
+				{props.entry.host}{' '}
+				<ActionCell>
+					<CellButton
+						icon='act-pen'
+						title='Change the host'
+						onClick={() => setRehosting(true)}
+					/>
+				</ActionCell>
 				<Show when={props.entry.username}>
 					{(name) => <> · account {name()}</>}
 				</Show>
@@ -242,10 +306,23 @@ function ServerCard(props: {
 					)}
 				</Show>
 			</p>
+			<Show when={rehosting()}>
+				<Portal>
+					<Ask
+						title='Change the host'
+						hint='Another host is another server: the password kept for this one is forgotten. A port may follow a colon.'
+						initial={props.entry.host}
+						confirm='Change'
+						problem={(typed) => hostProblem(typed, props.others)}
+						onCancel={() => setRehosting(false)}
+						onAnswer={rehost}
+					/>
+				</Portal>
+			</Show>
 			{/* Set once, if ever: a server that works is never opened here. */}
 			<details class='server-connection' open={startsOpen}>
 				<summary>Connection</summary>
-				<label>
+				<label title={PORTS_TIP}>
 					Ports
 					<input
 						value={portsText()}
@@ -257,20 +334,12 @@ function ServerCard(props: {
 						}}
 					/>
 				</label>
-				<Show
-					when={parsePorts(portsText()) !== null}
-					fallback={
-						<p class='error'>
-							Port numbers, separated by commas — not saved until they are.
-						</p>
-					}
-				>
-					<p class='muted'>
-						Every port is tried encrypted both ways at once, and the first to
-						answer is remembered.
+				<Show when={parsePorts(portsText()) === null}>
+					<p class='error'>
+						Port numbers, separated by commas — not saved until they are.
 					</p>
 				</Show>
-				<label class='row'>
+				<label class='row' title={UNENCRYPTED_TIP}>
 					<input
 						type='checkbox'
 						checked={props.entry.allowUnencrypted}
@@ -280,13 +349,7 @@ function ServerCard(props: {
 					/>
 					Allow unencrypted, once every encrypted way has failed
 				</label>
-				<Show when={props.entry.allowUnencrypted}>
-					<p class='muted warn-text'>
-						Only for a server with nothing else: your password and every message
-						cross the network readable. Never raced against encryption.
-					</p>
-				</Show>
-				<label>
+				<label class='split'>
 					Rapid server, where this server's own games are published
 					<input
 						value={props.entry.rapid ?? ''}
@@ -318,7 +381,7 @@ function ServerCard(props: {
 						)}
 					</Match>
 				</Switch>
-				<label>
+				<label class='split'>
 					Map search, where this server's own maps are found
 					<input
 						value={props.entry.maps ?? ''}
