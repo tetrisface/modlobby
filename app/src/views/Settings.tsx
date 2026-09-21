@@ -16,6 +16,7 @@ import { api, describeError } from '../ipc/client'
 import { build } from '../store/build'
 import { pushNotice } from '../store/chat'
 import { bounds } from '../lib/scale'
+import { MOD, shortcut } from '../lib/platform'
 import {
 	applySettings,
 	resetScale,
@@ -580,9 +581,10 @@ export function SettingsView() {
 								<output>{uiScale()}%</output>
 							</label>
 							<p class='muted'>
-								Holding Ctrl and turning the mouse wheel does this anywhere in
-								the window, and Ctrl+0 puts it back. Each screen is remembered
-								on its own, so plugging in a monitor does not resize the laptop.
+								Holding {MOD} and turning the mouse wheel does this anywhere in
+								the window, and {shortcut('0')} puts it back. Each screen is
+								remembered on its own, so plugging in a monitor does not resize
+								the laptop.
 							</p>
 							<button type='button' onClick={() => resetScale()}>
 								Reset

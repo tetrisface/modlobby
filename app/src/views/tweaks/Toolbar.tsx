@@ -2,8 +2,10 @@ import { Select } from '../../components/Select'
 import { For, Show, createEffect, createSignal, type JSX } from 'solid-js'
 import { dismiss } from '../../components/dismiss'
 import { Glyph } from '../../components/icons'
+import { CloseGlyph, FullscreenGlyph } from '../../components/WindowGlyphs'
 import type { Prepared } from '../../ipc/bindings/Prepared'
 import { TWEAK_SLOTS } from '../../lib/setup'
+import { shortcut } from '../../lib/platform'
 import {
 	KINDS,
 	SLOT_KEYS,
@@ -32,6 +34,8 @@ export function Toolbar(props: {
 	fullscreen: boolean
 	/** Whether the main area is the comparison rather than the editor. */
 	comparing: boolean
+	/** Whether the search across every tweak is open beside the editor. */
+	searching: boolean
 	/** The drafts editor names what is open; under a settings row the row does. */
 	heading: boolean
 	drafts: DraftEntry[]
@@ -45,6 +49,15 @@ export function Toolbar(props: {
 	onFullscreen: (on: boolean) => void
 	onCompare: () => void
 	onCopy: (what: Copyable) => void
+	onSearch: () => void
+	/** Monaco's command palette, in whichever editor is showing. */
+	onPalette: () => void
+	/**
+	 * The corner's ×: folds a row's editor away, or leaves the drafts editor.
+	 * What is typed stays either way.
+	 */
+	onDone: () => void
+	closeTitle: string
 }) {
 	const [draftName, setDraftName] = createSignal('')
 	const dirty = () => isDirty(props.doc)
@@ -80,112 +93,162 @@ export function Toolbar(props: {
 				</div>
 			</Show>
 
-			<div class='tweak-bar-row'>
-				<button
-					class='tweak-tool'
-					onClick={props.onFormat}
-					disabled={props.busy}
-				>
-					Format
-				</button>
-				<button
-					class='tweak-tool'
-					onClick={props.onReset}
-					disabled={props.busy || !dirty()}
-					title='Back to what the room holds, or what the draft file says'
-				>
-					Reset
-				</button>
-				{/* Drafts are Lua files; an arrangement is kept as a preset instead. */}
-				<Show when={props.doc.kind !== 'boxes'}>
-					<Menu label='Drafts' title='Keep this as a draft, or bring one in'>
-						<div class='menu-save'>
-							<input
-								class='draft-name'
-								placeholder={draftNameFor(props.doc)}
-								aria-label='Draft name'
-								value={draftName()}
-								onInput={(event) => setDraftName(event.currentTarget.value)}
-								onKeyDown={(event) => event.key === 'Enter' && save()}
-							/>
-							<button class='tweak-tool' onClick={save} disabled={props.busy}>
-								Save draft
-							</button>
-						</div>
-						<Show
-							when={props.drafts.length > 0}
-							fallback={<p class='menu-note'>No {props.doc.kind} drafts yet</p>}
+			{/* The tools wrap onto a second line in a narrow pane; the corner's
+			    two stay in the corner. */}
+			<div class='tweak-bar-row tweak-tools-row'>
+				<div class='tweak-tools'>
+					<button
+						class='tweak-tool'
+						onClick={props.onFormat}
+						disabled={props.busy}
+					>
+						Format
+					</button>
+					<button
+						class='tweak-tool'
+						onClick={props.onReset}
+						disabled={props.busy || !dirty()}
+						title='Back to what the room holds, or what the draft file says'
+					>
+						Reset
+					</button>
+					{/* Drafts are Lua files; an arrangement is kept as a preset instead. */}
+					<Show when={props.doc.kind !== 'boxes'}>
+						{/* What Ctrl+S does, for whoever does not reach for it. */}
+						<button
+							class='tweak-tool'
+							disabled={props.busy}
+							title={`Keep it as the draft "${draftNameFor(props.doc)}" on this machine (${shortcut('S')}); the room is sent nothing`}
+							onClick={() => props.onSave(draftNameFor(props.doc))}
 						>
-							<p class='menu-note'>Load into {props.doc.title}</p>
-							<For each={props.drafts}>
-								{(draft) => (
-									<div class='menu-row'>
-										<button
-											class='menu-item'
-											title={`Replace what ${props.doc.title} holds here with ${draft.title}`}
-											onClick={() => props.onLoad(draft.title)}
-										>
-											<span>{draft.title}</span>
-											<span class='menu-sub'>{draft.name ?? ''}</span>
-										</button>
-										<button
-											class='menu-drop'
-											title={`Delete the draft ${draft.title}`}
-											aria-label={`Delete the draft ${draft.title}`}
-											onClick={() => props.onDelete(draft.title)}
-										>
-											<Glyph id='act-trash' />
-										</button>
-									</div>
-								)}
-							</For>
-						</Show>
+							Save
+						</button>
+						<Menu label='Drafts' title='Keep this as a draft, or bring one in'>
+							<div class='menu-save'>
+								<input
+									class='draft-name'
+									placeholder={draftNameFor(props.doc)}
+									aria-label='Draft name'
+									value={draftName()}
+									onInput={(event) => setDraftName(event.currentTarget.value)}
+									onKeyDown={(event) => event.key === 'Enter' && save()}
+								/>
+								<button class='tweak-tool' onClick={save} disabled={props.busy}>
+									Save draft
+								</button>
+							</div>
+							<Show
+								when={props.drafts.length > 0}
+								fallback={
+									<p class='menu-note'>No {props.doc.kind} drafts yet</p>
+								}
+							>
+								<p class='menu-note'>Load into {props.doc.title}</p>
+								<For each={props.drafts}>
+									{(draft) => (
+										<div class='menu-row'>
+											<button
+												class='menu-item'
+												title={`Replace what ${props.doc.title} holds here with ${draft.title}`}
+												onClick={() => props.onLoad(draft.title)}
+											>
+												<span>{draft.title}</span>
+												<span class='menu-sub'>{draft.name ?? ''}</span>
+											</button>
+											<button
+												class='menu-drop'
+												title={`Delete the draft ${draft.title}`}
+												aria-label={`Delete the draft ${draft.title}`}
+												onClick={() => props.onDelete(draft.title)}
+											>
+												<Glyph id='act-trash' />
+											</button>
+										</div>
+									)}
+								</For>
+							</Show>
+						</Menu>
+					</Show>
+					<Menu
+						label='Copy'
+						title='Copy what is typed here, in any of its forms'
+					>
+						<button class='menu-item' onClick={() => props.onCopy('lua')}>
+							{KINDS[props.doc.kind].text}
+						</button>
+						<button
+							class='menu-item'
+							disabled={!props.prepared}
+							onClick={() => props.onCopy('minified')}
+						>
+							minified
+						</button>
+						<button
+							class='menu-item'
+							disabled={!props.prepared}
+							onClick={() => props.onCopy('blob')}
+						>
+							{KINDS[props.doc.kind].blob}
+						</button>
+						<button
+							class='menu-item'
+							disabled={!props.prepared}
+							onClick={() => props.onCopy('command')}
+						>
+							!bSet command
+						</button>
 					</Menu>
-				</Show>
-				<Menu label='Copy' title='Copy what is typed here, in any of its forms'>
-					<button class='menu-item' onClick={() => props.onCopy('lua')}>
-						{KINDS[props.doc.kind].text}
-					</button>
 					<button
-						class='menu-item'
-						disabled={!props.prepared}
-						onClick={() => props.onCopy('minified')}
+						class='tweak-tool'
+						title={`Everything the editor can do, by name (F1, ${shortcut('P')})`}
+						onClick={props.onPalette}
 					>
-						minified
+						Command palette
 					</button>
+					{/* Other ways to look, kept together at the right when the row wraps. */}
+					<span class='tweak-tools-end'>
+						<button
+							class='tweak-tool'
+							classList={{ on: props.searching }}
+							title={`Search every tweak in the room (${shortcut('Shift+F')})`}
+							onClick={props.onSearch}
+						>
+							Search all
+						</button>
+						<button
+							class='tweak-tool'
+							classList={{ on: props.comparing }}
+							title='Any two of: a slot, a draft, your edit, a change, the vote'
+							onClick={props.onCompare}
+						>
+							{props.comparing ? 'Editor' : 'Compare'}
+						</button>
+					</span>
+				</div>
+				{/* The window corner's own two, for the same two acts on this editor. */}
+				<span class='win-controls'>
 					<button
-						class='menu-item'
-						disabled={!props.prepared}
-						onClick={() => props.onCopy('blob')}
+						class='win-btn'
+						title={
+							props.fullscreen ? 'Back into the pane (Esc)' : 'Fill the window'
+						}
+						aria-label={
+							props.fullscreen ? 'Back into the pane' : 'Fill the window'
+						}
+						onClick={() => props.onFullscreen(!props.fullscreen)}
 					>
-						{KINDS[props.doc.kind].blob}
+						<FullscreenGlyph full={props.fullscreen} />
 					</button>
+					{/* Not the window's red: folding a tweak away loses nothing. */}
 					<button
-						class='menu-item'
-						disabled={!props.prepared}
-						onClick={() => props.onCopy('command')}
+						class='win-btn'
+						title={props.closeTitle}
+						aria-label={props.closeTitle}
+						onClick={props.onDone}
 					>
-						!bSet command
+						<CloseGlyph />
 					</button>
-				</Menu>
-				<span class='spacer' />
-				<button
-					class='tweak-tool'
-					classList={{ on: props.comparing }}
-					title='Any two of: a slot, a draft, your edit, a change, the vote'
-					onClick={props.onCompare}
-				>
-					{props.comparing ? 'Editor' : 'Compare'}
-				</button>
-				<button
-					class='tweak-tool'
-					title={
-						props.fullscreen ? 'Back into the pane (Esc)' : 'Fill the window'
-					}
-					onClick={() => props.onFullscreen(!props.fullscreen)}
-				>
-					{props.fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-				</button>
+				</span>
 			</div>
 		</header>
 	)
@@ -353,7 +416,7 @@ export function SendBar(props: {
 				<button
 					class='primary'
 					disabled={!sendable()}
-					title={props.refusal ?? `Set ${slot()} now (Ctrl+Enter)`}
+					title={props.refusal ?? `Set ${slot()} now (${shortcut('Enter')})`}
 					onClick={() => props.onSend(true)}
 				>
 					{props.spads ? 'Send !bSet' : 'Set slot'}

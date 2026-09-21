@@ -180,6 +180,26 @@ describe('the workspace', () => {
 		space.dispose()
 	})
 
+	test('going from one row to another keeps the window filled; folding away does not', async () => {
+		const { io } = fakeIo()
+		const space = createTweakspace(io, () => ({
+			tweakdefs: 'AAA',
+			tweakdefs1: 'BBB',
+		}))
+		await flush()
+		space.expand(slotId('tweakdefs'))
+		space.setFullscreen(true)
+		// What a search result in another tweak does.
+		space.expand(slotId('tweakdefs1'))
+		expect(space.ws).toMatchObject({
+			expanded: slotId('tweakdefs1'),
+			fullscreen: true,
+		})
+		space.expand(null)
+		expect(space.ws.fullscreen).toBe(false)
+		space.dispose()
+	})
+
 	test('a row opens and closes over its edit, which survives the closing', async () => {
 		const { io } = fakeIo()
 		const space = createTweakspace(io, () => ({ tweakdefs2: 'AAA' }))

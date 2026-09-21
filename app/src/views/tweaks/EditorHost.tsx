@@ -9,12 +9,9 @@ import {
 import type { Problem } from '../../ipc/bindings/Problem'
 import type { Symbol } from '../../ipc/bindings/Symbol'
 import type { Assist, Warning } from '../../lib/assist'
-import { KINDS, type Doc, type DocId } from '../../lib/tweakspace'
+import { KINDS, type Doc, type DocId, type Goto } from '../../lib/tweakspace'
 import { grabKeys } from './keys'
 import { registerAssist } from './providers'
-
-/** A place to go, stamped so that going to the same line twice still goes. */
-export type Goto = { line: number; column: number; at: number }
 
 /**
  * The one place the workspace touches Monaco for editing.
@@ -30,7 +27,11 @@ export function EditorHost(props: {
 	problems: Problem[]
 	warnings: Warning[]
 	assist: Assist
+	/** Where to go, once it is this document's; `onArrived` says it went. */
 	goto: Goto | null
+	onArrived: () => void
+	/** The editor, for the bar's buttons that drive it; `undefined` once gone. */
+	onEditor: (editor: monaco.editor.ICodeEditor | undefined) => void
 	/** Only where there is width to spare for it: over the whole window. */
 	minimap: boolean
 	/** What the Rust check found at the top level; Ctrl+Shift+O lists it. */
@@ -84,6 +85,7 @@ export function EditorHost(props: {
 				editor?.trigger('keyboard', action, null),
 			)
 		switchModel(editor, props.doc.id, props.doc.buffer, language())
+		props.onEditor(editor)
 		registerAssist(() => ({
 			assist: props.assist,
 			kind: props.doc.kind,
@@ -104,15 +106,26 @@ export function EditorHost(props: {
 		if (model) setProblems(model, props.problems, props.warnings)
 	})
 
+	// After the document switch above, so it lands in the new model.
 	createEffect(() => {
 		const target = props.goto
-		if (!target || !editor) return
-		editor.revealLineInCenter(target.line)
-		editor.setPosition({ lineNumber: target.line, column: target.column })
+		if (!target || !editor || target.id !== props.doc.id) return
+		const range = {
+			startLineNumber: target.line,
+			startColumn: target.column,
+			endLineNumber: target.line,
+			endColumn: target.column + target.length,
+		}
+		editor.setSelection(range)
+		editor.revealRangeInCenter(range)
 		editor.focus()
+		props.onArrived()
 	})
 
-	onCleanup(() => editor?.dispose())
+	onCleanup(() => {
+		props.onEditor(undefined)
+		editor?.dispose()
+	})
 
 	return <div class='tweak-editor' ref={host} />
 }

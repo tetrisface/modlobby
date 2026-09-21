@@ -15,7 +15,7 @@ import type { Kind } from '../ipc/bindings/Kind'
 import type { OptionChangeView } from '../ipc/bindings/OptionChangeView'
 import type { Slot } from '../ipc/bindings/Slot'
 import { BOX_OVERRIDE } from './boxes'
-import { TWEAK_SLOTS, isCleared, tweakKey } from './setup'
+import { TWEAK_SLOTS, byRunOrder, isCleared, tweakKey } from './setup'
 
 /**
  * The room's documents: the twenty tweak slots, then the start-box override.
@@ -105,7 +105,15 @@ export type Workspace = {
 	fullscreen: boolean
 	/** What is being compared, in place of the editor, when something is. */
 	compare: Compare | null
+	/** The search across every tweak, beside the editor while it is open. */
+	search: { open: boolean; query: string }
 }
+
+/**
+ * A place in a document to go to, and how much of it to select there. It
+ * names its document, so it can wait for that one's editor to open.
+ */
+export type Goto = { id: DocId; line: number; column: number; length: number }
 
 export const slotId = (key: string): DocId => `slot:${key}`
 export const draftId = (name: string): DocId => `draft:${name}`
@@ -212,6 +220,7 @@ export function emptyWorkspace(
 		minify: false,
 		fullscreen: false,
 		compare: null,
+		search: { open: false, query: '' },
 	}
 }
 
@@ -341,6 +350,69 @@ export function unsentCount(ws: Workspace): number {
 	return Object.values(ws.docs).filter(
 		(doc) => doc.origin === 'slot' && isDirty(doc),
 	).length
+}
+
+// ---- searching every tweak ----
+
+/** One match: its line, and where on it, 1-based as Monaco counts. */
+export type Hit = { line: number; column: number; length: number; text: string }
+
+/** A tweak's matches; `more` counts those past what is listed. */
+export type Found = {
+	id: DocId
+	title: string
+	name: string | null
+	hits: Hit[]
+	more: number
+}
+
+/** A tweak with a thousand matches lists this many; the rest are counted. */
+const HITS_LISTED = 100
+
+/**
+ * Every tweak in the room that holds `query`, in the order BAR runs them,
+ * searched as the editor holds it -- decoded, formatted, unsent edits
+ * included. Case is ignored. The start-box override is JSON rather than a
+ * tweak, and drafts are not the room's, so neither is searched.
+ */
+export function searchSlots(ws: Workspace, query: string): Found[] {
+	if (query === '') return []
+	const needle = query.toLowerCase()
+	return Object.values(ws.docs)
+		.filter(
+			(doc) =>
+				doc.origin === 'slot' && doc.kind !== 'boxes' && doc.buffer !== '',
+		)
+		.sort((a, b) => byRunOrder(a.title, b.title))
+		.map((doc) => {
+			const hits: Hit[] = []
+			let total = 0
+			doc.buffer.split('\n').forEach((text, at) => {
+				const lower = text.toLowerCase()
+				for (
+					let from = lower.indexOf(needle);
+					from !== -1;
+					from = lower.indexOf(needle, from + needle.length)
+				) {
+					total += 1
+					if (hits.length < HITS_LISTED)
+						hits.push({
+							line: at + 1,
+							column: from + 1,
+							length: needle.length,
+							text,
+						})
+				}
+			})
+			return {
+				id: doc.id,
+				title: doc.title,
+				name: doc.name,
+				hits,
+				more: total - hits.length,
+			}
+		})
+		.filter((found) => found.hits.length > 0)
 }
 
 /** The slot the active document would be sent to. */

@@ -42,6 +42,7 @@ import {
 	type Compare,
 	type DocId,
 	type Filter,
+	type Goto,
 	type Loaded,
 	type Workspace,
 } from '../lib/tweakspace'
@@ -240,11 +241,23 @@ export function createTweakspace(
 			if (doc.origin !== 'slot') setWs('target', nextSlot(doc.kind))
 		}
 
-		/** Opens a slot's row in the settings, or closes it with `null`. */
+		/**
+		 * Opens a slot's row in the settings, or closes it with `null`. Closing
+		 * leaves fullscreen too; going from one row to another keeps it -- the
+		 * search's way from one tweak to the next.
+		 */
 		function expand(id: DocId | null) {
 			if (id !== null) open(id)
-			setWs({ expanded: id, compare: null, fullscreen: false })
+			setWs({ expanded: id, compare: null })
+			if (id === null) setWs('fullscreen', false)
 		}
+
+		/**
+		 * Where the editor goes next. Kept here rather than in the editor: a
+		 * search result in another slot opens that slot's row, and it is that
+		 * row's editor, mounted after, that has to go there. `null` once it has.
+		 */
+		const [goto, setGoto] = createSignal<Goto | null>(null)
 
 		function edit(id: DocId, text: string) {
 			const doc = ws.docs[id]
@@ -347,6 +360,8 @@ export function createTweakspace(
 		}
 		const setFullscreen = (on: boolean) => setWs('fullscreen', on)
 		const setMinify = (on: boolean) => setWs('minify', on)
+		const setSearch = (patch: Partial<Workspace['search']>) =>
+			setWs('search', patch)
 
 		return {
 			ws,
@@ -377,6 +392,9 @@ export function createTweakspace(
 			setTarget,
 			setFullscreen,
 			setMinify,
+			setSearch,
+			goto,
+			setGoto,
 			dispose,
 		}
 	})

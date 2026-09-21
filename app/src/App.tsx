@@ -1,5 +1,6 @@
 import { HashRouter, Route, useLocation, useNavigate } from '@solidjs/router'
 import { listen } from '@tauri-apps/api/event'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import {
 	For,
 	Show,
@@ -15,6 +16,11 @@ import { Glyph, IconSprite } from './components/icons'
 import { Thinking } from './components/Thinking'
 import { NavTabs } from './components/NavTabs'
 import { PlayerMenu } from './components/PlayerMenu'
+import {
+	CloseGlyph,
+	FullscreenGlyph,
+	MinimizeGlyph,
+} from './components/WindowGlyphs'
 import { connectChannel } from './ipc/channel'
 import { ACTIVITY_EVENTS, activityReporter } from './lib/activity'
 import { serverId } from './lib/servers'
@@ -278,14 +284,14 @@ function Layout(props: ParentProps) {
 			if (over() && clickLeavesOverlay(event.target)) void api.overlayToggle()
 		}
 		/**
-		 * Ctrl+wheel sizes the interface, Ctrl+0 puts it back.
+		 * Ctrl+wheel sizes the interface, Ctrl+0 puts it back -- Cmd on a Mac.
 		 *
 		 * Not passive: the whole point is to take the gesture off the browser,
 		 * which would otherwise zoom the webview itself and leave the two
 		 * fighting over the same wheel.
 		 */
 		const zoom = (event: WheelEvent) => {
-			if (!event.ctrlKey) return
+			if (!event.ctrlKey && !event.metaKey) return
 			event.preventDefault()
 			if (event.deltaY !== 0) nudgeScale(event.deltaY < 0 ? 1 : -1)
 		}
@@ -506,6 +512,18 @@ function Layout(props: ParentProps) {
 					<div class='win-controls'>
 						<button
 							class='win-btn'
+							title='Minimize'
+							aria-label='Minimize'
+							onClick={() =>
+								void getCurrentWindow()
+									.minimize()
+									.catch((error) => pushNotice('warning', describeError(error)))
+							}
+						>
+							<MinimizeGlyph />
+						</button>
+						<button
+							class='win-btn'
 							title={fullscreen() ? 'Windowed' : 'Full screen'}
 							aria-label={fullscreen() ? 'Windowed' : 'Full screen'}
 							onClick={() =>
@@ -515,18 +533,7 @@ function Layout(props: ParentProps) {
 									.catch((error) => pushNotice('warning', describeError(error)))
 							}
 						>
-							<svg viewBox='0 0 12 12' aria-hidden='true'>
-								<Show
-									when={fullscreen()}
-									fallback={
-										// Corners pointing out: take the whole screen.
-										<path d='M1 4V1h3M8 1h3v3M11 8v3H8M4 11H1V8' />
-									}
-								>
-									{/* Corners pointing in: back to a window. */}
-									<path d='M4 1v3H1M11 4H8V1M8 11V8h3M1 8h3v3' />
-								</Show>
-							</svg>
+							<FullscreenGlyph full={fullscreen()} />
 						</button>
 						<button
 							class='win-btn close'
@@ -534,9 +541,7 @@ function Layout(props: ParentProps) {
 							aria-label='Close modlobby'
 							onClick={() => void api.shutdown()}
 						>
-							<svg viewBox='0 0 12 12' aria-hidden='true'>
-								<path d='M2 2l8 8M10 2l-8 8' />
-							</svg>
+							<CloseGlyph />
 						</button>
 					</div>
 				</Show>

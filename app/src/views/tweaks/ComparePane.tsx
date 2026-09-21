@@ -30,6 +30,8 @@ export function ComparePane(props: {
 	diff: (kind: Kind, left: string, right: string) => Promise<DiffView>
 	onChange: (compare: Compare) => void
 	onClose: () => void
+	/** The right side's editor, for the bar's buttons that drive one. */
+	onEditor: (editor: monaco.editor.ICodeEditor | undefined) => void
 }) {
 	const [sides, setSides] = createSignal<[SideText, SideText] | null>(null)
 	const [view, setView] = createSignal<DiffView | null>(null)
@@ -76,8 +78,12 @@ export function ComparePane(props: {
 			{ renderSideBySide: sideBySide },
 			KINDS[pair[0].kind].language,
 		)
+		props.onEditor(editor.getModifiedEditor())
 	})
-	onCleanup(() => editor && disposeDiff(editor))
+	onCleanup(() => {
+		props.onEditor(undefined)
+		if (editor) disposeDiff(editor)
+	})
 
 	const pick = (which: 'left' | 'right', key: string) => {
 		const side = parseSide(key)

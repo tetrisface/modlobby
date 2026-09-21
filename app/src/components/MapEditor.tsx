@@ -38,6 +38,7 @@ import {
 	labelSize,
 } from '../lib/startbox/scale'
 import { ring } from '../lib/startbox/spline'
+import { shortcut } from '../lib/platform'
 import { isBoss } from '../lib/roster'
 import { pushNotice } from '../store/chat'
 import { useRoom } from '../views/room/model'
@@ -591,7 +592,7 @@ export function MapEditor(props: {
 						<div class='ed-actions'>
 							<button
 								type='button'
-								title='Ctrl+Z'
+								title={shortcut('Z')}
 								disabled={state().past.length === 0}
 								onClick={() => dispatch({ type: 'undo' })}
 							>
@@ -602,7 +603,7 @@ export function MapEditor(props: {
 							</button>
 							<button
 								type='button'
-								title='Ctrl+Shift+Z'
+								title={shortcut('Shift+Z')}
 								disabled={state().future.length === 0}
 								onClick={() => dispatch({ type: 'redo' })}
 							>

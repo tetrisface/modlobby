@@ -1945,6 +1945,176 @@ body.resizing-y {
 	min-height: 10rem;
 }
 
+/* The editor and, while it is open, the search beside it. */
+.tweak-body {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+}
+
+.tweak-body > .tweak-editor,
+.tweak-body > .compare {
+	flex: 1;
+	min-width: 0;
+}
+
+/* Every tweak, searched: left of the line numbers, where an editor keeps its
+   own search. */
+.tweak-search {
+	display: flex;
+	flex-direction: column;
+	flex-shrink: 0;
+	width: clamp(10rem, 32%, 17rem);
+	min-height: 0;
+	background: var(--panel);
+	border-right: 1px solid var(--line);
+}
+
+.tweak-search-head {
+	display: flex;
+	gap: 0.25rem;
+	padding: 0.375rem;
+}
+
+.tweak-search-head input {
+	flex: 1;
+	min-width: 0;
+	padding: 0.1875rem 0.4375rem;
+	font-family: var(--mono);
+	font-size: 0.75rem;
+}
+
+.tweak-search-close {
+	padding: 0 0.375rem;
+	font-size: 0.9375rem;
+	line-height: 1;
+	color: var(--faint);
+	background: transparent;
+	border: none;
+}
+
+.tweak-search-close:hover {
+	color: var(--text);
+	background: transparent;
+}
+
+.tweak-search-count,
+.tweak-search-more {
+	margin: 0 0.5rem 0.25rem;
+	font-size: 0.6875rem;
+	color: var(--faint);
+}
+
+.tweak-search-more {
+	margin-left: 0.75rem;
+}
+
+.tweak-search-list {
+	flex: 1;
+	min-height: 0;
+	padding: 0 0.25rem 0.5rem;
+	overflow-y: auto;
+}
+
+.tweak-search-doc header {
+	display: flex;
+	align-items: baseline;
+	gap: 0.375rem;
+	padding: 0.3125rem 0.25rem 0.125rem;
+	font-family: var(--mono);
+	font-size: 0.6875rem;
+}
+
+.tweak-search-key {
+	color: var(--accent);
+}
+
+.tweak-search-doc.on .tweak-search-key {
+	color: var(--text);
+}
+
+.tweak-search-name {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	font-family: var(--body);
+	color: var(--faint);
+}
+
+.tweak-search-c,
+.tweak-search-line {
+	color: var(--faint);
+	font-variant-numeric: tabular-nums;
+}
+
+.tweak-search-hit {
+	display: flex;
+	gap: 0.5rem;
+	width: 100%;
+	padding: 0.125rem 0.25rem 0.125rem 0.75rem;
+	text-align: left;
+	font-family: var(--mono);
+	font-size: 0.6875rem;
+	font-weight: 400;
+	letter-spacing: 0;
+	color: var(--muted);
+	background: transparent;
+	border: none;
+	border-radius: 2px;
+}
+
+.tweak-search-hit:hover {
+	color: var(--text);
+	background: var(--raised);
+}
+
+.tweak-search-line {
+	flex-shrink: 0;
+	min-width: 2ch;
+	text-align: right;
+}
+
+.tweak-search-text {
+	min-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+.tweak-search-text mark {
+	color: var(--text);
+	background: color-mix(in srgb, var(--accent) 30%, transparent);
+	border-radius: 1px;
+}
+
+/* The tools wrap among themselves; the window corner's buttons stay at the
+   top right, where the app's own are. */
+.tweak-tools-row {
+	flex-wrap: nowrap;
+	align-items: flex-start;
+}
+
+.tweak-tools {
+	display: flex;
+	flex: 1;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem;
+	min-width: 0;
+}
+
+.tweak-tools-end {
+	display: flex;
+	gap: 0.5rem;
+	margin-left: auto;
+}
+
+.tweak-bar .win-controls {
+	flex-shrink: 0;
+	margin-left: 0;
+}
 /* Where the text goes: the one bar that sends, under everything else, the
    way a form keeps its submit at the bottom. */
 .tweak-foot {
@@ -2007,8 +2177,6 @@ body.resizing-y {
 	margin: 0;
 	/* The app's own inputs are padded for text. */
 	padding: 0;
-	/* Centred on the line box it sits low beside the digits' x-height. */
-	transform: translateY(-7%);
 	background: var(--sunken);
 	border: 1px solid var(--faint);
 	border-radius: 2px;

@@ -20,6 +20,7 @@ import {
 	parseSide,
 	reset,
 	resolveSide,
+	searchSlots,
 	savedAs,
 	sent,
 	sideKey,
@@ -267,6 +268,83 @@ describe('target', () => {
 		expect(
 			targetOf({ ...ws, docs, active: draftId('d'), target: 'tweakdefs4' }),
 		).toEqual({ kind: 'defs', index: 4 })
+	})
+})
+
+describe('searching every tweak', () => {
+	const ws = (() => {
+		const base = emptyWorkspace()
+		const docs = { ...base.docs }
+		const hold = (key: string, text: string) => {
+			docs[slotId(key)] = loaded(docs[slotId(key)]!, arrived('YQ==', text))
+		}
+		hold(
+			'tweakdefs1',
+			'-- Walls\nUnitDefs.armwall.health = 1\n-- ARMWALL again: armwall\n',
+		)
+		hold('tweakunits', '{\n\tarmwall = { health = 12000 },\n}\n')
+		hold('tweakdefs2', 'local nothing = 1\n')
+		hold(BOX_OVERRIDE, '{"armwall": 1}')
+		docs[draftId('walls')] = draftDoc('walls', 'armwall')
+		return { ...base, docs }
+	})()
+
+	test('finds every match in every room tweak, units first, case aside', () => {
+		const found = searchSlots(ws, 'ArmWall')
+		expect(found.map((entry) => entry.title)).toEqual([
+			'tweakunits',
+			'tweakdefs1',
+		])
+		expect(found[0]!.hits).toEqual([
+			{
+				line: 2,
+				column: 2,
+				length: 7,
+				text: '\tarmwall = { health = 12000 },',
+			},
+		])
+		expect(found[1]!.name).toBe('Walls')
+		expect(found[1]!.hits.map((hit) => [hit.line, hit.column])).toEqual([
+			[2, 10],
+			[3, 4],
+			[3, 19],
+		])
+	})
+
+	test('an unsent edit is what is searched, not what the room holds', () => {
+		const edited = {
+			...ws,
+			docs: {
+				...ws.docs,
+				[slotId('tweakdefs2')]: edit(ws.docs[slotId('tweakdefs2')]!, 'armwall'),
+			},
+		}
+		expect(
+			searchSlots(edited, 'armwall').map((entry) => entry.title),
+		).toContain('tweakdefs2')
+	})
+
+	test('leaves out the override, drafts, and an empty query', () => {
+		expect(searchSlots(ws, '')).toEqual([])
+		const titles = searchSlots(ws, 'armwall').map((entry) => entry.title)
+		expect(titles).not.toContain(BOX_OVERRIDE)
+		expect(titles).not.toContain('walls')
+	})
+
+	test('lists a hundred matches in a tweak, and counts the rest', () => {
+		const many = {
+			...ws,
+			docs: {
+				...ws.docs,
+				[slotId('tweakdefs3')]: edit(
+					ws.docs[slotId('tweakdefs3')]!,
+					'x\n'.repeat(130),
+				),
+			},
+		}
+		const found = searchSlots(many, 'x')
+		expect(found[0]).toMatchObject({ title: 'tweakdefs3', more: 30 })
+		expect(found[0]!.hits).toHaveLength(100)
 	})
 })
 

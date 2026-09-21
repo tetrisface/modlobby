@@ -1,5 +1,6 @@
 import { Select } from '../../components/Select'
 import { For, Show } from 'solid-js'
+import { shortcut } from '../../lib/platform'
 import {
 	SCRATCH,
 	type DocId,
@@ -83,7 +84,7 @@ export function DocList(props: {
 				</For>
 				<Show when={props.items.length === 1 && props.filter.query === ''}>
 					<p class='muted setup-empty'>
-						No drafts yet. Keep one from the Drafts menu, or Ctrl+S.
+						No drafts yet. Keep one with Save, or {shortcut('S')}.
 					</p>
 				</Show>
 			</div>

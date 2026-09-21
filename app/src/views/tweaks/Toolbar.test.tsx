@@ -40,6 +40,9 @@ function toolbar(doc: Doc, over: Record<string, unknown> = {}) {
 		onFullscreen: vi.fn(),
 		onCompare: vi.fn(),
 		onCopy: vi.fn(),
+		onSearch: vi.fn(),
+		onPalette: vi.fn(),
+		onDone: vi.fn(),
 	}
 	const view = render(() => (
 		<Toolbar
@@ -48,6 +51,8 @@ function toolbar(doc: Doc, over: Record<string, unknown> = {}) {
 			busy={false}
 			fullscreen={false}
 			comparing={false}
+			searching={false}
+			closeTitle='Fold the editor away'
 			heading={false}
 			drafts={[]}
 			{...on}
@@ -158,6 +163,12 @@ describe('Toolbar', () => {
 		expect(on.onDelete).toHaveBeenCalledWith('nukes')
 	})
 
+	test('Save keeps it as a draft under its name, as Ctrl+S does', () => {
+		const { on, getByText } = toolbar({ ...typed, name: 'Nutty B' })
+		fireEvent.click(getByText('Save'))
+		expect(on.onSave).toHaveBeenCalledWith('Nutty B')
+	})
+
 	test('a draft is saved under its own name', () => {
 		const { on, getByText } = toolbar(draftDoc('walls', '-- T3 walls\n{}'))
 		fireEvent.click(getByText('Drafts'))
@@ -165,18 +176,31 @@ describe('Toolbar', () => {
 		expect(on.onSave).toHaveBeenLastCalledWith('walls')
 	})
 
-	test('compare and fullscreen go to the caller', () => {
-		const { on, getByText } = toolbar(typed)
-		fireEvent.click(getByText('Fullscreen'))
+	test('compare, search, the palette and the corner buttons go to the caller', () => {
+		const { on, getByText, getByLabelText } = toolbar(typed)
+		fireEvent.click(getByLabelText('Fill the window'))
 		expect(on.onFullscreen).toHaveBeenCalledWith(true)
 		fireEvent.click(getByText('Compare'))
 		expect(on.onCompare).toHaveBeenCalled()
+		fireEvent.click(getByText('Search all'))
+		expect(on.onSearch).toHaveBeenCalled()
+		fireEvent.click(getByText('Command palette'))
+		expect(on.onPalette).toHaveBeenCalled()
+		fireEvent.click(getByLabelText('Fold the editor away'))
+		expect(on.onDone).toHaveBeenCalled()
+	})
+
+	test('filling the window turns the corner into the way back', () => {
+		const { on, getByLabelText } = toolbar(typed, { fullscreen: true })
+		fireEvent.click(getByLabelText('Back into the pane'))
+		expect(on.onFullscreen).toHaveBeenCalledWith(false)
 	})
 
 	test('the start-box override copies as JSON and offers no draft', () => {
 		const boxes = emptyWorkspace().docs[slotId(BOX_OVERRIDE)]!
 		const { on, getByText, queryByText } = toolbar(boxes)
 		expect(queryByText('Drafts')).toBeNull()
+		expect(queryByText('Save'), 'no drafts, so nothing to save to').toBeNull()
 		fireEvent.click(getByText('Copy'))
 		expect(queryByText('Lua')).toBeNull()
 		// The wire form is zlib inside the base64url, and the button says so.

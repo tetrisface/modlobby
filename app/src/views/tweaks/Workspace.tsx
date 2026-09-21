@@ -6,7 +6,7 @@ import {
 	onCleanup,
 	onMount,
 } from 'solid-js'
-import { dropModel } from '../../editor/monaco'
+import { dropModel, type monaco } from '../../editor/monaco'
 import type { Kind } from '../../ipc/bindings/Kind'
 import { unknownUnits } from '../../lib/assist'
 import { describeError } from '../../ipc/client'
@@ -17,9 +17,12 @@ import {
 	draftNameFor,
 	isDirty,
 	resolveSide,
+	searchSlots,
 	sideOptions,
 	slotKey,
 	targetOf,
+	type DocId,
+	type Hit,
 	type Side,
 } from '../../lib/tweakspace'
 import { pushNotice } from '../../store/chat'
@@ -29,9 +32,10 @@ import { setRefusal } from '../room/move'
 import { VoteDiff } from '../VoteDiff'
 import { ComparePane, type SideText } from './ComparePane'
 import { DocList } from './DocList'
-import { EditorHost, type Goto } from './EditorHost'
+import { EditorHost } from './EditorHost'
 import { Outline } from './Outline'
 import { Problems } from './Problems'
+import { SearchPanel } from './SearchPanel'
 import { SendBar, Toolbar, type Copyable } from './Toolbar'
 
 /** What the notice calls what was copied. */
@@ -45,9 +49,12 @@ function copied(what: Copyable, kind: Kind): string {
 	}[what]
 }
 
-/** What takes Escape for itself before the window may: Monaco's widgets, a menu. */
+/**
+ * What takes Escape for itself before the window may: Monaco's widgets, a
+ * menu, the search while it is being typed in.
+ */
 const WANTS_ESCAPE =
-	'.tweak-full :is(.monaco-editor :is(.suggest-widget, .find-widget, .parameter-hints-widget, .rename-box).visible, .tweak-menu-list)'
+	'.tweak-full :is(.monaco-editor :is(.suggest-widget, .find-widget, .parameter-hints-widget, .rename-box).visible, .tweak-menu-list, .tweak-search:focus-within)'
 
 /**
  * The workspace, composed: the bar, the editor, what the room is doing to the
@@ -59,10 +66,50 @@ export function Workspace(props: { drafts: boolean; onClose?: () => void }) {
 	const room = useRoom()
 	const space = tweakspaceFor(room)
 	const [busy, setBusy] = createSignal(false)
-	const [goto, setGoto] = createSignal<Goto | null>(null)
 	const doc = space.active
 	const jump = (line: number, column = 1) =>
-		setGoto({ line, column, at: Date.now() })
+		space.setGoto({ id: doc().id, line, column, length: 0 })
+
+	/** Whichever editor is showing -- the one, or Compare's right side. */
+	let editor: monaco.editor.ICodeEditor | undefined
+	const palette = () => {
+		editor?.focus()
+		void editor?.getAction('editor.action.quickCommand')?.run()
+	}
+
+	// ---- searching every tweak ----
+
+	const found = createMemo(() =>
+		space.ws.search.open ? searchSlots(space.ws, space.ws.search.query) : [],
+	)
+	let searchInput: HTMLInputElement | undefined
+	/** Ctrl+Shift+F and the bar's button alike: open it, or put it away. */
+	function toggleSearch() {
+		if (space.ws.search.open) return closeSearch()
+		space.setSearch({ open: true })
+		searchInput?.focus()
+		searchInput?.select()
+	}
+	function closeSearch() {
+		space.setSearch({ open: false })
+		editor?.focus()
+	}
+	/**
+	 * A match, gone to. In another tweak it opens that one -- its own row, or
+	 * in the drafts editor in place -- and the editor there goes to it.
+	 */
+	function pick(id: DocId, hit: Hit) {
+		if (id !== space.ws.active) {
+			if (props.drafts) space.open(id)
+			else space.expand(id)
+		}
+		space.setGoto({
+			id,
+			line: hit.line,
+			column: hit.column,
+			length: hit.length,
+		})
+	}
 
 	/** Why the room would refuse a change from us, if it would. */
 	const refusal = createMemo(() => setRefusal(room))
@@ -184,8 +231,21 @@ export function Workspace(props: { drafts: boolean; onClose?: () => void }) {
 			event.preventDefault()
 			space.setFullscreen(false)
 		}
+		// Ctrl+Shift+F: every tweak, searched, wherever focus is; again, put away.
+		const search = (event: KeyboardEvent) => {
+			if (!(event.ctrlKey || event.metaKey) || !event.shiftKey || event.altKey)
+				return
+			if (event.key.toLowerCase() !== 'f') return
+			event.preventDefault()
+			event.stopPropagation()
+			toggleSearch()
+		}
 		window.addEventListener('keydown', keys, true)
-		onCleanup(() => window.removeEventListener('keydown', keys, true))
+		window.addEventListener('keydown', search, true)
+		onCleanup(() => {
+			window.removeEventListener('keydown', keys, true)
+			window.removeEventListener('keydown', search, true)
+		})
 	})
 
 	return (
@@ -207,6 +267,7 @@ export function Workspace(props: { drafts: boolean; onClose?: () => void }) {
 					busy={busy()}
 					fullscreen={space.ws.fullscreen}
 					comparing={space.ws.compare !== null}
+					searching={space.ws.search.open}
 					heading={props.drafts}
 					drafts={drafts()}
 					onClose={props.onClose}
@@ -218,37 +279,62 @@ export function Workspace(props: { drafts: boolean; onClose?: () => void }) {
 					onFullscreen={space.setFullscreen}
 					onCompare={toggleCompare}
 					onCopy={(what) => void copy(what)}
+					onSearch={toggleSearch}
+					onPalette={palette}
+					onDone={() => (props.drafts ? props.onClose?.() : space.expand(null))}
+					closeTitle={
+						props.drafts
+							? 'Back to the settings'
+							: 'Fold the editor away; what you typed is kept'
+					}
 				/>
 
-				<Show
-					when={space.ws.compare}
-					fallback={
-						<EditorHost
-							doc={doc()}
-							problems={space.check()?.problems ?? []}
-							warnings={warnings()}
-							assist={space.assist()}
-							goto={goto()}
-							minimap={space.ws.fullscreen}
-							outline={space.check()?.outline ?? []}
-							format={(text) => space.formatText(text, doc().kind)}
-							onEdit={space.edit}
-							onSave={() => void save(draftNameFor(doc()))}
-							onSend={sendNow}
+				{/* The search sits left of the line numbers, as an editor's own does. */}
+				<div class='tweak-body'>
+					<Show when={space.ws.search.open}>
+						<SearchPanel
+							query={space.ws.search.query}
+							found={found()}
+							active={space.ws.active}
+							ref={(input) => (searchInput = input)}
+							onQuery={(query) => space.setSearch({ query })}
+							onPick={pick}
+							onClose={closeSearch}
 						/>
-					}
-				>
-					{(compare) => (
-						<ComparePane
-							compare={compare()}
-							options={sideOptions(space.ws, history(), proposal())}
-							resolve={resolve}
-							diff={space.diffText}
-							onChange={space.setCompare}
-							onClose={() => space.setCompare(null)}
-						/>
-					)}
-				</Show>
+					</Show>
+					<Show
+						when={space.ws.compare}
+						fallback={
+							<EditorHost
+								doc={doc()}
+								problems={space.check()?.problems ?? []}
+								warnings={warnings()}
+								assist={space.assist()}
+								goto={space.goto()}
+								onArrived={() => space.setGoto(null)}
+								onEditor={(next) => (editor = next)}
+								minimap={space.ws.fullscreen}
+								outline={space.check()?.outline ?? []}
+								format={(text) => space.formatText(text, doc().kind)}
+								onEdit={space.edit}
+								onSave={() => void save(draftNameFor(doc()))}
+								onSend={sendNow}
+							/>
+						}
+					>
+						{(compare) => (
+							<ComparePane
+								compare={compare()}
+								options={sideOptions(space.ws, history(), proposal())}
+								resolve={resolve}
+								diff={space.diffText}
+								onChange={space.setCompare}
+								onClose={() => space.setCompare(null)}
+								onEditor={(next) => (editor = next)}
+							/>
+						)}
+					</Show>
+				</div>
 
 				<Problems
 					problems={space.check()?.problems ?? []}
