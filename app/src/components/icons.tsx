@@ -536,33 +536,49 @@ export function Marks(props: { status: UserStatusView; boss: boolean }) {
 
 /** `rank` is client-status bits 2-4 (0-7); Chobby numbers the same thing 1-8. */
 export function RankIcon(props: { status: UserStatusView }) {
-	const level = () => props.status.rank + 1
-	const upper = () => level() > 4
-	const chevrons = () => (upper() ? level() - 4 : level())
 	const label = () =>
-		`Rank ${level()}${props.status.moderator ? ' · moderator' : ''}`
+		`Rank ${props.status.rank + 1}${props.status.moderator ? ' · moderator' : ''}`
 
 	return (
 		<Show
 			when={!props.status.bot}
 			fallback={<Icon id='rank-bot' class='rank bot' label='Autohost' />}
 		>
-			<svg
-				class='icon rank'
-				classList={{ lower: !upper() }}
-				viewBox='0 0 20 20'
-				role='img'
-			>
-				<title>{label()}</title>
-				<use
-					href={`#chev${chevrons()}${upper() ? '-solid' : ''}`}
-					mask={props.status.moderator ? 'url(#rank-shield-cut)' : undefined}
-				/>
-				<Show when={props.status.moderator}>
-					<use href='#rank-shield' class='shield' />
-				</Show>
-			</svg>
+			<Chevrons
+				rank={props.status.rank}
+				moderator={props.status.moderator}
+				label={label()}
+			/>
 		</Show>
+	)
+}
+
+/** The chevrons for a 0-7 rank, for when there is no one user behind it. */
+export function Chevrons(props: {
+	rank: number
+	moderator?: boolean
+	label: string
+}) {
+	const level = () => props.rank + 1
+	const upper = () => level() > 4
+	const chevrons = () => (upper() ? level() - 4 : level())
+
+	return (
+		<svg
+			class='icon rank'
+			classList={{ lower: !upper() }}
+			viewBox='0 0 20 20'
+			role='img'
+		>
+			<title>{props.label}</title>
+			<use
+				href={`#chev${chevrons()}${upper() ? '-solid' : ''}`}
+				mask={props.moderator ? 'url(#rank-shield-cut)' : undefined}
+			/>
+			<Show when={props.moderator}>
+				<use href='#rank-shield' class='shield' />
+			</Show>
+		</svg>
 	)
 }
 

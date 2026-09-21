@@ -93,6 +93,8 @@ export function lanRows(
 			battle: battleOf(room),
 			running: false,
 			hasFriend: false,
+			// Nobody on the LAN has a server-given rank.
+			chev: null,
 		}))
 }
 

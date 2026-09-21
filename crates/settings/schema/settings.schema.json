@@ -217,6 +217,11 @@
           "description": "Chobby's own order: joinable first, then busy, then locked, then\npassworded, with player count deciding inside each band.",
           "type": "string",
           "const": "relevance"
+        },
+        {
+          "description": "The room's median rank; rooms with nobody known sort below rank 1.",
+          "type": "string",
+          "const": "rank"
         }
       ]
     },

@@ -63,6 +63,11 @@ pub enum TransportError {
 	/// setting — which is why a server that was never reached is not this.
 	#[error("no encrypted way in ({0})")]
 	NoEncryption(String),
+	/// Every way was refused outright: the host is there and nothing listens,
+	/// which is a server down or restarting. Its own case because the answer
+	/// is to wait, where the four socket errors read as a port problem.
+	#[error("every port refused the connection; the server is down or restarting")]
+	Down,
 }
 
 /// How a server is known across the app — in the remembered ways, in what
@@ -304,7 +309,7 @@ async fn open(endpoint: &Endpoint, wait: Duration) -> Result<(Opened, Way), Tran
 		match attempt(endpoint.host.clone(), port, security, wait).await {
 			Ok(opened) => return Ok(opened),
 			Err(Failed { error, .. }) => {
-				tracing::warn!(port, ?security, %error, "the remembered way failed; trying every way")
+				tracing::warn!(host = %endpoint.host, port, ?security, %error, "the remembered way failed; trying every way")
 			}
 		}
 	}
@@ -321,13 +326,21 @@ async fn open(endpoint: &Endpoint, wait: Duration) -> Result<(Opened, Way), Tran
 	if !endpoint.allow_plain {
 		return Err(if tried.reached {
 			TransportError::NoEncryption(tried.text)
+		} else if tried.refused {
+			TransportError::Down
 		} else {
 			TransportError::Unreachable(tried.text)
 		});
 	}
 	race(&endpoint.host, endpoint.every(&[Security::None]), wait)
 		.await
-		.map_err(|plain| TransportError::Unreachable(format!("{}; {}", tried.text, plain.text)))
+		.map_err(|plain| {
+			if tried.refused && plain.refused {
+				TransportError::Down
+			} else {
+				TransportError::Unreachable(format!("{}; {}", tried.text, plain.text))
+			}
+		})
 }
 
 /// What a race that nobody won ran into, and whether any of it got as far as
@@ -335,6 +348,8 @@ async fn open(endpoint: &Endpoint, wait: Duration) -> Result<(Opened, Way), Tran
 /// problem from one that is not there.
 struct Tried {
 	reached: bool,
+	/// Every way was refused outright; see [`TransportError::Down`].
+	refused: bool,
 	text: String,
 }
 
@@ -358,17 +373,19 @@ async fn race(
 		attempts.spawn(async move {
 			attempt(host, port, security, wait).await.map_err(|failed| {
 				let text = format!("{} on {port}: {}", name(security), failed.error);
-				(failed.reached, text)
+				(failed.reached, refused(&failed.error), text)
 			})
 		});
 	}
 	let mut reached = false;
+	let mut refusals = 0;
 	let mut failures = Vec::new();
 	while let Some(joined) = attempts.join_next().await {
 		match joined {
 			Ok(Ok(opened)) => return Ok(opened),
-			Ok(Err((there, failure))) => {
+			Ok(Err((there, turned_away, failure))) => {
 				reached |= there;
+				refusals += usize::from(turned_away);
 				failures.push(failure);
 			}
 			Err(panicked) => failures.push(panicked.to_string()),
@@ -379,8 +396,14 @@ async fn race(
 	}
 	Err(Tried {
 		reached,
+		refused: refusals == failures.len(),
 		text: failures.join("; "),
 	})
+}
+
+/// Turned away at the socket: the host answered and nothing listens there.
+fn refused(error: &TransportError) -> bool {
+	matches!(error, TransportError::Connect(io) if io.kind() == std::io::ErrorKind::ConnectionRefused)
 }
 
 /// One way in, from the first packet to the greeting, within `wait`.
@@ -863,18 +886,23 @@ mod tests {
 	}
 
 	#[tokio::test]
-	async fn a_server_that_is_not_there_is_unreachable_rather_than_unencrypted() {
+	async fn a_server_that_refuses_every_way_is_down_rather_than_unencrypted() {
 		// A port nothing listens on: bound to learn a free one, then let go.
 		let closed = {
 			let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
 			listener.local_addr().unwrap().port()
 		};
-		let refused = open(&local(vec![closed], false, None), Duration::from_secs(2)).await;
-		assert!(
-			matches!(refused, Err(TransportError::Unreachable(_))),
-			"allowing plaintext would not have helped: {:?}",
-			refused.err()
-		);
+		// Windows retries a refused connect for about two seconds before it
+		// says so; a shorter wait would read as a timeout.
+		let wait = Duration::from_secs(5);
+		for allow_plain in [false, true] {
+			let refused = open(&local(vec![closed], allow_plain, None), wait).await;
+			assert!(
+				matches!(refused, Err(TransportError::Down)),
+				"allowing plaintext would not have helped: {:?}",
+				refused.err()
+			);
+		}
 	}
 
 	#[tokio::test]

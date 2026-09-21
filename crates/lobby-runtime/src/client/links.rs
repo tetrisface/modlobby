@@ -227,6 +227,7 @@ impl Runtime {
 		let (transport, inbound, way) = match result {
 			Ok(connected) => connected,
 			Err(err) => {
+				tracing::warn!(host, %err, "could not connect");
 				self.batcher.push_for(&server, Delta::Phase(None));
 				purpose.fail(err.into());
 				return;

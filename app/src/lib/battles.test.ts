@@ -7,6 +7,7 @@ import {
 	isVsAi,
 	layoutLabel,
 	matches,
+	medianChevron,
 	stabilize,
 	type Row,
 } from './battles'
@@ -52,6 +53,7 @@ const row = (
 		battle: room,
 		running,
 		hasFriend,
+		chev: null,
 	}
 }
 
@@ -259,6 +261,19 @@ describe('sorting by a column', () => {
 		).toEqual(['gamma', 'beta', 'alpha'])
 	})
 
+	test('rank sorts on the median, unknown rooms last going down', () => {
+		const ranked = [
+			{ ...row({ id: 1, title: 'unknown' }), chev: null },
+			{ ...row({ id: 2, title: 'low' }), chev: 0 },
+			{ ...row({ id: 3, title: 'high' }), chev: 4.5 },
+		]
+		expect(
+			titles(
+				arrange(ranked, filters({ sort: 'rank', sortDescending: true }), ''),
+			),
+		).toEqual(['high', 'low', 'unknown'])
+	})
+
 	test('map sorts on its own field', () => {
 		// Xray, Yankee, Zulu.
 		expect(titles(arrange(rows, filters({ sort: 'map' }), ''))).toEqual([
@@ -340,5 +355,21 @@ describe('layoutLabel', () => {
 
 	test('a room that never said its shape says nothing', () => {
 		expect(layoutLabel(null)).toBe('')
+	})
+})
+
+describe('a room’s median chevron', () => {
+	test('is the middle one, not the average', () => {
+		// The mean here is 2.5, which describes nobody in the room.
+		expect(medianChevron([1, 1, 1, 1, 1, 7])).toBe(1)
+	})
+
+	test('splits the difference when the count is even', () => {
+		expect(medianChevron([1, 2, 4, 5])).toBe(3)
+		expect(medianChevron([2, 3])).toBe(2.5)
+	})
+
+	test('is nothing at all when nobody here is known', () => {
+		expect(medianChevron([])).toBeNull()
 	})
 })

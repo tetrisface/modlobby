@@ -368,6 +368,8 @@ pub enum BattleSort {
 	Players,
 	Title,
 	Map,
+	/// The room's median rank; rooms with nobody known sort below rank 1.
+	Rank,
 }
 
 /// A sort this build no longer offers — `host` was one until 2026-09-03 —
@@ -378,6 +380,7 @@ impl<'de> Deserialize<'de> for BattleSort {
 			"players" => BattleSort::Players,
 			"title" => BattleSort::Title,
 			"map" => BattleSort::Map,
+			"rank" => BattleSort::Rank,
 			_ => BattleSort::Relevance,
 		})
 	}

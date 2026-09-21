@@ -24,6 +24,8 @@ export type Row = {
 	running: boolean
 	/** Whether anyone in the room is a friend. */
 	hasFriend: boolean
+	/** The room's median rank, 0-7; see `medianChevron`. */
+	chev: number | null
 }
 
 /** A room's name across every server: two servers can each have a battle 12. */
@@ -129,6 +131,7 @@ const BY: Record<
 	players: (row) => row.battle.playerCount,
 	title: (row) => row.battle.title.toLowerCase(),
 	map: (row) => row.battle.mapName.toLowerCase(),
+	rank: (row) => row.chev ?? -1,
 }
 
 export function compare(a: Row, b: Row, sort: BattleSort, descending: boolean) {
@@ -158,6 +161,7 @@ export const SORTS: ReadonlyArray<{ key: BattleSort; label: string }> = [
 	{ key: 'players', label: 'Players' },
 	{ key: 'title', label: 'Title' },
 	{ key: 'map', label: 'Map' },
+	{ key: 'rank', label: 'Rank' },
 ]
 
 export const MODES: ReadonlyArray<{ key: ModeFilter; label: string }> = [
@@ -185,4 +189,29 @@ export function stabilize(sorted: Row[], held: readonly string[]): Row[] {
 	// The same "saved order, applied to what is actually there" rule the chat
 	// tabs follow, over battle keys instead of room names.
 	return ordered([...byKey.keys()], held).flatMap((key) => byKey.get(key) ?? [])
+}
+
+/**
+ * The middle chevron of the people in a room.
+ *
+ * Chevrons are the only measure of a player the list is ever given. Nothing
+ * on the wire carries a rating: `ADDUSER` is name and country, `CLIENTSTATUS`
+ * is a 0-7 rank, `s.user.whois` answers with a colour and an icon, and real
+ * OpenSkill reaches a client only as script tags for the one room it is in.
+ * So this is what a room's strength has to be read off, and it is a poor
+ * proxy: teiserver computes the rank from hours played plus contributor role
+ * (`cache_user.ex:1137`), which is how long people have been here, not how
+ * well they play.
+ *
+ * Median rather than mean, because one 7 among five 1s averages to a room
+ * that nobody in it resembles. An even count lands on a half — the hours
+ * behind the chevrons never leave the server, so there is nothing here to
+ * break the tie with, and `3.5` says that where rounding would pick a side.
+ */
+export function medianChevron(ranks: readonly number[]): number | null {
+	if (ranks.length === 0) return null
+	const sorted = [...ranks].sort((a, b) => a - b)
+	const mid = sorted.length >> 1
+	if (sorted.length % 2 === 1) return sorted[mid]!
+	return (sorted[mid - 1]! + sorted[mid]!) / 2
 }

@@ -15,9 +15,10 @@ import type { BattleList as Filters } from '../ipc/bindings/BattleList'
 import type { BattleSort } from '../ipc/bindings/BattleSort'
 import type { BattleOn } from '../ipc/bindings/BattleOn'
 import type { BattleView } from '../ipc/bindings/BattleView'
+import type { UserView } from '../ipc/bindings/UserView'
 import type { ModeFilter } from '../ipc/bindings/ModeFilter'
 import { dismiss } from '../components/dismiss'
-import { RankIcon } from '../components/icons'
+import { Chevrons, RankIcon } from '../components/icons'
 import { MapPicture } from '../components/MapPicture'
 import { Thinking } from '../components/Thinking'
 import { api, describeError } from '../ipc/client'
@@ -36,6 +37,7 @@ import {
 	arrange,
 	battleKey,
 	layoutLabel,
+	medianChevron,
 	stabilize,
 	type Row,
 } from '../lib/battles'
@@ -116,6 +118,7 @@ export function BattleList() {
 				battle,
 				running: session.users[battle.founder]?.status.inGame ?? false,
 				hasFriend: battle.members.some((name) => known.has(name)),
+				chev: chev(battle.members, session.users),
 			}))
 		}),
 		...heardRows(),
@@ -254,7 +257,11 @@ export function BattleList() {
 	function sortBy(key: BattleSort) {
 		if (key === filters().sort && key !== 'relevance')
 			return update({ sortDescending: !filters().sortDescending })
-		return update({ sort: key, sortDescending: key === 'players' })
+		// Biggest and most experienced first: that is what these are sorted for.
+		return update({
+			sort: key,
+			sortDescending: key === 'players' || key === 'rank',
+		})
 	}
 
 	/**
@@ -591,6 +598,12 @@ export function BattleList() {
 														<small> +{r().battle.spectatorCount}</small>
 													</span>
 												</span>
+												<span class='col-chev'>
+													{/* A median of 0 is the first chevron, not no room. */}
+													<Show when={r().chev !== null}>
+														<RoomRank median={r().chev!} />
+													</Show>
+												</span>
 												<span class='col-layout'>
 													{layoutLabel(r().battle.layout)}
 												</span>
@@ -889,4 +902,37 @@ function Choice(props: { label: string; on: boolean; onClick: () => void }) {
 			{props.label}
 		</button>
 	)
+}
+
+/**
+ * A room's median chevron, over the people in it whose status we hold.
+ *
+ * The host bot is not a person and its rank is whatever its account happens
+ * to be, so it is left out; so is anyone the server has not sent an ADDUSER
+ * for yet. Players and spectators count alike -- who is which is only known
+ * inside a room.
+ */
+function chev(
+	members: readonly string[],
+	users: Record<string, UserView | undefined>,
+): number | null {
+	return medianChevron(
+		members.flatMap((name) => {
+			const who = users[name]
+			return who && !who.status.bot ? who.status.rank : []
+		}),
+	)
+}
+
+/**
+ * The room's median as one rank icon, the exact figure on hover.
+ *
+ * An even split lands on a half, which no icon can draw; it shows the lower
+ * of the two, and the tooltip says the half.
+ */
+function RoomRank(props: { median: number }) {
+	// Chobby numbers ranks 1-8 where the wire has 0-7; `RankIcon` does the same.
+	const label = () =>
+		`Median rank ${props.median + 1}. Rank counts hours played and contributor role, not skill: no rating reaches a client outside the room it is in.`
+	return <Chevrons rank={Math.floor(props.median)} label={label()} />
 }

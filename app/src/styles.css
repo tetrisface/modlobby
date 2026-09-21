@@ -547,7 +547,7 @@ textarea {
 /* The whole row is the button now, so it has to read as one. */
 .battle-row {
 	display: grid;
-	grid-template-columns: 3.5rem 5rem 4.5rem 1fr 17.75rem 4rem;
+	grid-template-columns: 3.5rem 5rem 1.5rem 4.5rem 1fr 17.75rem 4rem;
 	align-items: center;
 	gap: 0.75rem;
 	padding: 0 1rem;
@@ -559,6 +559,12 @@ textarea {
 	.col-map {
 		font-size: 0.95rem;
 	}
+}
+
+/* One icon wide; the room's number is in its tooltip. */
+.col-chev {
+	display: flex;
+	justify-content: center;
 }
 
 /* The slash sits on the same pixel in every row: the taken count gets a
