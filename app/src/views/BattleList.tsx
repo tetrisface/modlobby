@@ -291,6 +291,9 @@ export function BattleList() {
 
 	/** Which server to host on, asked while there is more than one. */
 	const [choosing, setChoosing] = createSignal(false)
+	/** The LAN is a server you are on, not one you host on: it has its own entry. */
+	const hostable = () => readyServers().filter((server) => server !== LAN)
+	const lanOn = () => settings()?.lan.enabled ?? false
 	let hostPick: HTMLDivElement | undefined
 	createEffect(() => {
 		if (choosing())
@@ -466,7 +469,7 @@ export function BattleList() {
 				<div class='host-pick' ref={hostPick}>
 					<button
 						class='primary'
-						disabled={hostBusy()}
+						disabled={hostBusy() || (hostable().length === 0 && !lanOn())}
 						aria-expanded={choosing()}
 						title='Take over an empty autohost near you and become its boss, or open a room on your network'
 						onClick={() => setChoosing(!choosing())}
@@ -475,23 +478,24 @@ export function BattleList() {
 					</button>
 					<Show when={choosing()}>
 						<div class='popover host-menu'>
-							{/* The LAN is a server you are on, not one you host on. */}
-							<For each={readyServers().filter((server) => server !== LAN)}>
+							<For each={hostable()}>
 								{(server) => (
 									<button type='button' onClick={() => void host(server)}>
 										on {serverLabel(server)}
 									</button>
 								)}
 							</For>
-							<button
-								type='button'
-								onClick={() => {
-									setChoosing(false)
-									navigate('/lan/host')
-								}}
-							>
-								on the LAN
-							</button>
+							<Show when={lanOn()}>
+								<button
+									type='button'
+									onClick={() => {
+										setChoosing(false)
+										navigate('/lan/host')
+									}}
+								>
+									on the LAN
+								</button>
+							</Show>
 						</div>
 					</Show>
 				</div>

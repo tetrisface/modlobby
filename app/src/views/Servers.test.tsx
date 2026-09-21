@@ -37,7 +37,12 @@ function open() {
 	))
 }
 
-const cards = (root: HTMLElement) => [...root.querySelectorAll('.server-card')]
+const allCards = (root: HTMLElement) => [
+	...root.querySelectorAll('.server-card'),
+]
+/** The servers' cards. The LAN's is left out: always there, always last. */
+const cards = (root: HTMLElement) => allCards(root).slice(0, -1)
+const lanCard = (root: HTMLElement) => allCards(root).at(-1)!
 
 function button(root: Element, text: string): HTMLButtonElement {
 	const found = [...root.querySelectorAll('button')].find(
@@ -279,6 +284,27 @@ describe('the servers section', () => {
 		expect(cards(container)).toHaveLength(1)
 		fireEvent.click(button(card, 'Really remove?'))
 		return vi.waitFor(() => expect(cards(container)).toHaveLength(0))
+	})
+
+	test('the LAN has a card while it is off, and hosting there turns it on', async () => {
+		asked.mockImplementation(async (command: string, args?: unknown) => {
+			if (command === 'update_settings')
+				return structuredClone((args as { settings: Settings }).settings)
+			return null
+		})
+		const { container } = open()
+		const lan = lanCard(container)
+		expect(lan.textContent).toContain('Enable LAN games')
+		expect(
+			lan.querySelector<HTMLInputElement>('input[type=checkbox]')?.checked,
+		).toBe(false)
+		fireEvent.click(button(lan, 'Host a room'))
+		await vi.waitFor(() =>
+			expect(container.querySelector('.settings')).toBeNull(),
+		)
+		expect(asked).toHaveBeenCalledWith('update_settings', {
+			settings: expect.objectContaining({ lan: { enabled: true } }),
+		})
 	})
 
 	test("reset password opens the server's own page", async () => {

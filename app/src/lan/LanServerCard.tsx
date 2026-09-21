@@ -1,29 +1,47 @@
 import { useNavigate } from '@solidjs/router'
 import { Show, createSignal } from 'solid-js'
-import type { ServerEntry } from '../ipc/bindings/ServerEntry'
+import type { SetStoreFunction } from 'solid-js/store'
+import type { Settings } from '../ipc/bindings/Settings'
 import { api, describeError } from '../ipc/client'
 import { sessionStatus } from '../lib/servers'
 import { pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
 import { lanApi } from './api'
-import { LAN } from './lan'
+import { LAN, isLan } from './lan'
 
 /**
- * The LAN's card among the servers: a name to appear as, where things stand,
- * and the two ways in — host a room, or join one by its address when the
- * network did not carry the announcement.
+ * The LAN's card among the servers: the switch, a name to appear as, where
+ * things stand, and the two ways in — host a room, or join one by its
+ * address when the network did not carry the announcement.
+ *
+ * Drawn whether the LAN is on or off, since the switch is on it. Its row in
+ * the server list is there only while it is on, so the name waits for that.
  */
 export function LanServerCard(props: {
-	entry: ServerEntry
-	change: <K extends keyof ServerEntry>(field: K, value: ServerEntry[K]) => void
+	draft: Settings
+	setDraft: SetStoreFunction<Settings>
+	/** Saves the draft now; hosting asks Rust, which acts on what is saved. */
+	settle: () => Promise<void>
 }) {
 	const navigate = useNavigate()
+	const at = () => props.draft.servers.findIndex(isLan)
+	const entry = () => props.draft.servers[at()]
 	const session = () => lobby.servers[LAN]
 	const status = () => sessionStatus(session())
 	const connected = () => (session()?.phase ?? null) !== null
 	const [address, setAddress] = createSignal('')
 	const [password, setPassword] = createSignal('')
 	const [busy, setBusy] = createSignal(false)
+
+	/**
+	 * Pressing it is asking for the LAN, so it is switched on first -- and
+	 * saved now, since leaving the page drops a save that is still waiting.
+	 */
+	async function host() {
+		props.setDraft('lan', 'enabled', true)
+		await props.settle()
+		navigate('/lan/host')
+	}
 
 	async function join() {
 		setBusy(true)
@@ -52,24 +70,36 @@ export function LanServerCard(props: {
 				<input
 					class='server-name'
 					aria-label='Your name on the LAN'
-					value={props.entry.username}
+					value={entry()?.username ?? ''}
 					placeholder='Your name on the LAN'
+					disabled={!entry()}
 					onInput={(event) =>
-						props.change('username', event.currentTarget.value)
+						props.setDraft(
+							'servers',
+							at(),
+							'username',
+							event.currentTarget.value,
+						)
 					}
 				/>
 				<span class={`chip ${status().tone}`}>{status().text}</span>
 			</div>
+			<label class='row'>
+				<input
+					type='checkbox'
+					checked={props.draft.lan.enabled}
+					onChange={(event) =>
+						props.setDraft('lan', 'enabled', event.currentTarget.checked)
+					}
+				/>
+				Enable LAN games
+			</label>
 			<p class='muted'>
 				Games with people on your network, with no server in between. Rooms
 				announced here appear in the battle list by themselves.
 			</p>
 			<div class='server-actions'>
-				<button
-					type='button'
-					class='primary'
-					onClick={() => navigate('/lan/host')}
-				>
+				<button type='button' class='primary' onClick={() => void host()}>
 					Host a room
 				</button>
 				<input

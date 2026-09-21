@@ -33,6 +33,7 @@ for your platform. [mise](https://mise.jdx.dev/) installs the pinned node and bu
 ```sh
 git clone https://github.com/tetrisface/modlobby
 cd modlobby/app
+mise install     # pinned node and bun from mise.toml
 bun install
 bun run build    # installer under app/src-tauri/target/release/bundle/
 ```

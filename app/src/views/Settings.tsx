@@ -715,18 +715,6 @@ export function SettingsView() {
 					</Section>
 
 					<Section id='servers'>
-						<Row>
-							<label class='row'>
-								<input
-									type='checkbox'
-									checked={draft.lan.enabled}
-									onChange={(e) =>
-										setDraft('lan', 'enabled', e.currentTarget.checked)
-									}
-								/>
-								Enable LAN games
-							</label>
-						</Row>
 						<ServerRows draft={draft} setDraft={setDraft} settle={settle} />
 					</Section>
 

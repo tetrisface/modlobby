@@ -78,8 +78,8 @@ impl Settings {
 	}
 
 	/// Keeps the server list's LAN row in step with `lan.enabled`: a row
-	/// while it is on, none while it is off, so the card is not offered for
-	/// something that is switched off. A list emptied on purpose stays empty.
+	/// while it is on, none while it is off. A list emptied on purpose stays
+	/// empty.
 	///
 	/// The row is rebuilt rather than remembered, so the name you appear as
 	/// on the network is the one thing a switch off and on again forgets.

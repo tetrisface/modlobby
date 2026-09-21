@@ -76,34 +76,32 @@ export function ServerRows(props: {
 		<>
 			<For each={props.draft.servers}>
 				{(entry, index) => (
-					<Row>
-						<Show
-							when={isLan(entry)}
-							fallback={
-								<ServerCard
-									entry={entry}
-									change={(field, value) =>
-										props.setDraft('servers', index(), field, value)
-									}
-									remove={() =>
-										props.setDraft('servers', (servers) =>
-											servers.filter((_, at) => at !== index()),
-										)
-									}
-									ask={(mode) => void ask(entry, mode)}
-								/>
-							}
-						>
-							<LanServerCard
+					<Show when={!isLan(entry)}>
+						<Row>
+							<ServerCard
 								entry={entry}
 								change={(field, value) =>
 									props.setDraft('servers', index(), field, value)
 								}
+								remove={() =>
+									props.setDraft('servers', (servers) =>
+										servers.filter((_, at) => at !== index()),
+									)
+								}
+								ask={(mode) => void ask(entry, mode)}
 							/>
-						</Show>
-					</Row>
+						</Row>
+					</Show>
 				)}
 			</For>
+			{/* Its own row, not the list's: that one is there only while it is on. */}
+			<Row>
+				<LanServerCard
+					draft={props.draft}
+					setDraft={props.setDraft}
+					settle={props.settle}
+				/>
+			</Row>
 			<Row>
 				<AddServer
 					listed={props.draft.servers.map((entry) => entry.host)}
