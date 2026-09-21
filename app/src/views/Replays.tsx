@@ -3,30 +3,47 @@ import { For, Show, createMemo, createResource, createSignal } from 'solid-js'
 import { Ask } from '../components/Ask'
 import type { ReplayView } from '../ipc/bindings/ReplayView'
 import { api, describeError } from '../ipc/client'
+import { exactly } from '../lib/age'
+import { span } from '../lib/running'
 import { pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
 
 const ROW_HEIGHT = 40
 
+/** `51m game · 37m wall`, or `null` for a game left before it ended. */
+function lengthOf(replay: ReplayView): string | null {
+	if (replay.gameSeconds === null || replay.wallSeconds === null) return null
+	const minutes = (seconds: number) => span(Math.floor(seconds / 60))
+	return `${minutes(replay.gameSeconds)} game · ${minutes(replay.wallSeconds)} wall`
+}
+
 /**
  * The replays on this machine.
  *
  * A data directory holds thousands, so the list is built from their names —
- * which carry the date, map and engine — and nothing is decompressed to draw
- * it. Playing one hands the engine the file where it would otherwise be handed
- * a `spring://` URL.
+ * which carry the date, map and engine — and the few bytes of header that hold
+ * the game's length; the rest of each file is never read to draw it. Playing
+ * one hands the engine the file where it would otherwise be handed a
+ * `spring://` URL.
  */
 export function Replays() {
 	const [search, setSearch] = createSignal('')
 	const [saving, setSaving] = createSignal<ReplayView | null>(null)
 	let scrollRef: HTMLDivElement | undefined
 
+	// `when` is the local time, formatted once here rather than on every
+	// keystroke of the search across thousands of rows.
 	const [replays, { refetch }] = createResource(async () => {
 		try {
-			return await api.listReplays()
+			const found = await api.listReplays()
+			return found.map((replay) => ({
+				...replay,
+				when: exactly(replay.playedAt),
+				length: lengthOf(replay),
+			}))
 		} catch (error) {
 			pushNotice('warning', describeError(error))
-			return [] as ReplayView[]
+			return []
 		}
 	})
 
@@ -36,7 +53,7 @@ export function Replays() {
 		if (words.length === 0) return all
 		return all.filter((replay) => {
 			const haystack =
-				`${replay.map} ${replay.playedAt} ${replay.engine}`.toLowerCase()
+				`${replay.map} ${replay.when} ${replay.engine}`.toLowerCase()
 			return words.every((word) => haystack.includes(word))
 		})
 	})
@@ -68,6 +85,22 @@ export function Replays() {
 					onInput={(e) => setSearch(e.currentTarget.value)}
 				/>
 				<button onClick={() => void refetch()}>Rescan</button>
+				<button
+					type='button'
+					title='Open the folder new games record their replays in'
+					onClick={() =>
+						void api
+							.openReplaysDir()
+							.catch((error) =>
+								pushNotice(
+									'warning',
+									`replays folder: ${describeError(error)}`,
+								),
+							)
+					}
+				>
+					Replays folder
+				</button>
 				<span class='spacer' />
 				<span class='muted count'>
 					{rows().length} replays
@@ -114,9 +147,19 @@ export function Replays() {
 												}}
 												onDblClick={() => void play(r())}
 											>
-												<span class='col-when'>{r().playedAt}</span>
+												<span class='col-when'>{r().when}</span>
 												<span class='col-map' title={r().map}>
 													{r().map}
+												</span>
+												<span
+													class='col-length'
+													title={
+														r().length === null
+															? 'Left before the game ended; the engine records no length then'
+															: 'Game time stops for pauses and counts the whole game even for a late joiner; wall time is the clock'
+													}
+												>
+													{r().length ?? '–'}
 												</span>
 												<span class='col-engine'>{r().engine}</span>
 												<span class='col-size'>
@@ -152,7 +195,7 @@ export function Replays() {
 					<Ask
 						title='Save as preset'
 						hint={`The map, the modoptions and the start boxes from ${replay().map}.`}
-						initial={`${replay().map} ${replay().playedAt}`}
+						initial={`${replay().map} ${exactly(replay().playedAt)}`}
 						confirm='Save'
 						onCancel={() => setSaving(null)}
 						onAnswer={(name) => {

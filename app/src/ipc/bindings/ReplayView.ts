@@ -9,4 +9,13 @@ export type ReplayView = {
 	map: string
 	engine: string
 	bytes: number
+	/**
+	 * Seconds of game time, which stops for pauses and counts the whole game
+	 * even for someone who joined late. `null` for a game left before it ended.
+	 */
+	gameSeconds: number | null
+	/**
+	 * Seconds on the clock, from the game starting to it ending.
+	 */
+	wallSeconds: number | null
 }

@@ -1,4 +1,4 @@
-//! Reading the start script back out of a replay.
+//! Reading the start script, and the game's length, back out of a replay.
 //!
 //! A replay opens with a fixed header and the start script that made the game
 //! — every modoption, the map, the teams and their start boxes. That is a
@@ -22,6 +22,11 @@ const HEADER_SIZE_AT: usize = 20;
 const SCRIPT_SIZE_AT: usize = 304;
 /// Everything up to and including `scriptSize`.
 const NEEDED: usize = SCRIPT_SIZE_AT + 4;
+/// `gameTime` and `wallclockTime`, in seconds. The engine fills them in at
+/// game over (`CGame::GameEnd`); a game left before then keeps zeros.
+const GAME_TIME_AT: usize = 312;
+const WALLCLOCK_TIME_AT: usize = 316;
+const LENGTH_NEEDED: usize = WALLCLOCK_TIME_AT + 4;
 
 /// The engine writes version 5; anything else is a format we have not read.
 const KNOWN_VERSION: i32 = 5;
@@ -51,15 +56,51 @@ fn i32_at(bytes: &[u8], at: usize) -> i32 {
 	i32::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]])
 }
 
-/// The start script from a replay's bytes.
-pub fn script_from_bytes(head: &[u8]) -> Result<String, Error> {
-	if head.len() < NEEDED || !head.starts_with(MAGIC) {
+/// Refuses what is not a header we read, or is too short to hold `needed`.
+fn check(head: &[u8], needed: usize) -> Result<(), Error> {
+	if head.len() < needed || !head.starts_with(MAGIC) {
 		return Err(Error::NotADemo);
 	}
 	let version = i32_at(head, VERSION_AT);
 	if version != KNOWN_VERSION {
 		return Err(Error::Version(version));
 	}
+	Ok(())
+}
+
+/// How long a game ran, in seconds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Length {
+	/// Time in the game: frames over 30. It stands still while paused, and
+	/// covers the whole game even for someone who joined late and caught up.
+	pub game: u32,
+	/// Time on the clock, from the game starting to its game over.
+	pub wall: u32,
+}
+
+/// The game's length from a replay's bytes.
+pub fn length_from_bytes(head: &[u8]) -> Result<Length, Error> {
+	check(head, LENGTH_NEEDED)?;
+	let seconds = |at| u32::try_from(i32_at(head, at)).unwrap_or(0);
+	Ok(Length {
+		game: seconds(GAME_TIME_AT),
+		wall: seconds(WALLCLOCK_TIME_AT),
+	})
+}
+
+/// The game's length from a replay on disk. Only the header is decompressed,
+/// which is what makes it cheap enough to ask of every replay in a list.
+pub fn length(path: impl AsRef<Path>) -> Result<Length, Error> {
+	let mut head = Vec::with_capacity(LENGTH_NEEDED);
+	open(path.as_ref())?
+		.take(LENGTH_NEEDED as u64)
+		.read_to_end(&mut head)?;
+	length_from_bytes(&head)
+}
+
+/// The start script from a replay's bytes.
+pub fn script_from_bytes(head: &[u8]) -> Result<String, Error> {
+	check(head, NEEDED)?;
 
 	// `headerSize` is the header's own length and doubles as its minor
 	// version, so the script starts there rather than at a fixed offset — that
@@ -86,25 +127,26 @@ pub fn script_from_bytes(head: &[u8]) -> Result<String, Error> {
 
 /// The start script from a replay on disk, compressed (`.sdfz`) or not.
 pub fn script(path: impl AsRef<Path>) -> Result<String, Error> {
-	let path = path.as_ref();
+	// Only the front of the file: everything after the script is the demo
+	// stream, which is the part that makes these files large.
+	let mut head = Vec::new();
+	open(path.as_ref())?
+		.take(MOST_WE_WILL_READ as u64)
+		.read_to_end(&mut head)?;
+	script_from_bytes(&head)
+}
+
+/// A replay's bytes from the top, decompressed when it is an `.sdfz`.
+fn open(path: &Path) -> Result<Box<dyn Read>, Error> {
 	let file = std::fs::File::open(path)?;
 	let compressed = path
 		.extension()
 		.is_some_and(|extension| extension.eq_ignore_ascii_case("sdfz"));
-
-	// Only the front of the file: everything after the script is the demo
-	// stream, which is the part that makes these files large.
-	let mut head = Vec::new();
-	let mut reader: Box<dyn Read> = if compressed {
+	Ok(if compressed {
 		Box::new(flate2::read::GzDecoder::new(file))
 	} else {
 		Box::new(file)
-	};
-	reader
-		.by_ref()
-		.take(MOST_WE_WILL_READ as u64)
-		.read_to_end(&mut head)?;
-	script_from_bytes(&head)
+	})
 }
 
 #[cfg(test)]
@@ -163,6 +205,21 @@ mod tests {
 			script_from_bytes(&bytes),
 			Err(Error::Impossible(_))
 		));
+	}
+
+	#[test]
+	fn the_length_is_read_from_the_header() {
+		let mut bytes = demo("[GAME]{}", KNOWN_VERSION);
+		bytes[GAME_TIME_AT..GAME_TIME_AT + 4].copy_from_slice(&2_280_i32.to_le_bytes());
+		bytes[WALLCLOCK_TIME_AT..WALLCLOCK_TIME_AT + 4].copy_from_slice(&2_400_i32.to_le_bytes());
+		assert_eq!(
+			length_from_bytes(&bytes).unwrap(),
+			Length {
+				game: 2_280,
+				wall: 2_400
+			}
+		);
+		assert!(matches!(length_from_bytes(b"short"), Err(Error::NotADemo)));
 	}
 
 	#[test]

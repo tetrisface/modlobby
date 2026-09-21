@@ -1,21 +1,28 @@
 //! The replays on this machine.
 //!
-//! BAR names a demo `<date>_<time>_<map>_<engine>.sdfz`, which carries
-//! everything a list needs. That matters: a data directory holds thousands of
-//! them, and decompressing each one to read its header would make the list
-//! unusable. The header is read only for the one someone selects.
+//! BAR names a demo `<date>_<time>_<map>_<engine>.sdfz`, which carries the
+//! date, map and engine. The game's length is only in the header, so the first
+//! 320 bytes of each are decompressed for it: 631 replays took 200 ms warm and
+//! 1.3 s from a cold disk in a debug build, which is why the list is read off
+//! the main thread. The rest of the file is never touched.
 
 use std::path::{Path, PathBuf};
 
-/// A replay, as far as its name tells us.
+use crate::demo;
+
+/// A replay, as far as its name and header tell us.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Replay {
 	pub path: PathBuf,
-	/// `2026-08-29 13:17:21`, as the name spells it.
+	/// `2026-08-29T13:17:21Z`: the name's clock is UTC, and saying so lets
+	/// whoever shows it put it in local time.
 	pub played_at: String,
 	pub map: String,
 	pub engine: String,
 	pub bytes: u64,
+	/// `None` for a game left before it ended: the engine writes the length
+	/// at game over, and a replay saved without one has zeros there.
+	pub length: Option<demo::Length>,
 }
 
 /// `2026-08-29_13-17-21-351_Full Metal Plate 1.7_2026.07.04`
@@ -39,7 +46,7 @@ fn parse_name(stem: &str) -> Option<(String, String, String)> {
 	}
 
 	Some((
-		format!("{date} {}", clock.join(":")),
+		format!("{date}T{}Z", clock.join(":")),
 		map.to_owned(),
 		engine.to_owned(),
 	))
@@ -62,12 +69,23 @@ pub fn list(data_dir: &Path) -> Vec<Replay> {
 			}
 			let stem = path.file_stem()?.to_str()?;
 			let (played_at, map, engine) = parse_name(stem)?;
+			let bytes = entry.metadata().map(|meta| meta.len()).unwrap_or(0);
+			// The engine holds a game in memory and writes it out when it
+			// shuts down, so a game still running, or one whose engine was
+			// killed, is an empty file. Neither can be played.
+			if bytes == 0 {
+				return None;
+			}
+			// Any game over takes some seconds on the clock; zero is the
+			// header of a game nobody saw end.
+			let length = demo::length(&path).ok().filter(|length| length.wall > 0);
 			Some(Replay {
-				bytes: entry.metadata().map(|meta| meta.len()).unwrap_or(0),
+				bytes,
 				path,
 				played_at,
 				map,
 				engine,
+				length,
 			})
 		})
 		.collect();
@@ -86,7 +104,7 @@ mod tests {
 		assert_eq!(
 			parse_name("2026-08-29_13-17-21-351_Full Metal Plate 1.7_2026.07.04"),
 			Some((
-				"2026-08-29 13:17:21".into(),
+				"2026-08-29T13:17:21Z".into(),
 				"Full Metal Plate 1.7".into(),
 				"2026.07.04".into()
 			))
@@ -99,7 +117,7 @@ mod tests {
 		assert_eq!(
 			parse_name("2026-08-29_09-14-10-623_Ditched_V1_2026.07.04"),
 			Some((
-				"2026-08-29 09:14:10".into(),
+				"2026-08-29T09:14:10Z".into(),
 				"Ditched_V1".into(),
 				"2026.07.04".into()
 			))
@@ -120,7 +138,7 @@ mod tests {
 	}
 
 	#[test]
-	fn caches_are_left_out_and_the_newest_comes_first() {
+	fn caches_and_empty_demos_are_left_out_and_the_newest_comes_first() {
 		let dir = tempfile::tempdir().unwrap();
 		let demos = dir.path().join("demos");
 		std::fs::create_dir_all(&demos).unwrap();
@@ -132,14 +150,56 @@ mod tests {
 		] {
 			std::fs::write(demos.join(name), b"x").unwrap();
 		}
+		std::fs::write(
+			demos.join("2026-08-29_14-00-00-000_Forge v2.3_2026.07.04.sdfz"),
+			b"",
+		)
+		.unwrap();
 
 		let replays = list(dir.path());
 		assert_eq!(
 			replays.len(),
 			2,
-			"the cache and the text file are not replays"
+			"the cache, the text file and the empty demo are not replays"
 		);
 		assert_eq!(replays[0].map, "Forge v2.3", "newest first");
 		assert_eq!(replays[1].map, "Ditched_V1");
+	}
+
+	#[test]
+	fn a_finished_game_has_a_length_and_one_left_early_does_not() {
+		use std::io::Write;
+
+		let dir = tempfile::tempdir().unwrap();
+		let demos = dir.path().join("demos");
+		std::fs::create_dir_all(&demos).unwrap();
+		// A version 5 header with the two lengths at 312 and 316, gzipped.
+		let write = |name: &str, game: i32, wall: i32| {
+			let mut header = vec![0_u8; 352];
+			header[..15].copy_from_slice(b"spring demofile");
+			header[16..20].copy_from_slice(&5_i32.to_le_bytes());
+			header[312..316].copy_from_slice(&game.to_le_bytes());
+			header[316..320].copy_from_slice(&wall.to_le_bytes());
+			let file = std::fs::File::create(demos.join(name)).unwrap();
+			let mut gz = flate2::write::GzEncoder::new(file, flate2::Compression::default());
+			gz.write_all(&header).unwrap();
+			gz.finish().unwrap();
+		};
+		write(
+			"2026-08-29_10-00-00-000_Forge v2.3_2026.07.04.sdfz",
+			3095,
+			2266,
+		);
+		write("2026-08-29_11-00-00-000_Forge v2.3_2026.07.04.sdfz", 0, 0);
+
+		let replays = list(dir.path());
+		assert_eq!(replays[0].length, None, "left before the game over");
+		assert_eq!(
+			replays[1].length,
+			Some(demo::Length {
+				game: 3095,
+				wall: 2266
+			})
+		);
 	}
 }
