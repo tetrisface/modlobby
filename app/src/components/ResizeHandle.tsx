@@ -17,6 +17,8 @@ export function ResizeHandle(props: {
 	/** The start size, where the pointer began on the axis, and where it is. */
 	onMove: (start: number, from: number, to: number) => void
 	onEnd?: () => void
+	/** A double click: give the size back to the pane's own rules. */
+	onReset?: () => void
 	label?: string
 	/** `x` for a grip on a side edge (the default), `y` for one on the bottom. */
 	axis?: 'x' | 'y'
@@ -79,6 +81,7 @@ export function ResizeHandle(props: {
 			tabIndex={0}
 			onPointerDown={begin}
 			onKeyDown={nudge}
+			onDblClick={() => props.onReset?.()}
 		/>
 	)
 }

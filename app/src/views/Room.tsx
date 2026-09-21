@@ -349,9 +349,10 @@ export function Room() {
 	)
 
 	/**
-	 * The roster's height, dragged by hand and remembered; `null` leaves the
-	 * stylesheet's cap. Either way the chat keeps its floor: the stylesheet
-	 * bounds the cap by it, and the drag is bounded the same way.
+	 * The roster's height, dragged by hand and remembered; `null` leaves it to
+	 * its rows, up to the stylesheet's cap. Either way the chat keeps its
+	 * floor: the stylesheet bounds the height by it, and the drag is bounded
+	 * the same way.
 	 */
 	const [cap, setCap] = createSignal(readWidth(localStore(), CAP_KEY))
 	let main: HTMLDivElement | undefined
@@ -862,7 +863,8 @@ export function Room() {
 							</div>
 
 							{/* The line between the roster and the chat, dragged to give
-                  either side more. The chat keeps its floor whatever is
+                  either side more; a double click hands the height back to
+                  the roster's rows. The chat keeps its floor whatever is
                   dragged or spread above it. */}
 							<ResizeHandle
 								axis='y'
@@ -874,6 +876,10 @@ export function Room() {
 								onEnd={() => {
 									const now = cap()
 									if (now !== null) writeWidth(localStore(), CAP_KEY, now)
+								}}
+								onReset={() => {
+									setCap(null)
+									localStore()?.removeItem(CAP_KEY)
 								}}
 							/>
 

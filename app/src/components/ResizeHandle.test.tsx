@@ -53,6 +53,17 @@ describe('ResizeHandle', () => {
 		])
 		expect(onEnd).toHaveBeenCalledTimes(2)
 	})
+
+	test('a double click resets it', () => {
+		const onReset = vi.fn()
+		const { getByRole } = render(() => (
+			<ResizeHandle onStart={() => 556} onMove={vi.fn()} onReset={onReset} />
+		))
+		getByRole('separator').dispatchEvent(
+			new MouseEvent('dblclick', { bubbles: true }),
+		)
+		expect(onReset).toHaveBeenCalledTimes(1)
+	})
 })
 
 describe('ResizeHandle on a bottom edge', () => {

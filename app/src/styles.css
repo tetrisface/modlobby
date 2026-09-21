@@ -854,9 +854,10 @@ textarea {
 	--chat-floor: 11rem;
 }
 
-/* The roster takes what it needs, up to a cap: the stylesheet's, or the one
-   dragged by hand (`--rosters-cap`). Never so much that the chat loses its
-   floor. */
+/* The roster takes what it needs, up to 60%. Once dragged by hand it is as
+   tall as dragged (`--rosters-cap`), past its rows if need be, so the line
+   moves even while the whole roster is on show. Never so much that the chat
+   loses its floor. */
 .rosters {
 	padding: 0.75rem 1rem;
 	display: flex;
@@ -864,6 +865,7 @@ textarea {
 	gap: 1rem;
 	overflow-y: auto;
 	flex-shrink: 0;
+	height: var(--rosters-cap, auto);
 	max-height: min(var(--rosters-cap, 60%), calc(100% - var(--chat-floor)));
 }
 
