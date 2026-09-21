@@ -54,8 +54,9 @@ const MODDING_GROUPS: ReadonlyArray<readonly [string, readonly string[]]> = [
 ]
 
 /**
- * The two slots BAR declares by hand, both in Cheats. Slots 1-9 come from the
- * `for` loops the vendoring step does not read, so they appear nowhere else.
+ * The two slots BAR declares by hand, both in Cheats. Slots 1-29 come from
+ * `for` loops, which the parser does not read (it reads the `local options`
+ * table), so they appear nowhere else.
  */
 const DECLARED_TWEAK_SLOTS = ['tweakdefs', 'tweakunits']
 
@@ -64,13 +65,41 @@ const MOVED = new Set([
 	...DECLARED_TWEAK_SLOTS,
 ])
 
-/** The 20 slots the `tweaks` crate models; BAR declares 1-9 as hidden. */
-export const TWEAK_SLOTS: readonly string[] = ['defs', 'units'].flatMap(
+/**
+ * The 20 slots written from here, in the order BAR runs them since #6597:
+ * every tweakunits, then every tweakdefs. BAR declares 1-29 (hidden) and reads
+ * any index; a higher slot somebody else set is shown too, never written.
+ */
+export const TWEAK_SLOTS: readonly string[] = ['units', 'defs'].flatMap(
 	(kind) =>
 		['', '1', '2', '3', '4', '5', '6', '7', '8', '9'].map(
 			(index) => `tweak${kind}${index}`,
 		),
 )
+
+/** `tweakunits`, `tweakdefs7`, `tweakdefs29`; a leading zero is some other key. */
+const TWEAK_KEY = /^tweak(units|defs)([1-9]\d*)?$/
+
+/** A tweak key's kind and index, or nothing for any other key. */
+export function tweakKey(
+	key: string,
+): { kind: 'units' | 'defs'; index: number } | null {
+	const match = TWEAK_KEY.exec(key)
+	if (!match) return null
+	const index = match[2] === undefined ? 0 : Number(match[2])
+	// The index travels to Rust as a byte.
+	if (index > 255) return null
+	return { kind: match[1] as 'units' | 'defs', index }
+}
+
+/** Tweak keys in the order BAR runs them: units, then defs, each by index. */
+export function byRunOrder(a: string, b: string): number {
+	const [x, y] = [tweakKey(a), tweakKey(b)]
+	if (!x || !y) return 0
+	return (
+		Number(x.kind === 'defs') - Number(y.kind === 'defs') || x.index - y.index
+	)
+}
 
 export const MODDING_TAB = 'modding'
 
@@ -121,12 +150,12 @@ function groupsOf(options: ModOption[]): Group[] {
 	return groups
 }
 
-function moddingTab(options: ModOption[]): Tab {
+function moddingTab(options: ModOption[], extra: readonly string[]): Tab {
 	const byKey = new Map(options.map((option) => [option.key, option]))
 	const groups: Group[] = [
 		{
 			name: 'Tweak slots',
-			options: TWEAK_SLOTS.map((key) => ({
+			options: [...TWEAK_SLOTS, ...extra].sort(byRunOrder).map((key) => ({
 				key,
 				name: key,
 				desc: 'Base64url Lua carried as a modoption.',
@@ -181,8 +210,13 @@ function mapTab(options: ModOption[]): Tab | null {
  * Tabs in Chobby's order: weight descending, with an unweighted section
  * treated as zero so it lands between Experimental and Cheats. Modding goes
  * next to Cheats, where the tweak slots used to live, and Map last.
+ *
+ * `extra` is tweak slots past the twenty that the room has used.
  */
-export function tabs(options: ModOption[]): Tab[] {
+export function tabs(
+	options: ModOption[],
+	extra: readonly string[] = [],
+): Tab[] {
 	const sections = options
 		.filter(
 			(option) =>
@@ -204,7 +238,11 @@ export function tabs(options: ModOption[]): Tab[] {
 	}))
 
 	const map = mapTab(options)
-	return [...declared, moddingTab(options), ...(map === null ? [] : [map])]
+	return [
+		...declared,
+		moddingTab(options, extra),
+		...(map === null ? [] : [map]),
+	]
 }
 
 /** Modoptions the room has set, keyed without the `game/modoptions/` prefix. */
@@ -265,21 +303,55 @@ export function rowsOf(group: Group, values: Record<string, string>): Row[] {
 
 export type Changed = { tab: Tab; rows: Row[] }
 
+/** Which rows a view draws. */
+export type Shown = (row: Row) => boolean
+
+export const EVERY_ROW: Shown = () => true
+
 /**
- * Every setting by the tab it lives in -- only what differs from BAR's
- * default, or all of it. Tabs with nothing to show are left out.
+ * Where a new tweak of this kind goes: after the last one filled, so it runs
+ * after them -- BAR runs each kind in index order -- or, once slot 9 is taken,
+ * the first gap. Nothing when all ten are.
+ */
+export function nextTweak(
+	kind: 'defs' | 'units',
+	values: Record<string, string>,
+): string | null {
+	const keys = TWEAK_SLOTS.filter((key) => key.startsWith(`tweak${kind}`))
+	const filled = keys.map((key) => !isCleared(values[key] ?? ''))
+	const after = filled.lastIndexOf(true) + 1
+	if (after < keys.length) return keys[after]!
+	const gap = filled.indexOf(false)
+	return gap === -1 ? null : keys[gap]!
+}
+
+/**
+ * What a Changed view draws: what differs from BAR's default, the slot each
+ * kind's next tweak would go to, and whatever `held` names -- a slot that is
+ * open or holds an unsent edit, which must not vanish when somebody clears it.
+ */
+export function changedView(
+	values: Record<string, string>,
+	held: ReadonlySet<string> = new Set(),
+): Shown {
+	const next = new Set([nextTweak('defs', values), nextTweak('units', values)])
+	return (row) =>
+		row.changed || next.has(row.option.key) || held.has(row.option.key)
+}
+
+/**
+ * Every setting by the tab it lives in, as far as `shown` draws it. Tabs with
+ * nothing to show are left out.
  */
 export function rowsByTab(
 	tabs: Tab[],
 	values: Record<string, string>,
-	onlyChanged: boolean,
+	shown: Shown,
 ): Changed[] {
 	return tabs
 		.map((tab) => ({
 			tab,
-			rows: tab.groups
-				.flatMap((group) => rowsOf(group, values))
-				.filter((row) => row.changed || !onlyChanged),
+			rows: tab.groups.flatMap((group) => rowsOf(group, values)).filter(shown),
 		}))
 		.filter((entry) => entry.rows.length > 0)
 }
@@ -291,18 +363,18 @@ export type Section = { name: string; rows: Row[] }
 export const GENERAL_GROUP = 'General'
 
 /**
- * A tab's settings by the group they live in -- only what differs from BAR's
- * default, or all of it. Groups with nothing to show are left out.
+ * A tab's settings by the group they live in, as far as `shown` draws them.
+ * Groups with nothing to show are left out.
  */
 export function rowsByGroup(
 	tab: Tab,
 	values: Record<string, string>,
-	onlyChanged: boolean,
+	shown: Shown,
 ): Section[] {
 	return tab.groups
 		.map((group) => ({
 			name: group.name || GENERAL_GROUP,
-			rows: rowsOf(group, values).filter((row) => row.changed || !onlyChanged),
+			rows: rowsOf(group, values).filter(shown),
 		}))
 		.filter((entry) => entry.rows.length > 0)
 }
@@ -319,7 +391,7 @@ export function searchRows(
 	needle: string,
 ): Changed[] {
 	if (needle.trim() === '') return []
-	return rowsByTab(tabs, values, false)
+	return rowsByTab(tabs, values, EVERY_ROW)
 		.map((entry) => ({
 			tab: entry.tab,
 			rows: entry.rows.filter((row) => hasEveryWord(searchText(row), needle)),
@@ -346,12 +418,12 @@ export function changedByTab(
 	tabs: Tab[],
 	values: Record<string, string>,
 ): Changed[] {
-	return rowsByTab(tabs, values, true)
+	return rowsByTab(tabs, values, (row) => row.changed)
 }
 
-/** Whether a row is one of the twenty tweak slots, drawn as actions, not a value. */
+/** Whether a row is a tweak slot, whatever its index. */
 export function isTweakSlot(row: Row): boolean {
-	return TWEAK_SLOTS.includes(row.option.key)
+	return tweakKey(row.option.key) !== null
 }
 
 /** How many of a tab's settings differ from BAR's default. */
@@ -366,9 +438,6 @@ export function changedCount(tab: Tab, values: Record<string, string>): number {
 /** What a row shows on the right: the value, or the default it is sitting on. */
 export function displayText(row: Row): string {
 	const text = row.current ?? defaultText(row.option)
-	// A tweak is a blob of base64; its size is the one thing a row can say.
-	if (TWEAK_SLOTS.includes(row.option.key))
-		return text === '' ? 'empty' : `${text.length} B`
 	// The Map tab asks Rust for words; this is what it says until then.
 	if (isMapOption(row.option))
 		return isCleared(text) ? 'none' : `${text.length} B`

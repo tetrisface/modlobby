@@ -15,8 +15,10 @@ import type { Prepared } from '../ipc/bindings/Prepared'
 import type { TweakView } from '../ipc/bindings/TweakView'
 import type { api } from '../ipc/client'
 import { NO_ASSIST, type Assist } from '../lib/assist'
-import { isCleared } from '../lib/setup'
+import { BOX_OVERRIDE } from '../lib/boxes'
+import { isCleared, nextTweak } from '../lib/setup'
 import {
+	SCRATCH,
 	SLOT_KEYS,
 	defaultTarget,
 	draftDoc,
@@ -27,13 +29,16 @@ import {
 	kindOf,
 	listItems,
 	loaded,
-	modifiedCount,
 	noteOf,
 	reset as resetDoc,
 	savedAs,
+	scratchDoc,
 	sent,
+	slotDoc,
 	slotId,
+	slotOf,
 	targetOf,
+	unsentCount,
 	type Compare,
 	type DocId,
 	type Filter,
@@ -97,7 +102,7 @@ export function createTweakspace(
 
 		const active = createMemo(() => ws.docs[ws.active]!)
 		const items = createMemo(() => listItems(ws))
-		const modified = createMemo(() => modifiedCount(ws))
+		const unsent = createMemo(() => unsentCount(ws))
 
 		// ---- the room's slots ----
 
@@ -151,10 +156,20 @@ export function createTweakspace(
 
 		createEffect(() => {
 			const values = room()
-			for (const key of SLOT_KEYS) {
+			// The twenty, any slot past 9 the room holds, and any it held before
+			// -- so one cleared since is seen to be empty rather than kept full.
+			const keys = new Set([
+				...SLOT_KEYS,
+				...Object.keys(values).filter((key) => slotOf(key) !== null),
+				...untrack(() => Object.values(ws.docs))
+					.filter((doc) => doc.origin === 'slot')
+					.map((doc) => doc.title),
+			])
+			for (const key of keys) {
 				const blob = values[key] ?? ''
-				const doc = untrack(() => ws.docs[slotId(key)]!)
-				if (doc.loaded && doc.blob === blob) continue
+				const doc = untrack(() => ws.docs[slotId(key)])
+				if (!doc) setWs('docs', slotId(key), slotDoc(key))
+				else if (doc.loaded && doc.blob === blob) continue
 				if (inFlight.get(key) === blob) continue
 				void load(key, blob)
 			}
@@ -170,8 +185,9 @@ export function createTweakspace(
 
 		createEffect(
 			on(
-				() => [active().buffer, active().kind, targetOf(ws)] as const,
-				([lua, kind, slot]) => {
+				() =>
+					[active().buffer, active().kind, targetOf(ws), ws.minify] as const,
+				([lua, kind, slot, minify]) => {
 					if (!slot || !lua.trim()) {
 						setPrepared(null)
 						setProblem(null)
@@ -179,7 +195,7 @@ export function createTweakspace(
 						return
 					}
 					const timer = setTimeout(() => {
-						io.tweakPrepare(lua, slot, true)
+						io.tweakPrepare(lua, slot, true, minify)
 							.then((next) => {
 								setPrepared(next)
 								setProblem(null)
@@ -202,17 +218,32 @@ export function createTweakspace(
 
 		// ---- what the reader does ----
 
+		/**
+		 * Where a draft or the scratch goes unless told otherwise: the slot the
+		 * room's next tweak of that kind would take, so that sending one never
+		 * lands on a tweak somebody already set.
+		 */
+		const nextSlot = (kind: Kind): string =>
+			kind === 'boxes'
+				? BOX_OVERRIDE
+				: (nextTweak(kind, untrack(room)) ?? defaultTarget(kind))
+
 		function open(id: DocId) {
 			const doc = ws.docs[id]
-			if (!doc) return
+			// Already open: what was measured is still this document's.
+			if (!doc || ws.active === id) return
 			setWs('active', id)
 			// What was measured was the last document; nothing is, until this one is.
 			setPrepared(null)
 			setProblem(null)
 			setCheck(null)
-			// A draft is sent to a slot of its own kind; keep the choice if it fits.
-			if (doc.origin === 'draft' && kindOf(ws.target) !== doc.kind)
-				setWs('target', defaultTarget(doc.kind))
+			if (doc.origin !== 'slot') setWs('target', nextSlot(doc.kind))
+		}
+
+		/** Opens a slot's row in the settings, or closes it with `null`. */
+		function expand(id: DocId | null) {
+			if (id !== null) open(id)
+			setWs({ expanded: id, compare: null, fullscreen: false })
 		}
 
 		function edit(id: DocId, text: string) {
@@ -236,7 +267,7 @@ export function createTweakspace(
 			const doc = active()
 			const slot = targetOf(ws)
 			if (!slot) return null
-			const out = await io.tweakSend(doc.buffer, slot, direct)
+			const out = await io.tweakSend(doc.buffer, slot, direct, ws.minify)
 			if (direct && doc.origin === 'slot') setWs('docs', doc.id, sent)
 			return out
 		}
@@ -280,12 +311,22 @@ export function createTweakspace(
 				throw new Error('start boxes are kept as presets, not drafts')
 			await io.saveDraft(name, doc.buffer)
 			setWs('docs', draftId(name), savedAs(doc, name))
+			// The scratch has become that draft, and is free for the next one.
+			if (doc.origin !== 'scratch') return
+			setWs('docs', SCRATCH, scratchDoc(doc.kind))
+			open(draftId(name))
+		}
+
+		/** A draft's text into the open document, as an edit of it. */
+		function loadDraft(name: string) {
+			const draft = ws.docs[draftId(name)]
+			if (draft) edit(ws.active, draft.buffer)
 		}
 
 		async function deleteDraft(name: string) {
 			await io.deleteDraft(name)
 			const id = draftId(name)
-			if (ws.active === id) open(slotId(SLOT_KEYS[0]!))
+			if (ws.active === id) open(SCRATCH)
 			setWs(
 				'docs',
 				produce((docs) => {
@@ -297,14 +338,21 @@ export function createTweakspace(
 		const setFilter = (patch: Partial<Filter>) => setWs('filter', patch)
 		const setCompare = (compare: Compare | null) => setWs('compare', compare)
 		const diffText = io.tweakDiffText
-		const setTarget = (key: string) => setWs('target', key)
+		/** Formats text without touching a document, for Monaco's Format Document. */
+		const formatText = io.tweakFormat
+		/** The scratch takes the kind of wherever it is aimed. */
+		function setTarget(key: string) {
+			setWs('target', key)
+			if (ws.active === SCRATCH) setWs('docs', SCRATCH, 'kind', kindOf(key))
+		}
 		const setFullscreen = (on: boolean) => setWs('fullscreen', on)
+		const setMinify = (on: boolean) => setWs('minify', on)
 
 		return {
 			ws,
 			active,
 			items,
-			modified,
+			unsent,
 			prepared,
 			problem,
 			check,
@@ -312,6 +360,7 @@ export function createTweakspace(
 			setAssist,
 			decode,
 			open,
+			expand,
 			edit,
 			reset,
 			format,
@@ -319,12 +368,15 @@ export function createTweakspace(
 			clear,
 			refreshDrafts,
 			saveDraft,
+			loadDraft,
 			deleteDraft,
 			setFilter,
 			setCompare,
 			diffText,
+			formatText,
 			setTarget,
 			setFullscreen,
+			setMinify,
 			dispose,
 		}
 	})

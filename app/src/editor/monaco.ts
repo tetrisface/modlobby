@@ -5,6 +5,36 @@
 import * as monaco from 'monaco-editor/editor/editor.api'
 import 'monaco-editor/languages/definitions/lua/register'
 import { jsonDefaults } from 'monaco-editor/languages/features/json/register'
+// `editor.api` is the core alone: every editing feature is a module of its
+// own, and without these there was no find, no folding, and no widget for the
+// completions and hovers `providers.ts` registers. Each is what a code editor
+// is expected to have, or what something here draws through.
+import 'monaco-editor/features/codicon/register'
+import 'monaco-editor/features/find/register'
+import 'monaco-editor/editor/contrib/suggest/browser/suggestController'
+import 'monaco-editor/features/hover/register'
+import 'monaco-editor/features/folding/register'
+import 'monaco-editor/features/comment/register'
+import 'monaco-editor/features/multicursor/register'
+import 'monaco-editor/features/wordOperations/register'
+import 'monaco-editor/features/linesOperations/register'
+import 'monaco-editor/features/bracketMatching/register'
+import 'monaco-editor/features/wordHighlighter/register'
+import 'monaco-editor/features/contextmenu/register'
+import 'monaco-editor/features/clipboard/register'
+import 'monaco-editor/features/gotoLine/register'
+// F8 steps through the Rust check's problems, which are markers already.
+import 'monaco-editor/features/gotoError/register'
+// Compare's next/previous change (F7) and its accessible view.
+import 'monaco-editor/features/diffEditor/register'
+import 'monaco-editor/features/stickyScroll/register'
+// Format Document (Shift+Alt+F), through the StyLua provider in `providers.ts`.
+import 'monaco-editor/features/format/register'
+// The command palette (F1, and Ctrl+P from `views/tweaks/keys.ts`) and the
+// outline picker (Ctrl+Shift+O), which lists what the Rust check found.
+import 'monaco-editor/features/quickCommand/register'
+import 'monaco-editor/features/quickOutline/register'
+import 'monaco-editor/features/fontZoom/register'
 import EditorWorker from 'monaco-editor/editor/editor.worker?worker'
 import type { Problem } from '../ipc/bindings/Problem'
 import type { Warning } from '../lib/assist'

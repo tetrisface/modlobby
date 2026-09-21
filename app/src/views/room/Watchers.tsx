@@ -9,6 +9,7 @@ import {
 import { WatcherRow } from '../../components/PlayerRow'
 import type { UserView } from '../../ipc/bindings/UserView'
 import { localStore, readFlag, writeFlag } from '../../lib/resize'
+import { isBoss } from '../../lib/roster'
 import type { Skill } from '../../lib/skill'
 
 /** What both cards need to draw a person. */
@@ -182,7 +183,7 @@ export function WatcherCard(
 			skill={props.skillOf(user.name)}
 			me={user.name === props.me}
 			friend={props.isFriend(user.name)}
-			boss={props.boss === user.name}
+			boss={isBoss(props.boss, user.name)}
 			pending={pending}
 			place={place}
 		/>

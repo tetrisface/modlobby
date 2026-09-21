@@ -61,6 +61,13 @@ pub fn decode(blob: &str, kind: Kind) -> Result<Decoded, Error> {
 	Ok(Decoded { text, diagnostics })
 }
 
+/// Where the first `_` of the text's base64url falls, if one does: the index
+/// in the encoded string, whose group of four covers bytes `index / 4 * 3`
+/// onwards.
+pub(crate) fn first_underscore(text: &str) -> Option<usize> {
+	BASE64_URL_SAFE_NO_PAD.encode(text.as_bytes()).find('_')
+}
+
 /// Encodes unpadded base64url. For [`Kind::Units`] the result is guaranteed
 /// free of `_`, or the call fails with what to change.
 pub fn encode(text: &str, kind: Kind) -> Result<String, Error> {

@@ -1,12 +1,16 @@
 import { describe, expect, test } from 'vitest'
 import {
+	EVERY_ROW,
 	GENERAL_GROUP,
 	MAP_TAB,
 	MODDING_TAB,
 	TWEAK_SLOTS,
+	byRunOrder,
 	changedByTab,
 	changedCount,
+	changedView,
 	isTweakSlot,
+	nextTweak,
 	rowsByGroup,
 	rowsByTab,
 	defaultText,
@@ -15,10 +19,13 @@ import {
 	rowsOf,
 	searchRows,
 	tabs,
+	tweakKey,
+	type Shown,
 	type Tab,
 } from './setup'
 import { fixtureOptions } from './setup.fixture'
 
+const CHANGED: Shown = (row) => row.changed
 const TABS = tabs(fixtureOptions())
 const byKey = (key: string): Tab => {
 	const tab = TABS.find((entry) => entry.key === key)
@@ -111,12 +118,39 @@ describe('tabs', () => {
 		}
 	})
 
-	test('tweak slots are all twenty, defs before units', () => {
+	test('tweak slots are all twenty, units before defs as BAR runs them', () => {
 		expect(TWEAK_SLOTS).toHaveLength(20)
-		expect(TWEAK_SLOTS[0]).toBe('tweakdefs')
-		expect(TWEAK_SLOTS[9]).toBe('tweakdefs9')
-		expect(TWEAK_SLOTS[10]).toBe('tweakunits')
-		expect(TWEAK_SLOTS[19]).toBe('tweakunits9')
+		expect(TWEAK_SLOTS[0]).toBe('tweakunits')
+		expect(TWEAK_SLOTS[9]).toBe('tweakunits9')
+		expect(TWEAK_SLOTS[10]).toBe('tweakdefs')
+		expect(TWEAK_SLOTS[19]).toBe('tweakdefs9')
+	})
+
+	test('a slot past the twenty the room used joins them, in run order', () => {
+		const slots = tabs(fixtureOptions(), ['tweakdefs12', 'tweakunits20'])
+			.find((tab) => tab.key === MODDING_TAB)!
+			.groups[0]!.options.map((option) => option.key)
+		expect(slots).toHaveLength(22)
+		expect(slots.slice(8, 12)).toEqual([
+			'tweakunits8',
+			'tweakunits9',
+			'tweakunits20',
+			'tweakdefs',
+		])
+		expect(slots.at(-1)).toBe('tweakdefs12')
+	})
+
+	test('a tweak key is any index BAR reads, and nothing else', () => {
+		expect(tweakKey('tweakunits')).toEqual({ kind: 'units', index: 0 })
+		expect(tweakKey('tweakdefs29')).toEqual({ kind: 'defs', index: 29 })
+		expect(tweakKey('tweakdefs01')).toBeNull()
+		expect(tweakKey('tweakdefs256')).toBeNull()
+		expect(tweakKey('map_tweaklava')).toBeNull()
+		expect(
+			['tweakdefs', 'tweakunits12', 'tweakdefs2', 'tweakunits'].sort(
+				byRunOrder,
+			),
+		).toEqual(['tweakunits', 'tweakunits12', 'tweakdefs', 'tweakdefs2'])
 	})
 
 	test('hidden options never become a row', () => {
@@ -209,7 +243,7 @@ describe('changes against BAR defaults', () => {
 	})
 
 	test('showing the unchanged too lists every tab with all of its rows', () => {
-		const all = rowsByTab(TABS, values, false)
+		const all = rowsByTab(TABS, values, EVERY_ROW)
 		expect(all.map((entry) => entry.tab.name)).toEqual(
 			TABS.map((tab) => tab.name),
 		)
@@ -222,7 +256,7 @@ describe('changes against BAR defaults', () => {
 	})
 
 	test("a tab's changes come under BAR's own groups", () => {
-		const cheats = rowsByGroup(byKey('options_cheats'), values, true)
+		const cheats = rowsByGroup(byKey('options_cheats'), values, CHANGED)
 		expect(cheats.map((entry) => entry.name)).toEqual([
 			'Starting Resources',
 			'Resource Multipliers',
@@ -234,7 +268,7 @@ describe('changes against BAR defaults', () => {
 
 	test('showing the unchanged inside a tab lists every group with all of its rows', () => {
 		const tab = byKey('options_cheats')
-		const all = rowsByGroup(tab, values, false)
+		const all = rowsByGroup(tab, values, EVERY_ROW)
 		expect(all.map((entry) => entry.name)).toEqual(
 			tab.groups.map((group) => group.name),
 		)
@@ -248,9 +282,9 @@ describe('changes against BAR defaults', () => {
 
 	test('a group BAR left unnamed is called General', () => {
 		const raptors = byKey('raptor_defense_options')
-		expect(rowsByGroup(raptors, {}, true)).toEqual([])
+		expect(rowsByGroup(raptors, {}, CHANGED)).toEqual([])
 		expect(
-			rowsByGroup(raptors, {}, false).map((entry) => [
+			rowsByGroup(raptors, {}, EVERY_ROW).map((entry) => [
 				entry.name,
 				entry.rows.length,
 			]),
@@ -260,15 +294,72 @@ describe('changes against BAR defaults', () => {
 	test('the tweak slots are rows of the Modding tab, not a grid', () => {
 		const modding = byKey(MODDING_TAB)
 		expect(
-			rowsByGroup(modding, values, true).map((entry) => [
+			rowsByGroup(modding, values, CHANGED).map((entry) => [
 				entry.name,
 				entry.rows.map((row) => row.option.key),
 			]),
 		).toEqual([['Tweak slots', ['tweakdefs1']]])
-		const slots = rowsByGroup(modding, values, false)[0]!
+		const slots = rowsByGroup(modding, values, EVERY_ROW)[0]!
 		expect(slots.name).toBe('Tweak slots')
 		expect(slots.rows).toHaveLength(20)
 		expect(slots.rows.every(isTweakSlot)).toBe(true)
+	})
+})
+
+describe('the next tweak', () => {
+	const filled = (...keys: string[]) =>
+		Object.fromEntries(keys.map((key) => [key, 'bG9jYWw=']))
+
+	test('goes after the last one filled, so it runs after them', () => {
+		expect(nextTweak('defs', {})).toBe('tweakdefs')
+		expect(nextTweak('defs', filled('tweakdefs', 'tweakdefs3'))).toBe(
+			'tweakdefs4',
+		)
+		// Each kind counts its own ten.
+		expect(nextTweak('units', filled('tweakdefs', 'tweakdefs3'))).toBe(
+			'tweakunits',
+		)
+		// SPADS clears a slot to `0`, which is room.
+		expect(nextTweak('defs', { tweakdefs: '0' })).toBe('tweakdefs')
+	})
+
+	test('takes the first gap once slot 9 is taken, and nothing when all ten are', () => {
+		expect(nextTweak('units', filled('tweakunits', 'tweakunits9'))).toBe(
+			'tweakunits1',
+		)
+		const full = filled(...TWEAK_SLOTS.filter((key) => key.includes('defs')))
+		expect(nextTweak('defs', full)).toBeNull()
+		expect(nextTweak('units', full)).toBe('tweakunits')
+	})
+
+	test('a Changed view shows each kind its empty row, below the filled ones', () => {
+		const values = readModOptions({ 'game/modoptions/tweakdefs1': 'bG9jYWw=' })
+		const modding = rowsByGroup(byKey(MODDING_TAB), values, changedView(values))
+		expect(
+			modding.map((entry) => [
+				entry.name,
+				entry.rows.map((row) => [row.option.key, row.changed]),
+			]),
+		).toEqual([
+			[
+				'Tweak slots',
+				[
+					['tweakunits', false],
+					['tweakdefs1', true],
+					['tweakdefs2', false],
+				],
+			],
+		])
+		// The empty rows are not changes: badges and counts leave them out.
+		expect(changedCount(byKey(MODDING_TAB), values)).toBe(1)
+	})
+
+	test('a held slot stays in a Changed view after it is cleared', () => {
+		const shown = changedView({}, new Set(['tweakunits4']))
+		const keys = rowsByTab(TABS, {}, shown).flatMap((entry) =>
+			entry.rows.map((row) => row.option.key),
+		)
+		expect(keys).toEqual(['tweakunits', 'tweakunits4', 'tweakdefs'])
 	})
 })
 
@@ -383,16 +474,6 @@ describe('display', () => {
 		expect(displayText(row('nowasting', { nowasting: 'disabled' }))).toBe(
 			'Disabled',
 		)
-	})
-
-	test('a tweak slot shows its size, never its blob', () => {
-		const modding = byKey(MODDING_TAB)
-		const slot = (values: Record<string, string>) =>
-			modding.groups
-				.flatMap((group) => rowsOf(group, values))
-				.find((entry) => entry.option.key === 'tweakunits2')!
-		expect(displayText(slot({ tweakunits2: 'e30=' }))).toBe('4 B')
-		expect(displayText(slot({}))).toBe('empty')
 	})
 
 	test('an unset row falls back to the default it sits on', () => {

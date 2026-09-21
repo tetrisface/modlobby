@@ -1,5 +1,7 @@
 import { monaco } from '../../editor/monaco'
 import type { Kind } from '../../ipc/bindings/Kind'
+import type { Symbol } from '../../ipc/bindings/Symbol'
+import { describeError } from '../../ipc/client'
 import {
 	describeTag,
 	pathAt,
@@ -7,25 +9,82 @@ import {
 	tagAt,
 	type Assist,
 } from '../../lib/assist'
+import { pushNotice } from '../../store/chat'
+
+/** What the providers need of the open document, asked on every request. */
+export type AssistContext = {
+	assist: Assist
+	kind: Kind
+	/** What the Rust check found at the top level, for the outline picker. */
+	outline: Symbol[]
+	/** StyLua, or the JSON formatter for the override. */
+	format: (text: string) => Promise<string>
+}
 
 let registered = false
+/** The editor mounted last; it is the one open, since only one ever is. */
+let current: () => AssistContext
 
 /**
  * Completion and hover for a `tweakunits` table, from what the game and the
- * engine know. Registered once for the Lua language; the accessor is read
- * on every request, so a new room's units are offered without re-registering.
+ * engine know; Format Document through our formatter; and the outline the
+ * Rust check found, for Ctrl+Shift+O. Registered once per language, reading
+ * whichever editor was mounted last -- so a new room's units are offered
+ * without re-registering, and a closed editor is never asked.
  *
- * Only models from the workspace (`tweak:` scheme) and only for the units
- * kind: a `tweakdefs` script has braces that mean other things.
+ * Only models from the workspace (`tweak:` scheme). Completion and hover only
+ * for the units kind: a `tweakdefs` script has braces that mean other things.
  */
-export function registerAssist(
-	current: () => { assist: Assist; kind: Kind },
-): void {
+export function registerAssist(context: () => AssistContext): void {
+	current = context
 	if (registered) return
 	registered = true
 
+	const ours = (model: monaco.editor.ITextModel) => model.uri.scheme === 'tweak'
 	const applies = (model: monaco.editor.ITextModel) =>
-		model.uri.scheme === 'tweak' && current().kind === 'units'
+		ours(model) && current().kind === 'units'
+
+	for (const language of ['lua', 'json'])
+		monaco.languages.registerDocumentFormattingEditProvider(language, {
+			async provideDocumentFormattingEdits(model) {
+				if (!ours(model)) return []
+				try {
+					const text = await current().format(model.getValue())
+					return [{ range: model.getFullModelRange(), text }]
+				} catch (error) {
+					pushNotice('warning', `format: ${describeError(error)}`)
+					return []
+				}
+			},
+		})
+
+	monaco.languages.registerDocumentSymbolProvider('lua', {
+		provideDocumentSymbols(model) {
+			if (!ours(model)) return []
+			const { outline, kind } = current()
+			return outline
+				.filter((symbol) => symbol.line <= model.getLineCount())
+				.map((symbol) => {
+					const range = new monaco.Range(
+						symbol.line,
+						1,
+						symbol.line,
+						model.getLineMaxColumn(symbol.line),
+					)
+					return {
+						name: symbol.name,
+						detail: '',
+						kind:
+							kind === 'units'
+								? monaco.languages.SymbolKind.Field
+								: monaco.languages.SymbolKind.Variable,
+						tags: [],
+						range,
+						selectionRange: range,
+					}
+				})
+		},
+	})
 
 	monaco.languages.registerCompletionItemProvider('lua', {
 		provideCompletionItems(model, position) {

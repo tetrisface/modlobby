@@ -44,6 +44,7 @@ import {
 	arrange,
 	emptySeats,
 	freeTeam,
+	isBoss,
 	unusedBotName,
 	type Team,
 } from '../lib/roster'
@@ -758,7 +759,7 @@ export function Room() {
 																skill={skillOf(user.name)}
 																me={user.name === room.me()}
 																friend={isFriend(user.name)}
-																boss={room.my()?.boss === user.name}
+																boss={isBoss(room.my()?.boss, user.name)}
 																download={
 																	user.name === room.me()
 																		? lobby.download

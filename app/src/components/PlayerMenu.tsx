@@ -3,6 +3,7 @@ import type { BotView } from '../ipc/bindings/BotView'
 import { api, describeError } from '../ipc/client'
 import { ensureRoom, privateRoom, pushNotice } from '../store/chat'
 import { lobby, mainServer, roomServer, roomSession } from '../store/lobby'
+import { isBoss } from '../lib/roster'
 import { dismiss } from './dismiss'
 import { Flag, RankIcon } from './icons'
 
@@ -225,7 +226,7 @@ export function PlayerMenu() {
 				/** Whether SPADS would take our word for it in this room. */
 				const bossing = () => {
 					const room = roomSession()
-					return !!room?.myBattle?.boss && room.myBattle.boss === room.me
+					return isBoss(room?.myBattle?.boss, room?.me)
 				}
 
 				/** `stay`: the entry opens something in the menu, so it stays. */

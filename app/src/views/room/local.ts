@@ -40,7 +40,8 @@ export const skirmishIo = {
 	currentArrangement: (teams) => api.skirmishCurrentArrangement(teams),
 	downloadMissing: () => api.skirmishDownloadMissing(),
 	pveScore: () => api.skirmishPveScore(),
-	tweakSend: (lua, slot, direct) => api.skirmishTweakSend(lua, slot, direct),
+	tweakSend: (lua, slot, direct, minify) =>
+		api.skirmishTweakSend(lua, slot, direct, minify),
 	tweakClear: (slot) => api.skirmishTweakClear(slot),
 } satisfies RoomIo
 

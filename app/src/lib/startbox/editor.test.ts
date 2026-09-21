@@ -216,6 +216,18 @@ describe('the boxes list', () => {
 		expect(shrunk.boxes[1]).toEqual(triangle)
 	})
 
+	it('drops a row’s whole box even while one of its corners is selected', () => {
+		const state = run(
+			start,
+			{ type: 'select', box: 1, vertex: 0 },
+			{ type: 'drop', box: 1 },
+		)
+		expect(state.boxes).toEqual([square])
+		expect(state.selected).toBeNull()
+		expect(reduce(state, { type: 'undo' }).boxes).toEqual(start.boxes)
+		expect(reduce(start, { type: 'drop', box: 5 })).toBe(start)
+	})
+
 	it('reorders, which is what changes the ally team a box belongs to', () => {
 		const state = reduce(start, { type: 'reorder', from: 1, to: 0 })
 		expect(state.boxes).toEqual([triangle, square])

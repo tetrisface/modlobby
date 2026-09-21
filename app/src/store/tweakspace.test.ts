@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { Prepared } from '../ipc/bindings/Prepared'
 import type { TweakView } from '../ipc/bindings/TweakView'
 import { BOX_OVERRIDE } from '../lib/boxes'
-import { draftId, slotId } from '../lib/tweakspace'
+import { SCRATCH, draftId, slotId } from '../lib/tweakspace'
 import { createTweakspace, type TweakIo } from './tweakspace'
 
 /** A base64 that is its own Lua: the fake decodes by prefixing a header. */
@@ -101,7 +101,7 @@ describe('the workspace', () => {
 			original: '-- BBB\nlua of BBB\n',
 			stale: true,
 		})
-		expect(space.modified()).toBe(1)
+		expect(space.unsent()).toBe(1)
 		space.reset(slotId('tweakdefs1'))
 		expect(space.active()).toMatchObject({
 			buffer: '-- BBB\nlua of BBB\n',
@@ -117,11 +117,17 @@ describe('the workspace', () => {
 		space.edit(slotId('tweakdefs1'), 'local a = 1')
 		await vi.advanceTimersByTimeAsync(300)
 		expect(io.tweakPrepare).toHaveBeenCalledTimes(1)
+		// Measured as it would go out: as written, not minified.
 		expect(io.tweakPrepare).toHaveBeenLastCalledWith(
 			'local a = 1',
 			{ kind: 'defs', index: 1 },
 			true,
+			false,
 		)
+		expect(space.prepared()?.gauge.fits).toBe(true)
+
+		// Opening what is already open keeps what was measured of it.
+		space.expand(slotId('tweakdefs1'))
 		expect(space.prepared()?.gauge.fits).toBe(true)
 
 		io.tweakPrepare.mockRejectedValueOnce(new Error('Lua: unexpected token'))
@@ -150,13 +156,76 @@ describe('the workspace', () => {
 			original: '{ armcom = {} }',
 		})
 		// The slot is still not what the room holds.
-		expect(space.modified()).toBe(1)
+		expect(space.unsent()).toBe(1)
 
+		// Aimed where the room's next tweak of its kind goes: here, the first.
 		space.open(draftId('com'))
-		expect(space.ws.target).toBe('tweakunits1')
+		expect(space.ws.target).toBe('tweakunits')
 		await space.deleteDraft('com')
 		expect(space.ws.docs[draftId('com')]).toBeUndefined()
-		expect(space.ws.active).toBe(slotId('tweakdefs'))
+		expect(space.ws.active).toBe(SCRATCH)
+		space.dispose()
+	})
+
+	test('a draft is aimed past the tweaks the room already holds', async () => {
+		const { io, files } = fakeIo()
+		files.set('walls', '{ armwall = {} }')
+		const space = createTweakspace(io, () => ({
+			tweakunits: 'AAA',
+			tweakunits1: 'BBB',
+		}))
+		await space.refreshDrafts()
+		space.open(draftId('walls'))
+		expect(space.ws.target).toBe('tweakunits2')
+		space.dispose()
+	})
+
+	test('a row opens and closes over its edit, which survives the closing', async () => {
+		const { io } = fakeIo()
+		const space = createTweakspace(io, () => ({ tweakdefs2: 'AAA' }))
+		await flush()
+		space.expand(slotId('tweakdefs2'))
+		expect(space.ws).toMatchObject({
+			expanded: slotId('tweakdefs2'),
+			active: slotId('tweakdefs2'),
+		})
+		space.edit(slotId('tweakdefs2'), 'mine')
+		space.setFullscreen(true)
+		space.expand(null)
+		expect(space.ws).toMatchObject({ expanded: null, fullscreen: false })
+		expect(space.ws.docs[slotId('tweakdefs2')]!.buffer).toBe('mine')
+		expect(space.unsent()).toBe(1)
+		space.dispose()
+	})
+
+	test('a draft loads into the open slot as an edit of it', async () => {
+		const { io, files } = fakeIo()
+		files.set('walls', '{ armwall = {} }')
+		const space = createTweakspace(io, () => ({}), slotId('tweakunits3'))
+		await space.refreshDrafts()
+		space.loadDraft('walls')
+		expect(space.active()).toMatchObject({
+			id: slotId('tweakunits3'),
+			buffer: '{ armwall = {} }',
+		})
+		expect(space.unsent()).toBe(1)
+		space.dispose()
+	})
+
+	test('the scratch takes its target kind, and saving it makes a draft of it', async () => {
+		const { io, files } = fakeIo()
+		const space = createTweakspace(io, () => ({ tweakdefs: 'AAA' }))
+		space.open(SCRATCH)
+		expect(space.ws.target).toBe('tweakdefs1')
+		space.setTarget('tweakunits4')
+		expect(space.active().kind).toBe('units')
+		space.edit(SCRATCH, '-- Golem\n{}')
+		await space.saveDraft('golem')
+		expect(files.get('golem')).toBe('-- Golem\n{}')
+		expect(space.ws.active).toBe(draftId('golem'))
+		expect(space.ws.docs[draftId('golem')]!.kind).toBe('units')
+		// Free for the next one, still aimed as it was.
+		expect(space.ws.docs[SCRATCH]).toMatchObject({ buffer: '', kind: 'units' })
 		space.dispose()
 	})
 
@@ -165,12 +234,35 @@ describe('the workspace', () => {
 		const space = createTweakspace(io, () => ({}), slotId('tweakdefs1'))
 		space.edit(slotId('tweakdefs1'), 'local a = 1')
 		await space.send(false)
-		expect(space.modified()).toBe(1)
+		expect(space.unsent()).toBe(1)
 		await space.send(true)
-		expect(space.modified()).toBe(0)
+		expect(space.unsent()).toBe(0)
 		expect(io.tweakSend).toHaveBeenLastCalledWith(
 			'local a = 1',
 			{ kind: 'defs', index: 1 },
+			true,
+			false,
+		)
+		space.dispose()
+	})
+
+	test('minifying, once asked for, is what is measured and what is sent', async () => {
+		const { io } = fakeIo()
+		const space = createTweakspace(io, () => ({}), slotId('tweakdefs1'))
+		space.edit(slotId('tweakdefs1'), 'local a = 1')
+		space.setMinify(true)
+		await vi.advanceTimersByTimeAsync(300)
+		expect(io.tweakPrepare).toHaveBeenLastCalledWith(
+			'local a = 1',
+			{ kind: 'defs', index: 1 },
+			true,
+			true,
+		)
+		await space.send(true)
+		expect(io.tweakSend).toHaveBeenLastCalledWith(
+			'local a = 1',
+			{ kind: 'defs', index: 1 },
+			true,
 			true,
 		)
 		space.dispose()
@@ -191,10 +283,6 @@ describe('the workspace', () => {
 		await flush()
 		expect(space.active()).toMatchObject({ blob: '0', buffer: '' })
 		expect(io.tweakDecode).toHaveBeenCalledTimes(1)
-		expect(space.items().at(-1)).toMatchObject({
-			title: BOX_OVERRIDE,
-			empty: true,
-		})
 
 		space.edit(slotId(BOX_OVERRIDE), '{"startboxes":[]}')
 		await space.send(true)
@@ -202,19 +290,46 @@ describe('the workspace', () => {
 			'{"startboxes":[]}',
 			{ kind: 'boxes' },
 			true,
+			false,
 		)
 		await expect(space.saveDraft('boxes')).rejects.toThrow('presets')
 		expect(io.saveDraft).not.toHaveBeenCalled()
 		space.dispose()
 	})
 
-	test('the list is searched and sorted through the filter', async () => {
+	test('a slot past 9 the room holds is a document too, and empties when cleared', async () => {
 		const { io } = fakeIo()
-		const [room] = createSignal<Record<string, string>>({ tweakunits2: 'XYZ' })
+		const [room, setRoom] = createSignal<Record<string, string>>({
+			tweakdefs12: 'AAA',
+		})
 		const space = createTweakspace(io, room)
 		await flush()
+		expect(space.ws.docs[slotId('tweakdefs12')]).toMatchObject({
+			kind: 'defs',
+			loaded: true,
+			name: 'AAA',
+		})
+		// SPADS can drop the tag rather than write `0`; still empty, not kept full.
+		setRoom({})
+		await flush()
+		expect(space.ws.docs[slotId('tweakdefs12')]).toMatchObject({
+			blob: '',
+			buffer: '',
+		})
+		space.dispose()
+	})
+
+	test('the list is searched and sorted through the filter', async () => {
+		const { io, files } = fakeIo()
+		files.set('walls', '-- XYZ\n{}')
+		files.set('nukes', 'x')
+		const space = createTweakspace(io, () => ({}))
+		await space.refreshDrafts()
 		space.setFilter({ query: 'xyz' })
-		expect(space.items().map((item) => item.title)).toEqual(['tweakunits2'])
+		expect(space.items().map((item) => item.title)).toEqual([
+			'untitled',
+			'walls',
+		])
 		space.dispose()
 	})
 })

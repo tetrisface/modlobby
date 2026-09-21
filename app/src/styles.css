@@ -1718,12 +1718,17 @@ body.resizing-y {
 
 /* ---- the tweak workspace ---- */
 
+/* Beside its drafts in the drafts editor; alone under a settings row. */
 .tweaks {
 	display: grid;
-	grid-template-columns: 13.75rem 1fr;
+	grid-template-columns: minmax(0, 1fr);
 	flex: 1;
 	height: 100%;
 	min-height: 0;
+}
+
+.tweaks.desk {
+	grid-template-columns: 13.75rem minmax(0, 1fr);
 }
 
 .doc-list {
@@ -1732,12 +1737,6 @@ body.resizing-y {
 	min-height: 0;
 	background: var(--panel);
 	border-right: 1px solid var(--line);
-}
-
-.doc-segments {
-	display: flex;
-	gap: 0.25rem;
-	padding: 0.5rem 0.625rem 0;
 }
 
 .doc-find {
@@ -1858,11 +1857,10 @@ body.resizing-y {
 	color: var(--accent);
 }
 
-.doc-foot {
-	padding: 0.375rem 0.75rem;
-	border-top: 1px solid var(--line);
-	font-size: 0.6875rem;
-	color: var(--accent);
+/* The unslotted tweak heads the list as a thing to start, not a file. */
+.doc.scratch .doc-title {
+	font-family: var(--body);
+	color: var(--text);
 }
 
 .tweak-main {
@@ -1905,6 +1903,7 @@ body.resizing-y {
 }
 
 .gauge-badge {
+	flex-shrink: 0;
 	font-family: var(--mono);
 	font-size: 0.8125rem;
 	color: var(--muted);
@@ -1946,19 +1945,201 @@ body.resizing-y {
 	min-height: 10rem;
 }
 
-.gauge {
+/* Where the text goes: the one bar that sends, under everything else, the
+   way a form keeps its submit at the bottom. */
+.tweak-foot {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
-	gap: 0.875rem;
-	padding: 0.3125rem 0.75rem;
+	gap: 0.375rem 0.5rem;
+	padding: 0.4375rem 0.625rem;
 	border-top: 1px solid var(--line);
-	font-family: var(--mono);
-	font-size: 0.6875rem;
-	color: var(--muted);
+	background: var(--sunken);
+	font-size: 0.8125rem;
 }
 
-.gauge.over {
+.tweak-foot button {
+	padding: 0.25rem 0.75rem;
+	font-size: 0.8125rem;
+}
+
+/* The numbers are never cut short: where they and the buttons do not fit on
+   one line, the buttons move to a line of their own. */
+.gauge {
+	display: inline-flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 0 0.35em;
+	font-family: var(--mono);
+	font-size: 0.6875rem;
+	color: var(--faint);
+}
+
+.gauge > * {
+	white-space: nowrap;
+}
+
+/* Each number that would not fit in the chat line, on its own. */
+.gauge .over {
 	color: var(--error);
+}
+
+.gauge-minify {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.25rem;
+	cursor: pointer;
+}
+
+.gauge-minify input {
+	width: 0.75rem;
+	height: 0.75rem;
+	margin: 0;
+	accent-color: var(--accent);
+}
+
+.tweak-send {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+	align-items: center;
+	gap: 0.375rem;
+	margin-left: auto;
+}
+
+.tweak-why {
+	font-size: 0.75rem;
+}
+
+.tweak-back {
+	padding-left: 0;
+	color: var(--accent);
+	border-color: transparent;
+}
+
+/* A tool that drops a short list (`Menu` in the tool bar), from its left edge. */
+.tweak-menu {
+	position: relative;
+	display: inline-flex;
+}
+
+.tweak-menu > .tweak-tool {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.25rem;
+}
+
+.tweak-menu > .tweak-tool .icon {
+	width: 0.6875rem;
+	height: 0.6875rem;
+	transform: rotate(90deg);
+	transition: transform 120ms ease;
+}
+
+.tweak-menu > .tweak-tool[aria-expanded='true'] .icon {
+	transform: rotate(-90deg);
+}
+
+.popover.tweak-menu-list {
+	left: 0;
+	right: auto;
+	display: flex;
+	flex-direction: column;
+	gap: 0.0625rem;
+	min-width: 14rem;
+	max-height: 18rem;
+	padding: 0.375rem;
+	overflow-y: auto;
+	white-space: normal;
+}
+
+.menu-item {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 0.75rem;
+	width: 100%;
+	padding: 0.25rem 0.5rem;
+	text-align: left;
+	font-family: var(--mono);
+	font-size: 0.75rem;
+	font-weight: 400;
+	letter-spacing: 0;
+	color: var(--text);
+	background: transparent;
+	border: none;
+	border-radius: 2px;
+}
+
+.menu-item:hover:not(:disabled) {
+	background: var(--raised);
+}
+
+.menu-item:disabled {
+	color: var(--faint);
+}
+
+.menu-item > span:first-child {
+	flex-shrink: 0;
+	white-space: nowrap;
+}
+
+.menu-sub {
+	min-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	font-family: var(--body);
+	color: var(--faint);
+}
+
+.menu-row {
+	display: flex;
+	align-items: center;
+}
+
+.menu-row .menu-item {
+	flex: 1;
+	min-width: 0;
+}
+
+.menu-drop {
+	display: flex;
+	padding: 0.25rem 0.375rem;
+	color: var(--faint);
+	background: transparent;
+	border: none;
+}
+
+.menu-drop:hover {
+	color: var(--error);
+	background: transparent;
+}
+
+.menu-drop .icon {
+	width: 0.8125rem;
+	height: 0.8125rem;
+}
+
+.menu-note {
+	margin: 0.3125rem 0.5rem 0.125rem;
+	font-family: var(--display);
+	font-size: 0.625rem;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	color: var(--faint);
+}
+
+.menu-save {
+	display: flex;
+	gap: 0.25rem;
+	padding: 0.125rem 0.125rem 0.375rem;
+	border-bottom: 1px solid var(--line-soft);
+}
+
+.menu-save .draft-name {
+	flex: 1;
+	min-width: 0;
 }
 
 /* What the room is doing to the open slot, under the editor and bounded so
@@ -2285,13 +2466,6 @@ body.resizing {
 	user-select: none;
 }
 
-.setup-back {
-	padding: 0.125rem 0.5625rem;
-	font-size: 0.6875rem;
-	background: transparent;
-	color: var(--muted);
-}
-
 .setup-head {
 	display: flex;
 	align-items: center;
@@ -2542,7 +2716,6 @@ body.resizing {
 .setup-empty,
 .setup-note,
 .setup-reveal,
-.setup .button,
 .v-edit {
 	font-size: 1rem;
 }
@@ -2645,30 +2818,9 @@ body.resizing {
 	color: var(--warn);
 }
 
-.setup .button {
-	align-self: flex-start;
-	text-decoration: none;
-	color: var(--text);
-	background: var(--panel);
-	border: 1px solid var(--line);
-	border-radius: 2px;
-	padding: 0.3125rem 0.75rem;
-	font-family: var(--display);
-	font-size: 0.75rem;
-	font-weight: 600;
-	letter-spacing: 0.05em;
-}
-
-.slot-grid {
-	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(9.375rem, 1fr));
-	gap: 0.1875rem;
-}
-
 /* A cell of small actions (`ActionCell`): the tweak slots' look, shared by
-   every pen and bin that sits beside a name. A slot cell holds two: copy the
-   command, and -- the wider target, because it is what you came for -- open
-   the slot in the editor. */
+   every pen and bin that sits beside a name. A slot's cell holds two: copy
+   the command, and open the slot in the editor under its row. */
 .act-cell {
 	display: inline-flex;
 	align-items: stretch;
@@ -2730,19 +2882,144 @@ body.resizing {
 	padding: 0.125rem 0.375rem;
 }
 
-.slot-open .kk {
-	flex: 1;
+/* ---- a base64url slot as a row (`TweakRow`) ----
+   Key, the name its tweak goes by, the blob, the actions. Opened, the row
+   and the editor under it read as one card, lifted off the list. */
+
+.opt.tweak {
+	grid-template-columns: 0.125rem auto minmax(0, 1fr) minmax(4.5rem, 10rem) auto;
+}
+
+.tweak-note {
+	display: flex;
+	align-items: baseline;
+	gap: 0.375rem;
+	min-width: 0;
+}
+
+.tweak-note .tweak-name {
+	min-width: 0;
 	overflow: hidden;
 	white-space: nowrap;
 	text-overflow: ellipsis;
+	font-size: 0.8125rem;
+	color: var(--faint);
 }
 
-.act-cell.filled .kk {
+.opt.tweak.changed .tweak-name {
+	color: var(--muted);
+}
+
+.tweak-input.v-edit {
+	justify-self: stretch;
+	width: 100%;
+	max-width: none;
+	min-width: 0;
+	text-overflow: ellipsis;
+	color: var(--faint);
+	background: var(--sunken);
+	border: 1px solid var(--line-soft);
+}
+
+.opt.tweak.changed .tweak-input {
 	color: var(--accent);
 }
 
-.act-cell.filled .vv {
-	color: var(--muted);
+/* An empty slot is a place to put something, and looks it. */
+.tweak-input:placeholder-shown {
+	border-style: dashed;
+}
+
+.tweak-input:focus {
+	color: var(--text);
+	border-color: var(--accent-deep);
+}
+
+/* Tweak keys are all about one width; a floor lines their names up. */
+.opt.tweak .k {
+	min-width: 6.5rem;
+}
+
+.opt.tweak .slot-open .icon {
+	transition: transform 120ms ease;
+}
+
+/* The pen, turned chevron: pointing up, the way the editor folds. */
+.opt.tweak.open .slot-open .icon {
+	transform: rotate(-90deg);
+}
+
+/* The key sits as far from the top edge as from the left one, and as far
+   again from the bar below: measured to its capitals, not its line box. */
+.opt.tweak.open {
+	margin: 0.25rem -0.5rem 0;
+	padding: 0.8125rem 0.5rem 0.9375rem;
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-bottom: none;
+	border-radius: 3px 3px 0 0;
+}
+
+.opt.tweak.open .mark {
+	background: var(--accent);
+}
+
+/* What the detail column shows at once: an opened row and its editor are
+   sized to it, so the send bar is on screen without scrolling for it. */
+.setup-body > .setup-detail {
+	container-type: size;
+}
+
+/* The row scrolled to the top, the card fills what is left; the height is
+   the reader's to drag from the corner after that. */
+.opt.tweak.open {
+	scroll-margin-top: 0.75rem;
+}
+
+.tweak-inline {
+	display: flex;
+	height: clamp(14rem, calc(100cqh - 3.75rem), 44rem);
+	min-height: 14rem;
+	margin: 0 -0.5rem 0.625rem;
+	overflow: hidden;
+	resize: vertical;
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-top-color: var(--line-soft);
+	border-radius: 0 0 3px 3px;
+}
+
+.tweak-inline:has(> .tweaks-away) {
+	height: auto;
+	min-height: 0;
+	resize: none;
+}
+
+.tweak-inline .tweak-bar {
+	padding: 0.375rem 0.5rem;
+}
+
+/* The tweak slots' heading opens the drafts editor. */
+.setup-drafts {
+	padding: 0.0625rem 0.5rem;
+	font-family: var(--display);
+	font-size: 0.625rem;
+	font-weight: 600;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	color: var(--accent);
+	background: transparent;
+	border: 1px solid var(--accent-deep);
+	border-radius: 2px;
+}
+
+.setup-drafts:hover {
+	color: var(--text);
+	border-color: var(--accent);
+}
+
+.setup-unsent {
+	font-size: 0.625rem;
 }
 
 .icon.act {
@@ -3072,7 +3349,8 @@ input[type='checkbox'].v-edit {
 
 .replay-row {
 	display: grid;
-	grid-template-columns: 10.3125rem 1fr 6.25rem 5.625rem 6rem 5.625rem;
+	/* The length column fits `1h26 game · 1h51 wall`. */
+	grid-template-columns: 10.3125rem 1fr 9.5rem 6.25rem 5.625rem 6rem 5.625rem;
 	align-items: center;
 	gap: 0.75rem;
 	padding: 0 1rem;
@@ -3085,6 +3363,7 @@ input[type='checkbox'].v-edit {
 }
 
 .col-when,
+.col-length,
 .col-engine,
 .col-size {
 	font-family: var(--mono);
@@ -4841,8 +5120,14 @@ button.link:hover {
 
 .ed-actions {
 	display: grid;
-	grid-template-columns: repeat(4, 1fr);
+	grid-template-columns: repeat(2, 1fr);
 	gap: 0.25rem;
+}
+
+.ed-glyph {
+	margin-right: 0.375rem;
+	font-size: 1rem;
+	line-height: 0;
 }
 
 .ed-strength {
@@ -4877,6 +5162,21 @@ button.link:hover {
 	border-bottom: 0;
 }
 
+.ed-add button {
+	flex: 1;
+	color: var(--muted);
+	background: transparent;
+	border-color: transparent;
+	font-size: 1rem;
+	line-height: 1;
+}
+
+.ed-add button:hover:not(:disabled) {
+	color: var(--accent);
+	border-color: transparent;
+	background: var(--raised);
+}
+
 .ed-list li.on {
 	background: var(--raised);
 }
@@ -4894,6 +5194,20 @@ button.link:hover {
 .ed-pick .n {
 	font-family: var(--mono);
 	font-weight: 700;
+}
+
+/* Quiet until reached for; a box deleted by mistake is one Undo away. */
+.ed-drop {
+	padding: 0.3125rem 0.5rem;
+	color: var(--muted);
+	background: transparent;
+	border-color: transparent;
+}
+
+.ed-drop:hover:not(:disabled) {
+	color: var(--error);
+	border-color: var(--error);
+	background: color-mix(in srgb, var(--error) 12%, transparent);
 }
 
 .ed-warn {

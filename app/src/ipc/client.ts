@@ -254,8 +254,12 @@ export const api = {
 		invoke<Book>('skirmish_save_preset', { name }),
 	skirmishApplyPreset: (name: string, sections: Sections) =>
 		invoke<Plan>('skirmish_apply_preset', { name, sections }),
-	skirmishTweakSend: (lua: string, slot: Slot, direct: boolean) =>
-		invoke<Prepared>('skirmish_tweak_send', { lua, slot, direct }),
+	skirmishTweakSend: (
+		lua: string,
+		slot: Slot,
+		direct: boolean,
+		minify: boolean,
+	) => invoke<Prepared>('skirmish_tweak_send', { lua, slot, direct, minify }),
 	skirmishTweakClear: (slot: Slot) =>
 		invoke<void>('skirmish_tweak_clear', { slot }),
 	listReplays: () => invoke<ReplayView[]>('list_replays'),
@@ -296,10 +300,11 @@ export const api = {
 		invoke<TweakView>('tweak_decode', { blob, kind }),
 	tweakFormat: (lua: string, kind: Kind) =>
 		invoke<string>('tweak_format', { lua, kind }),
-	tweakPrepare: (lua: string, slot: Slot, direct: boolean) =>
-		invoke<Prepared>('tweak_prepare', { lua, slot, direct }),
-	tweakSend: (lua: string, slot: Slot, direct: boolean) =>
-		invoke<Prepared>('tweak_send', { lua, slot, direct }),
+	/** `minify`: send it minified rather than as written; see `tweaks::prepare`. */
+	tweakPrepare: (lua: string, slot: Slot, direct: boolean, minify: boolean) =>
+		invoke<Prepared>('tweak_prepare', { lua, slot, direct, minify }),
+	tweakSend: (lua: string, slot: Slot, direct: boolean, minify: boolean) =>
+		invoke<Prepared>('tweak_send', { lua, slot, direct, minify }),
 	tweakClear: (slot: Slot) => invoke<void>('tweak_clear', { slot }),
 	tweakDiff: (kind: Kind, current: string, proposed: string) =>
 		invoke<DiffView>('tweak_diff', { kind, current, proposed }),

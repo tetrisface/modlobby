@@ -74,8 +74,12 @@ export function track(
 /** `7m`, `1h04`, and `+` when the start is only a floor. */
 export function elapsed(running: Running, now: number): string {
 	const minutes = Math.max(0, Math.floor((now - running.since) / 60_000))
-	const mark = running.exact ? '' : '+'
-	if (minutes < 60) return `${minutes}m${mark}`
+	return `${span(minutes)}${running.exact ? '' : '+'}`
+}
+
+/** `7m`, `1h04`: how the app writes a game's length. */
+export function span(minutes: number): string {
+	if (minutes < 60) return `${minutes}m`
 	const hours = Math.floor(minutes / 60)
-	return `${hours}h${String(minutes % 60).padStart(2, '0')}${mark}`
+	return `${hours}h${String(minutes % 60).padStart(2, '0')}`
 }

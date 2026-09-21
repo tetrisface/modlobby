@@ -1,4 +1,5 @@
 import type { UserView } from '../ipc/bindings/UserView'
+import { isBoss } from './roster'
 
 /**
  * Who in a room asks the pve.bar stats service first, and how long the rest wait.
@@ -36,7 +37,7 @@ export function askOrder(
 	const key = (name: string): Key => {
 		const user = room.users[name]
 		return [
-			name === room.boss ? 0 : 1,
+			isBoss(room.boss, name) ? 0 : 1,
 			user?.battleStatus?.player ? 0 : 1,
 			-(user?.status.rank ?? 0),
 		]

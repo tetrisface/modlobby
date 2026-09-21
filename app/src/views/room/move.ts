@@ -1,4 +1,4 @@
-import { freeTeam } from '../../lib/roster'
+import { bossesOf, freeTeam, isBoss } from '../../lib/roster'
 import type { RoomModel } from './model'
 
 /**
@@ -51,8 +51,46 @@ type Named = Exclude<Target, { kind: 'me' }>
 export function bossing(room: RoomModel): boolean {
 	// A room with no host to ask is one we already run.
 	if (!room.caps.spads) return true
+	return isBoss(room.my()?.boss, room.me())
+}
+
+/**
+ * Why a setting we change here would be refused, or `null` when it may be
+ * taken -- directly or as a vote, which is the host's call. Worded for anyone
+ * who plays, not for anyone who runs an autohost.
+ *
+ * Only what BAR's autohosts refuse for certain (`spads_config_bar`,
+ * `commands_*.conf` `[bSet]`), since a false "no" keeps somebody out of a
+ * room they could have changed:
+ * - a boss is raised to level 100 by BarManager and sets directly, seated or
+ *   not, game running or not; a moderator is 110 and does too;
+ * - with a boss in the room everybody else is level 0;
+ * - an event room takes it from level 100 only;
+ * - otherwise a player may, between games, and a spectator may not.
+ * Somebody given a level by name in `users.conf` may do more than this says;
+ * the command stays copyable for them.
+ */
+export function setRefusal(room: RoomModel): string | null {
+	if (!room.caps.spads) return null
+	const me = room.me()
+	if (me === null) return null
+	const user = room.users()[me]
 	const boss = room.my()?.boss
-	return boss !== undefined && boss !== null && boss === room.me()
+	if (isBoss(boss, me) || user?.status.moderator) return null
+	if (bossesOf(boss).length > 0)
+		return 'Only the room’s boss can change settings'
+	if (room.my()?.preset === 'event')
+		return 'Only a boss can change settings in an event'
+	if (room.running() !== null)
+		return 'Settings can be changed once the game is over'
+	if (user?.battleStatus?.player !== true)
+		return 'Join as a player to change settings'
+	return null
+}
+
+/** Whether a setting we change here may be taken; see `setRefusal`. */
+export function canSet(room: RoomModel): boolean {
+	return setRefusal(room) === null
 }
 
 /** Whether this row can be moved at all, and so whether it can be dragged. */

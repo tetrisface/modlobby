@@ -153,7 +153,7 @@ export function BotOptions(props: { bot: BotView; onClose: () => void }) {
 						}
 					>
 						<div class='setup-detail'>
-							<Rows rows={rows()} editable onEdit={() => {}} set={set} />
+							<Rows rows={rows()} editable set={set} />
 						</div>
 					</Show>
 				</Show>

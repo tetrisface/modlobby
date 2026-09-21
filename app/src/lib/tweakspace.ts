@@ -1,8 +1,9 @@
 /**
  * The tweak workspace, as data.
  *
- * Twenty tweak slots, the start-box override and however many drafts, each a
- * document with the text it was loaded with and the text it holds now.
+ * Twenty tweak slots, the start-box override, however many drafts and one
+ * unslotted scratch tweak, each a document with the text it was loaded with
+ * and the text it holds now.
  * Nothing here talks to Rust or to Monaco: the store (`store/tweakspace.ts`)
  * does the asking and the editor does the drawing, and this is what both of
  * them agree on -- which is why every rule about dirty, stale and sent lives
@@ -14,12 +15,13 @@ import type { Kind } from '../ipc/bindings/Kind'
 import type { OptionChangeView } from '../ipc/bindings/OptionChangeView'
 import type { Slot } from '../ipc/bindings/Slot'
 import { BOX_OVERRIDE } from './boxes'
-import { TWEAK_SLOTS, isCleared } from './setup'
+import { TWEAK_SLOTS, isCleared, tweakKey } from './setup'
 
 /**
  * The room's documents: the twenty tweak slots, then the start-box override.
- * The override is JSON where the rest are Lua, with zlib inside its
- * base64url; Rust tells them apart by the kind.
+ * A slot past 9 joins them when a room turns out to hold one. The override
+ * is JSON where the rest are Lua, with zlib inside its base64url; Rust tells
+ * them apart by the kind.
  */
 export const SLOT_KEYS: readonly string[] = [...TWEAK_SLOTS, BOX_OVERRIDE]
 
@@ -38,16 +40,22 @@ export const KINDS: Record<
 	boxes: { language: 'json', text: 'JSON', blob: 'base64url+zlib' },
 }
 
-/** How the kinds sort: the order the game applies them, the override last. */
-const KIND_ORDER: readonly Kind[] = ['defs', 'units', 'boxes']
+/**
+ * How the kinds sort: the order BAR runs them (every tweakunits before any
+ * tweakdefs, `unitdefs_post.lua`), the override last.
+ */
+const KIND_ORDER: readonly Kind[] = ['units', 'defs', 'boxes']
 
-export type DocId = `slot:${string}` | `draft:${string}`
-export type Origin = 'slot' | 'draft'
+/** The one tweak that belongs to no slot and no file until it is given one. */
+export const SCRATCH = 'scratch:untitled'
+
+export type DocId = `slot:${string}` | `draft:${string}` | typeof SCRATCH
+export type Origin = 'slot' | 'draft' | 'scratch'
 
 export type Doc = {
 	id: DocId
 	origin: Origin
-	/** The slot key, or the draft's file name. */
+	/** The slot key, the draft's file name, or `untitled`. */
 	title: string
 	kind: Kind
 	/** The text as loaded: the room's value formatted, or the draft file. */
@@ -67,9 +75,8 @@ export type Doc = {
 	notes: string[]
 }
 
-export type Sort = 'order' | 'name' | 'kind'
-export type Segment = 'slots' | 'drafts'
-export type Filter = { query: string; sort: Sort; segment: Segment }
+export type Sort = 'name' | 'kind'
+export type Filter = { query: string; sort: Sort }
 
 /**
  * One side of a comparison: a document's text as edited or as loaded, one
@@ -85,9 +92,16 @@ export type Compare = { left: Side; right: Side }
 export type Workspace = {
 	docs: Record<string, Doc>
 	active: DocId
+	/** The slot whose row is open in the settings, if one is. */
+	expanded: DocId | null
 	filter: Filter
-	/** The slot a draft is sent to; a slot document is sent to itself. */
+	/** Where a draft or the scratch is sent; a slot document is sent to itself. */
 	target: string
+	/**
+	 * Send it minified. Off unless asked for: a room should get the tweak as it
+	 * was written, names and comments and all, so others can read it.
+	 */
+	minify: boolean
 	fullscreen: boolean
 	/** What is being compared, in place of the editor, when something is. */
 	compare: Compare | null
@@ -103,15 +117,13 @@ export function kindOf(key: string): Kind {
 	return key.startsWith('tweakunits') ? 'units' : 'defs'
 }
 
-/** `tweakdefs` is index 0, `tweakdefs1` index 1, and so on to 9. */
+/**
+ * `tweakdefs` is index 0, `tweakdefs1` index 1, and so on -- past 9 too, for
+ * a slot somebody else set; see `tweakKey`.
+ */
 export function slotOf(key: string): Slot | null {
 	if (key === BOX_OVERRIDE) return { kind: 'boxes' }
-	const match = /^tweak(defs|units)([1-9]?)$/.exec(key)
-	if (!match) return null
-	return {
-		kind: match[1] as 'defs' | 'units',
-		index: match[2] === '' ? 0 : Number(match[2]),
-	}
+	return tweakKey(key)
 }
 
 export function slotKey(slot: Slot): string {
@@ -133,7 +145,7 @@ export function guessKind(lua: string): Kind {
 	return body.startsWith('{') ? 'units' : 'defs'
 }
 
-function slotDoc(key: string): Doc {
+export function slotDoc(key: string): Doc {
 	return {
 		id: slotId(key),
 		origin: 'slot',
@@ -147,6 +159,17 @@ function slotDoc(key: string): Doc {
 		stale: false,
 		loaded: false,
 		notes: [],
+	}
+}
+
+/** Empty, and of whatever kind the slot it is aimed at takes. */
+export function scratchDoc(kind: Kind): Doc {
+	return {
+		...slotDoc('untitled'),
+		id: SCRATCH,
+		origin: 'scratch',
+		kind,
+		loaded: true,
 	}
 }
 
@@ -179,11 +202,14 @@ export function emptyWorkspace(
 ): Workspace {
 	const docs: Record<string, Doc> = {}
 	for (const key of SLOT_KEYS) docs[slotId(key)] = slotDoc(key)
+	docs[SCRATCH] = scratchDoc('defs')
 	return {
 		docs,
 		active,
-		filter: { query: '', sort: 'order', segment: 'slots' },
+		expanded: null,
+		filter: { query: '', sort: 'name' },
 		target: defaultTarget('defs'),
+		minify: false,
 		fullscreen: false,
 		compare: null,
 	}
@@ -254,7 +280,8 @@ export function sent(doc: Doc): Doc {
 
 /** The draft name to use when none is typed: its own, else its header, else its slot. */
 export function draftNameFor(doc: Doc): string {
-	return (doc.origin === 'draft' ? doc.title : doc.name) || doc.title
+	const header = firstComment(doc.buffer) ?? doc.name
+	return (doc.origin === 'draft' ? doc.title : header) || doc.title
 }
 
 /** Saved to a draft under this name: that draft now holds the buffer. */
@@ -262,54 +289,42 @@ export function savedAs(doc: Doc, name: string): Doc {
 	return { ...draftDoc(name, doc.buffer), kind: doc.kind }
 }
 
+/** A row of the drafts editor's list: a draft, or the scratch. */
 export type Item = {
 	id: DocId
 	title: string
 	kind: Kind
 	name: string | null
 	dirty: boolean
-	stale: boolean
 	empty: boolean
+	/** Characters of Lua. */
 	size: number
-	/** What `size` counts: the room's blob, or the draft's Lua. */
-	unit: 'blob' | 'lua'
 }
 
 function itemOf(doc: Doc): Item {
-	const slot = doc.origin === 'slot'
 	return {
 		id: doc.id,
 		title: doc.title,
 		kind: doc.kind,
-		name: doc.name,
+		name: doc.origin === 'scratch' ? firstComment(doc.buffer) : doc.name,
 		dirty: isDirty(doc),
-		stale: doc.stale,
-		empty: slot ? isCleared(doc.blob ?? '') : doc.buffer === '',
-		size: slot ? (doc.blob ?? '').length : doc.buffer.length,
-		unit: slot ? 'blob' : 'lua',
+		empty: doc.buffer === '',
+		size: doc.buffer.length,
 	}
 }
 
-const order = (item: Item) => {
-	const at = SLOT_KEYS.indexOf(item.title)
-	return at === -1 ? SLOT_KEYS.length : at
-}
-
 const BY: Record<Sort, (a: Item, b: Item) => number> = {
-	order: (a, b) => order(a) - order(b) || a.title.localeCompare(b.title),
 	name: (a, b) => (a.name ?? a.title).localeCompare(b.name ?? b.title),
 	kind: (a, b) =>
 		KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) ||
-		order(a) - order(b) ||
 		a.title.localeCompare(b.title),
 }
 
-/** The list on the left: one segment, searched and sorted. */
+/** The drafts editor's list: the scratch first, then the drafts, searched and sorted. */
 export function listItems(ws: Workspace, filter: Filter = ws.filter): Item[] {
-	const origin: Origin = filter.segment === 'slots' ? 'slot' : 'draft'
 	const needle = filter.query.trim().toLowerCase()
-	return Object.values(ws.docs)
-		.filter((doc) => doc.origin === origin)
+	const drafts = Object.values(ws.docs)
+		.filter((doc) => doc.origin === 'draft')
 		.map(itemOf)
 		.filter(
 			(item) =>
@@ -318,10 +333,14 @@ export function listItems(ws: Workspace, filter: Filter = ws.filter): Item[] {
 				(item.name ?? '').toLowerCase().includes(needle),
 		)
 		.sort(BY[filter.sort])
+	return [itemOf(ws.docs[SCRATCH]!), ...drafts]
 }
 
-export function modifiedCount(ws: Workspace): number {
-	return Object.values(ws.docs).filter(isDirty).length
+/** Slots holding an edit the room has not been sent. */
+export function unsentCount(ws: Workspace): number {
+	return Object.values(ws.docs).filter(
+		(doc) => doc.origin === 'slot' && isDirty(doc),
+	).length
 }
 
 /** The slot the active document would be sent to. */
@@ -376,7 +395,8 @@ export function sideOptions(
 	const out: SideOption[] = []
 	for (const doc of Object.values(ws.docs)) {
 		const slot = doc.origin === 'slot'
-		const held = slot ? !isCleared(doc.blob ?? '') : true
+		// The scratch has no file behind it: only its edit is anything.
+		const held = slot ? !isCleared(doc.blob ?? '') : doc.origin === 'draft'
 		const dirty = isDirty(doc)
 		if (!held && !dirty) continue
 		const group: SideGroup = slot ? 'Slots' : 'Drafts'

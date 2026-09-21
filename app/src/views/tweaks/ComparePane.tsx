@@ -12,6 +12,7 @@ import {
 	type SideGroup,
 	type SideOption,
 } from '../../lib/tweakspace'
+import { grabKeys } from './keys'
 
 export type SideText = { label: string; kind: Kind; text: string }
 
@@ -36,6 +37,8 @@ export function ComparePane(props: {
 	const [missing, setMissing] = createSignal<string | null>(null)
 	let host: HTMLDivElement | undefined
 	let editor: monaco.editor.IStandaloneDiffEditor | undefined
+	// Ctrl+F and Ctrl+P reach the right side, which is the one that is somebody's edit.
+	grabKeys(() => editor?.getModifiedEditor())
 
 	createEffect(() => {
 		const { left, right } = props.compare

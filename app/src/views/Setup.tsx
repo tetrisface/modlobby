@@ -1,6 +1,7 @@
 import { Select } from '../components/Select'
 import {
 	For,
+	Index,
 	Match,
 	createEffect,
 	Show,
@@ -10,11 +11,9 @@ import {
 	createSignal,
 	type Accessor,
 } from 'solid-js'
-import { ActionCell, CellButton } from '../components/ActionCell'
 import { ResizeHandle } from '../components/ResizeHandle'
 import { SearchBox } from '../components/SearchBox'
 import { api, describeError } from '../ipc/client'
-import { BOX_OVERRIDE } from '../lib/boxes'
 import {
 	clamp,
 	dragWidth,
@@ -24,18 +23,18 @@ import {
 } from '../lib/resize'
 import {
 	ALL_TAB,
+	EVERY_ROW,
 	GENERAL_GROUP,
 	MAP_TAB,
 	MODDING_TAB,
-	TWEAK_SLOTS,
+	byRunOrder,
 	changedByTab,
 	changedCount,
+	changedView,
 	defaultText,
 	displayText,
-	isCleared,
 	isOn,
 	isMapOption,
-	isTweakSlot,
 	readModOptions,
 	label,
 	rowsByGroup,
@@ -48,10 +47,14 @@ import {
 	type Section,
 	type Tab,
 } from '../lib/setup'
+import { SCRATCH, SLOT_KEYS, isDirty, slotOf, titleOf } from '../lib/tweakspace'
 import { pushNotice } from '../store/chat'
+import { tweakspaceFor } from '../store/tweakspaceInstance'
 import { PasteBanner } from './PasteBanner'
 import { Presets } from './Presets'
 import { useRoom, type RoomModel } from './room/model'
+import { canSet, setRefusal } from './room/move'
+import { TweakRow } from './tweaks/TweakRow'
 import { Tweaks } from './tweaks/Tweaks'
 
 const TWEAK_GROUP = 'Tweak slots'
@@ -108,7 +111,24 @@ export function Setup() {
 		() => room.battle()?.gameName,
 		(game) => api.gameModOptions(game).catch(() => []),
 	)
-	const TABS = createMemo(() => tabs(catalogue() ?? []))
+	const space = tweakspaceFor(room)
+	/**
+	 * Tweak slots past the twenty written from here that this room has used.
+	 * BAR reads any index; these are shown, never written. Equal while the
+	 * same slots, so the tabs are not remade on every room update.
+	 */
+	const extraSlots = createMemo(
+		() =>
+			Object.values(space.ws.docs)
+				.filter(
+					(doc) => doc.origin === 'slot' && !SLOT_KEYS.includes(doc.title),
+				)
+				.map((doc) => doc.title)
+				.sort(byRunOrder),
+		undefined,
+		{ equals: (a, b) => a.join() === b.join() },
+	)
+	const TABS = createMemo(() => tabs(catalogue() ?? [], extraSlots()))
 
 	/**
 	 * The chosen tab is held as a key rather than as the tab itself: the table
@@ -124,28 +144,53 @@ export function Setup() {
 	}
 	const [group, setGroup] = createSignal<string | null>(null)
 
-	/** The slot being edited, or nothing; the pane is the editor while one is. */
-	const [editing, setEditing] = createSignal<{ slot?: string } | null>(null)
+	/**
+	 * The drafts editor fills the pane while it is open. Anything that picks
+	 * something else to look at -- a tab, a group, its own back button --
+	 * closes it.
+	 */
+	const [drafting, setDrafting] = createSignal(false)
+	function openDrafts() {
+		space.expand(null)
+		space.open(SCRATCH)
+		setDrafting(true)
+	}
+	function closeDrafts() {
+		space.setFullscreen(false)
+		setDrafting(false)
+	}
 
 	const values = createMemo(() => readModOptions(room.my()?.scriptTags))
 
-	/**
-	 * SPADS refuses `bSet` from a spectator outright and auto-converts it into a
-	 * vote for a player below level 100, so holding a seat is the honest gate.
-	 * What happens after the send is the host's call, not ours. Where no host is
-	 * being asked, there is nobody to refuse and a spectator may still set up
-	 * the game they are about to watch.
-	 */
-	const editable = createMemo(() => {
-		if (!room.caps.spads) return true
-		const me = room.me()
-		return me !== null && room.users()[me]?.battleStatus?.player === true
-	})
+	const editable = createMemo(() => canSet(room))
 
 	const everywhere = createMemo(() => changedByTab(TABS(), values()))
 	const total = createMemo(() =>
 		everywhere().reduce((sum, entry) => sum + entry.rows.length, 0),
 	)
+
+	/**
+	 * What a Changed view keeps though it is not a change: the open slot and
+	 * any holding an unsent edit, so neither vanishes when somebody clears it.
+	 * Equal while the same slots are in it, so typing does not redo the rows.
+	 */
+	const held = createMemo(
+		() =>
+			new Set(
+				Object.values(space.ws.docs)
+					.filter(
+						(doc) =>
+							doc.origin === 'slot' &&
+							(doc.id === space.ws.expanded || isDirty(doc)),
+					)
+					.map((doc) => titleOf(doc.id)),
+			),
+		undefined,
+		{
+			equals: (a, b) => a.size === b.size && [...a].every((key) => b.has(key)),
+		},
+	)
+	const changedRows = () => changedView(values(), held())
 
 	const shown = createMemo(() => {
 		const name = group()
@@ -172,6 +217,7 @@ export function Setup() {
 		setTabKey(next.key)
 		setGroup(null)
 		setUnchanged(false)
+		closeDrafts()
 	}
 
 	const [width, setWidth] = createSignal(readWidth(localStore(), WIDTH_KEY))
@@ -248,11 +294,14 @@ export function Setup() {
 					Presets
 				</button>
 				<Show when={pane() === 'setup'}>
-					<span class='note'>{noteOfPane(room, editable())}</span>
-					<Show when={editing()}>
-						<button class='setup-back' onClick={() => setEditing(null)}>
-							Settings
-						</button>
+					<span class='note'>{noteOfPane(room)}</span>
+					<Show when={space.unsent() > 0}>
+						<span
+							class='doc-tag dirty setup-unsent'
+							title='Slots edited here that the room has not been sent'
+						>
+							{space.unsent()} unsent
+						</span>
 					</Show>
 				</Show>
 			</div>
@@ -305,7 +354,7 @@ export function Setup() {
 							)
 						}}
 					</For>
-					<Show when={!editing()}>
+					<Show when={!drafting()}>
 						<SearchBox
 							class='setup-search'
 							placeholder='Search settings'
@@ -315,17 +364,15 @@ export function Setup() {
 					</Show>
 				</div>
 
-				<Show when={!editing()} fallback={<Tweaks initial={editing()?.slot} />}>
+				<Show
+					when={!drafting()}
+					fallback={<Tweaks drafts onClose={closeDrafts} />}
+				>
 					<Show
 						when={!searching()}
 						fallback={
 							<div class='setup-detail setup-found'>
-								<Found
-									found={found}
-									needle={needle()}
-									editable={editable()}
-									onEdit={(slot) => setEditing({ slot })}
-								/>
+								<Found found={found} needle={needle()} editable={editable()} />
 							</div>
 						}
 					>
@@ -371,40 +418,43 @@ export function Setup() {
 								<Switch>
 									<Match when={tab().key === ALL_TAB}>
 										<Changes
-											changed={() => byTabName(everywhere())}
-											all={() => byTabName(rowsByTab(TABS(), values(), false))}
+											changed={() =>
+												byTabName(rowsByTab(TABS(), values(), changedRows()))
+											}
+											all={() =>
+												byTabName(rowsByTab(TABS(), values(), EVERY_ROW))
+											}
 											empty="Every setting is on BAR's default."
 											unchanged={unchanged()}
 											onToggle={() => setUnchanged(!unchanged())}
 											editable={editable()}
-											onEdit={(slot) => setEditing({ slot })}
+											onDrafts={openDrafts}
 										/>
 									</Match>
 									<Match when={group() === null}>
 										<Changes
-											changed={() => rowsByGroup(tab(), values(), true)}
-											all={() => rowsByGroup(tab(), values(), false)}
+											changed={() =>
+												rowsByGroup(tab(), values(), changedRows())
+											}
+											all={() => rowsByGroup(tab(), values(), EVERY_ROW)}
 											empty="Every setting in this tab is on BAR's default."
 											unchanged={unchanged()}
 											onToggle={() => setUnchanged(!unchanged())}
 											editable={editable()}
-											onEdit={(slot) => setEditing({ slot })}
+											onDrafts={openDrafts}
 										/>
 									</Match>
 									<Match
 										when={tab().key === MODDING_TAB && group() === TWEAK_GROUP}
 									>
 										<TweakSlots
-											values={values()}
-											onEdit={(slot) => setEditing({ slot })}
+											rows={shown()}
+											editable={editable()}
+											onDrafts={openDrafts}
 										/>
 									</Match>
 									<Match when={true}>
-										<Rows
-											rows={shown()}
-											editable={editable()}
-											onEdit={(slot) => setEditing({ slot })}
-										/>
+										<Rows rows={shown()} editable={editable()} />
 									</Match>
 								</Switch>
 							</div>
@@ -418,10 +468,12 @@ export function Setup() {
 
 /**
  * What the pane says a change will do, which is not the same sentence when
- * there is a host to persuade and when there is not.
+ * there is a host to persuade and when there is not -- or why it would not
+ * be taken at all.
  */
-function noteOfPane(room: RoomModel, editable: boolean): string {
-	if (!editable) return 'Read-only · spectator'
+function noteOfPane(room: RoomModel): string {
+	const why = setRefusal(room)
+	if (why !== null) return why
 	if (room.caps.spads) return 'A change is proposed to the host'
 	return 'A change takes effect here'
 }
@@ -434,6 +486,10 @@ function noteOfPane(room: RoomModel, editable: boolean): string {
  * The toggle reveals rows in place. It used to open the tab's first group
  * instead, which lost the changed rows it had been showing and, on Modding,
  * landed on the slot grid rather than the rows it had promised.
+ *
+ * `Index`, not `For`: the rows are made again whenever the room says
+ * anything, and a row keyed by identity would be a new row each time --
+ * which, for one with the editor open under it, is a new editor.
  */
 function Changes(props: {
 	changed: Accessor<Section[]>
@@ -443,30 +499,30 @@ function Changes(props: {
 	unchanged: boolean
 	onToggle: () => void
 	editable: boolean
-	onEdit: (slot: string) => void
+	onDrafts: () => void
 }) {
 	const shown = () => (props.unchanged ? props.all() : props.changed())
+	/** Changed rows, or every row once the unchanged are shown too. */
+	const count = (rows: Row[]) =>
+		props.unchanged ? rows.length : rows.filter((row) => row.changed).length
 	return (
 		<>
 			<Show
 				when={shown().length > 0}
 				fallback={<p class='muted setup-empty'>{props.empty}</p>}
 			>
-				<For each={shown()}>
+				<Index each={shown()}>
 					{(entry) => (
 						<>
-							<div class='setup-section'>
-								<span>{entry.name}</span>
-								<span class='count'>{entry.rows.length}</span>
-							</div>
-							<Rows
-								rows={entry.rows}
-								editable={props.editable}
-								onEdit={props.onEdit}
+							<SectionHead
+								name={entry().name}
+								count={count(entry().rows)}
+								onDrafts={props.onDrafts}
 							/>
+							<Rows rows={entry().rows} editable={props.editable} />
 						</>
 					)}
-				</For>
+				</Index>
 			</Show>
 			<button class='setup-reveal' onClick={props.onToggle}>
 				{props.unchanged ? 'Hide unchanged' : 'Show unchanged'}
@@ -475,12 +531,37 @@ function Changes(props: {
 	)
 }
 
+/**
+ * A heading over rows, with what it counts. The tweak slots' heading also
+ * opens the drafts editor: an unslotted tweak, and the drafts beside it.
+ */
+function SectionHead(props: {
+	name: string
+	count: number
+	onDrafts: () => void
+}) {
+	return (
+		<div class='setup-section'>
+			<span>{props.name}</span>
+			<Show when={props.name === TWEAK_GROUP}>
+				<button
+					class='setup-drafts'
+					title='Write a tweak for no slot yet, next to your drafts'
+					onClick={props.onDrafts}
+				>
+					Editor
+				</button>
+			</Show>
+			<span class='count'>{props.count}</span>
+		</div>
+	)
+}
+
 /** What the search turned up, under the tab each row lives in. */
 function Found(props: {
 	found: Accessor<Changed[]>
 	needle: string
 	editable: boolean
-	onEdit: (slot: string) => void
 }) {
 	return (
 		<Show
@@ -498,11 +579,7 @@ function Found(props: {
 							<span>{entry.tab.name}</span>
 							<span class='count'>{entry.rows.length}</span>
 						</div>
-						<Rows
-							rows={entry.rows}
-							editable={props.editable}
-							onEdit={props.onEdit}
-						/>
+						<Rows rows={entry.rows} editable={props.editable} />
 					</>
 				)}
 			</For>
@@ -511,8 +588,9 @@ function Found(props: {
 }
 
 /**
- * Settings as rows. A tweak slot is not a value anyone reads: its row ends
- * in the two things to do with it, copy and open, wherever the row appears.
+ * Settings as rows. A base64url slot -- a tweak, or the start-box override --
+ * is a `TweakRow` wherever it appears: its blob to read or paste over, and the
+ * editor one press away.
  *
  * Exported because an AI's own options are the same kind of table -- BAR's
  * `modoptions.lua` and an engine AI's `AIOptions.lua` are one format -- and
@@ -522,39 +600,38 @@ function Found(props: {
 export function Rows(props: {
 	rows: Row[]
 	editable: boolean
-	onEdit: (slot: string) => void
 	set?: (key: string, value: string) => Promise<void>
 }) {
 	return (
 		<div class='setup-rows'>
-			<For
-				each={props.rows}
+			<Show
+				when={props.rows.length > 0}
 				fallback={<p class='muted setup-empty'>Nothing here.</p>}
 			>
-				{(row) => (
-					<div class='opt' classList={{ changed: row.changed }}>
-						<span class='mark' />
-						<span class='k' title={row.option.desc ?? ''}>
-							{label(row.option)}
-						</span>
-						<Switch fallback={<span class='v'>{displayText(row)}</span>}>
-							<Match when={isMapOption(row.option)}>
-								<MapValue row={row} onEdit={props.onEdit} />
-							</Match>
-							<Match when={isTweakSlot(row)}>
-								<SlotActions
-									slot={row.option.key}
-									blob={row.current ?? ''}
-									onEdit={props.onEdit}
-								/>
-							</Match>
-							<Match when={props.editable}>
-								<Control row={row} set={props.set} />
-							</Match>
-						</Switch>
-					</div>
-				)}
-			</For>
+				<Index each={props.rows}>
+					{(row) => (
+						<Show
+							when={slotOf(row().option.key) === null}
+							fallback={<TweakRow row={row()} />}
+						>
+							<div class='opt' classList={{ changed: row().changed }}>
+								<span class='mark' />
+								<span class='k' title={row().option.desc ?? ''}>
+									{label(row().option)}
+								</span>
+								<Switch fallback={<span class='v'>{displayText(row())}</span>}>
+									<Match when={isMapOption(row().option)}>
+										<MapValue row={row()} />
+									</Match>
+									<Match when={props.editable}>
+										<Control row={row()} set={props.set} />
+									</Match>
+								</Switch>
+							</div>
+						</Show>
+					)}
+				</Index>
+			</Show>
 		</div>
 	)
 }
@@ -562,87 +639,18 @@ export function Rows(props: {
 /**
  * A map-metadata row's value in words. The blob is base64url(zlib(json)) and
  * says nothing; Rust decodes it (`boxes::describe_map_option`) and answers
- * with what it holds. The two SPADS sets from the map's metadata are
- * read-only; the override is somebody's own, drawn on the map or, from here,
- * typed as JSON in the editor.
+ * with what it holds. These two are the ones SPADS sets from the map's
+ * metadata, and read-only; the override is somebody's own, and a `TweakRow`.
  */
-function MapValue(props: { row: Row; onEdit: (slot: string) => void }) {
+function MapValue(props: { row: Row }) {
 	const [words] = createResource(
 		() => [props.row.option.key, props.row.current ?? ''] as const,
 		([key, raw]) => api.describeMapOption(key, raw).catch(() => null),
 	)
-	const text = () => (words.loading ? '…' : (words() ?? displayText(props.row)))
 	return (
-		<Show
-			when={props.row.option.key === BOX_OVERRIDE}
-			fallback={
-				<span class='v' title={props.row.current ?? ''}>
-					{text()}
-				</span>
-			}
-		>
-			<SlotActions
-				slot={props.row.option.key}
-				blob={props.row.current ?? ''}
-				text={text()}
-				onEdit={props.onEdit}
-			/>
-		</Show>
-	)
-}
-
-/**
- * The two things to do with a slot: copy the `!bSet` command that carries it
- * -- what a spectator can hand to someone with a seat -- and, the wider
- * target, open it in the editor, which is what the slot is for whether it is
- * full or still empty. `label` puts the slot's name on the button, for a grid
- * where the row has no other place for it; `text` says what it holds, where
- * the blob's size would not.
- */
-function SlotActions(props: {
-	slot: string
-	blob: string
-	label?: string
-	text?: string
-	onEdit: (slot: string) => void
-}) {
-	const empty = () => isCleared(props.blob)
-
-	async function copy() {
-		try {
-			await navigator.clipboard.writeText(`!bSet ${props.slot} ${props.blob}`)
-			pushNotice('info', `!bSet ${props.slot} copied`)
-		} catch (error) {
-			pushNotice('warning', `copy: ${describeError(error)}`)
-		}
-	}
-
-	return (
-		<ActionCell filled={!empty()}>
-			<CellButton
-				icon='act-copy'
-				title={`Copy the !bSet command for ${props.slot}`}
-				disabled={empty()}
-				onClick={() => void copy()}
-			/>
-			<CellButton
-				class='slot-open'
-				icon='act-pen'
-				title={
-					empty()
-						? `Write into ${props.slot}`
-						: `Open ${props.slot} in the editor`
-				}
-				onClick={() => props.onEdit(props.slot)}
-			>
-				<Show when={props.label}>
-					{(label) => <span class='kk'>{label()}</span>}
-				</Show>
-				<span class='vv'>
-					{props.text ?? (empty() ? '—' : `${props.blob.length} B`)}
-				</span>
-			</CellButton>
-		</ActionCell>
+		<span class='v' title={props.row.current ?? ''}>
+			{words.loading ? '…' : (words() ?? displayText(props.row))}
+		</span>
 	)
 }
 
@@ -705,36 +713,21 @@ function Control(props: {
 	)
 }
 
-/** The twenty slots as a grid, every one of them, filled or not. */
+/** The twenty slots as rows, every one of them, filled or not. */
 function TweakSlots(props: {
-	values: Record<string, string>
-	onEdit: (slot?: string) => void
+	rows: Row[]
+	editable: boolean
+	onDrafts: () => void
 }) {
 	const room = useRoom()
-	const filled = createMemo(() =>
-		TWEAK_SLOTS.filter((key) => (props.values[key] ?? '') !== ''),
-	)
-
 	return (
 		<>
-			<div class='setup-section'>
-				<span>Slots</span>
-				<span class='count'>{filled().length} filled</span>
-			</div>
-
-			<div class='slot-grid'>
-				<For each={TWEAK_SLOTS}>
-					{(key) => (
-						<SlotActions
-							slot={key}
-							blob={props.values[key] ?? ''}
-							label={key}
-							onEdit={props.onEdit}
-						/>
-					)}
-				</For>
-			</div>
-
+			<SectionHead
+				name={TWEAK_GROUP}
+				count={props.rows.filter((row) => row.changed).length}
+				onDrafts={props.onDrafts}
+			/>
+			<Rows rows={props.rows} editable={props.editable} />
 			<Show
 				when={room.caps.spads}
 				fallback={
@@ -744,12 +737,13 @@ function TweakSlots(props: {
 					</div>
 				}
 			>
-				<div class='setup-note'>
-					Spectators cannot set a modoption or call a vote on one. The editor
-					formats, diffs and copies the command for someone who can.
-				</div>
+				<Show when={!props.editable}>
+					<div class='setup-note'>
+						The editor still formats and compares a tweak, and copies the
+						command for somebody who can set it.
+					</div>
+				</Show>
 			</Show>
-			<button onClick={() => props.onEdit()}>Open editor</button>
 		</>
 	)
 }

@@ -130,8 +130,13 @@ pub fn format(text: &str, kind: Kind, config: &Config) -> Result<String, Error> 
 	}
 }
 
-/// Minifies, encodes and measures — without sending anything.
-pub fn prepare(text: &str, slot: Slot, direct: bool) -> Result<Prepared, Error> {
+/// Encodes and measures — without sending anything. The Lua goes out as
+/// written (see [`lua::as_written`]) unless `minify` asks for the minified
+/// form; that form is measured either way, for the gauge and for copying.
+///
+/// The override is always compact: it is generated JSON with no names in it,
+/// on a line the server keeps only 1025 characters of.
+pub fn prepare(text: &str, slot: Slot, direct: bool, minify: bool) -> Result<Prepared, Error> {
 	let kind = slot.kind();
 	let (minified, blob) = match kind {
 		Kind::Boxes => {
@@ -140,8 +145,14 @@ pub fn prepare(text: &str, slot: Slot, direct: bool) -> Result<Prepared, Error> 
 			(minified, blob)
 		}
 		Kind::Defs | Kind::Units => {
+			// Also where Lua that does not lex is refused, whichever form is sent.
 			let minified = lua::minify(text, kind)?;
-			let blob = base64url::encode(&minified, kind)?;
+			let sent = if minify {
+				minified.clone()
+			} else {
+				lua::as_written(text, kind)?
+			};
+			let blob = base64url::encode(&sent, kind)?;
 			(minified, blob)
 		}
 	};
@@ -177,7 +188,7 @@ for i = 1, count do
 end
 ";
 		let slot = Slot::Defs(1);
-		let prepared = prepare(lua, slot, true).unwrap();
+		let prepared = prepare(lua, slot, true, true).unwrap();
 
 		assert!(prepared.command.starts_with("!bSet tweakdefs1 "));
 		assert!(prepared.gauge.fits);
@@ -195,16 +206,74 @@ end
 		assert!(view.formatted.contains("UnitDefs.armcom.metalcost"));
 		// Formatting is display only: what we would send again is unchanged.
 		assert_eq!(
-			prepare(&view.formatted, slot, true).unwrap().blob,
+			prepare(&view.formatted, slot, true, true).unwrap().blob,
 			prepared.blob
 		);
+	}
+
+	/// Unless minifying is asked for, the room gets what was written: every
+	/// comment, every line, every name.
+	#[test]
+	fn a_tweak_goes_out_as_written_by_default() {
+		let lua = "-- Sphere spawner v3
+-- why these numbers? see the notes
+local count_per_wave = 4 -- inline
+";
+		let slot = Slot::Defs(1);
+		let prepared = prepare(lua, slot, true, false).unwrap();
+		let view = decode(&prepared.blob, slot.kind(), &Config::default()).unwrap();
+		assert_eq!(view.text, lua, "tweakdefs go out exactly as typed");
+		// Measured as sent, with the minified size beside it.
+		assert!(prepared.gauge.minified < prepared.gauge.raw);
+		assert!(prepared.gauge.blob > prepare(lua, slot, true, true).unwrap().gauge.blob);
+	}
+
+	/// A units table as written: strings escaped as the game needs, and each
+	/// comment `?` that would land on a `_` moved off it by a space -- nothing
+	/// the game reads is changed, and nothing it cannot read goes out.
+	#[test]
+	fn a_units_table_as_written_never_carries_an_underscore() {
+		let slot = Slot::Units(1);
+		let squash = |text: &str| text.replace([' ', '\t'], "");
+		// Every alignment of a comment full of question marks and an accent.
+		for pad in 0..3 {
+			let lua = format!(
+				"-- Walls\n{{\n\t-- tougher{}? why? who knows? caf\u{e9}\n\tarmwall = {{ health = 12000, name = 'why?' }},\n}}\n",
+				" ".repeat(pad)
+			);
+			let prepared = prepare(&lua, slot, true, false).unwrap();
+			assert!(!prepared.blob.contains('_'), "pad {pad}");
+			let view = decode(&prepared.blob, slot.kind(), &Config::default()).unwrap();
+			assert!(view.diagnostics.is_empty());
+			assert_eq!(view.name.as_deref(), Some("Walls"));
+			// Only spaces went in, besides the string's escapes.
+			assert_eq!(
+				squash(&view.text),
+				squash(&lua.replace("'why?'", "'why\\063'")),
+				"pad {pad}"
+			);
+		}
+		// The name cannot move: that line is what Chobby reads.
+		let lead = (0..3)
+			.map(|pad| {
+				format!(
+					"--{} Walls?\n{{ armwall = {{ health = 1 }} }}\n",
+					" ".repeat(pad)
+				)
+			})
+			.find(|lua| base64url::first_underscore(lua).is_some())
+			.expect("some padding puts the ? on an underscore");
+		let Err(Error::Underscore(why)) = prepare(&lead, slot, true, false) else {
+			panic!("a ? in the name must be refused")
+		};
+		assert!(why.contains("name"), "{why}");
 	}
 
 	/// The same loop for the override, which the game reads as zlib JSON.
 	#[test]
 	fn the_override_round_trips_as_the_game_reads_it() {
 		let json = "{\n\t\"startboxes\": [\n\t\t{ \"poly\": [ { \"x\": 0, \"y\": 0 }, { \"x\": 50, \"y\": 200 } ] }\n\t]\n}\n";
-		let prepared = prepare(json, Slot::Boxes, true).unwrap();
+		let prepared = prepare(json, Slot::Boxes, true, false).unwrap();
 		assert!(
 			prepared
 				.command
@@ -225,17 +294,20 @@ end
 		assert_eq!(view.name, None, "JSON has no header comment");
 		assert!(view.diagnostics.is_empty());
 		assert_eq!(
-			prepare(&view.formatted, Slot::Boxes, true).unwrap().blob,
+			prepare(&view.formatted, Slot::Boxes, true, false).unwrap().blob,
 			prepared.blob
 		);
 		// A vote line is the short kind, like any other.
-		assert_eq!(prepare(json, Slot::Boxes, false).unwrap().gauge.cap, 257);
+		assert_eq!(
+			prepare(json, Slot::Boxes, false, false).unwrap().gauge.cap,
+			257
+		);
 	}
 
 	#[test]
 	fn oversized_payloads_report_the_overflow_rather_than_truncating() {
 		let lua = format!("local t = '{}'\n", "x".repeat(20_000));
-		let prepared = prepare(&lua, Slot::Units(2), true).unwrap();
+		let prepared = prepare(&lua, Slot::Units(2), true, false).unwrap();
 		assert!(!prepared.gauge.fits);
 		assert!(prepared.gauge.command > prepared.gauge.cap);
 	}

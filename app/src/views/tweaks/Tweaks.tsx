@@ -1,30 +1,33 @@
 import { Show, onMount } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import { describeError } from '../../ipc/client'
-import { slotId } from '../../lib/tweakspace'
 import { pushNotice } from '../../store/chat'
 import { tweakspaceFor } from '../../store/tweakspaceInstance'
 import { useRoom } from '../room/model'
 import { Workspace } from './Workspace'
 
 /**
- * The tweak editor, where the pane puts it -- or over the whole window.
+ * The tweak editor, where it was opened -- under a settings row, or as the
+ * drafts editor with its list -- or over the whole window.
  *
  * The workspace itself is mounted in exactly one of the two places at a time.
  * A second Monaco on the same model would work, but two cursors in one
  * document is a thing nobody asked for, and the pane has better uses for the
  * space than a mirror.
  */
-export function Tweaks(props: { initial?: string }) {
+export function Tweaks(props: { drafts?: boolean; onClose?: () => void }) {
 	const space = tweakspaceFor(useRoom())
 	onMount(() => {
-		if (props.initial) space.open(slotId(props.initial))
 		void space
 			.refreshDrafts()
 			.catch((error) =>
 				pushNotice('warning', `drafts: ${describeError(error)}`),
 			)
 	})
+
+	const workspace = () => (
+		<Workspace drafts={props.drafts ?? false} onClose={props.onClose} />
+	)
 
 	return (
 		<>
@@ -39,13 +42,11 @@ export function Tweaks(props: { initial?: string }) {
 					</div>
 				}
 			>
-				<Workspace />
+				{workspace()}
 			</Show>
 			<Show when={space.ws.fullscreen}>
 				<Portal>
-					<div class='tweak-full'>
-						<Workspace />
-					</div>
+					<div class='tweak-full'>{workspace()}</div>
 				</Portal>
 			</Show>
 		</>

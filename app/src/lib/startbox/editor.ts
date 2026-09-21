@@ -69,6 +69,8 @@ export type Action =
 	| { type: 'close' }
 	| { type: 'add' }
 	| { type: 'delete' }
+	/** One team's whole box, from its row in the list, whatever is selected. */
+	| { type: 'drop'; box: number }
 	| { type: 'select'; box: number; vertex: number | null }
 	| { type: 'insert'; box: number; edge: number; at: Point }
 	| { type: 'strength'; value: number }
@@ -309,9 +311,14 @@ function remove(state: State): State {
 			vertex: null,
 		})
 	}
+	return drop(state, selected.box)
+}
+
+function drop(state: State, index: number): State {
+	if (state.boxes[index] === undefined) return state
 	return commit(
 		state,
-		state.boxes.filter((_, i) => i !== selected.box),
+		state.boxes.filter((_, i) => i !== index),
 		null,
 	)
 }
@@ -358,6 +365,8 @@ export function reduce(state: State, action: Action): State {
 		}
 		case 'delete':
 			return remove(state)
+		case 'drop':
+			return drop(state, action.box)
 		case 'select':
 			return { ...state, selected: { box: action.box, vertex: action.vertex } }
 		case 'insert': {

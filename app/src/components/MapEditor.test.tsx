@@ -157,7 +157,8 @@ const boxes = (container: HTMLElement) => [
 ]
 const button = (container: HTMLElement, label: string) =>
 	[...container.querySelectorAll('button')].find(
-		(b) => b.textContent?.trim() === label,
+		(b) =>
+			b.textContent?.trim() === label || b.getAttribute('aria-label') === label,
 	)!
 
 beforeEach(() => rustAnswers(twoBoxes))
@@ -167,7 +168,7 @@ describe('MapEditor', () => {
 	test('starts from the boxes the room has and lists them', async () => {
 		const { container } = await open()
 		expect(boxes(container)).toHaveLength(2)
-		expect(container.querySelectorAll('.ed-list li')).toHaveLength(2)
+		expect(container.querySelectorAll('.ed-list .ed-pick')).toHaveLength(2)
 		expect(container.querySelector('.ed-list li .muted')?.textContent).toBe(
 			'rectangle',
 		)
@@ -216,7 +217,10 @@ describe('MapEditor', () => {
 		expect(boxes(container)[0]?.getAttribute('d')).toBe(
 			'M160 0 L200 0 L200 40 L160 40 Z',
 		)
-		expect(button(container, 'Undo').disabled).toBe(false)
+		expect(
+			container.querySelector<HTMLButtonElement>('button[title="Ctrl+Z"]')
+				?.disabled,
+		).toBe(false)
 	})
 
 	test('Escape cancels a drag in flight, and asks before closing a dirty draft', async () => {
@@ -278,20 +282,31 @@ describe('MapEditor', () => {
 			'M100 100 L190 100 L150 190 Z',
 		)
 		expect(
-			container.querySelector('.ed-list li:last-child .muted')?.textContent,
+			[...container.querySelectorAll('.ed-pick .muted')].at(-1)?.textContent,
 		).toBe('3 corners')
 	})
 
 	test('a spectator sees the map and nothing to press', async () => {
 		const { container, svg } = await open(false)
 		expect(container.querySelector('.note')?.textContent).toBe(
-			'read-only · spectator',
+			'Join as a player to change settings',
 		)
 		expect(button(container, 'Add box').disabled).toBe(true)
 		expect(button(container, 'Apply').disabled).toBe(true)
 		drag(svg, [40, 40], [400, 40])
 		expect(boxes(container)[0]?.getAttribute('d')).toBe(
 			'M20 20 L60 20 L60 60 L20 60 Z',
+		)
+	})
+
+	test('a spectator who bosses the room may still draw and apply', async () => {
+		// BarManager raises a boss to the level bSet needs, seated or not.
+		const { container } = await open(false)
+		setLobby('servers', TEST_SERVER, 'myBattle', 'boss', 'alice,me')
+		await settle()
+		expect(button(container, 'Add box').disabled).toBe(false)
+		expect(container.querySelector('.note')?.textContent).toBe(
+			'Apply sends to the host',
 		)
 	})
 
@@ -409,10 +424,30 @@ describe('MapEditor', () => {
 		expect(large.handle).toBeGreaterThan(small.handle)
 	})
 
+	test('each row deletes its own box, and applying none clears the override', async () => {
+		const { container, onClose } = await open()
+		const drop = () =>
+			fireEvent.click(container.querySelector('.ed-list li .ed-drop')!)
+		drop()
+		expect(boxes(container)).toHaveLength(1)
+		drop()
+		expect(boxes(container)).toHaveLength(0)
+
+		vi.mocked(invoke).mockClear()
+		fireEvent.click(button(container, 'Apply'))
+		await settle()
+		const sent = vi
+			.mocked(invoke)
+			.mock.calls.filter(([command]) => command === 'set_option')
+		expect(sent.map(([, args]) => args)).toEqual([
+			{ key: 'mapmetadata_startbox_override', value: '0' },
+		])
+		expect(onClose).toHaveBeenCalledTimes(1)
+	})
+
 	test('fewer boxes than teams is said out loud', async () => {
 		const { container } = await open()
-		fireEvent.click(container.querySelector('.ed-list li .ed-pick')!)
-		fireEvent.click(button(container, 'Delete'))
+		fireEvent.click(container.querySelector('.ed-list li .ed-drop')!)
 		expect(container.querySelector('.ed-warn')?.textContent).toContain(
 			'1 team has no box',
 		)

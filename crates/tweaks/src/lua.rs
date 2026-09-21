@@ -1,9 +1,12 @@
-//! Formatting with StyLua and a token-level minifier.
+//! Formatting with StyLua, the Lua as written for sending, and a token-level
+//! minifier.
 //!
-//! Minifying matters because the whole `!bSet` line is capped at 16 385
-//! characters server-side, and the base64 of the Lua is four thirds of it.
-//! The first `--` line is kept: BAR has no field for a tweak's name, so that
-//! comment *is* the name (`gui_modoptions_panel.lua:1068-1086`).
+//! A tweak goes out as written unless its sender asks for it minified: the
+//! whole `!bSet` line is capped at 16 385 characters server-side, and the
+//! base64 of the Lua is four thirds of it, so minifying is what makes a big
+//! one fit. The first `--` line is kept either way: BAR has no field for a
+//! tweak's name, so that comment *is* the name
+//! (`gui_modoptions_panel.lua:1068-1086`).
 
 use std::path::Path;
 
@@ -129,6 +132,71 @@ pub fn minify(source: &str, kind: Kind) -> Result<String, Error> {
 		previous = Some(text);
 	}
 	Ok(out)
+}
+
+/// The Lua as it was written -- every comment, every line -- which is what a
+/// room should get unless the sender asks for [`minify`]: others learn from a
+/// tweak they can read.
+///
+/// `tweakdefs` go out exactly as typed. For `tweakunits` only what the game
+/// needs is changed (see [`crate::base64url`]): string literals are escaped as
+/// [`minify`] escapes them, and where a comment's `?` or accented letter would
+/// still encode to `_`, a space goes in ahead of it to move it off that
+/// position -- before a token, or beside a space already in a comment, where
+/// it changes nothing the game reads.
+///
+/// Never on the first line: that is the tweak's name, as Chobby reads it. A
+/// `?` there, or one no space can move (`???`), is an error naming what to
+/// change.
+pub fn as_written(source: &str, kind: Kind) -> Result<String, Error> {
+	if kind != Kind::Units {
+		return Ok(source.to_owned());
+	}
+	let mut text = String::with_capacity(source.len() + 8);
+	// Where a space may go in, in ascending order.
+	let mut safe = Vec::new();
+	for token in lex(source)? {
+		let start = text.len();
+		let piece = render(&token, kind);
+		safe.push(start);
+		if matches!(
+			token.token_kind(),
+			TokenKind::Whitespace | TokenKind::SingleLineComment | TokenKind::MultiLineComment
+		) {
+			safe.extend(
+				piece
+					.char_indices()
+					.filter(|(_, ch)| *ch == ' ' || *ch == '\t')
+					.map(|(at, ch)| start + at + ch.len_utf8()),
+			);
+		}
+		text.push_str(&piece);
+	}
+	let line_one = text.find('\n').unwrap_or(text.len());
+	safe.retain(|&at| at > line_one);
+	safe.dedup();
+	// Spaces put in at each point; a third would bring it back where it was.
+	let mut used = vec![0u8; safe.len()];
+	while let Some(at) = crate::base64url::first_underscore(&text) {
+		// The last byte whose bits make up the offending sextet.
+		let byte = at / 4 * 3 + [0, 1, 2, 2][at % 4];
+		let Some(point) = (0..safe.len())
+			.rev()
+			.find(|&i| safe[i] <= byte && used[i] < 2)
+		else {
+			return Err(Error::Underscore(if byte <= line_one {
+				"a tweakunits name cannot hold '?' or accented letters; reword the first line".into()
+			} else {
+				"a comment in this tweakunits cannot be sent as written; reword its '?' or accented letters, or send it minified".into()
+			}));
+		};
+		text.insert(safe[point], ' ');
+		used[point] += 1;
+		for later in &mut safe[point + 1..] {
+			*later += 1;
+		}
+	}
+	Ok(text)
 }
 
 /// Every token in source order, trivia included. `collect` is the only entry

@@ -38,8 +38,10 @@ import {
 	labelSize,
 } from '../lib/startbox/scale'
 import { ring } from '../lib/startbox/spline'
+import { isBoss } from '../lib/roster'
 import { pushNotice } from '../store/chat'
 import { useRoom } from '../views/room/model'
+import { setRefusal } from '../views/room/move'
 
 /** The modoption a drawn arrangement is sent as; `"0"` clears it. */
 const OVERRIDE = BOX_KEYS[0]
@@ -89,16 +91,10 @@ export function MapEditor(props: {
 
 	const room = useRoom()
 	const me = () => room.me()
-	const boss = () => me() !== null && room.my()?.boss === me()
-	/**
-	 * SPADS refuses `!bSet` from a spectator (`commands.rs` `set_option`). In a
-	 * room with no host there is nobody to refuse it.
-	 */
-	const editable = createMemo(() => {
-		if (!room.caps.spads) return true
-		const name = me()
-		return name !== null && room.users()[name]?.battleStatus?.player === true
-	})
+	const boss = () => isBoss(room.my()?.boss, me())
+	/** Why the host would refuse the override from us, if it would; see `setRefusal`. */
+	const refusal = createMemo(() => setRefusal(room))
+	const editable = () => refusal() === null
 
 	const tags = () => room.my()?.scriptTags
 	const overrideSet = () => {
@@ -197,13 +193,19 @@ export function MapEditor(props: {
 		const held = encoded()
 		return held && 'error' in held ? held.error : null
 	}
+	/**
+	 * No boxes is not something the override can say: the game passes over one
+	 * with fewer boxes than teams (`matchOverride`), so applying none clears it
+	 * and the map's own come back.
+	 */
+	const clearing = () => state().boxes.length === 0
 	const sendable = createMemo(
 		() =>
 			editable() &&
-			wire() !== null &&
-			!over() &&
-			state().boxes.length > 0 &&
-			state().drag === null,
+			state().drag === null &&
+			(clearing()
+				? dirty(state()) || overrideSet()
+				: wire() !== null && !over()),
 	)
 
 	/** What applying them will have done, which depends on who decides here. */
@@ -215,7 +217,8 @@ export function MapEditor(props: {
 
 	/** The same question before the fact, in the header. */
 	const applyNote = () => {
-		if (!editable()) return 'read-only · spectator'
+		const why = refusal()
+		if (why !== null) return why
 		if (!room.caps.spads) return 'Apply sets them'
 		return boss() ? 'Apply sends to the host' : 'Apply proposes a vote'
 	}
@@ -238,6 +241,7 @@ export function MapEditor(props: {
 	}
 
 	function apply() {
+		if (clearing()) return void send('0')
 		const held = wire()
 		if (held !== null) void send(held.value)
 	}
@@ -587,32 +591,24 @@ export function MapEditor(props: {
 						<div class='ed-actions'>
 							<button
 								type='button'
-								disabled={!editable()}
-								onClick={() => dispatch({ type: 'add' })}
-							>
-								Add box
-							</button>
-							<button
-								type='button'
-								disabled={!editable() || state().selected === null}
-								onClick={() => dispatch({ type: 'delete' })}
-							>
-								Delete
-							</button>
-							<button
-								type='button'
-								disabled={state().past.length === 0}
 								title='Ctrl+Z'
+								disabled={state().past.length === 0}
 								onClick={() => dispatch({ type: 'undo' })}
 							>
+								<span class='ed-glyph' aria-hidden='true'>
+									↶
+								</span>
 								Undo
 							</button>
 							<button
 								type='button'
-								disabled={state().future.length === 0}
 								title='Ctrl+Shift+Z'
+								disabled={state().future.length === 0}
 								onClick={() => dispatch({ type: 'redo' })}
 							>
+								<span class='ed-glyph' aria-hidden='true'>
+									↷
+								</span>
 								Redo
 							</button>
 						</div>
@@ -690,12 +686,33 @@ export function MapEditor(props: {
 										>
 											↓
 										</button>
+										<button
+											type='button'
+											class='ed-drop'
+											title='Delete this box'
+											aria-label={`Delete box ${index() + 1}`}
+											disabled={!editable()}
+											onClick={() => dispatch({ type: 'drop', box: index() })}
+										>
+											×
+										</button>
 									</li>
 								)}
 							</For>
+							<li class='ed-add'>
+								<button
+									type='button'
+									aria-label='Add box'
+									title='Add box'
+									disabled={!editable()}
+									onClick={() => dispatch({ type: 'add' })}
+								>
+									+
+								</button>
+							</li>
 						</ol>
 
-						<Show when={shortfall() > 0 && state().boxes.length > 0}>
+						<Show when={shortfall() > 0 && !clearing()}>
 							<p class='ed-warn'>
 								{shortfall()} {shortfall() === 1 ? 'team has' : 'teams have'} no
 								box: the game will ignore this override and use the map's boxes.
@@ -708,7 +725,11 @@ export function MapEditor(props: {
 						<div class='ed-budget' classList={{ over: over() }}>
 							<Show
 								when={wire()}
-								fallback={<span class='muted'>nothing to send</span>}
+								fallback={
+									<Show when={!clearing()}>
+										<span class='muted'>nothing to send</span>
+									</Show>
+								}
 							>
 								{(held) => (
 									<>

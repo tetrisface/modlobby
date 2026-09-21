@@ -15,6 +15,7 @@ import {
 	defaultCompare,
 	draftId,
 	draftNameFor,
+	isDirty,
 	resolveSide,
 	sideOptions,
 	slotKey,
@@ -22,16 +23,16 @@ import {
 	type Side,
 } from '../../lib/tweakspace'
 import { pushNotice } from '../../store/chat'
-import { roomSession } from '../../store/lobby'
 import { tweakspaceFor } from '../../store/tweakspaceInstance'
 import { useRoom } from '../room/model'
+import { setRefusal } from '../room/move'
 import { VoteDiff } from '../VoteDiff'
 import { ComparePane, type SideText } from './ComparePane'
 import { DocList } from './DocList'
 import { EditorHost, type Goto } from './EditorHost'
 import { Outline } from './Outline'
 import { Problems } from './Problems'
-import { Toolbar, type Copyable } from './Toolbar'
+import { SendBar, Toolbar, type Copyable } from './Toolbar'
 
 /** What the notice calls what was copied. */
 function copied(what: Copyable, kind: Kind): string {
@@ -44,16 +45,17 @@ function copied(what: Copyable, kind: Kind): string {
 	}[what]
 }
 
-/** Monaco widgets that take Escape for themselves before the window may. */
-const MONACO_WANTS_ESCAPE =
-	'.tweak-full .monaco-editor :is(.suggest-widget, .find-widget, .parameter-hints-widget, .rename-box).visible'
+/** What takes Escape for itself before the window may: Monaco's widgets, a menu. */
+const WANTS_ESCAPE =
+	'.tweak-full :is(.monaco-editor :is(.suggest-widget, .find-widget, .parameter-hints-widget, .rename-box).visible, .tweak-menu-list)'
 
 /**
- * The workspace, composed: the list, the bar, the editor, and under it what
- * the room is doing to the open slot. Reads the store; everything below it
- * gets props.
+ * The workspace, composed: the bar, the editor, what the room is doing to the
+ * open slot, and the send bar under it all. In the drafts editor the list of
+ * drafts sits beside it; under a settings row the row is the heading. Reads
+ * the store; everything below it gets props.
  */
-export function Workspace() {
+export function Workspace(props: { drafts: boolean; onClose?: () => void }) {
 	const room = useRoom()
 	const space = tweakspaceFor(room)
 	const [busy, setBusy] = createSignal(false)
@@ -62,23 +64,19 @@ export function Workspace() {
 	const jump = (line: number, column = 1) =>
 		setGoto({ line, column, at: Date.now() })
 
-	/** SPADS takes `bSet` only from a player; see `Setup`. */
-	const seated = createMemo(() => {
-		const room = roomSession()
-		const me = room?.me ?? null
-		return me !== null && room?.users[me]?.battleStatus?.player === true
-	})
+	/** Why the room would refuse a change from us, if it would. */
+	const refusal = createMemo(() => setRefusal(room))
 
 	/** The vote in progress, when it proposes the open slot. */
 	const proposal = createMemo(() => {
-		const vote = roomSession()?.myBattle?.vote
+		const vote = room.my()?.vote
 		const open = doc()
 		if (vote?.proposal.type !== 'setOption' || open.origin !== 'slot')
 			return null
 		return vote.proposal.key === open.title ? vote.proposal.value : null
 	})
 
-	const history = () => roomSession()?.myBattle?.history ?? []
+	const history = () => room.my()?.history ?? []
 
 	/** Unit keys this game does not have -- only meaningful in a units table. */
 	const warnings = createMemo(() =>
@@ -93,6 +91,14 @@ export function Workspace() {
 			.filter((change) => change.key === open.title)
 			.reverse()
 	})
+
+	/** Drafts of the open document's kind: a units table is no defs tweak. */
+	const drafts = createMemo(() =>
+		Object.values(space.ws.docs)
+			.filter((entry) => entry.origin === 'draft' && entry.kind === doc().kind)
+			.map((entry) => ({ title: entry.title, name: entry.name }))
+			.sort((a, b) => a.title.localeCompare(b.title)),
+	)
 
 	/** A side's text, decoding a blob on the way. */
 	async function resolve(side: Side): Promise<SideText | null> {
@@ -153,20 +159,28 @@ export function Workspace() {
 				)
 		})
 
-	const remove = () =>
+	/** What Ctrl+Enter does: the send bar's own button, when it could be pressed. */
+	function sendNow() {
+		const ready = space.prepared()
+		const open = doc()
+		if (busy() || refusal() !== null || ready === null) return
+		if (open.origin === 'slot' && !isDirty(open)) return
+		if (room.caps.spads && !ready.gauge.fits) return
+		void send(true)
+	}
+
+	const remove = (name: string) =>
 		act('delete draft', async () => {
-			const name = doc().title
 			await space.deleteDraft(name)
 			dropModel(draftId(name))
 		})
 
 	// Escape leaves fullscreen. Caught before the overlay's own Escape handler
-	// and left alone when a Monaco widget is open and wants it.
+	// and left alone when a Monaco widget or a menu is open and wants it.
 	onMount(() => {
 		const keys = (event: KeyboardEvent) => {
 			if (event.key !== 'Escape' || !space.ws.fullscreen) return
-			if (event.defaultPrevented || document.querySelector(MONACO_WANTS_ESCAPE))
-				return
+			if (event.defaultPrevented || document.querySelector(WANTS_ESCAPE)) return
 			event.preventDefault()
 			space.setFullscreen(false)
 		}
@@ -175,36 +189,35 @@ export function Workspace() {
 	})
 
 	return (
-		<section class='tweaks'>
-			<DocList
-				items={space.items()}
-				active={space.ws.active}
-				filter={space.ws.filter}
-				modified={space.modified()}
-				onSelect={space.open}
-				onFilter={space.setFilter}
-			/>
+		<section class='tweaks' classList={{ desk: props.drafts }}>
+			<Show when={props.drafts}>
+				<DocList
+					items={space.items()}
+					active={space.ws.active}
+					filter={space.ws.filter}
+					onSelect={space.open}
+					onFilter={space.setFilter}
+				/>
+			</Show>
 
 			<div class='tweak-main'>
 				<Toolbar
 					doc={doc()}
 					prepared={space.prepared()}
-					problem={space.problem()}
 					busy={busy()}
 					fullscreen={space.ws.fullscreen}
 					comparing={space.ws.compare !== null}
-					seated={seated()}
-					target={space.ws.target}
+					heading={props.drafts}
+					drafts={drafts()}
+					onClose={props.onClose}
 					onFormat={() => void act('format', () => space.format(doc().id))}
 					onReset={() => space.reset(doc().id)}
 					onSave={(name) => void save(name)}
-					onDelete={doc().origin === 'draft' ? () => void remove() : undefined}
+					onLoad={space.loadDraft}
+					onDelete={(name) => void remove(name)}
 					onFullscreen={space.setFullscreen}
 					onCompare={toggleCompare}
 					onCopy={(what) => void copy(what)}
-					onTarget={space.setTarget}
-					onSend={(direct) => void send(direct)}
-					onClear={() => void act('clear', () => space.clear())}
 				/>
 
 				<Show
@@ -216,8 +229,12 @@ export function Workspace() {
 							warnings={warnings()}
 							assist={space.assist()}
 							goto={goto()}
+							minimap={space.ws.fullscreen}
+							outline={space.check()?.outline ?? []}
+							format={(text) => space.formatText(text, doc().kind)}
 							onEdit={space.edit}
 							onSave={() => void save(draftNameFor(doc()))}
+							onSend={sendNow}
 						/>
 					}
 				>
@@ -241,27 +258,6 @@ export function Workspace() {
 				/>
 
 				<Outline symbols={space.check()?.outline ?? []} onGoto={jump} />
-
-				<Show when={space.prepared()}>
-					{(ready) => (
-						<div
-							class='gauge'
-							classList={{ over: room.caps.spads && !ready().gauge.fits }}
-						>
-							<span>raw {ready().gauge.raw} B</span>
-							<span>minified {ready().gauge.minified} B</span>
-							<span>blob {ready().gauge.blob}</span>
-							{/* The cap is the room's chat limit. A tweak too long to say in
-                  a room still fits in a start script perfectly well, so where
-                  nothing is said there is nothing to be under. */}
-							<Show when={room.caps.spads}>
-								<span>
-									command {ready().gauge.command} / {ready().gauge.cap}
-								</span>
-							</Show>
-						</div>
-					)}
-				</Show>
 
 				<Show when={proposal()}>
 					{(value) => (
@@ -313,6 +309,22 @@ export function Workspace() {
 						</For>
 					</details>
 				</Show>
+
+				<SendBar
+					doc={doc()}
+					prepared={space.prepared()}
+					problem={space.problem()}
+					busy={busy()}
+					refusal={refusal()}
+					spads={room.caps.spads}
+					target={space.ws.target}
+					minify={space.ws.minify}
+					onMinify={space.setMinify}
+					onTarget={space.setTarget}
+					onSend={(direct) => void send(direct)}
+					onClear={() => void act('clear', () => space.clear())}
+					onCopy={(what) => void copy(what)}
+				/>
 			</div>
 		</section>
 	)

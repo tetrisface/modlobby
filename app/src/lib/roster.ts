@@ -3,6 +3,25 @@ import type { BotView } from '../ipc/bindings/BotView'
 import type { UserView } from '../ipc/bindings/UserView'
 import { isUnrated, type Skill } from './skill'
 
+/**
+ * Who bosses a room, from what BarManager says: every boss, joined with
+ * commas (`barmanager.py`, `','.join(spads.getBosses())`).
+ */
+export function bossesOf(boss: string | null | undefined): string[] {
+	return (boss ?? '')
+		.split(',')
+		.map((name) => name.trim())
+		.filter((name) => name !== '')
+}
+
+/** Whether `name` is one of the room's bosses. */
+export function isBoss(
+	boss: string | null | undefined,
+	name: string | null | undefined,
+): boolean {
+	return !!name && bossesOf(boss).includes(name)
+}
+
 /** A skill by name, where the host has sent one. */
 export type SkillOf = (name: string) => Skill | null
 

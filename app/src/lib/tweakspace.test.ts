@@ -2,11 +2,13 @@ import { describe, expect, test } from 'vitest'
 import { BOX_OVERRIDE } from './boxes'
 import { TWEAK_SLOTS } from './setup'
 import {
+	SCRATCH,
 	SLOT_KEYS,
 	defaultCompare,
 	defaultTarget,
 	draftDoc,
 	draftId,
+	draftNameFor,
 	edit,
 	emptyWorkspace,
 	firstComment,
@@ -15,7 +17,6 @@ import {
 	kindOf,
 	listItems,
 	loaded,
-	modifiedCount,
 	parseSide,
 	reset,
 	resolveSide,
@@ -28,7 +29,9 @@ import {
 	slotOf,
 	targetOf,
 	titleOf,
+	unsentCount,
 	type Doc,
+	type Filter,
 	type Side,
 } from './tweakspace'
 
@@ -56,7 +59,10 @@ describe('slots', () => {
 		}
 		expect(slotOf('tweakdefs')).toEqual({ kind: 'defs', index: 0 })
 		expect(slotOf('tweakunits9')).toEqual({ kind: 'units', index: 9 })
-		expect(slotOf('tweakunits10')).toBeNull()
+		// Past the ten written from here: BAR reads any index (#6597).
+		expect(slotOf('tweakunits29')).toEqual({ kind: 'units', index: 29 })
+		expect(slotOf('tweakdefs01')).toBeNull()
+		expect(slotOf('tweakdefs256')).toBeNull()
 		expect(slotOf('startmetal')).toBeNull()
 	})
 
@@ -148,6 +154,15 @@ describe('drafts', () => {
 		expect(isDirty(draft)).toBe(false)
 	})
 
+	test('a draft is named by the header being typed before the one the room holds', () => {
+		expect(draftNameFor(slot({ name: 'Room', buffer: '-- Typed\nx' }))).toBe(
+			'Typed',
+		)
+		expect(draftNameFor(slot({ name: 'Room', buffer: 'x' }))).toBe('Room')
+		expect(draftNameFor(slot({ buffer: 'x' }))).toBe('tweakdefs1')
+		expect(draftNameFor(draftDoc('walls', '-- T3\n{}'))).toBe('walls')
+	})
+
 	test('saving a slot as a draft keeps the slot kind even for an empty buffer', () => {
 		const doc = slot({ kind: 'units', buffer: '' })
 		expect(savedAs(doc, 'blank')).toMatchObject({
@@ -179,50 +194,68 @@ describe('the list', () => {
 		return { ...base, docs }
 	})()
 
-	test('slots come in the order the game applies them, the override last', () => {
+	const titles = (filter: Filter) =>
+		listItems(ws, filter).map((item) => item.title)
+
+	test('the scratch comes first, then the drafts, measured in Lua', () => {
 		const items = listItems(ws)
-		expect(items.map((item) => item.title)).toEqual([...SLOT_KEYS])
-		expect(items[1]).toMatchObject({ dirty: true, size: 4, unit: 'blob' })
-		expect(items[12]).toMatchObject({
-			title: 'tweakunits2',
-			name: 'Golem',
-			empty: false,
-		})
-		expect(items[20]).toMatchObject({
-			title: BOX_OVERRIDE,
-			kind: 'boxes',
-			empty: true,
-		})
+		expect(items.map((item) => item.title)).toEqual([
+			'untitled',
+			'a-draft',
+			'b-draft',
+		])
+		expect(items[0]).toMatchObject({ id: SCRATCH, empty: true, size: 0 })
+		expect(items[1]).toMatchObject({ kind: 'units', size: 9, dirty: false })
 	})
 
-	test('drafts are their own segment, measured in Lua', () => {
-		const items = listItems(ws, { query: '', sort: 'order', segment: 'drafts' })
-		expect(items.map((item) => item.title)).toEqual(['a-draft', 'b-draft'])
-		expect(items[0]).toMatchObject({ kind: 'units', size: 9, unit: 'lua' })
-	})
-
-	test('search matches the key or the header, either case', () => {
+	test('search matches the file name or the header, and never hides the scratch', () => {
+		const named = {
+			...ws,
+			docs: { ...ws.docs, [draftId('c')]: draftDoc('c', '-- Golem\n{}') },
+		}
 		expect(
-			listItems(ws, { query: 'GOLEM', sort: 'order', segment: 'slots' }).map(
+			listItems(named, { query: 'GOLEM', sort: 'name' }).map(
 				(item) => item.title,
 			),
-		).toEqual(['tweakunits2'])
-		expect(
-			listItems(ws, { query: 'defs', sort: 'order', segment: 'slots' }),
-		).toHaveLength(10)
+		).toEqual(['untitled', 'c'])
+		expect(titles({ query: 'b-dr', sort: 'name' })).toEqual([
+			'untitled',
+			'b-draft',
+		])
 	})
 
-	test('sorting by kind keeps defs first, and by name uses the header', () => {
-		const byKind = listItems(ws, { query: '', sort: 'kind', segment: 'slots' })
-		expect(byKind[0]!.kind).toBe('defs')
-		expect(byKind[19]!.kind).toBe('units')
-		expect(byKind[20]!.kind).toBe('boxes')
-		const byName = listItems(ws, { query: '', sort: 'name', segment: 'slots' })
-		expect(byName[0]!.title).toBe('tweakunits2')
+	test('sorting by kind puts units first, as BAR runs them; by name uses the header', () => {
+		expect(titles({ query: '', sort: 'kind' })).toEqual([
+			'untitled',
+			'a-draft',
+			'b-draft',
+		])
+		expect(titles({ query: '', sort: 'name' })).toEqual([
+			'untitled',
+			'a-draft',
+			'b-draft',
+		])
 	})
 
-	test('counts what is modified across both segments', () => {
-		expect(modifiedCount(ws)).toBe(1)
+	test('the scratch is named by its header as it is typed', () => {
+		const typed = {
+			...ws,
+			docs: { ...ws.docs, [SCRATCH]: edit(ws.docs[SCRATCH]!, '-- Mine\nx') },
+		}
+		expect(listItems(typed)[0]).toMatchObject({ name: 'Mine', dirty: true })
+	})
+
+	test('counts only the slots holding an edit the room has not seen', () => {
+		expect(unsentCount(ws)).toBe(1)
+		const drafted = {
+			...ws,
+			docs: {
+				...ws.docs,
+				[draftId('a-draft')]: edit(ws.docs[draftId('a-draft')]!, 'y'),
+				[SCRATCH]: edit(ws.docs[SCRATCH]!, 'x'),
+			},
+		}
+		expect(unsentCount(drafted)).toBe(1)
 	})
 })
 
@@ -285,9 +318,9 @@ describe('comparing', () => {
 	test('the menu lists held slots, edited buffers, drafts, slot changes and the vote', () => {
 		const options = sideOptions(ws, history, 'Yg==')
 		expect(options.map((option) => option.label)).toEqual([
+			'tweakunits2 · room',
 			'tweakdefs1 · room',
 			'tweakdefs1 · edited',
-			'tweakunits2 · room',
 			'walls · file',
 			'#7 tweakdefs1 before by Lathek',
 			'#7 tweakdefs1 after by Lathek',

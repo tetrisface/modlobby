@@ -7,8 +7,10 @@ import {
 	switchModel,
 } from '../../editor/monaco'
 import type { Problem } from '../../ipc/bindings/Problem'
+import type { Symbol } from '../../ipc/bindings/Symbol'
 import type { Assist, Warning } from '../../lib/assist'
 import { KINDS, type Doc, type DocId } from '../../lib/tweakspace'
+import { grabKeys } from './keys'
 import { registerAssist } from './providers'
 
 /** A place to go, stamped so that going to the same line twice still goes. */
@@ -29,21 +31,35 @@ export function EditorHost(props: {
 	warnings: Warning[]
 	assist: Assist
 	goto: Goto | null
+	/** Only where there is width to spare for it: over the whole window. */
+	minimap: boolean
+	/** What the Rust check found at the top level; Ctrl+Shift+O lists it. */
+	outline: Symbol[]
+	/** Format Document (Shift+Alt+F), as the Format button formats. */
+	format: (text: string) => Promise<string>
 	onEdit: (id: DocId, text: string) => void
+	/** Ctrl+S: keep it as a draft. */
 	onSave: () => void
+	/** Ctrl+Enter: what the send bar's primary button does. */
+	onSend: () => void
 }) {
 	let host: HTMLDivElement | undefined
 	let editor: monaco.editor.IStandaloneCodeEditor | undefined
 	const language = () => KINDS[props.doc.kind].language
+	grabKeys(() => editor)
 
 	onMount(() => {
 		if (!host) return
 		editor = createEditor(host, {
-			minimap: { enabled: true },
+			minimap: { enabled: props.minimap },
 			wordWrap: 'on',
 			folding: true,
 			bracketPairColorization: { enabled: true },
 			insertSpaces: false,
+			// StyLua indents every scope, so indentation is the outline; the
+			// Rust check's symbols are single lines and would pin nothing.
+			stickyScroll: { enabled: true, defaultModel: 'indentationModel' },
+			mouseWheelZoom: true,
 		})
 		editor.onDidChangeModelContent(() => {
 			const model = editor?.getModel()
@@ -53,8 +69,27 @@ export function EditorHost(props: {
 		editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () =>
 			props.onSave(),
 		)
+		editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () =>
+			props.onSend(),
+		)
+		// The editor's own font size; the app's scale is the app's. Monaco
+		// ships the actions without keys.
+		const zoom: Array<[number, string]> = [
+			[monaco.KeyCode.Equal, 'editor.action.fontZoomIn'],
+			[monaco.KeyCode.Minus, 'editor.action.fontZoomOut'],
+			[monaco.KeyCode.Digit0, 'editor.action.fontZoomReset'],
+		]
+		for (const [key, action] of zoom)
+			editor.addCommand(monaco.KeyMod.CtrlCmd | key, () =>
+				editor?.trigger('keyboard', action, null),
+			)
 		switchModel(editor, props.doc.id, props.doc.buffer, language())
-		registerAssist(() => ({ assist: props.assist, kind: props.doc.kind }))
+		registerAssist(() => ({
+			assist: props.assist,
+			kind: props.doc.kind,
+			outline: props.outline,
+			format: props.format,
+		}))
 	})
 
 	createEffect(() => {

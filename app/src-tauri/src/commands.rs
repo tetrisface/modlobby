@@ -729,8 +729,9 @@ pub async fn skirmish_tweak_send(
 	lua: String,
 	slot: Slot,
 	direct: bool,
+	minify: bool,
 ) -> Result<Prepared> {
-	let prepared = tweaks::prepare(&lua, slot, direct)?;
+	let prepared = tweaks::prepare(&lua, slot, direct, minify)?;
 	app.client
 		.skirmish(skirmish::Act::Say {
 			text: prepared.command.clone(),
@@ -764,14 +765,19 @@ pub async fn set_side(app: State<'_, App>, side: u8) -> Result<()> {
 	Ok(())
 }
 
-/// Every replay in any BAR data directory, newest first.
+/// Every replay in any BAR data directory, newest first. Each one's header is
+/// read for its length, which is disk work for hundreds of files.
 #[tauri::command]
-pub fn list_replays(app: State<'_, App>) -> Result<Vec<ReplayView>> {
-	Ok(content::Library::new(data_dirs(&app)?)
-		.replays()
-		.into_iter()
-		.map(ReplayView::from)
-		.collect())
+pub async fn list_replays(app: State<'_, App>) -> Result<Vec<ReplayView>> {
+	let library = content::Library::new(data_dirs(&app)?);
+	disk_work(move || {
+		library
+			.replays()
+			.into_iter()
+			.map(ReplayView::from)
+			.collect()
+	})
+	.await
 }
 
 /// Plays a replay. The engine takes a demo file where it would take a
@@ -1197,8 +1203,10 @@ pub async fn friend_action(
 /// SPADS decides what happens next, not us. `[bSet]` is granted as
 /// `battle,pv:player:stopped|100:0` (`commands_default.conf`), so a player
 /// below level 100 has this auto-converted into a vote by `autoCallvote`, and
-/// a spectator is refused outright. The refusal arrives as chat, which is why
-/// nothing here tries to predict it.
+/// a spectator below 100 is refused -- but BarManager raises every boss to
+/// 100, so a boss sets it seated or not. The refusal arrives as chat, which is
+/// why nothing here tries to predict it; the view's `setRefusal` says why
+/// ahead of time only where the refusal is certain.
 #[tauri::command]
 pub async fn set_option(app: State<'_, App>, key: String, value: String) -> Result<()> {
 	if key.is_empty() || !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
@@ -1355,6 +1363,16 @@ pub fn open_maps_dir(app: State<'_, App>) -> Result<()> {
 	open(maps)
 }
 
+/// The folder a game played from here records its replay in. The list also
+/// reads other installs' `demos`, but this is where the new ones land.
+#[tauri::command]
+pub fn open_replays_dir(app: State<'_, App>) -> Result<()> {
+	let demos = data_dirs(&app)?.write.join("demos");
+	std::fs::create_dir_all(&demos)
+		.map_err(|err| ApiError::new("io", format!("making the replays directory: {err}")))?;
+	open(demos)
+}
+
 /// The player's files — engine settings, hotkeys, widget state — as the
 /// Settings page shows them: where they can be copied from, and the copies
 /// taken before each launch.
@@ -1477,10 +1495,16 @@ pub async fn tweak_format(app: State<'_, App>, lua: String, kind: Kind) -> Resul
 	Ok(lua_work(move || tweaks::format(&lua, kind, &config)).await??)
 }
 
-/// Minifies, encodes and measures — the gauge the editor shows. Sends nothing.
+/// Encodes and measures — the gauge the editor shows. Sends nothing. The Lua
+/// goes as written unless `minify` asks otherwise.
 #[tauri::command]
-pub async fn tweak_prepare(lua: String, slot: Slot, direct: bool) -> Result<Prepared> {
-	Ok(lua_work(move || tweaks::prepare(&lua, slot, direct)).await??)
+pub async fn tweak_prepare(
+	lua: String,
+	slot: Slot,
+	direct: bool,
+	minify: bool,
+) -> Result<Prepared> {
+	Ok(lua_work(move || tweaks::prepare(&lua, slot, direct, minify)).await??)
 }
 
 /// Prepares again here rather than trusting the webview, refuses anything the
@@ -1491,8 +1515,9 @@ pub async fn tweak_send(
 	lua: String,
 	slot: Slot,
 	direct: bool,
+	minify: bool,
 ) -> Result<Prepared> {
-	let prepared = tweaks::prepare(&lua, slot, direct)?;
+	let prepared = tweaks::prepare(&lua, slot, direct, minify)?;
 	if !prepared.gauge.fits {
 		return Err(ApiError::new(
 			"tooLong",
@@ -1750,6 +1775,11 @@ pub struct ReplayView {
 	pub engine: String,
 	#[ts(type = "number")]
 	pub bytes: u64,
+	/// Seconds of game time, which stops for pauses and counts the whole game
+	/// even for someone who joined late. `null` for a game left before it ended.
+	pub game_seconds: Option<u32>,
+	/// Seconds on the clock, from the game starting to it ending.
+	pub wall_seconds: Option<u32>,
 }
 
 impl From<content::replays::Replay> for ReplayView {
@@ -1760,6 +1790,8 @@ impl From<content::replays::Replay> for ReplayView {
 			map: replay.map,
 			engine: replay.engine,
 			bytes: replay.bytes,
+			game_seconds: replay.length.map(|length| length.game),
+			wall_seconds: replay.length.map(|length| length.wall),
 		}
 	}
 }

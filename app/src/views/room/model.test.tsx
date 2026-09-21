@@ -627,26 +627,31 @@ describe('the setup pane', () => {
 		expect(rows(container)).toBe(1)
 	})
 
-	test('Modding shows its slots as rows, and the grid only from its group', async () => {
+	test('Modding shows its slots as the same rows everywhere, with room for a new tweak', async () => {
+		const slotKeys = () =>
+			[...container.querySelectorAll('.setup-detail .opt.tweak .k')].map(
+				(key) => key.textContent,
+			)
 		const { container } = await open(alone([]))
 		fireEvent.click(setupTab(container, 'Modding'))
 		await settle()
-		expect(sections(container)).toEqual([])
-		expect(container.textContent).toContain(
-			"Every setting in this tab is on BAR's default.",
-		)
+		// Nothing is changed, and each kind still offers the slot its next tweak goes to.
+		expect(sections(container)).toEqual(['Tweak slots'])
+		// In the order BAR runs them: every tweakunits before any tweakdefs.
+		expect(slotKeys()).toEqual(['tweakunits', 'tweakdefs'])
+		expect(setupTab(container, 'Modding').querySelector('.badge')).toBeNull()
 
 		fireEvent.click(reveal(container))
 		await settle()
 		expect(sections(container)).toEqual(['Tweak slots'])
 		expect(rows(container)).toBe(20)
-		expect(container.querySelector('.slot-grid')).toBeNull()
 
 		const group = [
 			...container.querySelectorAll<HTMLButtonElement>('.groups .group'),
 		].find((button) => button.textContent?.startsWith('Tweak slots'))!
 		fireEvent.click(group)
 		await settle()
-		expect(container.querySelector('.slot-grid')).toBeTruthy()
+		expect(slotKeys()).toHaveLength(20)
+		expect(container.querySelector('.setup-drafts')?.textContent).toBe('Editor')
 	})
 })

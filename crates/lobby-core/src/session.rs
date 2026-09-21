@@ -563,13 +563,18 @@ impl Session {
 		Ok(effects)
 	}
 
-	/// Whether SPADS has told us we boss the room we are in.
+	/// Whether SPADS has told us we boss the room we are in. A room can have
+	/// several: BarManager sends them joined with commas
+	/// (`barmanager.py`, `','.join(spads.getBosses())`).
 	pub fn is_boss(&self) -> bool {
+		let Some(me) = self.state.me.as_deref() else {
+			return false;
+		};
 		self.state
 			.my_battle
 			.as_ref()
 			.and_then(|my| my.boss.as_deref())
-			.is_some_and(|boss| Some(boss) == self.state.me.as_deref())
+			.is_some_and(|bosses| bosses.split(',').any(|boss| boss.trim() == me))
 	}
 
 	/// Sends a direct message. Nothing appears until the server echoes it back.
@@ -2264,9 +2269,9 @@ mod tests {
 		);
 		feed(
 			&mut s,
-			&[r#"SAIDBATTLEEX host * BarManager|{"BattleStateChanged": {"boss": "me"}}"#],
+			&[r#"SAIDBATTLEEX host * BarManager|{"BattleStateChanged": {"boss": "alice,me"}}"#],
 		);
-		assert!(s.is_boss());
+		assert!(s.is_boss(), "the second of two bosses is still one");
 		assert_eq!(
 			areas(&s.say_battle(paste, PasteBurst::Boss).unwrap()),
 			[Area::BattlePaste; 3]

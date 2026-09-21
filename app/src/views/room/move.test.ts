@@ -6,6 +6,8 @@ import {
 	fakeRoom,
 	myBattle,
 	recordingIo,
+	status,
+	user,
 } from './fixture'
 import type { Calls } from './fixture'
 import {
@@ -16,6 +18,7 @@ import {
 	movable,
 	moveTo,
 	setBonus,
+	setRefusal,
 	type Target,
 } from './move'
 
@@ -67,6 +70,72 @@ describe('who may move whom', () => {
 	test("and somebody else's AI is not, unless you boss it", () => {
 		expect(movable(served([], 'alice'), THEIR_BOT)).toBe(false)
 		expect(movable(served([], 'me'), THEIR_BOT)).toBe(true)
+	})
+})
+
+describe('whether a setting we change would be taken', () => {
+	/** A room on the server: seated or not, who bosses it, and what else is so. */
+	function room(
+		over: {
+			seated?: boolean
+			boss?: string | null
+			moderator?: boolean
+			running?: boolean
+			preset?: string | null
+		} = {},
+	) {
+		const me = user('me', {
+			battleStatus: status({ player: over.seated ?? true }),
+		})
+		me.status.moderator = over.moderator ?? false
+		return fakeRoom({
+			caps: SERVED,
+			users: () => ({ me }),
+			my: () =>
+				myBattle({ boss: over.boss ?? null, preset: over.preset ?? null }),
+			running: () =>
+				over.running ? { id: 1, ip: '1.2.3.4', port: 8452 } : null,
+		})
+	}
+
+	test('a room of our own takes anything', () => {
+		expect(setRefusal(fakeRoom({ caps: ALONE }))).toBeNull()
+	})
+
+	test('a player may between games; a spectator is told to join', () => {
+		expect(setRefusal(room())).toBeNull()
+		expect(setRefusal(room({ seated: false }))).toBe(
+			'Join as a player to change settings',
+		)
+		expect(setRefusal(room({ running: true }))).toBe(
+			'Settings can be changed once the game is over',
+		)
+	})
+
+	test('a boss sets from anywhere, and is still one of two', () => {
+		// BarManager raises every boss to level 100, which bSet needs for itself.
+		expect(setRefusal(room({ seated: false, boss: 'me' }))).toBeNull()
+		expect(setRefusal(room({ running: true, boss: 'me' }))).toBeNull()
+		expect(setRefusal(room({ seated: false, boss: 'alice, me' }))).toBeNull()
+	})
+
+	test('with a boss in the room, nobody else may', () => {
+		expect(setRefusal(room({ boss: 'alice' }))).toBe(
+			'Only the room’s boss can change settings',
+		)
+	})
+
+	test('a moderator may, even watching, even with a boss', () => {
+		expect(
+			setRefusal(room({ seated: false, boss: 'alice', moderator: true })),
+		).toBeNull()
+	})
+
+	test('an event room takes it from its boss only', () => {
+		expect(setRefusal(room({ preset: 'event' }))).toBe(
+			'Only a boss can change settings in an event',
+		)
+		expect(setRefusal(room({ preset: 'event', boss: 'me' }))).toBeNull()
 	})
 })
 

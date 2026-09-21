@@ -1,6 +1,7 @@
 import { Select } from '../components/Select'
 import { For, Show, createMemo, createSignal } from 'solid-js'
 import { describeError } from '../ipc/client'
+import { isBoss } from '../lib/roster'
 import { pushNotice } from '../store/chat'
 import { useRoom } from './room/model'
 
@@ -35,10 +36,7 @@ export function HostBar() {
 		return PRESETS.includes(now) ? PRESETS : [now, ...PRESETS]
 	})
 
-	const boss = createMemo(() => {
-		const who = room.my()?.boss
-		return who !== null && who === room.me()
-	})
+	const boss = createMemo(() => isBoss(room.my()?.boss, room.me()))
 
 	async function run(command: string) {
 		setBusy(true)

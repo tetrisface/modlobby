@@ -21,11 +21,14 @@ pub enum Slot {
 }
 
 impl Slot {
-	/// Every tweak slot, in the order the game applies them.
+	/// The slots written from here, in the order BAR runs them: every
+	/// `tweakunits` before any `tweakdefs`, each kind by index
+	/// (`unitdefs_post.lua`). BAR reads any index and declares up to 29; a
+	/// higher one somebody else set still [`parse`](Slot::parse)s.
 	pub fn all() -> Vec<Slot> {
 		(0..=9)
-			.map(Slot::Defs)
-			.chain((0..=9).map(Slot::Units))
+			.map(Slot::Units)
+			.chain((0..=9).map(Slot::Defs))
 			.collect()
 	}
 
@@ -64,10 +67,13 @@ impl Slot {
 				key.strip_prefix("tweakunits")?,
 			)
 		};
+		// Slot 0 has no digits, so a leading zero is some other key.
 		let index = if rest.is_empty() {
 			0
+		} else if rest.starts_with('0') {
+			return None;
 		} else {
-			rest.parse().ok().filter(|i| (1..=9).contains(i))?
+			rest.parse().ok()?
 		};
 		Some(make(index))
 	}
@@ -106,7 +112,13 @@ mod tests {
 				Some(slot)
 			);
 		}
-		assert_eq!(Slot::parse("tweakdefs10"), None);
+		assert_eq!(Slot::all()[0], Slot::Units(0), "units run first");
+		// Past the ten written from here: BAR declares up to 29 and reads any.
+		assert_eq!(Slot::parse("tweakdefs29"), Some(Slot::Defs(29)));
+		assert_eq!(Slot::Defs(29).key(), "tweakdefs29");
+		assert_eq!(Slot::parse("tweakdefs01"), None);
+		assert_eq!(Slot::parse("tweakunits256"), None);
+		assert_eq!(Slot::parse("tweakunitsx"), None);
 		assert_eq!(Slot::parse("map_tweaklava"), None);
 		assert_eq!(
 			Slot::parse("game/modoptions/mapmetadata_startbox_override"),

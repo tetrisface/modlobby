@@ -207,6 +207,9 @@ describe('the room with no server behind it', () => {
 					},
 				]
 			if (command === 'game_modoptions') return OPTIONS
+			// What the setup pane's tweak workspace asks the game and engine.
+			if (command === 'game_unit_names') return []
+			if (command === 'engine_def_tags') return { weapon: [] }
 			return null
 		})
 		const { container } = await open()

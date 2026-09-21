@@ -161,8 +161,8 @@ export function recordingIo(calls: Calls): RoomIo {
 			note('pveScore')
 			return null
 		},
-		tweakSend: async (lua, slot, direct) => {
-			note('tweakSend', lua, slot, direct)
+		tweakSend: async (lua, slot, direct, minify) => {
+			note('tweakSend', lua, slot, direct, minify)
 			return NOTHING_PREPARED
 		},
 		tweakClear: async (slot) => note('tweakClear', slot),
