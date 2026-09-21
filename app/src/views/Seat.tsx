@@ -18,12 +18,12 @@ import { applySettings, settings } from '../store/settings'
 import { useRoom, type RoomModel } from './room/model'
 import { setBonus as sendBonus } from './room/move'
 
-/** side 2 is Random; Legion needs its modoption, so it is offered last. */
+/** The factions, then side 2, Random, which is none of them. */
 const SIDES = [
 	{ id: 0, label: 'Armada' },
 	{ id: 1, label: 'Cortex' },
-	{ id: 2, label: 'Random' },
 	{ id: 3, label: 'Legion' },
+	{ id: 2, label: 'Random' },
 ]
 
 /** The lowest team number nobody else in the room holds. */

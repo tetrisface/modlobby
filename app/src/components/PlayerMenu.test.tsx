@@ -1,6 +1,10 @@
 import { cleanup, fireEvent, render } from '@solidjs/testing-library'
+import { invoke } from '@tauri-apps/api/core'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { BotView } from '../ipc/bindings/BotView'
+import { emptyLobby, setLobby } from '../store/lobby'
+import { seedSession } from '../store/testing'
+import { myBattle, status, user } from '../views/room/fixture'
 import {
 	PlayerMenu,
 	showBotMenu,
@@ -165,5 +169,57 @@ describe('the bonus, from the row menu', () => {
 		showPlayerMenu('alice', press(), { moves: moves(given) })
 		await settle()
 		expect(labels(container)).toContain('Bonus')
+	})
+})
+
+describe('boss and unboss', () => {
+	/** A room with us and alice in it, bossed by `boss`. */
+	function room(player: boolean, boss: string | null) {
+		setLobby(emptyLobby())
+		seedSession({
+			me: 'me',
+			users: {
+				me: user('me', { battleStatus: status({ player }) }),
+				alice: user('alice'),
+			},
+			myBattle: myBattle({ boss }),
+		})
+	}
+
+	async function menuFor(name: string) {
+		const { container } = render(() => <PlayerMenu />)
+		showPlayerMenu(name, press())
+		await settle()
+		return container
+	}
+
+	test('a seated player may call the vote, and the words go to the room', async () => {
+		vi.mocked(invoke).mockClear()
+		room(true, null)
+		const container = await menuFor('alice')
+		expect(labels(container)).toContain('Boss')
+		click(
+			[...container.querySelectorAll('button')].find(
+				(b) => b.textContent === 'Boss',
+			) as HTMLElement,
+		)
+		await settle()
+		expect(invoke).toHaveBeenCalledWith('say_battle', { text: '!boss alice' })
+		cleanup()
+		expect(labels(await menuFor('me')), 'yourself too').toContain('Boss')
+	})
+
+	test('a boss is offered Unboss, yourself included', async () => {
+		room(false, 'alice,me')
+		expect(labels(await menuFor('alice'))).toContain('Unboss')
+		cleanup()
+		expect(labels(await menuFor('me'))).toContain('Unboss')
+	})
+
+	test('a spectator in an unbossed room is offered neither', async () => {
+		room(false, null)
+		const offered = labels(await menuFor('alice'))
+		expect(offered).not.toContain('Boss')
+		expect(offered).not.toContain('Unboss')
 	})
 })

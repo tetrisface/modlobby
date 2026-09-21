@@ -164,9 +164,12 @@ export function PlayerMenu() {
 	const say = (command: string) => api.sayBattle(command)
 
 	async function act(what: string, run: () => Promise<void>) {
+		// Started before closing: an entry reads its target as it starts, and a
+		// closed menu has no target left to read (a stale `<Show>` read).
+		const running = run()
 		close()
 		try {
-			await run()
+			await running
 		} catch (error) {
 			pushNotice('warning', `${what}: ${describeError(error)}`)
 		}
@@ -227,6 +230,13 @@ export function PlayerMenu() {
 				const bossing = () => {
 					const room = roomSession()
 					return isBoss(room?.myBattle?.boss, room?.me)
+				}
+				/** Whether we sit in the room: a player may call SPADS votes. */
+				const playing = () => {
+					const room = roomSession()
+					const me = room?.me
+					if (!room || !me) return false
+					return room.users[me]?.battleStatus?.player ?? false
 				}
 
 				/** `stay`: the entry opens something in the menu, so it stays. */
@@ -294,6 +304,16 @@ export function PlayerMenu() {
 					if (alongside && bossing()) {
 						entries.push(['Move to spectators', () => say(`!spec ${name()}`)])
 						entries.push(['Kick from the room', () => say(`!kick ${name()}`)])
+					}
+					// Yourself included: `!boss me` takes a room nobody runs, and
+					// `!unboss me` hands it back. A boss's word is final, a player's
+					// calls a vote, and a spectator's is refused (`commands_*.conf`).
+					if (together() && (bossing() || playing())) {
+						entries.push(
+							isBoss(roomSession()?.myBattle?.boss, name())
+								? ['Unboss', () => say(`!unboss ${name()}`)]
+								: ['Boss', () => say(`!boss ${name()}`)],
+						)
 					}
 
 					const room = theirRoom()
