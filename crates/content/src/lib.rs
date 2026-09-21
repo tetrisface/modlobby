@@ -686,7 +686,8 @@ mod union_tests {
 				.path()
 				.join("demos")
 				.join("2026-08-29_13-17-21-351_Supreme Isthmus v2.1_2026.07.04.sdfz"),
-			b"",
+			// An empty demo is a game still running, which `replays` leaves out.
+			b"x",
 		)
 		.unwrap();
 		let library = Library::new(DataDirs {
