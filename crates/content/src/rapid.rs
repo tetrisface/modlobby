@@ -115,10 +115,14 @@ pub fn parse_versions(unpacked: &str) -> Vec<Version> {
 type Names = HashMap<String, Vec<String>>;
 
 /// The first of `theirs` that carries one of BAR's names with contents BAR
-/// never published under it.
+/// never published under it -- other than a copy already looked at, which
+/// the runtime never fetches from anyone but BAR ([`recoil::STALE_COPIES`]).
 pub fn shadowed<'a>(bars: &Names, theirs: &'a [Version]) -> Option<&'a str> {
 	theirs
 		.iter()
+		.filter(|version| {
+			!recoil::STALE_COPIES.contains(&(version.name.as_str(), version.md5.as_str()))
+		})
 		.find(|version| {
 			bars.get(&version.name)
 				.is_some_and(|published| !published.contains(&version.md5))
@@ -140,10 +144,11 @@ pub struct Vetter {
 }
 
 impl Vetter {
-	pub fn new(client: reqwest::Client) -> Self {
+	/// `bars_master` is BAR's master index, as its launcher config names it.
+	pub fn new(client: reqwest::Client, bars_master: impl Into<String>) -> Self {
 		Self {
 			client,
-			bars_master: recoil::RAPID_REPO_MASTER.to_owned(),
+			bars_master: bars_master.into(),
 			https_only: true,
 			bars: Mutex::new(None),
 		}
@@ -153,9 +158,8 @@ impl Vetter {
 	#[cfg(test)]
 	fn against(client: reqwest::Client, bars_master: &str) -> Self {
 		Self {
-			bars_master: bars_master.to_owned(),
 			https_only: false,
-			..Self::new(client)
+			..Self::new(client, bars_master)
 		}
 	}
 
@@ -390,7 +394,7 @@ mod tests {
 	#[tokio::test]
 	async fn plain_http_is_refused_before_anything_is_asked() {
 		let (server, _) = served("mods:test,bbbb,,Somebody's Mod v1\n").await;
-		let vetter = Vetter::new(crate::http::client("test"));
+		let vetter = Vetter::new(crate::http::client("test"), recoil::RAPID_REPO_MASTER);
 		let refused = vetter
 			.vet(&format!("{}/theirs/repos.gz", server.uri()))
 			.await;
@@ -417,6 +421,26 @@ mod tests {
 			.filter(|request| request.url.path() == "/bar/byar/versions.gz")
 			.count();
 		assert_eq!(bars_index, 1);
+	}
+
+	#[test]
+	fn a_stale_copy_already_looked_at_is_not_held_against_its_server() {
+		let (name, md5) = recoil::STALE_COPIES[0];
+		let bars: Names = [(
+			name.to_owned(),
+			vec!["f7abf7328ee9025a7ba3e63d6f0f3b4e".to_owned()],
+		)]
+		.into();
+		let stale = Version {
+			md5: md5.to_owned(),
+			name: name.to_owned(),
+		};
+		assert_eq!(shadowed(&bars, std::slice::from_ref(&stale)), None);
+		let other = Version {
+			md5: "0000".into(),
+			..stale
+		};
+		assert_eq!(shadowed(&bars, &[other]), Some(name));
 	}
 
 	#[tokio::test]

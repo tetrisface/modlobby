@@ -92,6 +92,7 @@ async fn a_guest_logs_in_joins_talks_and_hears_the_game_start() {
 		ports: vec![port],
 		allow_plain: true,
 		preferred: None,
+		roots_only: false,
 	};
 	client
 		.login(endpoint, LoginRequest::new("bob", "*", "test", "h h"))

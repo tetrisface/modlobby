@@ -87,6 +87,7 @@ impl Server {
 			ports: self.ports.clone(),
 			allow_plain: self.allow_unencrypted,
 			preferred: None,
+			roots_only: false,
 		}
 	}
 }
@@ -132,8 +133,10 @@ async fn main() -> anyhow::Result<()> {
 			Ok(())
 		}
 		Command::Rapid { url } => {
-			let vetter =
-				content::rapid::Vetter::new(content::http::client(env!("CARGO_PKG_VERSION")));
+			let vetter = content::rapid::Vetter::new(
+				content::http::client(env!("CARGO_PKG_VERSION")),
+				recoil::RAPID_REPO_MASTER,
+			);
 			for (repo, versions) in vetter.published(&url).await? {
 				println!("{} ({})", repo.name, repo.url);
 				for version in versions {
@@ -149,7 +152,11 @@ async fn main() -> anyhow::Result<()> {
 				Transport::connect(&server.endpoint(), ThrottlePolicy::default())
 					.await
 					.with_context(|| format!("reaching {}", server.server))?;
-			println!("{}: {way}", server.server);
+			let pinned = way
+				.pin
+				.map(|pin| format!(", certificate {pin} trusted on first use"))
+				.unwrap_or_default();
+			println!("{}: {way}{pinned}", server.server);
 			transport.shutdown().await;
 			Ok(())
 		}

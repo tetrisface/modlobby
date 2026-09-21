@@ -3,12 +3,7 @@ import { Portal } from 'solid-js/web'
 import { Glyph } from './icons'
 import { Linkify, openExternal } from './Linkify'
 import { api, describeError, errorCode } from '../ipc/client'
-import {
-	BAR_HOST,
-	forgotPasswordUrl,
-	serverId,
-	serverName,
-} from '../lib/servers'
+import { forgotPasswordUrl, serverId, serverName } from '../lib/servers'
 import { lobby } from '../store/lobby'
 import { applySettings, settings } from '../store/settings'
 
@@ -402,7 +397,7 @@ export function LoginForm(props: {
 			</Show>
 			<Show
 				when={
-					mode() === 'register' && !awaitingCode() && props.server === BAR_HOST
+					mode() === 'register' && !awaitingCode() && entry()?.builtin === 'bar'
 				}
 			>
 				<p class='muted'>
@@ -466,7 +461,7 @@ export function LoginForm(props: {
 				</p>
 			</Show>
 			<p class='muted login-forgot'>
-				<Show when={props.server !== BAR_HOST}>
+				<Show when={entry()?.builtin !== 'bar'}>
 					Server: {entry() ? serverName(entry()!) : props.server}
 					<Show when={entry()}>{' · '}</Show>
 				</Show>

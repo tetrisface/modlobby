@@ -3,11 +3,14 @@
 
 use std::sync::Arc;
 
+use content::launcher::BarConfig;
 use lobby_runtime::{Client, Hardware, IcmpEcho, platform};
+use settings::model::Builtin;
 use settings::{
 	CredentialStore, KeyringStore, LoginGuard, MemoryStore, RejoinMemory, Store, UpdateMemory,
+	credentials,
 };
-use spring_protocol::ThrottlePolicy;
+use spring_protocol::{ThrottlePolicy, server_id};
 
 /// How long a map index that could not be fetched is not asked for again.
 ///
@@ -77,6 +80,11 @@ pub struct App {
 	pub engine_downloads: tokio::sync::Mutex<()>,
 	/// The local network: where the `lan` server points, and the room hosted.
 	pub lan: crate::lan::Lan,
+	/// Where BAR's lobby, games and maps are, as BAR's launcher config said
+	/// at this start.
+	pub bar: BarConfig,
+	/// Whether that was fetched recently enough to stand for the run.
+	bar_fresh: bool,
 }
 
 impl App {
@@ -88,6 +96,11 @@ impl App {
 		let http = content::http::client(env!("CARGO_PKG_VERSION"));
 		let settings = Store::open(settings::config_dir())?;
 		let cache_dir = settings.dir().join("cache");
+		let credentials = credential_store();
+		// Before anything connects, so BAR's entry is where BAR says it is.
+		let held = content::launcher::cached(&cache_dir, std::time::SystemTime::now());
+		follow_bar(&settings, credentials.as_ref(), &held.applied, &held.config);
+		content::launcher::mark_applied(&cache_dir, &held.config);
 		let hardware = platform::detect();
 		let lan = crate::lan::Lan::default();
 		let client = tauri::async_runtime::block_on(async {
@@ -107,11 +120,14 @@ impl App {
 			news_read: news::Memory::new(settings.dir()),
 			client,
 			settings,
-			credentials: credential_store(),
+			credentials,
 			hardware,
 			pve: pve::Service::new(http.clone(), pve::ENDPOINT),
 			thumbs: content::map_thumb::Service::new(http.clone(), &cache_dir),
-			rapid: std::sync::Arc::new(content::rapid::Vetter::new(http.clone())),
+			rapid: std::sync::Arc::new(content::rapid::Vetter::new(
+				http.clone(),
+				held.config.rapid_master.clone(),
+			)),
 			http,
 			map_index: tokio::sync::Mutex::new(MapIndexHeld::default()),
 			news: tokio::sync::Mutex::new(None),
@@ -119,7 +135,35 @@ impl App {
 			game_files: Arc::new(content::game_cache::GameFileCache::new()),
 			engine_downloads: tokio::sync::Mutex::new(()),
 			lan,
+			bar: held.config,
+			bar_fresh: held.fresh,
 		})
+	}
+
+	/// Asks for BAR's launcher config again once the copy on disk is a week
+	/// old. What it says takes hold at the next start, before anything
+	/// connects; a server moved mid-session would be a stranger thing.
+	pub async fn refresh_bar_config(&self) {
+		if self.bar_fresh {
+			return;
+		}
+		let fetched = content::launcher::refresh(
+			&self.http,
+			content::launcher::CONFIG_URL,
+			&self.settings.dir().join("cache"),
+			std::time::SystemTime::now(),
+		)
+		.await;
+		match fetched {
+			Ok(config) if config != self.bar => {
+				tracing::info!(
+					?config,
+					"BAR's launcher config changed; it takes hold at the next start"
+				)
+			}
+			Ok(_) => tracing::debug!("BAR's launcher config: as it was"),
+			Err(err) => tracing::warn!(%err, "BAR's launcher config: not refreshed"),
+		}
 	}
 
 	/// BAR's map index: each map's picture and its spring name.
@@ -230,6 +274,56 @@ impl App {
 	}
 }
 
+/// Moves BAR's entry with BAR's launcher config: whatever of its host, port
+/// and name still says what the config said when last followed (`was`) now
+/// says what it says (`now`), and a password kept for the old host is kept
+/// for the new one too. What somebody set otherwise stays theirs: a host
+/// typed over BAR's is somewhere they chose to go.
+fn follow_bar(settings: &Store, store: &dyn CredentialStore, was: &BarConfig, now: &BarConfig) {
+	if was == now {
+		return;
+	}
+	let mut carried = Vec::new();
+	let followed = settings.update(|settings| {
+		let bars = settings
+			.servers
+			.iter_mut()
+			.filter(|entry| entry.builtin == Some(Builtin::Bar));
+		for entry in bars {
+			if entry.host == was.host {
+				entry.host.clone_from(&now.host);
+				if !entry.username.is_empty() {
+					carried.push(entry.username.clone());
+				}
+			}
+			if entry.ports == [was.port] {
+				entry.ports = vec![now.port];
+			}
+			if entry.name == was.name {
+				entry.name.clone_from(&now.name);
+			}
+		}
+	});
+	if let Err(err) = followed {
+		tracing::warn!(%err, "BAR's server could not follow its launcher config");
+		return;
+	}
+	let (from, to) = (server_id(&was.host), server_id(&now.host));
+	if from == to {
+		return;
+	}
+	tracing::info!(%from, %to, "BAR's lobby moved, as its launcher config says");
+	for username in carried {
+		let moved = credentials::password(store, &from, &username).and_then(|kept| match kept {
+			Some(password) => credentials::keep(store, &to, &username, &password),
+			None => Ok(()),
+		});
+		if let Err(err) = moved {
+			tracing::warn!(%err, %username, "the password did not move with BAR's lobby");
+		}
+	}
+}
+
 /// Set to `memory` to keep passwords for this run only, in memory.
 ///
 /// The OS keyring is per user, not per `MODLOBBY_CONFIG_DIR`: a second
@@ -246,4 +340,56 @@ fn credential_store() -> Arc<dyn CredentialStore> {
 		return Arc::new(MemoryStore::default());
 	}
 	Arc::new(KeyringStore)
+}
+
+#[cfg(test)]
+mod tests {
+	use settings::model::ServerEntry;
+
+	use super::*;
+
+	#[test]
+	fn bars_entry_follows_the_config_but_keeps_what_was_set_by_hand() {
+		let dir = tempfile::tempdir().unwrap();
+		let store = Store::open(dir.path()).unwrap();
+		store
+			.update(|settings| {
+				settings.servers[0].username = "me".into();
+				settings.servers[0].name = "Main".into();
+			})
+			.unwrap();
+		let passwords = MemoryStore::default();
+		credentials::keep(&passwords, settings::model::DEFAULT_HOST, "me", "secret").unwrap();
+
+		let was = BarConfig::default();
+		let now = BarConfig {
+			host: "server5.beyondallreason.info".into(),
+			port: 8300,
+			name: "BAR 5".into(),
+			..BarConfig::default()
+		};
+		follow_bar(&store, &passwords, &was, &now);
+
+		assert_eq!(
+			store.get().servers[0],
+			ServerEntry {
+				host: now.host.clone(),
+				ports: vec![8300],
+				name: "Main".into(),
+				username: "me".into(),
+				..ServerEntry::bar()
+			}
+		);
+		assert_eq!(
+			credentials::password(&passwords, "server5.beyondallreason.info", "me").unwrap(),
+			Some("secret".into())
+		);
+
+		// A host typed over BAR's is not moved.
+		store
+			.update(|settings| settings.servers[0].host = "integration.example".into())
+			.unwrap();
+		follow_bar(&store, &passwords, &now, &was);
+		assert_eq!(store.get().servers[0].host, "integration.example");
+	}
 }

@@ -91,8 +91,10 @@ impl Store {
 		let before = self.get();
 		let mut after = before.clone();
 		change(&mut after);
-		// What a change implies, whoever made it: the LAN's row for its switch,
-		// a server's startup login for the account's.
+		// What a change implies, whoever made it: the servers every install
+		// has, the LAN's row for its switch, a server's startup login for the
+		// account's.
+		after.ensure_builtins();
 		after.ensure_lan();
 		after.follow_auto_login(&before);
 		if after == before {
@@ -158,6 +160,7 @@ fn parse(path: &Path, text: &str) -> Result<Settings, Error> {
 	if !listed {
 		settings.migrate();
 	}
+	settings.ensure_builtins();
 	settings.ensure_lan();
 	Ok(settings)
 }
@@ -313,6 +316,7 @@ mod tests {
 					channels: vec!["main".into(), "newbies".into()],
 					..crate::model::ServerEntry::bar()
 				},
+				crate::model::ServerEntry::recoil(),
 				// No local network: it is off until it is asked for, and a
 				// file from before it existed never asked.
 			]
@@ -349,11 +353,28 @@ mod tests {
 	}
 
 	#[test]
-	fn a_list_emptied_on_purpose_stays_empty() {
+	fn an_emptied_list_still_has_the_servers_every_install_has() {
 		let dir = tempfile::tempdir().unwrap();
 		let path = dir.path().join(FILE_NAME);
-		std::fs::write(&path, r#"{ "servers": [], "server": { "host": "x" } }"#).unwrap();
-		assert!(load(&path).unwrap().servers.is_empty());
+		std::fs::write(
+			&path,
+			r#"{ "servers": [{ "host": "mods.example" }], "server": { "host": "x" } }"#,
+		)
+		.unwrap();
+		let hosts: Vec<String> = load(&path)
+			.unwrap()
+			.servers
+			.into_iter()
+			.map(|entry| entry.host)
+			.collect();
+		assert_eq!(
+			hosts,
+			[
+				"server4.beyondallreason.info",
+				"lobby.recoilengine.org",
+				"mods.example"
+			]
+		);
 	}
 
 	#[test]
@@ -366,7 +387,13 @@ mod tests {
 		)
 		.unwrap();
 		let reloaded = store.reload().unwrap().unwrap();
-		assert_eq!(reloaded.servers, vec![crate::model::ServerEntry::bar()]);
+		assert_eq!(
+			reloaded.servers,
+			vec![
+				crate::model::ServerEntry::bar(),
+				crate::model::ServerEntry::recoil()
+			]
+		);
 	}
 
 	#[test]

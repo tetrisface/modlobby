@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime};
 use lobby_runtime::{ClientError, launch, player_files};
 use lobby_ui::UiMessage;
 use serde::Serialize;
-use settings::model::ServerEntry;
+use settings::model::{Builtin, ServerEntry};
 use settings::{CredentialError, Settings, credentials};
 use spring_protocol::{Endpoint, LoginRequest, TransportError, server_id};
 use tauri::ipc::Channel;
@@ -42,6 +42,9 @@ impl From<ClientError> for ApiError {
 			ClientError::NotConnected => "notConnected",
 			ClientError::AlreadyConnected => "alreadyConnected",
 			ClientError::Transport(TransportError::NoEncryption(_)) => "noEncryption",
+			ClientError::Transport(TransportError::CertificateChanged { .. }) => {
+				"certificateChanged"
+			}
 			ClientError::Transport(_) => "transport",
 			ClientError::Refused(_) => "refused",
 			ClientError::TooLong(_) => "tooLong",
@@ -151,6 +154,7 @@ fn endpoint(entry: &ServerEntry) -> Endpoint {
 		ports: entry.ports.clone(),
 		allow_plain: entry.allow_unencrypted,
 		preferred: None,
+		roots_only: entry.builtin == Some(Builtin::Bar),
 	}
 }
 
@@ -396,7 +400,15 @@ fn rapid_refusal(err: content::rapid::Error) -> ApiError {
 	ApiError::new("input", err.to_string())
 }
 
-/// Forgets which way into `host` worked, so the next connect tries every way.
+/// Where BAR's lobby, games and maps are, as its launcher config said at
+/// this start: what an empty address on a server card stands for.
+#[tauri::command]
+pub async fn bar_config(app: State<'_, App>) -> Result<content::launcher::BarConfig> {
+	Ok(app.bar.clone())
+}
+
+/// Forgets which way into `host` worked -- and the certificate trusted
+/// there, if one was -- so the next connect tries every way.
 #[tauri::command]
 pub async fn forget_way(app: State<'_, App>, host: String) -> Result<()> {
 	app.client.forget_way(host).await?;

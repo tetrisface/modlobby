@@ -225,6 +225,21 @@
         }
       ]
     },
+    "Builtin": {
+      "description": "A server every install has: its card stays on the list.",
+      "oneOf": [
+        {
+          "description": "BAR's own. Where it is follows BAR's launcher config: a host, port\nor name that still says what the config said is moved with it.",
+          "type": "string",
+          "const": "bar"
+        },
+        {
+          "description": "Recoil's, the engine's own lobby.",
+          "type": "string",
+          "const": "recoil"
+        }
+      ]
+    },
     "Chat": {
       "type": "object",
       "properties": {
@@ -445,6 +460,18 @@
           "type": [
             "boolean",
             "null"
+          ],
+          "default": null
+        },
+        "builtin": {
+          "description": "Which of the servers every install has this is, if it is one.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Builtin"
+            },
+            {
+              "type": "null"
+            }
           ],
           "default": null
         },

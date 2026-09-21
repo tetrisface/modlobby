@@ -10,9 +10,6 @@ export function serverId(host: string): string {
 	return host.trim().toLowerCase()
 }
 
-/** BAR's own server, as `serverId` names it. */
-export const BAR_HOST = 'server4.beyondallreason.info'
-
 /** What a server is called: its name, else its host. */
 export function serverName(entry: ServerEntry): string {
 	return entry.name.trim() || entry.host.trim()
@@ -84,24 +81,25 @@ export function guessedRapid(host: string): string {
 
 /**
  * Servers worth offering by name when one is added, with what is known of
- * them already.
+ * them already. BAR's and Recoil's are not among them: every install has
+ * those (`ServerEntry.builtin`).
  *
- * Recoil's lobby is uberserver: STLS on 8200 only (8201 is its UDP port, and
- * a TCP try there just waits out its timeout), behind the self-signed X.509
- * v1 certificate uberserver makes itself, which rustls cannot read — so no
- * encrypted way in until certificates are pinned, and unencrypted is allowed.
- * It keeps no rapid index of its own; its games are on springrts' master.
+ * Modded BAR is a teiserver whose `STLS` says yes and then drops the
+ * handshake, and whose 8201 resets: unencrypted on 8200 is the only way in.
+ * Its games are on its own rapid, and its maps behind a search of its own on
+ * the lobby's host.
  */
 export const KNOWN: Pick<
 	ServerEntry,
-	'host' | 'name' | 'ports' | 'allowUnencrypted' | 'rapid'
+	'host' | 'name' | 'ports' | 'allowUnencrypted' | 'rapid' | 'maps'
 >[] = [
 	{
-		host: 'lobby.recoilengine.org',
-		name: 'Recoil Official',
+		host: 'moddedbar.duckdns.org',
+		name: 'Modded BAR',
 		ports: [8200],
 		allowUnencrypted: true,
-		rapid: 'https://repos.springrts.com/repos.gz',
+		rapid: 'https://randomguyrapid.duckdns.org/repos.gz',
+		maps: 'https://moddedbar.duckdns.org/find',
 	},
 ]
 
@@ -113,13 +111,14 @@ export function newServer(typed: string): ServerEntry {
 	const { host, port } = splitHost(typed)
 	const known = KNOWN.find((entry) => serverId(entry.host) === serverId(host))
 	return {
+		builtin: null,
 		host,
 		name: known?.name ?? '',
 		ports: port === null ? (known?.ports ?? [8200, 8201]) : [port],
 		allowUnencrypted: known?.allowUnencrypted ?? false,
 		website: null,
 		rapid: known?.rapid ?? null,
-		maps: null,
+		maps: known?.maps ?? null,
 		username: '',
 		channels: ['main'],
 		autoLogin: null,

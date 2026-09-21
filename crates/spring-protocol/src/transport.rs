@@ -22,13 +22,12 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinSet;
-use tokio_rustls::TlsConnector;
 use tokio_rustls::client::TlsStream;
 use tokio_rustls::rustls::pki_types::ServerName;
-use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 
 use crate::codec::{self, RawMessage};
 use crate::event::ServerEvent;
+use crate::pin::{self, Fingerprint, Seen, Trust};
 use crate::policy::{Area, Envelope, PolicyEvent, Scheduler, ThrottlePolicy};
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
@@ -68,6 +67,31 @@ pub enum TransportError {
 	/// is to wait, where the four socket errors read as a port problem.
 	#[error("every port refused the connection; the server is down or restarting")]
 	Down,
+	/// The certificate is not the one trusted before, or no longer one the
+	/// roots vouch for. Refused outright, and never answered by falling back
+	/// to plaintext: that is what somebody in the middle would want.
+	#[error("{}", changed(*.was, *.now))]
+	CertificateChanged {
+		was: Option<Fingerprint>,
+		now: Fingerprint,
+	},
+}
+
+fn changed(was: Option<Fingerprint>, now: Fingerprint) -> String {
+	let before = match was {
+		Some(was) => format!(
+			"not the one trusted before ({} then, {} now)",
+			was.short(),
+			now.short()
+		),
+		None => format!(
+			"no longer one a certificate authority vouches for ({} now)",
+			now.short()
+		),
+	};
+	format!(
+		"the server's certificate is {before}, so it was not connected to. If the server replaced it on purpose, \"try every way again\" under Settings → Servers forgets the old one"
+	)
 }
 
 /// How a server is known across the app — in the remembered ways, in what
@@ -86,8 +110,13 @@ pub struct Endpoint {
 	/// Whether an unencrypted connection will do once every encrypted way
 	/// has failed. Never tried before that.
 	pub allow_plain: bool,
-	/// What worked last time, tried on its own before anything else.
+	/// What worked last time, tried on its own before anything else. Its
+	/// certificate pin, if it has one, is the one every way must show.
 	pub preferred: Option<Way>,
+	/// Only a certificate the roots vouch for will do, even the first time:
+	/// for a server known to have one, where a self-signed certificate could
+	/// only be somebody else's.
+	pub roots_only: bool,
 }
 
 impl Endpoint {
@@ -98,6 +127,18 @@ impl Endpoint {
 			ports: vec![8200, 8201],
 			allow_plain: false,
 			preferred: None,
+			roots_only: false,
+		}
+	}
+
+	/// What a certificate the roots refuse may still be taken for: what was
+	/// pinned last time, else a change if the roots vouched for it then, else
+	/// -- nothing encrypted remembered -- whatever it is, this first time.
+	fn trust(&self) -> Trust {
+		match self.preferred.filter(|way| way.security != Security::None) {
+			Some(way) => Trust::Pinned(way.pin),
+			None if self.roots_only => Trust::Roots,
+			None => Trust::FirstUse,
 		}
 	}
 
@@ -142,6 +183,9 @@ pub struct Way {
 	pub security: Security,
 	/// From the first packet to the greeting.
 	pub ms: u32,
+	/// The certificate trusted on first use, where the roots vouched for none.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub pin: Option<Fingerprint>,
 }
 
 impl fmt::Display for Way {
@@ -305,9 +349,14 @@ pub fn install_crypto() {
 /// The first way in that greets; see [`Transport::connect`]. `wait` bounds
 /// each attempt, so the whole takes at most three of them.
 async fn open(endpoint: &Endpoint, wait: Duration) -> Result<(Opened, Way), TransportError> {
+	let trust = endpoint.trust();
 	if let Some((port, security)) = endpoint.first() {
-		match attempt(endpoint.host.clone(), port, security, wait).await {
+		match attempt(endpoint.host.clone(), port, security, trust, wait).await {
 			Ok(opened) => return Ok(opened),
+			Err(Failed {
+				error: changed @ TransportError::CertificateChanged { .. },
+				..
+			}) => return Err(changed),
 			Err(Failed { error, .. }) => {
 				tracing::warn!(host = %endpoint.host, port, ?security, %error, "the remembered way failed; trying every way")
 			}
@@ -316,6 +365,7 @@ async fn open(endpoint: &Endpoint, wait: Duration) -> Result<(Opened, Way), Tran
 	let encrypted = race(
 		&endpoint.host,
 		endpoint.every(&[Security::Stls, Security::Tls]),
+		trust,
 		wait,
 	)
 	.await;
@@ -323,6 +373,9 @@ async fn open(endpoint: &Endpoint, wait: Duration) -> Result<(Opened, Way), Tran
 		Ok(opened) => return Ok(opened),
 		Err(tried) => tried,
 	};
+	if let Some((was, now)) = tried.changed {
+		return Err(TransportError::CertificateChanged { was, now });
+	}
 	if !endpoint.allow_plain {
 		return Err(if tried.reached {
 			TransportError::NoEncryption(tried.text)
@@ -332,15 +385,20 @@ async fn open(endpoint: &Endpoint, wait: Duration) -> Result<(Opened, Way), Tran
 			TransportError::Unreachable(tried.text)
 		});
 	}
-	race(&endpoint.host, endpoint.every(&[Security::None]), wait)
-		.await
-		.map_err(|plain| {
-			if tried.refused && plain.refused {
-				TransportError::Down
-			} else {
-				TransportError::Unreachable(format!("{}; {}", tried.text, plain.text))
-			}
-		})
+	race(
+		&endpoint.host,
+		endpoint.every(&[Security::None]),
+		trust,
+		wait,
+	)
+	.await
+	.map_err(|plain| {
+		if tried.refused && plain.refused {
+			TransportError::Down
+		} else {
+			TransportError::Unreachable(format!("{}; {}", tried.text, plain.text))
+		}
+	})
 }
 
 /// What a race that nobody won ran into, and whether any of it got as far as
@@ -350,6 +408,8 @@ struct Tried {
 	reached: bool,
 	/// Every way was refused outright; see [`TransportError::Down`].
 	refused: bool,
+	/// A way showed a certificate other than the one trusted.
+	changed: Option<(Option<Fingerprint>, Fingerprint)>,
 	text: String,
 }
 
@@ -365,27 +425,36 @@ struct Failed {
 async fn race(
 	host: &str,
 	ways: Vec<(u16, Security)>,
+	trust: Trust,
 	wait: Duration,
 ) -> Result<(Opened, Way), Tried> {
 	let mut attempts = JoinSet::new();
 	for (port, security) in ways {
 		let host = host.to_owned();
 		attempts.spawn(async move {
-			attempt(host, port, security, wait).await.map_err(|failed| {
-				let text = format!("{} on {port}: {}", name(security), failed.error);
-				(failed.reached, refused(&failed.error), text)
-			})
+			attempt(host, port, security, trust, wait)
+				.await
+				.map_err(|failed| {
+					let text = format!("{} on {port}: {}", name(security), failed.error);
+					let changed = match failed.error {
+						TransportError::CertificateChanged { was, now } => Some((was, now)),
+						_ => None,
+					};
+					(failed.reached, refused(&failed.error), changed, text)
+				})
 		});
 	}
 	let mut reached = false;
 	let mut refusals = 0;
+	let mut changed = None;
 	let mut failures = Vec::new();
 	while let Some(joined) = attempts.join_next().await {
 		match joined {
 			Ok(Ok(opened)) => return Ok(opened),
-			Ok(Err((there, turned_away, failure))) => {
+			Ok(Err((there, turned_away, shown, failure))) => {
 				reached |= there;
 				refusals += usize::from(turned_away);
+				changed = changed.or(shown);
 				failures.push(failure);
 			}
 			Err(panicked) => failures.push(panicked.to_string()),
@@ -397,6 +466,7 @@ async fn race(
 	Err(Tried {
 		reached,
 		refused: refusals == failures.len(),
+		changed,
 		text: failures.join("; "),
 	})
 }
@@ -411,6 +481,7 @@ async fn attempt(
 	host: String,
 	port: u16,
 	security: Security,
+	trust: Trust,
 	wait: Duration,
 ) -> Result<(Opened, Way), Failed> {
 	let started = Instant::now();
@@ -421,37 +492,67 @@ async fn attempt(
 		.map_err(|_| TransportError::Timeout(wait))
 		.flatten()
 		.map_err(within(false))?;
-	let stream = tokio::time::timeout_at(deadline, secure(&host, socket, security))
+	let (stream, pin) = tokio::time::timeout_at(deadline, secure(&host, socket, security, trust))
 		.await
 		.map_err(|_| TransportError::Timeout(wait))
 		.flatten()
 		.map_err(within(true))?;
 	let ms = started.elapsed().as_millis().try_into().unwrap_or(u32::MAX);
-	Ok((stream, Way { port, security, ms }))
+	Ok((
+		stream,
+		Way {
+			port,
+			security,
+			ms,
+			pin,
+		},
+	))
 }
 
-/// A connected socket made into a stream the server has greeted on.
+/// A connected socket made into a stream the server has greeted on, and the
+/// certificate pin it was trusted by, if the roots vouched for none.
 async fn secure(
 	host: &str,
 	socket: TcpStream,
 	security: Security,
-) -> Result<Opened, TransportError> {
-	let stream: Box<dyn Io> = match security {
-		Security::None => Box::new(socket),
-		Security::Stls => Box::new(tls(host, stls_upgrade(socket).await?).await?),
-		Security::Tls => Box::new(tls(host, socket).await?),
+	trust: Trust,
+) -> Result<(Opened, Option<Fingerprint>), TransportError> {
+	let (stream, pin): (Box<dyn Io>, _) = match security {
+		Security::None => (Box::new(socket), None),
+		Security::Stls => {
+			let (stream, pin) = tls(host, stls_upgrade(socket).await?, trust).await?;
+			(Box::new(stream), pin)
+		}
+		Security::Tls => {
+			let (stream, pin) = tls(host, socket, trust).await?;
+			(Box::new(stream), pin)
+		}
 	};
 	let mut stream = BufReader::new(stream);
 	if !greets(&mut stream).await {
 		return Err(TransportError::Silent);
 	}
-	Ok(stream)
+	Ok((stream, pin))
 }
 
-async fn tls(host: &str, socket: TcpStream) -> Result<TlsStream<TcpStream>, TransportError> {
+async fn tls(
+	host: &str,
+	socket: TcpStream,
+	trust: Trust,
+) -> Result<(TlsStream<TcpStream>, Option<Fingerprint>), TransportError> {
 	let name = ServerName::try_from(host.to_owned())
 		.map_err(|_| TransportError::ServerName(host.to_owned()))?;
-	Ok(tls_connector().connect(name, socket).await?)
+	let (connector, outcome) = pin::connector(trust);
+	let handshake = connector.connect(name, socket).await;
+	let seen = *outcome.lock().expect("pin outcome lock");
+	match (handshake, seen) {
+		(Ok(stream), Some(Seen::Pinned(pin))) => Ok((stream, Some(pin))),
+		(Ok(stream), _) => Ok((stream, None)),
+		(Err(_), Some(Seen::Changed { was, now })) => {
+			Err(TransportError::CertificateChanged { was, now })
+		}
+		(Err(io), _) => Err(io.into()),
+	}
 }
 
 /// How a way of connecting reads in a message.
@@ -513,24 +614,6 @@ async fn read_line_within<S: AsyncRead + Unpin>(
 		.await
 		.map_err(|_| TransportError::Timeout(GREETING_WAIT))??;
 	Ok(())
-}
-
-/// Verifies the server against the Mozilla root store bundled by
-/// `webpki-roots`. Built once: a race makes a handshake per port per way, and
-/// the root store is the same for all of them.
-fn tls_connector() -> TlsConnector {
-	static CONFIG: std::sync::OnceLock<Arc<ClientConfig>> = std::sync::OnceLock::new();
-	let config = CONFIG.get_or_init(|| {
-		install_crypto();
-		let mut roots = RootCertStore::empty();
-		roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-		Arc::new(
-			ClientConfig::builder()
-				.with_root_certificates(roots)
-				.with_no_client_auth(),
-		)
-	});
-	TlsConnector::from(Arc::clone(config))
 }
 
 /// Keeps the password hash out of the transmit trace.
@@ -649,12 +732,22 @@ mod tests {
 	use std::future::Future;
 	use std::sync::atomic::AtomicUsize;
 
+	use tokio_rustls::TlsAcceptor;
+	use tokio_rustls::rustls::ServerConfig;
+	use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
+
+	/// A certificate no root vouches for, and its key; test-only, made with
+	/// openssl for these tests.
+	const SELF_SIGNED: &[u8] = include_bytes!("../testdata/self-signed.der");
+	const SELF_SIGNED_KEY: &[u8] = include_bytes!("../testdata/self-signed.key.der");
+
 	fn local(ports: Vec<u16>, allow_plain: bool, preferred: Option<Way>) -> Endpoint {
 		Endpoint {
 			host: "127.0.0.1".into(),
 			ports,
 			allow_plain,
 			preferred,
+			roots_only: false,
 		}
 	}
 
@@ -663,7 +756,31 @@ mod tests {
 			port,
 			security,
 			ms: 0,
+			pin: None,
 		}
+	}
+
+	/// A TLS port behind [`SELF_SIGNED`] that greets once encrypted, as an
+	/// uberserver does on the far side of `STLS`.
+	async fn self_signed(socket: TcpStream) {
+		install_crypto();
+		let config = ServerConfig::builder()
+			.with_no_client_auth()
+			.with_single_cert(
+				vec![CertificateDer::from(SELF_SIGNED)],
+				PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(SELF_SIGNED_KEY)),
+			)
+			.unwrap();
+		if let Ok(mut stream) = TlsAcceptor::from(Arc::new(config)).accept(socket).await {
+			let _ = stream.write_all(b"TASSERVER 0.38 * 8201 0\n").await;
+			let _ = stream.flush().await;
+			tokio::time::sleep(Duration::from_secs(5)).await;
+		}
+	}
+
+	async fn greets_plainly(mut socket: TcpStream) {
+		let _ = socket.write_all(b"TASSERVER 0.38 * 8201 0\n").await;
+		tokio::time::sleep(Duration::from_secs(5)).await;
 	}
 
 	/// A listener on a free local port serving each connection with `serve`,
@@ -743,12 +860,86 @@ mod tests {
 	}
 
 	#[test]
+	fn a_certificate_is_taken_as_the_remembered_way_says() {
+		let pin = Fingerprint([1; 32]);
+		let pinned = Way {
+			pin: Some(pin),
+			..way(8200, Security::Stls)
+		};
+		assert_eq!(
+			local(vec![8200], false, Some(pinned)).trust(),
+			Trust::Pinned(Some(pin))
+		);
+		assert_eq!(
+			local(vec![8200], false, Some(way(8200, Security::Stls))).trust(),
+			Trust::Pinned(None),
+			"the roots vouched for it last time"
+		);
+		assert_eq!(
+			local(vec![8200], true, Some(way(8200, Security::None))).trust(),
+			Trust::FirstUse,
+			"nothing encrypted remembered"
+		);
+		let bar = Endpoint {
+			roots_only: true,
+			..local(vec![8200], false, None)
+		};
+		assert_eq!(bar.trust(), Trust::Roots);
+	}
+
+	#[tokio::test]
+	async fn a_certificate_nobody_vouches_for_is_trusted_the_first_time_and_held_to() {
+		let (port, _) = serving(self_signed).await;
+		let wait = Duration::from_secs(5);
+		let (_, first) = open(&local(vec![port], false, None), wait).await.unwrap();
+		assert_eq!(first.security, Security::Tls);
+		assert_eq!(first.pin, Some(Fingerprint::of(SELF_SIGNED)));
+
+		let (_, again) = open(&local(vec![port], false, Some(first)), wait)
+			.await
+			.unwrap();
+		assert_eq!(again.pin, first.pin);
+	}
+
+	#[tokio::test]
+	async fn a_changed_certificate_is_refused_and_never_answered_with_plaintext() {
+		let (tls, _) = serving(self_signed).await;
+		let (plain, plain_taken) = serving(greets_plainly).await;
+		let trusted_before = Way {
+			pin: Some(Fingerprint([7; 32])),
+			..way(tls, Security::Tls)
+		};
+		let refused = open(
+			&local(vec![tls, plain], true, Some(trusted_before)),
+			Duration::from_secs(5),
+		)
+		.await;
+		assert!(matches!(
+			refused,
+			Err(TransportError::CertificateChanged { was: Some(_), .. })
+		));
+		assert_eq!(plain_taken.load(Ordering::Relaxed), 0);
+	}
+
+	#[tokio::test]
+	async fn a_server_held_to_the_roots_is_not_trusted_on_first_use() {
+		let (port, _) = serving(self_signed).await;
+		let bar = Endpoint {
+			roots_only: true,
+			..local(vec![port], false, None)
+		};
+		let refused = open(&bar, Duration::from_secs(5)).await;
+		assert!(matches!(refused, Err(TransportError::NoEncryption(_))));
+	}
+
+	#[test]
 	fn a_way_reads_as_what_it_was() {
 		assert_eq!(
 			Way {
 				port: 8200,
 				security: Security::Stls,
-				ms: 46
+				ms: 46,
+				pin: None,
 			}
 			.to_string(),
 			"STLS on 8200, 46 ms"
@@ -809,6 +1000,7 @@ mod tests {
 			"127.0.0.1".into(),
 			silent,
 			Security::Stls,
+			Trust::FirstUse,
 			Duration::from_millis(200),
 		)
 		.await;

@@ -926,6 +926,25 @@ pub const HTTP_SEARCH_URL: &str = "https://files-cdn.beyondallreason.dev/find";
 /// knows BAR's -- but a map neither publishes has lived here for fifteen
 /// years, which is where a custom map on a LAN comes from.
 pub const SPRINGFILES_SEARCH_URL: &str = "https://springfiles.springrts.com/json.php";
+/// Games published outside BAR under one of BAR's own names but with other
+/// contents, each looked at and let through: `(name, md5)`. A server whose
+/// rapid lists one is not refused for it, but the game itself is only ever
+/// fetched from BAR's.
+///
+/// springrts' `bar` repo is BAR's rapid from 2019, before BAR kept its own.
+/// Its builds left out `luaui/images/Ranks/rank{1,2,3}.png` -- 6542 files
+/// against git's 6545, the rest byte for byte the same -- and this is the one
+/// of its 37 names BAR's index still lists (checked 2026-09-21).
+pub const STALE_COPIES: &[(&str, &str)] = &[(
+	"Beyond all Reason test-11420-8448c1d",
+	"01d65c48a165bc14a6d044e698bc0830",
+)];
+
+/// Whether `name` is only to be fetched from BAR's rapid; see [`STALE_COPIES`].
+pub fn stale_copy(name: &str) -> bool {
+	STALE_COPIES.iter().any(|(stale, _)| *stale == name)
+}
+
 /// The game the launcher installs, as a rapid tag pr-downloader resolves: what
 /// a room that names no game yet is asking for.
 pub const BAR_GAME_TAG: &str = "byar:test";

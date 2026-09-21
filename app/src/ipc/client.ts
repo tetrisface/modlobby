@@ -2,6 +2,7 @@ import { invoke, type Channel } from '@tauri-apps/api/core'
 import type { Act } from './bindings/Act'
 import type { AiChoice } from './bindings/AiChoice'
 import type { Arrangement } from './bindings/Arrangement'
+import type { BarConfig } from './bindings/BarConfig'
 import type { BattleOn } from './bindings/BattleOn'
 import type { ArrangementView } from './bindings/ArrangementView'
 import type { Check } from './bindings/Check'
@@ -67,8 +68,13 @@ export const api = {
 	checkRapid: (url: string) => invoke<RapidSummary>('check_rapid', { url }),
 	/** Resolves if `url` answers like a map search; refused with why if not. */
 	checkMapSearch: (url: string) => invoke<void>('check_map_search', { url }),
-	/** Forgets which way into `host` worked, so the next connect tries every way. */
+	/**
+	 * Forgets which way into `host` worked, and the certificate trusted there,
+	 * so the next connect tries every way.
+	 */
 	forgetWay: (host: string) => invoke<void>('forget_way', { host }),
+	/** Where BAR's lobby, games and maps are: what an empty address means. */
+	barConfig: () => invoke<BarConfig>('bar_config'),
 	/** Tries the last login again, under `server`'s login limit. */
 	reconnect: (server: string) => invoke<void>('reconnect', { server }),
 	/** Answers with the user agreement the server replies to the first login with. */

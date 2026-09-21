@@ -12,7 +12,11 @@ const asked = vi.mocked(invoke)
 
 function withServers(...hosts: string[]): Settings {
 	return {
-		servers: hosts.map((host) => newServer(host)),
+		// The first is BAR's own, as every install's list starts.
+		servers: hosts.map((host, at) => ({
+			...newServer(host),
+			builtin: at === 0 ? 'bar' : null,
+		})),
 		account: { rememberPassword: false, autoLogin: false },
 	} as unknown as Settings
 }

@@ -17,6 +17,7 @@ pub mod archive;
 pub mod demo;
 pub mod game_cache;
 pub mod http;
+pub mod launcher;
 pub mod map_index;
 pub mod map_name;
 pub mod map_search;

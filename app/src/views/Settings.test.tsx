@@ -19,6 +19,7 @@ function loaded(): Settings {
 		lan: { enabled: false },
 		servers: [
 			{
+				builtin: 'bar',
 				host: 'server4.beyondallreason.info',
 				name: 'BAR',
 				ports: [8200, 8201],

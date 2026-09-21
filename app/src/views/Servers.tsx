@@ -16,6 +16,7 @@ import { LoginSheet } from '../components/LoginForm'
 import { openExternal } from '../components/Linkify'
 import { Row } from '../components/SettingRow'
 import type { Account } from '../ipc/bindings/Account'
+import type { BarConfig } from '../ipc/bindings/BarConfig'
 import type { ServerEntry } from '../ipc/bindings/ServerEntry'
 import type { Settings } from '../ipc/bindings/Settings'
 import { api, describeError } from '../ipc/client'
@@ -55,6 +56,7 @@ export function ServerRows(props: {
 	settle: () => Promise<void>
 }) {
 	const [asking, setAsking] = createSignal<Asking | null>(null)
+	const [bar] = createResource(() => api.barConfig().catch(() => undefined))
 
 	/**
 	 * A server just added may publish its own games. Where most keep their
@@ -91,6 +93,7 @@ export function ServerRows(props: {
 							<ServerCard
 								entry={entry}
 								account={props.draft.account}
+								bar={bar()}
 								others={props.draft.servers
 									.filter((_, at) => at !== index())
 									.map((other) => other.host)}
@@ -186,6 +189,8 @@ const UNENCRYPTED_TIP =
 function ServerCard(props: {
 	entry: ServerEntry
 	account: Account
+	/** What an empty address means: BAR's, as its launcher config says. */
+	bar: BarConfig | undefined
 	/** Every other server's host, which this one may not be changed to. */
 	others: string[]
 	change: <K extends keyof ServerEntry>(field: K, value: ServerEntry[K]) => void
@@ -367,7 +372,7 @@ function ServerCard(props: {
 					Rapid server, where this server's own games are published
 					<input
 						value={props.entry.rapid ?? ''}
-						placeholder={guessedRapid(props.entry.host)}
+						placeholder={props.bar?.rapidMaster}
 						onInput={(event) =>
 							props.change('rapid', event.currentTarget.value.trim() || null)
 						}
@@ -399,7 +404,7 @@ function ServerCard(props: {
 					Map search, where this server's own maps are found
 					<input
 						value={props.entry.maps ?? ''}
-						placeholder={`https://${props.entry.host}/find`}
+						placeholder={props.bar?.search}
 						onInput={(event) =>
 							props.change('maps', event.currentTarget.value.trim() || null)
 						}
@@ -473,14 +478,17 @@ function ServerCard(props: {
 						</button>
 					)}
 				</Show>
-				<button
-					type='button'
-					class='server-remove'
-					classList={{ danger: removing() }}
-					onClick={remove}
-				>
-					{removing() ? 'Really remove?' : 'Remove'}
-				</button>
+				{/* The servers every install has stay on the list. */}
+				<Show when={!props.entry.builtin}>
+					<button
+						type='button'
+						class='server-remove'
+						classList={{ danger: removing() }}
+						onClick={remove}
+					>
+						{removing() ? 'Really remove?' : 'Remove'}
+					</button>
+				</Show>
 			</div>
 		</div>
 	)

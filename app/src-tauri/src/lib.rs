@@ -276,6 +276,10 @@ pub fn run() {
 			let handle = tauri_app.handle().clone();
 			let client = app.client.clone();
 			let vetter = std::sync::Arc::clone(&app.rapid);
+			let bar = lobby_runtime::BarContent {
+				rapid_master: app.bar.rapid_master.clone(),
+				search: app.bar.search.clone(),
+			};
 			let at_start = app.settings.get();
 			// Beside the settings and the preset book, because it is the same
 			// kind of thing: what this person has set up, kept for next time.
@@ -301,6 +305,7 @@ pub fn run() {
 						Box::pin(async move { lan::map_from_host(&handle, ask, say).await })
 					}))
 					.await;
+				let _ = client.set_bar_content(bar).await;
 				push_settings(&client, &controller, &at_start).await;
 				let _ = client.set_skirmish_path(Some(skirmish_path)).await;
 				// BAR's maps decide who a map is asked of, so they are had
@@ -308,6 +313,7 @@ pub fn run() {
 				// its pictures. From the disk cache on all but a first run.
 				if let Some(app) = handle.try_state::<state::App>() {
 					let _ = app.map_index().await;
+					app.refresh_bar_config().await;
 				}
 				while let Some(event) = watch.recv().await {
 					if let settings::SettingsEvent::Changed(settings) = &event {
@@ -355,6 +361,7 @@ pub fn run() {
 			commands::login,
 			commands::logout,
 			commands::forget_way,
+			commands::bar_config,
 			commands::check_rapid,
 			commands::check_map_search,
 			commands::reconnect,

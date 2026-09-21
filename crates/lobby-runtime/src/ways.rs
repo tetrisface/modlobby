@@ -51,6 +51,7 @@ mod tests {
 		port: 8200,
 		security: Security::Stls,
 		ms: 46,
+		pin: None,
 	};
 
 	#[test]

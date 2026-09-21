@@ -10,8 +10,17 @@ use ts_rs::TS;
 
 pub const SCHEMA_FILE: &str = "settings.schema.json";
 
-/// BAR's lobby server: the one every install starts with.
+/// BAR's lobby server: the one every install starts with, until BAR's
+/// launcher config names another.
 pub const DEFAULT_HOST: &str = "server4.beyondallreason.info";
+
+/// Recoil's own lobby server, the engine's: uberserver, behind a certificate
+/// it made itself, so trusted on first use.
+pub const RECOIL_HOST: &str = "lobby.recoilengine.org";
+
+/// Where Recoil's games are: springrts' rapid, which Recoil's lobby keeps
+/// none of its own beside.
+pub const SPRINGRTS_RAPID: &str = "https://repos.springrts.com/repos.gz";
 
 /// The host of the servers entry that is not a server: whoever on the local
 /// network is hosting a room. Nothing resolves it; the app points it at an
@@ -72,8 +81,49 @@ impl Settings {
 			schema: Some(format!("./{SCHEMA_FILE}")),
 			// No LAN row: `lan.enabled` is off, and `ensure_lan` adds one the
 			// moment it is turned on.
-			servers: vec![ServerEntry::bar()],
+			servers: vec![ServerEntry::bar(), ServerEntry::recoil()],
 			..Self::default()
+		}
+	}
+
+	/// Keeps the servers every install has on the list, whatever the file
+	/// says: BAR's first, where it always was, and Recoil's after it. An
+	/// entry from before there were such servers is taken for its own by its
+	/// host -- and BAR's, which raced 8201 as well as 8200 only because every
+	/// server did, gets the one port BAR's launcher config names.
+	pub(crate) fn ensure_builtins(&mut self) {
+		for entry in &mut self.servers {
+			if entry.builtin.is_some() {
+				continue;
+			}
+			let host = entry.host.trim().to_ascii_lowercase();
+			if host == DEFAULT_HOST {
+				entry.builtin = Some(Builtin::Bar);
+				if entry.ports == [8200, 8201] {
+					entry.ports = vec![8200];
+				}
+			} else if host == RECOIL_HOST {
+				entry.builtin = Some(Builtin::Recoil);
+			}
+		}
+		if !self
+			.servers
+			.iter()
+			.any(|entry| entry.builtin == Some(Builtin::Bar))
+		{
+			self.servers.insert(0, ServerEntry::bar());
+		}
+		if !self
+			.servers
+			.iter()
+			.any(|entry| entry.builtin == Some(Builtin::Recoil))
+		{
+			let after_bar = self
+				.servers
+				.iter()
+				.position(|entry| entry.builtin == Some(Builtin::Bar))
+				.map_or(0, |at| at + 1);
+			self.servers.insert(after_bar, ServerEntry::recoil());
 		}
 	}
 
@@ -121,6 +171,7 @@ impl Settings {
 	pub(crate) fn migrate(&mut self) {
 		let server = &self.server;
 		self.servers = vec![ServerEntry {
+			builtin: None,
 			host: server.host.clone(),
 			name: if server.host == DEFAULT_HOST {
 				"BAR".into()
@@ -139,11 +190,25 @@ impl Settings {
 	}
 }
 
+/// A server every install has: its card stays on the list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(export)]
+pub enum Builtin {
+	/// BAR's own. Where it is follows BAR's launcher config: a host, port
+	/// or name that still says what the config said is moved with it.
+	Bar,
+	/// Recoil's, the engine's own lobby.
+	Recoil,
+}
+
 /// A lobby server, and the account on it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(default, rename_all = "camelCase")]
 #[ts(export)]
 pub struct ServerEntry {
+	/// Which of the servers every install has this is, if it is one.
+	pub builtin: Option<Builtin>,
 	/// Where it is. The server is known by this, trimmed and lowercased, so
 	/// changing it makes a different server: a new account, a new password.
 	pub host: String,
@@ -182,11 +247,27 @@ pub struct ServerEntry {
 }
 
 impl ServerEntry {
-	/// BAR's own.
+	/// BAR's own, as modlobby was built knowing it: STLS on 8200, the one
+	/// port BAR's launcher config names.
 	pub fn bar() -> Self {
 		Self {
+			builtin: Some(Builtin::Bar),
 			host: DEFAULT_HOST.into(),
 			name: "BAR".into(),
+			ports: vec![8200],
+			..Self::default()
+		}
+	}
+
+	/// Recoil's own. uberserver: STLS on 8200, and 8201 is its UDP port,
+	/// where a TCP connection only waits out its timeout.
+	pub fn recoil() -> Self {
+		Self {
+			builtin: Some(Builtin::Recoil),
+			host: RECOIL_HOST.into(),
+			name: "Recoil Official".into(),
+			ports: vec![8200],
+			rapid: Some(SPRINGRTS_RAPID.into()),
 			..Self::default()
 		}
 	}
@@ -214,6 +295,7 @@ impl ServerEntry {
 impl Default for ServerEntry {
 	fn default() -> Self {
 		Self {
+			builtin: None,
 			host: String::new(),
 			name: String::new(),
 			// teiserver's own: plain (and `STLS`) on 8200, TLS on 8201.

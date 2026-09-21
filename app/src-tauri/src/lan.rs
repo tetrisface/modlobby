@@ -88,6 +88,7 @@ pub fn connector(target: Arc<Mutex<Option<SocketAddr>>>) -> Connector {
 				port: addr.port(),
 				security: Security::None,
 				ms: 0,
+				pin: None,
 			});
 		}
 		Box::pin(async move { Transport::connect(&endpoint, policy).await })
@@ -146,6 +147,7 @@ async fn connect(app: &State<'_, App>, addr: SocketAddr, name: &str) -> Result<(
 		ports: vec![addr.port()],
 		allow_plain: true,
 		preferred: None,
+		roots_only: false,
 	};
 	let request = LoginRequest::new(name, "*", LOBBY_VERSION, app.hardware.lobby_hash.clone());
 	app.client.login(endpoint, request).await?;

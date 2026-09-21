@@ -117,6 +117,24 @@ fn no_host() -> FromHost {
 	Arc::new(|_, _| Box::pin(async { Err("this room has no host to ask".to_owned()) }))
 }
 
+/// Where BAR publishes its games and maps: its rapid master index and its
+/// search, as its launcher config names them. Until told, the addresses
+/// modlobby was built with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BarContent {
+	pub rapid_master: String,
+	pub search: String,
+}
+
+impl Default for BarContent {
+	fn default() -> Self {
+		Self {
+			rapid_master: recoil::RAPID_REPO_MASTER.to_owned(),
+			search: recoil::HTTP_SEARCH_URL.to_owned(),
+		}
+	}
+}
+
 /// With nobody to read another rapid server, only BAR's is fetched from.
 fn vet_bars_only() -> Vet {
 	Arc::new(|master| {
@@ -351,6 +369,7 @@ enum Command {
 	SetMapSearches(BTreeMap<String, String>),
 	/// The spring names of BAR's maps; see [`map_searches_for`].
 	SetBarMaps(BTreeSet<String>),
+	SetBarContent(BarContent),
 	SetVet(Vet),
 	/// Where a map comes from when no search had it; see [`FromHost`].
 	SetFromHost(FromHost),
@@ -908,6 +927,11 @@ impl Client {
 		self.send(Command::SetBarMaps(names)).await
 	}
 
+	/// Where BAR's own games and maps are, as BAR's launcher config says.
+	pub async fn set_bar_content(&self, bar: BarContent) -> Result<(), ClientError> {
+		self.send(Command::SetBarContent(bar)).await
+	}
+
 	/// Who reads a rapid server that is not BAR's before games are fetched
 	/// from it. Until one is set, no such server is fetched from.
 	pub async fn set_vet(&self, vet: Vet) -> Result<(), ClientError> {
@@ -1067,6 +1091,7 @@ struct Runtime {
 	rapid_masters: BTreeMap<String, String>,
 	map_searches: BTreeMap<String, String>,
 	bar_maps: BTreeSet<String>,
+	bar: BarContent,
 	/// Maps a search said it does not have, kept beside the ways.
 	misses: Misses,
 	vet: Vet,
@@ -1238,10 +1263,10 @@ fn remember_tail(tail: &mut Vec<String>, line: &str) {
 /// Where `server`'s games are looked for: its own rapid master index if it
 /// has one, else BAR's — which is also where a room with no server behind it
 /// looks. A mod is never looked for on another server's.
-fn master_for(masters: &BTreeMap<String, String>, server: Option<&str>) -> String {
+fn master_for(masters: &BTreeMap<String, String>, server: Option<&str>, bars: &str) -> String {
 	server
 		.and_then(|server| masters.get(server))
-		.map_or(recoil::RAPID_REPO_MASTER, String::as_str)
+		.map_or(bars, String::as_str)
 		.to_owned()
 }
 
@@ -1315,10 +1340,11 @@ fn map_searches_for(
 	searches: &BTreeMap<String, String>,
 	server: Option<&str>,
 	map: &str,
+	bars: &str,
 ) -> Vec<String> {
 	let own = server.and_then(|server| searches.get(server));
 	if bar_maps.contains(map) || (own.is_none() && bar_maps.is_empty()) {
-		return vec![recoil::HTTP_SEARCH_URL.to_owned()];
+		return vec![bars.to_owned()];
 	}
 	let mut asked = Vec::new();
 	match own {
@@ -1408,6 +1434,7 @@ impl Runtime {
 			rapid_masters: BTreeMap::new(),
 			map_searches: BTreeMap::new(),
 			bar_maps: BTreeSet::new(),
+			bar: BarContent::default(),
 			misses,
 			vet: vet_bars_only(),
 			from_host: no_host(),
@@ -1615,7 +1642,13 @@ impl Runtime {
 		map: &str,
 		by_hand: bool,
 	) -> Result<Vec<String>, String> {
-		let asked = map_searches_for(&self.bar_maps, &self.map_searches, server, map);
+		let asked = map_searches_for(
+			&self.bar_maps,
+			&self.map_searches,
+			server,
+			map,
+			&self.bar.search,
+		);
 		if by_hand {
 			// `count`, not `any`: every one is forgotten, and a short circuit
 			// would leave the rest remembered.
@@ -1648,7 +1681,7 @@ impl Runtime {
 	}
 
 	fn rapid_master(&self, server: Option<&str>) -> String {
-		master_for(&self.rapid_masters, server)
+		master_for(&self.rapid_masters, server, &self.bar.rapid_master)
 	}
 
 	/// The same, for the room with no server behind it.
@@ -1680,7 +1713,10 @@ impl Runtime {
 			return Err(ClientError::Refused("no BAR data directory".into()));
 		};
 		let library = content::Library::new(dirs.clone());
+		let rapid_master = self.rapid_master(server.as_deref());
 		let mut wants = Vec::new();
+		// Why what is missing is not asked for.
+		let mut refused = Vec::new();
 		if !library.has_game(&game) {
 			// A room that names no game yet -- a first run -- is asking for
 			// BAR; its name is adopted once the download has given it one.
@@ -1689,12 +1725,15 @@ impl Runtime {
 			} else {
 				game.clone()
 			};
-			wants.push((recoil::Want::Game, want));
+			if recoil::stale_copy(&want) && rapid_master != self.bar.rapid_master {
+				refused.push(format!(
+					"{want} is only fetched from BAR's rapid: {rapid_master} has an old copy of it with other contents"
+				));
+			} else {
+				wants.push((recoil::Want::Game, want));
+			}
 		}
-		let rapid_master = self.rapid_master(server.as_deref());
-		// Why the map is not asked for, where it is missing and is not.
-		let mut map_refused = None;
-		let mut map_searches = vec![recoil::HTTP_SEARCH_URL.to_owned()];
+		let mut map_searches = vec![self.bar.search.clone()];
 		// No map named is no map to ask for; the picker fetches whichever is chosen.
 		if !map.is_empty() && !library.has_map(&map) {
 			match self.map_searches(server.as_deref(), &map, by_hand) {
@@ -1702,16 +1741,18 @@ impl Runtime {
 					map_searches = searches;
 					wants.push((recoil::Want::Map, map.clone()));
 				}
-				Err(reason) => map_refused = Some(reason),
+				Err(reason) => refused.push(reason),
 			}
 		}
 		if wants.is_empty() {
-			return Err(ClientError::Refused(
-				map_refused.unwrap_or_else(|| "nothing is missing".into()),
-			));
+			return Err(ClientError::Refused(if refused.is_empty() {
+				"nothing is missing".into()
+			} else {
+				refused.join("; ")
+			}));
 		}
-		// The game still comes; the map's refusal is said beside it.
-		if let Some(reason) = map_refused {
+		// What can come still comes; the rest's refusals are said beside it.
+		for reason in refused {
 			self.batcher.push(Delta::Notice {
 				level: lobby_ui::NoticeLevel::Warning,
 				text: reason,
@@ -2498,6 +2539,7 @@ impl Runtime {
 			Command::SetRapidMasters(masters) => self.rapid_masters = masters,
 			Command::SetMapSearches(searches) => self.map_searches = searches,
 			Command::SetBarMaps(names) => self.bar_maps = names,
+			Command::SetBarContent(bar) => self.bar = bar,
 			Command::SetVet(vet) => self.vet = vet,
 			Command::SetFromHost(from_host) => self.from_host = from_host,
 			Command::SetDataDir(data_dir) => {
@@ -3548,14 +3590,21 @@ mod tests {
 			"https://mods.example/repos.gz".to_owned(),
 		)]);
 		assert_eq!(
-			master_for(&masters, Some("mods.example")),
+			master_for(&masters, Some("mods.example"), recoil::RAPID_REPO_MASTER),
 			"https://mods.example/repos.gz"
 		);
 		assert_eq!(
-			master_for(&masters, Some("server4.beyondallreason.info")),
+			master_for(
+				&masters,
+				Some("server4.beyondallreason.info"),
+				recoil::RAPID_REPO_MASTER
+			),
 			recoil::RAPID_REPO_MASTER
 		);
-		assert_eq!(master_for(&masters, None), recoil::RAPID_REPO_MASTER);
+		assert_eq!(
+			master_for(&masters, None, recoil::RAPID_REPO_MASTER),
+			recoil::RAPID_REPO_MASTER
+		);
 	}
 
 	#[test]
@@ -3565,8 +3614,9 @@ mod tests {
 			"mods.example".to_owned(),
 			"https://mods.example/find".to_owned(),
 		)]);
-		let ask =
-			|bars: &BTreeSet<String>, server, map| map_searches_for(bars, &theirs, server, map);
+		let ask = |bars: &BTreeSet<String>, server, map| {
+			map_searches_for(bars, &theirs, server, map, recoil::HTTP_SEARCH_URL)
+		};
 		let mods = Some("mods.example");
 		let bar = recoil::HTTP_SEARCH_URL;
 		let files = recoil::SPRINGFILES_SEARCH_URL;
@@ -3611,14 +3661,26 @@ mod tests {
 			"http://mods.example/find".to_owned(),
 		)]);
 		assert_eq!(
-			map_searches_for(&bars, &plain, mods, "Bathtub Brawl V2"),
+			map_searches_for(
+				&bars,
+				&plain,
+				mods,
+				"Bathtub Brawl V2",
+				recoil::HTTP_SEARCH_URL
+			),
 			[files]
 		);
 
 		// A server naming springfiles itself is not asked twice.
 		let same = BTreeMap::from([("mods.example".to_owned(), files.to_owned())]);
 		assert_eq!(
-			map_searches_for(&bars, &same, mods, "Bathtub Brawl V2"),
+			map_searches_for(
+				&bars,
+				&same,
+				mods,
+				"Bathtub Brawl V2",
+				recoil::HTTP_SEARCH_URL
+			),
 			[files]
 		);
 	}
@@ -3720,6 +3782,7 @@ mod tests {
 		port: 8200,
 		security: Security::None,
 		ms: 1,
+		pin: None,
 	};
 
 	type FakeServer = (

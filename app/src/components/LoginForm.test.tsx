@@ -65,7 +65,7 @@ function flip(container: HTMLElement) {
 /** Only what the form reads: the server it is for, and the two flags. */
 function settingsWith(): Settings {
 	return {
-		servers: [newServer(SERVER)],
+		servers: [{ ...newServer(SERVER), builtin: 'bar' }],
 		account: { rememberPassword: false, autoLogin: false },
 		chat: { muted: [] },
 	} as unknown as Settings

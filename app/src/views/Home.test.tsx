@@ -2,7 +2,7 @@ import { cleanup, render, waitFor } from '@solidjs/testing-library'
 import { reconcile } from 'solid-js/store'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { Settings } from '../ipc/bindings/Settings'
-import { BAR_HOST, newServer } from '../lib/servers'
+import { newServer } from '../lib/servers'
 import { emptyLobby, setLobby } from '../store/lobby'
 import { seedSession } from '../store/testing'
 import { setSettingsSignal } from '../store/settings'
@@ -19,7 +19,7 @@ function account(
 	own: boolean | null = null,
 ) {
 	setSettingsSignal({
-		servers: [{ ...newServer(BAR_HOST), autoLogin: own }],
+		servers: [{ ...newServer('server4.beyondallreason.info'), autoLogin: own }],
 		account: {
 			username: 'me',
 			rememberPassword: false,

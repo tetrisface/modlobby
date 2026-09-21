@@ -110,20 +110,20 @@ describe('the servers section', () => {
 		)
 	})
 
-	test('Recoil is offered by name, and comes as it has to be reached', () => {
+	test('Modded BAR is offered by name, and comes as it has to be reached', () => {
 		const { container } = open()
 		const offered = () =>
 			[...container.querySelectorAll('#known-servers option')].map((option) =>
 				option.getAttribute('value'),
 			)
-		expect(offered()).toEqual(['lobby.recoilengine.org'])
+		expect(offered()).toEqual(['moddedbar.duckdns.org'])
 
-		typeHost(container, 'lobby.recoilengine.org')
+		typeHost(container, 'moddedbar.duckdns.org')
 		fireEvent.click(button(container, 'Add'))
 		const card = cards(container)[1]!
 		expect(card.querySelector('.server-name')).toHaveProperty(
 			'value',
-			'Recoil Official',
+			'Modded BAR',
 		)
 		const fields = [
 			...card.querySelectorAll<HTMLInputElement>('.server-connection input'),
@@ -134,11 +134,52 @@ describe('the servers section', () => {
 				'.server-connection input[type=checkbox]',
 			)!.checked,
 		).toBe(true)
-		expect(fields.at(-2)!.value).toBe('https://repos.springrts.com/repos.gz')
+		expect(fields.at(-2)!.value).toBe(
+			'https://randomguyrapid.duckdns.org/repos.gz',
+		)
+		expect(fields.at(-1)!.value).toBe('https://moddedbar.duckdns.org/find')
 		expect(asked).not.toHaveBeenCalledWith('check_rapid', {
-			url: 'https://lobby.recoilengine.org/repos.gz',
+			url: 'https://moddedbar.duckdns.org/repos.gz',
 		})
 		expect(offered()).toEqual([])
+	})
+
+	test("the servers every install has stay, and an empty address shows BAR's", async () => {
+		asked.mockImplementation(async (command: string) => {
+			if (command === 'bar_config')
+				return {
+					host: BAR,
+					port: 8200,
+					name: 'BAR',
+					rapidMaster: 'https://repos-cdn.beyondallreason.dev/repos.gz',
+					search: 'https://files-cdn.beyondallreason.dev/find',
+				}
+			return null
+		})
+		applySettings({
+			...blankSettings(),
+			servers: [
+				{ ...newServer(BAR), builtin: 'bar', name: 'BAR' },
+				{ ...newServer('lobby.recoilengine.org'), builtin: 'recoil' },
+				newServer('mods.example'),
+			],
+		})
+		const { container } = open()
+		const removable = cards(container).map((card) =>
+			card.textContent?.includes('Remove'),
+		)
+		expect(removable).toEqual([false, false, true])
+
+		const mods = cards(container)[2]!
+		const [rapid, maps] = [
+			...mods.querySelectorAll<HTMLInputElement>('.server-connection input'),
+		].slice(-2)
+		await vi.waitFor(() =>
+			expect(rapid!.placeholder).toBe(
+				'https://repos-cdn.beyondallreason.dev/repos.gz',
+			),
+		)
+		expect(maps!.placeholder).toBe('https://files-cdn.beyondallreason.dev/find')
 	})
 
 	test('a server says how many are on it while logged in, and the last count after', () => {
@@ -313,7 +354,6 @@ describe('the servers section', () => {
 		const field = [
 			...card.querySelectorAll<HTMLInputElement>('.server-connection input'),
 		].at(-1)!
-		expect(field.placeholder).toBe(`https://${BAR}/find`)
 		fireEvent.input(field, { target: { value: 'https://maps.example/find' } })
 		expect(field.value).toBe('https://maps.example/find')
 	})
