@@ -60,6 +60,36 @@ describe('drawing a box', () => {
 	})
 })
 
+describe('a box that surrounds another', () => {
+	// The whole map less a square hole: in along a seam at y=100, round the
+	// hole the other way, and out along the same seam.
+	const keyhole: [number, number][] = [
+		[0, 0],
+		[200, 0],
+		[200, 200],
+		[0, 200],
+		[0, 100],
+		[60, 100],
+		[60, 140],
+		[140, 140],
+		[140, 60],
+		[60, 60],
+		[60, 100],
+		[0, 100],
+	]
+
+	it('puts the label in the band, where the average of the corners would put it in the hole', () => {
+		const { x, y } = centre(keyhole)
+		// As deep in the band as it goes: 30 from both sides of it.
+		const fromBorder = Math.min(x, y, 200 - x, 200 - y)
+		const fromHole = Math.hypot(
+			Math.max(60 - x, 0, x - 140),
+			Math.max(60 - y, 0, y - 140),
+		)
+		expect(Math.min(fromBorder, fromHole)).toBeGreaterThan(29)
+	})
+})
+
 describe('the rectangle a polygon fits in', () => {
 	it('takes the far corners whatever order the points came in', () => {
 		expect(

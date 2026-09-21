@@ -10,8 +10,10 @@ import { dropModel, type monaco } from '../../editor/monaco'
 import type { Kind } from '../../ipc/bindings/Kind'
 import { unknownUnits } from '../../lib/assist'
 import { describeError } from '../../ipc/client'
+import { when } from '../../lib/presets'
 import {
 	KINDS,
+	compareChange,
 	defaultCompare,
 	draftId,
 	draftNameFor,
@@ -125,6 +127,11 @@ export function Workspace(props: { drafts: boolean; onClose?: () => void }) {
 
 	const history = () => room.my()?.history ?? []
 
+	// A minute is the resolution `when` writes, so it is the rate it needs.
+	const [now, setNow] = createSignal(Date.now())
+	const tick = setInterval(() => setNow(Date.now()), 30_000)
+	onCleanup(() => clearInterval(tick))
+
 	/** Unit keys this game does not have -- only meaningful in a units table. */
 	const warnings = createMemo(() =>
 		doc().kind === 'units'
@@ -162,7 +169,9 @@ export function Workspace(props: { drafts: boolean; onClose?: () => void }) {
 	}
 
 	const toggleCompare = () =>
-		space.setCompare(space.ws.compare ? null : defaultCompare(space.ws))
+		space.setCompare(
+			space.ws.compare ? null : defaultCompare(space.ws, history()),
+		)
 
 	async function act(what: string, run: () => Promise<void>) {
 		setBusy(true)
@@ -325,7 +334,7 @@ export function Workspace(props: { drafts: boolean; onClose?: () => void }) {
 						{(compare) => (
 							<ComparePane
 								compare={compare()}
-								options={sideOptions(space.ws, history(), proposal())}
+								options={sideOptions(space.ws, history(), proposal(), now())}
 								resolve={resolve}
 								diff={space.diffText}
 								onChange={space.setCompare}
@@ -376,16 +385,14 @@ export function Workspace(props: { drafts: boolean; onClose?: () => void }) {
 							{(change) => (
 								<div class='history-row'>
 									<span>
-										#{change.seq} {change.by ?? 'someone'} ·{' '}
-										{change.from.length} → {change.to.length} chars
+										{when(change.at, now())} by {change.by ?? 'someone'} ·{' '}
+										{change.from.length} → {change.to.length} chars · #
+										{change.seq}
 									</span>
 									<button
 										class='link'
 										onClick={() =>
-											space.setCompare({
-												left: { history: change.seq, which: 'from' },
-												right: { history: change.seq, which: 'to' },
-											})
+											space.setCompare(compareChange(history(), change.seq))
 										}
 									>
 										Compare

@@ -339,6 +339,9 @@ pub struct OptionChangeView {
 	pub from: String,
 	pub to: String,
 	pub by: Option<String>,
+	/// When we saw it, in Unix seconds by our clock.
+	#[ts(type = "number")]
+	pub at: u64,
 }
 
 impl From<&OptionChange> for OptionChangeView {
@@ -349,6 +352,7 @@ impl From<&OptionChange> for OptionChangeView {
 			from: change.from.clone(),
 			to: change.to.clone(),
 			by: change.by.clone(),
+			at: change.at,
 		}
 	}
 }

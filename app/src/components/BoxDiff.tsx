@@ -35,14 +35,17 @@ function Panel(props: {
 				<svg viewBox='0 0 200 200' role='img'>
 					<title>{props.label}</title>
 					<For each={polys() ?? []}>
-						{(poly, index) => (
-							<g>
-								<path d={outline(poly)} />
-								<text x={centre(poly).x} y={centre(poly).y + 7}>
-									{index() + 1}
-								</text>
-							</g>
-						)}
+						{(poly, index) => {
+							const at = centre(poly)
+							return (
+								<g>
+									<path d={outline(poly)} />
+									<text x={at.x} y={at.y + 7}>
+										{index() + 1}
+									</text>
+								</g>
+							)
+						}}
 					</For>
 				</svg>
 			</div>

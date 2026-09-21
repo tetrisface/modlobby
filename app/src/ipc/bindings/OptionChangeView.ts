@@ -9,4 +9,8 @@ export type OptionChangeView = {
 	from: string
 	to: string
 	by: string | null
+	/**
+	 * When we saw it, in Unix seconds by our clock.
+	 */
+	at: number
 }

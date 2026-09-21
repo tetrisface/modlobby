@@ -965,14 +965,17 @@ function Minimap(props: {
 				{/* The modoption arrangement, when one applies. Drawn under the
             protocol rects so that a room using both shows which is which. */}
 				<For each={boxes()?.polys ?? []}>
-					{(poly, index) => (
-						<g class='mm-box meta'>
-							<path d={outline(poly)} />
-							<text x={centre(poly).x} y={centre(poly).y + 6}>
-								{index() + 1}
-							</text>
-						</g>
-					)}
+					{(poly, index) => {
+						const at = centre(poly)
+						return (
+							<g class='mm-box meta'>
+								<path d={outline(poly)} />
+								<text x={at.x} y={at.y + 6}>
+									{index() + 1}
+								</text>
+							</g>
+						)
+					}}
 				</For>
 				{/* The protocol's own rects repeat the arrangement above wherever both
             are there, so they are drawn only where it is not -- a map whose

@@ -182,6 +182,14 @@ fn first_colour() -> u32 {
 	COLOURS[0]
 }
 
+/// Unix seconds by this machine's clock, what a change in the history is stamped with.
+fn unix_now() -> u64 {
+	std::time::SystemTime::now()
+		.duration_since(std::time::UNIX_EPOCH)
+		.map(|since| since.as_secs())
+		.unwrap_or_default()
+}
+
 impl Room {
 	/// A room built from whatever this machine has, with the player in seat one.
 	pub fn new(
@@ -332,6 +340,7 @@ impl Room {
 			from,
 			to: value.to_owned(),
 			by: Some(self.player.clone()),
+			at: unix_now(),
 		});
 		true
 	}
@@ -350,6 +359,7 @@ impl Room {
 			from,
 			to: String::new(),
 			by: Some(self.player.clone()),
+			at: unix_now(),
 		});
 		true
 	}

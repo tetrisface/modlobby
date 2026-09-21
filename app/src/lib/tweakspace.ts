@@ -15,6 +15,7 @@ import type { Kind } from '../ipc/bindings/Kind'
 import type { OptionChangeView } from '../ipc/bindings/OptionChangeView'
 import type { Slot } from '../ipc/bindings/Slot'
 import { BOX_OVERRIDE } from './boxes'
+import { when } from './presets'
 import { TWEAK_SLOTS, byRunOrder, isCleared, tweakKey } from './setup'
 
 /**
@@ -79,8 +80,9 @@ export type Sort = 'name' | 'kind'
 export type Filter = { query: string; sort: Sort }
 
 /**
- * One side of a comparison: a document's text as edited or as loaded, one
- * end of a change the room saw this session, or what a vote proposes.
+ * One side of a comparison: a document's text as edited or as loaded, a
+ * version a change the room saw this session made (`to`) or, for a slot's
+ * first change, the version before it (`from`), or what a vote proposes.
  */
 export type Side =
 	| { doc: DocId; text: 'buffer' | 'original' }
@@ -457,12 +459,15 @@ export type SideOption = {
  * Everything worth putting on one side of a diff, grouped for a menu.
  *
  * Of the room's history, only the slots this editor reads: the other
- * modoptions are a number or a switch, which is nothing to diff as text.
+ * modoptions are a number or a switch, which is nothing to diff as text. A
+ * version is named by how long ago it was made, as of `now` in milliseconds;
+ * its number stays at the end, since two made in the same minute read alike.
  */
 export function sideOptions(
 	ws: Workspace,
 	history: OptionChangeView[],
 	vote: string | null,
+	now: number,
 ): SideOption[] {
 	const out: SideOption[] = []
 	for (const doc of Object.values(ws.docs)) {
@@ -491,18 +496,31 @@ export function sideOptions(
 			})
 		}
 	}
+	// A change's `from` is the `to` of the change before it to the same slot, so
+	// both ends of every change would name each version twice. Like a commit,
+	// a change stands for the version it made; only a slot's first change adds
+	// the version before it.
+	const seen = new Set<string>()
 	for (const change of history) {
 		if (slotOf(change.key) === null) continue
-		for (const which of ['from', 'to'] as const) {
-			const side: Side = { history: change.seq, which }
-			const by = change.by ? ` by ${change.by}` : ''
+		if (!seen.has(change.key)) {
+			seen.add(change.key)
+			const side: Side = { history: change.seq, which: 'from' }
 			out.push({
 				key: sideKey(side),
-				label: `#${change.seq} ${change.key} ${which === 'from' ? 'before' : 'after'}${by}`,
+				label: versionLabel(change, 'from'),
 				side,
 				group: 'Changes this session',
 			})
 		}
+		const side: Side = { history: change.seq, which: 'to' }
+		const by = change.by ? ` by ${change.by}` : ''
+		out.push({
+			key: sideKey(side),
+			label: `${change.key} · ${when(change.at, now)}${by} · #${change.seq}`,
+			side,
+			group: 'Changes this session',
+		})
 	}
 	if (vote !== null) {
 		out.push({
@@ -536,12 +554,13 @@ export function resolveSide(
 		}
 	}
 	if ('history' in side) {
-		const change = history.find((entry) => entry.seq === side.history)
+		const named = side.which === 'from' ? before(history, side.history) : side
+		const change = history.find((entry) => entry.seq === named.history)
 		if (!change) return null
 		return {
-			label: `#${change.seq} ${change.key} ${side.which === 'from' ? 'before' : 'after'}`,
+			label: versionLabel(change, named.which),
 			kind: kindOf(change.key),
-			blob: side.which === 'from' ? change.from : change.to,
+			blob: named.which === 'from' ? change.from : change.to,
 		}
 	}
 	if (vote === null) return null
@@ -554,15 +573,56 @@ export function resolveSide(
 }
 
 /**
- * What opening Compare shows first: the open document as loaded against as
- * edited -- or against itself when nothing has been typed, so both sides
- * name something the menu has.
+ * What opening Compare shows first: the step that led to what the open
+ * document holds now, the previous version left and the current right. That
+ * is the edit against what was loaded when something has been typed, else the
+ * room's last change to the slot this session, else the document against
+ * itself, so both sides still name something the menu has.
  */
-export function defaultCompare(ws: Workspace): Compare {
+export function defaultCompare(
+	ws: Workspace,
+	history: OptionChangeView[],
+): Compare {
 	const doc = ws.docs[ws.active]
-	const right = doc && isDirty(doc) ? 'buffer' : 'original'
-	return {
-		left: { doc: ws.active, text: 'original' },
-		right: { doc: ws.active, text: right },
-	}
+	const loaded: Side = { doc: ws.active, text: 'original' }
+	if (doc && isDirty(doc))
+		return { left: loaded, right: { doc: ws.active, text: 'buffer' } }
+	const last =
+		doc?.origin === 'slot'
+			? history.filter((change) => change.key === doc.title).at(-1)
+			: undefined
+	if (last) return compareChange(history, last.seq)
+	return { left: loaded, right: loaded }
+}
+
+type HistorySide = Extract<Side, { history: number }>
+
+/** A version in the history by a name that does not age, as a picked side carries it. */
+function versionLabel(change: OptionChangeView, which: 'from' | 'to'): string {
+	return which === 'to'
+		? `#${change.seq} ${change.key}`
+		: `${change.key} · when you joined`
+}
+
+/**
+ * The version a change started from, as the menu names it: the one the
+ * change before it to the same slot made or, for a slot's first change, the
+ * value when you joined.
+ */
+function before(history: OptionChangeView[], seq: number): HistorySide {
+	const change = history.find((entry) => entry.seq === seq)
+	const prior = history
+		.filter((entry) => entry.key === change?.key && entry.seq < seq)
+		.at(-1)
+	return prior
+		? { history: prior.seq, which: 'to' }
+		: { history: seq, which: 'from' }
+}
+
+/** One change the way `git show` has it: the version before it, then the one it made. */
+export function compareChange(
+	history: OptionChangeView[],
+	seq: number,
+): Compare {
+	return { left: before(history, seq), right: { history: seq, which: 'to' } }
 }

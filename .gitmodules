@@ -58,3 +58,7 @@
 	path = external/widgets-extra
 	url = https://github.com/tetrisface/widgets-extra.git
 	branch = main
+[submodule "external/uberserver"]
+	path = external/uberserver
+	url = https://github.com/spring/uberserver.git
+	branch = master

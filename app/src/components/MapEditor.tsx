@@ -493,24 +493,28 @@ export function MapEditor(props: {
 							>
 								<title>Start boxes on {props.mapName}</title>
 								<For each={ghost() ?? []}>
-									{(poly, index) => (
-										<g class='ed-ghost'>
-											<path d={outline(poly)} />
-											<text
-												transform={upright(centre(poly))}
-												dominant-baseline='central'
-												style={{
-													'font-size': `${labelSize(frame(), extent(poly))}px`,
-												}}
-											>
-												{index() + 1}
-											</text>
-										</g>
-									)}
+									{(poly, index) => {
+										const middle = centre(poly)
+										return (
+											<g class='ed-ghost'>
+												<path d={outline(poly)} />
+												<text
+													transform={upright(middle)}
+													dominant-baseline='central'
+													style={{
+														'font-size': `${labelSize(frame(), extent(poly))}px`,
+													}}
+												>
+													{index() + 1}
+												</text>
+											</g>
+										)
+									}}
 								</For>
 								<For each={state().boxes}>
 									{(box, index) => {
 										const shape = createMemo(() => ring(box))
+										const middle = createMemo(() => centre(shape()))
 										return (
 											<g
 												class='ed-box'
@@ -518,7 +522,7 @@ export function MapEditor(props: {
 											>
 												<path d={outline(shape())} />
 												<text
-													transform={upright(centre(shape()))}
+													transform={upright(middle())}
 													dominant-baseline='central'
 													style={{
 														'font-size': `${labelSize(

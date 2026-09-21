@@ -4,6 +4,7 @@ import { TWEAK_SLOTS } from './setup'
 import {
 	SCRATCH,
 	SLOT_KEYS,
+	compareChange,
 	defaultCompare,
 	defaultTarget,
 	draftDoc,
@@ -368,15 +369,26 @@ describe('comparing', () => {
 		docs[draftId('walls')] = draftDoc('walls', '{ armwall = {} }')
 		return { ...base, docs }
 	})()
+	// Unix seconds, as the history stamps them; `now` is ten minutes on, in ms.
+	const AT = 1_790_000_000
+	const now = (AT + 600) * 1000
 	const history = [
-		{ seq: 6, key: 'allowpausegameplay', from: '0', to: '1', by: null },
-		{ seq: 7, key: 'tweakdefs1', from: 'YQ==', to: 'Yg==', by: 'Lathek' },
+		{ seq: 6, key: 'allowpausegameplay', from: '0', to: '1', by: null, at: AT },
+		{
+			seq: 7,
+			key: 'tweakdefs1',
+			from: 'YQ==',
+			to: 'Yg==',
+			by: 'Lathek',
+			at: AT + 60,
+		},
 		{
 			seq: 8,
 			key: 'mapmetadata_startbox_override',
 			from: '',
 			to: 'eJyr',
 			by: 'Host',
+			at: AT + 570,
 		},
 	]
 
@@ -394,20 +406,65 @@ describe('comparing', () => {
 	})
 
 	test('the menu lists held slots, edited buffers, drafts, slot changes and the vote', () => {
-		const options = sideOptions(ws, history, 'Yg==')
+		const options = sideOptions(ws, history, 'Yg==', now)
 		expect(options.map((option) => option.label)).toEqual([
 			'tweakunits2 · room',
 			'tweakdefs1 · room',
 			'tweakdefs1 · edited',
 			'walls · file',
-			'#7 tweakdefs1 before by Lathek',
-			'#7 tweakdefs1 after by Lathek',
-			'#8 mapmetadata_startbox_override before by Host',
-			'#8 mapmetadata_startbox_override after by Host',
+			'tweakdefs1 · when you joined',
+			'tweakdefs1 · 9m ago by Lathek · #7',
+			'mapmetadata_startbox_override · when you joined',
+			'mapmetadata_startbox_override · just now by Host · #8',
 			'what the vote proposes',
 		])
 		expect(options[3]!.group).toBe('Drafts')
-		expect(sideOptions(ws, [], null).map((o) => o.group)).not.toContain('Vote')
+		expect(sideOptions(ws, [], null, now).map((o) => o.group)).not.toContain(
+			'Vote',
+		)
+	})
+
+	test('a slot changed twice is three versions, as commits are, not four ends', () => {
+		const twice = [
+			{
+				seq: 1,
+				key: 'tweakdefs1',
+				from: 'YQ==',
+				to: 'Yg==',
+				by: 'Host',
+				at: AT,
+			},
+			{
+				seq: 2,
+				key: 'tweakdefs1',
+				from: 'Yg==',
+				to: 'Yw==',
+				by: null,
+				at: AT + 600,
+			},
+		]
+		const changes = sideOptions(emptyWorkspace(DEFS), twice, null, now).filter(
+			(option) => option.group === 'Changes this session',
+		)
+		expect(changes.map((option) => option.label)).toEqual([
+			'tweakdefs1 · when you joined',
+			'tweakdefs1 · 10m ago by Host · #1',
+			'tweakdefs1 · just now · #2',
+		])
+		// The second change starts from the version the first made, which the
+		// menu has, rather than from an end of its own that it does not.
+		expect(compareChange(twice, 1)).toEqual({
+			left: { history: 1, which: 'from' },
+			right: { history: 1, which: 'to' },
+		})
+		expect(compareChange(twice, 2)).toEqual({
+			left: { history: 1, which: 'to' },
+			right: { history: 2, which: 'to' },
+		})
+		// A `from` from elsewhere is named for the version it is.
+		expect(resolveSide(ws, { history: 2, which: 'from' }, twice, null)).toEqual(
+			{ label: '#1 tweakdefs1', kind: 'defs', blob: 'Yg==' },
+		)
 	})
 
 	test('a side resolves to Lua for a document and to a blob for the rest', () => {
@@ -419,7 +476,7 @@ describe('comparing', () => {
 			lua: 'local a = 2',
 		})
 		expect(resolveSide(ws, { history: 7, which: 'to' }, history, null)).toEqual(
-			{ label: '#7 tweakdefs1 after', kind: 'defs', blob: 'Yg==' },
+			{ label: '#7 tweakdefs1', kind: 'defs', blob: 'Yg==' },
 		)
 		// The override's history decodes as boxes, which is what makes it JSON.
 		expect(
@@ -435,15 +492,30 @@ describe('comparing', () => {
 		).toBeNull()
 	})
 
-	test('opening compare shows the edit against what was loaded, or a clean document against itself', () => {
-		expect(defaultCompare(ws)).toEqual({
+	test('opening compare shows the previous version left and the current right', () => {
+		// An edit is the latest step, whatever the room changed before it.
+		expect(defaultCompare(ws, history)).toEqual({
 			left: { doc: DEFS, text: 'original' },
 			right: { doc: DEFS, text: 'buffer' },
 		})
-		const clean = { ...ws, active: slotId('tweakunits2') }
-		expect(defaultCompare(clean).right).toEqual({
-			doc: slotId('tweakunits2'),
-			text: 'original',
+		// A clean slot shows the room's last change to it, from the version the
+		// change before it made.
+		const override = { ...ws, active: slotId(BOX_OVERRIDE) }
+		const again = {
+			seq: 9,
+			key: BOX_OVERRIDE,
+			from: 'eJyr',
+			to: '0',
+			by: 'Host',
+			at: AT + 590,
+		}
+		expect(defaultCompare(override, [...history, again])).toEqual({
+			left: { history: 8, which: 'to' },
+			right: { history: 9, which: 'to' },
 		})
+		// Nothing changed and nothing typed: the document against itself.
+		const clean = { ...ws, active: slotId('tweakunits2') }
+		const self: Side = { doc: slotId('tweakunits2'), text: 'original' }
+		expect(defaultCompare(clean, history)).toEqual({ left: self, right: self })
 	})
 })

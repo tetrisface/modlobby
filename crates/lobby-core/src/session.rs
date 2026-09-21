@@ -2774,6 +2774,8 @@ mod tests {
 			(my.history[0].from.as_str(), my.history[0].to.as_str()),
 			("", "QUJD")
 		);
+		// Stamped when seen, which is what the editor says "5m ago" from.
+		assert!(my.history[0].at > 0);
 	}
 
 	/// Clearing a slot never reaches SETSCRIPTTAGS (`spads.pl:2625-2628`), so

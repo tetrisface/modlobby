@@ -320,6 +320,7 @@ describe('MapEditor', () => {
 				from: 'blob',
 				to: 'other',
 				by: 'Bob',
+				at: 0,
 			},
 		])
 		setLobby('servers', TEST_SERVER, 'myBattle', 'scriptTags', {

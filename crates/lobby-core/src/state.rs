@@ -38,6 +38,9 @@ pub struct OptionChange {
 	pub to: String,
 	/// Who did it, once the host announces it.
 	pub by: Option<String>,
+	/// When we saw it, in Unix seconds by our clock: the protocol carries no
+	/// time of its own.
+	pub at: u64,
 }
 
 /// The room we are in.
@@ -155,6 +158,12 @@ impl MyBattle {
 			from,
 			to,
 			by,
+			// ponytail: the core reads the clock itself; pass `now` through
+			// `Session::handle` once a test needs to pin it.
+			at: std::time::SystemTime::now()
+				.duration_since(std::time::UNIX_EPOCH)
+				.map(|since| since.as_secs())
+				.unwrap_or_default(),
 		});
 	}
 }

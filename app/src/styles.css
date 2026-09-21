@@ -4732,8 +4732,11 @@ html.overlay .shell {
 
 /* The modoption arrangement, distinguished from the protocol's own rects: a
    room can carry both and they need not agree, so they must not look alike. */
+/* Start boxes fill even-odd, as the game's PointInPolygon decides inside: a
+   hole wound the same way round as its box is empty in the game, so here too. */
 .mm-box.meta path {
 	fill: color-mix(in srgb, var(--accent) 22%, transparent);
+	fill-rule: evenodd;
 	stroke: var(--accent);
 	stroke-width: 1.5;
 	stroke-dasharray: 4 3;
@@ -4798,6 +4801,7 @@ html.overlay .shell {
 
 .box-panel path {
 	fill: color-mix(in srgb, var(--muted) 25%, transparent);
+	fill-rule: evenodd;
 	stroke: var(--muted);
 	stroke-width: 1.5;
 }
@@ -5261,6 +5265,7 @@ button.link:hover {
 
 .ed-box path {
 	fill: color-mix(in srgb, var(--accent) 18%, transparent);
+	fill-rule: evenodd;
 	stroke: var(--accent);
 	stroke-width: 1.5;
 	vector-effect: non-scaling-stroke;

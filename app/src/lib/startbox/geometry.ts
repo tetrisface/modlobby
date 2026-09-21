@@ -233,7 +233,7 @@ export function setStrength(box: Box, index: number, strength: number): Box {
 	}
 }
 
-function distanceToSegment(p: Point, a: Point, b: Point): number {
+export function distanceToSegment(p: Point, a: Point, b: Point): number {
 	const vx = b.x - a.x
 	const vy = b.y - a.y
 	const length = vx * vx + vy * vy
