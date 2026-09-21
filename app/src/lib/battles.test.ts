@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import type { BattleList } from '../ipc/bindings/BattleList'
 import type { BattleView } from '../ipc/bindings/BattleView'
+import type { BotView } from '../ipc/bindings/BotView'
 import {
 	arrange,
 	battleKey,
@@ -343,18 +344,28 @@ describe('holding the order still under the pointer', () => {
 })
 
 describe('layoutLabel', () => {
+	const shaped = (teams: number, teamSize: number, over = {}) =>
+		layoutLabel(battle({ layout: { teams, teamSize }, ...over }))
+
 	test('a room with two or more teams is said as a matchup', () => {
-		expect(layoutLabel({ teams: 2, teamSize: 8 })).toBe('8v8')
-		expect(layoutLabel({ teams: 4, teamSize: 4 })).toBe('4v4v4v4')
+		expect(shaped(2, 8)).toBe('8v8')
+		expect(shaped(4, 4)).toBe('4v4v4v4')
 	})
 
-	test('one team of several is co-op, one of one is a duel', () => {
-		expect(layoutLabel({ teams: 1, teamSize: 6 })).toBe('coop')
-		expect(layoutLabel({ teams: 1, teamSize: 1 })).toBe('1v1')
+	test('one team of several against AI is co-op, by title or by its bots', () => {
+		expect(shaped(1, 6, { title: 'Raptors vs AI' })).toBe('coop')
+		const raptor = { name: 'Raptors', ai: 'RaptorsDefense' } as BotView
+		expect(shaped(1, 6, { bots: [raptor] })).toBe('coop')
+	})
+
+	test('one team of several without AI keeps its raw shape', () => {
+		expect(shaped(1, 100)).toBe('1v100')
+		expect(shaped(1, 1)).toBe('1v1')
+		expect(shaped(1, 1, { title: 'vs AI' })).toBe('1v1')
 	})
 
 	test('a room that never said its shape says nothing', () => {
-		expect(layoutLabel(null)).toBe('')
+		expect(layoutLabel(battle())).toBe('')
 	})
 })
 

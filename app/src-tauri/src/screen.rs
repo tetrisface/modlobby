@@ -74,7 +74,9 @@ pub fn toggle_fullscreen(
 		let _ = window.unmaximize();
 	}
 	let position = window.outer_position().unwrap_or_default();
-	let size = window.outer_size().unwrap_or_default();
+	// Inner, because that is what `set_size` takes: an outer size given back
+	// grows the window by its invisible frame on every round trip.
+	let size = window.inner_size().unwrap_or_default();
 
 	// A window that already covers the monitor has no windowed shape worth
 	// remembering — restoring to it would make the toggle do nothing, which is

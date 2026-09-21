@@ -10,9 +10,15 @@ import {
 	test,
 	vi,
 } from 'vitest'
+import { reconcile } from 'solid-js/store'
 import type { Settings } from '../ipc/bindings/Settings'
+import type { UserView } from '../ipc/bindings/UserView'
+import { localStore } from '../lib/resize'
+import { rememberSeen } from '../lib/seen'
 import { newServer } from '../lib/servers'
+import { emptyLobby, setLobby } from '../store/lobby'
 import { applySettings } from '../store/settings'
+import { seedSession } from '../store/testing'
 import { blankSettings, SettingsView } from './Settings'
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
@@ -72,7 +78,11 @@ beforeEach(() => {
 	applySettings(loaded())
 })
 
-afterEach(() => cleanup())
+afterEach(() => {
+	cleanup()
+	setLobby(reconcile(emptyLobby()))
+	Reflect.deleteProperty(window, 'localStorage')
+})
 
 describe('the servers section', () => {
 	test('lists each server with where its session stands', () => {
@@ -97,6 +107,69 @@ describe('the servers section', () => {
 		expect(button(container, 'Add').disabled).toBe(true)
 		expect(container.querySelector('.server-add + .error')?.textContent).toBe(
 			'that server is already listed',
+		)
+	})
+
+	test('Recoil is offered by name, and comes as it has to be reached', () => {
+		const { container } = open()
+		const offered = () =>
+			[...container.querySelectorAll('#known-servers option')].map((option) =>
+				option.getAttribute('value'),
+			)
+		expect(offered()).toEqual(['lobby.recoilengine.org'])
+
+		typeHost(container, 'lobby.recoilengine.org')
+		fireEvent.click(button(container, 'Add'))
+		const card = cards(container)[1]!
+		expect(card.querySelector('.server-name')).toHaveProperty(
+			'value',
+			'Recoil Official',
+		)
+		const fields = [
+			...card.querySelectorAll<HTMLInputElement>('.server-connection input'),
+		]
+		expect(fields[0]!.value).toBe('8200')
+		expect(
+			card.querySelector<HTMLInputElement>(
+				'.server-connection input[type=checkbox]',
+			)!.checked,
+		).toBe(true)
+		expect(fields.at(-2)!.value).toBe('https://repos.springrts.com/repos.gz')
+		expect(asked).not.toHaveBeenCalledWith('check_rapid', {
+			url: 'https://lobby.recoilengine.org/repos.gz',
+		})
+		expect(offered()).toEqual([])
+	})
+
+	test('a server says how many are on it while logged in, and the last count after', () => {
+		const storage = new Map<string, string>()
+		Object.defineProperty(window, 'localStorage', {
+			value: {
+				getItem: (key: string) => storage.get(key) ?? null,
+				setItem: (key: string, value: string) => void storage.set(key, value),
+			},
+			configurable: true,
+		})
+		const somebody = {} as UserView
+		seedSession(
+			{ phase: 'ready', me: 'me', users: { a: somebody, b: somebody } },
+			BAR,
+		)
+		const first = open()
+		expect(cards(first.container)[0]?.textContent).toContain(
+			'2 online, 0 rooms',
+		)
+		first.unmount()
+
+		setLobby(reconcile(emptyLobby()))
+		rememberSeen(localStore(), BAR, {
+			users: 312,
+			rooms: 41,
+			at: Math.floor(Date.now() / 1000) - 2 * 3600,
+		})
+		const { container } = open()
+		expect(cards(container)[0]?.textContent).toContain(
+			'312 online, 41 rooms, 2h ago',
 		)
 	})
 

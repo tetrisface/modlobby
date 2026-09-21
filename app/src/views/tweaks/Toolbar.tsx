@@ -315,20 +315,22 @@ export function SendBar(props: {
 					 */
 					const max = () => gauge().cap - (gauge().command - gauge().blob)
 					const over = (length: number) => props.spads && length > max()
+					/**
+					 * The override goes out zlib-compressed, so its text's length says
+					 * nothing about the cap: only its blob can be too long.
+					 */
+					const textOver = (length: number) =>
+						props.doc.kind !== 'boxes' && over(length)
 					return (
 						<span class='gauge'>
-							<span classList={{ over: over(gauge().raw) }}>
+							<span classList={{ over: textOver(gauge().raw) }}>
 								{names().text.toLowerCase()} {gauge().raw}
 							</span>
 							<span class='gauge-dot'>·</span>
 							{/* The override is always sent compact; a Lua tweak only when asked. */}
 							<Show
 								when={props.doc.kind !== 'boxes'}
-								fallback={
-									<span classList={{ over: over(gauge().minified) }}>
-										minified {gauge().minified}
-									</span>
-								}
+								fallback={<span>minified {gauge().minified}</span>}
 							>
 								<label
 									class='gauge-minify'

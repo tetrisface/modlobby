@@ -9,7 +9,6 @@
 
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { BattleList } from '../ipc/bindings/BattleList'
-import type { LayoutView } from '../ipc/bindings/LayoutView'
 import type { BattleSort } from '../ipc/bindings/BattleSort'
 import type { ModeFilter } from '../ipc/bindings/ModeFilter'
 import { ordered } from './reorder'
@@ -32,14 +31,18 @@ export type Row = {
 export const battleKey = (server: string, id: number) => `${server}/${id}`
 
 /**
- * How a room's shape is said out loud: `2x8` is `8v8`, and one team of more
- * than one is co-op, whoever it is they are all playing against.
+ * How a room's shape is said out loud: `2x8` is `8v8`. One team of several is
+ * co-op when it plays AI; people against people in that shape keep the raw
+ * `1v16`, which at least claims nothing the room is not.
  */
-export function layoutLabel(layout: LayoutView | null): string {
+export function layoutLabel(battle: BattleView): string {
+	const { layout } = battle
 	if (!layout) return ''
 	const { teams, teamSize } = layout
-	if (teams < 2) return teamSize > 1 ? 'coop' : '1v1'
-	return Array(teams).fill(teamSize).join('v')
+	if (teams >= 2) return Array(teams).fill(teamSize).join('v')
+	// Bots are only known for the room we are in; the title is the rest.
+	const vsAi = battle.bots.length > 0 || isVsAi(battle)
+	return teamSize > 1 && vsAi ? 'coop' : `1v${teamSize}`
 }
 
 /**

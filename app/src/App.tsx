@@ -23,6 +23,8 @@ import {
 } from './components/WindowGlyphs'
 import { connectChannel } from './ipc/channel'
 import { ACTIVITY_EVENTS, activityReporter } from './lib/activity'
+import { localStore } from './lib/resize'
+import { headCount, rememberSeen } from './lib/seen'
 import { serverId } from './lib/servers'
 import {
 	clickLeavesOverlay,
@@ -349,6 +351,16 @@ function Layout(props: ParentProps) {
 			restored.add(server)
 			void restoreChannels(server)
 		}
+	})
+
+	// Each ready server's head count, kept for its card while not logged in.
+	createEffect(() => {
+		for (const [server, session] of sessions())
+			if (session.phase === 'ready')
+				rememberSeen(localStore(), server, {
+					...headCount(session),
+					at: Math.floor(Date.now() / 1000),
+				})
 	})
 
 	async function restoreChannels(server: string) {

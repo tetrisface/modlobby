@@ -19,10 +19,13 @@ import type { Account } from '../ipc/bindings/Account'
 import type { ServerEntry } from '../ipc/bindings/ServerEntry'
 import type { Settings } from '../ipc/bindings/Settings'
 import { api, describeError } from '../ipc/client'
+import { localStore } from '../lib/resize'
+import { headCount, readSeen, seenText } from '../lib/seen'
 import {
 	forgotPasswordUrl,
 	guessedRapid,
 	hostProblem,
+	KNOWN,
 	newServer,
 	parsePorts,
 	serverId,
@@ -62,6 +65,7 @@ export function ServerRows(props: {
 	async function add(typed: string) {
 		const added = newServer(typed)
 		props.setDraft('servers', (servers) => [...servers, added])
+		if (added.rapid) return
 		const guess = guessedRapid(added.host)
 		const found = await api.checkRapid(guess).catch(() => null)
 		if (!found || found.own === 0) return
@@ -210,6 +214,15 @@ function ServerCard(props: {
 	const startsOpen = props.entry.allowUnencrypted
 
 	const status = () => sessionStatus(session())
+	/** Live while logged in; else the last count, since no server says before. */
+	const headline = () => {
+		const live = session()
+		return seenText(
+			live?.phase === 'ready' ? headCount(live) : null,
+			readSeen(localStore(), id()),
+			Date.now(),
+		)
+	}
 	const connected = () => (session()?.phase ?? null) !== null
 	const logsIn = () => props.entry.autoLogin ?? props.account.autoLogin
 
@@ -289,6 +302,7 @@ function ServerCard(props: {
 				<Show when={props.entry.username}>
 					{(name) => <> · account {name()}</>}
 				</Show>
+				<Show when={headline()}>{(text) => <> · {text()}</>}</Show>
 				<Show when={way()}>
 					{(found) => (
 						<>
@@ -475,6 +489,11 @@ function ServerCard(props: {
 function AddServer(props: { listed: string[]; add: (host: string) => void }) {
 	const [host, setHost] = createSignal('')
 	const problem = () => hostProblem(host(), props.listed)
+	const unlisted = () =>
+		KNOWN.filter(
+			(known) =>
+				!props.listed.some((held) => serverId(held) === serverId(known.host)),
+		)
 
 	function add() {
 		if (problem() !== null) return
@@ -489,6 +508,7 @@ function AddServer(props: { listed: string[]; add: (host: string) => void }) {
 					Add a server
 					<input
 						value={host()}
+						list='known-servers'
 						placeholder='its host, e.g. server.example.com'
 						onInput={(event) => setHost(event.currentTarget.value)}
 						onKeyDown={(event) => {
@@ -497,6 +517,11 @@ function AddServer(props: { listed: string[]; add: (host: string) => void }) {
 							add()
 						}}
 					/>
+					<datalist id='known-servers'>
+						<For each={unlisted()}>
+							{(known) => <option value={known.host}>{known.name}</option>}
+						</For>
+					</datalist>
 				</label>
 				<button type='button' disabled={problem() !== null} onClick={add}>
 					Add

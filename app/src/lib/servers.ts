@@ -83,18 +83,42 @@ export function guessedRapid(host: string): string {
 }
 
 /**
+ * Servers worth offering by name when one is added, with what is known of
+ * them already.
+ *
+ * Recoil's lobby is uberserver: STLS on 8200 only (8201 is its UDP port, and
+ * a TCP try there just waits out its timeout), behind the self-signed X.509
+ * v1 certificate uberserver makes itself, which rustls cannot read — so no
+ * encrypted way in until certificates are pinned, and unencrypted is allowed.
+ * It keeps no rapid index of its own; its games are on springrts' master.
+ */
+export const KNOWN: Pick<
+	ServerEntry,
+	'host' | 'name' | 'ports' | 'allowUnencrypted' | 'rapid'
+>[] = [
+	{
+		host: 'lobby.recoilengine.org',
+		name: 'Recoil Official',
+		ports: [8200],
+		allowUnencrypted: true,
+		rapid: 'https://repos.springrts.com/repos.gz',
+	},
+]
+
+/**
  * A server just added by its host: teiserver's ports unless one was typed
- * after it, encrypted only, no account yet.
+ * after it, encrypted only, no account yet — or what is known of it.
  */
 export function newServer(typed: string): ServerEntry {
 	const { host, port } = splitHost(typed)
+	const known = KNOWN.find((entry) => serverId(entry.host) === serverId(host))
 	return {
 		host,
-		name: '',
-		ports: port === null ? [8200, 8201] : [port],
-		allowUnencrypted: false,
+		name: known?.name ?? '',
+		ports: port === null ? (known?.ports ?? [8200, 8201]) : [port],
+		allowUnencrypted: known?.allowUnencrypted ?? false,
 		website: null,
-		rapid: null,
+		rapid: known?.rapid ?? null,
 		maps: null,
 		username: '',
 		channels: ['main'],

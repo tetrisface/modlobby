@@ -62,3 +62,4 @@
 	path = external/uberserver
 	url = https://github.com/spring/uberserver.git
 	branch = master
+	shallow = true

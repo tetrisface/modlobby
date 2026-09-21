@@ -22,6 +22,7 @@ struct Restore {
 	position: PhysicalPosition<i32>,
 	size: PhysicalSize<u32>,
 	decorated: bool,
+	maximized: bool,
 }
 
 pub struct TauriSurface {
@@ -50,10 +51,22 @@ impl TauriSurface {
 	}
 
 	fn enter(&self) {
+		// Unmaximized first, as `screen.rs` does. A maximized window's rectangle
+		// hangs past every edge of the monitor, and given back as an ordinary
+		// window it stays there: the page clipped on the right, and saved that
+		// way by the window-state plugin for every start after. The flag puts it
+		// back to maximized instead.
+		let maximized = self.window.is_maximized().unwrap_or(false);
+		if maximized {
+			let _ = self.window.unmaximize();
+		}
 		let remembered = Restore {
 			position: self.window.outer_position().unwrap_or_default(),
-			size: self.window.outer_size().unwrap_or_default(),
+			// Inner, because that is what `set_size` takes: an outer size given
+			// back grows the window by its invisible frame on every round trip.
+			size: self.window.inner_size().unwrap_or_default(),
 			decorated: self.window.is_decorated().unwrap_or(true),
+			maximized,
 		};
 		// Kept from the first entry only: entered again while still in this
 		// shape, the window would remember the overlay as what to go back to.
@@ -97,6 +110,9 @@ impl TauriSurface {
 		let _ = self.window.set_decorations(remembered.decorated);
 		let _ = self.window.set_position(remembered.position);
 		let _ = self.window.set_size(remembered.size);
+		if remembered.maximized {
+			let _ = self.window.maximize();
+		}
 	}
 
 	/// What the window is now, as the toolkit believes it and as the OS has

@@ -36,6 +36,7 @@ import type { DownloadStatus } from '../ipc/bindings/DownloadStatus'
 import type { StartRectView } from '../ipc/bindings/StartRectView'
 import type { UserView } from '../ipc/bindings/UserView'
 import { api, describeError } from '../ipc/client'
+import { layoutLabel } from '../lib/battles'
 import { boxSignature, centre, outline } from '../lib/boxes'
 import { downloadFraction } from '../lib/download'
 import { TILES } from '../lib/maps'
@@ -1040,12 +1041,8 @@ function Chips(props: { battle: BattleView }) {
 					<Missing parts={parts()} engineVersion={props.battle.engineVersion} />
 				</Show>
 			</Show>
-			<Show when={props.battle.layout}>
-				{(layout) => (
-					<span class='chip info'>
-						{layout().teams} × {layout().teamSize}
-					</span>
-				)}
+			<Show when={layoutLabel(props.battle)}>
+				{(label) => <span class='chip info'>{label()}</span>}
 			</Show>
 			<Show when={props.battle.locked}>
 				<span class='chip warn'>Locked</span>

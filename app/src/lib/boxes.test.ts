@@ -60,6 +60,39 @@ describe('drawing a box', () => {
 	})
 })
 
+describe('a box made of islands', () => {
+	// Three squares in a row joined by seams at y=100; the end ones are the
+	// deepest, the middle one is where the box as a whole is.
+	const islands: [number, number][] = [
+		[20, 80],
+		[60, 80],
+		[60, 100],
+		[90, 100],
+		[90, 82],
+		[126, 82],
+		[126, 100],
+		[150, 100],
+		[150, 80],
+		[190, 80],
+		[190, 120],
+		[150, 120],
+		[150, 100],
+		[126, 100],
+		[126, 118],
+		[90, 118],
+		[90, 100],
+		[60, 100],
+		[60, 120],
+		[20, 120],
+	]
+
+	it('labels the middle island rather than the deepest one', () => {
+		const { x, y } = centre(islands)
+		expect(Math.abs(x - 108)).toBeLessThan(1)
+		expect(Math.abs(y - 100)).toBeLessThan(1)
+	})
+})
+
 describe('a box that surrounds another', () => {
 	// The whole map less a square hole: in along a seam at y=100, round the
 	// hole the other way, and out along the same seam.

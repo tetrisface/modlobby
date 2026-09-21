@@ -257,6 +257,26 @@ describe('SendBar', () => {
 		expect(button(getByText('Call a vote')).disabled).toBe(true)
 	})
 
+	test('the override is compressed, so only its blob can go red', () => {
+		const override = emptyWorkspace().docs[slotId(BOX_OVERRIDE)]!
+		const long = prepared(true)
+		long.gauge = { ...long.gauge, raw: 20000, minified: 17000 }
+		const fits = sendBar(override, { target: BOX_OVERRIDE, prepared: long })
+		expect(fits.container.querySelector('.gauge .over')).toBeNull()
+		fits.unmount()
+
+		const tooLong = prepared(false)
+		tooLong.gauge = { ...tooLong.gauge, raw: 20000, minified: 17000 }
+		const { getByText } = sendBar(override, {
+			target: BOX_OVERRIDE,
+			prepared: tooLong,
+		})
+		const red = (text: string) => getByText(text).closest('.over') !== null
+		expect(red('json 20000')).toBe(false)
+		expect(red('minified 17000')).toBe(false)
+		expect(red('base64url+zlib 19982')).toBe(true)
+	})
+
 	test('minifying is asked for, never assumed; the override has no say', () => {
 		const lua = sendBar(typed)
 		const box = lua.getByRole('checkbox') as HTMLInputElement

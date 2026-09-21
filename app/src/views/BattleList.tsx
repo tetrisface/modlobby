@@ -614,7 +614,7 @@ export function BattleList() {
 													</Show>
 												</span>
 												<span class='col-layout'>
-													{layoutLabel(r().battle.layout)}
+													{layoutLabel(r().battle)}
 												</span>
 												<span class='col-title'>{r().battle.title}</span>
 												<span class='col-map'>{r().battle.mapName}</span>
