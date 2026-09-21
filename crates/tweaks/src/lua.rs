@@ -185,7 +185,8 @@ pub fn as_written(source: &str, kind: Kind) -> Result<String, Error> {
 			.find(|&i| safe[i] <= byte && used[i] < 2)
 		else {
 			return Err(Error::Underscore(if byte <= line_one {
-				"a tweakunits name cannot hold '?' or accented letters; reword the first line".into()
+				"a tweakunits name cannot hold '?' or accented letters; reword the first line"
+					.into()
 			} else {
 				"a comment in this tweakunits cannot be sent as written; reword its '?' or accented letters, or send it minified".into()
 			}));

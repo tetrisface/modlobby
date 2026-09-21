@@ -294,7 +294,9 @@ local count_per_wave = 4 -- inline
 		assert_eq!(view.name, None, "JSON has no header comment");
 		assert!(view.diagnostics.is_empty());
 		assert_eq!(
-			prepare(&view.formatted, Slot::Boxes, true, false).unwrap().blob,
+			prepare(&view.formatted, Slot::Boxes, true, false)
+				.unwrap()
+				.blob,
 			prepared.blob
 		);
 		// A vote line is the short kind, like any other.

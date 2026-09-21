@@ -1965,11 +1965,14 @@ body.resizing-y {
 
 /* The numbers are never cut short: where they and the buttons do not fit on
    one line, the buttons move to a line of their own. */
+/* Centred rather than on a baseline: the minify toggle has none of its own,
+   and would sit off the line the numbers are on. */
 .gauge {
 	display: inline-flex;
 	flex-wrap: wrap;
-	align-items: baseline;
+	align-items: center;
 	gap: 0 0.35em;
+	line-height: 1.4;
 	font-family: var(--mono);
 	font-size: 0.6875rem;
 	color: var(--faint);
@@ -1991,11 +1994,58 @@ body.resizing-y {
 	cursor: pointer;
 }
 
+/* A box drawn like the rest of the bar -- square corners, the accent when on,
+   a tick in it -- rather than the platform's white one, and no bigger than a
+   digit beside it. */
 .gauge-minify input {
-	width: 0.75rem;
-	height: 0.75rem;
+	appearance: none;
+	display: inline-grid;
+	place-content: center;
+	flex-shrink: 0;
+	width: 0.625rem;
+	height: 0.625rem;
 	margin: 0;
-	accent-color: var(--accent);
+	/* The app's own inputs are padded for text. */
+	padding: 0;
+	/* Centred on the line box it sits low beside the digits' x-height. */
+	transform: translateY(-7%);
+	background: var(--sunken);
+	border: 1px solid var(--faint);
+	border-radius: 2px;
+	cursor: pointer;
+}
+
+/* The tick, cut out of a square: hidden until checked. */
+.gauge-minify input::before {
+	content: '';
+	width: 0.4375rem;
+	height: 0.4375rem;
+	background: var(--bg);
+	clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+	transform: scale(0);
+	transition: transform 80ms ease-out;
+}
+
+.gauge-minify:hover input {
+	border-color: var(--muted);
+}
+
+.gauge-minify input:checked {
+	background: var(--accent);
+	border-color: var(--accent);
+}
+
+.gauge-minify input:checked::before {
+	transform: scale(1);
+}
+
+.gauge-minify input:focus-visible {
+	outline: 1px solid var(--accent);
+	outline-offset: 1px;
+}
+
+.gauge-minify:has(input:checked):not(.over) {
+	color: var(--muted);
 }
 
 .tweak-send {
