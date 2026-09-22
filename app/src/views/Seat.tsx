@@ -322,10 +322,10 @@ export function Seat() {
 		p().watch.pending
 			? pendingTitle()
 			: queued() !== null
-				? 'Leave the queue and keep watching'
+				? 'Leave the queue and keep spectating'
 				: seated()
 					? 'Give the seat up'
-					: 'Watching'
+					: 'Spectating'
 	const playTitle = () =>
 		p().play.pending
 			? pendingTitle()
@@ -384,7 +384,7 @@ export function Seat() {
 						title={watchTitle()}
 						onClick={() => void watch()}
 					>
-						Watch
+						Spectate
 					</button>
 					<button
 						type='button'

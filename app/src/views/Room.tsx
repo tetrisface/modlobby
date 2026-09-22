@@ -694,7 +694,7 @@ export function Room() {
 								</Match>
 								<Match when={room.running() && room.caps.plays}>
 									<button class='primary' onClick={launch}>
-										Watch the game
+										Spectate the game
 									</button>
 								</Match>
 								{/* The game is on, and this machine has no engine allowed to

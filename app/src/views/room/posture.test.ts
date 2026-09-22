@@ -31,7 +31,7 @@ const looks = (room: ReturnType<typeof fakeRoom>) => {
 }
 
 describe('the posture control', () => {
-	test('watching holds Watch and offers Play as the next step', () => {
+	test('watching holds Spectate and offers Play as the next step', () => {
 		expect(looks(room({ player: false }))).toEqual(['held', 'next', 'plain'])
 	})
 
@@ -98,7 +98,7 @@ describe('the posture control', () => {
 		expect(p.play).toMatchObject({ look: 'held', pending: true })
 	})
 
-	test('a stand-up asked for shows Watch at once, on its way', () => {
+	test('a stand-up asked for shows Spectate at once, on its way', () => {
 		const p = posture(
 			room({}, {}, {}, { seatOnItsWay: { player: false, allyTeam: 0 } }),
 		)

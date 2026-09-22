@@ -2796,14 +2796,10 @@ body.resizing-y {
 
 @keyframes ready-call {
 	from {
-		box-shadow:
-			inset 0 0 0 1px var(--warn),
-			0 0 0 0 color-mix(in srgb, var(--warn) 70%, transparent);
+		box-shadow: 0 0 0 0 color-mix(in srgb, var(--warn) 70%, transparent);
 	}
 	to {
-		box-shadow:
-			inset 0 0 0 1px var(--warn),
-			0 0 0 0.75rem transparent;
+		box-shadow: 0 0 0 0.75rem transparent;
 	}
 }
 
@@ -4447,7 +4443,7 @@ input[type='checkbox'].v-edit {
 	color: var(--accent);
 }
 
-/* ---- the posture control: Watch, Play, Ready ---- */
+/* ---- the posture control: Spectate, Play, Ready ---- */
 
 .choice.posture button {
 	display: inline-flex;
@@ -4457,12 +4453,42 @@ input[type='checkbox'].v-edit {
 	font-size: 0.75rem;
 	font-weight: 600;
 	letter-spacing: 0.05em;
+	border: 1px solid var(--line);
+}
+
+/* Each segment draws its own border and the control none, so a coloured
+   edge is the control's edge: one line on one radius, with no grey ring
+   around it. Neighbours overlap by a pixel to keep a shared edge one line.
+   Nothing is clipped, so Ready's breath can ring outward past its edge. */
+.choice.posture {
+	border: 0;
+	overflow: visible;
+}
+
+.choice.posture button + button {
+	margin-left: -1px;
+}
+
+/* The radius every button has: a 1px line bent any wider dims at the bend. */
+.choice.posture button:first-child {
+	border-radius: 4px 0 0 4px;
+}
+
+.choice.posture button:last-child {
+	border-radius: 0 4px 4px 0;
+}
+
+/* A coloured edge is drawn over its neighbour's grey one. */
+.choice.posture button.next,
+.choice.posture button.asked {
+	position: relative;
+	z-index: 1;
 }
 
 /* The step after where you are: outlined, inviting. */
 .choice.posture button.next {
 	color: var(--text);
-	box-shadow: inset 0 0 0 1px var(--muted);
+	border-color: var(--muted);
 }
 
 .posture-note {
@@ -4474,9 +4500,10 @@ input[type='checkbox'].v-edit {
 /* Ready keeps its label and changes colour, Chobby's grammar: yellow while
    the room asks it of you, green once given, dashed while armed for later.
    Shared by the segment and the card's copy of the toggle. */
-.posture-ready.asked {
+.posture-ready.asked,
+.choice.posture button.ready.asked {
 	color: var(--warn);
-	box-shadow: inset 0 0 0 1px var(--warn);
+	border-color: var(--warn);
 }
 
 .posture-ready.on,
@@ -4535,12 +4562,7 @@ input[type='checkbox'].v-edit {
 	}
 }
 
-/* The card's copy is a full-size button with a border of its own. */
-.card-actions .posture-ready.asked {
-	border-color: var(--warn);
-	box-shadow: none;
-}
-
+/* The card's copy is a full-size button, so its green is an edge too. */
 .card-actions .posture-ready.on {
 	border-color: var(--ok);
 }

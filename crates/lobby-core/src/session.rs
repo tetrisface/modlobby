@@ -222,7 +222,7 @@ pub struct Session {
 	/// server has answered with it. Sent as two requests because the server
 	/// clears a ready that arrives with the seat (`consul_server.ex`
 	/// `request_user_change_status`). Dropped with a refused seat, by a
-	/// Watch press, and by an explicit ready press either way: the newest
+	/// Spectate press, and by an explicit ready press either way: the newest
 	/// word from the player wins.
 	ready_after_seat: bool,
 	/// A `!privatehost` we asked for and the password it came back with.
@@ -3554,7 +3554,7 @@ mod tests {
 	fn a_ready_pressed_behind_a_stand_up_follows_the_seat() {
 		let mut s = in_a_public_room();
 		feed(&mut s, &[&told(seated(0, false))]);
-		// Watch, Play, Ready, faster than the server answers. The seat lands
+		// Spectate, Play, Ready, faster than the server answers. The seat lands
 		// as a sit-down, which clears a ready sent with it; so none is.
 		s.release_seat();
 		s.take_seat(0, 0, false).unwrap();

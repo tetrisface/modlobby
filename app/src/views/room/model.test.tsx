@@ -243,7 +243,7 @@ describe('choosing a team', () => {
 		expect(seat?.[1][1]).toBe(0)
 	})
 
-	test('in the queue, Play says where you stand and Watch leaves it', async () => {
+	test('in the queue, Play says where you stand and Spectate leaves it', async () => {
 		const calls: Calls = []
 		const model = watchingThree(calls, [])
 		const { container } = await open(
@@ -261,7 +261,7 @@ describe('choosing a team', () => {
 			container.querySelector('.seat .posture .play .posture-note')
 				?.textContent,
 		).toBe('queued 2 of 2')
-		const leave = buttons.find((b) => b.textContent === 'Watch')
+		const leave = buttons.find((b) => b.textContent === 'Spectate')
 		fireEvent.click(leave as HTMLButtonElement)
 		await settle()
 		expect(calls).toContainEqual(['sayBattle', ['$leaveq']])

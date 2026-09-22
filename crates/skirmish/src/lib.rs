@@ -578,7 +578,7 @@ impl Room {
 			}
 			Act::ReleaseSeat => {
 				self.release_seat();
-				Outcome::Did("you are watching".to_owned())
+				Outcome::Did("you are spectating".to_owned())
 			}
 			Act::SetSide { side } => {
 				self.set_side(side);

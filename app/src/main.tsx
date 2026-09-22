@@ -15,6 +15,8 @@ import 'flag-icons/css/flag-icons.min.css'
 import './styles.css'
 
 captureConsole()
+// Console hooks for staging room states by hand; see `dev.ts`.
+if (import.meta.env.DEV) void import('./dev')
 
 const root = document.getElementById('root')
 if (!root) throw new Error('missing #root')
