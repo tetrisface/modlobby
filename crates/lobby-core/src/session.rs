@@ -9,7 +9,7 @@ use spring_protocol::{
 
 use crate::hosting::{self, Rtts, SpareRoom};
 use crate::spads::{self, Announcement, VoteState};
-use crate::state::{Bot, Channel, LobbyState, MyBattle, Phase, StartRect};
+use crate::state::{Bot, Channel, LobbyState, MyBattle, Phase, SeatOnItsWay, StartRect};
 use spring_protocol::policy::PasteBurst;
 
 /// What the application must do in response to an event.
@@ -218,6 +218,13 @@ pub struct Session {
 	/// the oldest, which the server kept its own way -- a seat refused in a
 	/// full room, say.
 	in_flight: VecDeque<Option<Seat>>,
+	/// A Ready pressed while watching: the seat first, and a ready once the
+	/// server has answered with it. Sent as two requests because the server
+	/// clears a ready that arrives with the seat (`consul_server.ex`
+	/// `request_user_change_status`). Dropped with a refused seat, by a
+	/// Watch press, and by an explicit ready press either way: the newest
+	/// word from the player wins.
+	ready_after_seat: bool,
 	/// A `!privatehost` we asked for and the password it came back with.
 	private_host: Option<String>,
 	/// The spare autohost we are joining to make it ours; claimed on arrival.
@@ -334,6 +341,7 @@ impl Session {
 			collecting_ignored: None,
 			seat: None,
 			in_flight: VecDeque::new(),
+			ready_after_seat: false,
 			private_host: None,
 			hosting: None,
 			synced: false,
@@ -475,7 +483,12 @@ impl Session {
 	/// how a client with nobody at the keyboard says it is watching; a room
 	/// that is ours is always ours to sit in. Nothing here does it on its own —
 	/// it is always a deliberate action from the user.
-	pub fn take_seat(&mut self, team: u8, ally_team: u8) -> Result<Vec<Effect>, SeatError> {
+	pub fn take_seat(
+		&mut self,
+		team: u8,
+		ally_team: u8,
+		ready: bool,
+	) -> Result<Vec<Effect>, SeatError> {
 		if self
 			.state
 			.my_battle
@@ -495,6 +508,8 @@ impl Session {
 			side: self.seat.map_or(0, |seat| seat.side),
 			handicap: self.seat.map_or(0, |seat| seat.handicap),
 		});
+		// Assigned, not set: the newest press decides.
+		self.ready_after_seat = ready;
 		let mut effects = vec![self.battle_status()];
 		effects.extend(self.wish());
 		Ok(effects)
@@ -502,14 +517,37 @@ impl Session {
 
 	/// Says we are ready, or not. Only a player can be either.
 	pub fn set_ready(&mut self, ready: bool) -> Result<Vec<Effect>, SeatError> {
-		let seat = self.seat.as_mut().ok_or(SeatError::Spectating)?;
+		// An explicit word on ready, either way, supersedes one that was to
+		// follow the seat.
+		self.ready_after_seat = false;
+		let seat = self.seat.ok_or(SeatError::Spectating)?;
+		// The seat itself is still on its way and lands as a sit-down. The
+		// server clears a ready that arrives with one, and the flood window
+		// would merge this into it; so it follows the seat instead.
+		if ready && self.sitting_down() {
+			self.ready_after_seat = true;
+			return Ok(self.wish().into_iter().collect());
+		}
 		if seat.ready == ready {
 			return Ok(vec![]);
 		}
-		seat.ready = ready;
+		self.seat = Some(Seat { ready, ..seat });
 		let mut effects = vec![self.battle_status()];
 		effects.extend(self.wish());
 		Ok(effects)
+	}
+
+	/// Whether the seat we hold has yet to land as a sit-down: the server has
+	/// not seen us seated, or a stand-up of ours is still ahead of it.
+	fn sitting_down(&self) -> bool {
+		let me = self.state.me.as_deref().unwrap_or_default();
+		let seated = self
+			.state
+			.users
+			.get(me)
+			.and_then(|user| user.battle_status)
+			.is_some_and(|status| status.player);
+		!seated || self.in_flight.iter().any(Option::is_none)
 	}
 
 	/// Picks a faction: 0 Armada, 1 Cortex, 2 Random, 3 Legion.
@@ -526,6 +564,7 @@ impl Session {
 	/// seat: whoever stands up has stopped planning to play.
 	pub fn release_seat(&mut self) -> Vec<Effect> {
 		self.seat = None;
+		self.ready_after_seat = false;
 		let Some(my) = self.state.my_battle.as_mut() else {
 			return vec![];
 		};
@@ -575,8 +614,19 @@ impl Session {
 			return effects;
 		}
 		self.seat = said;
-		// Our own request answered is nothing to answer back.
 		if answer {
+			// Our own request answered is nothing to answer back -- unless a
+			// Ready pressed while watching is still owed its second half.
+			if std::mem::take(&mut self.ready_after_seat)
+				&& let Some(seat) = self.seat.filter(|seat| !seat.ready)
+			{
+				self.seat = Some(Seat {
+					ready: true,
+					..seat
+				});
+				effects.push(self.battle_status());
+				effects.extend(self.wish());
+			}
 			return effects;
 		}
 		let Some(seat) = self.seat.filter(|seat| !seat.ready) else {
@@ -598,30 +648,55 @@ impl Session {
 		effects
 	}
 
-	/// Keeps the room view's `ready_on_its_way` in step: the ready our newest
-	/// request asks for, while the server still shows otherwise. The page draws
-	/// it at once, as on its way; the server's word stays what is true.
+	/// Keeps the room view's `ready_on_its_way` and `seat_on_its_way` in
+	/// step: what our newest request asks for, while the server still shows
+	/// otherwise. The page draws it at once, as on its way; the server's word
+	/// stays what is true.
 	fn wish(&mut self) -> Option<Effect> {
-		let asked = self
-			.in_flight
-			.back()
-			.copied()
+		let newest = self.in_flight.back().copied();
+		let asked_ready = newest
 			.flatten()
-			.map(|seat| seat.ready);
+			.map(|seat| seat.ready || self.ready_after_seat);
+		let asked_seat = newest.map(|seat| SeatOnItsWay {
+			player: seat.is_some(),
+			ally_team: seat.map_or(0, |seat| seat.ally_team),
+		});
 		let me = self.state.me.as_deref().unwrap_or_default();
-		let shown = self
-			.state
-			.users
-			.get(me)
-			.and_then(|user| user.battle_status)
-			.is_some_and(|status| status.player && status.ready);
-		let on_its_way = asked.filter(|&ready| ready != shown);
+		let shown = self.state.users.get(me).and_then(|user| user.battle_status);
+		let shown_ready = shown.is_some_and(|status| status.player && status.ready);
+		let shown_seat = SeatOnItsWay {
+			player: shown.is_some_and(|status| status.player),
+			ally_team: shown
+				.filter(|status| status.player)
+				.map_or(0, |status| status.ally_team),
+		};
+		let ready = asked_ready.filter(|&ready| ready != shown_ready);
+		let seat = asked_seat.filter(|&seat| seat != shown_seat);
 		let my = self.state.my_battle.as_mut()?;
-		if my.ready_on_its_way == on_its_way {
+		if my.ready_on_its_way == ready && my.seat_on_its_way == seat {
 			return None;
 		}
-		my.ready_on_its_way = on_its_way;
+		my.ready_on_its_way = ready;
+		my.seat_on_its_way = seat;
 		Some(Effect::RoomChanged)
+	}
+
+	/// The runtime's word that the status we last asked for waits for the
+	/// flood window, and until when, in Unix milliseconds. The first word
+	/// stands: the window opens at one moment however often it is asked.
+	pub fn status_held(&mut self, until_ms: u64) -> Option<Effect> {
+		let my = self.state.my_battle.as_mut()?;
+		if my.held_until_ms.is_some() {
+			return None;
+		}
+		my.held_until_ms = Some(until_ms);
+		Some(Effect::RoomChanged)
+	}
+
+	/// The runtime's word that a status of ours left.
+	pub fn status_sent(&mut self) -> Option<Effect> {
+		let my = self.state.my_battle.as_mut()?;
+		my.held_until_ms.take().map(|_| Effect::RoomChanged)
 	}
 
 	pub fn seat(&self) -> Option<Seat> {
@@ -846,6 +921,17 @@ impl Session {
 		self.synced
 	}
 
+	/// The runtime's word that the newest status replaced one still waiting
+	/// for the flood window (`PolicyEvent::Coalesced`). The replaced request
+	/// never leaves, so no answer to it comes; left waiting, it would take
+	/// the answer meant for the request that replaced it.
+	pub fn status_replaced(&mut self) {
+		let n = self.in_flight.len();
+		if n >= 2 {
+			self.in_flight.remove(n - 2);
+		}
+	}
+
 	fn battle_status(&mut self) -> Effect {
 		self.in_flight.push_back(self.seat);
 		let sync = if self.synced {
@@ -1068,6 +1154,7 @@ impl Session {
 				let script_password = self.pending_join.take().unwrap_or_default();
 				state.my_battle = Some(MyBattle::new(id, game_hash, script_password));
 				self.in_flight.clear();
+				self.ready_after_seat = false;
 				let mut effects = vec![Effect::Joined { id }];
 				effects.extend(self.claim_room(id));
 				// Already under way before we arrived: worth saying, not worth
@@ -2260,12 +2347,15 @@ mod tests {
 		spring_protocol::BattleStatus::from_bits(bits)
 	}
 
-	/// A session sitting in a public room, ready to try for a seat.
+	/// A session sitting in a public room, ready to try for a seat. Listed as
+	/// a user, as the server lists everyone, ourselves included: our own
+	/// entry is where the server's word on our seat is read from.
 	fn in_a_public_room() -> Session {
 		let mut s = joined_session();
 		feed(
 			&mut s,
 			&[
+				"ADDUSER me EU 1 modlobby",
 				"ADDUSER host EU 0 SPADS",
 				"BATTLEOPENED 3 0 0 host 1.2.3.4 8452 16 0 0 -1 R	v	m	t	g",
 				"JOINBATTLE 3 hash",
@@ -2305,7 +2395,7 @@ mod tests {
 		// the lineup ready when this one ends. Refusing it would make the
 		// commonest thing anyone does in a busy room impossible.
 		feed(&mut s, &["CLIENTSTATUS host 1"]);
-		assert!(s.take_seat(0, 0).is_ok());
+		assert!(s.take_seat(0, 0, false).is_ok());
 	}
 
 	#[test]
@@ -2315,7 +2405,7 @@ mod tests {
 		// There was a licence for this once -- a setting, and a session that
 		// started watching-only -- from when this client was first pointed at
 		// a live server. A lobby you cannot sit down in is not a lobby.
-		assert!(s.take_seat(0, 0).is_ok());
+		assert!(s.take_seat(0, 0, false).is_ok());
 		assert_eq!(
 			s.seat().map(|seat| (seat.team, seat.ally_team)),
 			Some((0, 0))
@@ -2325,7 +2415,8 @@ mod tests {
 	#[test]
 	fn ready_and_faction_ride_on_the_battle_status() {
 		let mut s = in_a_public_room();
-		s.take_seat(3, 1).unwrap();
+		s.take_seat(3, 1, false).unwrap();
+		feed(&mut s, &[&told(MyBattleStatus::player(Sync::Synced, 3, 1))]);
 
 		let ready = sent_status(&s.set_ready(true).unwrap());
 		assert!(ready.ready);
@@ -2452,7 +2543,7 @@ mod tests {
 	#[test]
 	fn saying_the_same_thing_twice_sends_nothing() {
 		let mut s = in_a_public_room();
-		s.take_seat(0, 0).unwrap();
+		s.take_seat(0, 0, false).unwrap();
 		s.set_ready(true).unwrap();
 		assert!(
 			s.set_ready(true).unwrap().is_empty(),
@@ -2471,19 +2562,20 @@ mod tests {
 	#[test]
 	fn changing_side_keeps_ready_and_faction_but_sitting_down_does_not() {
 		let mut s = in_a_public_room();
-		s.take_seat(0, 0).unwrap();
+		s.take_seat(0, 0, false).unwrap();
+		feed(&mut s, &[&told(seated(0, false))]);
 		s.set_side(3).unwrap();
 		s.set_ready(true).unwrap();
 
 		// Moving to another team keeps both: the game agreed to is the same
 		// one, and the faction is a preference.
-		let moved = sent_status(&s.take_seat(1, 1).unwrap());
+		let moved = sent_status(&s.take_seat(1, 1, false).unwrap());
 		assert!(moved.ready);
 		assert_eq!(moved.side, 3);
 
 		// Standing up and sitting down again is a new seat, not a game agreed to.
 		s.release_seat();
-		let sat = sent_status(&s.take_seat(0, 0).unwrap());
+		let sat = sent_status(&s.take_seat(0, 0, false).unwrap());
 		assert!(!sat.ready);
 	}
 
@@ -3019,7 +3111,7 @@ mod tests {
 	#[test]
 	fn a_seat_is_refused_outside_a_room_and_never_taken_unasked() {
 		let mut s = ready_with_room();
-		assert_eq!(s.take_seat(0, 0), Err(SeatError::NotInARoom));
+		assert_eq!(s.take_seat(0, 0, false), Err(SeatError::NotInARoom));
 
 		s.join_battle(5, None, "1".into());
 		feed(&mut s, &["JOINBATTLE 5 -1", "JOINEDBATTLE 5 me 1"]);
@@ -3028,17 +3120,7 @@ mod tests {
 		assert_eq!(s.seat(), None);
 
 		// What the room answers while we are a spectator.
-		let status = |effects: &[Effect]| {
-			let [Effect::Send(env)] = effects else {
-				panic!("expected one status, got {effects:?}")
-			};
-			let rest = env
-				.line
-				.strip_prefix("MYBATTLESTATUS ")
-				.expect("a status line");
-			let bits: u32 = rest.split(' ').next().unwrap().parse().unwrap();
-			BattleStatus::from_bits(bits)
-		};
+		let status = |effects: &[Effect]| sent_status(effects);
 		assert!(!status(&feed(&mut s, &["REQUESTBATTLESTATUS"])).player);
 
 		// A passworded room is one a cluster manager gave us.
@@ -3050,7 +3132,7 @@ mod tests {
 		s.join_battle(9, Some("pw"), "1".into());
 		feed(&mut s, &["JOINBATTLE 9 -1", "JOINEDBATTLE 9 me 1"]);
 
-		let taken = s.take_seat(2, 1).expect("a passworded room is ours");
+		let taken = s.take_seat(2, 1, false).expect("a passworded room is ours");
 		assert_eq!(
 			s.seat().map(|seat| (seat.team, seat.ally_team)),
 			Some((2, 1))
@@ -3064,7 +3146,7 @@ mod tests {
 		assert!(!status(&s.release_seat()).player);
 		assert_eq!(s.seat(), None);
 		// Leaving forgets the seat, so the next room starts as a spectator.
-		s.take_seat(2, 1).unwrap();
+		s.take_seat(2, 1, false).unwrap();
 		s.leave_battle();
 		assert_eq!(s.seat(), None);
 	}
@@ -3191,7 +3273,7 @@ mod tests {
 		let mut s = in_a_public_room();
 		// The join's answer to the status request, then the auto-seat.
 		feed(&mut s, &["REQUESTBATTLESTATUS"]);
-		s.take_seat(0, 1).unwrap();
+		s.take_seat(0, 1, false).unwrap();
 
 		// The first answer lands: us watching, from before the seat. Taken,
 		// and the content check reporting in meanwhile still asks for the seat.
@@ -3208,7 +3290,7 @@ mod tests {
 	#[test]
 	fn a_refused_seat_leaves_us_watching() {
 		let mut s = in_a_public_room();
-		s.take_seat(0, 0).unwrap();
+		s.take_seat(0, 0, false).unwrap();
 		// A full room keeps us a spectator, and queues us instead.
 		feed(&mut s, &[&told(watching())]);
 		assert_eq!(s.seat(), None);
@@ -3227,7 +3309,7 @@ mod tests {
 	#[test]
 	fn the_server_unreadying_us_is_taken() {
 		let mut s = in_a_public_room();
-		s.take_seat(0, 0).unwrap();
+		s.take_seat(0, 0, false).unwrap();
 		s.set_ready(true).unwrap();
 		feed(&mut s, &[&told(seated(0, false)), &told(seated(0, true))]);
 
@@ -3314,7 +3396,7 @@ mod tests {
 		let mut s = in_a_public_room();
 		feed(&mut s, &["s.battle.queue_status 3\tme"]);
 		s.set_pre_ready(true).unwrap();
-		s.take_seat(0, 0).unwrap();
+		s.take_seat(0, 0, false).unwrap();
 		assert!(statuses(&feed(&mut s, &[&told(seated(0, false))])).is_empty());
 		assert!(pre_ready(&s));
 	}
@@ -3322,7 +3404,7 @@ mod tests {
 	#[test]
 	fn our_status_waits_for_the_flood_window_as_one_line() {
 		let mut s = in_a_public_room();
-		let effects = s.take_seat(0, 0).unwrap();
+		let effects = s.take_seat(0, 0, false).unwrap();
 		let Some(Effect::Send(env)) = effects.first() else {
 			panic!("{effects:?}")
 		};
@@ -3380,5 +3462,169 @@ mod tests {
 		// Shown ready once the server answers, so no longer on its way.
 		assert!(feed(&mut s, &[&told(seated(0, true))]).contains(&Effect::RoomChanged));
 		assert_eq!(on_its_way(&s), None);
+	}
+
+	#[test]
+	fn a_ready_pressed_from_watching_follows_the_seat() {
+		let mut s = in_a_public_room();
+		s.take_seat(0, 1, true).unwrap();
+		// The seat, answered as the server keeps it: unready. The ready follows.
+		let sent = statuses(&feed(&mut s, &[&told(seated(1, false))]));
+		assert_eq!(sent.len(), 1);
+		assert!(sent[0].player && sent[0].ready);
+		assert_eq!(sent[0].ally_team, 1);
+		assert!(statuses(&feed(&mut s, &[&told(seated(1, true))])).is_empty());
+		assert_eq!(s.seat().map(|seat| seat.ready), Some(true));
+	}
+
+	#[test]
+	fn a_ready_pressed_from_watching_is_dropped_with_a_refused_seat() {
+		let mut s = in_a_public_room();
+		s.take_seat(0, 1, true).unwrap();
+		// A full room keeps us watching and queues us.
+		assert!(statuses(&feed(&mut s, &[&told(watching())])).is_empty());
+		feed(&mut s, &["s.battle.queue_status 3\tme"]);
+		// The queue seats us later: nothing was armed for it.
+		assert!(statuses(&feed(&mut s, &[&told(seated(1, false))])).is_empty());
+		assert!(!pre_ready(&s));
+	}
+
+	#[test]
+	fn the_joins_stale_echo_does_not_spend_the_ready_that_follows_the_seat() {
+		let mut s = in_a_public_room();
+		feed(&mut s, &["REQUESTBATTLESTATUS"]);
+		s.take_seat(0, 1, true).unwrap();
+		assert!(statuses(&feed(&mut s, &[&told(watching())])).is_empty());
+		let sent = statuses(&feed(&mut s, &[&told(seated(1, false))]));
+		assert_eq!(sent.len(), 1);
+		assert!(sent[0].ready);
+	}
+
+	#[test]
+	fn standing_up_before_the_seat_is_answered_drops_the_ready() {
+		let mut s = in_a_public_room();
+		s.take_seat(0, 1, true).unwrap();
+		s.release_seat();
+		// A locked room refuses the release and echoes the seat instead.
+		let effects = feed(&mut s, &[&told(seated(1, false)), &told(seated(1, false))]);
+		assert!(statuses(&effects).is_empty(), "{effects:?}");
+	}
+
+	#[test]
+	fn a_side_change_before_the_seat_is_answered_readies_once() {
+		let mut s = in_a_public_room();
+		s.take_seat(0, 1, true).unwrap();
+		s.set_side(3).unwrap();
+		let first = statuses(&feed(&mut s, &[&told(seated(1, false))]));
+		let second = statuses(&feed(&mut s, &[&told(seated(1, false).side(3))]));
+		let sent: Vec<_> = first.into_iter().chain(second).collect();
+		assert_eq!(sent.len(), 1, "{sent:?}");
+		assert!(sent[0].ready);
+		assert_eq!(sent[0].side, 3);
+	}
+
+	#[test]
+	fn an_explicit_ready_press_supersedes_the_one_that_follows_the_seat() {
+		let mut s = in_a_public_room();
+		s.take_seat(0, 0, true).unwrap();
+		s.set_ready(true).unwrap();
+		s.set_ready(false).unwrap();
+		assert!(statuses(&feed(&mut s, &[&told(seated(0, false))])).is_empty());
+	}
+
+	#[test]
+	fn a_request_replaced_before_it_left_is_not_waited_on() {
+		let mut s = in_a_public_room();
+		feed(&mut s, &[&told(seated(0, false))]);
+		// Two side changes inside a full flood window: the second replaces the
+		// first before it leaves, and the runtime says so.
+		s.set_side(1).unwrap();
+		s.set_side(3).unwrap();
+		s.status_replaced();
+		// The host moves us as it answers. That fits neither request: it is
+		// the answer to the one line that left, and the seat is the server's.
+		feed(&mut s, &[&told(seated(4, false).side(3))]);
+		assert_eq!(s.seat().map(|seat| seat.ally_team), Some(4));
+		// Nothing is left waiting, so the server's next word is simply taken.
+		feed(&mut s, &[&told(seated(4, true).side(3))]);
+		assert_eq!(s.seat().map(|seat| seat.ready), Some(true));
+	}
+
+	#[test]
+	fn a_ready_pressed_behind_a_stand_up_follows_the_seat() {
+		let mut s = in_a_public_room();
+		feed(&mut s, &[&told(seated(0, false))]);
+		// Watch, Play, Ready, faster than the server answers. The seat lands
+		// as a sit-down, which clears a ready sent with it; so none is.
+		s.release_seat();
+		s.take_seat(0, 0, false).unwrap();
+		assert!(statuses(&s.set_ready(true).unwrap()).is_empty());
+		assert!(statuses(&feed(&mut s, &[&told(watching())])).is_empty());
+		let sent = statuses(&feed(&mut s, &[&told(seated(0, false))]));
+		assert_eq!(sent.len(), 1);
+		assert!(sent[0].ready);
+	}
+
+	#[test]
+	fn a_ready_pressed_before_the_server_has_seated_us_follows_the_seat() {
+		let mut s = in_a_public_room();
+		s.take_seat(0, 0, false).unwrap();
+		let effects = s.set_ready(true).unwrap();
+		assert!(statuses(&effects).is_empty());
+		assert!(
+			effects.contains(&Effect::RoomChanged),
+			"shown on its way at once"
+		);
+		let sent = statuses(&feed(&mut s, &[&told(seated(0, false))]));
+		assert_eq!(sent.len(), 1);
+		assert!(sent[0].ready);
+	}
+
+	#[test]
+	fn a_seat_on_its_way_is_in_the_room_view_until_answered() {
+		let mut s = in_a_public_room();
+		feed(&mut s, &[&told(watching())]);
+		let on_its_way = |s: &Session| s.state.my_battle.as_ref().and_then(|my| my.seat_on_its_way);
+
+		assert!(
+			s.take_seat(0, 1, false)
+				.unwrap()
+				.contains(&Effect::RoomChanged)
+		);
+		assert_eq!(
+			on_its_way(&s),
+			Some(SeatOnItsWay {
+				player: true,
+				ally_team: 1
+			})
+		);
+		// Shown seated once the server answers, so no longer on its way.
+		assert!(feed(&mut s, &[&told(seated(1, false))]).contains(&Effect::RoomChanged));
+		assert_eq!(on_its_way(&s), None);
+
+		assert!(s.release_seat().contains(&Effect::RoomChanged));
+		assert_eq!(
+			on_its_way(&s),
+			Some(SeatOnItsWay {
+				player: false,
+				ally_team: 0
+			})
+		);
+		feed(&mut s, &[&told(watching())]);
+		assert_eq!(on_its_way(&s), None);
+	}
+
+	#[test]
+	fn a_status_held_by_the_flood_window_is_in_the_room_view_until_it_leaves() {
+		let mut s = in_a_public_room();
+		let held = |s: &Session| s.state.my_battle.as_ref().and_then(|my| my.held_until_ms);
+
+		assert_eq!(s.status_held(1_000), Some(Effect::RoomChanged));
+		// Said again as the runtime tries again: the same moment, nothing new.
+		assert_eq!(s.status_held(1_002), None);
+		assert_eq!(held(&s), Some(1_000));
+		assert_eq!(s.status_sent(), Some(Effect::RoomChanged));
+		assert_eq!(held(&s), None);
+		assert_eq!(s.status_sent(), None);
 	}
 }

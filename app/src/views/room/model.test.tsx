@@ -217,14 +217,14 @@ describe('choosing a team', () => {
 
 	async function join(container: HTMLElement) {
 		const button = [...container.querySelectorAll('.seat button')].find(
-			(b) => b.textContent === 'Join',
+			(b) => b.textContent === 'Play',
 		)
 		expect(button).toBeTruthy()
 		fireEvent.click(button as HTMLButtonElement)
 		await settle()
 	}
 
-	test('Join takes the emptiest side against people', async () => {
+	test('Play takes the emptiest side against people', async () => {
 		const calls: Calls = []
 		const { container } = await open(watchingThree(calls, []))
 		await join(container)
@@ -243,7 +243,7 @@ describe('choosing a team', () => {
 		expect(seat?.[1][1]).toBe(0)
 	})
 
-	test('in the queue, Join is Leave queue and says where you stand', async () => {
+	test('in the queue, Play says where you stand and Watch leaves it', async () => {
 		const calls: Calls = []
 		const model = watchingThree(calls, [])
 		const { container } = await open(
@@ -257,11 +257,11 @@ describe('choosing a team', () => {
 			}),
 		)
 		const buttons = [...container.querySelectorAll('.seat button')]
-		expect(buttons.some((b) => b.textContent === 'Join')).toBe(false)
-		expect(container.querySelector('.seat .muted')?.textContent).toBe(
-			'queued 2 of 2',
-		)
-		const leave = buttons.find((b) => b.textContent === 'Leave queue')
+		expect(
+			container.querySelector('.seat .posture .play .posture-note')
+				?.textContent,
+		).toBe('queued 2 of 2')
+		const leave = buttons.find((b) => b.textContent === 'Watch')
 		fireEvent.click(leave as HTMLButtonElement)
 		await settle()
 		expect(calls).toContainEqual(['sayBattle', ['$leaveq']])
@@ -526,17 +526,14 @@ describe('a room behind the seam', () => {
 			}),
 		)
 
-		expect(buttons(container, '.card-actions')).toEqual([
-			'Ready up',
-			'Leave room',
-		])
-		fireEvent.click(cardButton(container, 'Ready up'))
+		expect(buttons(container, '.card-actions')).toEqual(['Ready', 'Leave room'])
+		fireEvent.click(cardButton(container, 'Ready'))
 		await settle()
 		expect(calls).toContainEqual(['setReady', [true]])
 		expect(calls).not.toContainEqual(['sayBattle', ['!cv start']])
 	})
 
-	test('a spectator is offered no start, since SPADS would refuse one', async () => {
+	test('a spectator sees the start but cannot take it, since SPADS would refuse', async () => {
 		const { container } = await open(
 			fakeRoom({
 				caps: SERVED,
@@ -546,7 +543,9 @@ describe('a room behind the seam', () => {
 			}),
 		)
 
-		expect(buttons(container, '.card-actions')).toEqual(['Leave room'])
+		const vote = cardButton(container, 'Vote to start')
+		expect(vote.disabled).toBe(true)
+		expect(vote.getAttribute('title')).toBe('Take a seat first')
 	})
 })
 
@@ -710,6 +709,32 @@ describe('the faction picker', () => {
 	})
 })
 
+describe('a seat on its way', () => {
+	test('shows at once, and the hold by the flood window drains under it', async () => {
+		const { container } = await open(
+			fakeRoom({
+				caps: SERVED,
+				// Our seat is on its way, and the flood window holds it a moment.
+				my: () =>
+					myBattle({
+						seatOnItsWay: { player: true, allyTeam: 0 },
+						heldUntilMs: Date.now() + 5000,
+					}),
+			}),
+		)
+		const play = [...container.querySelectorAll('.choice.posture button')].find(
+			(b) => b.textContent?.startsWith('Play'),
+		) as HTMLButtonElement
+		expect(play.classList).toContain('on')
+		expect(play.classList).toContain('pending')
+		expect(play.classList).toContain('held')
+		expect(play.title).toMatch(/Held a moment/)
+		// The team picker shows the seat asked for.
+		const picker = container.querySelector('.seat select') as HTMLSelectElement
+		expect(picker.value).toBe('0')
+	})
+})
+
 describe('readying up', () => {
 	test('a ready asked for shows at once, and a second press changes the wish', async () => {
 		const calls: Calls = []
@@ -729,8 +754,8 @@ describe('readying up', () => {
 		fireEvent.click(button)
 		await settle()
 		expect(calls).toContainEqual(['setReady', [false]])
-		// The card's button does not ask again while it is on its way.
-		expect(cardButton(container, 'Ready up').disabled).toBe(true)
+		// The card's copy of the toggle shows the same wish, on its way.
+		expect(cardButton(container, 'Ready').classList).toContain('pending')
 	})
 
 	test('a boss who is not ready is asked to ready up before starting', async () => {
@@ -744,8 +769,8 @@ describe('readying up', () => {
 		)
 
 		// SPADS refuses `!start` while a seated player is unready, the boss too.
-		expect(buttons(container, '.card-actions')[0]).toBe('Ready up')
-		fireEvent.click(cardButton(container, 'Ready up'))
+		expect(buttons(container, '.card-actions')[0]).toBe('Ready')
+		fireEvent.click(cardButton(container, 'Ready'))
 		await settle()
 		expect(calls).toContainEqual(['setReady', [true]])
 	})
@@ -762,10 +787,10 @@ describe('readying up', () => {
 			}),
 		)
 
-		expect(container.querySelector('.seat')?.textContent).toContain(
-			'Everyone else is ready',
-		)
-		expect(cardButton(container, 'Ready up').classList).toContain('waiting')
+		const segment = container.querySelector('.seat .posture .ready')!
+		expect(segment.classList).toContain('waiting')
+		expect(segment.getAttribute('title')).toBe('Everyone else is ready')
+		expect(cardButton(container, 'Ready').classList).toContain('waiting')
 	})
 
 	test('queued, a ready can be given in advance for when a seat frees', async () => {
@@ -781,11 +806,12 @@ describe('readying up', () => {
 			}),
 		)
 
-		const box = [...container.querySelectorAll('.seat label.check')].find(
-			(label) => label.textContent?.includes('Ready when seated'),
-		)
-		expect(box).toBeTruthy()
-		fireEvent.click(box!.querySelector('input')!)
+		// The same Ready segment: pressed while queued, it arms for the seat.
+		const segment = container.querySelector<HTMLButtonElement>(
+			'.seat .posture .ready',
+		)!
+		expect(segment.getAttribute('title')).toContain('the moment the queue')
+		fireEvent.click(segment)
 		await settle()
 		expect(calls).toContainEqual(['setPreReady', [true]])
 	})
@@ -798,8 +824,12 @@ describe('readying up', () => {
 			}),
 		)
 
-		const seat = container.querySelector('.seat')!
-		expect(seat.textContent).toContain('Ready for next game')
-		expect(buttons(container, '.seat')).not.toContain('Ready up')
+		expect(
+			container.querySelector('.seat .posture .ready .posture-note')
+				?.textContent,
+		).toBe('next game')
+		expect(
+			container.querySelector('.seat .posture .ready')?.getAttribute('title'),
+		).toContain('once this game ends')
 	})
 })

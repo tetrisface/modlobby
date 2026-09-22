@@ -99,6 +99,8 @@ export function myBattle(over: Partial<MyBattleView> = {}): MyBattleView {
 		history: [],
 		preReady: false,
 		readyOnItsWay: null,
+		seatOnItsWay: null,
+		heldUntilMs: null,
 		...over,
 	}
 }
@@ -133,7 +135,8 @@ export function recordingIo(calls: Calls): RoomIo {
 	}
 	return {
 		setOption: async (key, value) => note('setOption', key, value),
-		takeSeat: async (team, allyTeam) => note('takeSeat', team, allyTeam),
+		takeSeat: async (team, allyTeam, ready = false) =>
+			note('takeSeat', team, allyTeam, ready),
 		releaseSeat: async () => note('releaseSeat'),
 		setReady: async (ready) => note('setReady', ready),
 		setPreReady: async (on) => note('setPreReady', on),

@@ -138,6 +138,8 @@ function enter(bots: BotView[], others: UserView[] = []) {
 		history: [],
 		preReady: false,
 		readyOnItsWay: null,
+		seatOnItsWay: null,
+		heldUntilMs: null,
 	}
 	onlySession(next)
 }

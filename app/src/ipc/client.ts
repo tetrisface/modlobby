@@ -295,8 +295,9 @@ export const api = {
 	openUrl: (url: string) => invoke<void>('open_url', { url }),
 	openLogDir: () => invoke<void>('open_log_dir'),
 
-	takeSeat: (team: number, allyTeam: number) =>
-		invoke<void>('take_seat', { team, allyTeam }),
+	/** With `ready`, a ready follows once the server has answered with the seat. */
+	takeSeat: (team: number, allyTeam: number, ready = false) =>
+		invoke<void>('take_seat', { team, allyTeam, ready }),
 	releaseSeat: () => invoke<void>('release_seat'),
 	setReady: (ready: boolean) => invoke<void>('set_ready', { ready }),
 	/**

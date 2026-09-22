@@ -16,7 +16,7 @@ import { pushNotice } from '../store/chat'
 import { roomServer } from '../store/lobby'
 import { applySettings, settings } from '../store/settings'
 import { useRoom, type RoomModel } from './room/model'
-import { readiness } from './room/readiness'
+import { posture, type Segment } from './room/posture'
 import { setBonus as sendBonus } from './room/move'
 
 /** The factions, then side 2, Random, which is none of them. */
@@ -61,10 +61,15 @@ async function remember(played: boolean) {
  * Sits on ally team `ally` — joining it, or moving there from another — and
  * makes playing what `remember` remembers. Sitting down from watching starts
  * unready; a move between sides keeps ready, since the game agreed to is the
- * same one.
+ * same one. `ready` asks for a ready to follow the seat: the server clears
+ * one sent with it, so the runtime sends it once the seat is answered.
  */
-export async function sitOn(room: RoomModel, ally: number): Promise<void> {
-	await room.io.takeSeat(nextTeam(room), ally)
+export async function sitOn(
+	room: RoomModel,
+	ally: number,
+	ready = false,
+): Promise<void> {
+	await room.io.takeSeat(nextTeam(room), ally, ready)
 	await remember(true)
 }
 
@@ -87,28 +92,35 @@ export function Seat() {
 		return name === null ? undefined : room.users()[name]
 	})
 	const seat = () => me()?.battleStatus
-	const seated = () => seat()?.player ?? false
+	/** Our own newest word on the seat, ahead of the server's. */
+	const wished = () => room.my()?.seatOnItsWay ?? null
+	const seated = () => wished()?.player ?? seat()?.player ?? false
 	const running = () => room.running() !== null
-	const tier = createMemo(() => readiness(room))
-	/** The ready we asked for while the server still shows otherwise. */
-	const asked = () => room.my()?.readyOnItsWay ?? null
-	/** What the button shows: our wish at once, else the server's word. */
-	const readyNow = () => asked() ?? tier() === 'settled'
-	/** One toggle for a ready given in advance; see `setPreReady`. */
-	const preReady = (label: string, title: string) => (
-		<label class='check' title={title}>
-			<input
-				type='checkbox'
-				checked={room.my()?.preReady ?? false}
-				disabled={busy()}
-				onChange={(event) => {
-					const on = event.currentTarget.checked
-					void act('ready in advance', () => room.io.setPreReady(on))
-				}}
-			/>
-			{label}
-		</label>
+	/** The three postures as drawn; see `posture`. */
+	const p = createMemo(() => posture(room))
+	const held = (segment: Segment) => segment.look === 'held'
+	const heldUntil = createMemo(() => p().heldUntil)
+	/**
+	 * When the flood window began holding our status, by our clock. The
+	 * hairline drains from there to `heldUntil`, and keeps its place when the
+	 * pending segment changes under it.
+	 */
+	const heldSince = createMemo<number | null>(
+		(since) => (heldUntil() === null ? null : (since ?? Date.now())),
+		null,
 	)
+	const heldStyle = createMemo(() => {
+		const since = heldSince()
+		const until = heldUntil()
+		if (since === null || until === null) return undefined
+		return {
+			'--held-total': `${Math.max(until - since, 1)}ms`,
+			'--held-elapsed': `${Date.now() - since}ms`,
+		}
+	})
+	/** A pending segment's hairline, while the window holds the press. */
+	const hold = (segment: Segment) =>
+		segment.pending && heldUntil() !== null ? heldStyle() : undefined
 	/**
 	 * Our place in the join queue, from one, or null while not in it. A full
 	 * room answers Join by keeping us a spectator and queueing us itself, so
@@ -213,9 +225,10 @@ export function Seat() {
 	/**
 	 * Sits down on arrival when that is the posture, once per room.
 	 *
-	 * Once, so that leaving your seat is not immediately undone — and leaving it
-	 * also changes what `remember` remembers, so the next room agrees with what
-	 * you just did.
+	 * Once, decided on arrival whichever way: leaving your seat is not to be
+	 * undone, and a seat you took yourself is not to be taken again behind
+	 * you. Both change what `remember` remembers, and the next room agrees
+	 * with what you just did.
 	 *
 	 * The team is picked from the members known at that moment, which on a busy
 	 * room may be a moment before the last of them has arrived. Two people can
@@ -227,12 +240,13 @@ export function Seat() {
 	createEffect(() => {
 		const battle = battleOf()
 		const play = settings()?.play
-		if (!battle || !play || seated() || !room.caps.plays) return
+		if (!battle || !play || !room.caps.plays) return
 		if (seatedIn === battle.id) return
+		seatedIn = battle.id
+		if (seated()) return
 		const wanted =
 			play.joinAs === 'remember' ? play.lastWasPlayer : play.joinAs === 'player'
 		if (!wanted) return
-		seatedIn = battle.id
 		void act('take a seat', () => room.io.takeSeat(nextTeam(room), freeAlly()))
 	})
 
@@ -251,7 +265,8 @@ export function Seat() {
 	}
 
 	/** What the seat picker shows: the side we hold, or nothing while watching. */
-	const current = () => (seated() ? String(seat()?.allyTeam ?? 0) : '')
+	const current = () =>
+		seated() ? String(wished()?.allyTeam ?? seat()?.allyTeam ?? 0) : ''
 
 	/**
 	 * Sits or moves as picked. A refused pick snaps the picker back, since the
@@ -270,6 +285,73 @@ export function Seat() {
 			await remember(false)
 		})
 
+	// ---- the posture control -------------------------------------------
+	// Pressing a segment says "this is the posture I want". A lower one steps
+	// back to it; Ready also toggles off on a second press, as in Chobby.
+
+	const watching = () => !seated() && queued() === null
+	const armed = () => room.my()?.preReady ?? false
+
+	function watch() {
+		if (queued() !== null)
+			return act('leave the queue', () => room.io.sayBattle('$leaveq'))
+		if (seated()) return spectate()
+	}
+
+	function play() {
+		if (watching()) return act('take a seat', () => sitOn(room, freeAlly()))
+		if (held(p().ready)) return act('ready', () => room.io.setReady(false))
+	}
+
+	function ready() {
+		// One press for "I'm in": the seat, and a ready once it is answered.
+		if (watching())
+			return act('take a seat', () => sitOn(room, freeAlly(), true))
+		// Nothing to ready right now, so a ready for when there is.
+		if (queued() !== null || running())
+			return act('ready in advance', () => room.io.setPreReady(!armed()))
+		return act('ready', () => room.io.setReady(!held(p().ready)))
+	}
+
+	/** A press the server has not answered: on its way, or held a moment. */
+	const pendingTitle = () =>
+		heldUntil() === null
+			? 'On its way to the server'
+			: 'Held a moment: the room takes five changes in eight seconds'
+	const watchTitle = () =>
+		p().watch.pending
+			? pendingTitle()
+			: queued() !== null
+				? 'Leave the queue and keep watching'
+				: seated()
+					? 'Give the seat up'
+					: 'Watching'
+	const playTitle = () =>
+		p().play.pending
+			? pendingTitle()
+			: queued() !== null
+				? 'Waiting for a seat'
+				: watching()
+					? 'Take a seat on the emptiest team'
+					: held(p().ready)
+						? 'Step back to not ready'
+						: 'Playing'
+	const readyTitle = () => {
+		const segment = p().ready
+		if (segment.pending) return pendingTitle()
+		if (watching()) return 'Take a seat and ready up'
+		if (queued() !== null)
+			return armed()
+				? 'Armed: ready the moment the queue seats you, this once. Press to take it back'
+				: 'Ready the moment the queue seats you, this once'
+		if (running())
+			return armed()
+				? 'Armed: ready again once this game ends. Press to take it back'
+				: 'Ready again once this game ends'
+		if (segment.waiting) return 'Everyone else is ready'
+		return held(segment) ? 'Ready. Press to unready' : 'Not ready'
+	}
+
 	return (
 		<div class='seat'>
 			{/* A room whose game cannot be played here is one to watch and talk in:
@@ -283,8 +365,77 @@ export function Seat() {
 					</span>
 				}
 			>
-				{/* Where to sit; whether to sit is the button after it. The picker
-            stays whether you are seated or watching, so nothing moves. */}
+				{/* The three postures, read left to right as commitment: which you
+				    hold, and which is the step after it. Ready keeps its label and
+				    changes colour, as Chobby's does: yellow while the room asks it,
+				    green once given, dashed while armed for later. */}
+				<div class='choice posture' role='group' aria-label='Posture'>
+					<button
+						type='button'
+						class='watch'
+						classList={{
+							on: held(p().watch),
+							pending: p().watch.pending,
+							held: hold(p().watch) !== undefined,
+						}}
+						style={hold(p().watch)}
+						aria-pressed={held(p().watch)}
+						disabled={busy()}
+						title={watchTitle()}
+						onClick={() => void watch()}
+					>
+						Watch
+					</button>
+					<button
+						type='button'
+						class='play'
+						classList={{
+							on: held(p().play),
+							next: p().play.look === 'next',
+							pending: p().play.pending,
+							held: hold(p().play) !== undefined,
+						}}
+						style={hold(p().play)}
+						aria-pressed={held(p().play)}
+						disabled={busy()}
+						title={playTitle()}
+						onClick={() => void play()}
+					>
+						Play
+						<Show when={p().play.note}>
+							{(note) => <span class='posture-note'>{note()}</span>}
+						</Show>
+					</button>
+					{/* Ready is a thing you say to somebody; a room nobody waits on
+					    has no such segment. */}
+					<Show when={room.caps.ready}>
+						<button
+							type='button'
+							class='ready posture-ready'
+							classList={{
+								on: held(p().ready),
+								asked: p().ready.look === 'asked',
+								armed: p().ready.look === 'armed',
+								pending: p().ready.pending,
+								held: hold(p().ready) !== undefined,
+								waiting: p().ready.waiting,
+							}}
+							style={hold(p().ready)}
+							aria-pressed={held(p().ready)}
+							disabled={busy()}
+							title={readyTitle()}
+							onClick={() => void ready()}
+						>
+							Ready
+							<Show when={p().ready.note}>
+								{(note) => <span class='posture-note'>{note()}</span>}
+							</Show>
+						</button>
+					</Show>
+				</div>
+
+				{/* Where to sit. The picker stays whether you are seated or
+				    watching, so nothing moves. */}
 				<Select
 					value={current()}
 					disabled={busy()}
@@ -309,12 +460,6 @@ export function Seat() {
 				</Select>
 
 				<Show when={seated()}>
-					{/* Sitting down mid-game puts you in the lineup for the next one,
-              which is worth saying so nobody waits for this one to let them in. */}
-					<Show when={running()}>
-						<span class='muted'>next game</span>
-					</Show>
-
 					{/* The chosen faction's mark is drawn over the picker's value, so the
 					    closed box shows it whether or not the list itself can. */}
 					<span class='select-iconed'>
@@ -348,89 +493,6 @@ export function Seat() {
 					emptyAlly={emptyAlly}
 					allyTeams={allyTeams}
 				/>
-
-				{/* One button, in one place: onto the emptiest side, out of the
-            queue for one, or back out of the seat. The picker beside it is
-            for choosing which side. */}
-				<Show
-					when={seated()}
-					fallback={
-						<Show
-							when={queued()}
-							fallback={
-								<button
-									disabled={busy()}
-									title='Take a seat on the emptiest team'
-									onClick={() =>
-										act('take a seat', () => sitOn(room, freeAlly()))
-									}
-								>
-									Join
-								</button>
-							}
-						>
-							{(place) => (
-								<>
-									<span class='muted'>
-										queued {place()} of {battleOf()?.queue.length ?? 0}
-									</span>
-									<Show when={room.caps.ready}>
-										{preReady(
-											'Ready when seated',
-											'Ready you the moment the queue gives you a seat, this once',
-										)}
-									</Show>
-									<button
-										disabled={busy()}
-										title='Stay a spectator when a seat frees up'
-										onClick={() =>
-											act('leave the queue', () => room.io.sayBattle('$leaveq'))
-										}
-									>
-										Leave queue
-									</button>
-								</>
-							)}
-						</Show>
-					}
-				>
-					{/* Ready is a thing you say to somebody; committing to play is a
-					    choice made beside giving the seat up. */}
-					<Show when={room.caps.ready}>
-						{/* Loud while the room needs it and quiet once given. During a
-						    game a ready would be wiped at its end, so what is offered
-						    is one that answers that reset instead. */}
-						<Show
-							when={!running()}
-							fallback={preReady(
-								'Ready for next game',
-								'Ready you again once, when this game ends',
-							)}
-						>
-							<Show when={tier() === 'waiting' && !readyNow()}>
-								<span class='muted'>Everyone else is ready</span>
-							</Show>
-							{/* A press flips it at once, drawn as on its way until the
-							    server answers; a second press changes the wish rather than
-							    waiting behind it. */}
-							<button
-								classList={{ primary: !readyNow(), pending: asked() !== null }}
-								title={
-									asked() === null ? undefined : 'On its way to the server'
-								}
-								disabled={busy()}
-								onClick={() =>
-									act('ready', () => room.io.setReady(!readyNow()))
-								}
-							>
-								{readyNow() ? 'Ready' : 'Ready up'}
-							</button>
-						</Show>
-					</Show>
-					<button disabled={busy()} title='Give the seat up' onClick={spectate}>
-						Spectate
-					</button>
-				</Show>
 			</Show>
 
 			<span class='spacer' />

@@ -155,40 +155,57 @@ export function Room() {
 	const startAction = createMemo(() => {
 		if (!room.caps.plays) return null
 		const why = tier()
-		if (why === 'asked' || why === 'waiting')
+		if (why === 'asked' || why === 'waiting') {
+			// The seat bar's Ready toggle, drawn again where the eye lands: the
+			// same label, colour and wish. Once ready, this becomes the room's
+			// step below.
+			const wish = room.my()?.readyOnItsWay ?? null
+			const on = wish ?? false
 			return {
-				label: 'Ready up',
+				label: 'Ready',
 				title:
-					why === 'waiting'
-						? 'Everyone else is ready'
-						: 'Ready up, then start or vote to start',
-				run: () => say(room.io.setReady(true)),
-				ready: true,
-				waiting: why === 'waiting',
-				// Asked for already: on its way, and a second press says nothing new.
-				pending: room.my()?.readyOnItsWay === true,
+					wish !== null
+						? 'On its way to the server'
+						: why === 'waiting'
+							? 'Everyone else is ready'
+							: 'Not ready',
+				run: () => say(room.io.setReady(!on)),
+				toggle: true,
+				on,
+				pending: wish !== null,
+				waiting: why === 'waiting' && !on,
+				disabled: false,
 			}
+		}
+		const step = { toggle: false, on: false, pending: false, waiting: false }
 		switch (standing()) {
 			case 'boss':
 				return {
 					label: 'Start the game',
 					title: '!start',
 					run: () => send('!start'),
-					ready: false,
-					waiting: false,
-					pending: false,
+					disabled: false,
+					...step,
 				}
 			case 'player':
 				return {
 					label: 'Vote to start',
 					title: '!cv start',
 					run: () => send('!cv start'),
-					ready: false,
-					waiting: false,
-					pending: false,
+					disabled: false,
+					...step,
 				}
 			default:
-				return null
+				// Watching a served room: the room's step is there to read, but
+				// not ours to take. SPADS refuses a spectator's start vote.
+				if (!room.caps.spads) return null
+				return {
+					label: 'Vote to start',
+					title: 'Take a seat first',
+					run: () => Promise.resolve(),
+					disabled: true,
+					...step,
+				}
 		}
 	})
 
@@ -691,14 +708,18 @@ export function Room() {
 								<Match when={startAction()}>
 									{(action) => (
 										<button
-											class='primary'
 											classList={{
-												waiting: action().waiting && !action().pending,
+												primary: !action().toggle,
+												'posture-ready': action().toggle,
+												asked: action().toggle && !action().on,
+												on: action().on,
 												pending: action().pending,
+												waiting: action().waiting,
 											}}
+											aria-pressed={action().toggle ? action().on : undefined}
 											disabled={
-												action().pending ||
-												(!action().ready && missingParts(room).length > 0)
+												action().disabled ||
+												(!action().toggle && missingParts(room).length > 0)
 											}
 											title={action().title}
 											onClick={() => void action().run()}

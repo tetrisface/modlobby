@@ -119,7 +119,7 @@ async fn a_guest_logs_in_joins_talks_and_hears_the_game_start() {
 
 	client.join_battle(server.clone(), 1, None).await.unwrap();
 	until(&client, "the join", |s| s.room().is_some()).await;
-	client.take_seat(1, 1).await.unwrap();
+	client.take_seat(1, 1, false).await.unwrap();
 	client.say("hello".into()).await.unwrap();
 	// The founder hears the guest arrive with its script password, sit, and
 	// talk -- the talk last, so reading up to it sees the rest.

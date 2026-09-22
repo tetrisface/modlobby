@@ -160,7 +160,7 @@ describe('moving somebody', () => {
 	test('your own seat is a status of your own, not a request', async () => {
 		const calls: Calls = []
 		await moveTo(served(calls, 'alice'), ME, 1)
-		expect(calls).toEqual([['takeSeat', [0, 1]]])
+		expect(calls).toEqual([['takeSeat', [0, 1, false]]])
 	})
 
 	test('dropped back on the team you sit on, nothing is sent', async () => {

@@ -117,6 +117,8 @@ function enterRoom() {
 		history: [],
 		preReady: false,
 		readyOnItsWay: null,
+		seatOnItsWay: null,
+		heldUntilMs: null,
 	}
 	onlySession(next)
 }

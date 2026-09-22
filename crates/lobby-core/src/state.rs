@@ -81,7 +81,21 @@ pub struct MyBattle {
 	/// The ready our newest request asks for, while the server still shows
 	/// otherwise: on its way, and drawn as such.
 	pub ready_on_its_way: Option<bool>,
+	/// The seat our newest request asks for, likewise.
+	pub seat_on_its_way: Option<SeatOnItsWay>,
+	/// When the status we last asked for leaves, in Unix milliseconds by our
+	/// clock, while the flood window holds it. The runtime, which runs the
+	/// window, sets and clears it.
+	pub held_until_ms: Option<u64>,
 	next_seq: u64,
+}
+
+/// The posture a request of ours asks for: a seat on an ally team, or none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SeatOnItsWay {
+	pub player: bool,
+	/// Meaningful for a player; zero for a spectator.
+	pub ally_team: u8,
 }
 
 impl MyBattle {
@@ -99,6 +113,8 @@ impl MyBattle {
 			settled: false,
 			pre_ready: false,
 			ready_on_its_way: None,
+			seat_on_its_way: None,
+			held_until_ms: None,
 			next_seq: 0,
 		}
 	}

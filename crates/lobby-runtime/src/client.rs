@@ -520,6 +520,8 @@ enum Command {
 	TakeSeat {
 		team: u8,
 		ally_team: u8,
+		/// A ready to follow, once the server has answered with the seat.
+		ready: bool,
 		reply: Reply<()>,
 	},
 	SetReady {
@@ -1071,10 +1073,11 @@ impl Client {
 
 	/// Takes a player slot. Refused only outside a room — see
 	/// [`lobby_core::SeatError`].
-	pub async fn take_seat(&self, team: u8, ally_team: u8) -> Result<(), ClientError> {
+	pub async fn take_seat(&self, team: u8, ally_team: u8, ready: bool) -> Result<(), ClientError> {
 		self.ask(|reply| Command::TakeSeat {
 			team,
 			ally_team,
+			ready,
 			reply,
 		})
 		.await
@@ -1233,6 +1236,15 @@ async fn sleep_until_idle(policy: &idle::Idle, connected: bool) {
 		Some(wait) => tokio::time::sleep(wait).await,
 		None => std::future::pending().await,
 	}
+}
+
+/// `wait` from now in Unix milliseconds: the page's clock, for a deadline it
+/// draws down to.
+fn unix_ms_after(wait: std::time::Duration) -> u64 {
+	let now = std::time::SystemTime::now()
+		.duration_since(std::time::UNIX_EPOCH)
+		.unwrap_or_default();
+	(now + wait).as_millis() as u64
 }
 
 struct Runtime {
@@ -2895,9 +2907,10 @@ impl Runtime {
 			Command::TakeSeat {
 				team,
 				ally_team,
+				ready,
 				reply,
 			} => {
-				self.run_room(reply, |session| session.take_seat(team, ally_team))
+				self.run_room(reply, |session| session.take_seat(team, ally_team, ready))
 					.await;
 			}
 			Command::SetOverlayConfigDir(dir) => self.overlay_config_dir = dir,
@@ -3038,8 +3051,39 @@ impl Runtime {
 					area,
 					pending,
 					wait,
-				} => tracing::debug!(server, ?area, pending, ?wait, "throttled"),
-				PolicyEvent::Sent { area, lines, .. } => self.paste_sent(area, lines),
+				} => {
+					tracing::debug!(server, ?area, pending, ?wait, "throttled");
+					if area == Area::BattleStatus {
+						let until = unix_ms_after(wait);
+						let effects: Vec<Effect> = self
+							.link_mut(server)
+							.and_then(|conn| conn.session.status_held(until))
+							.into_iter()
+							.collect();
+						self.apply_effects(server, effects).await;
+					}
+				}
+				PolicyEvent::Sent { area, lines, .. } => {
+					self.paste_sent(area, lines);
+					if area == Area::BattleStatus {
+						let effects: Vec<Effect> = self
+							.link_mut(server)
+							.and_then(|conn| conn.session.status_sent())
+							.into_iter()
+							.collect();
+						self.apply_effects(server, effects).await;
+					}
+				}
+				// The status it replaced never leaves, so no answer to it comes.
+				PolicyEvent::Coalesced {
+					area: Area::BattleStatus,
+					..
+				} => {
+					tracing::info!(server, "policy: a status replaced one still waiting");
+					if let Some(conn) = self.link_mut(server) {
+						conn.session.status_replaced();
+					}
+				}
 				other => tracing::info!(server, ?other, "policy"),
 			},
 			Inbound::Closed { reason } => self.connection_lost(server, reason),

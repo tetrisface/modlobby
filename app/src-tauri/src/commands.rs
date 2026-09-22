@@ -1266,8 +1266,8 @@ pub async fn vote(app: State<'_, App>, choice: String) -> Result<()> {
 /// Takes a player slot. The runtime refuses this in a public room — a slot
 /// there belongs to someone else — so it only succeeds in a room we were given.
 #[tauri::command]
-pub async fn take_seat(app: State<'_, App>, team: u8, ally_team: u8) -> Result<()> {
-	app.client.take_seat(team, ally_team).await?;
+pub async fn take_seat(app: State<'_, App>, team: u8, ally_team: u8, ready: bool) -> Result<()> {
+	app.client.take_seat(team, ally_team, ready).await?;
 	Ok(())
 }
 

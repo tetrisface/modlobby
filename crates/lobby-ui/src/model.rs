@@ -385,6 +385,32 @@ pub struct MyBattleView {
 	/// otherwise. Drawn at once as on its way; the server's word is still
 	/// what is true.
 	pub ready_on_its_way: Option<bool>,
+	/// The seat our newest request asks for, likewise.
+	pub seat_on_its_way: Option<SeatOnItsWayView>,
+	/// When the status we last asked for leaves, in Unix milliseconds, while
+	/// the flood window holds it: the room takes five changes in eight
+	/// seconds. Drawn as a hairline draining along the pending segment.
+	#[ts(type = "number | null")]
+	pub held_until_ms: Option<u64>,
+}
+
+/// The posture a request of ours asks for: a seat on an ally team, or none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SeatOnItsWayView {
+	pub player: bool,
+	/// Meaningful for a player; zero for a spectator.
+	pub ally_team: u8,
+}
+
+impl From<lobby_core::SeatOnItsWay> for SeatOnItsWayView {
+	fn from(seat: lobby_core::SeatOnItsWay) -> Self {
+		Self {
+			player: seat.player,
+			ally_team: seat.ally_team,
+		}
+	}
 }
 
 impl From<&MyBattle> for MyBattleView {
@@ -400,6 +426,8 @@ impl From<&MyBattle> for MyBattleView {
 			history: my.history.iter().map(OptionChangeView::from).collect(),
 			pre_ready: my.pre_ready,
 			ready_on_its_way: my.ready_on_its_way,
+			seat_on_its_way: my.seat_on_its_way.map(Into::into),
+			held_until_ms: my.held_until_ms,
 		}
 	}
 }
