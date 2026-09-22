@@ -1,4 +1,5 @@
-import { invoke, type Channel } from '@tauri-apps/api/core'
+import type { Channel } from '@tauri-apps/api/core'
+import { invoke } from './invoke'
 import type { Act } from './bindings/Act'
 import type { AiChoice } from './bindings/AiChoice'
 import type { Arrangement } from './bindings/Arrangement'

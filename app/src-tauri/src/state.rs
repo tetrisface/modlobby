@@ -36,7 +36,7 @@ struct MapIndexHeld {
 /// and how long it earned before being asked again.
 #[derive(Default)]
 struct WidgetUsageHeld {
-	usage: Option<widgets::Usage>,
+	usage: Option<Arc<widgets::Usage>>,
 	failed: Option<(std::time::Instant, std::time::Duration)>,
 }
 
@@ -215,7 +215,10 @@ impl App {
 	/// A failure returns `None` rather than an error: usage is decoration on a
 	/// widget list, and a page that renders without the numbers is a better
 	/// outcome than one that refuses to render.
-	pub async fn widget_usage(&self) -> Option<widgets::Usage> {
+	///
+	/// Shared, not copied: every widget picture looks its URL up here, and the
+	/// document is megabytes of nested maps.
+	pub async fn widget_usage(&self) -> Option<Arc<widgets::Usage>> {
 		let mut held = self.widget_usage.lock().await;
 		if let Some(usage) = held.usage.as_ref() {
 			return Some(usage.clone());
@@ -234,7 +237,7 @@ impl App {
 			std::time::SystemTime::now(),
 		)
 		.await;
-		match loaded.usage {
+		match loaded.usage.map(Arc::new) {
 			Some(usage) => {
 				held.usage = Some(usage.clone());
 				held.failed = None;

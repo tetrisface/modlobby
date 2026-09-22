@@ -1217,3 +1217,69 @@ describe('the widgets folder', () => {
 		)
 	})
 })
+
+describe('a long list', () => {
+	/** Stands in for the browser's observer: the test says when the end is near. */
+	function endComesIntoView(): () => void {
+		const callbacks: IntersectionObserverCallback[] = []
+		vi.stubGlobal(
+			'IntersectionObserver',
+			class {
+				constructor(callback: IntersectionObserverCallback) {
+					callbacks.push(callback)
+				}
+				observe() {}
+				unobserve() {}
+				disconnect() {}
+			},
+		)
+		return () => {
+			const seen = [{ isIntersecting: true }] as IntersectionObserverEntry[]
+			for (const callback of callbacks) {
+				callback(seen, {} as IntersectionObserver)
+			}
+		}
+	}
+
+	afterEach(() => {
+		vi.unstubAllGlobals()
+	})
+
+	const many = (count: number) =>
+		Array.from({ length: count }, (_, at) =>
+			widget({
+				key: `w${at}`,
+				name: `Widget ${at}`,
+				windows: combined({ '30d': stats({ rank: at + 1 }) }),
+			}),
+		)
+
+	test('draws the first fifty rows, and the rest as the end nears', async () => {
+		const nearEnd = endComesIntoView()
+		serve(published(many(80)))
+		const Widgets = await fresh()
+		const { container, getByText } = render(() => <Widgets />)
+
+		await drawn(container)
+		expect(rows(container)).toHaveLength(50)
+		// The count is the whole list's, not what is drawn of it.
+		expect(getByText(/80 widgets/)).toBeTruthy()
+		nearEnd()
+		expect(rows(container)).toHaveLength(80)
+	})
+
+	test('a new search starts again from the top fifty', async () => {
+		const nearEnd = endComesIntoView()
+		serve(published(many(80)))
+		const Widgets = await fresh()
+		const { container, getByPlaceholderText } = render(() => <Widgets />)
+
+		await drawn(container)
+		nearEnd()
+		expect(rows(container)).toHaveLength(80)
+		fireEvent.input(getByPlaceholderText(/Search/), {
+			target: { value: 'widget' },
+		})
+		expect(rows(container)).toHaveLength(50)
+	})
+})

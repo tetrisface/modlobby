@@ -1,7 +1,7 @@
 {
 	"$schema": "../gen/schemas/desktop-schema.json",
 	"identifier": "default",
-	"description": "The main window: IPC to the lobby runtime, opening local paths, OS notifications, flashing the taskbar entry, and the global shortcut that raises the lobby over a game.",
+	"description": "The main window: IPC to the lobby runtime, opening local paths, OS notifications, flashing the taskbar entry, the global shortcut that raises the lobby over a game, and the MCP bridge's webview side (its plugin is only registered in opt-in debug runs).",
 	"windows": ["main"],
 	"permissions": [
 		"core:default",
@@ -19,6 +19,7 @@
 		"core:window:allow-set-focus",
 		"global-shortcut:default",
 		"opener:default",
-		"notification:default"
+		"notification:default",
+		"mcp-bridge:default"
 	]
 }

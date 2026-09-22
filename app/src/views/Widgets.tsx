@@ -1,9 +1,11 @@
 import {
 	For,
 	Show,
+	createEffect,
 	createMemo,
 	createResource,
 	createSignal,
+	on,
 	onCleanup,
 	onMount,
 } from 'solid-js'
@@ -103,6 +105,13 @@ const SOURCE_LABEL: Record<string, string> = {
 }
 
 const label = (window: string) => WINDOW_LABEL[window] ?? window
+
+/**
+ * Rows drawn at first, and again each time the end of the table nears. Each
+ * sort or filter lays out every drawn row again, and at a few hundred rows
+ * that was most of what a click cost.
+ */
+const ROWS_PER_DRAW = 50
 
 const ACTION_LABEL: Record<Action, string> = {
 	install: 'Install',
@@ -244,6 +253,41 @@ export function Widgets() {
 		),
 	)
 
+	let page!: HTMLElement
+	const [drawnCount, setDrawnCount] = createSignal(ROWS_PER_DRAW)
+	const drawn = createMemo(() => listed().slice(0, drawnCount()))
+	// A list asked for anew starts again from its top. Not one that changed
+	// under the reader: an install refreshes what is installed, and that must
+	// not throw away how far down they had scrolled.
+	createEffect(
+		on(
+			[query, sort, descending, shownAudience, shown, installedOnly, mode],
+			() => {
+				setDrawnCount(ROWS_PER_DRAW)
+				page.scrollTop = 0
+			},
+			{ defer: true },
+		),
+	)
+
+	/** Draws the next rows once the end of the table is a screen away. */
+	const drawMoreNear = (end: HTMLElement) => {
+		const observer = new IntersectionObserver(
+			(entries) => {
+				if (!entries.some((entry) => entry.isIntersecting)) return
+				setDrawnCount((count) => count + ROWS_PER_DRAW)
+				if (!end.isConnected) return
+				// Asked again rather than trusted to fire: an end still in view
+				// once the rows are in raises no new event of its own.
+				observer.unobserve(end)
+				observer.observe(end)
+			},
+			{ root: page, rootMargin: '0px 0px 100% 0px' },
+		)
+		observer.observe(end)
+		onCleanup(() => observer.disconnect())
+	}
+
 	/** The day the pipeline built this, in the reader's own format. */
 	const built = () => {
 		const at = usage()?.generated_at
@@ -342,7 +386,7 @@ export function Widgets() {
 	}
 
 	return (
-		<section class='widgets'>
+		<section class='widgets' ref={page}>
 			<h1>Widgets</h1>
 
 			<header class='toolbar widget-toolbar'>
@@ -486,7 +530,7 @@ export function Widgets() {
 						</tr>
 					</thead>
 					<tbody>
-						<For each={listed()}>
+						<For each={drawn()}>
 							{(widget) => (
 								<>
 									<Row
@@ -526,6 +570,9 @@ export function Widgets() {
 						</For>
 					</tbody>
 				</table>
+				<Show when={drawnCount() < listed().length}>
+					<div ref={drawMoreNear} aria-hidden='true' />
+				</Show>
 			</Show>
 		</section>
 	)

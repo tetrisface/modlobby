@@ -159,7 +159,21 @@ pub fn run() {
 		Err(err) => tracing::warn!(%err, "ignoring .env"),
 	}
 
-	tauri::Builder::default()
+	let builder = tauri::Builder::default();
+	// Lets an agent drive this window through the Tauri MCP server. Debug
+	// builds only, and opt-in even there: the socket takes any local client,
+	// browser pages included, since it checks neither Origin nor a token.
+	#[cfg(debug_assertions)]
+	let builder = if std::env::var_os("MODLOBBY_MCP_BRIDGE").is_some() {
+		builder.plugin(
+			tauri_plugin_mcp_bridge::Builder::new()
+				.bind_address("127.0.0.1")
+				.build(),
+		)
+	} else {
+		builder
+	};
+	builder
 		.plugin(tauri_plugin_opener::init())
 		.plugin(tauri_plugin_notification::init())
 		.plugin(tauri_plugin_updater::Builder::new().build())

@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '../ipc/invoke'
 import type { LanHostView } from '../ipc/bindings/LanHostView'
 import type { LanRoomView } from '../ipc/bindings/LanRoomView'
 

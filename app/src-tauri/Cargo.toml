@@ -45,6 +45,8 @@ tauri-plugin-notification = { workspace = true }
 tauri-plugin-opener = { workspace = true }
 tauri-plugin-window-state = { workspace = true }
 tauri-plugin-updater = { workspace = true }
+# Registered in debug builds only, see `lib.rs`.
+tauri-plugin-mcp-bridge = { workspace = true }
 dotenvy = { workspace = true }
 tweaks = { workspace = true }
 tracing = { workspace = true }

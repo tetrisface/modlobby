@@ -31,9 +31,11 @@ use crate::state::App;
 /// Deliberately not a `Result`: usage decorates a widget list rather than
 /// carrying it, so a page that renders without the numbers is a better outcome
 /// than one that refuses to render. The state layer logs the reason.
+///
+/// The one copy of the document a run makes: the page keeps what it is sent.
 #[tauri::command]
 pub async fn widget_usage(app: State<'_, App>) -> std::result::Result<Option<widgets::Usage>, ()> {
-	Ok(app.widget_usage().await)
+	Ok(app.widget_usage().await.map(|usage| usage.as_ref().clone()))
 }
 
 /// How long to wait for the runtime to say whether a game is up.
