@@ -124,6 +124,9 @@ export function applyDelta(delta: Delta, server: string | null = null): void {
 		case 'content':
 			setLobby('content', delta.data)
 			return
+		case 'contentCheck':
+			setLobby('contentCheck', delta.data)
+			return
 		case 'download':
 			setLobby('download', delta.data)
 			return

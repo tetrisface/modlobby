@@ -255,6 +255,67 @@ impl App {
 	/// it is trusted for. An empty answer — offline, or a first run with no
 	/// network — is not kept, so the next ask tries again rather than leaving
 	/// the whole session with an empty page.
+	/// A game from outside the room's rapid (`content::sources`), for the
+	/// runtime's [`lobby_runtime::GameSources`]. Before rapid only the
+	/// player's overrides answer; after it, modlobby's list and then the hub,
+	/// whose copy is asked for again once it is a day old. BAR's own names
+	/// are never looked for anywhere but BAR's rapid.
+	pub async fn game_from_sources(
+		&self,
+		ask: lobby_runtime::GameAsk,
+		progress: tokio::sync::mpsc::Sender<recoil::Progress>,
+	) -> Option<Result<String, String>> {
+		use content::sources;
+		if self
+			.rapid
+			.bar_names()
+			.await
+			.is_ok_and(|names| names.contains(&ask.name))
+		{
+			return None;
+		}
+		let found = if ask.after_rapid {
+			let cache = self.settings.dir().join("cache");
+			let now = std::time::SystemTime::now();
+			let (mut hub, fresh) = sources::cached(&cache, now);
+			if !fresh {
+				match sources::refresh(&self.http, sources::HUB_URL, &cache, now).await {
+					Ok(list) => hub = list,
+					Err(err) => tracing::warn!(%err, "coilbox's hub list: not refreshed"),
+				}
+			}
+			sources::resolve(&ask.name, &[], &sources::shipped(), &hub)
+		} else {
+			let overrides: Vec<(String, sources::Target)> = self
+				.settings
+				.get()
+				.games
+				.overrides
+				.into_iter()
+				.map(|kept| (kept.name, kept.source))
+				.collect();
+			sources::resolve(&ask.name, &overrides, &[], &[])
+		};
+		if found.is_empty() {
+			return None;
+		}
+		let games = ask.dirs.write.join("games");
+		let fetched = sources::fetch(
+			&self.http,
+			sources::GITHUB_API,
+			&found,
+			&games,
+			|current, total| {
+				let _ = progress.try_send(recoil::Progress { current, total });
+			},
+		)
+		.await?;
+		Some(match fetched {
+			Ok(fetched) => hold_to_room(fetched, ask).await,
+			Err(reason) => Err(reason),
+		})
+	}
+
 	pub async fn news(&self) -> Vec<news::NewsItem> {
 		let mut held = self.news.lock().await;
 		if let Some(items) = held.as_ref() {
@@ -271,6 +332,56 @@ impl App {
 			*held = Some(items.clone());
 		}
 		items
+	}
+}
+
+/// A game fetched from outside rapid, held to the hash its room announced:
+/// kept when it has the room's checksum, set aside where the engine will not
+/// load it when it has not, and kept with a word said when it could not be
+/// told.
+async fn hold_to_room(
+	fetched: content::sources::Fetched,
+	ask: lobby_runtime::GameAsk,
+) -> Result<String, String> {
+	use content::checksum::{Verdict, against_room};
+	let set_aside = |why: String| {
+		let kept = content::sources::set_aside(&fetched.path, &ask.dirs.write)
+			.map(|aside| format!("set aside in {}", aside.display()))
+			.unwrap_or_else(|err| format!("and could not be set aside: {err}"));
+		Err(format!("{}: {why}; {kept}", fetched.from))
+	};
+	let Some(room) = ask.room_hash else {
+		if fetched.built {
+			return set_aside(
+				"a build is only kept once its checksum is a room's, and there is no room".into(),
+			);
+		}
+		return Ok(fetched.from);
+	};
+	let path = fetched.path.clone();
+	let dirs = ask.dirs.clone();
+	let engine = ask.engine.clone();
+	let verdict = tokio::task::spawn_blocking(move || {
+		let library = content::Library::new(dirs);
+		against_room(&path, room, &|name| library.archive_named(&engine, name))
+	})
+	.await
+	.unwrap_or_else(|err| Verdict::Unchecked(err.to_string()));
+	match verdict {
+		Verdict::Matches => Ok(format!("{}; checksum {room}, the room's", fetched.from)),
+		Verdict::Unchecked(why) if fetched.built => set_aside(format!(
+			"a build is only kept once its checksum is the room's, which could not be checked ({why})"
+		)),
+		Verdict::Unchecked(why) => {
+			tracing::warn!(game = ask.name, %why, "not checked against the room");
+			Ok(format!(
+				"{} (not checked against the room: {why})",
+				fetched.from
+			))
+		}
+		Verdict::Differs { ours, room } => set_aside(format!(
+			"not the room's files (checksum {ours}, the room's {room})"
+		)),
 	}
 }
 

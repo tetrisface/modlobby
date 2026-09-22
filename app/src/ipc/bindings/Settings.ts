@@ -3,6 +3,7 @@ import type { Account } from './Account'
 import type { BattleList } from './BattleList'
 import type { Chat } from './Chat'
 import type { Connection } from './Connection'
+import type { Games } from './Games'
 import type { Lan } from './Lan'
 import type { Logging } from './Logging'
 import type { Notifications } from './Notifications'
@@ -37,4 +38,5 @@ export type Settings = {
 	updates: Updates
 	ui: Ui
 	lan: Lan
+	games: Games
 }

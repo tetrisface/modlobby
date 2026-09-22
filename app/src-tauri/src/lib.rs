@@ -285,6 +285,7 @@ pub fn run() {
 			// kind of thing: what this person has set up, kept for next time.
 			let skirmish_path = commands::skirmish_path(&app);
 			let from_host_handle = handle.clone();
+			let sources_handle = handle.clone();
 			tauri::async_runtime::spawn(async move {
 				// Whoever reads another server's rapid before games come
 				// from it; without one the runtime fetches from BAR's only.
@@ -303,6 +304,17 @@ pub fn run() {
 					.set_from_host(std::sync::Arc::new(move |ask, say| {
 						let handle = from_host_handle.clone();
 						Box::pin(async move { lan::map_from_host(&handle, ask, say).await })
+					}))
+					.await;
+				// Games the room's rapid does not have: the player's
+				// overrides, modlobby's list, coilbox's hub.
+				let _ = client
+					.set_game_sources(std::sync::Arc::new(move |ask, progress| {
+						let handle = sources_handle.clone();
+						Box::pin(async move {
+							let app = handle.try_state::<state::App>()?;
+							app.game_from_sources(ask, progress).await
+						})
 					}))
 					.await;
 				let _ = client.set_bar_content(bar).await;
@@ -468,6 +480,7 @@ pub fn run() {
 			commands::open_data_dir,
 			commands::open_maps_dir,
 			commands::open_replays_dir,
+			commands::open_widgets_dir,
 			commands::player_files,
 			commands::import_player_files,
 			commands::open_url,
@@ -495,6 +508,14 @@ pub fn run() {
 		.build(tauri::generate_context!())
 		.expect("building modlobby")
 		.run(|handle, event| {
+			// After the window-state plugin has put the window back: a shape it
+			// cannot tell from a maximized one is made one, or it is saved and
+			// restored as it is on every run after.
+			if matches!(event, tauri::RunEvent::Ready)
+				&& let Some(window) = handle.get_webview_window("main")
+			{
+				screen::heal_restored(&window);
+			}
 			// Before the window-state plugin looks at the window, which it
 			// does on `Exit`: closed over a game, the window is in the
 			// overlay's shape, and that is not the shape to open in next time.

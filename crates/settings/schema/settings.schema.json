@@ -46,6 +46,12 @@
         "idleDisconnectMinutes": 60
       }
     },
+    "games": {
+      "$ref": "#/$defs/Games",
+      "default": {
+        "overrides": []
+      }
+    },
     "lan": {
       "$ref": "#/$defs/Lan",
       "default": {
@@ -277,6 +283,128 @@
           "format": "uint32",
           "default": 60,
           "minimum": 0
+        }
+      }
+    },
+    "GameOverride": {
+      "description": "One game, by its exact name, and where it comes from.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "The game's name exactly as rooms report it, e.g.\n`SplinterFaction 0.1.86`. Nothing else matches: not the next version,\nnot a different case.",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/GameSource"
+        }
+      },
+      "required": [
+        "name",
+        "source"
+      ]
+    },
+    "GameSource": {
+      "description": "One way to fetch a game, in coilbox's hub format\n(`{kind, value, asset?, filename?}`), so a list, the hub and an override\nall say it the same way.",
+      "oneOf": [
+        {
+          "description": "A rapid tag, e.g. `evo:stable`.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "rapid"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A file at an https address; `filename` is what to save it as.",
+          "type": "object",
+          "properties": {
+            "filename": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "url"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A GitHub repository's releases, `owner/repo`; `asset` is a fragment of\nthe file name that picks among a release's files.",
+          "type": "object",
+          "properties": {
+            "asset": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "github"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A GitHub repository's commit, built: the one the room's version names\nby its last part (`test-31368-8379d65`), with that version written\nover `placeholder` (`$VERSION` unless said) in its `modinfo.lua`. Kept\nonly when it is the room's copy.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "git"
+            },
+            "placeholder": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ]
+        }
+      ]
+    },
+    "Games": {
+      "description": "Games from anywhere but the rooms' own rapid servers.",
+      "type": "object",
+      "properties": {
+        "overrides": {
+          "description": "Where exactly one game is to be had, above every list and above the\nroom's own rapid: a room naming `name` gets it from `source` and from\nnowhere else.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/GameOverride"
+          }
         }
       }
     },

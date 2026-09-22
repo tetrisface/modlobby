@@ -25,6 +25,7 @@ import {
 	uiScale,
 } from '../store/settings'
 import { busy as updating, checkUpdate, checking } from '../store/update'
+import { GameOverrideRows } from './Games'
 import { ServerRows } from './Servers'
 
 /** Long enough that typing a hostname is one write rather than twelve. */
@@ -43,6 +44,7 @@ const SECTIONS = {
 	overlay: 'Overlay',
 	updates: 'Updates',
 	servers: 'Servers',
+	games: 'Games',
 	connection: 'Connection',
 	files: 'Files and logs',
 	chat: 'Chat',
@@ -722,6 +724,10 @@ export function SettingsView() {
 						<ServerRows draft={draft} setDraft={setDraft} settle={settle} />
 					</Section>
 
+					<Section id='games'>
+						<GameOverrideRows draft={draft} setDraft={setDraft} />
+					</Section>
+
 					<Section id='connection'>
 						<Row>
 							<label>
@@ -842,6 +848,7 @@ export function blankSettings(): Settings {
 	return {
 		$schema: null,
 		lan: { enabled: false },
+		games: { overrides: [] },
 		servers: [],
 		account: { rememberPassword: false, autoLogin: false },
 		connection: { idleDisconnectMinutes: 60 },

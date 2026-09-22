@@ -13,7 +13,7 @@ pub mod player_files;
 pub mod reconnect;
 mod ways;
 
-pub use client::{Ask, BarContent, Client, ClientError, Connector, FromHost};
+pub use client::{Ask, BarContent, Client, ClientError, Connector, FromHost, GameAsk, GameSources};
 pub use latency::{IcmpEcho, Latency, Unmeasured};
 /// Re-exported so callers do not need `lobby-core` just to name an action.
 pub use lobby_core::{FriendAction, UnknownFriendAction};

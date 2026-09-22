@@ -611,7 +611,7 @@ describe('sorting', () => {
 		const { container, getByRole } = render(() => <Widgets />)
 		await drawn(container)
 		fireEvent.click(getByRole('button', { name: /Players/ }))
-		fireEvent.click(getByRole('button', { name: /^Widget/ }))
+		fireEvent.click(getByRole('button', { name: /^Widget$/ }))
 		expect(names(container)).toEqual(['Alpha', 'Bravo', 'Charlie'])
 	})
 })
@@ -1193,5 +1193,27 @@ describe('source links', () => {
 		expect(container.querySelector('tr.widget-row a[href]')).toBeNull()
 		fireEvent.click(button)
 		await waitFor(() => expect(opened).toEqual(['https://github.com/o/r']))
+	})
+})
+
+describe('the widgets folder', () => {
+	test('the button opens it, and a refusal is said on the page', async () => {
+		serve(published([widget()]))
+		const Widgets = await fresh()
+		const { container, getByText } = render(() => <Widgets />)
+		await drawn(container)
+
+		asked.mockResolvedValueOnce(undefined)
+		fireEvent.click(getByText('Widgets folder'))
+		await waitFor(() => expect(asked).toHaveBeenCalledWith('open_widgets_dir'))
+		expect(container.querySelector('.widget-note')).toBeNull()
+
+		asked.mockRejectedValueOnce(new Error('no opener'))
+		fireEvent.click(getByText('Widgets folder'))
+		await waitFor(() =>
+			expect(container.querySelector('.widget-note')?.textContent).toContain(
+				'no opener',
+			),
+		)
 	})
 })

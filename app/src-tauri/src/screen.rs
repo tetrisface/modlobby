@@ -40,6 +40,38 @@ impl Screen {
 	}
 }
 
+/// Maximizes a window that was put back in a maximized window's rectangle
+/// without being maximized.
+///
+/// That is the shape a `.window-state.json` holds once something has saved a
+/// maximized window's outer rectangle as a plain one -- 16 px wider than the
+/// screen, 7 px above it -- and it heals nothing by itself: the window-state
+/// plugin restores the shape, reads the same shape back at exit, and saves it
+/// again. Called once the plugin has had its turn, on `RunEvent::Ready`. A
+/// stale fullscreen from a previous run (monitor-sized, never marked) gets
+/// the same treatment, which is also the right one.
+pub fn heal_restored(window: &tauri::WebviewWindow) {
+	if window.is_maximized().unwrap_or(false) {
+		return;
+	}
+	let Ok(Some(monitor)) = window.current_monitor() else {
+		return;
+	};
+	let Ok(size) = window.inner_size() else {
+		return;
+	};
+	let area = monitor.work_area().size;
+	if size.width < area.width || size.height < area.height {
+		return;
+	}
+	tracing::info!(
+		width = size.width,
+		height = size.height,
+		"window restored at work-area size without being maximized; maximizing"
+	);
+	let _ = window.maximize();
+}
+
 /// Whether the window is fullscreen right now, for drawing the toggle.
 #[tauri::command]
 pub fn is_fullscreen(screen: tauri::State<'_, Screen>) -> bool {

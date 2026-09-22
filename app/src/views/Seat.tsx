@@ -8,7 +8,7 @@ import {
 	createSignal,
 	onCleanup,
 } from 'solid-js'
-import { SideIcon } from '../components/icons'
+import { SideGlyph, SideIcon } from '../components/icons'
 import type { AiChoice } from '../ipc/bindings/AiChoice'
 import { api, describeError } from '../ipc/client'
 import { DEFAULT_TEAMS, freeTeam, unusedBotName } from '../lib/roster'
@@ -58,8 +58,9 @@ async function remember(played: boolean) {
 
 /**
  * Sits on ally team `ally` — joining it, or moving there from another — and
- * makes playing what `remember` remembers. Taking a seat resets ready, in the
- * runtime and by SPADS alike, so moving sides is one action and not two.
+ * makes playing what `remember` remembers. Sitting down from watching starts
+ * unready; a move between sides keeps ready, since the game agreed to is the
+ * same one.
  */
 export async function sitOn(room: RoomModel, ally: number): Promise<void> {
 	await room.io.takeSeat(nextTeam(room), ally)
@@ -280,33 +281,30 @@ export function Seat() {
 						<span class='muted'>next game</span>
 					</Show>
 
-					{/* Ready is a thing you say to somebody. */}
-					<Show when={room.caps.ready}>
-						<button
-							class={seat()?.ready ? 'primary' : ''}
+					{/* The chosen faction's mark is drawn over the picker's value, so the
+					    closed box shows it whether or not the list itself can. */}
+					<span class='select-iconed'>
+						<SideIcon side={seat()?.side ?? 0} />
+						<Select
+							class='rich'
+							value={String(seat()?.side ?? 0)}
 							disabled={busy()}
-							onClick={() =>
-								act('ready', () => room.io.setReady(!(seat()?.ready ?? false)))
+							onChange={(e) =>
+								act('faction', () =>
+									room.io.setSide(Number(e.currentTarget.value)),
+								)
 							}
 						>
-							{seat()?.ready ? 'Ready' : 'Not ready'}
-						</button>
-					</Show>
-
-					<Select
-						value={String(seat()?.side ?? 0)}
-						disabled={busy()}
-						onChange={(e) =>
-							act('faction', () =>
-								room.io.setSide(Number(e.currentTarget.value)),
-							)
-						}
-					>
-						<For each={SIDES}>
-							{(side) => <option value={String(side.id)}>{side.label}</option>}
-						</For>
-					</Select>
-					<SideIcon side={seat()?.side ?? 0} />
+							<For each={SIDES}>
+								{(side) => (
+									<option value={String(side.id)}>
+										<SideGlyph side={side.id} />
+										{side.label}
+									</option>
+								)}
+							</For>
+						</Select>
+					</span>
 				</Show>
 
 				<AddAi
@@ -356,6 +354,19 @@ export function Seat() {
 						</Show>
 					}
 				>
+					{/* Ready is a thing you say to somebody; committing to play is a
+					    choice made beside giving the seat up. */}
+					<Show when={room.caps.ready}>
+						<button
+							class={seat()?.ready ? '' : 'primary'}
+							disabled={busy()}
+							onClick={() =>
+								act('ready', () => room.io.setReady(!(seat()?.ready ?? false)))
+							}
+						>
+							{seat()?.ready ? 'Ready' : 'Ready up'}
+						</button>
+					</Show>
 					<button disabled={busy()} title='Give the seat up' onClick={spectate}>
 						Spectate
 					</button>

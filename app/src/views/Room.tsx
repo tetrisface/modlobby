@@ -13,6 +13,7 @@ import {
 } from 'solid-js'
 import { Composer } from '../components/Composer'
 import { GameActions } from '../components/GameActions'
+import { ContentChip } from '../components/ContentChip'
 import { GetEngine } from '../components/GetEngine'
 import { Linkify } from '../components/Linkify'
 import { MapEditor } from '../components/MapEditor'
@@ -141,14 +142,34 @@ export function Room() {
 	 * The start button, by standing. The boss says `!start`; a player calls
 	 * the vote by name, as Chobby does (`Interface:StartBattle`), so the room
 	 * reads what was asked rather than an auto-callvote's rewording of it.
+	 * A player who has not readied up is asked to do that first: the vote
+	 * would otherwise wait on them.
 	 */
 	const startAction = createMemo(() => {
 		if (!room.caps.plays) return null
 		switch (standing()) {
 			case 'boss':
-				return { label: 'Start the game', command: '!start' }
-			case 'player':
-				return { label: 'Vote to start', command: '!cv start' }
+				return {
+					label: 'Start the game',
+					title: '!start',
+					run: () => send('!start'),
+				}
+			case 'player': {
+				const me = room.me()
+				const ready =
+					me !== null && (room.users()[me]?.battleStatus?.ready ?? false)
+				if (room.caps.ready && !ready)
+					return {
+						label: 'Ready up',
+						title: 'Ready up, then vote to start',
+						run: () => say(room.io.setReady(true)),
+					}
+				return {
+					label: 'Vote to start',
+					title: '!cv start',
+					run: () => send('!cv start'),
+				}
+			}
 			default:
 				return null
 		}
@@ -461,6 +482,7 @@ export function Room() {
 								mapName={b().mapName}
 								teams={Math.max(occupants().teams.length, 2)}
 								onClose={() => setEditing(false)}
+								onChangeMap={() => setPicking('map')}
 							/>
 						</Show>
 						<Show when={botOf(botOptions())}>
@@ -654,8 +676,8 @@ export function Room() {
 										<button
 											class='primary'
 											disabled={missingParts(room).length > 0}
-											title={action().command}
-											onClick={() => void send(action().command)}
+											title={action().title}
+											onClick={() => void action().run()}
 										>
 											{action().label}
 										</button>
@@ -764,6 +786,19 @@ export function Room() {
 																download={
 																	user.name === room.me()
 																		? lobby.download
+																		: undefined
+																}
+																onToggleReady={
+																	user.name === room.me() && room.caps.ready
+																		? () =>
+																				say(
+																					room.io.setReady(
+																						!(
+																							room.users()[user.name]
+																								?.battleStatus?.ready ?? false
+																						),
+																					),
+																				)
 																		: undefined
 																}
 																moves={movesFor(
@@ -1036,7 +1071,14 @@ function Chips(props: { battle: BattleView }) {
 			<Show when={room.content()}>
 				<Show
 					when={parts().length > 0}
-					fallback={<span class='chip ok'>Content ready</span>}
+					fallback={
+						<ContentChip
+							engine={props.battle.engineVersion}
+							game={props.battle.gameName}
+							map={props.battle.mapName}
+							check={room.check()}
+						/>
+					}
 				>
 					<Missing parts={parts()} engineVersion={props.battle.engineVersion} />
 				</Show>

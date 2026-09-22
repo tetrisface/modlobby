@@ -391,15 +391,29 @@ export function IconSprite() {
 						stroke-linejoin='round'
 					/>
 				</symbol>
+				{/* A question block: a rounded square with a question mark in it.
+				    Drawn a touch smaller than the other marks, and the mark a touch
+				    smaller than its box, so it reads as light as they do. */}
 				<symbol id='side-random' viewBox='0 0 20 20'>
-					<path
-						d='M10 2.6 L17.4 10 L10 17.4 L2.6 10 Z'
+					<rect
+						x='2.97'
+						y='2.97'
+						width='14.06'
+						height='14.06'
+						rx='1.9'
 						fill='none'
 						stroke='currentColor'
 						stroke-width='1.7'
-						stroke-dasharray='2.6 2.2'
+					/>
+					<path
+						d='M7.95 8.35 A2.05 2.05 0 1 1 10 10.4 V11.69'
+						fill='none'
+						stroke='currentColor'
+						stroke-width='1.7'
+						stroke-linecap='round'
 						stroke-linejoin='round'
 					/>
+					<circle cx='10' cy='14.08' r='0.86' fill='currentColor' />
 				</symbol>
 			</defs>
 		</svg>
@@ -484,6 +498,11 @@ export function StatusIcon(props: {
 	status: UserStatusView
 	battle: BattleStatusView
 	download?: DownloadStatus
+	/**
+	 * Our own row: the ready marks say what a press does, and the row's
+	 * gesture does it. Not a button, because a press that moves is a drag.
+	 */
+	pressable?: boolean
 }) {
 	const fraction = () =>
 		props.download ? downloadFraction(props.download) : null
@@ -508,12 +527,47 @@ export function StatusIcon(props: {
 				/>
 			</Match>
 			<Match when={props.battle.ready}>
-				<Icon id='st-ready' class='status ready' label='Ready' />
+				<StatusMark
+					id='st-ready'
+					class='status ready'
+					label='Ready'
+					press={props.pressable ? 'press to unready' : undefined}
+				/>
 			</Match>
 			<Match when={true}>
-				<Icon id='st-unready' class='status unready' label='Not ready' />
+				<StatusMark
+					id='st-unready'
+					class='status unready'
+					label='Not ready'
+					press={props.pressable ? 'press to ready up' : undefined}
+				/>
 			</Match>
 		</Switch>
+	)
+}
+
+/** A status mark; with `press`, one a press on the row acts on, and says so. */
+function StatusMark(props: {
+	id: string
+	class: string
+	label: string
+	press?: string
+}) {
+	return (
+		<Show
+			when={props.press}
+			fallback={<Icon id={props.id} class={props.class} label={props.label} />}
+		>
+			{(press) => (
+				<span class='status-act'>
+					<Icon
+						id={props.id}
+						class={props.class}
+						label={`${props.label} · ${press()}`}
+					/>
+				</span>
+			)}
+		</Show>
 	)
 }
 
@@ -597,6 +651,25 @@ export function SideIcon(props: { side: number }) {
 		<Show when={side()}>
 			{(s) => (
 				<Icon id={s().id} class={`side ${s().class}`} label={s().label} />
+			)}
+		</Show>
+	)
+}
+
+/**
+ * The same mark beside text that already names the faction -- an option in
+ * the picker -- so it carries no title of its own: a legacy select shows an
+ * option's whole text, and a hidden title would read as a second name.
+ */
+export function SideGlyph(props: { side: number }) {
+	const side = () => SIDES[props.side]
+
+	return (
+		<Show when={side()}>
+			{(s) => (
+				<svg class={`icon side ${s().class}`} aria-hidden='true'>
+					<use href={`#${s().id}`} />
+				</svg>
 			)}
 		</Show>
 	)

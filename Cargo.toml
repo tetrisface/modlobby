@@ -39,6 +39,22 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.png]
 opt-level = 3
+# A game's checksum is SHA-512 over every file it holds, unzipped or
+# un-7zipped first; unoptimised that is most of a minute for one game.
+[profile.dev.package.sha2]
+opt-level = 3
+[profile.dev.package.flate2]
+opt-level = 3
+[profile.dev.package.miniz_oxide]
+opt-level = 3
+[profile.dev.package.zlib-rs]
+opt-level = 3
+[profile.dev.package.lzma-rust2]
+opt-level = 3
+[profile.dev.package.crc32fast]
+opt-level = 3
+[profile.dev.package.zip]
+opt-level = 3
 
 [workspace.dependencies]
 spring-protocol = { path = "crates/spring-protocol" }
@@ -117,6 +133,8 @@ sevenz-rust2 = "=0.22.2"
 # tenth of that -- as it is, every time a day has passed and its ETag has
 # changed. The one download that must not be compressed, the engine archive,
 # asks for `identity` by name.
+# The engine's springignore.txt rules are regexes; ported as it builds them.
+regex = "=1.13.1"
 reqwest = { version = "=0.13.4", default-features = false, features = [
   "brotli",
   "gzip",

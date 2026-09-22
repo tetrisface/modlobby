@@ -15,11 +15,11 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use md5::{Digest, Md5};
+use content::fetch::{hash_file, sweep_stale_parts};
+use md5::Md5;
 use serde::Serialize;
 use sha2::Sha256;
 use tauri::{Emitter, State};
-use tokio::io::AsyncWriteExt;
 
 use crate::commands::{ApiError, Result};
 use crate::state::App;
@@ -337,20 +337,8 @@ async fn download(
 	Err(last.unwrap_or_else(|| ApiError::new("notFound", "the index named no mirror")))
 }
 
-/// How much has to arrive before the front end is told again.
-///
-/// Chunks arrive in tens of kilobytes, so one event each would be tens of
-/// thousands of IPC messages for one engine — a progress bar nobody can see
-/// moving that fast, at the cost of the UI thread that has to drain them.
-const REPORT_EVERY: u64 = 4 * 1024 * 1024;
-
-/// Streams the archive to `into`, picking up where a previous attempt left off.
-///
-/// Written to disk chunk by chunk rather than collected first: an engine is a
-/// few hundred megabytes, and the machine most likely to be running this is the
-/// one that just discovered it has no engine at all. What is already on disk
-/// is asked for with `Range`; a mirror that answers 206 continues it, one that
-/// answers 200 did not understand and starts over.
+/// Streams the archive to `into`, picking up where a previous attempt left
+/// off (`content::fetch::resumable`).
 async fn download_from(
 	http: &reqwest::Client,
 	url: &str,
@@ -358,79 +346,17 @@ async fn download_from(
 	expected: u64,
 	say: &impl Fn(EngineProgress),
 ) -> Result<()> {
-	let have = tokio::fs::metadata(into)
-		.await
-		.map(|meta| meta.len())
-		.unwrap_or(0);
-	// The archive as it is on the mirror, byte for byte: the offset resumed
-	// from, the size the index quoted and the checksum it gave are all of the
-	// stored file, and the client otherwise asks for gzip on every request.
-	// A mirror that compressed the answer would make a resume append the
-	// wrong bytes at the wrong offset, and the checksum would then reject
-	// the whole download rather than the mirror.
-	let mut request = http
-		.get(url)
-		.header(reqwest::header::ACCEPT_ENCODING, "identity");
-	if have > 0 {
-		request = request.header(reqwest::header::RANGE, format!("bytes={have}-"));
-	}
-	let mut response = request
-		.send()
-		.await
-		.map_err(|err| ApiError::new("network", format!("fetching the engine: {err}")))?;
-
-	let status = response.status();
-	let io = |err| ApiError::new("io", format!("opening the archive: {err}"));
-	let (mut file, mut got) = if status == reqwest::StatusCode::PARTIAL_CONTENT && have > 0 {
-		tracing::info!(have, "resuming the engine archive");
-		let file = tokio::fs::OpenOptions::new()
-			.append(true)
-			.open(into)
-			.await
-			.map_err(io)?;
-		(file, have)
-	} else if status.is_success() {
-		(tokio::fs::File::create(into).await.map_err(io)?, 0)
-	} else {
-		return Err(ApiError::new(
-			"network",
-			format!("the mirror answered {status}"),
-		));
-	};
-
-	// The index carries a size, but the response's own is the one that matches
-	// what is arriving — and after a resume it counts only the remainder.
-	let total = match response.content_length() {
-		Some(remaining) => got + remaining,
-		None => expected.max(got),
-	};
-	let mut reported = got;
-
-	// `chunk` rather than a stream, so reqwest needs no extra feature and this
-	// needs no futures crate for one loop.
-	while let Some(chunk) = response
-		.chunk()
-		.await
-		.map_err(|err| ApiError::new("network", format!("the download stopped: {err}")))?
-	{
-		file.write_all(&chunk)
-			.await
-			.map_err(|err| ApiError::new("io", format!("writing the archive: {err}")))?;
-		got += chunk.len() as u64;
-		if got - reported >= REPORT_EVERY {
-			reported = got;
-			say(EngineProgress::Downloading { got, total });
+	content::fetch::resumable(http, url, into, expected, |got, total| {
+		say(EngineProgress::Downloading { got, total });
+	})
+	.await
+	.map_err(|err| match err {
+		content::fetch::Error::Network(reason) => ApiError::new("network", reason),
+		content::fetch::Error::Io(reason) => ApiError::new("io", reason),
+		content::fetch::Error::Status(status) => {
+			ApiError::new("network", format!("the mirror answered {status}"))
 		}
-	}
-
-	file.flush()
-		.await
-		.map_err(|err| ApiError::new("io", format!("finishing the archive: {err}")))?;
-
-	// The bar should read full before extraction starts, whatever the last
-	// reporting threshold happened to land on.
-	say(EngineProgress::Downloading { got, total });
-	Ok(())
+	})
 }
 
 /// Checks the archive against the checksum its source gave, when it gave one:
@@ -475,55 +401,12 @@ async fn verify(path: &Path, release: &content::release::Release) -> Result<()> 
 	))
 }
 
-fn hash_file<D: Digest>(path: &Path) -> std::io::Result<String> {
-	use std::io::Read;
-	let mut file = std::fs::File::open(path)?;
-	let mut hasher = D::new();
-	let mut chunk = [0_u8; 64 * 1024];
-	loop {
-		let read = file.read(&mut chunk)?;
-		if read == 0 {
-			break;
-		}
-		hasher.update(&chunk[..read]);
-	}
-	Ok(hex(&hasher.finalize()))
-}
-
-fn hex(bytes: &[u8]) -> String {
-	bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-/// Removes staging files older than `after`, so a download abandoned long ago
-/// does not sit under `engine/` forever. A recent one is left for resuming.
-fn sweep_stale_parts(engine_dir: &Path, after: Duration) {
-	let Ok(entries) = std::fs::read_dir(engine_dir) else {
-		return;
-	};
-	for entry in entries.filter_map(std::result::Result::ok) {
-		let path = entry.path();
-		let name = entry.file_name();
-		let name = name.to_string_lossy();
-		if !(name.starts_with('.') && name.ends_with(".part")) {
-			continue;
-		}
-		let stale = entry
-			.metadata()
-			.and_then(|meta| meta.modified())
-			.ok()
-			.and_then(|modified| modified.elapsed().ok())
-			.is_some_and(|age| age > after);
-		if stale {
-			tracing::info!(path = %path.display(), "removing an abandoned engine download");
-			let _ = std::fs::remove_file(&path);
-		}
-	}
-}
-
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use content::fetch::hex;
 	use content::release::Release;
+	use md5::Digest;
 	use wiremock::matchers::{header, method, path};
 	use wiremock::{Mock, MockServer, ResponseTemplate};
 

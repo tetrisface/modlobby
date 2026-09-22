@@ -6,6 +6,7 @@ import type { BotView } from './BotView'
 import type { ChannelSummaryView } from './ChannelSummaryView'
 import type { ChannelView } from './ChannelView'
 import type { ChatLine } from './ChatLine'
+import type { ContentCheckView } from './ContentCheckView'
 import type { DownloadStatus } from './DownloadStatus'
 import type { EngineStatus } from './EngineStatus'
 import type { FriendsView } from './FriendsView'
@@ -66,6 +67,7 @@ export type Delta =
 	  }
 	| { type: 'vote'; data: VoteView | null }
 	| { type: 'content'; data: { engine: boolean; game: boolean; map: boolean } }
+	| { type: 'contentCheck'; data: ContentCheckView }
 	| { type: 'myBattle'; data: MyBattleView | null }
 	| { type: 'skirmish'; data: SkirmishView | null }
 	| { type: 'gameRunning'; data: GameRunningView | null }

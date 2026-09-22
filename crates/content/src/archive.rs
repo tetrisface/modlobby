@@ -79,6 +79,22 @@ fn pooled(data_dir: &Path, md5: &str) -> PathBuf {
 	data_dir.join("pool").join(head).join(format!("{rest}.gz"))
 }
 
+/// Every file a rapid package lists, with where the pool keeps its contents
+/// (gzipped): the package's data directory is the one its `packages/` is in.
+pub fn pooled_files(sdp: &Path) -> Result<Vec<(String, PathBuf)>, Error> {
+	let data_dir = sdp
+		.parent()
+		.and_then(Path::parent)
+		.ok_or_else(|| Error::Malformed(sdp.to_path_buf()))?;
+	Ok(index(sdp)?
+		.into_iter()
+		.map(|(name, md5)| {
+			let object = pooled(data_dir, &md5);
+			(name, object)
+		})
+		.collect())
+}
+
 /// Every file name the rapid package with this md5 lists.
 pub fn package_files(data_dir: &Path, package_md5: &str) -> Result<Vec<String>, Error> {
 	let sdp = data_dir.join("packages").join(format!("{package_md5}.sdp"));

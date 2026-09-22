@@ -57,6 +57,12 @@ export function rowGesture(options: {
 	canMove: () => boolean
 	onMove: (allyTeam: number) => void
 	onMenu: (event: MouseEvent) => void
+	/**
+	 * A press released where it began, given the press: true if the row took
+	 * it as an action of its own, in which case no menu opens. A press that
+	 * moves is a drag whatever it began on.
+	 */
+	onTap?: (down: PointerEvent) => boolean
 }): (event: PointerEvent) => void {
 	return (event: PointerEvent) => {
 		if (event.button !== 0) return
@@ -93,7 +99,7 @@ export function rowGesture(options: {
 			window.removeEventListener('pointerup', up)
 			window.removeEventListener('pointercancel', up)
 			if (!flight) {
-				options.onMenu(at)
+				if (!options.onTap?.(event)) options.onMenu(at)
 				return
 			}
 			flight.drop()

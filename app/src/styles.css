@@ -124,6 +124,62 @@ a:focus-visible {
 	border-radius: 2px;
 }
 
+/* A select with the mark of its value drawn inside its box, before the text. */
+.select-iconed {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+}
+
+.select-iconed > .icon {
+	position: absolute;
+	left: 0.375rem;
+	pointer-events: none;
+}
+
+.select-iconed > .select {
+	padding-left: 1.875rem;
+}
+
+/*
+ * A select whose options carry a mark: Chromium's customizable select lets an
+ * option hold markup once both it and its picker opt in. A WebView that does
+ * not know the value keeps the native list and shows the options' text alone.
+ */
+.select.rich,
+.select.rich::picker(select) {
+	appearance: base-select;
+}
+
+.select.rich::picker(select) {
+	padding: 0.125rem;
+	color: var(--text);
+	background: var(--raised);
+	border: 1px solid var(--line);
+	border-radius: 2px;
+}
+
+.select.rich option {
+	display: flex;
+	align-items: center;
+	gap: 0.4375rem;
+	padding: 0.1875rem 0.4375rem;
+	border-radius: 2px;
+}
+
+.select.rich option:hover,
+.select.rich option:focus-visible {
+	background: var(--sunken);
+}
+
+.select.rich option:checked {
+	color: var(--accent);
+}
+
+.select.rich option::checkmark {
+	display: none;
+}
+
 button.primary {
 	background: var(--accent);
 	color: #10131a;
@@ -812,6 +868,53 @@ textarea {
 	border-color: rgba(88, 196, 255, 0.32);
 }
 
+/* "Content ready" and what it rests on: each part, and whether it is the
+   room's files, in a tip on hover or keyboard focus. */
+.content-chip {
+	position: relative;
+	cursor: help;
+}
+
+.content-tip {
+	display: none;
+	position: absolute;
+	top: calc(100% + 0.375rem);
+	left: 0;
+	z-index: 40;
+	grid-template-columns: auto auto auto;
+	gap: 0.25rem 0.75rem;
+	width: max-content;
+	max-width: min(40rem, 90vw);
+	padding: 0.5625rem 0.6875rem;
+	font-family: var(--body);
+	font-size: 0.75rem;
+	font-weight: 400;
+	letter-spacing: normal;
+	color: var(--text);
+	background: var(--raised);
+	border: 1px solid var(--line);
+	border-radius: 4px;
+	box-shadow: 0 12px 28px rgb(0 0 0 / 45%);
+}
+
+.content-chip:hover .content-tip,
+.content-chip:focus-visible .content-tip {
+	display: grid;
+}
+
+.content-tip-row {
+	display: contents;
+}
+
+.content-tip-what,
+.content-tip-said {
+	color: var(--muted);
+}
+
+.content-tip-said.differs {
+	color: var(--warn);
+}
+
 /* A download in progress: the chip is a glass filling from the bottom to
    `--fill`, with the arrow flowing inside it. */
 .chip.sync-chip {
@@ -1130,6 +1233,21 @@ body.resizing-y {
 }
 
 .status.unready {
+	color: var(--error);
+}
+
+/* Our own ready marks: a press released on one flips it (see `rowGesture`);
+   the hover colour is the state a press leads to. */
+.status-act {
+	display: flex;
+	cursor: pointer;
+}
+
+.status-act:hover .status.unready {
+	color: var(--ok);
+}
+
+.status-act:hover .status.ready {
 	color: var(--error);
 }
 
@@ -1684,6 +1802,20 @@ body.resizing-y {
 
 .server-add label {
 	flex: 1;
+}
+
+/* One override a line: the name widest, the repository next, the rest narrow. */
+.game-override {
+	display: grid;
+	grid-template-columns: 2fr 9rem 2fr 1.2fr auto;
+	align-items: end;
+	gap: 0.5rem;
+}
+
+@container settings (width < 44rem) {
+	.game-override {
+		grid-template-columns: 1fr 1fr;
+	}
 }
 
 .warn-text {

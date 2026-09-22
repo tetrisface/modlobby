@@ -131,6 +131,11 @@ export async function moveTo(
 	allyTeam: number,
 ): Promise<void> {
 	if (target.kind === 'me') {
+		// Dropped back where we sit is not a move; taking the seat again would
+		// only ask the room to note it.
+		const me = room.me()
+		const held = me === null ? undefined : room.users()[me]?.battleStatus
+		if (held?.player && held.allyTeam === allyTeam) return
 		await room.io.takeSeat(ourTeam(room), allyTeam)
 		return
 	}

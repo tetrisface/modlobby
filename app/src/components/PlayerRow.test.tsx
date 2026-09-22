@@ -496,3 +496,73 @@ describe("a watcher's skill", () => {
 		expect(unrated.container.querySelector('.skill')?.textContent).toBe('')
 	})
 })
+
+describe('readying up from the row', () => {
+	const mark = (container: HTMLElement) =>
+		container.querySelector<HTMLElement>('.status-act svg')!
+
+	function ours(ready: boolean, movable = false) {
+		let flipped = 0
+		const rendered = render(() => (
+			<PlayerRow
+				user={user({ battleStatus: battle({ ready }) })}
+				skill={skill()}
+				me={true}
+				moves={
+					movable ? { teams: [0, 1], on: 0, to: async () => {} } : undefined
+				}
+				onToggleReady={() => flipped++}
+			/>
+		))
+		return { ...rendered, flipped: () => flipped }
+	}
+
+	test('a press released on our own cross readies us up', () => {
+		const { container, flipped } = ours(false)
+		expect(icons(container)[0]).toBe('#st-unready')
+		fireEvent.pointerDown(mark(container), {
+			button: 0,
+			clientX: 5,
+			clientY: 5,
+		})
+		fireEvent.pointerUp(window, { clientX: 5, clientY: 5 })
+		expect(flipped()).toBe(1)
+	})
+
+	test('and released on our own check unreadies', () => {
+		const { container, flipped } = ours(true)
+		expect(icons(container)[0]).toBe('#st-ready')
+		fireEvent.pointerDown(mark(container), {
+			button: 0,
+			clientX: 5,
+			clientY: 5,
+		})
+		fireEvent.pointerUp(window, { clientX: 5, clientY: 5 })
+		expect(flipped()).toBe(1)
+	})
+
+	test('a press on the mark that moves drags the row and flips nothing', () => {
+		const { container, flipped } = ours(false, true)
+		fireEvent.pointerDown(mark(container), {
+			button: 0,
+			clientX: 5,
+			clientY: 5,
+		})
+		fireEvent.pointerMove(window, { clientX: 60, clientY: 40 })
+		expect(container.querySelector('.player.lifted')).not.toBeNull()
+		fireEvent.pointerUp(window, { clientX: 60, clientY: 40 })
+		expect(flipped()).toBe(0)
+	})
+
+	test("another player's mark is only a mark", () => {
+		const { container } = render(() => (
+			<PlayerRow
+				user={user({ battleStatus: battle({ ready: false }) })}
+				skill={skill()}
+				me={false}
+			/>
+		))
+		expect(container.querySelector('.status-act')).toBeNull()
+		expect(icons(container)[0]).toBe('#st-unready')
+	})
+})

@@ -1,5 +1,6 @@
 import { createContext, useContext, type Accessor } from 'solid-js'
 import type { BattleView } from '../../ipc/bindings/BattleView'
+import type { ContentCheckView } from '../../ipc/bindings/ContentCheckView'
 import type { Book } from '../../ipc/bindings/Book'
 import type { Plan } from '../../ipc/bindings/Plan'
 import type { Sections } from '../../ipc/bindings/Sections'
@@ -124,6 +125,8 @@ export type RoomModel = {
 	me: Accessor<string | null>
 	/** Whether this machine has the room's engine, game and map. */
 	content: Accessor<{ engine: boolean; game: boolean; map: boolean } | null>
+	/** The room's game and map here held to the checksums the room announced. */
+	check: Accessor<ContentCheckView>
 	/** The room's game, while one is running. */
 	running: Accessor<GameRunningView | null>
 	/**

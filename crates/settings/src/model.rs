@@ -56,6 +56,63 @@ pub struct Settings {
 	pub updates: Updates,
 	pub ui: Ui,
 	pub lan: Lan,
+	pub games: Games,
+}
+
+/// Games from anywhere but the rooms' own rapid servers.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(default, rename_all = "camelCase")]
+#[ts(export)]
+pub struct Games {
+	/// Where exactly one game is to be had, above every list and above the
+	/// room's own rapid: a room naming `name` gets it from `source` and from
+	/// nowhere else.
+	pub overrides: Vec<GameOverride>,
+}
+
+/// One game, by its exact name, and where it comes from.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct GameOverride {
+	/// The game's name exactly as rooms report it, e.g.
+	/// `SplinterFaction 0.1.86`. Nothing else matches: not the next version,
+	/// not a different case.
+	pub name: String,
+	pub source: GameSource,
+}
+
+/// One way to fetch a game, in coilbox's hub format
+/// (`{kind, value, asset?, filename?}`), so a list, the hub and an override
+/// all say it the same way.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+#[ts(export)]
+pub enum GameSource {
+	/// A rapid tag, e.g. `evo:stable`.
+	Rapid { value: String },
+	/// A file at an https address; `filename` is what to save it as.
+	Url {
+		value: String,
+		#[serde(default, skip_serializing_if = "Option::is_none")]
+		filename: Option<String>,
+	},
+	/// A GitHub repository's releases, `owner/repo`; `asset` is a fragment of
+	/// the file name that picks among a release's files.
+	Github {
+		value: String,
+		#[serde(default, skip_serializing_if = "Option::is_none")]
+		asset: Option<String>,
+	},
+	/// A GitHub repository's commit, built: the one the room's version names
+	/// by its last part (`test-31368-8379d65`), with that version written
+	/// over `placeholder` (`$VERSION` unless said) in its `modinfo.lua`. Kept
+	/// only when it is the room's copy.
+	Git {
+		value: String,
+		#[serde(default, skip_serializing_if = "Option::is_none")]
+		placeholder: Option<String>,
+	},
 }
 
 /// Games with people on the local network, with no server between you.

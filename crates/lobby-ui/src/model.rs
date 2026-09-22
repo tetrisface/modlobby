@@ -752,6 +752,31 @@ pub enum NoticeLevel {
 	Error,
 }
 
+/// One part of the room's content here held to the hash the room announced
+/// for it: the engine's checksum of the archive and what it uses.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "verdict", rename_all = "camelCase")]
+#[ts(export)]
+pub enum CheckView {
+	/// Being read; a large game takes seconds.
+	Checking,
+	/// The same files the room plays, by the hash both sides announce.
+	Same { hash: u32 },
+	/// Ours and the room's, as the room writes them.
+	Differs { ours: u32, room: u32 },
+	/// Could not be told, and why.
+	Unchecked { why: String },
+}
+
+/// The room's game and map here held to its hashes. `None` for a part that
+/// is not here, or that the room announced no hash for.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ContentCheckView {
+	pub game: Option<CheckView>,
+	pub map: Option<CheckView>,
+}
+
 /// One change to apply to the mirrored state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(
@@ -836,6 +861,8 @@ pub enum Delta {
 		game: bool,
 		map: bool,
 	},
+	/// Whether the room's game and map here are the ones it plays.
+	ContentCheck(ContentCheckView),
 	MyBattle(Option<MyBattleView>),
 	/// The room with no server behind it, whole. `None` when there is none.
 	Skirmish(Option<Box<SkirmishView>>),

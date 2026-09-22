@@ -44,6 +44,7 @@ export function onlineRoom(): RoomModel {
 		users: () => roomSession()?.users ?? {},
 		me: () => roomSession()?.me ?? null,
 		content: () => lobby.content,
+		check: () => lobby.contentCheck,
 		running: () => roomSession()?.gameRunning ?? null,
 		exit,
 		log: BATTLE_ROOM,

@@ -83,6 +83,8 @@ export function MapEditor(props: {
 	mapName: string
 	teams: number
 	onClose: () => void
+	/** Opens the map picker over this sheet; the sheet follows the pick. */
+	onChangeMap: () => void
 }) {
 	const [state, setState] = createSignal<State>(initial())
 	const dispatch = (action: Action) => setState((held) => reduce(held, action))
@@ -440,6 +442,18 @@ export function MapEditor(props: {
 			>
 				<header class='ed-head'>
 					<h2>Start boxes · {props.mapName}</h2>
+					<button
+						type='button'
+						class='link'
+						title={
+							room.caps.picksContent
+								? 'Play a different map'
+								: 'Ask the host for a different map'
+						}
+						onClick={props.onChangeMap}
+					>
+						Change map
+					</button>
 					<span class='note'>{applyNote()}</span>
 					<button type='button' onClick={close}>
 						Close

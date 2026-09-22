@@ -405,10 +405,12 @@ describe('the bonus, from a row to the host', () => {
 
 describe('a room behind the seam', () => {
 	test('draws teams, the map and the settings with no server at all', async () => {
-		const { container, getByText } = await open(alone([]))
+		const { container, getByText, getAllByText } = await open(alone([]))
 
 		expect(getByText('Skirmish')).toBeTruthy()
-		expect(getByText('Comet Catcher Remake 1.8')).toBeTruthy()
+		// On the card, and again in the content chip's tip.
+		const map = getAllByText('Comet Catcher Remake 1.8')
+		expect(map.some((shown) => !shown.closest('.content-tip'))).toBe(true)
 		// The human on team 1 and the AI on team 2, from `lib/roster`'s arrange().
 		expect(container.querySelectorAll('.team').length).toBe(2)
 		expect(named(container, '.team')).toEqual(['me', 'BARb'])
@@ -443,7 +445,7 @@ describe('a room behind the seam', () => {
 		expect(queryByText('Leave room')).toBeNull()
 		// Nobody to be ready for. Asked of the seat bar rather than of the page,
 		// because a player row's sync icon is titled "Not ready" as well.
-		expect(buttons(container, '.seat')).not.toContain('Not ready')
+		expect(buttons(container, '.seat')).not.toContain('Ready up')
 	})
 
 	test('the game is started from here when nobody else will start it', async () => {
@@ -490,6 +492,9 @@ describe('a room behind the seam', () => {
 			fakeRoom({
 				caps: SERVED,
 				my: () => myBattle({ boss: 'someone' }),
+				users: () => ({
+					me: user('me', { battleStatus: status({ ready: true }) }),
+				}),
 				io: recordingIo(calls),
 			}),
 		)
@@ -501,6 +506,26 @@ describe('a room behind the seam', () => {
 		fireEvent.click(cardButton(container, 'Vote to start'))
 		await settle()
 		expect(calls).toContainEqual(['sayBattle', ['!cv start']])
+	})
+
+	test('a player who is not ready is asked to ready up before the vote is offered', async () => {
+		const calls: Calls = []
+		const { container } = await open(
+			fakeRoom({
+				caps: SERVED,
+				my: () => myBattle({ boss: 'someone' }),
+				io: recordingIo(calls),
+			}),
+		)
+
+		expect(buttons(container, '.card-actions')).toEqual([
+			'Ready up',
+			'Leave room',
+		])
+		fireEvent.click(cardButton(container, 'Ready up'))
+		await settle()
+		expect(calls).toContainEqual(['setReady', [true]])
+		expect(calls).not.toContainEqual(['sayBattle', ['!cv start']])
 	})
 
 	test('a spectator is offered no start, since SPADS would refuse one', async () => {
@@ -653,5 +678,26 @@ describe('the setup pane', () => {
 		await settle()
 		expect(slotKeys()).toHaveLength(20)
 		expect(container.querySelector('.setup-drafts')?.textContent).toBe('Editor')
+	})
+})
+
+describe('the faction picker', () => {
+	test('each option carries its mark beside a plain label', async () => {
+		const { container } = await open(
+			fakeRoom({ caps: SERVED, io: recordingIo([]) }),
+		)
+		const options = [
+			...container.querySelectorAll<HTMLOptionElement>(
+				'.seat .select.rich option',
+			),
+		]
+		expect(options.map((o) => o.textContent?.trim())).toEqual([
+			'Armada',
+			'Cortex',
+			'Legion',
+			'Random',
+		])
+		for (const option of options)
+			expect(option.querySelector('svg.icon.side')).not.toBeNull()
 	})
 })

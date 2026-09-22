@@ -17,6 +17,7 @@ function loaded(): Settings {
 	return {
 		$schema: null,
 		lan: { enabled: false },
+		games: { overrides: [] },
 		servers: [
 			{
 				builtin: 'bar',

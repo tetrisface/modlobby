@@ -11,9 +11,12 @@ flate2 = { workspace = true }
 image = { workspace = true }
 md-5 = { workspace = true }
 recoil = { workspace = true }
+regex = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+settings = { workspace = true }
+sha2 = { workspace = true }
 # A map archive is a .sd7 (7z) or .sdz (zip); its mapinfo.lua is the only
 # place its real name is written down. Both are already here for the engine
 # archive and the widget zips.

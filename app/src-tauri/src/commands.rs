@@ -1387,6 +1387,16 @@ pub fn open_replays_dir(app: State<'_, App>) -> Result<()> {
 	open(demos)
 }
 
+/// The folder widgets installed from here are written to; BAR loads it
+/// alongside every other data directory's.
+#[tauri::command]
+pub fn open_widgets_dir(app: State<'_, App>) -> Result<()> {
+	let widgets = data_dirs(&app)?.write.join(widgets::manage::WIDGETS_DIR);
+	std::fs::create_dir_all(&widgets)
+		.map_err(|err| ApiError::new("io", format!("making the widgets directory: {err}")))?;
+	open(widgets)
+}
+
 /// The player's files — engine settings, hotkeys, widget state — as the
 /// Settings page shows them: where they can be copied from, and the copies
 /// taken before each launch.

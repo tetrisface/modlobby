@@ -1,4 +1,5 @@
 import { createStore } from 'solid-js/store'
+import type { ContentCheckView } from '../ipc/bindings/ContentCheckView'
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { EngineStatus } from '../ipc/bindings/EngineStatus'
 import type { GameRunningView } from '../ipc/bindings/GameRunningView'
@@ -36,6 +37,8 @@ export type LobbyState = {
 	engine: EngineStatus
 	/** Whether this machine has the room's engine, game and map. */
 	content: { engine: boolean; game: boolean; map: boolean } | null
+	/** The room's game and map here held to the checksums it announced. */
+	contentCheck: ContentCheckView
 	download: DownloadStatus
 	/** A multi-line paste on its way to the room. */
 	paste: PasteStatus
@@ -73,6 +76,7 @@ export function emptyLobby(): LobbyState {
 		servers: {},
 		engine: { state: 'idle' },
 		content: null,
+		contentCheck: { game: null, map: null },
 		download: { state: 'idle' },
 		paste: { state: 'idle' },
 		skirmish: null,

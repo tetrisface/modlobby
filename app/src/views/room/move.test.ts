@@ -163,6 +163,13 @@ describe('moving somebody', () => {
 		expect(calls).toEqual([['takeSeat', [0, 1]]])
 	})
 
+	test('dropped back on the team you sit on, nothing is sent', async () => {
+		const calls: Calls = []
+		// The fixture seats us on the first team.
+		await moveTo(served(calls, 'alice'), ME, 0)
+		expect(calls).toEqual([])
+	})
+
 	test('an AI you added moves without asking the host', async () => {
 		const calls: Calls = []
 		await moveTo(served(calls, 'alice'), MY_BOT, 2)

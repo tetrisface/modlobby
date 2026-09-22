@@ -131,6 +131,67 @@ fn field(mapinfo: &str, key: &str) -> Option<String> {
 	})
 }
 
+/// A game's own name, from the `modinfo.lua` at its archive's root, put
+/// together the way the engine does for a map ([`compose`]): the scanner
+/// names games and maps alike (`ArchiveScanner.cpp:192`). `None` for an
+/// archive that is not a game.
+pub fn game_of_archive(path: &Path) -> Option<String> {
+	compose(&modinfo(path)?)
+}
+
+/// The `modinfo.lua` at an archive's root, as text.
+pub(crate) fn modinfo(path: &Path) -> Option<String> {
+	root_file(path, "modinfo.lua")
+}
+
+/// The `mapinfo.lua` at an archive's root, as text: the one that makes it a
+/// map to the scanner (`ArchiveScanner.cpp:746`), unlike [`read`]'s, which is
+/// wherever the archive keeps one.
+pub(crate) fn mapinfo(path: &Path) -> Option<String> {
+	root_file(path, "mapinfo.lua")
+}
+
+/// One file at an archive's root, as text; the engine looks for
+/// `modinfo.lua` and `mapinfo.lua` there and nowhere else.
+fn root_file(path: &Path, wanted: &str) -> Option<String> {
+	let at_root = |name: &str| {
+		name.trim_start_matches(['/', '\\'])
+			.eq_ignore_ascii_case(wanted)
+	};
+	let mut held = Vec::new();
+	match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
+		"sdz" => {
+			let mut zip = zip::ZipArchive::new(std::fs::File::open(path).ok()?).ok()?;
+			let name = zip.file_names().find(|name| at_root(name))?.to_owned();
+			zip.by_name(&name)
+				.ok()?
+				.take(MOST as u64)
+				.read_to_end(&mut held)
+				.ok()?;
+		}
+		"sd7" => {
+			sevenz_rust2::decompress_file_with_extract_fn(path, "", |entry, reader, _| {
+				if !at_root(entry.name()) {
+					return Ok(true);
+				}
+				reader.take(MOST as u64).read_to_end(&mut held)?;
+				// Found: the rest of a game is not worth decompressing.
+				Ok(false)
+			})
+			.ok()?;
+		}
+		"sdd" => return std::fs::read_to_string(path.join(wanted)).ok(),
+		// `<data>/packages/<md5>.sdp`, its files in `<data>/pool`.
+		"sdp" => {
+			let data_dir = path.parent()?.parent()?;
+			let md5 = path.file_stem()?.to_str()?;
+			held = crate::archive::from_package(data_dir, md5, wanted).ok()?;
+		}
+		_ => return None,
+	}
+	String::from_utf8(held).ok().filter(|text| !text.is_empty())
+}
+
 /// `mapinfo.lua` out of a `.sd7` (7z) or `.sdz` (zip), whichever this is.
 /// One pass over a `.sd7` (7z), `.sdz` (zip) or unpacked `.sdd`.
 pub fn read(path: &Path) -> Option<Says> {
@@ -228,6 +289,34 @@ local mapinfo = {
 	modtype     = 3,
 }
 "#;
+
+	#[test]
+	fn a_game_is_named_by_the_modinfo_at_its_root_and_nothing_else() {
+		let dir = tempfile::tempdir().unwrap();
+		let sdz = dir.path().join("SplinterFaction_0.1.86.sdz");
+		let mut zip = zip::ZipWriter::new(std::fs::File::create(&sdz).unwrap());
+		let stored = zip::write::SimpleFileOptions::default();
+		// A modinfo deeper down is some other archive's, not this one's.
+		zip.start_file("units/modinfo.lua", stored).unwrap();
+		std::io::Write::write_all(&mut zip, b"name = \"Decoy\"").unwrap();
+		zip.start_file("modinfo.lua", stored).unwrap();
+		std::io::Write::write_all(
+			&mut zip,
+			b"local modinfo = {\n\tname = \"SplinterFaction\",\n\tshortname = \"SF\",\n\tversion = \"0.1.86\",\n}\nreturn modinfo\n",
+		)
+		.unwrap();
+		zip.finish().unwrap();
+		assert_eq!(
+			game_of_archive(&sdz).as_deref(),
+			Some("SplinterFaction 0.1.86")
+		);
+
+		let sdd = dir.path().join("Mod.sdd");
+		std::fs::create_dir(&sdd).unwrap();
+		assert_eq!(game_of_archive(&sdd), None, "no modinfo, no game");
+		std::fs::write(sdd.join("modinfo.lua"), "name = 'My Mod'\nversion = '2'\n").unwrap();
+		assert_eq!(game_of_archive(&sdd).as_deref(), Some("My Mod 2"));
+	}
 
 	#[test]
 	fn the_name_is_the_one_the_engine_composes() {

@@ -14,8 +14,11 @@
 //!   `supreme_isthmus_v2.1.sd7`).
 
 pub mod archive;
+pub mod checksum;
 pub mod demo;
+pub mod fetch;
 pub mod game_cache;
+pub mod git;
 pub mod http;
 pub mod launcher;
 pub mod map_index;
@@ -25,6 +28,7 @@ pub mod map_thumb;
 pub mod rapid;
 pub mod release;
 pub mod replays;
+pub mod sources;
 
 use std::cmp::Ordering;
 use std::io::{BufRead, BufReader};
@@ -113,6 +117,36 @@ impl From<&Path> for DataDirs {
 #[derive(Debug, Clone)]
 pub struct Library {
 	dirs: DataDirs,
+}
+
+/// What each game archive calls itself, kept for the process: finding one
+/// means opening every archive under `games/`, and a `.sd7` has to be
+/// decompressed up to its `modinfo.lua`. Keyed by the file's size and time,
+/// so a replaced archive is read again.
+mod game_names {
+	use std::collections::HashMap;
+	use std::path::{Path, PathBuf};
+	use std::sync::{Mutex, OnceLock};
+	use std::time::SystemTime;
+
+	type Seen = (u64, Option<SystemTime>, Option<String>);
+
+	pub(super) fn of(path: &Path) -> Option<String> {
+		static SEEN: OnceLock<Mutex<HashMap<PathBuf, Seen>>> = OnceLock::new();
+		let meta = std::fs::metadata(path).ok()?;
+		let stamp = (meta.len(), meta.modified().ok());
+		let seen = SEEN.get_or_init(Mutex::default);
+		if let Some((len, time, name)) = seen.lock().ok()?.get(path)
+			&& (*len, *time) == stamp
+		{
+			return name.clone();
+		}
+		let name = crate::map_name::game_of_archive(path);
+		seen.lock()
+			.ok()?
+			.insert(path.to_path_buf(), (stamp.0, stamp.1, name.clone()));
+		name
+	}
 }
 
 impl Library {
@@ -246,6 +280,56 @@ impl Library {
 	pub fn has_game(&self, display_name: &str) -> bool {
 		self.rapid_md5(display_name)
 			.is_some_and(|md5| self.any_has(Path::new("packages").join(format!("{md5}.sdp"))))
+			|| self.game_archive(display_name).is_some()
+	}
+
+	/// The archive named `name` that a game on `engine` would load: one of
+	/// that engine's own base archives, else a game installed as a file, else
+	/// a rapid package.
+	pub fn archive_named(&self, engine: &str, name: &str) -> Option<PathBuf> {
+		let base = self
+			.find_engine(engine)
+			.map(|found| found.content.join("base"));
+		let mut pending: Vec<PathBuf> = base.into_iter().collect();
+		while let Some(dir) = pending.pop() {
+			for path in std::fs::read_dir(&dir)
+				.into_iter()
+				.flatten()
+				.filter_map(Result::ok)
+				.map(|entry| entry.path())
+			{
+				if path.is_dir() && path.extension().is_none() {
+					pending.push(path);
+				} else if game_names::of(&path).as_deref() == Some(name) {
+					return Some(path);
+				}
+			}
+		}
+		self.game_archive(name).or_else(|| self.rapid_package(name))
+	}
+
+	/// The rapid package of the game `display_name`, in whichever data
+	/// directory has it.
+	fn rapid_package(&self, display_name: &str) -> Option<PathBuf> {
+		let md5 = self.rapid_md5(display_name)?;
+		self.dirs
+			.all()
+			.map(|dir| dir.join("packages").join(format!("{md5}.sdp")))
+			.find(|sdp| sdp.is_file())
+	}
+
+	/// The archive under `games/` in any data directory whose own name is
+	/// `display_name`: one a download that was not rapid's put there, or one
+	/// put there by hand. Asked of each archive's `modinfo.lua`, since the
+	/// engine goes by that and not by the file's name.
+	pub fn game_archive(&self, display_name: &str) -> Option<PathBuf> {
+		self.dirs
+			.all()
+			.filter_map(|dir| std::fs::read_dir(dir.join("games")).ok())
+			.flatten()
+			.filter_map(Result::ok)
+			.map(|entry| entry.path())
+			.find(|path| game_names::of(path).as_deref() == Some(display_name))
 	}
 
 	/// One file out of the installed game, by the version a room reports.
@@ -487,6 +571,21 @@ mod tests {
 				.is_dir()
 		);
 		assert!(!library.has_game("My Mod"));
+	}
+
+	#[test]
+	fn a_game_installed_as_a_file_is_found_by_the_name_inside_it() {
+		let dir = tempfile::tempdir().unwrap();
+		let games = dir.path().join("games");
+		std::fs::create_dir_all(games.join("SplinterFaction.sdd")).unwrap();
+		std::fs::write(
+			games.join("SplinterFaction.sdd").join("modinfo.lua"),
+			"local modinfo = {\n\tname = \"SplinterFaction\",\n\tversion = \"0.1.86\",\n}\n",
+		)
+		.unwrap();
+		let library = Library::new(DataDirs::only(dir.path()));
+		assert!(library.has_game("SplinterFaction 0.1.86"));
+		assert!(!library.has_game("SplinterFaction 0.1.87"));
 	}
 
 	#[test]

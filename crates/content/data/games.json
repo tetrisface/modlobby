@@ -1,0 +1,10 @@
+{
+	"format": "coilbox-hub-games",
+	"version": 1,
+	"games": [
+		{
+			"title": "SplinterFaction",
+			"downloads": [{ "kind": "github", "value": "SplinterFaction/SplinterFaction" }]
+		}
+	]
+}

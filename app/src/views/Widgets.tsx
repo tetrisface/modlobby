@@ -405,6 +405,18 @@ export function Widgets() {
 					/>
 				</div>
 
+				<button
+					type='button'
+					title='Open the folder widgets installed here are written to'
+					onClick={() =>
+						void api
+							.openWidgetsDir()
+							.catch((error) => setNote(`widgets folder: ${message(error)}`))
+					}
+				>
+					Widgets folder
+				</button>
+
 				<span class='spacer' />
 				<Show when={usage()}>
 					<span class='muted count'>

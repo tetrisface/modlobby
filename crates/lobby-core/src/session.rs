@@ -427,11 +427,13 @@ impl Session {
 		{
 			return Err(SeatError::NotInARoom);
 		}
-		// Ready never survives sitting down: a seat taken is not a game agreed to.
+		// Ready never survives sitting down from watching: a seat taken is not
+		// a game agreed to. A change of side while seated keeps it, as Chobby
+		// does: the game agreed to is the same one.
 		self.seat = Some(Seat {
 			team,
 			ally_team,
-			ready: false,
+			ready: self.seat.is_some_and(|seat| seat.ready),
 			side: self.seat.map_or(0, |seat| seat.side),
 		});
 		Ok(vec![self.battle_status()])
@@ -893,6 +895,8 @@ impl Session {
 				vec![]
 			}
 			E::JoinBattle { id, game_hash } => {
+				// The room's word on its game, which a copy is held to.
+				tracing::info!(id, game_hash, "joined a room");
 				let script_password = self.pending_join.take().unwrap_or_default();
 				state.my_battle = Some(MyBattle::new(id, game_hash, script_password));
 				let mut effects = vec![Effect::Joined { id }];
@@ -2275,17 +2279,22 @@ mod tests {
 	}
 
 	#[test]
-	fn sitting_down_again_is_not_a_game_agreed_to() {
+	fn changing_side_keeps_ready_and_faction_but_sitting_down_does_not() {
 		let mut s = in_a_public_room();
 		s.take_seat(0, 0).unwrap();
 		s.set_side(3).unwrap();
 		s.set_ready(true).unwrap();
 
-		// Moving to another team clears ready but keeps the faction: one is a
-		// statement about this arrangement, the other is a preference.
+		// Moving to another team keeps both: the game agreed to is the same
+		// one, and the faction is a preference.
 		let moved = sent_status(&s.take_seat(1, 1).unwrap());
-		assert!(!moved.ready);
+		assert!(moved.ready);
 		assert_eq!(moved.side, 3);
+
+		// Standing up and sitting down again is a new seat, not a game agreed to.
+		s.release_seat();
+		let sat = sent_status(&s.take_seat(0, 0).unwrap());
+		assert!(!sat.ready);
 	}
 
 	fn sent_lines(effects: &[Effect]) -> Vec<&str> {

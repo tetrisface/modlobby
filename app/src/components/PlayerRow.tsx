@@ -25,6 +25,11 @@ export function PlayerRow(props: {
 	download?: DownloadStatus
 	/** Where this row may be sent. Absent outside a room, or where it may not. */
 	moves?: Moves
+	/**
+	 * Our own row only: a press released on the ready mark flips it. A press
+	 * that moves drags the row instead, as from anywhere else on it.
+	 */
+	onToggleReady?: () => void
 }) {
 	const menu = (event: MouseEvent) =>
 		showPlayerMenu(props.user.name, event, { moves: props.moves })
@@ -32,6 +37,13 @@ export function PlayerRow(props: {
 		canMove: () => props.moves !== undefined,
 		onMove: (ally) => void props.moves?.to(ally),
 		onMenu: menu,
+		onTap: (down) => {
+			const toggle = props.onToggleReady
+			const target = down.target as Element | null
+			if (!toggle || !target?.closest('.status-act')) return false
+			toggle()
+			return true
+		},
 	})
 	return (
 		<Show when={props.user.battleStatus}>
@@ -45,6 +57,7 @@ export function PlayerRow(props: {
 						status={props.user.status}
 						battle={battle()}
 						download={props.download}
+						pressable={props.onToggleReady !== undefined}
 					/>
 					<Flag country={props.user.country} />
 					<RankIcon status={props.user.status} />

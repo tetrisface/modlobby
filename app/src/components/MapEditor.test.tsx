@@ -119,10 +119,15 @@ function square(svg: SVGSVGElement) {
  * it is editing -- here the online one, over the same mirrored state these
  * tests were already writing.
  */
-function editor(onClose: () => void) {
+function editor(onClose: () => void, onChangeMap: () => void = vi.fn()) {
 	return (
 		<RoomProvider value={onlineRoom()}>
-			<MapEditor mapName='Comet Catcher' teams={2} onClose={onClose} />
+			<MapEditor
+				mapName='Comet Catcher'
+				teams={2}
+				onClose={onClose}
+				onChangeMap={onChangeMap}
+			/>
 		</RoomProvider>
 	)
 }
@@ -452,5 +457,16 @@ describe('MapEditor', () => {
 		expect(container.querySelector('.ed-warn')?.textContent).toContain(
 			'1 team has no box',
 		)
+	})
+})
+
+describe('changing the map', () => {
+	test('the header link hands over to the map picker', async () => {
+		room('me', true)
+		const onChangeMap = vi.fn()
+		const { getByText } = render(() => editor(vi.fn(), onChangeMap))
+		await settle()
+		fireEvent.click(getByText('Change map'))
+		expect(onChangeMap).toHaveBeenCalledTimes(1)
 	})
 })
