@@ -9,8 +9,8 @@
 # Five jobs: `gate` decides whether this run releases and which version;
 # `tag` bumps, tags and opens the GitHub release as a draft; `build` runs once
 # per platform (Windows NSIS; Linux AppImage and .deb; macOS .app and
-# .dmg, unsigned -- a Developer ID certificate carries its holder's name, so
-# there is nothing here to sign with) and each attaches its bundles, .sig
+# .dmg, signed with a self-signed certificate -- a Developer ID certificate
+# carries its holder's name) and each attaches its bundles, .sig
 # files and latest.json to that draft, then versionless copies of the
 # bundles. tauri-action merges the `platforms` map of an existing latest.json
 # rather than replacing it. `publish` waits for ci on the pushed commit and
@@ -196,6 +196,38 @@ jobs:
           bun-version: 1.4.0
       - run: bun install --frozen-lockfile
         working-directory: app
+
+      # An ad-hoc signature is the binary's hash, so the keychain's "Always
+      # Allow" for the saved password named only the build it was clicked in
+      # and every update asked again. Signed with one certificate, the
+      # designated requirement is `certificate root = H"<its hash>"`, the same
+      # for every release. Gatekeeper still warns on the first download;
+      # losing the .p12 costs every user one more prompt. tauri-action's own
+      # APPLE_CERTIFICATE import only accepts Apple-issued names, so the
+      # certificate goes into a keychain here and tauri finds it by name on
+      # the search list. codesign rejects an untrusted self-signed identity
+      # ("no identity found"); trusting it without sudo waits on a dialog.
+      - name: Signing certificate
+        if: runner.os == 'macOS'
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          [ -n "$MACOS_CERTIFICATE" ] || { echo "secret MACOS_CERTIFICATE is not set"; exit 1; }
+          keychain=$RUNNER_TEMP/signing.keychain-db
+          password=$(openssl rand -hex 16)
+          base64 --decode <<<"$MACOS_CERTIFICATE" > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" >/dev/null
+          security find-certificate -c modlobby -p "$keychain" > "$RUNNER_TEMP/cert.pem"
+          sudo security add-trusted-cert -d -r trustRoot -p codeSign -k "$keychain" "$RUNNER_TEMP/cert.pem"
+          # shellcheck disable=SC2046 # one argument per existing keychain
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          security find-identity -v -p codesigning "$keychain" | grep '"modlobby"'
+          echo "APPLE_SIGNING_IDENTITY=modlobby" >> "$GITHUB_ENV"
 
       # Builds the platform's bundle (tauri.conf.json names nsis,
       # tauri.linux.conf.json overrides that with appimage, deb and rpm, and
