@@ -689,7 +689,12 @@ async fn writer<W>(
 				Some(Outbound::Cancel { area }) => {
 					scheduler.cancel(area);
 				}
-				Some(Outbound::Shutdown) | None => return,
+				// Hung up for real: without this the reader's half kept the
+				// socket open until the server next said something.
+				Some(Outbound::Shutdown) | None => {
+					let _ = write_half.shutdown().await;
+					return;
+				}
 			},
 			_ = tokio::time::sleep(wakeup) => {}
 		}

@@ -40,6 +40,9 @@ pub(super) enum Purpose {
 		password: String,
 		reply: Reply<Vec<String>>,
 	},
+	/// The login after `REGISTRATIONACCEPTED`, on a connection of its own:
+	/// the agreement it is answered with is the registration's answer.
+	Agreement(Reply<Vec<String>>),
 }
 
 impl Purpose {
@@ -48,7 +51,7 @@ impl Purpose {
 			Self::Login(reply) => {
 				let _ = reply.send(Err(err));
 			}
-			Self::Register { reply, .. } => {
+			Self::Register { reply, .. } | Self::Agreement(reply) => {
 				let _ = reply.send(Err(err));
 			}
 		}
@@ -254,6 +257,10 @@ impl Runtime {
 			} => {
 				slot.register_reply = Some(reply);
 				session.registering(email, password)
+			}
+			Purpose::Agreement(reply) => {
+				slot.register_reply = Some(reply);
+				session
 			}
 		};
 		slot.link = Some(Connection {

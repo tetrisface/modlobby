@@ -29,6 +29,10 @@ pub const MODLOBBY_CLIENT: &str = "modlobby";
 /// Chobby's compatibility flags; teiserver ignores the field.
 pub const DEFAULT_FLAGS: &str = "b sp";
 
+/// What teiserver greets with, always (`spring_out.ex:92`): how a server that
+/// takes Chobby's fingerprint is told from one that refuses it.
+pub const TEISERVER_VERSION: &str = "0.38-33-ga5f3b28";
+
 #[derive(Clone)]
 pub struct LoginRequest {
 	pub username: String,
@@ -78,6 +82,38 @@ impl LoginRequest {
 			self.flags
 		)
 	}
+}
+
+impl LoginRequest {
+	/// The line for a server that greeted with `server_version`.
+	///
+	/// teiserver keeps the lobby hash as the machine fingerprint its moderation
+	/// goes by, so it gets Chobby's. uberserver refuses that one outright
+	/// (`_validLoginSentence`: the middle field is SpringLobby's `<uint32 user
+	/// id> <hex mac hash>`, and a base64 hash is neither), so every other
+	/// server gets that shape, which teiserver would take as well.
+	pub fn line_for(&self, server_version: &str) -> String {
+		if server_version == TEISERVER_VERSION {
+			return self.line();
+		}
+		format!(
+			"LOGIN {} {} 0 * {}:{}\t{}\t{}",
+			self.username,
+			self.password_hash,
+			self.client_name,
+			self.lobby_version,
+			spring_ids(&self.lobby_hash),
+			self.flags
+		)
+	}
+}
+
+/// SpringLobby's pair, made from Chobby's fingerprint: the same machine
+/// gives the same pair, and nothing else goes into it.
+fn spring_ids(lobby_hash: &str) -> String {
+	let digest = hash::md5_hex(lobby_hash);
+	let user_id = u32::from_str_radix(&digest[..8], 16).unwrap_or_default();
+	format!("{user_id} {}", &digest[8..24])
 }
 
 impl fmt::Debug for LoginRequest {
@@ -142,6 +178,56 @@ mod tests {
 		assert_ne!(stored_client_name(&spaced.line()), MODLOBBY_CLIENT);
 	}
 
+	/// uberserver's `_validLoginSentence`, which refused ours with "Invalid
+	/// sentence format" on lobby.recoilengine.org (2026-09-22).
+	fn uberserver_takes(line: &str) -> bool {
+		let sentence = line.splitn(6, ' ').nth(5).expect("a sentence");
+		let fields: Vec<&str> = sentence.split('\t').collect();
+		let [lobby, ids, flags] = fields[..] else {
+			return false;
+		};
+		let (user_id, mac) = ids.split_once(' ').unwrap_or((ids, "0"));
+		lobby.len() <= 64
+			&& ids.len() <= 40
+			&& mac.len() <= 16
+			&& u64::from_str_radix(mac, 16).is_ok()
+			&& user_id.parse::<u32>().is_ok()
+			&& flags.chars().all(|c| c.is_ascii_lowercase() || c == ' ')
+	}
+
+	#[test]
+	fn teiserver_gets_chobbys_fingerprint_and_every_other_server_springlobbys() {
+		let req = LoginRequest::new(
+			"alice",
+			"password",
+			"0.1.22",
+			"wPM0PNyjjxe/qpsPngTLmg== 6e3b2c9d0a1f4e57",
+		);
+		assert_eq!(req.line_for(TEISERVER_VERSION), req.line());
+		assert!(!uberserver_takes(&req.line()), "the refusal, as it was");
+
+		let spring = req.line_for("unknown");
+		assert!(uberserver_takes(&spring), "{spring}");
+		assert_eq!(
+			spring,
+			req.line_for("0.38-86-gb142493"),
+			"the same machine, the same ids"
+		);
+		assert_eq!(stored_client_name(&spring), MODLOBBY_CLIENT);
+	}
+
+	#[test]
+	fn a_taken_name_reads_the_same_on_either_server() {
+		assert!(name_taken("Username already taken"));
+		assert!(name_taken("Username is already in use."));
+		// Not whose name it is: somebody's address.
+		assert!(!name_taken("Email already in use"));
+		assert!(!name_taken("Email address is already in use."));
+		assert!(!name_taken(
+			"too many recent registration attempts, please try again later"
+		));
+	}
+
 	#[test]
 	fn debug_output_redacts_the_hash() {
 		let req = LoginRequest::new("alice", "password", "v", "h");
@@ -164,6 +250,16 @@ pub fn register(username: &str, password: &str, email: &str) -> String {
 /// a login from one with the agreement text rather than with a session.
 pub fn confirm_agreement(code: &str) -> String {
 	format!("CONFIRMAGREEMENT {code}")
+}
+
+/// Whether a `REGISTRATIONDENIED` says the name is an account already:
+/// teiserver's "Username already taken" (`cache_user.ex:369`), uberserver's
+/// "Username is already in use." (`SQLUsers.py` `check_register_user`). Not
+/// the email address either one refuses, which says nothing about whose
+/// name it is.
+pub fn name_taken(reason: &str) -> bool {
+	let reason = reason.trim().to_ascii_lowercase();
+	reason.starts_with("username") && (reason.contains("taken") || reason.contains("in use"))
 }
 
 /// Why a name would be refused, checked here so the answer is immediate.

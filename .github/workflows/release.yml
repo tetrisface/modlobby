@@ -1,22 +1,26 @@
 # Two ways in. The button: blank input bumps the patch version, a typed version
 # is used as given. Or a push to main whose commit subject carries `[release]`
-# (or `[release 1.2.3]`): ci runs first and this workflow starts when it
-# finishes, releasing only if it was green. The bump is committed and tagged
-# before the build, so the tag names a commit whose Cargo.toml already states
-# its own version, and `git checkout v<x> && cargo build` reproduces the
-# shipped version string.
+# (or `[release 1.2.3]`): this workflow builds while ci tests the same push,
+# into a draft release, and publishes the draft only once ci is green. The
+# bump is committed and tagged before the build, so the tag names a commit
+# whose Cargo.toml already states its own version, and
+# `git checkout v<x> && cargo build` reproduces the shipped version string.
 #
-# Four jobs: `gate` decides whether this run releases and which version;
-# `tag` bumps, tags and opens the GitHub release; `build` runs once
-# per platform (Windows NSIS; Linux AppImage, .deb and .rpm; macOS .app and
+# Five jobs: `gate` decides whether this run releases and which version;
+# `tag` bumps, tags and opens the GitHub release as a draft; `build` runs once
+# per platform (Windows NSIS; Linux AppImage and .deb; macOS .app and
 # .dmg, unsigned -- a Developer ID certificate carries its holder's name, so
 # there is nothing here to sign with) and each attaches its bundles, .sig
-# files and latest.json to that release as soon as it finishes, then
-# versionless copies of the bundles. tauri-action merges the `platforms` map of an existing
-# latest.json rather than replacing it, so the manifest fills in one platform
-# at a time. A client whose platform is not in the manifest yet sees a
-# transient "no update for this target" — the same class of window as the 404
-# before the first upload. `aur` then publishes the Arch package from the .deb.
+# files and latest.json to that draft, then versionless copies of the
+# bundles. tauri-action merges the `platforms` map of an existing latest.json
+# rather than replacing it. `publish` waits for ci on the pushed commit and
+# makes the draft the latest release: nothing is visible to an updater until
+# every platform is in the manifest. `aur` then publishes the Arch package
+# from the .deb.
+#
+# A red ci leaves the bump on main, the tag and the draft behind. Rerun ci and
+# then the `publish` job if it was a flake; otherwise delete the draft and its
+# tag, and the next release takes the next number.
 name: release
 
 on:
@@ -26,17 +30,17 @@ on:
         description: "Version to release (blank: patch + 1)"
         required: false
         default: ""
-  workflow_run:
-    workflows: [ci]
-    types: [completed]
+  push:
     branches: [main]
 
 permissions:
   contents: write
+  # `publish` reads the ci run of the same push.
+  actions: read
 
-# Two releases racing on main would both bump and both tag. Every ci run on
+# Two releases racing on main would both bump and both tag. Every push to
 # main also lands here, so a non-release push queues behind a running release
-# for a few seconds before `gate` lets it out.
+# before `gate` lets it out.
 concurrency:
   group: release
   cancel-in-progress: false
@@ -52,23 +56,19 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           INPUT_VERSION: ${{ inputs.version }}
-          CI_EVENT: ${{ github.event.workflow_run.event }}
-          CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
-          CI_MESSAGE: ${{ github.event.workflow_run.head_commit.message }}
+          MESSAGE: ${{ github.event.head_commit.message }}
         run: |
           if [ "$EVENT" = workflow_dispatch ]; then
             echo "release=true" >> "$GITHUB_OUTPUT"
             echo "version=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # Only the subject line counts, and only for a push: a pull request
-          # from a branch named main must not release.
-          subject=$(head -n1 <<<"$CI_MESSAGE")
-          if ! [[ "$CI_EVENT" = push && "$subject" =~ \[release( ([0-9]+\.[0-9]+\.[0-9]+))?\] ]]; then
+          # Only the subject line counts.
+          subject=$(head -n1 <<<"$MESSAGE")
+          if ! [[ "$subject" =~ \[release( ([0-9]+\.[0-9]+\.[0-9]+))?\] ]]; then
             echo "not a release commit: $subject"
             exit 0
           fi
-          [ "$CI_CONCLUSION" = success ] || { echo "ci was $CI_CONCLUSION, not releasing"; exit 1; }
           echo "release=true" >> "$GITHUB_OUTPUT"
           echo "version=${BASH_REMATCH[2]}" >> "$GITHUB_OUTPUT"
 
@@ -86,14 +86,12 @@ jobs:
         with:
           ref: main
 
-      # ci verified one commit; release that one, not whatever main is now.
-      - name: main is still the commit ci passed
-        if: github.event_name == 'workflow_run'
-        env:
-          CI_SHA: ${{ github.event.workflow_run.head_sha }}
+      # ci verifies the pushed commit; release that one, not whatever main is now.
+      - name: main is still the pushed commit
+        if: github.event_name == 'push'
         run: |
-          [ "$(git rev-parse HEAD)" = "$CI_SHA" ] ||
-            { echo "main moved past $CI_SHA since ci ran; push [release] again or use the button"; exit 1; }
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ] ||
+            { echo "main moved past $GITHUB_SHA; push [release] again or use the button"; exit 1; }
 
       - name: Next version
         id: version
@@ -110,6 +108,16 @@ jobs:
           echo "$current -> $next"
           echo "next=$next" >> "$GITHUB_OUTPUT"
 
+      # tauri-action is told to look for a draft, and handed a published
+      # release it opens a second one on the same tag. Before anything is pushed.
+      - name: Not already published
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEXT: ${{ steps.version.outputs.next }}
+        run: |
+          [ "$(gh release view "v$NEXT" --json isDraft -q .isDraft 2>/dev/null)" != false ] ||
+            { echo "v$NEXT is already published; release the next version"; exit 1; }
+
       - name: Bump, commit, tag
         id: bump
         env:
@@ -122,16 +130,19 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # A build that failed after the bump left main and the tag in place;
-          # dispatching again with the same version resumes from there. The
-          # push refuses a tag that already names a different commit.
+          # dispatching again with the same version resumes from there, while
+          # the release is still a draft. The push refuses a tag that already
+          # names a different commit, and `--atomic` then refuses main with it:
+          # never a tag off main, never a bump on main without its tag.
           git diff --quiet || git commit -am "release $NEXT"
           git tag -f "v$NEXT"
-          git push origin main "v$NEXT"
+          git push --atomic origin main "v$NEXT"
           echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
       # The release exists before any builder starts, so the parallel
       # tauri-action runs all find it by tag instead of racing to create it.
-      # Re-dispatching the same version finds the release already there.
+      # Re-dispatching the same version finds the draft already there. A draft
+      # is not `latest`, so no updater sees it before `publish`.
       - name: Open the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -139,7 +150,7 @@ jobs:
           COMMIT: ${{ steps.bump.outputs.commit }}
         run: |
           gh release view "v$NEXT" >/dev/null 2>&1 ||
-            gh release create "v$NEXT" --title "$NEXT" --notes "$NEXT+$COMMIT"
+            gh release create "v$NEXT" --draft --title "$NEXT" --notes "$NEXT+$COMMIT"
 
   build:
     needs: tag
@@ -156,6 +167,13 @@ jobs:
     defaults:
       run:
         shell: bash
+    env:
+      # `tauri::generate_context!` brotli-compresses the whole front end at
+      # quality 9 inside a proc macro, and a release build compiles proc
+      # macros unoptimised unless told otherwise. Here rather than in
+      # Cargo.toml: the optimised macros are cached, a local build would only
+      # pay for them.
+      CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_OPT_LEVEL: 3
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -181,7 +199,9 @@ jobs:
 
       # Builds the platform's bundle (tauri.conf.json names nsis,
       # tauri.linux.conf.json overrides that with appimage, deb and rpm, and
-      # tauri.macos.conf.json with app and dmg), signs the updater
+      # tauri.macos.conf.json with app and dmg; `args` below leaves the rpm
+      # out: 45 s of bundling for a format with no downloads in thirty
+      # releases, and the updater only ever serves the AppImage), signs the updater
       # artifact, and attaches bundle, .sig and latest.json to the release. No
       # submodule is needed: the one file compiled in from external/ is only
       # read under #[cfg(test)].
@@ -197,6 +217,9 @@ jobs:
           tauriScript: bun run tauri
           tagName: v${{ needs.tag.outputs.next }}
           releaseName: ${{ needs.tag.outputs.next }}
+          # A draft cannot be fetched by tag; this makes the action look for it.
+          releaseDraft: true
+          args: ${{ runner.os == 'Linux' && '--bundles appimage,deb' || '' }}
 
       # The same bundles again under names without the version, so the README
       # links /releases/latest/download/<name> and never goes stale. The .sig
@@ -213,7 +236,6 @@ jobs:
               *.exe) name=modlobby_x64-setup.exe ;;
               *.AppImage) name=modlobby_amd64.AppImage ;;
               *.deb) name=modlobby_amd64.deb ;;
-              *.rpm) name=modlobby.x86_64.rpm ;;
               *.dmg) name=modlobby_aarch64.dmg ;;
               *) continue ;;
             esac
@@ -221,16 +243,38 @@ jobs:
           done
           gh release upload "v$NEXT" latest/* --clobber
 
+  # Whole or not at all: every platform built, and ci green on the commit that
+  # was pushed. ci started with this workflow and is normally long done by
+  # now. The button has no push to wait for and publishes as it always did.
+  publish:
+    needs: [tag, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      NEXT: ${{ needs.tag.outputs.next }}
+    steps:
+      - name: ci is green on the pushed commit
+        if: github.event_name == 'push'
+        run: |
+          id=$(gh run list --workflow ci.yml --event push --commit "$GITHUB_SHA" --json databaseId -q '.[0].databaseId')
+          [ -n "$id" ] || { echo "no ci run for $GITHUB_SHA"; exit 1; }
+          until [ "$(gh run view "$id" --json status -q .status)" = completed ]; do sleep 15; done
+          conclusion=$(gh run view "$id" --json conclusion -q .conclusion)
+          [ "$conclusion" = success ] ||
+            { echo "ci was $conclusion: v$NEXT stays a draft. Rerun ci and this job, or delete the draft and its tag."; exit 1; }
+
+      - run: gh release edit "v$NEXT" --draft=false --latest
+
   # The Arch package: packaging/aur/PKGBUILD with this release's version,
   # checksummed and test-built in an Arch container, then pushed to
   # aur.archlinux.org. Needs an AUR account whose SSH key is in the secrets;
   # without AUR_SSH_PRIVATE_KEY the job stops after printing the PKGBUILD.
   aur:
-    needs: [tag, build]
-    # Only the Linux build matters here and the Windows one failing must not
-    # hide the package; the asset check below is what fails when the .deb is
-    # missing.
-    if: ${{ !cancelled() && needs.tag.result == 'success' }}
+    # After `publish`: the PKGBUILD's source is the release's public download
+    # URL, which a draft does not have.
+    needs: [tag, publish]
     runs-on: ubuntu-24.04
     env:
       AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}

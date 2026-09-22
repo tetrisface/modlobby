@@ -1,6 +1,8 @@
 # Every push and pull request: format, tests, generated bindings, front end.
-# No artifacts and no release here: release.yml runs after a green push whose
-# commit subject carries `[release]`, or from its button.
+# No artifacts and no release here: release.yml builds alongside this run on a
+# push whose commit subject carries `[release]` and publishes only once this
+# run is green; it finds this workflow by its file name. Its button releases
+# without waiting.
 name: ci
 
 on:
@@ -8,10 +10,37 @@ on:
     branches: [main]
   pull_request:
 
+# No debuginfo: nobody attaches a debugger to a runner, a panic still names its
+# file and line, and writing a PDB per test binary is a large part of the
+# Windows leg's link time. `test` inherits `dev`.
+env:
+  CARGO_PROFILE_DEV_DEBUG: 0
+
 jobs:
+  # The checks that produce the same answer everywhere and need nothing
+  # compiled, on their own so a formatting slip shows in a minute rather than
+  # after the slowest leg's tests.
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 26.8.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: 1.4.0
+      # rustup reads rust-toolchain.toml on the first cargo call; no action needed.
+      - run: cargo fmt --all --check
+      - run: bun install --frozen-lockfile
+        working-directory: app
+      - run: bun run check
+        working-directory: app
+
   check:
     # Every platform compiles the Tauri crate; Linux needs WebKitGTK for it.
-    # The checks that produce the same answer everywhere run on Windows only.
+    # The bindings check gives the same answer everywhere and needs the tests
+    # compiled, so it rides the Linux leg: Windows is the slowest by minutes.
     # macOS is Apple Silicon and builds nothing here -- it is the only thing
     # that proves the macOS branches compile, and the next Linux-shaped `cfg!`
     # fails here rather than on somebody's Mac.
@@ -61,8 +90,6 @@ jobs:
         run: bun run vite:build
         working-directory: app
 
-      - run: cargo fmt --all --check
-        if: runner.os == 'Windows'
       - run: cargo test --workspace
 
       - name: Generated bindings are committed
@@ -71,7 +98,7 @@ jobs:
         # Regenerating them means naming the real directory; prettier then puts
         # them in the house style, which is what is committed. A diff means a
         # type changed and its TypeScript was not.
-        if: runner.os == 'Windows'
+        if: runner.os == 'Linux'
         env:
           # Absolute: each crate's tests run with that crate as their cwd.
           TS_RS_EXPORT_DIR: ${{ github.workspace }}/app/src/ipc/bindings
@@ -79,7 +106,3 @@ jobs:
           cargo test --workspace export_bindings
           cd app && bunx prettier --log-level warn --write src/ipc/bindings
           git diff --exit-code src/ipc/bindings
-
-      - run: bun run check
-        if: runner.os == 'Windows'
-        working-directory: app

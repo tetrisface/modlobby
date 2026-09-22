@@ -179,6 +179,7 @@ export function LoginForm(props: {
 				),
 			)
 		} catch (err) {
+			if (askedForCode(err)) return
 			setError(explained(err))
 			void api
 				.loginWait(props.server)
@@ -206,9 +207,46 @@ export function LoginForm(props: {
 			)
 			setAwaitingCode(true)
 		} catch (err) {
+			if (errorCode(err) === 'nameTaken' && (await ownAccount())) return
 			setError(explained(err))
 		} finally {
 			setBusy(false)
+		}
+	}
+
+	/**
+	 * An account that never confirmed its code: the server answered the login
+	 * with its agreement and kept the connection up for the code, so the form
+	 * asks for it here, as it does right after registering.
+	 */
+	function askedForCode(err: unknown): boolean {
+		if (errorCode(err) !== 'unverified') return false
+		setAgreement(describeError(err).split('\n'))
+		setAwaitingCode(true)
+		return true
+	}
+
+	/**
+	 * A taken name may be this person's own account, made earlier and never
+	 * confirmed: the usual reason to register the same name twice. Logging in
+	 * with what was typed tells. An unconfirmed account moves the form on to its
+	 * code, a confirmed one is simply logged in, and a password that does not
+	 * match leaves the registration's refusal as the answer.
+	 */
+	async function ownAccount(): Promise<boolean> {
+		try {
+			applySettings(
+				await api.login(
+					props.server,
+					username().trim(),
+					password(),
+					remember(),
+					autoLogin(),
+				),
+			)
+			return true
+		} catch (err) {
+			return askedForCode(err)
 		}
 	}
 

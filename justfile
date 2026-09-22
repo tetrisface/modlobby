@@ -6,6 +6,10 @@ format:
 	(cd app && bun run fmt)
 	cargo fmt --all
 
+# Once per clone: `git push` then runs `just check` first (.githooks/pre-push).
+hooks:
+	git config core.hooksPath .githooks
+
 # What CI checks, in CI's order.
 check:
 	cargo fmt --all --check

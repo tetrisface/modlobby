@@ -51,6 +51,8 @@ impl From<ClientError> for ApiError {
 			ClientError::Engine(_) => "engine",
 			ClientError::Stopped => "stopped",
 			ClientError::NoCredentials => "noCredentials",
+			ClientError::Unverified(_) => "unverified",
+			ClientError::NameTaken(_) => "nameTaken",
 		};
 		Self::new(code, err.to_string())
 	}

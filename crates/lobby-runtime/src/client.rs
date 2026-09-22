@@ -25,7 +25,7 @@ use spring_protocol::{
 	Area, Endpoint, Envelope, Inbound, LoginRequest, ThrottlePolicy, Transport, TransportError,
 	Way, server_id,
 };
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::Child;
 use tokio::sync::{mpsc, oneshot};
 
@@ -62,6 +62,28 @@ pub enum ClientError {
 	/// A reconnect was asked for before any login this run, or after a logout.
 	#[error("nothing to reconnect with; log in first")]
 	NoCredentials,
+	/// The account has not confirmed the code emailed to it, so the server
+	/// answered the login with its agreement: the server's own words, which
+	/// say where the code went and what entering it agrees to. The connection
+	/// stays up for the code.
+	#[error("{}", unverified(.0))]
+	Unverified(Vec<String>),
+	/// A registration refused because the name is an account already, which
+	/// may be the person's own: made earlier, and never confirmed.
+	#[error("{0}")]
+	NameTaken(String),
+}
+
+fn unverified(agreement: &[String]) -> String {
+	let said: Vec<&str> = agreement
+		.iter()
+		.map(|line| line.trim())
+		.filter(|line| !line.is_empty())
+		.collect();
+	if said.is_empty() {
+		return "this account must confirm the code emailed to it".into();
+	}
+	said.join("\n")
 }
 
 type Reply<T> = oneshot::Sender<Result<T, ClientError>>;
@@ -1277,6 +1299,19 @@ async fn run_download(
 	progress: &mpsc::Sender<DownloadEvent>,
 ) -> Result<(), String> {
 	let mut child = crate::launch::spawn_download(run)?;
+	// Read beside stdout, or a full pipe would stall the child.
+	let errors = child.stderr.take().map(|stderr| {
+		tokio::spawn(async move {
+			let mut said = Vec::new();
+			let mut lines = BufReader::new(stderr).lines();
+			while let Ok(Some(line)) = lines.next_line().await {
+				if pr_downloader_said(&line) {
+					said.push(line);
+				}
+			}
+			said
+		})
+	});
 	let mut tail = Vec::new();
 	if let Some(mut stdout) = child.stdout.take() {
 		// Read raw rather than by line: pr-downloader redraws progress with
@@ -1300,11 +1335,35 @@ async fn run_download(
 	if matches!(child.wait().await, Ok(status) if status.success()) {
 		return Ok(());
 	}
+	// Last, so what went wrong ends the message.
+	if let Some(errors) = errors {
+		for line in errors.await.unwrap_or_default() {
+			remember_tail(&mut tail, &line);
+		}
+	}
 	if let Some(map) = missed(run, &tail) {
 		let search = run.search_url.clone();
 		let _ = progress.send(DownloadEvent::Missed { search, map }).await;
 	}
 	Err(unpublished(run, &tail).unwrap_or_else(|| failure_reason(&tail)))
+}
+
+/// Whether a stderr line is pr-downloader's own: its `[Error]` and `[Warn]`
+/// lines go there (as of the 2026.09.01 engine), including the search that
+/// tells an unpublished game apart. curl's tracing (`* Trying …`) goes there
+/// too, and says nothing a person needs.
+fn pr_downloader_said(line: &str) -> bool {
+	line.starts_with('[')
+}
+
+/// What a download that wanted a game and a map came to. The game's failure
+/// is the one to tell, and says what became of the map beside it.
+fn fetched(game: Option<String>, map: Result<(), String>) -> Result<(), String> {
+	match (game, map) {
+		(Some(game), Err(map)) => Err(format!("{game}; {map}")),
+		(Some(game), Ok(())) => Err(game),
+		(None, map) => map,
+	}
 }
 
 /// The map a map run's search answered "no such thing" for: a 404, which is
@@ -1805,20 +1864,25 @@ impl Runtime {
 			});
 		tokio::spawn(async move {
 			let progress = events.clone();
-			// The runs, one after the other, until one fails.
+			// The runs, one after the other.
 			let work = async move {
 				// The map's runs are the same map from each search in turn:
 				// alternatives, not more work, so the first that answers ends
 				// it and only every one of them failing is a failure. A game
-				// has one source and must work.
+				// has one source and must work -- but a game that cannot be
+				// had does not cost the map, which comes from elsewhere.
 				let mut found_map = false;
 				let mut no_map = None;
+				let mut no_game = None;
 				for run in runs {
 					if run.has_games() {
 						// Somebody else's rapid server is read before anything
 						// is fetched through it; BAR's own passes unread.
-						vet(run.rapid_master.clone()).await?;
-						run_download(&run, &progress).await?;
+						let got = match vet(run.rapid_master.clone()).await {
+							Ok(()) => run_download(&run, &progress).await,
+							Err(refused) => Err(refused),
+						};
+						no_game = got.err();
 						continue;
 					}
 					if found_map {
@@ -1829,7 +1893,7 @@ impl Runtime {
 						Err(reason) => no_map = Some(reason),
 					}
 				}
-				match no_map {
+				let map = match no_map {
 					// Every search said no. The room's own host is playing
 					// the map, so it has the file even where nobody else
 					// publishes it -- which is every custom map on a LAN.
@@ -1854,7 +1918,8 @@ impl Runtime {
 						None => Err(reason),
 					},
 					_ => Ok(()),
-				}
+				};
+				fetched(no_game, map)
 			};
 			// The stop side owns a sender the runtime drops; either the work
 			// finishing or that drop ends the wait. Letting the work go is
@@ -2840,28 +2905,38 @@ impl Runtime {
                             },
                         );
 						if let Some(reply) = login_reply {
-							let _ = reply.send(Err(ClientError::Refused(
-								"confirm the code emailed to you".into(),
-							)));
+							let _ = reply.send(Err(ClientError::Unverified(text)));
 						}
 					}
 				}
 				Effect::Registered => {
-					// The account exists but is unverified. Logging in on this
-					// same connection is what puts the server in the state
-					// where `CONFIRMAGREEMENT` means anything, and the
-					// agreement it answers with is what the caller is waiting
-					// for. Hanging up here — as this once did — threw away the
-					// connection the code had to be sent on.
-					if let Some(conn) = self.link_mut(server) {
-						let effects = conn.session.begin_login();
-						queue.extend(effects);
+					// The account exists but is unverified, and only a login
+					// binds the emailed code to a connection: the agreement
+					// that login is answered with is what the caller waits
+					// for. It goes out on a connection of its own. uberserver
+					// has put this one in its agreement state, where `LOGIN`
+					// is refused (`Insufficient rights`) and `CONFIRMAGREEMENT`
+					// has no account to confirm; teiserver answers an
+					// unverified login with the agreement on any connection
+					// (`spring_in.ex:292`).
+					let slot = self.servers.entry(server.to_owned()).or_default();
+					let reply = slot.register_reply.take();
+					let credentials = slot.credentials.clone();
+					self.disconnect(server).await;
+					if let (Some(reply), Some((endpoint, request))) = (reply, credentials) {
+						self.connect(endpoint, request, Purpose::Agreement(reply));
 					}
+					return;
 				}
 				Effect::RegistrationDenied { reason } => {
 					let slot = self.servers.entry(server.to_owned()).or_default();
 					if let Some(reply) = slot.register_reply.take() {
-						let _ = reply.send(Err(ClientError::Refused(reason)));
+						let refused = if spring_protocol::login::name_taken(&reason) {
+							ClientError::NameTaken(reason)
+						} else {
+							ClientError::Refused(reason)
+						};
+						let _ = reply.send(Err(refused));
 					}
 					// No account was made, so there is nothing to come back to.
 					slot.credentials = None;
@@ -3563,6 +3638,52 @@ mod tests {
 	use super::*;
 	use spring_protocol::Security;
 
+	/// What the 2026.09.01 engine's pr-downloader printed to stderr for a game
+	/// springrts' rapid does not publish, joining a SplinterFaction room on
+	/// lobby.recoilengine.org (2026-09-22).
+	#[test]
+	fn pr_downloaders_own_lines_are_kept_and_curls_tracing_is_not() {
+		let stderr = [
+			"*   Trying 127.0.0.1:1...",
+			"* connect to 127.0.0.1 port 1 failed: Connection refused",
+			"[Error] /build/src/tools/pr-downloader/src/Downloader/Http/HttpDownloader.cpp:220:search():Error downloading http://127.0.0.1:1/nobody-is-asked?category=game&springname=SplinterFaction%200.1.86",
+		];
+		let kept: Vec<&str> = stderr
+			.into_iter()
+			.filter(|line| pr_downloader_said(line))
+			.collect();
+		assert_eq!(kept.len(), 1);
+
+		let run = recoil::Download {
+			binary: "prd".into(),
+			data_dir: "data".into(),
+			wants: vec![(recoil::Want::Game, "SplinterFaction 0.1.86".into())],
+			rapid_master: "https://repos.springrts.com/repos.gz".into(),
+			search_url: recoil::NO_SEARCH_URL.into(),
+		};
+		let tail: Vec<String> = kept.into_iter().map(str::to_owned).collect();
+		assert_eq!(
+			unpublished(&run, &tail).as_deref(),
+			Some(
+				"SplinterFaction 0.1.86 is not published by this server's rapid server (https://repos.springrts.com/repos.gz)"
+			)
+		);
+	}
+
+	#[test]
+	fn a_game_that_cannot_be_had_is_told_with_what_became_of_the_map() {
+		assert_eq!(fetched(None, Ok(())), Ok(()));
+		assert_eq!(fetched(None, Err("no map".into())), Err("no map".into()));
+		assert_eq!(
+			fetched(Some("no game".into()), Ok(())),
+			Err("no game".into())
+		);
+		assert_eq!(
+			fetched(Some("no game".into()), Err("no map".into())),
+			Err("no game; no map".into())
+		);
+	}
+
 	#[test]
 	fn a_failure_repeats_the_last_lines_pr_downloader_printed() {
 		let mut tail = Vec::new();
@@ -4248,16 +4369,27 @@ mod tests {
 		client.shutdown().await;
 	}
 
-	/// Plays the server through a registration: the greeting, the account
-	/// made, and the agreement it answers the first login with. The trailing
-	/// empty `AGREEMENT ` is teiserver's own (`spring_out.ex:111-121`).
-	async fn accept_registration(server: DuplexStream) -> FakeServer {
-		let (read, mut write) = tokio::io::split(server);
+	/// Plays the server through a registration: the greeting and the account
+	/// made on the first connection, which is then let go; on the second, the
+	/// agreement the first login is answered with. The trailing empty
+	/// `AGREEMENT ` is teiserver's own (`spring_out.ex:111-121`).
+	async fn accept_registration(made_on: DuplexStream, logged_in_on: DuplexStream) -> FakeServer {
+		let (read, mut write) = tokio::io::split(made_on);
 		let mut lines = BufReader::new(read).lines();
 		write.write_all(b"TASSERVER 0.38 * 8201 0\n").await.unwrap();
 		let sent = lines.next_line().await.unwrap().unwrap();
 		assert!(sent.starts_with("REGISTER me "), "{sent}");
 		write.write_all(b"REGISTRATIONACCEPTED\n").await.unwrap();
+		// Nothing more on this one: uberserver would refuse a login here.
+		assert_eq!(lines.next_line().await.unwrap(), None, "hung up");
+		agree(logged_in_on).await
+	}
+
+	/// The server answering an unverified account's login with its agreement.
+	async fn agree(server: DuplexStream) -> FakeServer {
+		let (read, mut write) = tokio::io::split(server);
+		let mut lines = BufReader::new(read).lines();
+		write.write_all(b"TASSERVER 0.38 * 8201 0\n").await.unwrap();
 		let sent = lines.next_line().await.unwrap().unwrap();
 		assert!(sent.starts_with("LOGIN me "), "{sent}");
 		write
@@ -4285,11 +4417,11 @@ mod tests {
 	}
 
 	#[tokio::test]
-	async fn registering_logs_in_on_the_same_connection_and_answers_with_the_agreement() {
-		let (connector, mut servers) = in_memory_many(1);
+	async fn registering_logs_in_on_a_fresh_connection_and_answers_with_the_agreement() {
+		let (connector, mut servers) = in_memory_many(2);
 		let client = spawn(connector);
 		let made = registering(&client);
-		let _server = accept_registration(servers.remove(0)).await;
+		let _server = accept_registration(servers.remove(0), servers.remove(0)).await;
 
 		let agreement = made.await.unwrap().unwrap();
 		assert_eq!(agreement, ["Read the terms at https://example/privacy", ""]);
@@ -4303,10 +4435,11 @@ mod tests {
 
 	#[tokio::test]
 	async fn a_confirmed_code_finishes_the_login_that_registering_started() {
-		let (connector, mut servers) = in_memory_many(1);
+		let (connector, mut servers) = in_memory_many(2);
 		let client = spawn(connector);
 		let made = registering(&client);
-		let (mut lines, mut write) = accept_registration(servers.remove(0)).await;
+		let (mut lines, mut write) =
+			accept_registration(servers.remove(0), servers.remove(0)).await;
 		made.await.unwrap().unwrap();
 
 		let confirming = tokio::spawn({
@@ -4332,10 +4465,11 @@ mod tests {
 
 	#[tokio::test]
 	async fn a_wrong_code_answers_the_caller_rather_than_failing_silently() {
-		let (connector, mut servers) = in_memory_many(1);
+		let (connector, mut servers) = in_memory_many(2);
 		let client = spawn(connector);
 		let made = registering(&client);
-		let (mut lines, mut write) = accept_registration(servers.remove(0)).await;
+		let (mut lines, mut write) =
+			accept_registration(servers.remove(0), servers.remove(0)).await;
 		made.await.unwrap().unwrap();
 
 		let confirming = tokio::spawn({
@@ -4370,7 +4504,7 @@ mod tests {
 
 		let answer = made.await.unwrap();
 		assert!(
-			matches!(&answer, Err(ClientError::Refused(r)) if r == "Username already taken"),
+			matches!(&answer, Err(ClientError::NameTaken(r)) if r == "Username already taken"),
 			"{answer:?}"
 		);
 		// No account was made, so nothing was left behind to come back to.
@@ -4378,6 +4512,40 @@ mod tests {
 			client.reconnect("test".into(), None).await,
 			Err(ClientError::NoCredentials)
 		));
+		client.shutdown().await;
+	}
+
+	#[tokio::test]
+	async fn an_unconfirmed_account_logging_in_is_answered_with_the_agreement_and_kept_on() {
+		let (connector, mut servers) = in_memory_many(1);
+		let client = spawn(connector);
+		let login = tokio::spawn({
+			let client = client.clone();
+			async move {
+				let request = LoginRequest::new("me", "pw", "test", "h h");
+				client.login(Endpoint::new("test"), request).await
+			}
+		});
+		let (mut lines, _write) = agree(servers.remove(0)).await;
+
+		let answer = login.await.unwrap();
+		let Err(unverified @ ClientError::Unverified(_)) = answer else {
+			panic!("{answer:?}");
+		};
+		// The server's words, blank lines left out, are what the person reads.
+		assert_eq!(
+			unverified.to_string(),
+			"Read the terms at https://example/privacy"
+		);
+		// Still connected, for the code.
+		let _confirming = tokio::spawn({
+			let client = client.clone();
+			async move { client.confirm_agreement("test".into(), "9953".into()).await }
+		});
+		assert_eq!(
+			lines.next_line().await.unwrap().unwrap(),
+			"CONFIRMAGREEMENT 9953"
+		);
 		client.shutdown().await;
 	}
 

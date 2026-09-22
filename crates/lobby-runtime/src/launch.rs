@@ -262,7 +262,7 @@ pub fn spawn_download(download: &recoil::Download) -> Result<Child, String> {
 	);
 	tokio::process::Command::from(download.command())
 		.stdout(std::process::Stdio::piped())
-		.stderr(std::process::Stdio::null())
+		.stderr(std::process::Stdio::piped())
 		.kill_on_drop(true)
 		.spawn()
 		.map_err(|err| format!("spawning pr-downloader: {err}"))

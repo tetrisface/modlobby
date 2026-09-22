@@ -185,6 +185,9 @@ pub struct Session {
 	login: LoginRequest,
 	hardware: Vec<(String, String)>,
 	machine_hash: String,
+	/// Whether the server greeted as teiserver, which alone takes the
+	/// `c.telemetry.*` properties.
+	teiserver: bool,
 	agreement: Vec<String>,
 	/// Script password of a `JOINBATTLE` the host has not answered yet.
 	pending_join: Option<String>,
@@ -267,6 +270,7 @@ impl Session {
 			login,
 			hardware,
 			machine_hash,
+			teiserver: false,
 			agreement: Vec::new(),
 			pending_join: None,
 			collecting_friends: None,
@@ -298,22 +302,6 @@ impl Session {
 			password: password.into(),
 		};
 		self
-	}
-
-	/// Logs in on a connection that was opened to register.
-	///
-	/// The account exists now but is unverified, and the server answers a login
-	/// from one with the agreement rather than a session — which is what puts
-	/// it in the state where `CONFIRMAGREEMENT` means something
-	/// (`spring_in.ex:353` only answers the code once a login has set
-	/// `unverified_id`). The intent flips with it, so a reconnect on this
-	/// connection logs in rather than registering the account a second time.
-	pub fn begin_login(&mut self) -> Vec<Effect> {
-		self.intent = Intent::Login;
-		vec![Effect::Send(Envelope::queue(
-			Area::Login,
-			self.login.line(),
-		))]
 	}
 
 	/// Confirms the emailed agreement code for an account that has just been
@@ -736,8 +724,9 @@ impl Session {
 			E::Welcome { server_version, .. } => {
 				tracing::info!(server_version, "connected");
 				state.phase = Some(Phase::AwaitingLogin);
+				self.teiserver = server_version == login::TEISERVER_VERSION;
 				let line = match &self.intent {
-					Intent::Login => self.login.line(),
+					Intent::Login => self.login.line_for(&server_version),
 					Intent::Register { email, password } => {
 						login::register(&self.login.username, password, email)
 					}
@@ -785,8 +774,14 @@ impl Session {
 			},
 			E::LoginInfoEnd => {
 				state.phase = Some(Phase::Ready);
-				let mut effects: Vec<Effect> = self
-					.hardware
+				// `c.telemetry.*` is teiserver's; uberserver answers each
+				// property with "Unknown command".
+				let hardware = if self.teiserver {
+					self.hardware.as_slice()
+				} else {
+					&[]
+				};
+				let mut effects: Vec<Effect> = hardware
 					.iter()
 					.map(|(name, value)| {
 						Effect::Send(Envelope::queue(
@@ -1637,38 +1632,6 @@ mod tests {
 		assert_eq!(envelope.line, "CONFIRMAGREEMENT A1B2C3");
 	}
 
-	#[test]
-	fn beginning_a_login_after_registering_sends_login_and_not_register_again() {
-		let mut session = session().registering("a@b.c", "pw");
-		// The account now exists; the connection that made it logs in on it.
-		assert_eq!(
-			feed(&mut session, &["REGISTRATIONACCEPTED"]),
-			vec![Effect::Registered]
-		);
-
-		let effects = session.begin_login();
-		let [Effect::Send(envelope)] = &effects[..] else {
-			panic!("expected one line, got {effects:?}");
-		};
-		assert_eq!(envelope.area, Area::Login);
-		assert_eq!(
-			envelope.line,
-			LoginRequest::new("me", "pw", "test", "h h").line()
-		);
-
-		// And the intent stays flipped, so a reconnect on this connection does
-		// not try to create the account a second time.
-		let again = feed(&mut session, &["TASSERVER 0.38 * 8201 0"]);
-		let [Effect::Send(envelope)] = &again[..] else {
-			panic!("expected one line, got {again:?}");
-		};
-		assert!(
-			envelope.line.starts_with("LOGIN "),
-			"expected a login, got {}",
-			envelope.line
-		);
-	}
-
 	fn feed(session: &mut Session, lines: &[&str]) -> Vec<Effect> {
 		lines
 			.iter()
@@ -2363,12 +2326,28 @@ mod tests {
 	}
 
 	#[test]
+	fn an_uberserver_is_sent_no_telemetry_it_would_call_unknown() {
+		let mut s = session();
+		let effects = feed(
+			&mut s,
+			&["TASSERVER unknown * 8201 0", "ACCEPTED me", "LOGININFOEND"],
+		);
+		assert!(
+			!sent_lines(&effects)
+				.iter()
+				.any(|line| line.starts_with("c.telemetry.")),
+			"{effects:?}"
+		);
+		assert_eq!(effects.last(), Some(&Effect::Ready));
+	}
+
+	#[test]
 	fn login_flood_builds_state_and_ready_uploads_telemetry() {
 		let mut s = session();
 		let effects = feed(
 			&mut s,
 			&[
-				"TASSERVER 0.38 * 8201 0",
+				"TASSERVER 0.38-33-ga5f3b28 * 8201 0",
 				"ACCEPTED me",
 				"MOTD hi",
 				"ADDUSER me SE 1 LuaLobby Chobby",

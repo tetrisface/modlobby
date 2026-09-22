@@ -7,12 +7,11 @@ A Beyond All Reason lobby focused on modding, experiments and performance that u
 ## Packages
 
 Packages are available at [releases](https://github.com/tetrisface/modlobby/releases) as
-[.exe][exe], [.AppImage][appimage], [.deb][deb], [.rpm][rpm] and [.dmg][dmg] and updates automatically.
+[.exe][exe], [.AppImage][appimage], [.deb][deb] and [.dmg][dmg] and updates automatically.
 
 [exe]: https://github.com/tetrisface/modlobby/releases/latest/download/modlobby_x64-setup.exe
 [appimage]: https://github.com/tetrisface/modlobby/releases/latest/download/modlobby_amd64.AppImage
 [deb]: https://github.com/tetrisface/modlobby/releases/latest/download/modlobby_amd64.deb
-[rpm]: https://github.com/tetrisface/modlobby/releases/latest/download/modlobby.x86_64.rpm
 [dmg]: https://github.com/tetrisface/modlobby/releases/latest/download/modlobby_aarch64.dmg
 
 ## macOS

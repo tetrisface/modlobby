@@ -139,11 +139,22 @@ fn local_nets() -> Vec<(Ipv4Addr, Ipv4Addr, Option<Ipv4Addr>)> {
 		.into_iter()
 		.filter_map(|interface| match interface.addr {
 			if_addrs::IfAddr::V4(v4) if !v4.ip.is_loopback() => {
-				Some((v4.ip, v4.netmask, v4.broadcast))
+				Some((v4.ip, subnet_mask(v4.netmask), v4.broadcast))
 			}
 			_ => None,
 		})
 		.collect()
+}
+
+/// A netmask as a subnet. A zero one is an interface that reports none -- a
+/// point-to-point tunnel, as `if_addrs` reads ProtonVPN's on Windows -- and
+/// not a network every address is on, so it stands for its own address alone.
+fn subnet_mask(reported: Ipv4Addr) -> Ipv4Addr {
+	if reported.is_unspecified() {
+		Ipv4Addr::BROADCAST
+	} else {
+		reported
+	}
 }
 
 fn same_subnet(a: Ipv4Addr, b: Ipv4Addr, mask: Ipv4Addr) -> bool {
@@ -429,6 +440,16 @@ mod tests {
 			Announce::from_txt(&HashMap::new(), 8200).is_none(),
 			"no id, no room"
 		);
+	}
+
+	#[test]
+	fn an_interface_reporting_no_netmask_holds_its_own_address_only() {
+		let vpn = Ipv4Addr::new(10, 2, 0, 2);
+		let mask = subnet_mask(Ipv4Addr::UNSPECIFIED);
+		assert!(same_subnet(vpn, vpn, mask));
+		assert!(!same_subnet(Ipv4Addr::new(192, 0, 2, 2), vpn, mask));
+		let lan = Ipv4Addr::new(255, 255, 255, 0);
+		assert_eq!(subnet_mask(lan), lan);
 	}
 
 	#[test]

@@ -253,6 +253,90 @@ describe('the login form', () => {
 		expect(container.querySelectorAll('p.muted a.chat-link')).toHaveLength(1)
 	})
 
+	test('logging in to an account that never confirmed asks for its code', async () => {
+		serve({
+			login: Object.assign(new Error('unverified'), {
+				code: 'unverified',
+				message:
+					'A verification code has been sent to your email address.\nTerms: https://example.org/tos',
+			}),
+		})
+		const { container } = render(() => <Login />)
+		fill(container, 'input[autocomplete="username"]', 'me')
+		fill(container, 'input[autocomplete="current-password"]', 'pw')
+		send(container)
+
+		await waitFor(() =>
+			expect(
+				container.querySelector('input[autocomplete="one-time-code"]'),
+			).not.toBeNull(),
+		)
+		expect(container.querySelector('.error')).toBeNull()
+		expect(container.textContent).toContain('A verification code has been sent')
+		expect(container.querySelector('a.chat-link')?.getAttribute('href')).toBe(
+			'https://example.org/tos',
+		)
+	})
+
+	test('registering a name that is already this account, unconfirmed, asks for its code', async () => {
+		const taken = Object.assign(new Error('taken'), {
+			code: 'nameTaken',
+			message: 'Username is already in use.',
+		})
+		serve({
+			register: taken,
+			login: Object.assign(new Error('unverified'), {
+				code: 'unverified',
+				message: 'A verification code has been sent to your email address.',
+			}),
+		})
+		const { container } = render(() => <Login />)
+		flip(container)
+		fill(container, 'input[autocomplete="username"]', 'me')
+		fill(container, 'input[autocomplete="new-password"]', 'pw')
+		fill(container, 'input[type="email"]', 'a@b.c')
+		send(container)
+
+		await waitFor(() =>
+			expect(
+				container.querySelector('input[autocomplete="one-time-code"]'),
+			).not.toBeNull(),
+		)
+		expect(asked).toHaveBeenCalledWith('login', {
+			server: SERVER,
+			username: 'me',
+			password: 'pw',
+			remember: false,
+			autoLogin: false,
+		})
+		expect(container.querySelector('.error')).toBeNull()
+		cleanup()
+
+		// Somebody else's: the login is refused, and the name being taken is
+		// what the form says.
+		serve({
+			register: taken,
+			login: Object.assign(new Error('denied'), {
+				code: 'refused',
+				message: 'Invalid username or password',
+			}),
+		})
+		const other = render(() => <Login />)
+		flip(other.container)
+		fill(other.container, 'input[autocomplete="username"]', 'me')
+		fill(other.container, 'input[autocomplete="new-password"]', 'pw')
+		fill(other.container, 'input[type="email"]', 'a@b.c')
+		send(other.container)
+		await waitFor(() =>
+			expect(other.container.querySelector('.error')?.textContent).toBe(
+				'Username is already in use.',
+			),
+		)
+		expect(
+			other.container.querySelector('input[autocomplete="one-time-code"]'),
+		).toBeNull()
+	})
+
 	test("a wrong code leaves the form on the code field with the server's reason", async () => {
 		const { container } = render(() => <Login />)
 		flip(container)
