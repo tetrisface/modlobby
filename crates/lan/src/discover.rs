@@ -488,6 +488,9 @@ mod tests {
 	}
 
 	/// Two copies on one machine hear each other through the beacon alone.
+	/// Real multicast on every interface: Windows Firewall would ask about
+	/// each fresh test build, so Windows runs it only by `--ignored`.
+	#[cfg_attr(windows, ignore = "listens on every interface")]
 	#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 	async fn a_room_announced_here_is_found_here() {
 		let browser = Browser::start();

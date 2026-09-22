@@ -15,7 +15,7 @@
 //! peer is dropped, because an honest client reaches none of them.
 
 use std::collections::HashMap;
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{Arc, Mutex};
 
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
@@ -177,9 +177,16 @@ async fn open_archive(path: &std::path::Path) -> Option<(tokio::fs::File, u64, S
 }
 
 impl Host {
-	/// Binds `0.0.0.0:port` (0 for any free port) and starts serving `config`.
-	pub async fn start(config: Config, port: u16, files: MapFiles) -> std::io::Result<Self> {
-		let listener = TcpListener::bind(("0.0.0.0", port)).await?;
+	/// Binds `ip:port` (0 for any free port) and starts serving `config`.
+	/// Guests need `0.0.0.0`; tests take loopback, which Windows Firewall
+	/// never asks about.
+	pub async fn start(
+		config: Config,
+		ip: Ipv4Addr,
+		port: u16,
+		files: MapFiles,
+	) -> std::io::Result<Self> {
+		let listener = TcpListener::bind((ip, port)).await?;
 		let port = listener.local_addr()?.port();
 		let room = Arc::new(Mutex::new(Room::new(config)));
 		let peers: Peers = Arc::default();

@@ -211,9 +211,11 @@ pub async fn lan_host(
 	};
 	// The usual port first, so a guest typing an address can leave it off;
 	// any port when another room on this machine already has it.
-	let host = match lan::Host::start(config.clone(), lan::DEFAULT_PORT, files.clone()).await {
+	let every = Ipv4Addr::UNSPECIFIED;
+	let host = match lan::Host::start(config.clone(), every, lan::DEFAULT_PORT, files.clone()).await
+	{
 		Ok(host) => host,
-		Err(_) => lan::Host::start(config, 0, files)
+		Err(_) => lan::Host::start(config, every, 0, files)
 			.await
 			.map_err(|err| ApiError::new("io", format!("opening the room: {err}")))?,
 	};

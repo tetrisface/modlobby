@@ -6,6 +6,7 @@
 //! client's encrypted attempts fail fast on this server and the plain
 //! fallback is what gets in.
 
+use std::net::Ipv4Addr;
 use std::time::Duration;
 
 use lan::{Config, Host, Policy};
@@ -46,7 +47,9 @@ async fn until(client: &Client, what: &str, want: impl Fn(&Snapshot) -> bool) ->
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_guest_logs_in_joins_talks_and_hears_the_game_start() {
-	let host = Host::start(config(), 0, no_maps()).await.unwrap();
+	let host = Host::start(config(), Ipv4Addr::LOCALHOST, 0, no_maps())
+		.await
+		.unwrap();
 	let port = host.port();
 
 	// The founder, by hand.
@@ -169,7 +172,9 @@ async fn a_guest_logs_in_joins_talks_and_hears_the_game_start() {
 /// account. Three ways to try it, one test: the bounds are one policy.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_peer_cannot_spend_the_host_without_limit() {
-	let host = Host::start(config(), 0, no_maps()).await.unwrap();
+	let host = Host::start(config(), Ipv4Addr::LOCALHOST, 0, no_maps())
+		.await
+		.unwrap();
 	let port = host.port();
 	let at = format!("127.0.0.1:{port}");
 
@@ -254,7 +259,9 @@ async fn the_host_hands_its_map_to_a_member_and_to_nobody_else() {
 		let path = owned.join(format!("{stem}.sd7"));
 		path.is_file().then_some(path)
 	});
-	let host = Host::start(config(), 0, files).await.unwrap();
+	let host = Host::start(config(), Ipv4Addr::LOCALHOST, 0, files)
+		.await
+		.unwrap();
 	let at: std::net::SocketAddr = format!("127.0.0.1:{}", host.port()).parse().unwrap();
 
 	// A member of the room, joined the way a guest joins.
