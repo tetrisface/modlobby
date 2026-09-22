@@ -57,6 +57,8 @@ describe('applyMessage', () => {
 				paste: { state: 'idle' },
 				skirmish: null,
 				ways: {},
+				content: null,
+				contentCheck: { game: null, map: null },
 			},
 		})
 		const runs: number[] = []

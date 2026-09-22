@@ -307,7 +307,7 @@
       "description": "One way to fetch a game, in coilbox's hub format\n(`{kind, value, asset?, filename?}`), so a list, the hub and an override\nall say it the same way.",
       "oneOf": [
         {
-          "description": "A rapid tag, e.g. `evo:stable`.",
+          "description": "A rapid tag, e.g. `evo:stable`: the game is on the community's rapid\nmaster ([`SPRINGRTS_RAPID`]), and the room's version is fetched from\nthere by its name.",
           "type": "object",
           "properties": {
             "kind": {
@@ -359,6 +359,52 @@
             "kind": {
               "type": "string",
               "const": "github"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A GitLab project's releases: `group/project` on gitlab.com, or\n`https://<host>/<group>/<project>` on another; `asset` as for GitHub.",
+          "type": "object",
+          "properties": {
+            "asset": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "gitlab"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A Forgejo or Gitea repository's releases: `owner/repo` on Codeberg, or\n`https://<host>/<owner>/<repo>` on another; `asset` as for GitHub.",
+          "type": "object",
+          "properties": {
+            "asset": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "forgejo"
             },
             "value": {
               "type": "string"

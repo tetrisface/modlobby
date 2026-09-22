@@ -6,17 +6,48 @@ import type { GameOverride } from '../ipc/bindings/GameOverride'
 import type { GameSource } from '../ipc/bindings/GameSource'
 import type { Settings } from '../ipc/bindings/Settings'
 
-/** A source of `kind`, nothing filled in yet. */
-function fresh(kind: string): GameSource {
-	switch (kind) {
-		case 'url':
-			return { kind: 'url', value: '' }
-		case 'git':
-			return { kind: 'git', value: '' }
-		default:
-			return { kind: 'github', value: '' }
-	}
+/** Each kind of source: what it is called, and what its one field holds. */
+const KINDS: Record<
+	GameSource['kind'],
+	{ label: string; field: string; hint: string }
+> = {
+	github: { label: 'GitHub releases', field: 'Repository', hint: 'owner/repo' },
+	gitlab: {
+		label: 'GitLab releases',
+		field: 'Project',
+		hint: 'group/project, or https://host/group/project',
+	},
+	forgejo: {
+		label: 'Forgejo or Codeberg releases',
+		field: 'Repository',
+		hint: 'owner/repo, or https://host/owner/repo',
+	},
+	git: {
+		label: 'A GitHub commit, built',
+		field: 'Repository',
+		hint: 'owner/repo',
+	},
+	url: { label: 'An address', field: 'Address', hint: 'https://…/game.sdz' },
+	rapid: {
+		label: "Rapid, from the community's server",
+		field: 'Rapid tag',
+		hint: 'evo:stable',
+	},
 }
+
+/** A source of `kind`, nothing filled in yet. */
+const fresh = (kind: string) => ({ kind, value: '' }) as GameSource
+
+/** A source that picks among a release's files, when this is one. */
+const released = (source: GameSource) =>
+	source.kind === 'github' ||
+	source.kind === 'gitlab' ||
+	source.kind === 'forgejo'
+		? source
+		: null
+
+/** A commit to build, when this is one. */
+const built = (source: GameSource) => (source.kind === 'git' ? source : null)
 
 /** An override just added, to be filled in. */
 const blank = (): GameOverride => ({
@@ -48,10 +79,11 @@ export function GameOverrideRows(props: {
 				<p class='muted'>
 					A game the room's server does not have is looked for in modlobby's
 					list, then in coilbox's hub, and fetched from where they point: a
-					GitHub release, an address, or a commit built here -- which is kept
-					only once it is exactly the room's copy. An override below goes first,
-					for exactly the game it names and no other version, ahead of the
-					server's own rapid.
+					release on GitHub, GitLab or a Forgejo such as Codeberg, an address,
+					the community's rapid server, or a GitHub commit built here -- which
+					is kept only once its checksum is the room's. An override below goes
+					first, for exactly the game it names and no other version, ahead of
+					the server's own rapid.
 				</p>
 			</Row>
 			<For each={props.draft.games.overrides}>
@@ -82,20 +114,18 @@ export function GameOverrideRows(props: {
 										change(index(), fresh(e.currentTarget.value))
 									}
 								>
-									<option value='github'>GitHub releases</option>
-									<option value='git'>A git commit, built</option>
-									<option value='url'>An address</option>
+									<For each={Object.entries(KINDS)}>
+										{([kind, about]) => (
+											<option value={kind}>{about.label}</option>
+										)}
+									</For>
 								</Select>
 							</label>
 							<label>
-								{kept.source.kind === 'url' ? 'Address' : 'Repository'}
+								{KINDS[kept.source.kind].field}
 								<input
 									value={kept.source.value}
-									placeholder={
-										kept.source.kind === 'url'
-											? 'https://…/game.sdz'
-											: 'owner/repo'
-									}
+									placeholder={KINDS[kept.source.kind].hint}
 									onInput={(e) =>
 										change(index(), {
 											...kept.source,
@@ -104,44 +134,38 @@ export function GameOverrideRows(props: {
 									}
 								/>
 							</label>
-							<Show when={kept.source.kind === 'github'}>
-								<label>
-									File name has (optional)
-									<input
-										value={
-											kept.source.kind === 'github'
-												? (kept.source.asset ?? '')
-												: ''
-										}
-										onInput={(e) =>
-											change(index(), {
-												kind: 'github',
-												value: kept.source.value,
-												asset: e.currentTarget.value || null,
-											})
-										}
-									/>
-								</label>
+							<Show when={released(kept.source)}>
+								{(source) => (
+									<label>
+										File name has (optional)
+										<input
+											value={source().asset ?? ''}
+											onInput={(e) =>
+												change(index(), {
+													...source(),
+													asset: e.currentTarget.value || null,
+												})
+											}
+										/>
+									</label>
+								)}
 							</Show>
-							<Show when={kept.source.kind === 'git'}>
-								<label>
-									Version placeholder (optional)
-									<input
-										value={
-											kept.source.kind === 'git'
-												? (kept.source.placeholder ?? '')
-												: ''
-										}
-										placeholder='$VERSION'
-										onInput={(e) =>
-											change(index(), {
-												kind: 'git',
-												value: kept.source.value,
-												placeholder: e.currentTarget.value || null,
-											})
-										}
-									/>
-								</label>
+							<Show when={built(kept.source)}>
+								{(source) => (
+									<label>
+										Version placeholder (optional)
+										<input
+											value={source().placeholder ?? ''}
+											placeholder='$VERSION'
+											onInput={(e) =>
+												change(index(), {
+													...source(),
+													placeholder: e.currentTarget.value || null,
+												})
+											}
+										/>
+									</label>
+								)}
 							</Show>
 							<button
 								type='button'

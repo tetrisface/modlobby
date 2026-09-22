@@ -309,11 +309,11 @@ pub fn run() {
 				// Games the room's rapid does not have: the player's
 				// overrides, modlobby's list, coilbox's hub.
 				let _ = client
-					.set_game_sources(std::sync::Arc::new(move |ask, progress| {
+					.set_game_sources(std::sync::Arc::new(move |ask, progress, rapid| {
 						let handle = sources_handle.clone();
 						Box::pin(async move {
 							let app = handle.try_state::<state::App>()?;
-							app.game_from_sources(ask, progress).await
+							app.game_from_sources(ask, progress, rapid).await
 						})
 					}))
 					.await;

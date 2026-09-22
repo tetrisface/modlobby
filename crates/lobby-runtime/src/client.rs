@@ -147,10 +147,17 @@ pub type GameSources = Arc<
 	dyn Fn(
 			GameAsk,
 			mpsc::Sender<recoil::Progress>,
+			RapidRun,
 		) -> Pin<Box<dyn Future<Output = Option<Result<String, String>>> + Send>>
 		+ Send
 		+ Sync,
 >;
+
+/// pr-downloader run for the asked game against another rapid master, vetted
+/// as the room's is and filling the same bar: what a list's rapid entry is
+/// fetched by, handed to [`GameSources`] since only the runtime runs it.
+pub type RapidRun =
+	Arc<dyn Fn(String) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> + Send + Sync>;
 
 /// What [`GameSources`] is asked for.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -173,7 +180,7 @@ pub struct GameAsk {
 
 /// Nowhere but rapid, until something better is handed in.
 fn rapid_only() -> GameSources {
-	Arc::new(|_, _| Box::pin(async { None }))
+	Arc::new(|_, _, _| Box::pin(async { None }))
 }
 
 /// Runs `fetch` with its progress going where pr-downloader's goes, so a
@@ -219,7 +226,8 @@ async fn fetch_game(
 		engine: room.engine.clone(),
 		room_hash: room.hash,
 	};
-	if let Some(got) = ask_sources(sources, ask(false), progress).await {
+	let elsewhere = rapid_elsewhere(run, vet, progress);
+	if let Some(got) = ask_sources(sources, ask(false), progress, elsewhere.clone()).await {
 		return got.err();
 	}
 	let rapid = match vet(run.rapid_master.clone()).await {
@@ -227,7 +235,7 @@ async fn fetch_game(
 		Err(refused) => Err(refused),
 	};
 	let reason = rapid.err()?;
-	match ask_sources(sources, ask(true), progress).await {
+	match ask_sources(sources, ask(true), progress, elsewhere).await {
 		None => Some(reason),
 		Some(Ok(_)) => None,
 		Some(Err(more)) => Some(format!("{reason}; {more}")),
@@ -243,14 +251,34 @@ struct Room {
 	hash: Option<u32>,
 }
 
+/// `run`'s game from another rapid master: vetted, and nothing else of the
+/// run's fetched with it.
+fn rapid_elsewhere(
+	run: &recoil::Download,
+	vet: &Vet,
+	progress: &mpsc::Sender<DownloadEvent>,
+) -> RapidRun {
+	let (run, vet, progress) = (run.clone(), vet.clone(), progress.clone());
+	Arc::new(move |master: String| {
+		let (mut run, vet, progress) = (run.clone(), vet.clone(), progress.clone());
+		Box::pin(async move {
+			vet(master.clone()).await?;
+			run.rapid_master = master;
+			run.wants.retain(|(want, _)| *want == recoil::Want::Game);
+			run_download(&run, &progress).await
+		})
+	})
+}
+
 /// Asks `sources`, and says where the game came from when it came.
 async fn ask_sources(
 	sources: &GameSources,
 	ask: GameAsk,
 	progress: &mpsc::Sender<DownloadEvent>,
+	rapid: RapidRun,
 ) -> Option<Result<String, String>> {
 	let game = ask.name.clone();
-	let got = pumped(progress, |tx| sources(ask, tx)).await?;
+	let got = pumped(progress, |tx| sources(ask, tx, rapid)).await?;
 	if let Ok(from) = &got {
 		let from = from.clone();
 		let _ = progress.send(DownloadEvent::Sourced { game, from }).await;
@@ -1286,6 +1314,10 @@ struct Runtime {
 	probe_rx: mpsc::Receiver<Probe>,
 	check_tx: mpsc::Sender<Checked>,
 	check_rx: mpsc::Receiver<Checked>,
+	/// The room's content and what it was held to, as last pushed, so a
+	/// reloaded window has them from its snapshot.
+	content_view: Option<ContentView>,
+	content_check: lobby_ui::ContentCheckView,
 	/// What the last content check was for, so an answer for a room since
 	/// left is let go.
 	check_for: Option<CheckKey>,
@@ -1321,14 +1353,11 @@ struct CheckKey {
 struct Checked {
 	key: CheckKey,
 	view: lobby_ui::ContentCheckView,
-	/// The game is a file under `games/` -- from a list, an override, or put
-	/// there by hand -- rather than the room's server's rapid package.
-	game_on_file: bool,
 }
 
 /// The room's game and map here held to the room's hashes: what
 /// `content::checksum` makes of each, as the front end shows it.
-fn check_content(dirs: DataDirs, key: &CheckKey) -> (lobby_ui::ContentCheckView, bool) {
+fn check_content(dirs: DataDirs, key: &CheckKey) -> lobby_ui::ContentCheckView {
 	use content::checksum::Verdict;
 	use lobby_ui::CheckView;
 	let library = content::Library::new(dirs);
@@ -1341,14 +1370,10 @@ fn check_content(dirs: DataDirs, key: &CheckKey) -> (lobby_ui::ContentCheckView,
 			Verdict::Unchecked(why) => CheckView::Unchecked { why },
 		})
 	};
-	let on_file = library.game_archive(&key.game.0);
-	let game_on_file = on_file.is_some();
-	let game = on_file.or_else(|| library.archive_named(&key.engine, &key.game.0));
-	let view = lobby_ui::ContentCheckView {
-		game: held(game, key.game.1),
+	lobby_ui::ContentCheckView {
+		game: held(library.archive_named(&key.engine, &key.game.0), key.game.1),
 		map: held(library.map_archive(&key.map.0), key.map.1),
-	};
-	(view, game_on_file)
+	}
 }
 
 /// What a pr-downloader child reports back to the runtime.
@@ -1702,6 +1727,8 @@ impl Runtime {
 			probe_rx,
 			check_tx,
 			check_rx,
+			content_view: None,
+			content_check: lobby_ui::ContentCheckView::default(),
 			check_for: None,
 			probing: false,
 			skirmish: None,
@@ -2326,6 +2353,11 @@ impl Runtime {
 			dirs,
 		);
 		self.checked = Some(key.clone());
+		self.content_view = Some(ContentView {
+			engine: available.engine,
+			game: available.game,
+			map: available.map,
+		});
 		self.batcher.push(Delta::Content {
 			engine: available.engine,
 			game: available.game,
@@ -2369,6 +2401,7 @@ impl Runtime {
 			map: checking(key.map.1),
 		};
 		let nothing_to_hold = view == lobby_ui::ContentCheckView::default();
+		self.content_check = view.clone();
 		self.batcher.push(Delta::ContentCheck(view));
 		if nothing_to_hold {
 			self.check_for = None;
@@ -2377,27 +2410,21 @@ impl Runtime {
 		self.check_for = Some(key.clone());
 		let answer = self.check_tx.clone();
 		tokio::task::spawn_blocking(move || {
-			let (view, game_on_file) = check_content(dirs, &key);
-			let _ = answer.blocking_send(Checked {
-				key,
-				view,
-				game_on_file,
-			});
+			let view = check_content(dirs, &key);
+			let _ = answer.blocking_send(Checked { key, view });
 		});
 	}
 
-	/// A content check's answer. A game on file that is not the room's is one
+	/// A content check's answer. A game or map that is not the room's is one
 	/// the game would desync on -- the engine only warns
 	/// (`PreGame.cpp:636-646`) -- so the room hears we are not synced, which
-	/// keeps its host from starting with us. A map or a rapid package that
-	/// differs is only reported: those came the way the room's own did, and a
-	/// check that is wrong about them must not lock anyone out of a room.
+	/// keeps its host from starting with us, as SpringLobby's hash check did.
+	/// Held to BAR's own rooms on 2026-09-22: rapid games and maps matched.
 	async fn on_checked(&mut self, checked: Checked) {
 		if self.check_for.as_ref() != Some(&checked.key) {
 			return;
 		}
-		let game_differs = matches!(checked.view.game, Some(lobby_ui::CheckView::Differs { .. }));
-		let unsynced = game_differs && checked.game_on_file;
+		let mut unsynced = false;
 		for (name, view) in [
 			(&checked.key.game.0, &checked.view.game),
 			(&checked.key.map.0, &checked.view.map),
@@ -2405,15 +2432,11 @@ impl Runtime {
 			match view {
 				Some(lobby_ui::CheckView::Differs { ours, room }) => {
 					tracing::warn!(%name, ours, room, "not the room's files");
-					let then = if unsynced && name == &checked.key.game.0 {
-						"the room is told you are not synced"
-					} else {
-						"a game on it may desync"
-					};
+					unsynced = true;
 					self.batcher.push(Delta::Notice {
 						level: lobby_ui::NoticeLevel::Warning,
 						text: format!(
-							"{name} here is not the room's (checksum {ours}, the room's {room}); {then}"
+							"{name} here is not the room's (checksum {ours}, the room's {room}); the room is told you are not synced"
 						),
 					});
 				}
@@ -2427,6 +2450,7 @@ impl Runtime {
 			self.content_ready = false;
 			self.set_synced(false).await;
 		}
+		self.content_check = checked.view.clone();
 		self.batcher.push(Delta::ContentCheck(checked.view));
 	}
 
@@ -3684,6 +3708,8 @@ impl Runtime {
 			.as_ref()
 			.map_or(PasteStatus::Idle, PasteProgress::status);
 		snapshot.ways = self.ways_view();
+		snapshot.content = self.content_view;
+		snapshot.content_check = self.content_check.clone();
 		// Joined on here rather than built into either constructor, because a
 		// skirmish belongs to the machine and a snapshot describes a session.
 		snapshot.skirmish = self.skirmish.as_ref().map(|room| {
@@ -3957,25 +3983,22 @@ mod tests {
 		use lobby_ui::{CheckView, ContentCheckView};
 		assert_eq!(
 			check_content(dirs(), &key("Game 1", Some(ours))),
-			(
-				ContentCheckView {
-					game: Some(CheckView::Same { hash: ours }),
-					map: None,
-				},
-				true
-			)
+			ContentCheckView {
+				game: Some(CheckView::Same { hash: ours }),
+				map: None,
+			}
 		);
 		assert_eq!(
-			check_content(dirs(), &key("Game 1", Some(ours ^ 1))).0.game,
+			check_content(dirs(), &key("Game 1", Some(ours ^ 1))).game,
 			Some(CheckView::Differs {
 				ours,
 				room: ours ^ 1
 			})
 		);
-		assert_eq!(check_content(dirs(), &key("Game 1", None)).0.game, None);
+		assert_eq!(check_content(dirs(), &key("Game 1", None)).game, None);
 		assert_eq!(
 			check_content(dirs(), &key("Absent 2", Some(ours))),
-			(ContentCheckView::default(), false)
+			ContentCheckView::default()
 		);
 	}
 
@@ -4004,7 +4027,7 @@ mod tests {
 		after: Option<Result<String, String>>,
 		asked: Arc<std::sync::Mutex<Vec<GameAsk>>>,
 	) -> GameSources {
-		Arc::new(move |ask: GameAsk, _| {
+		Arc::new(move |ask: GameAsk, _, _| {
 			let answer = if ask.after_rapid {
 				after.clone()
 			} else {
@@ -4021,6 +4044,38 @@ mod tests {
 			tried.store(true, std::sync::atomic::Ordering::Relaxed);
 			Box::pin(async { Err("rapid said no".to_owned()) })
 		})
+	}
+
+	#[tokio::test]
+	async fn a_lists_rapid_entry_is_run_against_its_master_and_vetted_as_the_rooms_is() {
+		let (tx, _events) = mpsc::channel(8);
+		let vetted = Arc::new(std::sync::Mutex::new(Vec::new()));
+		let vet: Vet = {
+			let vetted = Arc::clone(&vetted);
+			Arc::new(move |master| {
+				vetted.lock().unwrap().push(master);
+				Box::pin(async { Err("not that one".to_owned()) })
+			})
+		};
+		let elsewhere: GameSources = Arc::new(|ask: GameAsk, _, rapid| {
+			Box::pin(async move {
+				ask.after_rapid.then_some(())?;
+				Some(
+					rapid("https://elsewhere/repos.gz".into())
+						.await
+						.map(|()| "rapid".into()),
+				)
+			})
+		});
+		let failure = fetch_game(&game_run(), &room(), &vet, &elsewhere, &tx).await;
+		assert_eq!(failure, Some("not that one; not that one".into()));
+		assert_eq!(
+			*vetted.lock().unwrap(),
+			[
+				"https://repos.springrts.com/repos.gz",
+				"https://elsewhere/repos.gz"
+			]
+		);
 	}
 
 	#[tokio::test]

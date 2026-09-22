@@ -43,6 +43,9 @@ opt-level = 3
 # un-7zipped first; unoptimised that is most of a minute for one game.
 [profile.dev.package.sha2]
 opt-level = 3
+# A commit's build is proved file by file against git's SHA-1 blob names.
+[profile.dev.package.sha1]
+opt-level = 3
 [profile.dev.package.flate2]
 opt-level = 3
 [profile.dev.package.miniz_oxide]
@@ -101,6 +104,7 @@ quick-xml = "=0.41.0"
 notify = "=8.2.0"
 rand = "=0.10.2"
 schemars = "=1.2.2"
+sha1 = "=0.11.0"
 sha2 = "=0.11.0"
 # Widget Hub distributions are zips. Deflate only: flate2 is already here, and
 # the other backends would each pull in a compressor of their own.

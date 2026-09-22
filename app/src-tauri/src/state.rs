@@ -259,11 +259,14 @@ impl App {
 	/// runtime's [`lobby_runtime::GameSources`]. Before rapid only the
 	/// player's overrides answer; after it, modlobby's list and then the hub,
 	/// whose copy is asked for again once it is a day old. BAR's own names
-	/// are never looked for anywhere but BAR's rapid.
+	/// are never looked for anywhere but BAR's rapid. A list's rapid entry is
+	/// fetched by the runtime's `rapid`, and forge answers are kept under the
+	/// config's `cache/forge/`.
 	pub async fn game_from_sources(
 		&self,
 		ask: lobby_runtime::GameAsk,
 		progress: tokio::sync::mpsc::Sender<recoil::Progress>,
+		rapid: lobby_runtime::RapidRun,
 	) -> Option<Result<String, String>> {
 		use content::sources;
 		if self
@@ -300,11 +303,31 @@ impl App {
 			return None;
 		}
 		let games = ask.dirs.write.join("games");
+		let cache = self
+			.settings
+			.dir()
+			.join("cache")
+			.join(content::api::CACHE_DIR);
+		let api = content::api::Api::github(Some(cache));
+		let from_rapid = |master: String| -> std::pin::Pin<
+			Box<dyn std::future::Future<Output = Result<std::path::PathBuf, String>> + Send>,
+		> {
+			let (rapid, dirs) = (rapid.clone(), ask.dirs.clone());
+			let (engine, name) = (ask.engine.clone(), ask.name.clone());
+			Box::pin(async move {
+				rapid(master).await?;
+				content::Library::new(dirs)
+					.archive_named(&engine, &name)
+					.ok_or_else(|| format!("{name} is not where rapid puts it"))
+			})
+		};
 		let fetched = sources::fetch(
 			&self.http,
-			sources::GITHUB_API,
+			&api,
+			&ask.name,
 			&found,
 			&games,
+			&from_rapid,
 			|current, total| {
 				let _ = progress.try_send(recoil::Progress { current, total });
 			},

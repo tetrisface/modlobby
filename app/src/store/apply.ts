@@ -76,6 +76,8 @@ export function applySnapshot(snapshot: Snapshot): void {
 		paste: snapshot.paste,
 		skirmish: snapshot.skirmish,
 		ways: snapshot.ways,
+		content: snapshot.content,
+		contentCheck: snapshot.contentCheck,
 	}
 	for (const session of snapshot.servers)
 		next.servers[session.server] = serverState(session)

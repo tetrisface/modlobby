@@ -89,7 +89,9 @@ pub struct GameOverride {
 #[serde(tag = "kind", rename_all = "lowercase")]
 #[ts(export)]
 pub enum GameSource {
-	/// A rapid tag, e.g. `evo:stable`.
+	/// A rapid tag, e.g. `evo:stable`: the game is on the community's rapid
+	/// master ([`SPRINGRTS_RAPID`]), and the room's version is fetched from
+	/// there by its name.
 	Rapid { value: String },
 	/// A file at an https address; `filename` is what to save it as.
 	Url {
@@ -100,6 +102,20 @@ pub enum GameSource {
 	/// A GitHub repository's releases, `owner/repo`; `asset` is a fragment of
 	/// the file name that picks among a release's files.
 	Github {
+		value: String,
+		#[serde(default, skip_serializing_if = "Option::is_none")]
+		asset: Option<String>,
+	},
+	/// A GitLab project's releases: `group/project` on gitlab.com, or
+	/// `https://<host>/<group>/<project>` on another; `asset` as for GitHub.
+	Gitlab {
+		value: String,
+		#[serde(default, skip_serializing_if = "Option::is_none")]
+		asset: Option<String>,
+	},
+	/// A Forgejo or Gitea repository's releases: `owner/repo` on Codeberg, or
+	/// `https://<host>/<owner>/<repo>` on another; `asset` as for GitHub.
+	Forgejo {
 		value: String,
 		#[serde(default, skip_serializing_if = "Option::is_none")]
 		asset: Option<String>,

@@ -557,6 +557,10 @@ pub struct Snapshot {
 	/// The way into each server that worked last, by lowercased host. The
 	/// machine's memory rather than a session's, so it is here logged out too.
 	pub ways: BTreeMap<String, String>,
+	/// The room's content as last told (`Delta::Content`), and what it was
+	/// held to (`Delta::ContentCheck`), so a reloaded window keeps them.
+	pub content: Option<ContentView>,
+	pub content_check: ContentCheckView,
 }
 
 /// One server's session.

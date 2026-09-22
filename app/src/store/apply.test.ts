@@ -85,6 +85,8 @@ const snapshot: Snapshot = {
 	paste: { state: 'idle' },
 	skirmish: null,
 	ways: {},
+	content: null,
+	contentCheck: { game: null, map: null },
 }
 
 describe('apply', () => {
@@ -137,6 +139,16 @@ describe('apply', () => {
 		})
 		applyDelta({ type: 'phase', data: null }, 'rapid')
 		expect(Object.keys(chat.channels)).toEqual([`${S} main`])
+	})
+
+	test("a reloaded window has the room's content and its check from the snapshot", () => {
+		applySnapshot({
+			...snapshot,
+			content: { engine: true, game: true, map: false },
+			contentCheck: { game: { verdict: 'same', hash: 7 }, map: null },
+		})
+		expect(lobby.content).toEqual({ engine: true, game: true, map: false })
+		expect(lobby.contentCheck.game).toEqual({ verdict: 'same', hash: 7 })
 	})
 
 	test('snapshot then deltas keep the mirror consistent', () => {

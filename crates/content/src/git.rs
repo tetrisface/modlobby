@@ -14,10 +14,14 @@
 //! `.gitattributes` marks `eol=crlf` with CRLF line ends where the blob has
 //! LF; [`Attributes`] undoes that, so what is unpacked is what was committed.
 
+use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use regex::Regex;
+use sha1::{Digest as _, Sha1};
+
+use crate::api::Api;
 
 /// The most a build unpacks to, all its files together: a repository is its
 /// author's to fill and a list's entry anyone's to write, and the largest
@@ -224,31 +228,37 @@ pub fn write_version(build: &Path, placeholder: &str, version: &str) -> Result<(
 		.map_err(|err| format!("modinfo.lua: {err}"))
 }
 
-/// A submodule a build needs: where it goes, and the GitHub repository it is.
-fn submodules(build: &Path) -> Vec<(String, String)> {
+/// The submodules a build needs: where each goes, and the GitHub repository
+/// it is -- a relative address (`../lib.git`) taken from `repo`'s owner, as
+/// git takes it from the superproject's.
+fn submodules(build: &Path, repo: &str) -> Vec<(String, String)> {
 	let Ok(text) = std::fs::read_to_string(build.join(".gitmodules")) else {
 		return Vec::new();
 	};
-	let mut found = Vec::new();
-	let mut path = None;
+	let value = |line: &str, key: &str| {
+		let rest = line.strip_prefix(key)?.trim_start().strip_prefix('=')?;
+		Some(rest.trim().to_owned())
+	};
+	let mut sections: Vec<(Option<String>, Option<String>)> = Vec::new();
 	for line in text.lines().map(str::trim) {
 		if line.starts_with('[') {
-			path = None;
-		} else if let Some(value) = line
-			.strip_prefix("path")
-			.and_then(|rest| rest.trim_start().strip_prefix('='))
-		{
-			path = Some(value.trim().to_owned());
-		} else if let Some(value) = line
-			.strip_prefix("url")
-			.and_then(|rest| rest.trim_start().strip_prefix('='))
-			&& let (Some(at), Some(repo)) = (path.clone(), github_repo(value.trim()))
-			&& plain_relative(&at)
-		{
-			found.push((at, repo));
+			sections.push((None, None));
+		} else if let Some(section) = sections.last_mut() {
+			if let Some(path) = value(line, "path") {
+				section.0 = Some(path);
+			} else if let Some(url) = value(line, "url") {
+				section.1 = Some(url);
+			}
 		}
 	}
-	found
+	sections
+		.into_iter()
+		.filter_map(|(path, url)| {
+			let (path, url) = (path?, url?);
+			let sub = github_repo(&url, repo)?;
+			plain_relative(&path).then_some((path, sub))
+		})
+		.collect()
 }
 
 /// A path that stays inside the build and inside a URL's path: plain names
@@ -266,13 +276,29 @@ fn plain_relative(path: &str) -> bool {
 		})
 }
 
-/// `owner/repo` out of a GitHub clone address; `None` for anywhere else.
-fn github_repo(url: &str) -> Option<String> {
-	let rest = url
+/// `owner/repo` out of a submodule's address: a GitHub clone address, or one
+/// relative to `parent` (`../lib.git`, `../../other/lib`); `None` for
+/// anywhere else.
+fn github_repo(url: &str, parent: &str) -> Option<String> {
+	let repo = if let Some(rest) = url
 		.strip_prefix("https://github.com/")
-		.or_else(|| url.strip_prefix("git@github.com:"))?;
-	let repo = rest.trim_end_matches('/').trim_end_matches(".git");
-	(repo.matches('/').count() == 1).then(|| repo.to_owned())
+		.or_else(|| url.strip_prefix("git@github.com:"))
+	{
+		rest.to_owned()
+	} else if url.starts_with("../") {
+		let mut parts: Vec<&str> = parent.split('/').collect();
+		let mut rest = url;
+		while let Some(up) = rest.strip_prefix("../") {
+			parts.pop()?;
+			rest = up;
+		}
+		parts.push(rest);
+		parts.join("/")
+	} else {
+		return None;
+	};
+	let repo = repo.trim_end_matches('/').trim_end_matches(".git");
+	crate::sources::is_repo(repo).then(|| repo.to_owned())
 }
 
 #[derive(serde::Deserialize)]
@@ -280,63 +306,29 @@ struct Commit {
 	sha: String,
 }
 
+/// A commit's whole tree, as GitHub lists it.
 #[derive(serde::Deserialize)]
-struct Content {
+struct Tree {
+	tree: Vec<TreeEntry>,
+	#[serde(default)]
+	truncated: bool,
+}
+
+#[derive(serde::Deserialize)]
+struct TreeEntry {
+	path: String,
+	#[serde(rename = "type")]
+	kind: String,
 	sha: String,
 }
 
-async fn github_json<T: serde::de::DeserializeOwned>(
-	http: &reqwest::Client,
-	url: &str,
-) -> Result<T, String> {
-	let response = http
-		.get(url)
-		.header(reqwest::header::ACCEPT, "application/vnd.github+json")
-		.send()
-		.await
-		.map_err(|err| err.to_string())?;
-	if !response.status().is_success() {
-		return Err(refused(url, &response));
-	}
-	response.json().await.map_err(|err| err.to_string())
-}
-
-/// Why GitHub's API said no, in words. Its allowance for an address without
-/// an account -- 60 requests an hour -- is the usual reason, and its answer
-/// says when that comes back.
-pub(crate) fn refused(what: &str, response: &reqwest::Response) -> String {
-	let header = |name: &str| {
-		response
-			.headers()
-			.get(name)
-			.and_then(|value| value.to_str().ok())
-	};
-	let status = response.status();
-	let spent =
-		matches!(status.as_u16(), 403 | 429) && header("x-ratelimit-remaining") == Some("0");
-	if !spent {
-		return format!("{what} answered {status}");
-	}
-	let now = std::time::SystemTime::now()
-		.duration_since(std::time::UNIX_EPOCH)
-		.map_or(0, |since| since.as_secs());
-	let wait = header("x-ratelimit-reset")
-		.and_then(|at| at.parse::<u64>().ok())
-		.map(|at| at.saturating_sub(now).div_ceil(60).max(1))
-		.map(|minutes| format!(" for another {minutes} min"))
-		.unwrap_or_default();
-	format!("GitHub's hourly allowance of requests for this address is used up{wait}")
-}
-
 /// Builds `repo`'s commit that `version` names into a `.sdd` under `games`:
-/// the commit's tree as committed, its submodules at the commits it pins,
-/// and `version` written over `placeholder`. Where the build is.
-///
-/// ponytail: submodules one level deep; a submodule's own submodules are
-/// left out, which the room's hash will say if it matters.
+/// the commit's tree as committed, its submodules -- and theirs -- at the
+/// commits they pin, and `version` written over `placeholder`. Where the
+/// build is.
 pub async fn build(
 	http: &reqwest::Client,
-	api: &str,
+	api: &Api,
 	repo: &str,
 	version: &str,
 	placeholder: &str,
@@ -344,10 +336,15 @@ pub async fn build(
 	mut report: impl FnMut(u64, u64),
 ) -> Result<PathBuf, String> {
 	let failed = |reason: String| format!("git {repo}: {reason}");
-	crate::sources::releases_url(api, repo)
+	crate::sources::releases_url(&api.github, repo)
 		.ok_or_else(|| failed("not a repository's name".into()))?;
 	let hash = short_hash(version).ok_or_else(|| failed(format!("{version} names no commit")))?;
-	let commit: Commit = github_json(http, &format!("{api}/repos/{repo}/commits/{hash}"))
+	let commit: Commit = api
+		.json(
+			http,
+			&format!("{}/repos/{repo}/commits/{hash}", api.github),
+			"the commit",
+		)
 		.await
 		.map_err(failed)?;
 	let short = &commit.sha[..commit.sha.len().min(12)];
@@ -356,33 +353,19 @@ pub async fn build(
 	let _ = std::fs::remove_dir_all(&staging);
 	std::fs::create_dir_all(&staging).map_err(|err| failed(err.to_string()))?;
 
-	let fetch_into = |repo: String, sha: String, into: PathBuf| {
-		let zipball = games.join(format!(".{}-{sha}.zip.part", repo.replace('/', "-")));
-		let url = format!("{api}/repos/{repo}/zipball/{sha}");
-		(url, zipball, into)
-	};
-	let (url, zipball, into) = fetch_into(repo.to_owned(), commit.sha.clone(), staging.clone());
-	crate::fetch::resumable(http, &url, &zipball, 0, &mut report)
-		.await
-		.map_err(|err| failed(err.to_string()))?;
-	let unpacked = unpack(&zipball, &into);
-	let _ = std::fs::remove_file(&zipball);
-	unpacked.map_err(failed)?;
-
-	for (at, sub) in submodules(&staging) {
-		let pinned: Content = github_json(
-			http,
-			&format!("{api}/repos/{repo}/contents/{at}?ref={}", commit.sha),
-		)
-		.await
-		.map_err(|err| failed(format!("submodule {at}: {err}")))?;
-		let (url, zipball, into) = fetch_into(sub.clone(), pinned.sha, staging.join(&at));
-		crate::fetch::resumable(http, &url, &zipball, 0, &mut report)
+	let mut pending = vec![(repo.to_owned(), commit.sha.clone(), staging.clone())];
+	while let Some((at_repo, sha, into)) = pending.pop() {
+		let pinned = checkout(http, api, &at_repo, &sha, &into, games, &mut report)
 			.await
-			.map_err(|err| failed(format!("submodule {at}: {err}")))?;
-		let unpacked = unpack(&zipball, &into);
-		let _ = std::fs::remove_file(&zipball);
-		unpacked.map_err(|err| failed(format!("submodule {at}: {err}")))?;
+			.map_err(|err| failed(format!("{at_repo} at {}: {err}", &sha[..sha.len().min(7)])))?;
+		for (at, sub) in submodules(&into, &at_repo) {
+			let Some(sub_sha) = pinned.get(&at) else {
+				return Err(failed(format!(
+					"{at_repo} names a submodule at {at} and pins nothing there"
+				)));
+			};
+			pending.push((sub, sub_sha.clone(), into.join(&at)));
+		}
 	}
 
 	write_version(&staging, placeholder, version).map_err(failed)?;
@@ -392,11 +375,143 @@ pub async fn build(
 	Ok(built)
 }
 
+/// One repository's commit into `into`: GitHub's archive of it unpacked,
+/// then every file proved against the blob the commit names. What `git
+/// archive` left out (`export-ignore`) or wrote otherwise (`export-subst`,
+/// line ends the root `.gitattributes` does not explain) is fetched as
+/// committed. The submodules it pins, by path.
+///
+/// ponytail: files fetched one at a time; a repository whose archive differs
+/// from its tree in thousands of files builds slowly.
+async fn checkout(
+	http: &reqwest::Client,
+	api: &Api,
+	repo: &str,
+	sha: &str,
+	into: &Path,
+	games: &Path,
+	report: &mut impl FnMut(u64, u64),
+) -> Result<HashMap<String, String>, String> {
+	let zipball = games.join(format!(".{}-{sha}.zip.part", repo.replace('/', "-")));
+	let url = format!("{}/repos/{repo}/zipball/{sha}", api.github);
+	crate::fetch::resumable(http, &url, &zipball, 0, &mut *report)
+		.await
+		.map_err(|err| err.to_string())?;
+	let unpacked = unpack(&zipball, into);
+	let _ = std::fs::remove_file(&zipball);
+	unpacked?;
+
+	let tree: Tree = api
+		.json(
+			http,
+			&format!("{}/repos/{repo}/git/trees/{sha}?recursive=1", api.github),
+			"the tree",
+		)
+		.await?;
+	if tree.truncated {
+		tracing::warn!(
+			repo,
+			sha,
+			"the tree is too large to list whole; its files are not proved"
+		);
+	}
+	let mut pinned = HashMap::new();
+	for entry in tree.tree {
+		match entry.kind.as_str() {
+			"commit" => {
+				pinned.insert(entry.path, entry.sha);
+			}
+			"blob" => prove(http, api, repo, sha, into, &entry).await?,
+			_ => {}
+		}
+	}
+	Ok(pinned)
+}
+
+/// A file as committed: kept when its blob hash is the tree's, else fetched
+/// from where GitHub serves it raw, and held to the tree there too.
+async fn prove(
+	http: &reqwest::Client,
+	api: &Api,
+	repo: &str,
+	sha: &str,
+	into: &Path,
+	entry: &TreeEntry,
+) -> Result<(), String> {
+	let parts: Vec<&str> = entry.path.split('/').collect();
+	let inside = parts
+		.iter()
+		.all(|part| !part.is_empty() && *part != "." && *part != "..");
+	let relative: PathBuf = parts.iter().collect();
+	if !inside || (cfg!(windows) && !windows_writes_as_named(&relative)) {
+		return Err(format!("{} is not a path this build can write", entry.path));
+	}
+	let path = into.join(&relative);
+	if blob_hash_of(&path).is_ok_and(|held| held == entry.sha) {
+		return Ok(());
+	}
+	let mut url = reqwest::Url::parse(&api.raw).map_err(|err| err.to_string())?;
+	url.path_segments_mut()
+		.map_err(|()| format!("{} is not a web address", api.raw))?
+		.pop_if_empty()
+		.extend(repo.split('/'))
+		.push(sha)
+		.extend(&parts);
+	let bytes = http
+		.get(url)
+		.send()
+		.await
+		.and_then(reqwest::Response::error_for_status)
+		.map_err(|err| format!("{}: {err}", entry.path))?
+		.bytes()
+		.await
+		.map_err(|err| format!("{}: {err}", entry.path))?;
+	if blob_hash(&bytes) != entry.sha {
+		return Err(format!(
+			"{} is not as committed even where GitHub serves it raw",
+			entry.path
+		));
+	}
+	tracing::info!(
+		repo,
+		path = entry.path,
+		"fetched as committed; the archive had it otherwise"
+	);
+	if let Some(parent) = path.parent() {
+		std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+	}
+	std::fs::write(&path, &bytes).map_err(|err| format!("{}: {err}", entry.path))
+}
+
+/// Git's name for a file's contents: SHA-1 over `blob <length>\0` and them.
+fn blob_hash(bytes: &[u8]) -> String {
+	let mut hasher = Sha1::new();
+	hasher.update(format!("blob {}\0", bytes.len()));
+	hasher.update(bytes);
+	crate::fetch::hex(&hasher.finalize())
+}
+
+/// [`blob_hash`] of a file on the disk, read in chunks.
+fn blob_hash_of(path: &Path) -> std::io::Result<String> {
+	let mut file = std::fs::File::open(path)?;
+	let mut hasher = Sha1::new();
+	hasher.update(format!("blob {}\0", file.metadata()?.len()));
+	let mut chunk = [0_u8; 64 * 1024];
+	loop {
+		let read = file.read(&mut chunk)?;
+		if read == 0 {
+			break;
+		}
+		hasher.update(&chunk[..read]);
+	}
+	Ok(crate::fetch::hex(&hasher.finalize()))
+}
+
 #[cfg(test)]
 mod tests {
 	use std::io::Write;
 
-	use wiremock::matchers::{method, path, query_param};
+	use wiremock::matchers::{method, path};
 	use wiremock::{Mock, MockServer, ResponseTemplate};
 
 	use super::*;
@@ -444,56 +559,144 @@ mod tests {
 		assert_eq!(lf(b"a\r\nb\r\n\rc\n"), b"a\nb\n\rc\n");
 	}
 
+	/// GitHub's tree for a commit: each file with its blob hash, each
+	/// submodule with the commit it pins.
+	fn tree(files: &[(&str, &[u8])], pins: &[(&str, &str)]) -> String {
+		let mut entries: Vec<String> = files
+			.iter()
+			.map(|(path, body)| {
+				format!(
+					r#"{{ "path": "{path}", "type": "blob", "sha": "{}" }}"#,
+					blob_hash(body)
+				)
+			})
+			.collect();
+		entries.extend(pins.iter().map(|(path, sha)| {
+			format!(r#"{{ "path": "{path}", "type": "commit", "sha": "{sha}" }}"#)
+		}));
+		format!(
+			r#"{{ "tree": [{}], "truncated": false }}"#,
+			entries.join(",")
+		)
+	}
+
+	async fn serve(server: &MockServer, at: String, body: ResponseTemplate) {
+		Mock::given(method("GET"))
+			.and(path(at))
+			.respond_with(body)
+			.mount(server)
+			.await;
+	}
+
 	#[tokio::test]
-	async fn a_commit_is_built_as_committed_with_its_submodule_and_its_version() {
+	async fn a_commit_is_built_as_committed_with_its_submodules_and_its_version() {
 		let dir = tempfile::tempdir().unwrap();
 		let games = dir.path().join("games");
 		std::fs::create_dir(&games).unwrap();
-		let api = MockServer::start().await;
+		let server = MockServer::start().await;
 		let sha = "8379d65aaaa0000000000000000000000000000";
-		let sub_sha = "24d521d0cbe7c860a53c360d545aadceaaae3f17";
-		Mock::given(method("GET"))
-			.and(path("/repos/dev/Game/commits/8379d65"))
-			.respond_with(
-				ResponseTemplate::new(200).set_body_string(format!(r#"{{ "sha": "{sha}" }}"#)),
-			)
-			.mount(&api)
-			.await;
-		Mock::given(method("GET"))
-			.and(path(format!("/repos/dev/Game/zipball/{sha}")))
-			.respond_with(ResponseTemplate::new(200).set_body_bytes(zipball(
+		let lib_sha = "24d521d0cbe7c860a53c360d545aadceaaae3f17";
+		let deep_sha = "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0";
+		let ok = |body: String| ResponseTemplate::new(200).set_body_string(body);
+		let bytes = |body: Vec<u8>| ResponseTemplate::new(200).set_body_bytes(body);
+
+		let gitattributes: &[u8] =
+			b"*.lua text eol=crlf\ndocs/ export-ignore\nstamp.txt export-subst\n";
+		let gitmodules: &[u8] =
+			b"[submodule \"lib\"]\n\turl = https://github.com/dev/lib.git\n\tpath = lib\n";
+		let modinfo: &[u8] = b"name = 'Game'\nversion = \"$VERSION\",\n";
+		serve(
+			&server,
+			"/repos/dev/Game/commits/8379d65".into(),
+			ok(format!(r#"{{ "sha": "{sha}" }}"#)),
+		)
+		.await;
+		serve(
+			&server,
+			format!("/repos/dev/Game/zipball/{sha}"),
+			bytes(zipball(
 				"dev-Game-8379d65",
 				&[
-					(".gitattributes", b"*.lua text eol=crlf\n"),
-					(".gitmodules", b"[submodule \"lib\"]\n\tpath = lib\n\turl = https://github.com/dev/lib.git\n"),
-					("modinfo.lua", b"name = 'Game'\r\nversion = \"$VERSION\",\r\n"),
+					(".gitattributes", gitattributes),
+					(".gitmodules", gitmodules),
+					(
+						"modinfo.lua",
+						b"name = 'Game'\r\nversion = \"$VERSION\",\r\n",
+					),
 					("units/a.lua", b"return 1\r\n"),
+					// `git archive` wrote the commit into it; the tree has the
+					// placeholder.
+					("stamp.txt", b"8379d65\n"),
 				],
-			)))
-			.mount(&api)
-			.await;
-		Mock::given(method("GET"))
-			.and(path("/repos/dev/Game/contents/lib"))
-			.and(query_param("ref", sha))
-			.respond_with(
-				ResponseTemplate::new(200)
-					.set_body_string(format!(r#"{{ "type": "submodule", "sha": "{sub_sha}" }}"#)),
-			)
-			.mount(&api)
-			.await;
-		Mock::given(method("GET"))
-			.and(path(format!("/repos/dev/lib/zipball/{sub_sha}")))
-			.respond_with(
-				ResponseTemplate::new(200)
-					.set_body_bytes(zipball("dev-lib-24d521d", &[("init.lua", b"return {}\n")])),
-			)
-			.mount(&api)
-			.await;
+			)),
+		)
+		.await;
+		serve(
+			&server,
+			format!("/repos/dev/Game/git/trees/{sha}"),
+			ok(tree(
+				&[
+					(".gitattributes", gitattributes),
+					(".gitmodules", gitmodules),
+					("modinfo.lua", modinfo),
+					("units/a.lua", b"return 1\n"),
+					("stamp.txt", b"$Format:%h$\n"),
+					("docs/notes.txt", b"left out of the archive\n"),
+				],
+				&[("lib", lib_sha)],
+			)),
+		)
+		.await;
+		serve(
+			&server,
+			format!("/raw/dev/Game/{sha}/stamp.txt"),
+			ok("$Format:%h$\n".into()),
+		)
+		.await;
+		serve(
+			&server,
+			format!("/raw/dev/Game/{sha}/docs/notes.txt"),
+			ok("left out of the archive\n".into()),
+		)
+		.await;
+
+		// The submodule has its own, named relative to it.
+		let lib_modules: &[u8] = b"[submodule \"deep\"]\n\tpath = deep\n\turl = ../deep.git\n";
+		serve(
+			&server,
+			format!("/repos/dev/lib/zipball/{lib_sha}"),
+			bytes(zipball(
+				"dev-lib-24d521d",
+				&[(".gitmodules", lib_modules), ("init.lua", b"return {}\n")],
+			)),
+		)
+		.await;
+		serve(
+			&server,
+			format!("/repos/dev/lib/git/trees/{lib_sha}"),
+			ok(tree(
+				&[(".gitmodules", lib_modules), ("init.lua", b"return {}\n")],
+				&[("deep", deep_sha)],
+			)),
+		)
+		.await;
+		serve(
+			&server,
+			format!("/repos/dev/deep/zipball/{deep_sha}"),
+			bytes(zipball("dev-deep-d0d0d0d", &[("x.lua", b"return 2\n")])),
+		)
+		.await;
+		serve(
+			&server,
+			format!("/repos/dev/deep/git/trees/{deep_sha}"),
+			ok(tree(&[("x.lua", b"return 2\n")], &[])),
+		)
+		.await;
 
 		let client = crate::http::client("test");
 		let built = build(
 			&client,
-			&api.uri(),
+			&Api::at(&server.uri()),
 			"dev/Game",
 			"test-5-8379d65",
 			PLACEHOLDER,
@@ -503,18 +706,16 @@ mod tests {
 		.await
 		.unwrap();
 		assert_eq!(built, games.join("dev-Game-8379d65aaaa0.sdd"));
+		let read = |path: &str| std::fs::read_to_string(built.join(path)).unwrap();
 		assert_eq!(
-			std::fs::read_to_string(built.join("modinfo.lua")).unwrap(),
+			read("modinfo.lua"),
 			"name = 'Game'\nversion = \"test-5-8379d65\",\n"
 		);
-		assert_eq!(
-			std::fs::read(built.join("units").join("a.lua")).unwrap(),
-			b"return 1\n"
-		);
-		assert_eq!(
-			std::fs::read(built.join("lib").join("init.lua")).unwrap(),
-			b"return {}\n"
-		);
+		assert_eq!(read("units/a.lua"), "return 1\n");
+		assert_eq!(read("stamp.txt"), "$Format:%h$\n");
+		assert_eq!(read("docs/notes.txt"), "left out of the archive\n");
+		assert_eq!(read("lib/init.lua"), "return {}\n");
+		assert_eq!(read("lib/deep/x.lua"), "return 2\n");
 		assert_eq!(
 			crate::map_name::game_of_archive(&built).as_deref(),
 			Some("Game test-5-8379d65")
@@ -525,6 +726,16 @@ mod tests {
 			.map(|entry| entry.file_name())
 			.collect();
 		assert_eq!(leftovers.len(), 1, "no staging or zip left: {leftovers:?}");
+	}
+
+	#[test]
+	fn a_blob_is_named_as_git_names_it() {
+		// `git hash-object` of an empty file and of "hello\n".
+		assert_eq!(blob_hash(b""), "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391");
+		assert_eq!(
+			blob_hash(b"hello\n"),
+			"ce013625030ba8dba906f756967f9e9ca394464a"
+		);
 	}
 
 	#[test]
@@ -552,33 +763,6 @@ mod tests {
 		}
 	}
 
-	#[tokio::test]
-	async fn a_spent_allowance_is_said_as_one() {
-		let server = MockServer::start().await;
-		let reset = std::time::SystemTime::now()
-			.duration_since(std::time::UNIX_EPOCH)
-			.unwrap()
-			.as_secs()
-			+ 600;
-		Mock::given(method("GET"))
-			.respond_with(
-				ResponseTemplate::new(403)
-					.insert_header("x-ratelimit-remaining", "0")
-					.insert_header("x-ratelimit-reset", reset.to_string().as_str()),
-			)
-			.mount(&server)
-			.await;
-		let client = crate::http::client("test");
-		let said = github_json::<Commit>(&client, &format!("{}/repos/a/b/commits/c", server.uri()))
-			.await
-			.err()
-			.unwrap();
-		assert_eq!(
-			said,
-			"GitHub's hourly allowance of requests for this address is used up for another 10 min"
-		);
-	}
-
 	#[test]
 	fn a_path_that_climbs_out_is_refused_and_a_version_needs_its_placeholder() {
 		let dir = tempfile::tempdir().unwrap();
@@ -597,12 +781,17 @@ mod tests {
 			"[submodule \"a\"]\n\tpath = lib/core\n\turl = https://github.com/dev/core.git\n\
 			 [submodule \"b\"]\n\tpath = ../../out\n\turl = https://github.com/dev/evil.git\n\
 			 [submodule \"c\"]\n\tpath = x?ref=main\n\turl = https://github.com/dev/evil.git\n\
-			 [submodule \"d\"]\n\tpath = elsewhere\n\turl = https://gitlab.com/dev/other.git\n",
+			 [submodule \"d\"]\n\tpath = elsewhere\n\turl = https://gitlab.com/dev/other.git\n\
+			 [submodule \"e\"]\n\turl = ../../them/shared\n\tpath = shared\n\
+			 [submodule \"f\"]\n\tpath = far\n\turl = ../../../too/far\n",
 		)
 		.unwrap();
 		assert_eq!(
-			submodules(dir.path()),
-			[("lib/core".to_owned(), "dev/core".to_owned())]
+			submodules(dir.path(), "dev/Game"),
+			[
+				("lib/core".to_owned(), "dev/core".to_owned()),
+				("shared".to_owned(), "them/shared".to_owned()),
+			]
 		);
 	}
 }

@@ -13,6 +13,7 @@
 //!   how BAR names the archives (`Supreme Isthmus v2.1` →
 //!   `supreme_isthmus_v2.1.sd7`).
 
+pub mod api;
 pub mod archive;
 pub mod checksum;
 pub mod demo;
@@ -25,6 +26,7 @@ pub mod map_index;
 pub mod map_name;
 pub mod map_search;
 pub mod map_thumb;
+pub mod peek;
 pub mod rapid;
 pub mod release;
 pub mod replays;

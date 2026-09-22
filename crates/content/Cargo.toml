@@ -16,6 +16,8 @@ reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 settings = { workspace = true }
+# git's name for a file's contents, which a commit's build is proved against.
+sha1 = { workspace = true }
 sha2 = { workspace = true }
 # A map archive is a .sd7 (7z) or .sdz (zip); its mapinfo.lua is the only
 # place its real name is written down. Both are already here for the engine

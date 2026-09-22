@@ -126,6 +126,32 @@ describe('the games section', () => {
 			{ timeout: 3000 },
 		)
 
+		// A GitLab project: its own field name, and a file fragment like
+		// GitHub's.
+		fireEvent.change(row()!.querySelector('select')!, {
+			target: { value: 'gitlab' },
+		})
+		expect(row()!.textContent).toContain('Project')
+		const [, project, fragment] = [...row()!.querySelectorAll('input')]
+		fireEvent.input(project!, { target: { value: 'mf/game' } })
+		fireEvent.input(fragment!, { target: { value: 'win' } })
+		await vi.waitFor(
+			() =>
+				expect(saved()).toEqual([
+					{
+						name: 'X 1',
+						source: { kind: 'gitlab', value: 'mf/game', asset: 'win' },
+					},
+				]),
+			{ timeout: 3000 },
+		)
+
+		fireEvent.change(row()!.querySelector('select')!, {
+			target: { value: 'rapid' },
+		})
+		expect(row()!.textContent).toContain('Rapid tag')
+		expect(row()!.querySelectorAll('input')).toHaveLength(2)
+
 		fireEvent.click(button(row()!, 'Remove'))
 		expect(row()).toBeNull()
 		await vi.waitFor(() => expect(saved()).toEqual([]), { timeout: 3000 })

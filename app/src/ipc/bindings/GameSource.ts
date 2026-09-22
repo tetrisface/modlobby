@@ -9,4 +9,6 @@ export type GameSource =
 	| { kind: 'rapid'; value: string }
 	| { kind: 'url'; value: string; filename?: string | null }
 	| { kind: 'github'; value: string; asset?: string | null }
+	| { kind: 'gitlab'; value: string; asset?: string | null }
+	| { kind: 'forgejo'; value: string; asset?: string | null }
 	| { kind: 'git'; value: string; placeholder?: string | null }

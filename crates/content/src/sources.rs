@@ -6,25 +6,27 @@
 //! to, and which reaches games ours does not name. Ours goes before the hub
 //! so what modlobby fetches is modlobby's to govern: an entry the hub adds
 //! or changes cannot redirect a game we already know. All three use the
-//! hub's shape (`{kind: rapid|url|github, value, asset?, filename?}`), so a
-//! developer learns one way to say where their game is.
+//! hub's shape (`{kind: rapid|url|github|…, value, asset?, filename?}`), so
+//! a developer learns one way to say where their game is.
 //!
 //! The hub says where a game lives, never which file is which version, so
 //! matching a room's version to a release is [`pick`]'s job. Everything here
 //! decides without the network; fetching and checking what was fetched are
 //! the caller's.
 
+use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use settings::model::SPRINGRTS_RAPID;
+
+use crate::api::Api;
 
 /// coilbox's hub (`src/hub/config.ts` `DEFAULT_HUB_URL`).
 pub const HUB_URL: &str = "https://coilbox-hub.vercel.app/api/v1/games";
-
-/// GitHub's API, where a repository's releases are listed.
-pub const GITHUB_API: &str = "https://api.github.com";
 
 /// How long a fetched hub list is trusted.
 pub const FRESH_FOR: Duration = Duration::from_secs(24 * 60 * 60);
@@ -107,7 +109,8 @@ fn version_of<'a>(name: &'a str, title: &str) -> Option<&'a str> {
 	(!version.trim().is_empty()).then_some(version)
 }
 
-/// A release on GitHub, as far as picking a file goes.
+/// A release, as far as picking a file goes, in GitHub's shape: a Forgejo
+/// writes the same, and a GitLab's is read into it ([`parse_gitlab`]).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Release {
 	#[serde(rename = "tag_name")]
@@ -122,7 +125,7 @@ pub struct Asset {
 	pub url: String,
 	pub size: u64,
 	/// `sha256:<hex>`, on every asset GitHub has hashed: what the file must
-	/// be byte for byte once it has arrived.
+	/// be byte for byte once it has arrived. No other forge gives one.
 	#[serde(default)]
 	pub digest: Option<String>,
 }
@@ -135,10 +138,15 @@ impl Asset {
 }
 
 /// GitHub's release list for `repo` (`owner/repo`) under `api`
-/// ([`GITHUB_API`]), newest first; `None` for anything that is not one
+/// ([`crate::api::GITHUB_API`]), newest first; `None` for anything that is not one
 /// repository's name, so a list entry cannot steer the request anywhere else.
 pub fn releases_url(api: &str, repo: &str) -> Option<String> {
-	let (owner, name) = repo.split_once('/')?;
+	is_repo(repo).then(|| format!("{api}/repos/{repo}/releases?per_page=100"))
+}
+
+/// Whether `repo` is one repository's name, `owner/repo`, and nothing that
+/// would steer a request anywhere else.
+pub(crate) fn is_repo(repo: &str) -> bool {
 	let fits = |part: &str| {
 		!part.is_empty()
 			&& part != "."
@@ -147,7 +155,8 @@ pub fn releases_url(api: &str, repo: &str) -> Option<String> {
 				.chars()
 				.all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
 	};
-	(fits(owner) && fits(name)).then(|| format!("{api}/repos/{owner}/{name}/releases?per_page=100"))
+	repo.split_once('/')
+		.is_some_and(|(owner, name)| fits(owner) && fits(name))
 }
 
 /// The releases in GitHub's answer; nothing for anything else.
@@ -207,9 +216,9 @@ pub enum InstallError {
 	NotAnArchive(String),
 	#[error(transparent)]
 	Fetch(#[from] crate::fetch::Error),
-	#[error("{name} arrived as {got} bytes, not the {want} GitHub gave; it was discarded")]
+	#[error("{name} arrived as {got} bytes, not the {want} its release gave; it was discarded")]
 	Size { name: String, got: u64, want: u64 },
-	#[error("{name}'s SHA-256 ({got}) is not the one GitHub gave ({want}); it was discarded")]
+	#[error("{name}'s SHA-256 ({got}) is not the one its release gave ({want}); it was discarded")]
 	Digest {
 		name: String,
 		got: String,
@@ -220,8 +229,8 @@ pub enum InstallError {
 }
 
 /// Fetches `asset` into `games`: staged as `.<name>.part`, resumed if an
-/// earlier attempt left one, checked against the size and SHA-256 GitHub
-/// gave, and only then moved into place, so the engine never finds half a
+/// earlier attempt left one, checked against the size and SHA-256 its
+/// release gave, and only then moved into place, so the engine never finds half a
 /// game or the wrong one. The installed file's path.
 pub async fn install(
 	http: &reqwest::Client,
@@ -290,38 +299,46 @@ pub struct Fetched {
 	pub built: bool,
 }
 
+/// Fetching the game by rapid from another master, as a list's rapid entry
+/// asks: the caller's to do, since it runs pr-downloader. Where the game
+/// then is.
+pub type Rapid<'a> =
+	dyn Fn(String) -> Pin<Box<dyn Future<Output = Result<PathBuf, String>> + Send>> + Sync + 'a;
+
 /// Tries each answer's downloads, in [`resolve`]'s order, until one installs
 /// into `games`: what came and from where, or every reason none did. `None`
-/// when there was nothing to try.
-///
-/// ponytail: a release list is asked for on every miss, unconditionally; an
-/// ETag cache belongs here once a room asks for such games often enough to
-/// meet GitHub's 60 requests an hour.
+/// when there was nothing to try. `name` is the game as the room names it,
+/// which a release is held to before it is downloaded.
 pub async fn fetch(
 	http: &reqwest::Client,
-	api: &str,
+	api: &Api,
+	name: &str,
 	found: &[Found],
 	games: &Path,
+	rapid: &Rapid<'_>,
 	mut report: impl FnMut(u64, u64),
 ) -> Option<Result<Fetched, String>> {
 	let mut failures = Vec::new();
 	for answer in found {
 		for target in &answer.targets {
 			let tried = match target {
-				Target::Github { value, asset } => {
-					github(
-						http,
-						api,
-						value,
-						&answer.version,
-						asset.as_deref(),
-						games,
-						&mut report,
-					)
-					.await
+				Target::Github { asset, .. }
+				| Target::Gitlab { asset, .. }
+				| Target::Forgejo { asset, .. } => {
+					let want = Want {
+						name,
+						version: &answer.version,
+						fragment: asset.as_deref(),
+					};
+					match listing(&api.github, target) {
+						Some(listing) => {
+							released(http, api, &listing, &want, games, &mut report).await
+						}
+						None => Err(format!("{target:?} names no repository this can ask")),
+					}
 				}
 				Target::Url { value, filename } => {
-					url(http, value, filename.as_deref(), games, &mut report).await
+					url(http, value, filename.as_deref(), name, games, &mut report).await
 				}
 				Target::Git { value, placeholder } => {
 					let placeholder = placeholder.as_deref().unwrap_or(crate::git::PLACEHOLDER);
@@ -337,10 +354,10 @@ pub async fn fetch(
 					.await
 					.map(|path| (format!("git {value}, built from {}", answer.version), path))
 				}
-				// A list's rapid tag names no master to find it in.
-				Target::Rapid { value } => Err(format!(
-					"rapid {value}: a list's rapid tag is not fetched yet"
-				)),
+				Target::Rapid { value } => rapid(SPRINGRTS_RAPID.to_owned())
+					.await
+					.map(|path| (format!("rapid {value} at {SPRINGRTS_RAPID}"), path))
+					.map_err(|err| format!("rapid {value} at {SPRINGRTS_RAPID}: {err}")),
 			};
 			match tried {
 				Ok((from, path)) => {
@@ -363,63 +380,203 @@ fn via_words(via: Via) -> &'static str {
 	}
 }
 
-async fn github(
+/// Which release is wanted: the room's game, its version, and a fragment of
+/// the file's name when a list gave one.
+struct Want<'a> {
+	name: &'a str,
+	version: &'a str,
+	fragment: Option<&'a str>,
+}
+
+/// Where a repository's releases are listed, and how the list is written.
+#[derive(Debug, PartialEq, Eq)]
+struct Listing {
+	label: String,
+	url: String,
+	gitlab: bool,
+}
+
+/// The release list a target names, under `github_api` for GitHub; `None`
+/// for an address that is not one repository's, so a list entry cannot
+/// steer a request anywhere else.
+fn listing(github_api: &str, target: &Target) -> Option<Listing> {
+	match target {
+		Target::Github { value, .. } => Some(Listing {
+			label: format!("github {value}"),
+			url: releases_url(github_api, value)?,
+			gitlab: false,
+		}),
+		Target::Gitlab { value, .. } => {
+			let (origin, path) = forge_repo(value, "gitlab.com", false)?;
+			Some(Listing {
+				label: format!("gitlab {value}"),
+				url: format!(
+					"{origin}/api/v4/projects/{}/releases?per_page=100",
+					path.replace('/', "%2F")
+				),
+				gitlab: true,
+			})
+		}
+		Target::Forgejo { value, .. } => {
+			let (origin, path) = forge_repo(value, "codeberg.org", true)?;
+			Some(Listing {
+				label: format!("forgejo {value}"),
+				url: format!("{origin}/api/v1/repos/{path}/releases?limit=50"),
+				gitlab: false,
+			})
+		}
+		_ => None,
+	}
+}
+
+/// `https://<host>` and a repository's path out of `value`: an https
+/// address, or a bare path on `host`. Plain names only; exactly two of them
+/// when `two`, else two or more, as a GitLab's subgroups nest.
+fn forge_repo(value: &str, host: &str, two: bool) -> Option<(String, String)> {
+	let (host, path) = match value.strip_prefix("https://") {
+		Some(rest) => rest.split_once('/')?,
+		None => (host, value),
+	};
+	let path = path.trim_end_matches('/').trim_end_matches(".git");
+	let host_fits = !host.is_empty()
+		&& host
+			.chars()
+			.all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | ':'));
+	let parts: Vec<&str> = path.split('/').collect();
+	let parts_fit = parts.iter().all(|part| {
+		!part.is_empty()
+			&& *part != "."
+			&& *part != ".."
+			&& part
+				.chars()
+				.all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+	});
+	let count_fits = if two {
+		parts.len() == 2
+	} else {
+		parts.len() >= 2
+	};
+	(host_fits && parts_fit && count_fits).then(|| (format!("https://{host}"), path.to_owned()))
+}
+
+/// A GitLab release list, as the releases GitHub writes: each link a file,
+/// its size unknown until it arrives.
+pub fn parse_gitlab(body: &str) -> Vec<Release> {
+	#[derive(Deserialize)]
+	struct Listed {
+		tag_name: String,
+		#[serde(default)]
+		assets: Assets,
+	}
+	#[derive(Default, Deserialize)]
+	struct Assets {
+		#[serde(default)]
+		links: Vec<Link>,
+	}
+	#[derive(Deserialize)]
+	struct Link {
+		name: String,
+		url: String,
+		#[serde(default)]
+		direct_asset_url: Option<String>,
+	}
+	let listed: Vec<Listed> = serde_json::from_str(body).unwrap_or_default();
+	listed
+		.into_iter()
+		.map(|release| Release {
+			tag: release.tag_name,
+			assets: release
+				.assets
+				.links
+				.into_iter()
+				.map(|link| Asset {
+					name: link.name,
+					url: link.direct_asset_url.unwrap_or(link.url),
+					size: 0,
+					digest: None,
+				})
+				.collect(),
+		})
+		.collect()
+}
+
+async fn released(
 	http: &reqwest::Client,
-	api: &str,
-	repo: &str,
-	version: &str,
-	fragment: Option<&str>,
+	api: &Api,
+	listing: &Listing,
+	want: &Want<'_>,
 	games: &Path,
 	report: &mut impl FnMut(u64, u64),
 ) -> Result<(String, PathBuf), String> {
-	let url = releases_url(api, repo)
-		.ok_or_else(|| format!("{repo} is not a GitHub repository's name"))?;
-	let failed = |reason: String| format!("github {repo}: {reason}");
-	let response = http
-		.get(&url)
-		.header(reqwest::header::ACCEPT, "application/vnd.github+json")
-		.send()
+	let failed = |reason: String| format!("{}: {reason}", listing.label);
+	let body = api
+		.text(http, &listing.url, "the release list")
 		.await
-		.map_err(|err| failed(err.to_string()))?;
-	if !response.status().is_success() {
-		return Err(failed(crate::git::refused("the release list", &response)));
-	}
-	let body = response
-		.text()
-		.await
-		.map_err(|err| failed(err.to_string()))?;
-	let releases = parse_releases(&body);
-	let asset = pick(&releases, version, fragment)
-		.ok_or_else(|| failed(format!("no release has {version}")))?;
+		.map_err(failed)?;
+	let releases = if listing.gitlab {
+		parse_gitlab(&body)
+	} else {
+		parse_releases(&body)
+	};
+	let asset = pick(&releases, want.version, want.fragment)
+		.ok_or_else(|| failed(format!("no release has {}", want.version)))?;
+	names_itself(http, asset, want.name).await.map_err(failed)?;
 	let path = install(http, asset, games, report)
 		.await
 		.map_err(|err| failed(err.to_string()))?;
-	Ok((format!("github {repo}, {}", asset.name), path))
+	Ok((format!("{}, {}", listing.label, asset.name), path))
 }
 
 async fn url(
 	http: &reqwest::Client,
 	value: &str,
 	filename: Option<&str>,
+	name: &str,
 	games: &Path,
 	report: &mut impl FnMut(u64, u64),
 ) -> Result<(String, PathBuf), String> {
 	if !value.starts_with("https://") {
 		return Err(format!("{value} is not served over https"));
 	}
-	let name = filename
+	let file = filename
 		.or_else(|| value.split(['?', '#']).next()?.rsplit('/').next())
 		.unwrap_or_default();
 	let asset = Asset {
-		name: name.to_owned(),
+		name: file.to_owned(),
 		url: value.to_owned(),
 		size: 0,
 		digest: None,
 	};
+	let failed = |reason: String| format!("{value}: {reason}");
+	names_itself(http, &asset, name).await.map_err(failed)?;
 	let path = install(http, &asset, games, report)
 		.await
-		.map_err(|err| format!("{value}: {err}"))?;
+		.map_err(|err| failed(err.to_string()))?;
 	Ok((value.to_owned(), path))
+}
+
+/// A `.sdz` whose `modinfo.lua` names another game than `name` is refused
+/// before any more of it is downloaded. One that cannot be looked into --
+/// a `.sd7`, or a server without ranges -- is fetched and held to the
+/// room's hash as ever.
+async fn names_itself(http: &reqwest::Client, asset: &Asset, name: &str) -> Result<(), String> {
+	if !asset.name.to_ascii_lowercase().ends_with(".sdz") {
+		return Ok(());
+	}
+	let modinfo = match crate::peek::root_file(http, &asset.url, "modinfo.lua").await {
+		Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+		Err(why) => {
+			tracing::debug!(asset = asset.name, %why, "not looked into before downloading");
+			return Ok(());
+		}
+	};
+	match crate::map_name::compose(&modinfo) {
+		Some(own) if own != name => Err(format!(
+			"{} is {own}, not {name}, by its modinfo.lua; not downloaded",
+			asset.name
+		)),
+		_ => Ok(()),
+	}
 }
 
 /// Where a game that is not the room's copy is kept: out of every folder
@@ -569,6 +726,13 @@ mod tests {
 	use wiremock::{Mock, MockServer, ResponseTemplate};
 
 	use super::*;
+	use crate::api::GITHUB_API;
+
+	fn rapid_nowhere(
+		master: String,
+	) -> Pin<Box<dyn Future<Output = Result<PathBuf, String>> + Send>> {
+		Box::pin(async move { Err(format!("nothing at {master}")) })
+	}
 
 	fn github(repo: &str) -> Target {
 		Target::Github {
@@ -848,10 +1012,12 @@ mod tests {
 			.expect(1)
 			.mount(&api)
 			.await;
+		// Asked twice: looked into first, which a server without ranges
+		// refuses, and then downloaded.
 		Mock::given(method("GET"))
 			.and(path("/files/SF_0.1.86.sdz"))
 			.respond_with(ResponseTemplate::new(200).set_body_bytes(body))
-			.expect(1)
+			.expect(2)
 			.mount(&api)
 			.await;
 		let found = resolve(
@@ -862,7 +1028,18 @@ mod tests {
 		);
 		let games = dir.path().join("games");
 		let client = crate::http::client("test");
-		let got = fetch(&client, &api.uri(), &found, &games, |_, _| {}).await;
+		let at = crate::api::Api::at(&api.uri());
+		let name = "SplinterFaction 0.1.86";
+		let got = fetch(
+			&client,
+			&at,
+			name,
+			&found,
+			&games,
+			&rapid_nowhere,
+			|_, _| {},
+		)
+		.await;
 		assert_eq!(
 			got,
 			Some(Ok(Fetched {
@@ -874,12 +1051,13 @@ mod tests {
 		assert_eq!(std::fs::read(games.join("SF_0.1.86.sdz")).unwrap(), body);
 
 		assert_eq!(
-			fetch(&client, &api.uri(), &[], &games, |_, _| {}).await,
+			fetch(&client, &at, name, &[], &games, &rapid_nowhere, |_, _| {}).await,
 			None
 		);
 		let refused = fetch(
 			&client,
-			&api.uri(),
+			&at,
+			"X 1",
 			&resolve(
 				"X 1",
 				&[(
@@ -893,6 +1071,7 @@ mod tests {
 				&[],
 			),
 			&games,
+			&rapid_nowhere,
 			|_, _| {},
 		)
 		.await;
@@ -900,6 +1079,169 @@ mod tests {
 			refused,
 			Some(Err("http://x/X.sdz is not served over https".into()))
 		);
+	}
+
+	#[tokio::test]
+	async fn a_rapid_entry_is_fetched_from_the_community_master_by_the_caller() {
+		let dir = tempfile::tempdir().unwrap();
+		let client = crate::http::client("test");
+		let found = resolve(
+			"Evolution RTS v18.13",
+			&[],
+			&[],
+			&[entry(
+				"Evolution RTS",
+				vec![Target::Rapid {
+					value: "evo:stable".into(),
+				}],
+			)],
+		);
+		let package = dir.path().join("packages").join("e.sdp");
+		let asked = std::sync::Mutex::new(Vec::new());
+		let rapid =
+			|master: String| -> Pin<Box<dyn Future<Output = Result<PathBuf, String>> + Send>> {
+				asked.lock().unwrap().push(master);
+				let package = package.clone();
+				Box::pin(async move { Ok(package) })
+			};
+		let got = fetch(
+			&client,
+			&crate::api::Api::at("http://unused"),
+			"Evolution RTS v18.13",
+			&found,
+			dir.path(),
+			&rapid,
+			|_, _| {},
+		)
+		.await;
+		assert_eq!(
+			got,
+			Some(Ok(Fetched {
+				from: format!("rapid evo:stable at {SPRINGRTS_RAPID}, from coilbox's hub"),
+				path: package.clone(),
+				built: false,
+			}))
+		);
+		assert_eq!(*asked.lock().unwrap(), [SPRINGRTS_RAPID]);
+	}
+
+	#[test]
+	fn each_forge_lists_its_releases_where_it_does_and_nowhere_else() {
+		let target = |kind: &str, value: &str| match kind {
+			"gitlab" => Target::Gitlab {
+				value: value.into(),
+				asset: None,
+			},
+			_ => Target::Forgejo {
+				value: value.into(),
+				asset: None,
+			},
+		};
+		assert_eq!(
+			listing(GITHUB_API, &target("gitlab", "group/sub/game")).map(|found| found.url),
+			Some(
+				"https://gitlab.com/api/v4/projects/group%2Fsub%2Fgame/releases?per_page=100"
+					.into()
+			)
+		);
+		assert_eq!(
+			listing(
+				GITHUB_API,
+				&target("gitlab", "https://git.example.org/dev/game.git")
+			)
+			.map(|found| found.url),
+			Some("https://git.example.org/api/v4/projects/dev%2Fgame/releases?per_page=100".into())
+		);
+		assert_eq!(
+			listing(GITHUB_API, &target("forgejo", "dev/game")).map(|found| found.url),
+			Some("https://codeberg.org/api/v1/repos/dev/game/releases?limit=50".into())
+		);
+		for steered in [
+			"dev",
+			"dev/game/extra",
+			"http://codeberg.org/dev/game",
+			"https://codeberg.org/dev/../x",
+			"dev/game?x=1",
+			"https://host@evil/dev/game",
+		] {
+			assert_eq!(
+				listing(GITHUB_API, &target("forgejo", steered)),
+				None,
+				"{steered}"
+			);
+		}
+		assert_eq!(
+			listing(GITHUB_API, &target("gitlab", "https://x/../y")),
+			None
+		);
+	}
+
+	#[test]
+	fn a_gitlab_release_list_reads_as_a_github_one() {
+		let releases = parse_gitlab(
+			r#"[{ "tag_name": "v2.58", "assets": { "count": 1, "sources": [], "links": [
+				{ "name": "mf-2.58.sdz", "url": "https://gitlab.com/x", "direct_asset_url": "https://gitlab.com/direct" },
+				{ "name": "notes.txt", "url": "https://gitlab.com/notes" } ] } }]"#,
+		);
+		assert_eq!(
+			pick(&releases, "2.58", None).map(|asset| asset.url.as_str()),
+			Some("https://gitlab.com/direct")
+		);
+		assert!(parse_gitlab("{}").is_empty());
+	}
+
+	#[tokio::test]
+	async fn a_release_naming_another_game_is_refused_before_it_is_downloaded() {
+		use crate::peek::tests::{Ranged, game_zip};
+		let dir = tempfile::tempdir().unwrap();
+		let server = MockServer::start().await;
+		let wrong = game_zip("name = 'SplinterFaction'\nversion = '0.1.85'\n", true);
+		Mock::given(method("GET"))
+			.and(path("/releases"))
+			.respond_with(ResponseTemplate::new(200).set_body_string(format!(
+				r#"[{{ "tag_name": "v0.1.86", "assets": {{ "links": [ {{ "name": "SF.sdz", "url": "{}/files/SF.sdz" }} ] }} }}]"#,
+				server.uri()
+			)))
+			.mount(&server)
+			.await;
+		Mock::given(method("GET"))
+			.and(path("/files/SF.sdz"))
+			.respond_with(Ranged(wrong))
+			.mount(&server)
+			.await;
+		let listing = Listing {
+			label: "gitlab dev/SF".into(),
+			url: format!("{}/releases", server.uri()),
+			gitlab: true,
+		};
+		let want = Want {
+			name: "SplinterFaction 0.1.86",
+			version: "0.1.86",
+			fragment: None,
+		};
+		let client = crate::http::client("test");
+		let api = crate::api::Api::at(&server.uri());
+		let refused = released(&client, &api, &listing, &want, dir.path(), &mut |_, _| {}).await;
+		assert_eq!(
+			refused,
+			Err("gitlab dev/SF: SF.sdz is SplinterFaction 0.1.85, not SplinterFaction 0.1.86, by its modinfo.lua; not downloaded".into())
+		);
+		assert!(
+			std::fs::read_dir(dir.path()).unwrap().next().is_none(),
+			"nothing written"
+		);
+
+		let right = Want {
+			name: "SplinterFaction 0.1.85",
+			version: "0.1.86",
+			fragment: None,
+		};
+		let (from, installed) =
+			released(&client, &api, &listing, &right, dir.path(), &mut |_, _| {})
+				.await
+				.unwrap();
+		assert_eq!(from, "gitlab dev/SF, SF.sdz");
+		assert_eq!(installed, dir.path().join("SF.sdz"));
 	}
 
 	#[test]
