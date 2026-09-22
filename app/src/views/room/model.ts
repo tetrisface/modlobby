@@ -26,6 +26,7 @@ export type RoomIo = Pick<
 	| 'takeSeat'
 	| 'releaseSeat'
 	| 'setReady'
+	| 'setPreReady'
 	| 'setSide'
 	| 'addBot'
 	| 'updateBot'

@@ -181,8 +181,13 @@ describe('choosing a team', () => {
 		const offered = [...(picker?.options ?? [])].map((o) => o.textContent)
 		// Team 2 is empty and sits below an occupied team 3. It used to be
 		// missing entirely: the list was the teams in use plus one past the top.
-		expect(offered).toContain('New team 2')
+		// The roster already draws it, so it is joined, not new; only the team
+		// past everything drawn is.
+		expect(offered).toContain('Join team 2')
 		expect(offered).toContain('Join team 3')
+		expect(offered.filter((label) => label?.startsWith('New'))).toEqual([
+			'New team 4',
+		])
 	})
 
 	test('the team you are on reads as yours, not as one to join', async () => {
@@ -464,6 +469,9 @@ describe('a room behind the seam', () => {
 			fakeRoom({
 				caps: SERVED,
 				my: () => myBattle({ boss: 'me' }),
+				users: () => ({
+					me: user('me', { battleStatus: status({ ready: true }) }),
+				}),
 				io: recordingIo(calls),
 			}),
 		)
@@ -699,5 +707,99 @@ describe('the faction picker', () => {
 		])
 		for (const option of options)
 			expect(option.querySelector('svg.icon.side')).not.toBeNull()
+	})
+})
+
+describe('readying up', () => {
+	test('a ready asked for shows at once, and a second press changes the wish', async () => {
+		const calls: Calls = []
+		const { container } = await open(
+			fakeRoom({
+				caps: SERVED,
+				// The server still shows us unready; our ready is on its way.
+				my: () => myBattle({ readyOnItsWay: true }),
+				io: recordingIo(calls),
+			}),
+		)
+
+		const button = [...container.querySelectorAll('.seat button')].find(
+			(b) => b.textContent === 'Ready',
+		) as HTMLButtonElement
+		expect(button.classList).toContain('pending')
+		fireEvent.click(button)
+		await settle()
+		expect(calls).toContainEqual(['setReady', [false]])
+		// The card's button does not ask again while it is on its way.
+		expect(cardButton(container, 'Ready up').disabled).toBe(true)
+	})
+
+	test('a boss who is not ready is asked to ready up before starting', async () => {
+		const calls: Calls = []
+		const { container } = await open(
+			fakeRoom({
+				caps: SERVED,
+				my: () => myBattle({ boss: 'me' }),
+				io: recordingIo(calls),
+			}),
+		)
+
+		// SPADS refuses `!start` while a seated player is unready, the boss too.
+		expect(buttons(container, '.card-actions')[0]).toBe('Ready up')
+		fireEvent.click(cardButton(container, 'Ready up'))
+		await settle()
+		expect(calls).toContainEqual(['setReady', [true]])
+	})
+
+	test('the last one unready is told so, and the card calls louder', async () => {
+		const { container } = await open(
+			fakeRoom({
+				caps: SERVED,
+				battle: () => battle({ members: ['me', 'alice'] }),
+				users: () => ({
+					me: user('me'),
+					alice: user('alice', { battleStatus: status({ ready: true }) }),
+				}),
+			}),
+		)
+
+		expect(container.querySelector('.seat')?.textContent).toContain(
+			'Everyone else is ready',
+		)
+		expect(cardButton(container, 'Ready up').classList).toContain('waiting')
+	})
+
+	test('queued, a ready can be given in advance for when a seat frees', async () => {
+		const calls: Calls = []
+		const { container } = await open(
+			fakeRoom({
+				caps: SERVED,
+				battle: () => battle({ members: ['me'], queue: ['me'] }),
+				users: () => ({
+					me: user('me', { battleStatus: status({ player: false }) }),
+				}),
+				io: recordingIo(calls),
+			}),
+		)
+
+		const box = [...container.querySelectorAll('.seat label.check')].find(
+			(label) => label.textContent?.includes('Ready when seated'),
+		)
+		expect(box).toBeTruthy()
+		fireEvent.click(box!.querySelector('input')!)
+		await settle()
+		expect(calls).toContainEqual(['setPreReady', [true]])
+	})
+
+	test('during a game, the ready offered is one for the next', async () => {
+		const { container } = await open(
+			fakeRoom({
+				caps: SERVED,
+				running: () => ({ id: 1, ip: '', port: 0 }),
+			}),
+		)
+
+		const seat = container.querySelector('.seat')!
+		expect(seat.textContent).toContain('Ready for next game')
+		expect(buttons(container, '.seat')).not.toContain('Ready up')
 	})
 })

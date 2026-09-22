@@ -29,4 +29,16 @@ export type MyBattleView = {
 	 * Modoption changes seen this session, oldest first.
 	 */
 	history: Array<OptionChangeView>
+	/**
+	 * A ready given in advance, armed until the server's next automatic
+	 * unready -- being seated from the queue, or a game ending -- which it
+	 * answers once. Never remembered past this room.
+	 */
+	preReady: boolean
+	/**
+	 * The ready our newest request asks for, while the server still shows
+	 * otherwise. Drawn at once as on its way; the server's word is still
+	 * what is true.
+	 */
+	readyOnItsWay: boolean | null
 }

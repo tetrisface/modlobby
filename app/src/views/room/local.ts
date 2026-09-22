@@ -20,6 +20,8 @@ export const skirmishIo = {
 	// here because the seam is one shape and refusing would be a lie about what
 	// happened rather than about what it means.
 	setReady: () => Promise.resolve(),
+	// Nothing here unreadies anyone, so there is nothing to answer in advance.
+	setPreReady: () => Promise.resolve(),
 	setSide: (side) => act({ type: 'setSide', side }),
 	addBot: (name, ai, team, allyTeam, colour) =>
 		act({ type: 'addBot', name, ai, team, allyTeam, colour }),

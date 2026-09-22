@@ -115,6 +115,8 @@ function enterRoom() {
 		scriptTags: {},
 		vote: null,
 		history: [],
+		preReady: false,
+		readyOnItsWay: null,
 	}
 	onlySession(next)
 }

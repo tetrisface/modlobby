@@ -96,6 +96,8 @@ function room(me: string, player: boolean) {
 		scriptTags: { [OVERRIDE]: 'blob' },
 		vote: null,
 		history: [],
+		preReady: false,
+		readyOnItsWay: null,
 	})
 }
 

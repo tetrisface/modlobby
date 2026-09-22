@@ -59,6 +59,8 @@ const room: SkirmishView = {
 		scriptTags: { 'game/modoptions/ranked_game': '0' },
 		vote: null,
 		history: [],
+		preReady: false,
+		readyOnItsWay: null,
 	},
 	users: [user('me', 0)],
 	me: 'me',
@@ -333,6 +335,8 @@ describe('apply', () => {
 				scriptTags: {},
 				vote: null,
 				history: [],
+				preReady: false,
+				readyOnItsWay: null,
 			},
 		})
 		const said = (seq: number, text: string): Delta => ({

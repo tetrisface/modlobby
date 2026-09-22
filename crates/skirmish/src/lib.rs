@@ -696,6 +696,9 @@ impl Room {
 			// Nothing to vote on where nobody can disagree.
 			vote: None,
 			history: self.history.clone(),
+			// Nothing here unreadies anyone, so there is nothing to answer.
+			pre_ready: false,
+			ready_on_its_way: None,
 		}
 	}
 

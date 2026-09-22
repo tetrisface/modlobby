@@ -377,6 +377,14 @@ pub struct MyBattleView {
 	pub vote: Option<VoteView>,
 	/// Modoption changes seen this session, oldest first.
 	pub history: Vec<OptionChangeView>,
+	/// A ready given in advance, armed until the server's next automatic
+	/// unready -- being seated from the queue, or a game ending -- which it
+	/// answers once. Never remembered past this room.
+	pub pre_ready: bool,
+	/// The ready our newest request asks for, while the server still shows
+	/// otherwise. Drawn at once as on its way; the server's word is still
+	/// what is true.
+	pub ready_on_its_way: Option<bool>,
 }
 
 impl From<&MyBattle> for MyBattleView {
@@ -390,6 +398,8 @@ impl From<&MyBattle> for MyBattleView {
 			script_tags: my.script_tags.clone(),
 			vote: my.vote.as_ref().map(VoteView::from),
 			history: my.history.iter().map(OptionChangeView::from).collect(),
+			pre_ready: my.pre_ready,
+			ready_on_its_way: my.ready_on_its_way,
 		}
 	}
 }

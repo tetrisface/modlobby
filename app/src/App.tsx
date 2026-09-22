@@ -5,7 +5,9 @@ import {
 	For,
 	Show,
 	createEffect,
+	createMemo,
 	createSignal,
+	on,
 	onCleanup,
 	onMount,
 	type ParentProps,
@@ -32,6 +34,10 @@ import {
 	roomOnScreen,
 } from './lib/overlay'
 import { api, describeError, errorCode } from './ipc/client'
+import { raise } from './ipc/alerts'
+import { LAN, lanRoom } from './lan/lan'
+import { onlineRoom } from './views/room/online'
+import { readiness } from './views/room/readiness'
 import type { Settings } from './ipc/bindings/Settings'
 import { build, setBuild } from './store/build'
 import {
@@ -47,6 +53,7 @@ import {
 	lobby,
 	mainSession,
 	myRoom,
+	roomServer,
 	roomSession,
 	sessions,
 	severalServers,
@@ -188,6 +195,32 @@ function Layout(props: ParentProps) {
 	 */
 	const unread = () => unreadTotal(settings()?.chat.muted ?? [])
 	const named = () => Object.values(chat.named).some(Boolean)
+
+	/**
+	 * A room waiting on us alone rings, once, as it starts to. Here rather
+	 * than in the room, which is not drawn while another tab is open -- and a
+	 * ring is how a host says the same thing, so it goes by the ring setting.
+	 */
+	// A memo, so the effect below hears a change of answer and not every
+	// roster update behind it.
+	const waitedOn = createMemo(() => {
+		const room = roomServer() === LAN ? lanRoom() : onlineRoom()
+		// A ready already on its way is an answer the room will have shortly.
+		return readiness(room) === 'waiting' && room.my()?.readyOnItsWay !== true
+	})
+	createEffect(
+		on(
+			waitedOn,
+			(waiting) => {
+				if (waiting)
+					void raise(
+						'ring',
+						'Everyone else is ready; the room is waiting on you',
+					)
+			},
+			{ defer: true },
+		),
+	)
 
 	/**
 	 * The window controls in the nav's corner.

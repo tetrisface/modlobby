@@ -299,6 +299,11 @@ export const api = {
 		invoke<void>('take_seat', { team, allyTeam }),
 	releaseSeat: () => invoke<void>('release_seat'),
 	setReady: (ready: boolean) => invoke<void>('set_ready', { ready }),
+	/**
+	 * A ready given in advance: answers the server's next automatic unready
+	 * (seated from the queue, or a game ending) once, then is spent.
+	 */
+	setPreReady: (on: boolean) => invoke<void>('set_pre_ready', { on }),
 	setSide: (side: number) => invoke<void>('set_side', { side }),
 	requestPrivateHost: (server: string) =>
 		invoke<string>('request_private_host', { server }),

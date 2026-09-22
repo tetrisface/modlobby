@@ -40,6 +40,8 @@ const mine = (id: number): MyBattleView => ({
 	scriptTags: {},
 	vote: null,
 	history: [],
+	preReady: false,
+	readyOnItsWay: null,
 })
 
 afterEach(() => setLobby(reconcile(emptyLobby())))

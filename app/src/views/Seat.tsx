@@ -16,6 +16,7 @@ import { pushNotice } from '../store/chat'
 import { roomServer } from '../store/lobby'
 import { applySettings, settings } from '../store/settings'
 import { useRoom, type RoomModel } from './room/model'
+import { readiness } from './room/readiness'
 import { setBonus as sendBonus } from './room/move'
 
 /** The factions, then side 2, Random, which is none of them. */
@@ -88,6 +89,26 @@ export function Seat() {
 	const seat = () => me()?.battleStatus
 	const seated = () => seat()?.player ?? false
 	const running = () => room.running() !== null
+	const tier = createMemo(() => readiness(room))
+	/** The ready we asked for while the server still shows otherwise. */
+	const asked = () => room.my()?.readyOnItsWay ?? null
+	/** What the button shows: our wish at once, else the server's word. */
+	const readyNow = () => asked() ?? tier() === 'settled'
+	/** One toggle for a ready given in advance; see `setPreReady`. */
+	const preReady = (label: string, title: string) => (
+		<label class='check' title={title}>
+			<input
+				type='checkbox'
+				checked={room.my()?.preReady ?? false}
+				disabled={busy()}
+				onChange={(event) => {
+					const on = event.currentTarget.checked
+					void act('ready in advance', () => room.io.setPreReady(on))
+				}}
+			/>
+			{label}
+		</label>
+	)
 	/**
 	 * Our place in the join queue, from one, or null while not in it. A full
 	 * room answers Join by keeping us a spectator and queueing us itself, so
@@ -116,6 +137,19 @@ export function Seat() {
 		for (const bot of battle.bots) used.add(bot.status.allyTeam)
 		return used
 	})
+
+	/**
+	 * The teams the roster draws: the first `DEFAULT_TEAMS` always, and any
+	 * somebody sits on. One of these is joined even while empty, since it is
+	 * already on screen; only a team past them is new.
+	 */
+	const drawnAllies = createMemo(
+		() =>
+			new Set([
+				...Array.from({ length: DEFAULT_TEAMS }, (_, ally) => ally),
+				...usedAllies(),
+			]),
+	)
 
 	const allyTeams = createMemo(() => {
 		const battle = battleOf()
@@ -266,7 +300,7 @@ export function Seat() {
 							<option value={String(ally)}>
 								{current() === String(ally)
 									? `Team ${ally + 1}`
-									: usedAllies().has(ally)
+									: drawnAllies().has(ally)
 										? `Join team ${ally + 1}`
 										: `New team ${ally + 1}`}
 							</option>
@@ -340,6 +374,12 @@ export function Seat() {
 									<span class='muted'>
 										queued {place()} of {battleOf()?.queue.length ?? 0}
 									</span>
+									<Show when={room.caps.ready}>
+										{preReady(
+											'Ready when seated',
+											'Ready you the moment the queue gives you a seat, this once',
+										)}
+									</Show>
 									<button
 										disabled={busy()}
 										title='Stay a spectator when a seat frees up'
@@ -357,15 +397,35 @@ export function Seat() {
 					{/* Ready is a thing you say to somebody; committing to play is a
 					    choice made beside giving the seat up. */}
 					<Show when={room.caps.ready}>
-						<button
-							class={seat()?.ready ? '' : 'primary'}
-							disabled={busy()}
-							onClick={() =>
-								act('ready', () => room.io.setReady(!(seat()?.ready ?? false)))
-							}
+						{/* Loud while the room needs it and quiet once given. During a
+						    game a ready would be wiped at its end, so what is offered
+						    is one that answers that reset instead. */}
+						<Show
+							when={!running()}
+							fallback={preReady(
+								'Ready for next game',
+								'Ready you again once, when this game ends',
+							)}
 						>
-							{seat()?.ready ? 'Ready' : 'Ready up'}
-						</button>
+							<Show when={tier() === 'waiting' && !readyNow()}>
+								<span class='muted'>Everyone else is ready</span>
+							</Show>
+							{/* A press flips it at once, drawn as on its way until the
+							    server answers; a second press changes the wish rather than
+							    waiting behind it. */}
+							<button
+								classList={{ primary: !readyNow(), pending: asked() !== null }}
+								title={
+									asked() === null ? undefined : 'On its way to the server'
+								}
+								disabled={busy()}
+								onClick={() =>
+									act('ready', () => room.io.setReady(!readyNow()))
+								}
+							>
+								{readyNow() ? 'Ready' : 'Ready up'}
+							</button>
+						</Show>
 					</Show>
 					<button disabled={busy()} title='Give the seat up' onClick={spectate}>
 						Spectate

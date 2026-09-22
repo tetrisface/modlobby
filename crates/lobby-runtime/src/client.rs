@@ -526,6 +526,10 @@ enum Command {
 		ready: bool,
 		reply: Reply<()>,
 	},
+	SetPreReady {
+		on: bool,
+		reply: Reply<()>,
+	},
 	SetSide {
 		side: u8,
 		reply: Reply<()>,
@@ -1052,6 +1056,12 @@ impl Client {
 	/// Says whether we are ready to start. Only a player can be.
 	pub async fn set_ready(&self, ready: bool) -> Result<(), ClientError> {
 		self.ask(|reply| Command::SetReady { ready, reply }).await
+	}
+
+	/// Arms a ready given in advance, or takes it back: it answers the
+	/// server's next automatic unready once, then is spent.
+	pub async fn set_pre_ready(&self, on: bool) -> Result<(), ClientError> {
+		self.ask(|reply| Command::SetPreReady { on, reply }).await
 	}
 
 	/// Picks a faction: 0 Armada, 1 Cortex, 2 Random, 3 Legion.
@@ -2875,6 +2885,10 @@ impl Runtime {
 				self.run_room(reply, |session| session.set_ready(ready))
 					.await;
 			}
+			Command::SetPreReady { on, reply } => {
+				self.run_room(reply, |session| session.set_pre_ready(on))
+					.await;
+			}
 			Command::SetSide { side, reply } => {
 				self.run_room(reply, |session| session.set_side(side)).await;
 			}
@@ -3351,6 +3365,7 @@ impl Runtime {
 				| Effect::ChannelsListed
 				| Effect::FriendsChanged
 				| Effect::BossChanged
+				| Effect::RoomChanged
 				| Effect::ServerSaid { .. }
 				| Effect::Motd { .. }
 				| Effect::Rung { .. }

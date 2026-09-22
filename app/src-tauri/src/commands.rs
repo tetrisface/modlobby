@@ -772,6 +772,14 @@ pub async fn set_ready(app: State<'_, App>, ready: bool) -> Result<()> {
 	Ok(())
 }
 
+/// Arms a ready given in advance, or takes it back: it answers the server's
+/// next automatic unready (seated from the queue, or a game ending) once.
+#[tauri::command]
+pub async fn set_pre_ready(app: State<'_, App>, on: bool) -> Result<()> {
+	app.client.set_pre_ready(on).await?;
+	Ok(())
+}
+
 /// Picks a faction: 0 Armada, 1 Cortex, 2 Random, 3 Legion.
 #[tauri::command]
 pub async fn set_side(app: State<'_, App>, side: u8) -> Result<()> {

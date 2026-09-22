@@ -74,6 +74,13 @@ pub struct MyBattle {
 	/// (`spring_out.ex` `do_join_battle`). Until then a tag arriving is the
 	/// room describing itself, not somebody changing it.
 	pub settled: bool,
+	/// A ready given in advance, armed until the server's next automatic
+	/// unready -- being seated from the queue, or a game ending -- which it
+	/// answers once. Never remembered past this room.
+	pub pre_ready: bool,
+	/// The ready our newest request asks for, while the server still shows
+	/// otherwise: on its way, and drawn as such.
+	pub ready_on_its_way: Option<bool>,
 	next_seq: u64,
 }
 
@@ -90,6 +97,8 @@ impl MyBattle {
 			vote: None,
 			history: Vec::new(),
 			settled: false,
+			pre_ready: false,
+			ready_on_its_way: None,
 			next_seq: 0,
 		}
 	}

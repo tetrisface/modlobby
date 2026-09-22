@@ -40,7 +40,7 @@ usage: prune-target.sh [-k N] [-i N] [-n] [-t DIR]
 
   -k, --keep N              hashes to keep per crate (default 3)
   -i, --keep-incremental N  incremental directories to keep per crate (default 5)
-  -n, --dry-run             report what would be removed, remove nothing
+  -n, --dry-run             report what would be removed and its size, remove nothing
   -t, --target DIR          target directory (default $CARGO_TARGET_DIR, else the
                             workspace target beside this script, whatever the cwd)
 USAGE
@@ -139,11 +139,16 @@ sort -u -o "$work/doomed" "$work/doomed"
 count=$(wc -l <"$work/doomed" | tr -d ' ')
 [ "$count" -gt 0 ] || { echo "prune-target: nothing superseded, $target_dir is already lean" && exit 0; }
 
-bytes=$("$du" -scb --files0-from=<(tr '\n' '\0' <"$work/doomed") 2>/dev/null | tail -1 | cut -f1)
-printf 'prune-target: %s entries, %.1f GB, keeping the %d newest hashes and %d incremental directories per crate\n' \
-	"$count" "$(echo "$bytes" | awk '{ print $1 / 1073741824 }')" "$keep" "$keep_incremental"
+printf 'prune-target: %s entries, keeping the %d newest hashes and %d incremental directories per crate\n' \
+	"$count" "$keep" "$keep_incremental"
 
-[ "$dry_run" -eq 0 ] || { echo "prune-target: dry run, nothing removed" && exit 0; }
+# Only a dry run measures: `du` stats every file under the doomed directories,
+# which on Windows takes longer than deleting them.
+if [ "$dry_run" -eq 1 ]; then
+	bytes=$("$du" -scb --files0-from=<(tr '\n' '\0' <"$work/doomed") 2>/dev/null | tail -1 | cut -f1)
+	printf 'prune-target: dry run, would free %.1f GB, nothing removed\n' "$(echo "$bytes" | awk '{ print $1 / 1073741824 }')"
+	exit 0
+fi
 
 tr '\n' '\0' <"$work/doomed" | xargs -0 rm -rf --
 echo "prune-target: removed"

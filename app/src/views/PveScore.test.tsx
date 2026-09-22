@@ -136,6 +136,8 @@ function enter(bots: BotView[], others: UserView[] = []) {
 		scriptTags: { 'game/modoptions/raptor_endless': '0' },
 		vote: null,
 		history: [],
+		preReady: false,
+		readyOnItsWay: null,
 	}
 	onlySession(next)
 }

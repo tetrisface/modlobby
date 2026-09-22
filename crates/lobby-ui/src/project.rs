@@ -267,7 +267,7 @@ impl Projector {
                 format!("cannot join {room}: {reason}"),
             )),
             Effect::FriendsChanged => out.push(Delta::Friends(FriendsView::from(state))),
-            Effect::BossChanged => {
+            Effect::BossChanged | Effect::RoomChanged => {
                 out.push(Delta::MyBattle(
                     state.my_battle.as_ref().map(MyBattleView::from),
                 ));

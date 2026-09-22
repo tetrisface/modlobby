@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
@@ -97,6 +97,9 @@ pub enum Effect {
 	FriendsChanged,
 	/// Who is bossing our room changed.
 	BossChanged,
+	/// Something else the room view shows about our own part in it changed:
+	/// a pre-ready armed, taken back or spent.
+	RoomChanged,
 	/// The server broadcast something to everyone.
 	ServerSaid {
 		text: String,
@@ -191,8 +194,30 @@ pub struct Session {
 	agreement: Vec<String>,
 	/// Script password of a `JOINBATTLE` the host has not answered yet.
 	pending_join: Option<String>,
-	/// The seat we hold in our room; `None` is a spectator.
+	/// The seat we hold in our room; `None` is a spectator. The server's word
+	/// on it, unless a request of ours it has not answered yet is still on its
+	/// way, in which case it is that request (see `in_flight`).
 	seat: Option<Seat>,
+	/// The statuses we sent that the server has not answered yet, oldest
+	/// first.
+	///
+	/// teiserver answers each one, in order, with the status it kept
+	/// (`spring_in.ex` `MYBATTLESTATUS`), and a status about us that arrives
+	/// meanwhile is recorded like any other. But our messages are whole
+	/// statuses, and one still on its way will be applied after whatever just
+	/// arrived; building the next one from that arrival would retract a
+	/// request the server has not seen yet. On a join that is the seat
+	/// itself: our spectator answer to `REQUESTBATTLESTATUS` echoes back after
+	/// the auto-seat's `take_seat`, and the content check's message in
+	/// between would otherwise say spectator.
+	///
+	/// An answer is matched by what it says (`Seat::answers`), against the
+	/// newest request it fits: every request before that one was answered
+	/// already or replaced before it left (`battle_status` coalesces), and
+	/// the server now holds what it asked for. One that fits nothing answers
+	/// the oldest, which the server kept its own way -- a seat refused in a
+	/// full room, say.
+	in_flight: VecDeque<Option<Seat>>,
 	/// A `!privatehost` we asked for and the password it came back with.
 	private_host: Option<String>,
 	/// The spare autohost we are joining to make it ours; claimed on arrival.
@@ -260,6 +285,37 @@ pub struct Seat {
 	pub ally_team: u8,
 	pub ready: bool,
 	pub side: u8,
+	/// The host's to give (`!force <name> bonus`); kept so what we send back
+	/// carries its value rather than ours.
+	pub handicap: u8,
+}
+
+impl Seat {
+	/// Our seat as the server has it, or `None` for a spectator.
+	fn from_status(status: &spring_protocol::BattleStatus) -> Option<Self> {
+		status.player.then_some(Self {
+			team: status.team,
+			ally_team: status.ally_team,
+			ready: status.ready,
+			side: status.side,
+			handicap: status.handicap,
+		})
+	}
+
+	/// Whether the server saying `said` answers our asking for `asked`. It
+	/// keeps its own team number and bonus (`spring_in.ex` takes only ready,
+	/// ally team, player, sync and side from us), so only those are compared.
+	fn answers(asked: Option<Self>, said: Option<Self>) -> bool {
+		match (asked, said) {
+			(None, None) => true,
+			(Some(asked), Some(said)) => {
+				asked.ally_team == said.ally_team
+					&& asked.ready == said.ready
+					&& asked.side == said.side
+			}
+			_ => false,
+		}
+	}
 }
 
 impl Session {
@@ -277,6 +333,7 @@ impl Session {
 			collecting_requests: None,
 			collecting_ignored: None,
 			seat: None,
+			in_flight: VecDeque::new(),
 			private_host: None,
 			hosting: None,
 			synced: false,
@@ -376,6 +433,7 @@ impl Session {
 			ally_team: 0,
 			ready: false,
 			side: self.seat.map_or(0, |seat| seat.side),
+			handicap: 0,
 		});
 		effects.push(self.battle_status());
 		let lines = [format!("!boss {me}"), "!preset custom".to_owned()];
@@ -435,8 +493,11 @@ impl Session {
 			ally_team,
 			ready: self.seat.is_some_and(|seat| seat.ready),
 			side: self.seat.map_or(0, |seat| seat.side),
+			handicap: self.seat.map_or(0, |seat| seat.handicap),
 		});
-		Ok(vec![self.battle_status()])
+		let mut effects = vec![self.battle_status()];
+		effects.extend(self.wish());
+		Ok(effects)
 	}
 
 	/// Says we are ready, or not. Only a player can be either.
@@ -446,7 +507,9 @@ impl Session {
 			return Ok(vec![]);
 		}
 		seat.ready = ready;
-		Ok(vec![self.battle_status()])
+		let mut effects = vec![self.battle_status()];
+		effects.extend(self.wish());
+		Ok(effects)
 	}
 
 	/// Picks a faction: 0 Armada, 1 Cortex, 2 Random, 3 Legion.
@@ -459,13 +522,106 @@ impl Session {
 		Ok(vec![self.battle_status()])
 	}
 
-	/// Goes back to spectating; always allowed.
+	/// Goes back to spectating; always allowed. A pre-ready goes with the
+	/// seat: whoever stands up has stopped planning to play.
 	pub fn release_seat(&mut self) -> Vec<Effect> {
 		self.seat = None;
-		if self.state.my_battle.is_none() {
+		let Some(my) = self.state.my_battle.as_mut() else {
 			return vec![];
+		};
+		let disarmed = std::mem::take(&mut my.pre_ready);
+		let mut effects = vec![self.battle_status()];
+		effects.extend(self.wish());
+		if disarmed && !effects.contains(&Effect::RoomChanged) {
+			effects.push(Effect::RoomChanged);
 		}
-		vec![self.battle_status()]
+		effects
+	}
+
+	/// Arms a ready given in advance, or takes it back.
+	///
+	/// The next time the server unreadies us of its own accord -- seating us
+	/// from the join queue, or ending a game -- it is answered with one ready,
+	/// and then it is spent. The server's unready is taken either way; this
+	/// only answers it. Never remembered past the room.
+	pub fn set_pre_ready(&mut self, on: bool) -> Result<Vec<Effect>, SeatError> {
+		let my = self.state.my_battle.as_mut().ok_or(SeatError::NotInARoom)?;
+		if my.pre_ready == on {
+			return Ok(vec![]);
+		}
+		my.pre_ready = on;
+		Ok(vec![Effect::RoomChanged])
+	}
+
+	/// The server's word on our own status, taken as it stands.
+	///
+	/// It answers a request of ours still in flight, when there is one (see
+	/// `in_flight`). While a newer one is still on its way, that request stays
+	/// what we build from, since the server will apply it after this. Once
+	/// none is, this is our seat.
+	fn our_status(&mut self, status: &spring_protocol::BattleStatus) -> Vec<Effect> {
+		let said = Seat::from_status(status);
+		let answer = !self.in_flight.is_empty();
+		if answer {
+			let upto = self
+				.in_flight
+				.iter()
+				.rposition(|&asked| Seat::answers(asked, said))
+				.unwrap_or(0);
+			self.in_flight.drain(..=upto);
+		}
+		let mut effects: Vec<Effect> = self.wish().into_iter().collect();
+		if !self.in_flight.is_empty() {
+			return effects;
+		}
+		self.seat = said;
+		// Our own request answered is nothing to answer back.
+		if answer {
+			return effects;
+		}
+		let Some(seat) = self.seat.filter(|seat| !seat.ready) else {
+			return effects;
+		};
+		let Some(my) = self.state.my_battle.as_mut().filter(|my| my.pre_ready) else {
+			return effects;
+		};
+		my.pre_ready = false;
+		self.seat = Some(Seat {
+			ready: true,
+			..seat
+		});
+		effects.push(self.battle_status());
+		effects.extend(self.wish());
+		if !effects.contains(&Effect::RoomChanged) {
+			effects.push(Effect::RoomChanged);
+		}
+		effects
+	}
+
+	/// Keeps the room view's `ready_on_its_way` in step: the ready our newest
+	/// request asks for, while the server still shows otherwise. The page draws
+	/// it at once, as on its way; the server's word stays what is true.
+	fn wish(&mut self) -> Option<Effect> {
+		let asked = self
+			.in_flight
+			.back()
+			.copied()
+			.flatten()
+			.map(|seat| seat.ready);
+		let me = self.state.me.as_deref().unwrap_or_default();
+		let shown = self
+			.state
+			.users
+			.get(me)
+			.and_then(|user| user.battle_status)
+			.is_some_and(|status| status.player && status.ready);
+		let on_its_way = asked.filter(|&ready| ready != shown);
+		let my = self.state.my_battle.as_mut()?;
+		if my.ready_on_its_way == on_its_way {
+			return None;
+		}
+		my.ready_on_its_way = on_its_way;
+		Some(Effect::RoomChanged)
 	}
 
 	pub fn seat(&self) -> Option<Seat> {
@@ -690,7 +846,8 @@ impl Session {
 		self.synced
 	}
 
-	fn battle_status(&self) -> Effect {
+	fn battle_status(&mut self) -> Effect {
+		self.in_flight.push_back(self.seat);
 		let sync = if self.synced {
 			Sync::Synced
 		} else {
@@ -699,16 +856,21 @@ impl Session {
 		let status = match self.seat {
 			Some(seat) => MyBattleStatus::player(sync, seat.team, seat.ally_team)
 				.ready(seat.ready)
-				.side(seat.side),
+				.side(seat.side)
+				.handicap(seat.handicap),
 			None => MyBattleStatus::spectator(sync),
 		};
-		Effect::Send(Envelope::queue(Area::BattleStatus, status.line()))
+		// Coalesced: a status still waiting for the flood window
+		// (`policy.rs`, five in any eight seconds, under SPADS's status-flood
+		// kick) is replaced by the newest, so rapid changes send only the last.
+		Effect::Send(Envelope::coalesce(Area::BattleStatus, "me", status.line()))
 	}
 
 	pub fn leave_battle(&mut self) -> Vec<Effect> {
 		self.pending_join = None;
 		self.hosting = None;
 		self.seat = None;
+		self.in_flight.clear();
 		let Some(my) = self.state.my_battle.take() else {
 			return vec![];
 		};
@@ -884,6 +1046,8 @@ impl Session {
 				if me && state.my_battle.as_ref().is_some_and(|my| my.id == id) {
 					state.my_battle = None;
 					state.forget_room_details(id);
+					self.seat = None;
+					self.in_flight.clear();
 					return vec![Effect::LeftBattle { id }];
 				}
 				vec![]
@@ -892,13 +1056,18 @@ impl Session {
 				if let Some(user) = state.users.get_mut(&name) {
 					user.battle_status = Some(status);
 				}
-				vec![]
+				let ours = state.my_battle.is_some() && state.me.as_deref() == Some(name.as_str());
+				if !ours {
+					return vec![];
+				}
+				self.our_status(&status)
 			}
 			E::JoinBattle { id, game_hash } => {
 				// The room's word on its game, which a copy is held to.
 				tracing::info!(id, game_hash, "joined a room");
 				let script_password = self.pending_join.take().unwrap_or_default();
 				state.my_battle = Some(MyBattle::new(id, game_hash, script_password));
+				self.in_flight.clear();
 				let mut effects = vec![Effect::Joined { id }];
 				effects.extend(self.claim_room(id));
 				// Already under way before we arrived: worth saying, not worth
@@ -1009,6 +1178,7 @@ impl Session {
 				};
 				state.forget_room_details(my.id);
 				self.seat = None;
+				self.in_flight.clear();
 				vec![
 					Effect::Notice("you were removed from the room".into()),
 					Effect::LeftBattle { id: my.id },
@@ -1204,10 +1374,23 @@ impl Session {
 				vec![]
 			}
 			E::BattleQueue { id, names } => {
+				// No longer queued and still without a seat: we left the queue,
+				// by button or by `$leaveq` typed, and a ready given for it goes
+				// with it. The status seating us arrives before this update
+				// (`consul_server.ex` `player_count_changed`), so a seating has
+				// already found it.
+				let me = state.me.as_deref().unwrap_or_default();
+				let left = self.seat.is_none() && !names.iter().any(|name| name == me);
 				if let Some(battle) = state.battles.get_mut(&id) {
 					battle.queue = names;
 				}
-				vec![]
+				match state.my_battle.as_mut() {
+					Some(my) if my.id == id && left && my.pre_ready => {
+						my.pre_ready = false;
+						vec![Effect::RoomChanged]
+					}
+					_ => vec![],
+				}
 			}
 			E::Redirect { host, port } => vec![Effect::Redirect { host, port }],
 			E::Disconnect { reason } => {
@@ -2059,7 +2242,14 @@ mod tests {
 	}
 
 	fn sent_status(effects: &[Effect]) -> spring_protocol::BattleStatus {
-		let [Effect::Send(env)] = effects else {
+		let sends: Vec<_> = effects
+			.iter()
+			.filter_map(|effect| match effect {
+				Effect::Send(env) => Some(env),
+				_ => None,
+			})
+			.collect();
+		let [env] = sends[..] else {
 			panic!("expected one status, got {effects:?}")
 		};
 		let rest = env
@@ -2965,5 +3155,230 @@ mod tests {
 				flood: true
 			}]
 		);
+	}
+
+	/// teiserver telling the room, us included, what our status now is.
+	fn told(status: MyBattleStatus) -> String {
+		format!("CLIENTBATTLESTATUS me {} 0", status.bits())
+	}
+
+	fn seated(ally_team: u8, ready: bool) -> MyBattleStatus {
+		MyBattleStatus::player(Sync::Synced, 0, ally_team).ready(ready)
+	}
+
+	fn watching() -> MyBattleStatus {
+		MyBattleStatus::spectator(Sync::Synced)
+	}
+
+	/// Every status we sent among `effects`, in order.
+	fn statuses(effects: &[Effect]) -> Vec<BattleStatus> {
+		effects
+			.iter()
+			.filter_map(|effect| match effect {
+				Effect::Send(env) => env.line.strip_prefix("MYBATTLESTATUS "),
+				_ => None,
+			})
+			.map(|rest| BattleStatus::from_bits(rest.split(' ').next().unwrap().parse().unwrap()))
+			.collect()
+	}
+
+	fn pre_ready(s: &Session) -> bool {
+		s.state.my_battle.as_ref().is_some_and(|my| my.pre_ready)
+	}
+
+	#[test]
+	fn a_stale_answer_does_not_retract_a_seat_still_on_its_way() {
+		let mut s = in_a_public_room();
+		// The join's answer to the status request, then the auto-seat.
+		feed(&mut s, &["REQUESTBATTLESTATUS"]);
+		s.take_seat(0, 1).unwrap();
+
+		// The first answer lands: us watching, from before the seat. Taken,
+		// and the content check reporting in meanwhile still asks for the seat.
+		feed(&mut s, &[&told(watching())]);
+		let sent = sent_status(&s.set_synced(true));
+		assert!(sent.player);
+		assert_eq!(sent.ally_team, 1);
+
+		// Once everything is answered, the seat is the server's.
+		feed(&mut s, &[&told(seated(1, false)), &told(seated(1, false))]);
+		assert_eq!(s.seat().map(|seat| seat.ally_team), Some(1));
+	}
+
+	#[test]
+	fn a_refused_seat_leaves_us_watching() {
+		let mut s = in_a_public_room();
+		s.take_seat(0, 0).unwrap();
+		// A full room keeps us a spectator, and queues us instead.
+		feed(&mut s, &[&told(watching())]);
+		assert_eq!(s.seat(), None);
+		assert!(matches!(s.set_ready(true), Err(SeatError::Spectating)));
+	}
+
+	#[test]
+	fn a_seat_the_server_gives_is_ours_to_ready() {
+		let mut s = in_a_public_room();
+		feed(&mut s, &[&told(seated(2, false))]);
+		let sent = sent_status(&s.set_ready(true).unwrap());
+		assert!(sent.player && sent.ready);
+		assert_eq!(sent.ally_team, 2);
+	}
+
+	#[test]
+	fn the_server_unreadying_us_is_taken() {
+		let mut s = in_a_public_room();
+		s.take_seat(0, 0).unwrap();
+		s.set_ready(true).unwrap();
+		feed(&mut s, &[&told(seated(0, false)), &told(seated(0, true))]);
+
+		// The game ends and the server unreadies everyone. Readying again is a
+		// change, so it goes out.
+		feed(&mut s, &[&told(seated(0, false))]);
+		assert!(sent_status(&s.set_ready(true).unwrap()).ready);
+	}
+
+	#[test]
+	fn a_bonus_the_host_gave_goes_back_out_with_us() {
+		let mut s = in_a_public_room();
+		feed(&mut s, &[&told(seated(0, false).handicap(20))]);
+		assert_eq!(sent_status(&s.set_ready(true).unwrap()).handicap, 20);
+	}
+
+	#[test]
+	fn a_ready_given_in_the_queue_answers_the_seat_once() {
+		let mut s = in_a_public_room();
+		feed(&mut s, &["s.battle.queue_status 3\tme"]);
+		assert_eq!(s.set_pre_ready(true).unwrap(), [Effect::RoomChanged]);
+
+		// The consul seats us, unready. That is taken, and answered once.
+		let effects = feed(&mut s, &[&told(seated(1, false))]);
+		let sent = statuses(&effects);
+		assert_eq!(sent.len(), 1, "{effects:?}");
+		assert!(sent[0].player && sent[0].ready);
+		assert_eq!(sent[0].ally_team, 1);
+		assert!(effects.contains(&Effect::RoomChanged));
+		assert!(!pre_ready(&s));
+
+		// Its answer, then the queue update that follows: nothing more to send.
+		assert!(
+			statuses(&feed(
+				&mut s,
+				&[&told(seated(1, true)), "s.battle.queue_status 3"]
+			))
+			.is_empty()
+		);
+	}
+
+	#[test]
+	fn seated_from_the_queue_without_a_ready_given_is_only_seated() {
+		let mut s = in_a_public_room();
+		feed(&mut s, &["s.battle.queue_status 3\tme"]);
+		assert!(statuses(&feed(&mut s, &[&told(seated(1, false))])).is_empty());
+		assert_eq!(s.seat().map(|seat| seat.ready), Some(false));
+	}
+
+	#[test]
+	fn a_ready_for_the_next_game_answers_its_end_once() {
+		let mut s = in_a_public_room();
+		// Seated and ready while the game runs.
+		feed(&mut s, &[&told(seated(0, true))]);
+		s.set_pre_ready(true).unwrap();
+
+		let reset = statuses(&feed(&mut s, &[&told(seated(0, false))]));
+		assert!(reset.first().is_some_and(|status| status.ready));
+
+		// Its answer, then the next game's end: spent, so taken as it stands.
+		feed(&mut s, &[&told(seated(0, true))]);
+		assert!(statuses(&feed(&mut s, &[&told(seated(0, false))])).is_empty());
+	}
+
+	#[test]
+	fn leaving_the_queue_or_the_seat_takes_a_ready_given_back() {
+		let mut s = in_a_public_room();
+		feed(&mut s, &["s.battle.queue_status 3\tme"]);
+		s.set_pre_ready(true).unwrap();
+		assert_eq!(
+			feed(&mut s, &["s.battle.queue_status 3"]),
+			[Effect::RoomChanged]
+		);
+		assert!(!pre_ready(&s));
+
+		feed(&mut s, &[&told(seated(0, false))]);
+		s.set_pre_ready(true).unwrap();
+		assert!(s.release_seat().contains(&Effect::RoomChanged));
+		assert!(!pre_ready(&s));
+	}
+
+	#[test]
+	fn our_own_seat_answered_is_no_reason_to_ready() {
+		let mut s = in_a_public_room();
+		feed(&mut s, &["s.battle.queue_status 3\tme"]);
+		s.set_pre_ready(true).unwrap();
+		s.take_seat(0, 0).unwrap();
+		assert!(statuses(&feed(&mut s, &[&told(seated(0, false))])).is_empty());
+		assert!(pre_ready(&s));
+	}
+
+	#[test]
+	fn our_status_waits_for_the_flood_window_as_one_line() {
+		let mut s = in_a_public_room();
+		let effects = s.take_seat(0, 0).unwrap();
+		let Some(Effect::Send(env)) = effects.first() else {
+			panic!("{effects:?}")
+		};
+		// Coalesced: a newer status replaces one still waiting to leave.
+		assert_eq!(
+			env.mode,
+			spring_protocol::policy::Mode::Coalesce("me".into())
+		);
+	}
+
+	#[test]
+	fn requests_replaced_before_they_left_do_not_hold_the_seat() {
+		let mut s = in_a_public_room();
+		feed(&mut s, &[&told(seated(0, false))]);
+		// Clicked fast: two go out, the three after them wait and replace
+		// each other, so only the last of those leaves.
+		for ready in [true, false, true, false, true] {
+			s.set_ready(ready).unwrap();
+		}
+		feed(
+			&mut s,
+			&[
+				&told(seated(0, true)),
+				&told(seated(0, false)),
+				&told(seated(0, true)),
+			],
+		);
+
+		// The game ends and the server unreadies us: taken, and readying
+		// again goes out rather than being mistaken for a request in flight.
+		feed(&mut s, &[&told(seated(0, false))]);
+		assert!(sent_status(&s.set_ready(true).unwrap()).ready);
+	}
+
+	#[test]
+	fn a_ready_on_its_way_is_in_the_room_view_until_answered() {
+		let mut s = in_a_public_room();
+		// Listed, as we always are, so what the server shows for us is known.
+		feed(
+			&mut s,
+			&["ADDUSER me EU 1 modlobby", &told(seated(0, false))],
+		);
+		let on_its_way = |s: &Session| {
+			s.state
+				.my_battle
+				.as_ref()
+				.and_then(|my| my.ready_on_its_way)
+		};
+
+		assert!(s.set_ready(true).unwrap().contains(&Effect::RoomChanged));
+		assert_eq!(on_its_way(&s), Some(true));
+		// Changing the faction meanwhile carries the same wish, and says nothing new.
+		assert!(!s.set_side(1).unwrap().contains(&Effect::RoomChanged));
+
+		// Shown ready once the server answers, so no longer on its way.
+		assert!(feed(&mut s, &[&told(seated(0, true))]).contains(&Effect::RoomChanged));
+		assert_eq!(on_its_way(&s), None);
 	}
 }

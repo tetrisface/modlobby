@@ -68,6 +68,7 @@ import { PveScore } from './PveScore'
 import { RoomTitle } from './RoomTitle'
 import { useRoom, type RoomModel } from './room/model'
 import { WatcherStack } from './room/Watchers'
+import { readiness } from './room/readiness'
 import { dragging } from '../lib/drag'
 import { Seat, canAddAi, showAddAi, sitOn } from './Seat'
 import { movable, moveTo, setBonus, type Target } from './room/move'
@@ -138,38 +139,54 @@ export function Room() {
 	// drawing it beats a silent refusal.
 	const canRename = () => standing() !== null
 
+	/** How much readying up asks of us here; see `readiness`. */
+	const tier = createMemo(() => readiness(room))
+
 	/**
 	 * The start button, by standing. The boss says `!start`; a player calls
 	 * the vote by name, as Chobby does (`Interface:StartBattle`), so the room
 	 * reads what was asked rather than an auto-callvote's rewording of it.
-	 * A player who has not readied up is asked to do that first: the vote
-	 * would otherwise wait on them.
+	 *
+	 * Anyone seated and not ready, the boss included, is asked to ready up
+	 * first: SPADS refuses a start, and a start vote, while a player is not.
+	 * `ready` marks the one action that works without the game here, since
+	 * readying while downloading is allowed.
 	 */
 	const startAction = createMemo(() => {
 		if (!room.caps.plays) return null
+		const why = tier()
+		if (why === 'asked' || why === 'waiting')
+			return {
+				label: 'Ready up',
+				title:
+					why === 'waiting'
+						? 'Everyone else is ready'
+						: 'Ready up, then start or vote to start',
+				run: () => say(room.io.setReady(true)),
+				ready: true,
+				waiting: why === 'waiting',
+				// Asked for already: on its way, and a second press says nothing new.
+				pending: room.my()?.readyOnItsWay === true,
+			}
 		switch (standing()) {
 			case 'boss':
 				return {
 					label: 'Start the game',
 					title: '!start',
 					run: () => send('!start'),
+					ready: false,
+					waiting: false,
+					pending: false,
 				}
-			case 'player': {
-				const me = room.me()
-				const ready =
-					me !== null && (room.users()[me]?.battleStatus?.ready ?? false)
-				if (room.caps.ready && !ready)
-					return {
-						label: 'Ready up',
-						title: 'Ready up, then vote to start',
-						run: () => say(room.io.setReady(true)),
-					}
+			case 'player':
 				return {
 					label: 'Vote to start',
 					title: '!cv start',
 					run: () => send('!cv start'),
+					ready: false,
+					waiting: false,
+					pending: false,
 				}
-			}
 			default:
 				return null
 		}
@@ -675,7 +692,14 @@ export function Room() {
 									{(action) => (
 										<button
 											class='primary'
-											disabled={missingParts(room).length > 0}
+											classList={{
+												waiting: action().waiting && !action().pending,
+												pending: action().pending,
+											}}
+											disabled={
+												action().pending ||
+												(!action().ready && missingParts(room).length > 0)
+											}
 											title={action().title}
 											onClick={() => void action().run()}
 										>
@@ -789,13 +813,15 @@ export function Room() {
 																		: undefined
 																}
 																onToggleReady={
-																	user.name === room.me() && room.caps.ready
+																	user.name === room.me() && tier() !== 'none'
 																		? () =>
 																				say(
 																					room.io.setReady(
 																						!(
+																							room.my()?.readyOnItsWay ??
 																							room.users()[user.name]
-																								?.battleStatus?.ready ?? false
+																								?.battleStatus?.ready ??
+																							false
 																						),
 																					),
 																				)
