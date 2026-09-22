@@ -90,6 +90,10 @@ async fn a_guest_logs_in_joins_talks_and_hears_the_game_start() {
 		},
 		None,
 	);
+	// The start signal is under test, not the engine: this machine's own
+	// installs would otherwise start one, or fetch the room's content into them.
+	client.set_auto_launch(false).await.unwrap();
+	client.set_auto_download(false).await.unwrap();
 	let endpoint = Endpoint {
 		host: "127.0.0.1".into(),
 		ports: vec![port],
