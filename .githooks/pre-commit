@@ -1,0 +1,15 @@
+#!/bin/sh
+# Formats what is being committed. A `just fmt` after the commit only fixes the
+# working tree, which is what pre-push checks, so the unformatted commit would
+# pass that check and fail ci. Enabled by `just hooks`; `--no-verify` skips it.
+# A file that also has unstaged edits is left as staged: restaging it would
+# commit those edits too.
+partial=$(git diff --name-only)
+just fmt >/dev/null || exit 1
+git diff --cached --name-only --diff-filter=ACMR | while read -r file; do
+	if printf '%s\n' "$partial" | grep -Fxq -- "$file"; then
+		echo "pre-commit: $file is staged in part, its formatting is left unstaged"
+	else
+		git add -- "$file"
+	fi
+done

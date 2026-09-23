@@ -623,9 +623,8 @@ pub async fn springfiles(
 	report: impl FnMut(u64, u64),
 ) -> Result<Fetched, String> {
 	let failed = |reason: String| format!("springfiles: {reason}");
-	let url =
-		reqwest::Url::parse_with_params(search, [("springname", name), ("category", "game")])
-			.map_err(|err| failed(err.to_string()))?;
+	let url = reqwest::Url::parse_with_params(search, [("springname", name), ("category", "game")])
+		.map_err(|err| failed(err.to_string()))?;
 	let body = async { http.get(url).send().await?.error_for_status()?.text().await }
 		.await
 		.map_err(|err| failed(err.to_string()))?;
@@ -1266,7 +1265,8 @@ mod tests {
 			parse_springfiles(body, "Vroom RTS v0.1.9.3.2"),
 			Some(Asset {
 				name: "vroom_rts-v0.1.9.3.2.sdz".into(),
-				url: "https://springfiles.springrts.com/files/games/vroom_rts-v0.1.9.3.2.sdz".into(),
+				url: "https://springfiles.springrts.com/files/games/vroom_rts-v0.1.9.3.2.sdz"
+					.into(),
 				size: 96_006_889,
 				digest: None,
 			})
