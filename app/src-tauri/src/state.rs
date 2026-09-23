@@ -252,19 +252,14 @@ impl App {
 		}
 	}
 
-	/// BAR's news, newest first.
-	///
-	/// Loaded once per run, from the disk cache while that is inside the hour
-	/// it is trusted for. An empty answer — offline, or a first run with no
-	/// network — is not kept, so the next ask tries again rather than leaving
-	/// the whole session with an empty page.
 	/// A game from outside the room's rapid (`content::sources`), for the
 	/// runtime's [`lobby_runtime::GameSources`]. Before rapid only the
 	/// player's overrides answer; after it, modlobby's list and then the hub,
-	/// whose copy is asked for again once it is a day old. BAR's own names
-	/// are never looked for anywhere but BAR's rapid. A list's rapid entry is
-	/// fetched by the runtime's `rapid`, and forge answers are kept under the
-	/// config's `cache/forge/`.
+	/// whose copy is asked for again once it is a day old, and last
+	/// springfiles. BAR's own names are never looked for anywhere but BAR's
+	/// rapid, and springfiles, asked by name, only once BAR's names are known.
+	/// A list's rapid entry is fetched by the runtime's `rapid`, and forge
+	/// answers are kept under the config's `cache/forge/`.
 	pub async fn game_from_sources(
 		&self,
 		ask: lobby_runtime::GameAsk,
@@ -272,14 +267,11 @@ impl App {
 		rapid: lobby_runtime::RapidRun,
 	) -> Option<Result<String, String>> {
 		use content::sources;
-		if self
-			.rapid
-			.bar_names()
-			.await
-			.is_ok_and(|names| names.contains(&ask.name))
-		{
+		let bars = self.rapid.bar_names().await;
+		if bars.as_ref().is_ok_and(|names| names.contains(&ask.name)) {
 			return None;
 		}
+		let springfiles_too = ask.after_rapid && bars.is_ok();
 		let found = if ask.after_rapid {
 			let cache = self.settings.dir().join("cache");
 			let now = std::time::SystemTime::now();
@@ -302,7 +294,7 @@ impl App {
 				.collect();
 			sources::resolve(&ask.name, &overrides, &[], &[])
 		};
-		if found.is_empty() {
+		if found.is_empty() && !springfiles_too {
 			return None;
 		}
 		let games = ask.dirs.write.join("games");
@@ -324,24 +316,48 @@ impl App {
 					.ok_or_else(|| format!("{name} is not where rapid puts it"))
 			})
 		};
-		let fetched = sources::fetch(
+		let report = |current, total| {
+			let _ = progress.try_send(recoil::Progress { current, total });
+		};
+		let springfiles = || {
+			sources::springfiles(
+				&self.http,
+				recoil::SPRINGFILES_SEARCH_URL,
+				&ask.name,
+				&games,
+				report,
+			)
+		};
+		let listed = sources::fetch(
 			&self.http,
 			&api,
 			&ask.name,
 			&found,
 			&games,
 			&from_rapid,
-			|current, total| {
-				let _ = progress.try_send(recoil::Progress { current, total });
-			},
+			report,
 		)
-		.await?;
+		.await;
+		let fetched = match listed {
+			Some(Ok(fetched)) => Ok(fetched),
+			Some(Err(listed)) if springfiles_too => springfiles()
+				.await
+				.map_err(|more| format!("{listed}; {more}")),
+			None if springfiles_too => springfiles().await,
+			other => other?,
+		};
 		Some(match fetched {
 			Ok(fetched) => hold_to_room(fetched, ask).await,
 			Err(reason) => Err(reason),
 		})
 	}
 
+	/// BAR's news, newest first.
+	///
+	/// Loaded once per run, from the disk cache while that is inside the hour
+	/// it is trusted for. An empty answer — offline, or a first run with no
+	/// network — is not kept, so the next ask tries again rather than leaving
+	/// the whole session with an empty page.
 	pub async fn news(&self) -> Vec<news::NewsItem> {
 		let mut held = self.news.lock().await;
 		if let Some(items) = held.as_ref() {

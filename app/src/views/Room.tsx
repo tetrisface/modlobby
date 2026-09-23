@@ -40,7 +40,7 @@ import { api, describeError } from '../ipc/client'
 import { layoutLabel } from '../lib/battles'
 import { boxSignature, centre, outline } from '../lib/boxes'
 import { downloadFraction } from '../lib/download'
-import { TILES } from '../lib/maps'
+import { TILES, mapFacts, mapSiteName } from '../lib/maps'
 import {
 	type Roster,
 	arrange,
@@ -472,6 +472,9 @@ export function Room() {
 		(game) => (game === '' ? null : api.newerGame(game).catch(() => null)),
 	)
 
+	/** BAR's map index, for the name its website lists the room's map under. */
+	const [mapIndexFacts] = createResource(mapFacts)
+
 	/** Takes it, and fetches it: the offer is to be playing on it. */
 	async function upgradeGame(version: string) {
 		await picked((name) => room.io.sayBattle(`!game ${name}`), 'game', version)
@@ -584,7 +587,12 @@ export function Room() {
 									>
 										{b().mapName || 'choose one'}
 									</b>
-									<Show when={b().mapName}>
+									<Show
+										when={
+											b().mapName &&
+											mapSiteName(b().mapName, mapIndexFacts() ?? {})
+										}
+									>
 										{(name) => (
 											<button
 												class='card-act'

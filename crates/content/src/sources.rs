@@ -7,7 +7,8 @@
 //! so what modlobby fetches is modlobby's to govern: an entry the hub adds
 //! or changes cannot redirect a game we already know. All three use the
 //! hub's shape (`{kind: rapid|url|github|…, value, asset?, filename?}`), so
-//! a developer learns one way to say where their game is.
+//! a developer learns one way to say where their game is. When none of
+//! them has it, springfiles is asked by name ([`springfiles`]).
 //!
 //! The hub says where a game lives, never which file is which version, so
 //! matching a room's version to a release is [`pick`]'s job. Everything here
@@ -577,6 +578,68 @@ async fn names_itself(http: &reqwest::Client, asset: &Asset, name: &str) -> Resu
 		)),
 		_ => Ok(()),
 	}
+}
+
+/// The file springfiles' search (`json.php`, pr-downloader's default) lists
+/// as the game named exactly `name`, from its first mirror served over
+/// https, with the size it gave. An entry this cannot read is skipped, not
+/// the answer.
+pub fn parse_springfiles(body: &str, name: &str) -> Option<Asset> {
+	#[derive(Deserialize)]
+	struct Listed {
+		springname: String,
+		category: String,
+		filename: String,
+		size: u64,
+		mirrors: Vec<String>,
+	}
+	let listed: Vec<Value> = serde_json::from_str(body).unwrap_or_default();
+	listed
+		.into_iter()
+		.filter_map(|one| serde_json::from_value::<Listed>(one).ok())
+		.filter(|file| file.category == "game" && file.springname == name)
+		.find_map(|file| {
+			let url = file
+				.mirrors
+				.into_iter()
+				.find(|mirror| mirror.starts_with("https://"))?;
+			Some(Asset {
+				name: file.filename,
+				url,
+				size: file.size,
+				digest: None,
+			})
+		})
+}
+
+/// `name` from springfiles' search at `search`: nobody's server, and where
+/// Recoil's games have been uploaded for fifteen years. It is asked by name,
+/// so the caller asks only for a name known not to be BAR's.
+pub async fn springfiles(
+	http: &reqwest::Client,
+	search: &str,
+	name: &str,
+	games: &Path,
+	report: impl FnMut(u64, u64),
+) -> Result<Fetched, String> {
+	let failed = |reason: String| format!("springfiles: {reason}");
+	let url =
+		reqwest::Url::parse_with_params(search, [("springname", name), ("category", "game")])
+			.map_err(|err| failed(err.to_string()))?;
+	let body = async { http.get(url).send().await?.error_for_status()?.text().await }
+		.await
+		.map_err(|err| failed(err.to_string()))?;
+	let asset =
+		parse_springfiles(&body, name).ok_or_else(|| format!("springfiles has no {name}"))?;
+	names_itself(http, &asset, name).await.map_err(failed)?;
+	let path = install(http, &asset, games, report)
+		.await
+		.map_err(|err| failed(err.to_string()))?;
+	Ok(Fetched {
+		from: format!("springfiles, {}", asset.name),
+		path,
+		built: false,
+	})
 }
 
 /// Where a game that is not the room's copy is kept: out of every folder
@@ -1188,6 +1251,29 @@ mod tests {
 			Some("https://gitlab.com/direct")
 		);
 		assert!(parse_gitlab("{}").is_empty());
+	}
+
+	/// springfiles' answer as it gave it for Vroom RTS on 2026-09-23, beside
+	/// a map of that name, a plain-http mirror and an entry it cannot read.
+	#[test]
+	fn springfiles_gives_the_game_of_exactly_that_name_from_an_https_mirror() {
+		let body = r#"[
+			{"springname": "Vroom RTS v0.1.9.3.2", "category": "map", "filename": "vroom.sd7", "size": 1, "mirrors": ["https://springfiles.springrts.com/files/maps/vroom.sd7"]},
+			{"springname": "Vroom RTS v0.1.9.3.2", "category": "game", "size": null},
+			{"mainQueryTime": 0.04, "fid": 38142, "name": "Vroom RTS", "filename": "vroom_rts-v0.1.9.3.2.sdz", "path": "games", "md5": "4bcad4ca513da1cd9ce1124d4e573653", "version": "v0.1.9.3.2", "category": "game", "size": 96006889, "keywords": null, "mirrors": ["http://mirror.example/vroom_rts-v0.1.9.3.2.sdz", "https://springfiles.springrts.com/files/games/vroom_rts-v0.1.9.3.2.sdz"], "tags": [], "springname": "Vroom RTS v0.1.9.3.2"}
+		]"#;
+		assert_eq!(
+			parse_springfiles(body, "Vroom RTS v0.1.9.3.2"),
+			Some(Asset {
+				name: "vroom_rts-v0.1.9.3.2.sdz".into(),
+				url: "https://springfiles.springrts.com/files/games/vroom_rts-v0.1.9.3.2.sdz".into(),
+				size: 96_006_889,
+				digest: None,
+			})
+		);
+		assert_eq!(parse_springfiles(body, "Vroom RTS v0.1.9.3"), None);
+		assert_eq!(parse_springfiles("[]", "Vroom RTS v0.1.9.3.2"), None);
+		assert_eq!(parse_springfiles("<html>", "Vroom RTS v0.1.9.3.2"), None);
 	}
 
 	#[tokio::test]

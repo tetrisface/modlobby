@@ -34,4 +34,9 @@ export type WidgetStatus = {
 	 * Every widget file BAR would load, whoever put it there.
 	 */
 	local: Array<LocalWidget>
+	/**
+	 * Every data directory with a widgets folder BAR loads, modlobby's first,
+	 * spelled as `LocalWidget::dir` spells it.
+	 */
+	dirs: Array<string>
 }

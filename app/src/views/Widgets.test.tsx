@@ -111,6 +111,7 @@ function installedStatus(over: Partial<WidgetStatus> = {}): WidgetStatus {
 		locked: false,
 		writeDir: '/home/someone/.local/share/modlobby/data',
 		local: [],
+		dirs: [],
 		...over,
 	}
 }
@@ -672,7 +673,7 @@ describe('what is on this machine', () => {
 		expect(line?.classList.contains('exact')).toBe(true)
 		expect(line?.textContent).toContain('Main version')
 		expect(line?.textContent).toContain('gui_ping_wheel.lua')
-		expect(line?.textContent).toContain("BAR's folder")
+		expect(line?.textContent).toContain("Chobby's folder")
 	})
 
 	test('a homebrewed file under the same name is told apart', async () => {
@@ -1196,20 +1197,46 @@ describe('source links', () => {
 	})
 })
 
-describe('the widgets folder', () => {
-	test('the button opens it, and a refusal is said on the page', async () => {
-		serve(published([widget()]))
+describe('the widget folders', () => {
+	const ours = '/home/someone/.local/share/modlobby/data'
+	const launcher = onDisk().dir
+
+	test('one button per folder, counting the widgets in each', async () => {
+		serve(
+			published([widget()]),
+			installedStatus({
+				dirs: [ours, launcher],
+				local: [onDisk(), onDisk({ file: 'LuaUI/Widgets/gui_other.lua' })],
+			}),
+		)
+		const Widgets = await fresh()
+		const { container, getByText } = render(() => <Widgets />)
+		await drawn(container)
+
+		const count = (label: string) =>
+			getByText(label).querySelector('.badge')?.textContent
+		expect(count('modlobby folder')).toBe('0')
+		expect(count('Chobby folder')).toBe('2')
+		expect(
+			container.querySelectorAll('[aria-label="Widget folders"] button'),
+		).toHaveLength(2)
+	})
+
+	test('a button opens its own folder, and a refusal is said on the page', async () => {
+		serve(published([widget()]), installedStatus({ dirs: [ours, launcher] }))
 		const Widgets = await fresh()
 		const { container, getByText } = render(() => <Widgets />)
 		await drawn(container)
 
 		asked.mockResolvedValueOnce(undefined)
-		fireEvent.click(getByText('Widgets folder'))
-		await waitFor(() => expect(asked).toHaveBeenCalledWith('open_widgets_dir'))
+		fireEvent.click(getByText('Chobby folder'))
+		await waitFor(() =>
+			expect(asked).toHaveBeenCalledWith('open_widgets_dir', { dir: launcher }),
+		)
 		expect(container.querySelector('.widget-note')).toBeNull()
 
 		asked.mockRejectedValueOnce(new Error('no opener'))
-		fireEvent.click(getByText('Widgets folder'))
+		fireEvent.click(getByText('Chobby folder'))
 		await waitFor(() =>
 			expect(container.querySelector('.widget-note')?.textContent).toContain(
 				'no opener',

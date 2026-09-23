@@ -427,9 +427,18 @@ export function isInstalled(widget: WidgetUsage): boolean {
 	)
 }
 
+/** Whose data directory this is, in words a player recognises. */
+export function ownerOf(dir: string, writable: boolean): string {
+	if (writable) return 'modlobby'
+	// ponytail: path heuristic -- bar-lobby keeps its content in `assets`, so a
+	// custom BAR_ASSETS_PATH reads as Chobby's. Have Rust tag each dir if that
+	// ever misleads.
+	return /[\\/]assets[\\/]?$/.test(dir) ? 'bar-lobby' : 'Chobby'
+}
+
 /** Where a file sits, in words a player recognises. */
 export function locationOf(file: LocalWidget): string {
-	return file.writable ? "modlobby's folder" : "BAR's folder"
+	return `${ownerOf(file.dir, file.writable)}'s folder`
 }
 
 /** What a header sorts by. */

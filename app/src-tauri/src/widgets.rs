@@ -76,15 +76,26 @@ pub async fn widget_installed(app: State<'_, App>) -> Result<WidgetStatus> {
 		.chain(dirs.read.iter().map(|dir| (dir.clone(), false)))
 		.collect();
 	// Reading a few dozen widget files is disk work, kept off the async runtime.
-	let local = tokio::task::spawn_blocking(move || widgets::local::scan(&scanned))
-		.await
-		.unwrap_or_default();
+	let (local, dirs) = tokio::task::spawn_blocking(move || {
+		// Ours is listed even before it has a widgets folder, since opening it
+		// makes one; another lobby's install is never written to, so it is
+		// listed only once it has one.
+		let dirs = scanned
+			.iter()
+			.filter(|(dir, writable)| *writable || dir.join(widgets::local::WIDGET_DIR).is_dir())
+			.map(|(dir, _)| dir.display().to_string())
+			.collect();
+		(widgets::local::scan(&scanned), dirs)
+	})
+	.await
+	.unwrap_or_default();
 	Ok(WidgetStatus {
 		installed: Ledger::read(&write_dir).widgets.into_values().collect(),
 		configured,
 		locked: game_running(&app).await,
 		write_dir: write_dir.display().to_string(),
 		local,
+		dirs,
 	})
 }
 

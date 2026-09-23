@@ -11,6 +11,7 @@ import {
 	disabledOnly,
 	isRepresentative,
 	matches,
+	ownerOf,
 	statsFor,
 	unavailableBecause,
 } from './widgets'
@@ -308,5 +309,40 @@ describe('forks and counting', () => {
 			},
 		)
 		expect(matches(row, 'mlov')).toBe(true)
+	})
+})
+
+describe('whose folder', () => {
+	test('the writable one is always modlobby', () => {
+		expect(ownerOf('C:/Somewhere/BeyondAllReason/assets', true)).toBe(
+			'modlobby',
+		)
+	})
+
+	test('an install keeping its content in assets is bar-lobby', () => {
+		expect(
+			ownerOf(
+				'C:\\Users\\a\\AppData\\Local\\Programs\\BeyondAllReason\\assets',
+				false,
+			),
+		).toBe('bar-lobby')
+		expect(ownerOf('/home/a/.local/share/BeyondAllReason/assets/', false)).toBe(
+			'bar-lobby',
+		)
+	})
+
+	test('any other install is Chobby', () => {
+		expect(
+			ownerOf(
+				'C:\\Users\\a\\AppData\\Local\\Programs\\Beyond-All-Reason\\data',
+				false,
+			),
+		).toBe('Chobby')
+		expect(
+			ownerOf(
+				'/Users/a/Library/Application Support/Beyond-All-Reason-mac',
+				false,
+			),
+		).toBe('Chobby')
 	})
 })

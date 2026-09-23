@@ -143,6 +143,10 @@ pub struct WidgetStatus {
 	/// Every widget file BAR would load, whoever put it there.
 	#[serde(default)]
 	pub local: Vec<crate::local::LocalWidget>,
+	/// Every data directory with a widgets folder BAR loads, modlobby's first,
+	/// spelled as `LocalWidget::dir` spells it.
+	#[serde(default)]
+	pub dirs: Vec<String>,
 }
 
 /// Everything modlobby has installed, keyed by usage key.

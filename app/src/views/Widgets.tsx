@@ -48,6 +48,7 @@ import {
 	mainFork,
 	matches,
 	notUsing,
+	ownerOf,
 	picturesOf,
 	ranked,
 	refreshInstalled,
@@ -449,17 +450,33 @@ export function Widgets() {
 					/>
 				</div>
 
-				<button
-					type='button'
-					title='Open the folder widgets installed here are written to'
-					onClick={() =>
-						void api
-							.openWidgetsDir()
-							.catch((error) => setNote(`widgets folder: ${message(error)}`))
-					}
-				>
-					Widgets folder
-				</button>
+				{/* One per data directory, since BAR loads them all; installs land
+            in modlobby's. */}
+				<div class='filter-group' role='group' aria-label='Widget folders'>
+					<For each={status()?.dirs ?? []}>
+						{(dir) => {
+							const owner = () => ownerOf(dir, dir === status()?.writeDir)
+							const count = () =>
+								status()?.local.filter((file) => file.dir === dir).length ?? 0
+							return (
+								<button
+									type='button'
+									title={`Open ${dir}/LuaUI/Widgets`}
+									onClick={() =>
+										void api
+											.openWidgetsDir(dir)
+											.catch((error) =>
+												setNote(`${owner()} folder: ${message(error)}`),
+											)
+									}
+								>
+									{owner()} folder
+									<span class='badge quiet'>{count()}</span>
+								</button>
+							)
+						}}
+					</For>
+				</div>
 
 				<span class='spacer' />
 				<Show when={usage()}>

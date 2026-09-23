@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { MapFacts } from '../ipc/bindings/MapFacts'
 
 const { mapIndex, warm } = vi.hoisted(() => ({
 	mapIndex: vi.fn(),
@@ -117,5 +118,35 @@ describe('a map the index has never heard of', () => {
 		expect(mapNameFromFile('supreme_isthmus_v2.1')).toBe('supreme isthmus v2.1')
 		// A name with no underscores is already one: left alone.
 		expect(mapNameFromFile('DeltaSiegeDry')).toBe('DeltaSiegeDry')
+	})
+})
+
+describe('the name beyondallreason.info lists a map under', () => {
+	const about = (displayName: string) => ({ displayName }) as MapFacts
+	const FACTS = {
+		'Aurelia v4.1': about('Aurelia'),
+		Adamantium_Factory_V1: about('Adamantium Factory'),
+		'Unnamed 1.0': about(''),
+	}
+
+	it('is the display name, which is all the site searches', async () => {
+		const { mapSiteName } = await import('./maps')
+		expect(mapSiteName('Aurelia v4.1', FACTS)).toBe('Aurelia')
+	})
+
+	it('of a version the index no longer lists is the listed version’s', async () => {
+		const { mapSiteName } = await import('./maps')
+		// The bug: `?mapname=Aurelia v4` found nothing; the site lists "Aurelia".
+		expect(mapSiteName('Aurelia v4', FACTS)).toBe('Aurelia')
+		expect(mapSiteName('Adamantium_Factory_V2', FACTS)).toBe(
+			'Adamantium Factory',
+		)
+	})
+
+	it('is nothing for a map that is not BAR’s, or has no display name', async () => {
+		const { mapSiteName } = await import('./maps')
+		expect(mapSiteName('Somebody’s Map v1', FACTS)).toBeNull()
+		expect(mapSiteName('Unnamed 2.0', FACTS)).toBeNull()
+		expect(mapSiteName('Aurelia v4', {})).toBeNull()
 	})
 })

@@ -113,6 +113,35 @@ export async function mapFacts(): Promise<MapIndex['maps']> {
 	return (await index())?.maps ?? {}
 }
 
+/** A map's name less its version, to tell versions of one map by:
+ *  `Aurelia v4.1` and `Aurelia_V4` are both `aurelia`. */
+function family(spring: string): string {
+	return spring
+		.replace(/[\s_-]+v?\d[\w.]*$/i, '')
+		.replace(/_/g, ' ')
+		.trim()
+		.toLowerCase()
+}
+
+/**
+ * The name beyondallreason.info lists a map under, which is all its search
+ * matches: the author's name for it, with no version. A version the index
+ * no longer lists goes by the name of one it does. `null` for a map that is
+ * not BAR's, which the site has nothing on.
+ */
+export function mapSiteName(
+	spring: string,
+	facts: MapIndex['maps'],
+): string | null {
+	const exact = facts[spring]?.displayName
+	if (exact) return exact
+	const wanted = family(spring)
+	const kin = Object.entries(facts).find(
+		([name, about]) => about.displayName && family(name) === wanted,
+	)
+	return kin?.[1].displayName ?? null
+}
+
 /**
  * The picture for a spring map name at the size it is drawn, as a URL the
  * webview loads like any other image. Rust resizes the published picture with

@@ -955,8 +955,9 @@ pub const BAR_GAME_TAG: &str = "byar:test";
 /// switched off. A game from somebody else's rapid server is no business of
 /// BAR's servers, which would be asked for a mod they have never heard of
 /// every time such a room was joined. So a game run gets this instead: the
-/// question dies on this machine, refused in a couple of seconds. Games come
-/// from rapid or not at all, which is also true of BAR's own.
+/// question dies on this machine, refused in a couple of seconds. A game
+/// rapid does not have is the app's to look for elsewhere, never under one
+/// of BAR's names (`content::sources`).
 pub const NO_SEARCH_URL: &str = "http://127.0.0.1:1/nobody-is-asked";
 /// pr-downloader prefers rapid's streamer, and BAR's returns an HTTP error:
 /// `streamer.cgi?<md5>` fails with "Couldn't download files for <md5>". BAR

@@ -1395,13 +1395,23 @@ pub fn open_replays_dir(app: State<'_, App>) -> Result<()> {
 	open(demos)
 }
 
-/// The folder widgets installed from here are written to; BAR loads it
-/// alongside every other data directory's.
+/// One data directory's widgets folder; BAR loads every one of them.
+///
+/// Only a directory the engine is given: the path comes from the webview, and
+/// that is no reason to open whatever it names. Ours is made if it is not there
+/// yet; another lobby's install is never written to.
 #[tauri::command]
-pub fn open_widgets_dir(app: State<'_, App>) -> Result<()> {
-	let widgets = data_dirs(&app)?.write.join(widgets::manage::WIDGETS_DIR);
-	std::fs::create_dir_all(&widgets)
-		.map_err(|err| ApiError::new("io", format!("making the widgets directory: {err}")))?;
+pub fn open_widgets_dir(app: State<'_, App>, dir: String) -> Result<()> {
+	let dirs = data_dirs(&app)?;
+	let dir = PathBuf::from(dir);
+	if !dirs.all().any(|known| known == dir) {
+		return Err(ApiError::new("input", "not one of the data directories"));
+	}
+	let widgets = dir.join(widgets::manage::WIDGETS_DIR);
+	if dir == dirs.write {
+		std::fs::create_dir_all(&widgets)
+			.map_err(|err| ApiError::new("io", format!("making the widgets directory: {err}")))?;
+	}
 	open(widgets)
 }
 

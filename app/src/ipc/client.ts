@@ -288,7 +288,7 @@ export const api = {
 	openDataDir: () => invoke<void>('open_data_dir'),
 	openMapsDir: () => invoke<void>('open_maps_dir'),
 	openReplaysDir: () => invoke<void>('open_replays_dir'),
-	openWidgetsDir: () => invoke<void>('open_widgets_dir'),
+	openWidgetsDir: (dir: string) => invoke<void>('open_widgets_dir', { dir }),
 	playerFiles: () => invoke<PlayerFilesView>('player_files'),
 	importPlayerFiles: (from: string) =>
 		invoke<number>('import_player_files', { from }),
