@@ -6,7 +6,8 @@ format:
 	(cd app && bun run fmt)
 	cargo fmt --all
 
-# Once per clone: `git push` then runs `just check` first (.githooks/pre-push).
+# Once per clone: `git commit` then formats what it commits (.githooks/pre-commit)
+# and `git push` runs `just check` first (.githooks/pre-push).
 hooks:
 	git config core.hooksPath .githooks
 
