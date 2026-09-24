@@ -4,7 +4,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { BotView } from '../ipc/bindings/BotView'
 import { emptyLobby, setLobby } from '../store/lobby'
 import { seedSession } from '../store/testing'
-import { myBattle, status, user } from '../views/room/fixture'
+import { battle, bot, myBattle, status, user } from '../views/room/fixture'
 import {
 	PlayerMenu,
 	showBotMenu,
@@ -221,5 +221,72 @@ describe('boss and unboss', () => {
 		const offered = labels(await menuFor('alice'))
 		expect(offered).not.toContain('Boss')
 		expect(offered).not.toContain('Unboss')
+	})
+})
+
+describe('sharing an ID in a running game', () => {
+	/** Us walked in on a game alice is in, in a room with `ais` AIs. */
+	function room(ais: number, added: boolean, alicePlays = true) {
+		setLobby(emptyLobby())
+		seedSession({
+			me: 'me',
+			users: {
+				me: user('me', { battleStatus: status({ player: false }) }),
+				alice: user('alice', {
+					status: { ...user('alice').status, inGame: true },
+					battleStatus: status({ player: alicePlays }),
+				}),
+			},
+			battles: {
+				1: battle({
+					bots: Array.from({ length: ais }, (_, i) => bot(`AI${i}`)),
+				}),
+			},
+			myBattle: myBattle(),
+			gameRunning: { id: 1, ip: '', port: 0, added },
+		})
+	}
+
+	async function menuFor(name: string) {
+		const { container } = render(() => <PlayerMenu />)
+		showPlayerMenu(name, press())
+		await settle()
+		return container
+	}
+
+	test('goes as a vote, the one form teiserver passes on', async () => {
+		vi.mocked(invoke).mockClear()
+		room(1, false)
+		const container = await menuFor('alice')
+		const entry = [...container.querySelectorAll('button')].find(
+			(b) => b.textContent === 'joinas - share their ID',
+		) as HTMLElement
+		expect(entry.title, 'says what it does on hover').toMatch(/vote/)
+		click(entry)
+		await settle()
+		expect(invoke).toHaveBeenCalledWith('say_battle', {
+			text: '!cv joinas alice',
+		})
+	})
+
+	test('not once SPADS has us in the game', async () => {
+		room(1, true)
+		expect(labels(await menuFor('alice'))).not.toContain(
+			'joinas - share their ID',
+		)
+	})
+
+	test('not without AIs, where teiserver makes it `joinas spec`', async () => {
+		room(0, false)
+		expect(labels(await menuFor('alice'))).not.toContain(
+			'joinas - share their ID',
+		)
+	})
+
+	test('not onto someone who is only watching', async () => {
+		room(1, false, false)
+		expect(labels(await menuFor('alice'))).not.toContain(
+			'joinas - share their ID',
+		)
 	})
 })

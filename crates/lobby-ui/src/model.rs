@@ -471,6 +471,11 @@ pub struct GameRunningView {
 	pub id: u32,
 	pub ip: String,
 	pub port: u16,
+	/// Whether SPADS already has us in this game: we were in the room when it
+	/// started, or have connected to it since (`midGameSpecLevel` adds anyone
+	/// who does as a spectator). Until then `!joinas` can still put us in on
+	/// someone's ID; after, SPADS refuses it as `already been added`.
+	pub added: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]

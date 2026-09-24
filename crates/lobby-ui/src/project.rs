@@ -194,11 +194,18 @@ impl Projector {
                 id: *id,
                 seconds: *elapsed_secs,
             }),
-            Effect::GameRunning { id, ip, port, .. } => {
+            Effect::GameRunning {
+                id,
+                ip,
+                port,
+                just_started,
+                ..
+            } => {
                 out.push(Delta::GameRunning(Some(GameRunningView {
                     id: *id,
                     ip: ip.clone(),
                     port: *port,
+                    added: *just_started,
                 })))
             }
             Effect::BattleChat {

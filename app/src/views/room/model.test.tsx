@@ -820,7 +820,7 @@ describe('readying up', () => {
 		const { container } = await open(
 			fakeRoom({
 				caps: SERVED,
-				running: () => ({ id: 1, ip: '', port: 0 }),
+				running: () => ({ id: 1, ip: '', port: 0, added: true }),
 			}),
 		)
 

@@ -27,7 +27,13 @@ describe('how much readying up asks of us', () => {
 		expect(readiness(room({ player: false }))).toBe('none')
 		expect(readiness(room({}, {}, { caps: ALONE }))).toBe('none')
 		expect(
-			readiness(room({}, {}, { running: () => ({ id: 1, ip: '', port: 0 }) })),
+			readiness(
+				room(
+					{},
+					{},
+					{ running: () => ({ id: 1, ip: '', port: 0, added: true }) },
+				),
+			),
 		).toBe('none')
 	})
 

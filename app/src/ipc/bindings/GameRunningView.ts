@@ -3,4 +3,15 @@
 /**
  * The room's game is running; the script password stays in the runtime.
  */
-export type GameRunningView = { id: number; ip: string; port: number }
+export type GameRunningView = {
+	id: number
+	ip: string
+	port: number
+	/**
+	 * Whether SPADS already has us in this game: we were in the room when it
+	 * started, or have connected to it since (`midGameSpecLevel` adds anyone
+	 * who does as a spectator). Until then `!joinas` can still put us in on
+	 * someone's ID; after, SPADS refuses it as `already been added`.
+	 */
+	added: boolean
+}

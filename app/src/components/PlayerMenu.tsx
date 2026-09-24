@@ -238,9 +238,34 @@ export function PlayerMenu() {
 					if (!room || !me) return false
 					return room.users[me]?.battleStatus?.player ?? false
 				}
+				/**
+				 * Whether SPADS would put us in the running game on their ID.
+				 *
+				 * Only while it has not put us in already -- we were not here at
+				 * the start and have not connected since -- and only onto someone
+				 * playing in it. teiserver turns `!joinas <name>` into `!joinas
+				 * spec`, and a vote for it too unless the room has AIs
+				 * (`chat_lib.ex`), so it goes as a vote and only where there are.
+				 */
+				const sharesId = () => {
+					const game = roomSession()?.gameRunning
+					const them = user()
+					if (!game || game.added || !them) return false
+					const hasAis = (session()?.battles[game.id]?.bots.length ?? 0) > 0
+					return (
+						hasAis && them.status.inGame && (them.battleStatus?.player ?? false)
+					)
+				}
 
-				/** `stay`: the entry opens something in the menu, so it stays. */
-				type Entry = [string, () => Promise<void> | void, 'stay'?]
+				/**
+				 * `stay`: the entry opens something in the menu, so it stays.
+				 * `title`: what it does, on hover, where the label cannot say.
+				 */
+				type Entry = [
+					string,
+					() => Promise<void> | void,
+					{ stay?: boolean; title?: string }?,
+				]
 
 				/**
 				 * Where this row can be sent, as words.
@@ -259,7 +284,7 @@ export function PlayerMenu() {
 							() => {
 								setPicking(true)
 							},
-							'stay',
+							{ stay: true },
 						])
 					return rows
 				}
@@ -304,6 +329,19 @@ export function PlayerMenu() {
 					if (alongside && bossing()) {
 						entries.push(['Move to spectators', () => say(`!spec ${name()}`)])
 						entries.push(['Kick from the room', () => say(`!kick ${name()}`)])
+					}
+					if (alongside && sharesId()) {
+						entries.push([
+							'joinas - share their ID',
+							() => say(`!cv joinas ${name()}`),
+							{
+								title:
+									'Calls a vote to put you in the running game on their ID, ' +
+									'playing their team alongside them. Launch only once SPADS ' +
+									'says it is adding you: connecting before that makes you a ' +
+									'spectator for the rest of the game.',
+							},
+						])
 					}
 					// Yourself included: `!boss me` takes a room nobody runs, and
 					// `!unboss me` hands it back. A boss's word is final, a player's
@@ -422,10 +460,11 @@ export function PlayerMenu() {
 							}
 						>
 							<For each={sorted()}>
-								{([label, run, stay]) => (
+								{([label, run, how]) => (
 									<button
+										title={how?.title}
 										onClick={() =>
-											stay
+											how?.stay
 												? void run()
 												: void act(
 														label.toLowerCase(),

@@ -3349,7 +3349,12 @@ impl Runtime {
 						);
 					}
 					self.game = Some(Game {
-						view: GameRunningView { id, ip, port },
+						view: GameRunningView {
+							id,
+							ip,
+							port,
+							added: just_started,
+						},
 						script_password,
 					});
 					// Either somebody asked to launch before the game existed,
@@ -3495,6 +3500,11 @@ impl Runtime {
 			if let Effect::Send(envelope) = effect {
 				self.send_line(&server, envelope).await?;
 			}
+		}
+		if let Some(game) = self.game.as_mut().filter(|game| !game.view.added) {
+			game.view.added = true;
+			self.batcher
+				.push_for(&server, Delta::GameRunning(Some(game.view.clone())));
 		}
 		self.in_game_on = Some(server);
 		let launched = launch::spawn(
