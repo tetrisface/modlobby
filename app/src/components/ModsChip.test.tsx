@@ -1,7 +1,7 @@
 import { cleanup, render } from '@solidjs/testing-library'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { MutatorView } from '../ipc/bindings/MutatorView'
-import { MutatorsChip } from './MutatorsChip'
+import { ModsChip } from './ModsChip'
 
 beforeEach(() => {
 	vi.useFakeTimers({ toFake: ['Date'] })
@@ -21,21 +21,21 @@ const sphere: MutatorView = {
 	date: '2025-10-05T13:32:07Z',
 }
 
-describe('the mutators chip', () => {
-	test('names each mutator and how recent it is, and keeps the commit for the tooltip', () => {
+describe('the mods chip', () => {
+	test('names each mod and how recent it is, and keeps the commit for the tooltip', () => {
 		const tiny = { ...sphere, title: 'tiny maps v1', source: null, date: null }
 		const chip = render(() => (
-			<MutatorsChip mutators={[sphere, tiny]} />
+			<ModsChip mods={[sphere, tiny]} />
 		)).container.querySelector('.chip')
 		expect(chip?.textContent).toBe(
-			'Mutators: sphere spawner mod v1.0.0 · 4d ago, tiny maps v1',
+			'Mods: sphere spawner mod v1.0.0 · 4d ago, tiny maps v1',
 		)
 		expect(chip?.getAttribute('title')).toContain('dev/sphere @ 9108a17')
 		expect(chip?.textContent).not.toContain('9108a17')
 	})
 
 	test('is not there when the room loads none', () => {
-		const shown = render(() => <MutatorsChip mutators={[]} />).container
+		const shown = render(() => <ModsChip mods={[]} />).container
 		expect(shown.querySelector('.chip')).toBeNull()
 	})
 })

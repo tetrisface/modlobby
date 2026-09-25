@@ -2,6 +2,7 @@ import { createSignal } from 'solid-js'
 
 /**
  * Press and drag a player onto a team; release without moving to open the menu.
+ * The mods list reorders with the same press and the same lifted copy.
  *
  * Pointer events rather than the platform's drag-and-drop, which is what the
  * tab strip uses and what this codebase otherwise prefers. The difference is
@@ -49,6 +50,73 @@ function lift(row: HTMLElement, at: PointerEvent) {
 			ghost.remove()
 			row.classList.remove('lifted')
 		},
+	}
+}
+
+/**
+ * Press and drag a row into another place in its list, the other rows making
+ * room as it goes; let go to drop it there. The roster's feel: a copy under
+ * the pointer and the row itself, dimmed, where it would land.
+ *
+ * Where it lands is read against the rows as they stood when it lifted --
+ * past the middle of a row is past that row -- so the list making room under
+ * the pointer never changes the answer, and nothing jitters. The list's
+ * children are its rows.
+ */
+export function reorderGesture(options: {
+	/** Where the pressed row is in the list. */
+	from: () => number
+	/** Where it came from and would land now; `null` once dropped or let go. */
+	onOver: (flight: { from: number; to: number } | null) => void
+	onDrop: (from: number, to: number) => void
+}): (event: PointerEvent) => void {
+	return (event: PointerEvent) => {
+		if (event.button !== 0) return
+		if ((event.target as Element | null)?.closest('button, input, select'))
+			return
+		event.preventDefault()
+		const row = event.currentTarget as HTMLElement
+		const from = options.from()
+		const fromX = event.clientX
+		const fromY = event.clientY
+		let flight: ReturnType<typeof lift> | undefined
+		let middles: number[] = []
+		let to = from
+
+		const move = (at: PointerEvent) => {
+			if (!flight) {
+				if (Math.hypot(at.clientX - fromX, at.clientY - fromY) < THRESHOLD)
+					return
+				middles = [...(row.parentElement?.children ?? [])].map((child) => {
+					const rect = child.getBoundingClientRect()
+					return rect.top + rect.height / 2
+				})
+				flight = lift(row, at)
+			}
+			flight.follow(at)
+			const next = middles.filter(
+				(middle, index) => index !== from && middle < at.clientY,
+			).length
+			if (next === to) return
+			to = next
+			options.onOver({ from, to })
+		}
+
+		const end = (dropped: boolean) => () => {
+			window.removeEventListener('pointermove', move)
+			window.removeEventListener('pointerup', up)
+			window.removeEventListener('pointercancel', cancel)
+			if (!flight) return
+			flight.drop()
+			options.onOver(null)
+			if (dropped && to !== from) options.onDrop(from, to)
+		}
+		const up = end(true)
+		const cancel = end(false)
+
+		window.addEventListener('pointermove', move)
+		window.addEventListener('pointerup', up)
+		window.addEventListener('pointercancel', cancel)
 	}
 }
 

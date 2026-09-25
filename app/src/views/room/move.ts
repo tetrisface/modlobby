@@ -89,22 +89,21 @@ export function setRefusal(room: RoomModel): string | null {
 }
 
 /**
- * Why a mutator we add, remove or update here would be refused, or `null`
- * when it may be taken, directly by a boss or as a vote. A mutator host
- * keeps BAR's vote levels (`commands_bar_votes.conf` there): a seated player
- * may call the vote between games even while the room has a boss, and a
- * spectator may not.
+ * Why a list of mods we send from here would be refused, or `null` when it
+ * may be taken, directly by a boss or as a vote. A mod host keeps BAR's vote
+ * levels (`commands_bar_votes.conf` there): a seated player may call the
+ * vote between games even while the room has a boss, and a spectator may
+ * not.
  */
-export function mutatorRefusal(room: RoomModel): string | null {
+export function modRefusal(room: RoomModel): string | null {
 	if (!room.caps.spads) return null
 	const me = room.me()
 	if (me === null) return null
 	const user = room.users()[me]
 	if (isBoss(room.my()?.boss, me) || user?.status.moderator) return null
-	if (room.running() !== null)
-		return 'Mutators can change once the game is over'
+	if (room.running() !== null) return 'Mods can change once the game is over'
 	if (user?.battleStatus?.player !== true)
-		return 'Join as a player to change mutators'
+		return 'Join as a player to change mods'
 	return null
 }
 

@@ -1347,6 +1347,9 @@ struct Runtime {
 	/// The room's engine, game, map and mutators the content check last ran
 	/// against; scanning the rapid index is too slow to repeat per message.
 	checked: Option<RoomContent>,
+	/// The room (server, battle) whose host has been told we load mutators,
+	/// so it is told once.
+	greeted_mutator_host: Option<(String, u32)>,
 	/// When to let the servers go because nobody has touched the window.
 	/// Off until the app pushes a limit; the CLI has no window to watch.
 	idle: idle::Idle,
@@ -1847,6 +1850,7 @@ impl Runtime {
 			overlay_config_dir: None,
 			menu_archive: None,
 			checked: None,
+			greeted_mutator_host: None,
 			idle: idle::Idle::default(),
 			paste: None,
 			downloading: None,
@@ -2557,6 +2561,38 @@ impl Runtime {
 		}
 	}
 
+	/// Tells a mutator host, once per room, that this lobby loads what it
+	/// announces: the host tells everybody else what the room loads and where
+	/// a lobby that loads it is, and holds the start while such a player is
+	/// seated. Said to any host whose tags say it runs mutators, whatever it
+	/// is called; the tags are the protocol, not a client name.
+	async fn greet_mutator_host(&mut self) {
+		let room = self.room();
+		let greet = room.as_deref().and_then(|server| {
+			let state = &self.link(server)?.session.state;
+			let my = state.my_battle.as_ref()?;
+			if !my.hosts_mutators() || self.greeted_mutator_host == Some((server.to_owned(), my.id))
+			{
+				return None;
+			}
+			let founder = state.battles.get(&my.id)?.founder.clone();
+			Some((server.to_owned(), my.id, founder))
+		});
+		let Some((server, id, founder)) = greet else {
+			return;
+		};
+		self.greeted_mutator_host = Some((server.clone(), id));
+		let effects = self
+			.link_mut(&server)
+			.and_then(|conn| {
+				conn.session
+					.say_private(&founder, lobby_core::MUTATORS_SUPPORTED)
+					.ok()
+			})
+			.unwrap_or_default();
+		self.apply_effects(&server, effects).await;
+	}
+
 	/// Holds the room's game and map, where they are here, to the hashes the
 	/// room announced -- off the actor, since reading a game takes seconds;
 	/// the answer comes back as [`Next::Checked`].
@@ -2710,6 +2746,7 @@ impl Runtime {
 					}
 					self.turn = self.turn.wrapping_add(1);
 					self.refresh_content().await;
+					self.greet_mutator_host().await;
 				}
 				Next::EngineExited(status) => self.engine_exited(status).await,
 			}
@@ -3661,7 +3698,7 @@ impl Runtime {
 							.source
 							.as_ref()
 							.map_or(&mutator.name, |pin| &pin.repo);
-						format!("the mutator {named}")
+						format!("the mod {named}")
 					}),
 			);
 			if !missing.is_empty() {

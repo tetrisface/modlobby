@@ -33,6 +33,15 @@ const MODOPTION: &str = "game/modoptions/";
 /// commit, `game/mutator{i}source` and `game/mutator{i}date` beside it.
 const MUTATOR: &str = "game/mutator";
 
+/// The tag a mutator host offers its first catalog entry under. A room with
+/// it, or with `game/mutator0`, has a host that speaks the mutator protocol.
+const MUTATOR_OFFER: &str = "game/mutatoroffer0";
+
+/// What a lobby that loads a room's mutators tells the host, in a private
+/// message, once it sees the room's tags. The host tells everyone else what
+/// the room loads, and holds the start while such a player is seated.
+pub const MUTATORS_SUPPORTED: &str = "mutators supported";
+
 /// A mutator the room loads on top of its game, as its host announces it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Mutator {
@@ -225,6 +234,14 @@ impl MyBattle {
 				})
 			})
 			.collect()
+	}
+
+	/// Whether the room's host runs mutators: it offers some, or loads some.
+	pub fn hosts_mutators(&self) -> bool {
+		self.script_tags
+			.get(MUTATOR_OFFER)
+			.is_some_and(|name| !name.is_empty())
+			|| !self.mutators().is_empty()
 	}
 
 	/// Applies `SETSCRIPTTAGS`. Returns the modoptions that really changed,
@@ -564,6 +581,15 @@ mod tests {
 			}]
 		);
 		assert!(with_tags(&[]).mutators().is_empty());
+	}
+
+	#[test]
+	fn a_host_that_offers_or_loads_mutators_speaks_the_protocol() {
+		assert!(with_tags(&[("game/mutatoroffer0", "sphere-spawner")]).hosts_mutators());
+		assert!(with_tags(&[("game/mutator0", "tiny maps v1")]).hosts_mutators());
+		assert!(
+			!with_tags(&[("game/mutatoroffer0", ""), ("game/modoptions/x", "1")]).hosts_mutators()
+		);
 	}
 
 	#[test]

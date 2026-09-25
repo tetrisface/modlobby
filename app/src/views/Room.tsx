@@ -14,7 +14,7 @@ import {
 import { Composer } from '../components/Composer'
 import { GameActions } from '../components/GameActions'
 import { ContentChip } from '../components/ContentChip'
-import { MutatorsChip } from '../components/MutatorsChip'
+import { ModsChip } from '../components/ModsChip'
 import { GetEngine } from '../components/GetEngine'
 import { Linkify } from '../components/Linkify'
 import { MapEditor } from '../components/MapEditor'
@@ -1108,8 +1108,8 @@ function missingParts(room: RoomModel): readonly string[] {
 	const parts = (['engine', 'game', 'map'] as const).filter(
 		(part) => !content[part],
 	)
-	const mutatorMissing = room.check().mutators.some((mutator) => !mutator.here)
-	return mutatorMissing ? [...parts, 'mutators'] : parts
+	const modMissing = room.check().mutators.some((mod) => !mod.here)
+	return modMissing ? [...parts, 'mods'] : parts
 }
 
 /** `1 player`, `2 players` — a count with its word, agreeing with it. */
@@ -1143,7 +1143,7 @@ function Chips(props: { battle: BattleView }) {
 					<Missing parts={parts()} engineVersion={props.battle.engineVersion} />
 				</Show>
 			</Show>
-			<MutatorsChip mutators={room.check().mutators} />
+			<ModsChip mods={room.check().mutators} />
 			<Show when={layoutLabel(props.battle)}>
 				{(label) => <span class='chip info'>{label()}</span>}
 			</Show>

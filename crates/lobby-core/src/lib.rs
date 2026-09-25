@@ -13,6 +13,6 @@ pub use hosting::{Rtts, SpareRoom};
 pub use session::{Effect, FriendAction, SeatError, Session, UnknownFriendAction};
 pub use spads::{Announcement, Proposal, VoteState};
 pub use state::{
-	Battle, Bot, GitPin, LobbyState, Mutator, MyBattle, OptionChange, Phase, SeatOnItsWay,
-	StartRect, User,
+	Battle, Bot, GitPin, LobbyState, MUTATORS_SUPPORTED, Mutator, MyBattle, OptionChange, Phase,
+	SeatOnItsWay, StartRect, User,
 };

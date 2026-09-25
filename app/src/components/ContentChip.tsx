@@ -22,11 +22,11 @@ export function ContentChip(props: {
 		{ what: 'Engine', name: props.engine, check: null, built: null },
 		{ what: 'Game', name: props.game, check: props.check.game, built: null },
 		{ what: 'Map', name: props.map, check: props.check.map, built: null },
-		...props.check.mutators.map((mutator) => ({
-			what: 'Mutator',
-			name: mutator.title,
-			check: mutator.check,
-			built: mutator.source && builtFrom(mutator.source, mutator.date),
+		...props.check.mutators.map((mod) => ({
+			what: 'Mod',
+			name: mod.title,
+			check: mod.check,
+			built: mod.source && builtFrom(mod.source, mod.date),
 		})),
 	]
 	const differs = () =>
@@ -59,7 +59,7 @@ export function ContentChip(props: {
 }
 
 /**
- * A mutator built here from the commit its room pinned: that commit, whose
+ * A mod built here from the commit its room pinned: that commit, whose
  * every file was checked against git's own hash as it was built.
  */
 function builtFrom(source: string, date: string | null): string {

@@ -5,6 +5,7 @@ import type { Delta } from '../ipc/bindings/Delta'
 import type { ServerSnapshot } from '../ipc/bindings/ServerSnapshot'
 import type { Snapshot } from '../ipc/bindings/Snapshot'
 import type { UiMessage } from '../ipc/bindings/UiMessage'
+import { rememberSet } from './mods'
 import { noteToldStart } from './running'
 import {
 	BATTLE_ROOM,
@@ -128,6 +129,7 @@ export function applyDelta(delta: Delta, server: string | null = null): void {
 			return
 		case 'contentCheck':
 			setLobby('contentCheck', delta.data)
+			rememberSet(delta.data.mutators)
 			return
 		case 'download':
 			setLobby('download', delta.data)

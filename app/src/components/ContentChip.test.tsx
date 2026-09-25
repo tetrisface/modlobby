@@ -55,7 +55,7 @@ describe('the content chip', () => {
 		])
 	})
 
-	test('lists the mutators after the map, in load order, each by its own name', () => {
+	test('lists the mods after the map, in load order, each by its own name', () => {
 		const mutator = (
 			title: string,
 			check: MutatorView['check'],
@@ -83,9 +83,9 @@ describe('the content chip', () => {
 		})
 		expect(container.querySelector('.chip.warn')).not.toBeNull()
 		expect(rows(container).slice(3)).toEqual([
-			'MutatorSphere v1same files as the room · checksum 5',
-			"MutatorTanks v2different files · checksum 1, the room's 2",
-			'MutatorPinned v1built from dev/pinned @ 9108a17',
+			'ModSphere v1same files as the room · checksum 5',
+			"ModTanks v2different files · checksum 1, the room's 2",
+			'ModPinned v1built from dev/pinned @ 9108a17',
 		])
 	})
 })

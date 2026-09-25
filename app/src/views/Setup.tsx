@@ -52,7 +52,7 @@ import { offers } from '../lib/mutators'
 import { pushNotice } from '../store/chat'
 import { tweakspaceFor } from '../store/tweakspaceInstance'
 import { PasteBanner } from './PasteBanner'
-import { Mutators } from './Mutators'
+import { Mods } from './Mods'
 import { Presets } from './Presets'
 import { useRoom, type RoomModel } from './room/model'
 import { canSet, setRefusal } from './room/move'
@@ -98,18 +98,19 @@ const TAB_GAP = 2
  * remembered, or, the first time, measured so that its tabs sit on one row.
  *
  * Presets share the pane as a second face of it: they are read from and
- * written to this room, so beside the settings is where they belong.
+ * written to this room, so beside the settings is where they belong. Mods
+ * are its third, in a room whose host runs them.
  */
 export function Setup() {
 	const room = useRoom()
-	const [chosenPane, setPane] = createSignal<'setup' | 'presets' | 'mutators'>(
+	const [chosenPane, setPane] = createSignal<'setup' | 'presets' | 'mods'>(
 		'setup',
 	)
-	/** A room whose host offers mutators, or loads any: the ones with the third face. */
-	const mutating = () =>
+	/** A room whose host offers mods, or loads any: the ones with the third face. */
+	const modded = () =>
 		offers(room.my()?.scriptTags).length > 0 || room.check().mutators.length > 0
 	const pane = () =>
-		chosenPane() === 'mutators' && !mutating() ? 'setup' : chosenPane()
+		chosenPane() === 'mods' && !modded() ? 'setup' : chosenPane()
 
 	/**
 	 * The game's own option table, read from the copy installed on this machine
@@ -302,13 +303,13 @@ export function Setup() {
 				>
 					Presets
 				</button>
-				<Show when={mutating()}>
+				<Show when={modded()}>
 					<button
 						class='pane-tab'
-						classList={{ on: pane() === 'mutators' }}
-						onClick={() => setPane('mutators')}
+						classList={{ on: pane() === 'mods' }}
+						onClick={() => setPane('mods')}
 					>
-						Mutators
+						Mods
 					</button>
 				</Show>
 				<Show when={pane() === 'setup'}>
@@ -334,7 +335,7 @@ export function Setup() {
 
 			<Show
 				when={pane() === 'setup'}
-				fallback={pane() === 'mutators' ? <Mutators /> : <Presets />}
+				fallback={pane() === 'mods' ? <Mods /> : <Presets />}
 			>
 				<div class='setup-tabs' ref={strip}>
 					<button
