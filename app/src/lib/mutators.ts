@@ -36,6 +36,17 @@ export function offers(tags: { [key in string]: string } | undefined): Offer[] {
 }
 
 /**
+ * Whether the room's host runs mods: it says so, or offers or loads some.
+ * The first alone is enough, so a host with nothing loaded or used yet still
+ * shows where mods are added.
+ */
+export function hostsMods(
+	tags: { [key in string]: string } | undefined,
+): boolean {
+	return Boolean(tags?.['game/mutatorhost']) || offers(tags).length > 0
+}
+
+/**
  * Whether a loaded mutator is this offer: one from GitHub by the commit it is
  * built from, which the room and the offer share after an update too; any
  * other by its name.

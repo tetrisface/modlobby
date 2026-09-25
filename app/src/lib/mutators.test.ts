@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { MutatorView } from '../ipc/bindings/MutatorView'
-import { offers, sameMutator, sourceWords } from './mutators'
+import { hostsMods, offers, sameMutator, sourceWords } from './mutators'
 
 const SHA = '9108a17078f79d09925edc305ec83bc06c3a7cb3'
 
@@ -29,6 +29,13 @@ describe('mutators', () => {
 			{ name: 'tiny maps v1', source: null, date: null },
 		])
 		expect(offers(undefined)).toEqual([])
+	})
+
+	test('a host runs mods when it says so, or offers some', () => {
+		expect(hostsMods({ 'game/mutatorhost': '0.4.0' })).toBe(true)
+		expect(hostsMods({ 'game/mutatoroffer0': 'tanks' })).toBe(true)
+		expect(hostsMods({ 'game/modoptions/startmetal': '1000' })).toBe(false)
+		expect(hostsMods(undefined)).toBe(false)
 	})
 
 	test('a loaded mutator is its offer by commit, or else by name', () => {

@@ -48,7 +48,7 @@ import {
 	type Tab,
 } from '../lib/setup'
 import { SCRATCH, SLOT_KEYS, isDirty, slotOf, titleOf } from '../lib/tweakspace'
-import { offers } from '../lib/mutators'
+import { hostsMods } from '../lib/mutators'
 import { pushNotice } from '../store/chat'
 import { tweakspaceFor } from '../store/tweakspaceInstance'
 import { PasteBanner } from './PasteBanner'
@@ -106,9 +106,9 @@ export function Setup() {
 	const [chosenPane, setPane] = createSignal<'setup' | 'presets' | 'mods'>(
 		'setup',
 	)
-	/** A room whose host offers mods, or loads any: the ones with the third face. */
+	/** A room whose host runs mods, or that loads any: the ones with the third face. */
 	const modded = () =>
-		offers(room.my()?.scriptTags).length > 0 || room.check().mutators.length > 0
+		hostsMods(room.my()?.scriptTags) || room.check().mutators.length > 0
 	const pane = () =>
 		chosenPane() === 'mods' && !modded() ? 'setup' : chosenPane()
 

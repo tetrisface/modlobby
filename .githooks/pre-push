@@ -1,14 +1,15 @@
 #!/bin/sh
-# What ci would say in five minutes, said before the push leaves. Enabled by
-# `just hooks`; `git push --no-verify` skips it. Only a branch update reaches
-# ci, so a tag, a delete or a push with nothing to send goes straight through.
+# What ci would say in five minutes, said before main moves. Enabled by
+# `just hooks`; `git push --no-verify` skips it. Any other branch is checked by
+# ci on its pull request, so it, a tag, a delete or a push with nothing to send
+# goes straight through. The match is on the remote ref: `x:main` is checked.
 # ci diffs the bindings of a clean checkout, hence HEAD: staged is not pushed.
 # In VS Code a failure reads "Can't push refs to remote. Try running Pull
 # first"; the real output is under "Show Command Output".
 zero=0000000000000000000000000000000000000000
 while read -r _ sha ref _; do
 	case "$ref" in
-	refs/heads/*)
+	refs/heads/main)
 		[ "$sha" = "$zero" ] && continue
 		just check </dev/null && exec git diff --exit-code HEAD -- app/src/ipc/bindings
 		exit 1

@@ -204,8 +204,11 @@ export function Mods() {
 				/>
 
 				<Show when={offered().length > 0}>
-					<div class='setup-section'>
-						<span>Offered by the host</span>
+					<div
+						class='setup-section'
+						title='What games on this host played, newest first. Adding one loads it at the commit it was played at.'
+					>
+						<span>Used recently on this host</span>
 					</div>
 					<div class='mod-offers'>
 						<For each={offered()}>
@@ -220,7 +223,7 @@ export function Mods() {
 											held()
 												? `${held()?.label} is in the list`
 												: offer.source
-													? `Add ${offer.name}, from ${offer.source.replace(/^github:/, '')}`
+													? `Add ${offer.name}, at the commit it was played at\n${offer.source.replace(/^github:/, '')}`
 													: `Add ${offer.name}`
 										}
 										onClick={() => add(offer.name)}
