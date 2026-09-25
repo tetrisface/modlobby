@@ -833,9 +833,17 @@ pub struct ContentCheckView {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct MutatorView {
+	/// What the room loads it by: the name inside it, or for one built from
+	/// a commit, the build's file name.
 	pub name: String,
+	/// What to call it: the name inside it where this copy is here to read.
+	pub title: String,
 	pub here: bool,
 	pub check: Option<CheckView>,
+	/// `github:owner/repo@<commit>` for one built from a commit.
+	pub source: Option<String>,
+	/// When that commit was made, as the host announced it.
+	pub date: Option<String>,
 }
 
 /// One change to apply to the mirrored state.

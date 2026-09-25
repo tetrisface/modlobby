@@ -1,6 +1,8 @@
 import { For, createUniqueId } from 'solid-js'
 import type { CheckView } from '../ipc/bindings/CheckView'
 import type { ContentCheckView } from '../ipc/bindings/ContentCheckView'
+import { exactly } from '../lib/age'
+import { sourceWords } from '../lib/mutators'
 
 /**
  * The room's content, all of it here: one chip, and on hover or focus each
@@ -17,13 +19,14 @@ export function ContentChip(props: {
 }) {
 	const tip = createUniqueId()
 	const parts = () => [
-		{ what: 'Engine', name: props.engine, check: null },
-		{ what: 'Game', name: props.game, check: props.check.game },
-		{ what: 'Map', name: props.map, check: props.check.map },
+		{ what: 'Engine', name: props.engine, check: null, built: null },
+		{ what: 'Game', name: props.game, check: props.check.game, built: null },
+		{ what: 'Map', name: props.map, check: props.check.map, built: null },
 		...props.check.mutators.map((mutator) => ({
 			what: 'Mutator',
-			name: mutator.name,
+			name: mutator.title,
 			check: mutator.check,
+			built: mutator.source && builtFrom(mutator.source, mutator.date),
 		})),
 	]
 	const differs = () =>
@@ -45,7 +48,7 @@ export function ContentChip(props: {
 								class='content-tip-said'
 								classList={{ differs: part.check?.verdict === 'differs' }}
 							>
-								{said(part.check)}
+								{part.built ?? said(part.check)}
 							</span>
 						</span>
 					)}
@@ -53,6 +56,15 @@ export function ContentChip(props: {
 			</span>
 		</span>
 	)
+}
+
+/**
+ * A mutator built here from the commit its room pinned: that commit, whose
+ * every file was checked against git's own hash as it was built.
+ */
+function builtFrom(source: string, date: string | null): string {
+	const when = date ? `, committed ${exactly(date)}` : ''
+	return `built from ${sourceWords(source)}${when}`
 }
 
 /** What is known of one part. An engine carries no checksum on the wire. */

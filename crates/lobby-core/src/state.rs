@@ -29,7 +29,8 @@ pub struct User {
 const MODOPTION: &str = "game/modoptions/";
 
 /// The tags a mutator host names the room's mutators by: `game/mutator0`
-/// onwards, each with `game/mutator{i}checksum` beside it.
+/// onwards, each with `game/mutator{i}checksum` or, for one built from a
+/// commit, `game/mutator{i}source` and `game/mutator{i}date` beside it.
 const MUTATOR: &str = "game/mutator";
 
 /// A mutator the room loads on top of its game, as its host announces it.
@@ -40,12 +41,52 @@ pub struct Mutator {
 	/// The archive's own checksum as 128 lowercase hex digits; `None` when
 	/// the host announced none, or something that is not one.
 	pub checksum: Option<String>,
+	/// The commit it is built from, where the host pinned one.
+	pub source: Option<GitPin>,
+	/// When that commit was made, as the host read it from the forge; shown,
+	/// never trusted.
+	pub date: Option<String>,
+}
+
+/// A GitHub commit a mutator is built from, as its host pins it:
+/// `github:owner/repo@<whole commit hash>`. The scheme leaves room for other
+/// places a mutator may come from; one this does not know is no pin.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitPin {
+	pub repo: String,
+	pub commit: String,
+}
+
+impl GitPin {
+	/// `github:owner/repo@<40 lowercase hex digits>`; `None` for anything
+	/// else, so a host cannot steer a fetch with a branch that moves or a
+	/// path that climbs.
+	pub fn parse(text: &str) -> Option<Self> {
+		let (repo, commit) = text.strip_prefix("github:")?.split_once('@')?;
+		let (owner, name) = repo.split_once('/')?;
+		let plain = |part: &str| {
+			!part.is_empty()
+				&& part.chars().any(|c| c != '.')
+				&& part
+					.bytes()
+					.all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+		};
+		let whole = commit.len() == 40 && is_hex(commit);
+		(plain(owner) && plain(name) && whole).then(|| Self {
+			repo: repo.to_owned(),
+			commit: commit.to_owned(),
+		})
+	}
 }
 
 /// Whether `hex` has the shape of an announced checksum: 128 lowercase hex
 /// digits, a SHA-512.
 fn is_checksum(hex: &str) -> bool {
-	hex.len() == 128 && hex.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+	hex.len() == 128 && is_hex(hex)
+}
+
+fn is_hex(text: &str) -> bool {
+	text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// A modoption changing while we watched — the raw material for a diff.
@@ -167,9 +208,20 @@ impl MyBattle {
 					.get(&format!("{MUTATOR}{index}checksum"))
 					.filter(|hex| is_checksum(hex))
 					.cloned();
+				let source = self
+					.script_tags
+					.get(&format!("{MUTATOR}{index}source"))
+					.and_then(|pin| GitPin::parse(pin));
+				let date = self
+					.script_tags
+					.get(&format!("{MUTATOR}{index}date"))
+					.filter(|date| date.len() <= 40 && date.chars().all(|c| c.is_ascii_graphic()))
+					.cloned();
 				Some(Mutator {
 					name: name.clone(),
 					checksum,
+					source,
+					date,
 				})
 			})
 			.collect()
@@ -481,10 +533,14 @@ mod tests {
 				Mutator {
 					name: "First v1".into(),
 					checksum: Some(sum),
+					source: None,
+					date: None,
 				},
 				Mutator {
 					name: "Second v1".into(),
 					checksum: None,
+					source: None,
+					date: None,
 				},
 			]
 		);
@@ -503,8 +559,45 @@ mod tests {
 			[Mutator {
 				name: "Only v1".into(),
 				checksum: None,
+				source: None,
+				date: None,
 			}]
 		);
 		assert!(with_tags(&[]).mutators().is_empty());
+	}
+
+	#[test]
+	fn a_pin_is_a_repository_and_a_whole_commit_and_nothing_else() {
+		let sha = "9108a17078f79d09925edc305ec83bc06c3a7cb3";
+		let room = with_tags(&[
+			("game/mutator0", "dev-sphere-spawner-9108a17078f7.sdd"),
+			(
+				"game/mutator0source",
+				&format!("github:dev/sphere-spawner@{sha}"),
+			),
+			("game/mutator0date", "2025-10-05T13:32:09Z"),
+		]);
+		let mutator = &room.mutators()[0];
+		assert_eq!(
+			mutator.source,
+			Some(GitPin {
+				repo: "dev/sphere-spawner".into(),
+				commit: sha.into(),
+			})
+		);
+		assert_eq!(mutator.date.as_deref(), Some("2025-10-05T13:32:09Z"));
+		for not_one in [
+			format!("dev/sphere-spawner@{sha}"),
+			format!("gitlab:dev/sphere-spawner@{sha}"),
+			"github:dev/sphere-spawner@main".to_owned(),
+			"github:dev/sphere-spawner@9108a17".to_owned(),
+			format!("github:dev/sphere-spawner@{}", sha.to_uppercase()),
+			format!("github:dev/../x@{sha}"),
+			format!("github:../x@{sha}"),
+			format!("github:dev/x/y@{sha}"),
+			format!("github:https://github.com/dev/x@{sha}"),
+		] {
+			assert_eq!(GitPin::parse(&not_one), None, "{not_one}");
+		}
 	}
 }

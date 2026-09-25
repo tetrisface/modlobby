@@ -1,6 +1,7 @@
 import { cleanup, render } from '@solidjs/testing-library'
 import { afterEach, describe, expect, test } from 'vitest'
 import type { ContentCheckView } from '../ipc/bindings/ContentCheckView'
+import type { MutatorView } from '../ipc/bindings/MutatorView'
 import { ContentChip } from './ContentChip'
 
 afterEach(cleanup)
@@ -54,25 +55,37 @@ describe('the content chip', () => {
 		])
 	})
 
-	test('lists the mutators after the map, in load order, each held to its checksum', () => {
+	test('lists the mutators after the map, in load order, each by its own name', () => {
+		const mutator = (
+			title: string,
+			check: MutatorView['check'],
+			source: string | null = null,
+		): MutatorView => ({
+			name: title,
+			title,
+			here: true,
+			check,
+			source,
+			date: null,
+		})
 		const container = chip({
 			game: null,
 			map: null,
 			mutators: [
-				{ name: 'Sphere v1', here: true, check: { verdict: 'same', hash: 5 } },
-				{
-					name: 'Tanks v2',
-					here: true,
-					check: { verdict: 'differs', ours: 1, room: 2 },
-				},
-				{ name: 'Unannounced v1', here: true, check: null },
+				mutator('Sphere v1', { verdict: 'same', hash: 5 }),
+				mutator('Tanks v2', { verdict: 'differs', ours: 1, room: 2 }),
+				mutator(
+					'Pinned v1',
+					null,
+					'github:dev/pinned@9108a17078f79d09925edc305ec83bc06c3a7cb3',
+				),
 			],
 		})
 		expect(container.querySelector('.chip.warn')).not.toBeNull()
 		expect(rows(container).slice(3)).toEqual([
 			'MutatorSphere v1same files as the room · checksum 5',
 			"MutatorTanks v2different files · checksum 1, the room's 2",
-			'MutatorUnannounced v1installed',
+			'MutatorPinned v1built from dev/pinned @ 9108a17',
 		])
 	})
 })

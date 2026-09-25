@@ -321,6 +321,22 @@ impl Library {
 	}
 
 	/// The archive under `games/` in any data directory whose own name is
+	/// An archive under `games/` by its file name, in any data directory: how
+	/// the engine finds an archive no name inside it answers to. `None` for a
+	/// name that is not one plain file name.
+	pub fn archive_file(&self, file_name: &str) -> Option<PathBuf> {
+		let plain = !file_name.is_empty()
+			&& !file_name.starts_with('.')
+			&& !file_name.contains(['/', '\\', ':']);
+		if !plain {
+			return None;
+		}
+		self.dirs
+			.all()
+			.map(|dir| dir.join("games").join(file_name))
+			.find(|path| path.exists())
+	}
+
 	/// `display_name`: one a download that was not rapid's put there, or one
 	/// put there by hand. Asked of each archive's `modinfo.lua`, since the
 	/// engine goes by that and not by the file's name.

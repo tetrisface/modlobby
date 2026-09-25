@@ -48,9 +48,11 @@ import {
 	type Tab,
 } from '../lib/setup'
 import { SCRATCH, SLOT_KEYS, isDirty, slotOf, titleOf } from '../lib/tweakspace'
+import { offers } from '../lib/mutators'
 import { pushNotice } from '../store/chat'
 import { tweakspaceFor } from '../store/tweakspaceInstance'
 import { PasteBanner } from './PasteBanner'
+import { Mutators } from './Mutators'
 import { Presets } from './Presets'
 import { useRoom, type RoomModel } from './room/model'
 import { canSet, setRefusal } from './room/move'
@@ -100,7 +102,14 @@ const TAB_GAP = 2
  */
 export function Setup() {
 	const room = useRoom()
-	const [pane, setPane] = createSignal<'setup' | 'presets'>('setup')
+	const [chosenPane, setPane] = createSignal<'setup' | 'presets' | 'mutators'>(
+		'setup',
+	)
+	/** A room whose host offers mutators, or loads any: the ones with the third face. */
+	const mutating = () =>
+		offers(room.my()?.scriptTags).length > 0 || room.check().mutators.length > 0
+	const pane = () =>
+		chosenPane() === 'mutators' && !mutating() ? 'setup' : chosenPane()
 
 	/**
 	 * The game's own option table, read from the copy installed on this machine
@@ -293,6 +302,15 @@ export function Setup() {
 				>
 					Presets
 				</button>
+				<Show when={mutating()}>
+					<button
+						class='pane-tab'
+						classList={{ on: pane() === 'mutators' }}
+						onClick={() => setPane('mutators')}
+					>
+						Mutators
+					</button>
+				</Show>
 				<Show when={pane() === 'setup'}>
 					<span class='note'>{noteOfPane(room)}</span>
 					<Show when={space.unsent() > 0}>
@@ -314,7 +332,10 @@ export function Setup() {
 				<PasteBanner />
 			</Show>
 
-			<Show when={pane() === 'setup'} fallback={<Presets />}>
+			<Show
+				when={pane() === 'setup'}
+				fallback={pane() === 'mutators' ? <Mutators /> : <Presets />}
+			>
 				<div class='setup-tabs' ref={strip}>
 					<button
 						class='setup-tab'

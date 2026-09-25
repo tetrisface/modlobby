@@ -45,6 +45,12 @@ pub fn short_hash(version: &str) -> Option<&str> {
 /// The version placeholder a packager writes over, when a list says nothing.
 pub const PLACEHOLDER: &str = "$VERSION";
 
+/// Whether `sha` is a whole commit hash as git writes it: 40 lowercase hex
+/// digits, so it names one commit and nothing can be moved under it.
+pub fn is_commit(sha: &str) -> bool {
+	sha.len() == 40 && sha.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
 /// The line-end rules a repository's `.gitattributes` sets: for each path,
 /// whether `git archive` wrote it with CRLF ends. The last rule that says
 /// anything about line ends decides, as in git.
@@ -301,9 +307,29 @@ fn github_repo(url: &str, parent: &str) -> Option<String> {
 	crate::sources::is_repo(repo).then(|| repo.to_owned())
 }
 
-#[derive(serde::Deserialize)]
-struct Commit {
-	sha: String,
+/// A commit as GitHub describes it: its whole hash, and when it was made.
+#[derive(Debug, serde::Deserialize)]
+pub struct Commit {
+	pub sha: String,
+	#[serde(default)]
+	commit: Option<CommitDetail>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct CommitDetail {
+	committer: Option<Committed>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct Committed {
+	date: Option<String>,
+}
+
+impl Commit {
+	/// When it was committed, as GitHub writes it (`2025-10-05T13:32:09Z`).
+	pub fn date(&self) -> Option<&str> {
+		self.commit.as_ref()?.committer.as_ref()?.date.as_deref()
+	}
 }
 
 /// A commit's whole tree, as GitHub lists it.
@@ -333,27 +359,88 @@ pub async fn build(
 	version: &str,
 	placeholder: &str,
 	games: &Path,
-	mut report: impl FnMut(u64, u64),
+	report: impl FnMut(u64, u64),
 ) -> Result<PathBuf, String> {
 	let failed = |reason: String| format!("git {repo}: {reason}");
 	crate::sources::releases_url(&api.github, repo)
 		.ok_or_else(|| failed("not a repository's name".into()))?;
 	let hash = short_hash(version).ok_or_else(|| failed(format!("{version} names no commit")))?;
-	let commit: Commit = api
-		.json(
-			http,
-			&format!("{}/repos/{repo}/commits/{hash}", api.github),
-			"the commit",
-		)
-		.await
-		.map_err(failed)?;
-	let short = &commit.sha[..commit.sha.len().min(12)];
-	let name = format!("{}-{short}", repo.replace('/', "-"));
-	let staging = games.join(format!(".{name}.sdd.part"));
+	let commit = commit_of(http, api, repo, hash).await.map_err(failed)?;
+	build_commit(
+		http,
+		api,
+		repo,
+		&commit.sha,
+		Some((placeholder, version)),
+		games,
+		report,
+	)
+	.await
+}
+
+/// What a build of `repo` at `sha` is called under `games/`:
+/// `github-owner-repo-<12 digits of the commit>.sdd`, which says where it
+/// came from beside anything built from elsewhere later. One name per
+/// commit, and the engine finds an archive by its file name too, so a room
+/// can load a mutator by this and never mean another copy of the same mod.
+pub fn build_name(repo: &str, sha: &str) -> String {
+	format!(
+		"github-{}-{}.sdd",
+		repo.replace('/', "-"),
+		&sha[..sha.len().min(12)]
+	)
+}
+
+/// The commit `reference` names in `repo`: a branch, a tag, `HEAD` for the
+/// default branch, or a commit hash as short as GitHub can tell apart.
+pub async fn commit_of(
+	http: &reqwest::Client,
+	api: &Api,
+	repo: &str,
+	reference: &str,
+) -> Result<Commit, String> {
+	let plain = !reference.is_empty()
+		&& !reference.contains("..")
+		&& reference
+			.bytes()
+			.all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'/'));
+	if !plain {
+		return Err(format!("{reference:?} is not a branch, tag or commit"));
+	}
+	api.json(
+		http,
+		&format!("{}/repos/{repo}/commits/{reference}", api.github),
+		"the commit",
+	)
+	.await
+}
+
+/// Builds `repo` at `sha`, a whole commit hash, into a `.sdd` under `games`:
+/// the commit's tree as committed and its submodules -- and theirs -- at the
+/// commits they pin, with `stamp`'s version written over its placeholder
+/// where there is one. What a mutator's host pins is built this way, as it
+/// stands. Where the build is.
+pub async fn build_commit(
+	http: &reqwest::Client,
+	api: &Api,
+	repo: &str,
+	sha: &str,
+	stamp: Option<(&str, &str)>,
+	games: &Path,
+	mut report: impl FnMut(u64, u64),
+) -> Result<PathBuf, String> {
+	let failed = |reason: String| format!("git {repo}: {reason}");
+	crate::sources::releases_url(&api.github, repo)
+		.ok_or_else(|| failed("not a repository's name".into()))?;
+	if !is_commit(sha) {
+		return Err(failed(format!("{sha} is not a whole commit hash")));
+	}
+	let name = build_name(repo, sha);
+	let staging = games.join(format!(".{name}.part"));
 	let _ = std::fs::remove_dir_all(&staging);
 	std::fs::create_dir_all(&staging).map_err(|err| failed(err.to_string()))?;
 
-	let mut pending = vec![(repo.to_owned(), commit.sha.clone(), staging.clone())];
+	let mut pending = vec![(repo.to_owned(), sha.to_owned(), staging.clone())];
 	while let Some((at_repo, sha, into)) = pending.pop() {
 		let pinned = checkout(http, api, &at_repo, &sha, &into, games, &mut report)
 			.await
@@ -368,8 +455,10 @@ pub async fn build(
 		}
 	}
 
-	write_version(&staging, placeholder, version).map_err(failed)?;
-	let built = games.join(format!("{name}.sdd"));
+	if let Some((placeholder, version)) = stamp {
+		write_version(&staging, placeholder, version).map_err(failed)?;
+	}
+	let built = games.join(&name);
 	let _ = std::fs::remove_dir_all(&built);
 	std::fs::rename(&staging, &built).map_err(|err| failed(err.to_string()))?;
 	Ok(built)
@@ -594,7 +683,7 @@ mod tests {
 		let games = dir.path().join("games");
 		std::fs::create_dir(&games).unwrap();
 		let server = MockServer::start().await;
-		let sha = "8379d65aaaa0000000000000000000000000000";
+		let sha = "8379d65aaaa00000000000000000000000000000";
 		let lib_sha = "24d521d0cbe7c860a53c360d545aadceaaae3f17";
 		let deep_sha = "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0";
 		let ok = |body: String| ResponseTemplate::new(200).set_body_string(body);
@@ -705,7 +794,7 @@ mod tests {
 		)
 		.await
 		.unwrap();
-		assert_eq!(built, games.join("dev-Game-8379d65aaaa0.sdd"));
+		assert_eq!(built, games.join("github-dev-Game-8379d65aaaa0.sdd"));
 		let read = |path: &str| std::fs::read_to_string(built.join(path)).unwrap();
 		assert_eq!(
 			read("modinfo.lua"),

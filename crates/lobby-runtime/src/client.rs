@@ -176,6 +176,12 @@ pub struct GameAsk {
 	/// What the room announced for its game (`JOINBATTLE`), which a copy
 	/// from outside rapid is held to; `None` with no room to ask.
 	pub room_hash: Option<u32>,
+	/// For a mutator, the checksum its host announced for it, which a copy
+	/// from anywhere is held to in place of `room_hash`.
+	pub checksum: Option<String>,
+	/// For a mutator, the commit its host pinned it to: built from GitHub as
+	/// it stands there, before anything else is asked.
+	pub pin: Option<lobby_core::GitPin>,
 }
 
 /// Nowhere but rapid, until something better is handed in.
@@ -218,15 +224,21 @@ async fn fetch_game(
 		.iter()
 		.find(|(want, _)| *want != recoil::Want::Map)
 		.cloned()?;
-	// A mutator is held to the checksum its room announced once it is here
-	// (`check_content`); only the room's game has a hash to hand on.
+	// Only the room's game has the room's hash; a mutator has the checksum
+	// and the commit its host announced for it.
 	let room_hash = room.hash.filter(|_| want == recoil::Want::Game);
+	let mutator = room
+		.mutators
+		.iter()
+		.find(|mutator| want == recoil::Want::Mutator && mutator.name == name);
 	let ask = |after_rapid| GameAsk {
 		name: name.clone(),
 		dirs: room.dirs.clone(),
 		after_rapid,
 		engine: room.engine.clone(),
 		room_hash,
+		checksum: mutator.and_then(|mutator| mutator.checksum.clone()),
+		pin: mutator.and_then(|mutator| mutator.source.clone()),
 	};
 	let elsewhere = rapid_elsewhere(run, vet, progress);
 	if let Some(got) = ask_sources(sources, ask(false), progress, elsewhere.clone()).await {
@@ -277,6 +289,8 @@ struct Room {
 	dirs: DataDirs,
 	engine: String,
 	hash: Option<u32>,
+	/// What the room announced for each mutator it loads.
+	mutators: Vec<lobby_core::Mutator>,
 }
 
 /// `run`'s game from another rapid master: vetted, and nothing else of the
@@ -1411,6 +1425,50 @@ struct Checked {
 	view: lobby_ui::ContentCheckView,
 }
 
+/// Where a mutator the room loads is here. One its host pinned to a commit
+/// is the build of that commit, found by the file name the room loads it by,
+/// so no other copy of the same mod passes for it; any other is found by the
+/// name inside it.
+fn mutator_archive(
+	library: &content::Library,
+	engine: &str,
+	mutator: &lobby_core::Mutator,
+) -> Option<PathBuf> {
+	let Some(pin) = &mutator.source else {
+		return library.archive_named(engine, &mutator.name);
+	};
+	let built = content::git::build_name(&pin.repo, &pin.commit);
+	if mutator.name != built {
+		tracing::warn!(name = %mutator.name, %built, "a pinned mutator the room names otherwise than its build");
+		return None;
+	}
+	library.archive_file(&built)
+}
+
+/// A mutator as the front end shows it: by the name inside it where that is
+/// known, else the repository it is built from, else the name the room
+/// loads it by.
+fn mutator_view(
+	mutator: &lobby_core::Mutator,
+	here: bool,
+	title: Option<String>,
+	check: Option<lobby_ui::CheckView>,
+) -> lobby_ui::MutatorView {
+	lobby_ui::MutatorView {
+		title: title
+			.or_else(|| mutator.source.as_ref().map(|pin| pin.repo.clone()))
+			.unwrap_or_else(|| mutator.name.clone()),
+		name: mutator.name.clone(),
+		here,
+		check,
+		source: mutator
+			.source
+			.as_ref()
+			.map(|pin| format!("github:{}@{}", pin.repo, pin.commit)),
+		date: mutator.date.clone(),
+	}
+}
+
 /// The room's game and map here held to the room's hashes: what
 /// `content::checksum` makes of each, as the front end shows it.
 fn check_content(dirs: DataDirs, key: &CheckKey) -> lobby_ui::ContentCheckView {
@@ -1432,7 +1490,7 @@ fn check_content(dirs: DataDirs, key: &CheckKey) -> lobby_ui::ContentCheckView {
 	};
 	let announced = |mutator: &lobby_core::Mutator| {
 		let checksum = mutator.checksum.as_deref()?;
-		let path = find(&mutator.name)?;
+		let path = mutator_archive(&library, &key.engine, mutator)?;
 		let hash = content::checksum::announced_hash(checksum)?;
 		Some(view(
 			content::checksum::against_announced(&path, checksum),
@@ -1445,10 +1503,10 @@ fn check_content(dirs: DataDirs, key: &CheckKey) -> lobby_ui::ContentCheckView {
 		mutators: key
 			.mutators
 			.iter()
-			.map(|(mutator, here)| lobby_ui::MutatorView {
-				name: mutator.name.clone(),
-				here: *here,
-				check: announced(mutator),
+			.map(|(mutator, here)| {
+				let title = mutator_archive(&library, &key.engine, mutator)
+					.and_then(|path| content::map_name::game_of_archive(&path));
+				mutator_view(mutator, *here, title, announced(mutator))
 			})
 			.collect(),
 	}
@@ -1984,12 +2042,7 @@ impl Runtime {
 			.state
 			.my_battle
 			.as_ref()
-			.map(|my| {
-				my.mutators()
-					.into_iter()
-					.map(|mutator| mutator.name)
-					.collect()
-			})
+			.map(lobby_core::MyBattle::mutators)
 			.unwrap_or_default();
 		self.fetch(wanted, mutators, self.room(), by_hand).await
 	}
@@ -2068,7 +2121,7 @@ impl Runtime {
 	async fn fetch(
 		&mut self,
 		(engine_version, game, map): (String, String, String),
-		mutators: Vec<String>,
+		mutators: Vec<lobby_core::Mutator>,
 		server: Option<String>,
 		by_hand: bool,
 	) -> Result<(), ClientError> {
@@ -2101,9 +2154,9 @@ impl Runtime {
 		}
 		wants.extend(
 			mutators
-				.into_iter()
-				.filter(|name| library.archive_named(&engine_version, name).is_none())
-				.map(|name| (recoil::Want::Mutator, name)),
+				.iter()
+				.filter(|mutator| mutator_archive(&library, &engine_version, mutator).is_none())
+				.map(|mutator| (recoil::Want::Mutator, mutator.name.clone())),
 		);
 		let mut map_searches = vec![self.bar.search.clone()];
 		// No map named is no map to ask for; the picker fetches whichever is chosen.
@@ -2155,6 +2208,7 @@ impl Runtime {
 				.and_then(|at| self.link(at))
 				.and_then(|conn| conn.session.state.my_battle.as_ref())
 				.and_then(|my| content::checksum::parse_room_hash(&my.game_hash)),
+			mutators,
 		};
 
 		let (stop_tx, stop_rx) = oneshot::channel();
@@ -2447,7 +2501,7 @@ impl Runtime {
 			.3
 			.iter()
 			.map(|mutator| {
-				let here = library.archive_named(&key.0, &mutator.name).is_some();
+				let here = mutator_archive(&library, &key.0, mutator).is_some();
 				(mutator.clone(), here)
 			})
 			.collect();
@@ -2514,11 +2568,10 @@ impl Runtime {
 			mutators: key
 				.mutators
 				.iter()
-				.map(|(mutator, here)| lobby_ui::MutatorView {
-					name: mutator.name.clone(),
-					here: *here,
-					check: (*here && mutator.checksum.is_some())
-						.then_some(lobby_ui::CheckView::Checking),
+				.map(|(mutator, here)| {
+					let checking = (*here && mutator.checksum.is_some())
+						.then_some(lobby_ui::CheckView::Checking);
+					mutator_view(mutator, *here, None, checking)
 				})
 				.collect(),
 		};
@@ -3601,11 +3654,15 @@ impl Runtime {
 					.iter()
 					.flat_map(lobby_core::MyBattle::mutators)
 					.filter(|mutator| {
-						library
-							.archive_named(&room.engine_version, &mutator.name)
-							.is_none()
+						mutator_archive(&library, &room.engine_version, mutator).is_none()
 					})
-					.map(|mutator| format!("the mutator {}", mutator.name)),
+					.map(|mutator| {
+						let named = mutator
+							.source
+							.as_ref()
+							.map_or(&mutator.name, |pin| &pin.repo);
+						format!("the mutator {named}")
+					}),
 			);
 			if !missing.is_empty() {
 				return Err(ClientError::Engine(format!(
@@ -4217,6 +4274,8 @@ mod tests {
 		let mutator = |name: &str, checksum: &str| lobby_core::Mutator {
 			name: name.into(),
 			checksum: Some(checksum.into()),
+			source: None,
+			date: None,
 		};
 		let key = CheckKey {
 			engine: "2026.09.01".into(),
@@ -4234,23 +4293,82 @@ mod tests {
 			[
 				MutatorView {
 					name: "Sphere v1".into(),
+					title: "Sphere v1".into(),
 					here: true,
 					check: Some(CheckView::Same { hash: ours }),
+					source: None,
+					date: None,
 				},
 				MutatorView {
 					name: "Sphere v1".into(),
+					title: "Sphere v1".into(),
 					here: true,
 					check: Some(CheckView::Differs {
 						ours,
 						room: ours ^ 1
 					}),
+					source: None,
+					date: None,
 				},
 				MutatorView {
 					name: "Absent v1".into(),
+					title: "Absent v1".into(),
 					here: false,
 					check: None,
+					source: None,
+					date: None,
 				},
 			]
+		);
+	}
+
+	/// A mutator pinned to a commit is its build of that commit, found by the
+	/// file name the room loads it by: another copy of the same mod, with the
+	/// same name inside it, does not pass for it.
+	#[test]
+	fn a_pinned_mutator_is_its_build_and_no_other_copy() {
+		let sha = "9108a17078f79d09925edc305ec83bc06c3a7cb3";
+		let pin = lobby_core::GitPin {
+			repo: "dev/sphere".into(),
+			commit: sha.into(),
+		};
+		let built = content::git::build_name(&pin.repo, sha);
+		let dir = tempfile::tempdir().unwrap();
+		let games = dir.path().join("games");
+		let modinfo = "name = 'Sphere'\nversion = 'v1'\nmutator = '1'\n";
+		std::fs::create_dir_all(games.join("sphere.sdd")).unwrap();
+		std::fs::write(games.join("sphere.sdd").join("modinfo.lua"), modinfo).unwrap();
+		let mutator = lobby_core::Mutator {
+			name: built.clone(),
+			checksum: None,
+			source: Some(pin),
+			date: Some("2025-10-05T13:32:09Z".into()),
+		};
+		let library = content::Library::new(DataDirs::only(dir.path()));
+		assert_eq!(mutator_archive(&library, "2026.09.01", &mutator), None);
+
+		std::fs::create_dir_all(games.join(&built)).unwrap();
+		std::fs::write(games.join(&built).join("modinfo.lua"), modinfo).unwrap();
+		assert_eq!(
+			mutator_archive(&library, "2026.09.01", &mutator),
+			Some(games.join(&built))
+		);
+		let key = CheckKey {
+			engine: "2026.09.01".into(),
+			game: ("Game 1".into(), None),
+			map: ("Nowhere 1".into(), None),
+			mutators: vec![(mutator, true)],
+		};
+		assert_eq!(
+			check_content(DataDirs::only(dir.path()), &key).mutators,
+			[lobby_ui::MutatorView {
+				name: built,
+				title: "Sphere v1".into(),
+				here: true,
+				check: None,
+				source: Some(format!("github:dev/sphere@{sha}")),
+				date: Some("2025-10-05T13:32:09Z".into()),
+			}]
 		);
 	}
 
@@ -4259,6 +4377,7 @@ mod tests {
 			dirs: DataDirs::only("data"),
 			engine: "2026.09.01".into(),
 			hash: Some(1_521_219_441),
+			mutators: Vec::new(),
 		}
 	}
 

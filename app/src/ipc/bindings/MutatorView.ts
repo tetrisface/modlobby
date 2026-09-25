@@ -7,7 +7,23 @@ import type { CheckView } from './CheckView'
  * against nothing, so this is the only thing that does.
  */
 export type MutatorView = {
+	/**
+	 * What the room loads it by: the name inside it, or for one built from
+	 * a commit, the build's file name.
+	 */
 	name: string
+	/**
+	 * What to call it: the name inside it where this copy is here to read.
+	 */
+	title: string
 	here: boolean
 	check: CheckView | null
+	/**
+	 * `github:owner/repo@<commit>` for one built from a commit.
+	 */
+	source: string | null
+	/**
+	 * When that commit was made, as the host announced it.
+	 */
+	date: string | null
 }

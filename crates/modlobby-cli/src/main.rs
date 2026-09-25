@@ -71,6 +71,14 @@ enum Command {
 		/// A `.sdz`, `.sd7`, unpacked `.sdd` or rapid `.sdp`.
 		archive: PathBuf,
 	},
+	/// Build a GitHub repository's commit the way a player's modlobby will,
+	/// and print the catalog entry that pins it: the name rooms add it by,
+	/// `github:owner/repo@commit` and the commit's date.
+	Mutator {
+		/// `owner/repo`, or `owner/repo@<branch, tag or commit>`; without one,
+		/// the default branch's newest commit.
+		repo: String,
+	},
 }
 
 #[derive(Args)]
@@ -147,6 +155,35 @@ async fn main() -> anyhow::Result<()> {
 				content::fetch::hex(&sum)
 			);
 			Ok(())
+		}
+		Command::Mutator { repo } => {
+			let (repo, reference) = repo.split_once('@').unwrap_or((repo.as_str(), "HEAD"));
+			let http = content::http::client(env!("CARGO_PKG_VERSION"));
+			let api = content::api::Api::github(None);
+			let commit = content::git::commit_of(&http, &api, repo, reference)
+				.await
+				.map_err(anyhow::Error::msg)?;
+			let sha = &commit.sha;
+			let games =
+				std::env::temp_dir().join(format!("modlobby-mutator-{}", std::process::id()));
+			let built = content::git::build_commit(&http, &api, repo, sha, None, &games, |_, _| {})
+				.await
+				.map_err(anyhow::Error::msg);
+			// Built to prove the commit is a mutator the engine can name, the
+			// way a player's modlobby will build it.
+			let printed = built.and_then(|path| {
+				let inside = content::map_name::game_of_archive(&path)
+					.with_context(|| format!("{repo} at {sha} has no modinfo.lua naming it"))?;
+				let label = repo.rsplit('/').next().unwrap_or(repo);
+				println!("# {inside}");
+				println!(
+					"- {{ name: {label:?}, source: \"github:{repo}@{sha}\", date: \"{}\" }}",
+					commit.date().unwrap_or_default()
+				);
+				Ok(())
+			});
+			let _ = std::fs::remove_dir_all(&games);
+			printed
 		}
 		Command::Rapid { url } => {
 			let vetter = content::rapid::Vetter::new(

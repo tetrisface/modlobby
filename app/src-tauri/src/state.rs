@@ -259,7 +259,9 @@ impl App {
 	/// springfiles. BAR's own names are never looked for anywhere but BAR's
 	/// rapid, and springfiles, asked by name, only once BAR's names are known.
 	/// A list's rapid entry is fetched by the runtime's `rapid`, and forge
-	/// answers are kept under the config's `cache/forge/`.
+	/// answers are kept under the config's `cache/forge/`. A mutator whose
+	/// host pinned a commit is built from it where an override would be
+	/// asked, unless the player has one.
 	pub async fn game_from_sources(
 		&self,
 		ask: lobby_runtime::GameAsk,
@@ -294,7 +296,11 @@ impl App {
 				.collect();
 			sources::resolve(&ask.name, &overrides, &[], &[])
 		};
-		if found.is_empty() && !springfiles_too {
+		let pin = ask
+			.pin
+			.clone()
+			.filter(|_| !ask.after_rapid && found.is_empty());
+		if found.is_empty() && !springfiles_too && pin.is_none() {
 			return None;
 		}
 		let games = ask.dirs.write.join("games");
@@ -319,6 +325,27 @@ impl App {
 		let report = |current, total| {
 			let _ = progress.try_send(recoil::Progress { current, total });
 		};
+		if let Some(pin) = pin {
+			let built = content::git::build_commit(
+				&self.http,
+				&api,
+				&pin.repo,
+				&pin.commit,
+				None,
+				&games,
+				report,
+			)
+			.await
+			.map(|path| sources::Fetched {
+				from: format!("git {}@{}, pinned by the room", pin.repo, &pin.commit[..7]),
+				path,
+				built: true,
+			});
+			return Some(match built {
+				Ok(fetched) => hold_to_room(fetched, ask).await,
+				Err(reason) => Err(reason),
+			});
+		}
 		let springfiles = || {
 			sources::springfiles(
 				&self.http,
@@ -377,22 +404,31 @@ impl App {
 	}
 }
 
-/// A game fetched from outside rapid, held to the hash its room announced:
-/// kept when it has the room's checksum, set aside where the engine will not
-/// load it when it has not, and kept with a word said when it could not be
-/// told.
+/// A game fetched from outside rapid, held to the hash its room announced
+/// (a mutator to the checksum its host announced for it): kept when it has
+/// the room's checksum, set aside where the engine will not load it when it
+/// has not, and kept with a word said when it could not be told.
 async fn hold_to_room(
 	fetched: content::sources::Fetched,
 	ask: lobby_runtime::GameAsk,
 ) -> Result<String, String> {
-	use content::checksum::{Verdict, against_room};
+	use content::checksum::{Verdict, against_announced, against_room, announced_hash};
 	let set_aside = |why: String| {
 		let kept = content::sources::set_aside(&fetched.path, &ask.dirs.write)
 			.map(|aside| format!("set aside in {}", aside.display()))
 			.unwrap_or_else(|err| format!("and could not be set aside: {err}"));
 		Err(format!("{}: {why}; {kept}", fetched.from))
 	};
-	let Some(room) = ask.room_hash else {
+	let room = match &ask.checksum {
+		Some(checksum) => announced_hash(checksum),
+		None => ask.room_hash,
+	};
+	let Some(room) = room else {
+		// A mutator built from the commit its host pinned was proved file by
+		// file against that commit as it was built; that is its check.
+		if fetched.built && ask.pin.is_some() {
+			return Ok(format!("{}; each file as the commit has it", fetched.from));
+		}
 		if fetched.built {
 			return set_aside(
 				"a build is only kept once its checksum is a room's, and there is no room".into(),
@@ -403,9 +439,13 @@ async fn hold_to_room(
 	let path = fetched.path.clone();
 	let dirs = ask.dirs.clone();
 	let engine = ask.engine.clone();
-	let verdict = tokio::task::spawn_blocking(move || {
-		let library = content::Library::new(dirs);
-		against_room(&path, room, &|name| library.archive_named(&engine, name))
+	let checksum = ask.checksum.clone();
+	let verdict = tokio::task::spawn_blocking(move || match checksum {
+		Some(checksum) => against_announced(&path, &checksum),
+		None => {
+			let library = content::Library::new(dirs);
+			against_room(&path, room, &|name| library.archive_named(&engine, name))
+		}
 	})
 	.await
 	.unwrap_or_else(|err| Verdict::Unchecked(err.to_string()));

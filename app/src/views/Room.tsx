@@ -14,6 +14,7 @@ import {
 import { Composer } from '../components/Composer'
 import { GameActions } from '../components/GameActions'
 import { ContentChip } from '../components/ContentChip'
+import { MutatorsChip } from '../components/MutatorsChip'
 import { GetEngine } from '../components/GetEngine'
 import { Linkify } from '../components/Linkify'
 import { MapEditor } from '../components/MapEditor'
@@ -1142,6 +1143,7 @@ function Chips(props: { battle: BattleView }) {
 					<Missing parts={parts()} engineVersion={props.battle.engineVersion} />
 				</Show>
 			</Show>
+			<MutatorsChip mutators={room.check().mutators} />
 			<Show when={layoutLabel(props.battle)}>
 				{(label) => <span class='chip info'>{label()}</span>}
 			</Show>
