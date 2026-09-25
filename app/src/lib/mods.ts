@@ -42,20 +42,22 @@ const REPO = '[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+'
 const REF = '[A-Za-z0-9_./-]+'
 const REPO_REF = new RegExp(`^(${REPO})(?:@(${REF}))?$`)
 const GITHUB_URL = new RegExp(
-	`^(?:https?://)?(?:www\\.)?github\\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\\.git)?(?:/tree/(${REF}))?/*$`,
+	`^(?:https?://)?(?:www\\.)?github\\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\\.git)?(?:/tree/(${REF})|/commit/([0-9a-f]{7,40}))?/*$`,
 )
-const COMMIT = /^[0-9a-f]{40}$/
+/** A commit as people write one: git's short form and up, as GitHub resolves it. */
+const COMMIT = /^[0-9a-f]{7,40}$/
 
 /**
  * `owner/repo` and the branch, tag or commit asked for, out of what somebody
- * pasted: the repository's page on GitHub, with or without `/tree/<branch>`,
- * or `owner/repo[@ref]` as the host takes it.
+ * pasted: a page on GitHub -- the repository's, `/tree/<branch or commit>`
+ * or `/commit/<commit>` -- or `owner/repo[@ref]` as the host takes it.
  */
 export function parseGithub(
 	text: string,
 ): { repo: string; ref: string | null } | null {
 	const found = GITHUB_URL.exec(text.trim()) ?? REPO_REF.exec(text.trim())
-	const [, repo, ref] = found ?? []
+	const [, repo, ...refs] = found ?? []
+	const ref = refs.find(Boolean)
 	if (!repo || ref?.includes('..')) return null
 	return { repo, ref: ref ?? null }
 }

@@ -66,6 +66,9 @@ describe('what somebody pastes', () => {
 			['https://github.com/dev/sphere.git', 'dev/sphere', null],
 			['github.com/dev/sphere/tree/feature/x', 'dev/sphere', 'feature/x'],
 			[' https://www.github.com/dev/sphere/tree/main ', 'dev/sphere', 'main'],
+			[`https://github.com/dev/sphere/commit/${SHA}`, 'dev/sphere', SHA],
+			['github.com/dev/sphere/commit/9108a17', 'dev/sphere', '9108a17'],
+			['dev/sphere@9108a17', 'dev/sphere', '9108a17'],
 		] as const) {
 			expect(parseGithub(text), text).toEqual({ repo, ref })
 		}
@@ -78,6 +81,8 @@ describe('what somebody pastes', () => {
 			'dev/sphere/extra',
 			'dev/sphere@../up',
 			'https://gitlab.com/dev/sphere',
+			'github.com/dev/sphere/commit/main',
+			'github.com/dev/sphere/commit/9108a1',
 		])
 			expect(parseGithub(text), text).toBeNull()
 	})
@@ -196,6 +201,10 @@ describe('what a draft says', () => {
 		expect(links(editPick(first!, `dev/sphere@${OTHER}`)!)).toEqual([
 			AT,
 			['another commit', `https://github.com/dev/sphere/tree/${OTHER}`],
+		])
+		expect(links(editPick(first!, 'dev/sphere@bbbbbbb')!)).toEqual([
+			AT,
+			['another commit', 'https://github.com/dev/sphere/tree/bbbbbbb'],
 		])
 		expect(links(editPick(first!, 'dev/tanks')!)).toEqual([
 			['dev/tanks', 'https://github.com/dev/tanks'],

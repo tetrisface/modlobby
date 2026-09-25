@@ -481,7 +481,13 @@ function AddRow(props: {
 		<div class='mod-add'>
 			<input
 				value={text()}
-				placeholder='Paste a GitHub page, owner/repo, or a name the host offers'
+				placeholder='owner/repo, owner/repo@branch or @commit, or a GitHub link'
+				title={
+					'A GitHub repository at the newest commit of its default branch (owner/repo),\n' +
+					'at a branch or commit (owner/repo@main, owner/repo@9108a17),\n' +
+					'or a link to its page, a branch or a commit.\n' +
+					'A name used recently on this host works too.'
+				}
 				onInput={(event) => {
 					setText(event.currentTarget.value)
 					props.onTyping()
