@@ -4717,10 +4717,52 @@ input[type='checkbox'].v-edit {
 	min-width: 0;
 }
 
+.mod-title {
+	display: flex;
+	align-items: center;
+	gap: 0.25rem;
+	min-width: 0;
+}
+
 .mod-name {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+
+/* The tweak rows' chevron: pointing right shut, down open. */
+.mod-expand {
+	display: inline-flex;
+	flex-shrink: 0;
+	padding: 0.125rem;
+	color: var(--faint);
+	background: transparent;
+	border: none;
+	border-radius: 2px;
+}
+
+.mod-expand:hover {
+	color: var(--text);
+}
+
+.mod-expand .icon {
+	width: 0.75rem;
+	height: 0.75rem;
+	transition: transform 120ms ease;
+}
+
+.mod-row.open .mod-expand .icon {
+	transform: rotate(90deg);
+}
+
+/* What the mod says it does, under its name and across to the row's end. */
+.mod-description {
+	grid-column: 3 / -1;
+	margin: 0.25rem 0 0.25rem;
+	font-size: 0.8125rem;
+	line-height: 1.45;
+	color: var(--muted);
+	white-space: pre-wrap;
 }
 
 .mod-row.added .mod-name,

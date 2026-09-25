@@ -69,6 +69,8 @@ export function reorderGesture(options: {
 	/** Where it came from and would land now; `null` once dropped or let go. */
 	onOver: (flight: { from: number; to: number } | null) => void
 	onDrop: (from: number, to: number) => void
+	/** A press let go of where it began: a click on the row, not a drag. */
+	onTap?: () => void
 }): (event: PointerEvent) => void {
 	return (event: PointerEvent) => {
 		if (event.button !== 0) return
@@ -106,7 +108,10 @@ export function reorderGesture(options: {
 			window.removeEventListener('pointermove', move)
 			window.removeEventListener('pointerup', up)
 			window.removeEventListener('pointercancel', cancel)
-			if (!flight) return
+			if (!flight) {
+				if (dropped) options.onTap?.()
+				return
+			}
 			flight.drop()
 			options.onOver(null)
 			if (dropped && to !== from) options.onDrop(from, to)

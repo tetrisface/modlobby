@@ -58,12 +58,12 @@ describe('the content chip', () => {
 	test('lists the mods after the map, in load order, each by its own name', () => {
 		const mutator = (
 			title: string,
-			description: null,
 			check: MutatorView['check'],
 			source: string | null = null,
 		): MutatorView => ({
 			name: title,
 			title,
+			description: null,
 			here: true,
 			check,
 			source,

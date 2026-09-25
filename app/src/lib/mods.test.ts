@@ -92,6 +92,7 @@ describe('the room as picks', () => {
 				repo: 'dev/sphere',
 				source: SPHERE_SOURCE,
 				date: '2025-10-05T13:32:07Z',
+				description: null,
 			},
 			{
 				ref: 'tiny maps v1',
@@ -99,6 +100,7 @@ describe('the room as picks', () => {
 				repo: null,
 				source: null,
 				date: null,
+				description: null,
 			},
 		])
 	})
@@ -165,6 +167,7 @@ describe('editing a draft', () => {
 			repo: 'dev/tanks',
 			source: null,
 			date: null,
+			description: null,
 		})
 		expect(editPick(first!, 'nonsense')).toBeNull()
 	})

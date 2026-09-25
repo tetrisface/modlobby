@@ -199,6 +199,33 @@ describe('the mods pane', () => {
 	}
 	const NEWER = 'c'.repeat(40)
 
+	test('a click opens a mod to what it says it does; a drag does not', () => {
+		const described = {
+			...sphere,
+			description: 'spawns aggressive space spheres',
+		}
+		const { rows, container } = pane({
+			loaded: [described, { ...sphere, name: 'x', title: 'x', source: null }],
+		})
+		const description = () =>
+			container.querySelector('.mod-description')?.textContent
+		laidOut(container)
+		const row = rows()[0]!.row
+		fireEvent.pointerDown(row, { clientX: 10, clientY: 20 })
+		fireEvent.pointerUp(window, { clientX: 10, clientY: 20 })
+		expect(description()).toBe('spawns aggressive space spheres')
+		const chevron = row.querySelector<HTMLButtonElement>('.mod-expand')!
+		expect(chevron.getAttribute('aria-expanded')).toBe('true')
+		fireEvent.click(chevron)
+		expect(description()).toBeUndefined()
+		fireEvent.pointerDown(row, { clientX: 10, clientY: 20 })
+		fireEvent.pointerMove(window, { clientX: 10, clientY: 70 })
+		fireEvent.pointerUp(window, { clientX: 10, clientY: 70 })
+		expect(description()).toBeUndefined()
+		const quiet = rows().find((entry) => entry.name === 'x')
+		expect(quiet?.row.querySelector('.mod-expand')).toBeNull()
+	})
+
 	test('the summary is the legend of the row markers', async () => {
 		newestIs(NEWER)
 		const { rows, offers, container } = pane({ loaded: [sphere] })

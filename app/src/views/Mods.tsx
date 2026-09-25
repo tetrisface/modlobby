@@ -126,6 +126,18 @@ export function Mods() {
 		return held ? movePick(shown(), held.from, held.to) : shown()
 	}
 
+	/**
+	 * The rows opened to what they say they do, by repository or name, so an
+	 * update from the host -- which remakes every row -- leaves them open.
+	 */
+	const [opened, setOpened] = createSignal<ReadonlySet<string>>(new Set())
+	const keyOf = (pick: Pick) => pick.repo ?? pick.ref
+	function toggle(pick: Pick) {
+		const next = new Set(opened())
+		if (!next.delete(keyOf(pick))) next.add(keyOf(pick))
+		setOpened(next)
+	}
+
 	return (
 		<div class='mods'>
 			<div class='toolbar'>
@@ -161,10 +173,13 @@ export function Mods() {
 							<Row
 								pick={pick}
 								change={drafting() ? changeOf(pick, current()) : 'same'}
+								open={opened().has(keyOf(pick))}
+								onToggle={() => toggle(pick)}
 								onPress={reorderGesture({
 									from: index,
 									onOver: setFlying,
 									onDrop: (from, to) => edit(movePick(shown(), from, to)),
+									onTap: () => pick.description && toggle(pick),
 								})}
 								checking={checking()}
 								onUpdate={() => void update([pick])}
@@ -315,7 +330,10 @@ function SourceButton(props: { link: SourceLink }) {
 function Row(props: {
 	pick: Pick
 	change: Change
-	/** A press anywhere but on a control picks the row up. */
+	/** Opened to what it says it does. */
+	open: boolean
+	onToggle: () => void
+	/** A press anywhere but on a control picks the row up; a click opens it. */
 	onPress: (event: PointerEvent) => void
 	/** While GitHub is being asked, nothing else is asked of it. */
 	checking: boolean
@@ -330,7 +348,9 @@ function Row(props: {
 		[
 			CHANGE_WORDS[props.change],
 			props.pick.date && `committed ${exactly(props.pick.date)}`,
-			'Drag to change the load order',
+			props.pick.description
+				? 'Click for what it does; drag to change the load order'
+				: 'Drag to change the load order',
 		]
 			.filter(Boolean)
 			.join('\n')
@@ -351,7 +371,7 @@ function Row(props: {
 	return (
 		<div
 			class='mod-row movable'
-			classList={{ [props.change]: true }}
+			classList={{ [props.change]: true, open: props.open }}
 			title={tip()}
 			onPointerDown={props.onPress}
 		>
@@ -360,7 +380,20 @@ function Row(props: {
 				⠿
 			</span>
 			<span class='mod-what'>
-				<span class='mod-name'>{props.pick.label}</span>
+				<span class='mod-title'>
+					<span class='mod-name'>{props.pick.label}</span>
+					<Show when={props.pick.description}>
+						<button
+							type='button'
+							class='mod-expand'
+							aria-expanded={props.open}
+							title={props.open ? 'Hide what it does' : 'Show what it does'}
+							onClick={() => props.onToggle()}
+						>
+							<Glyph id='act-expand' />
+						</button>
+					</Show>
+				</span>
 				<Show
 					when={editing()}
 					fallback={
@@ -420,6 +453,9 @@ function Row(props: {
 					onClick={props.onRemove}
 				/>
 			</ActionCell>
+			<Show when={props.open && props.pick.description}>
+				{(text) => <p class='mod-description'>{text()}</p>}
+			</Show>
 		</div>
 	)
 }

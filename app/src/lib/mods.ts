@@ -28,6 +28,8 @@ export type Pick = {
 	 * GitHub gave it when asked.
 	 */
 	newest?: string | null
+	/** What it says it does, once a copy is here to read. */
+	description?: string | null
 }
 
 /** What a room loads at most; the host refuses more (`MAX_MUTATORS`). */
@@ -83,6 +85,7 @@ export function picksOf(
 		repo: repoOfSource(mutator.source),
 		source: mutator.source,
 		date: mutator.date,
+		description: mutator.description,
 	}))
 }
 
@@ -199,6 +202,7 @@ export function editPick(pick: Pick, text: string): Pick | null {
 		repo: github.repo,
 		source: same ? pick.source : null,
 		date: same ? pick.date : null,
+		description: same ? pick.description : null,
 	}
 }
 
