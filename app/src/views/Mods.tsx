@@ -240,8 +240,11 @@ export function Mods() {
 				</Show>
 
 				<Show when={modSets().length > 0}>
-					<div class='setup-section'>
-						<span>Recent sets</span>
+					<div
+						class='setup-section'
+						title='The combinations of mods your games were played with, newest first, in the order and at the commits last played'
+					>
+						<span>Played recently</span>
 						<span class='count'>{modSets().length}</span>
 					</div>
 					<div class='mod-rows sets'>

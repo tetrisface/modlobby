@@ -294,7 +294,7 @@ export function Setup() {
 					classList={{ on: pane() === 'setup' }}
 					onClick={() => setPane('setup')}
 				>
-					Setup
+					Options
 				</button>
 				<button
 					class='pane-tab'

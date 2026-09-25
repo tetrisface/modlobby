@@ -14,4 +14,9 @@ export type GameRunningView = {
 	 * someone's ID; after, SPADS refuses it as `already been added`.
 	 */
 	added: boolean
+	/**
+	 * Whom we play alongside once `!joinas` has put us in on their ID: empty
+	 * until the host has said who is on it, `None` while we only watch.
+	 */
+	playingWith: Array<string> | null
 }

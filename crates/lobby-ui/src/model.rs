@@ -476,6 +476,9 @@ pub struct GameRunningView {
 	/// who does as a spectator). Until then `!joinas` can still put us in on
 	/// someone's ID; after, SPADS refuses it as `already been added`.
 	pub added: bool,
+	/// Whom we play alongside once `!joinas` has put us in on their ID: empty
+	/// until the host has said who is on it, `None` while we only watch.
+	pub playing_with: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]

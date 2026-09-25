@@ -161,6 +161,9 @@ pub struct MyBattle {
 	/// clock, while the flood window holds it. The runtime, which runs the
 	/// window, sets and clears it.
 	pub held_until_ms: Option<u64>,
+	/// The in-game ID SPADS put us on in the running game (`!joinas`), until
+	/// the next game starts.
+	pub joined_id: Option<u32>,
 	next_seq: u64,
 }
 
@@ -189,6 +192,7 @@ impl MyBattle {
 			ready_on_its_way: None,
 			seat_on_its_way: None,
 			held_until_ms: None,
+			joined_id: None,
 			next_seq: 0,
 		}
 	}

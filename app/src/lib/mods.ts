@@ -320,21 +320,28 @@ export function summary(
 	return parts
 }
 
-/** A list a room loaded while you were in it, with when it did. */
+/** A combination of mods a game was played with, and when it last was. */
 export type ModSet = { at: string; mods: Pick[] }
 
-const signature = (mods: readonly Pick[]) =>
-	mods.map((mod) => mod.ref).join('\n')
-
-const labels = (mods: readonly Pick[]) =>
-	mods.map((mod) => mod.label).join('\n')
+/** Which mod a pick is, whatever commit: its repository, or its name. */
+const identity = (mod: Pick) => mod.repo ?? mod.ref.toLowerCase()
 
 /**
- * The sets with what a room loads now at the front, each mod pinned to the
- * commit it had, so the set means the same later. Only once every mod is
- * here: before then a mod from GitHub has no name but its repository's. A
- * set already at the front keeps its place and takes the names; one further
- * back moves up.
+ * Which combination a set is: its mods in load order, since a later mod
+ * overrides an earlier one and another order is another game. Another
+ * commit of the same mods is the same combination, moved on.
+ */
+const combination = (mods: readonly Pick[]) => mods.map(identity).join('\n')
+
+/** Whether no mod is in the list twice, as a room's list is between two changes. */
+const distinct = (mods: readonly Pick[]) =>
+	new Set(mods.map(identity)).size === mods.length
+
+/**
+ * The sets with the one a game has just started with at the front, each mod
+ * pinned to the commit it was played at, so the set means the same later.
+ * The same combination played before moves up, at the commits played now.
+ * Only a whole list whose every mod is here counts.
  */
 export function remember(
 	sets: readonly ModSet[],
@@ -350,14 +357,10 @@ export function remember(
 		source: mutator.source,
 		date: mutator.date,
 	}))
-	const front = sets[0]
-	if (front && signature(front.mods) === signature(mods))
-		return labels(front.mods) === labels(mods)
-			? [...sets]
-			: [{ at: front.at, mods }, ...sets.slice(1)]
+	if (!distinct(mods)) return [...sets]
 	return [
 		{ at, mods },
-		...sets.filter((set) => signature(set.mods) !== signature(mods)),
+		...sets.filter((set) => combination(set.mods) !== combination(mods)),
 	].slice(0, KEPT)
 }
 
@@ -385,7 +388,7 @@ export function readSets(storage: Storage | null): ModSet[] {
 	try {
 		const parsed: unknown = JSON.parse(storage?.getItem(SETS_KEY) ?? '[]')
 		if (!Array.isArray(parsed)) return []
-		return parsed.filter(isSet)
+		return tidy(parsed.filter(isSet))
 	} catch {
 		return []
 	}
@@ -400,6 +403,26 @@ export function writeSets(storage: Storage | null, sets: readonly ModSet[]) {
 }
 
 export const SETS_KEY = 'modlobby.modSets'
+
+/**
+ * Stored sets as [`remember`] would have kept them: once per combination,
+ * the newest, and none that is a list caught between two changes or saved
+ * before its mods were here -- named after their repository, not
+ * themselves.
+ */
+function tidy(sets: readonly ModSet[]): ModSet[] {
+	const kept: ModSet[] = []
+	for (const set of sets) {
+		const whole =
+			distinct(set.mods) &&
+			set.mods.every((mod) => mod.label !== (mod.repo ?? null))
+		const seen = kept.some(
+			(held) => combination(held.mods) === combination(set.mods),
+		)
+		if (whole && !seen) kept.push(set)
+	}
+	return kept
+}
 
 function isSet(value: unknown): value is ModSet {
 	if (typeof value !== 'object' || value === null) return false

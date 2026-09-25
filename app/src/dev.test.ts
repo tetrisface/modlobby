@@ -143,7 +143,7 @@ describe('the dev console hooks', () => {
 	test('the breath is refused while a game runs, since nothing is asked', () => {
 		emit({
 			type: 'gameRunning',
-			data: { id: 5, ip: '', port: 0, added: true },
+			data: { id: 5, ip: '', port: 0, added: true, playingWith: null },
 		})
 		expect(() => breath()).toThrow(/game is running/)
 	})

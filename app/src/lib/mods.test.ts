@@ -263,38 +263,40 @@ describe('what a draft says', () => {
 })
 
 describe('remembered sets', () => {
-	test('go to the front as a room loads them, pinned, without repeats', () => {
+	test('go to the front as games are played, pinned, once per load order', () => {
 		const once = remember([], [sphere, tiny], '2025-10-06T00:00:00Z')
 		expect(once[0]?.mods.map((mod) => mod.ref)).toEqual([
 			`dev/sphere@${SHA}`,
 			'tiny maps v1',
 		])
-		const same = remember(once, [sphere, tiny], '2025-10-07T00:00:00Z')
-		expect(same).toEqual(once)
 		const other = remember(once, [tiny], '2025-10-08T00:00:00Z')
 		expect(other.map((set) => set.at)).toEqual([
 			'2025-10-08T00:00:00Z',
 			'2025-10-06T00:00:00Z',
 		])
-		const back = remember(other, [sphere, tiny], '2025-10-09T00:00:00Z')
-		expect(back.map((set) => set.at)).toEqual([
+		const turned = remember(other, [tiny, sphere], '2025-10-09T00:00:00Z')
+		expect(turned.map((set) => set.at)).toEqual([
+			'2025-10-09T00:00:00Z',
+			'2025-10-08T00:00:00Z',
+			'2025-10-06T00:00:00Z',
+		])
+		const newer = { ...sphere, source: `github:dev/sphere@${OTHER}` }
+		const moved = remember(turned, [newer, tiny], 'later')
+		expect(moved.map((set) => set.at)).toEqual([
+			'later',
 			'2025-10-09T00:00:00Z',
 			'2025-10-08T00:00:00Z',
 		])
-		expect(remember(back, [], 'later')).toEqual(back)
+		expect(moved[0]?.mods[0]?.ref).toBe(`dev/sphere@${OTHER}`)
+		expect(remember(turned, [], 'later')).toEqual(turned)
 	})
 
-	test('wait until every mod is here, then take the names it has', () => {
+	test('count only a whole list, every mod here and none twice', () => {
 		const building = { ...sphere, here: false, title: 'dev/sphere' }
 		expect(remember([], [building], 'then')).toEqual([])
-		const early = [{ at: 'then', mods: picksOf([building], []) }]
-		const named = remember(early, [sphere], 'later')
-		expect(named).toEqual([
-			{
-				at: 'then',
-				mods: [expect.objectContaining({ label: 'sphere spawner mod v1.0.0' })],
-			},
-		])
+		expect(
+			remember([], [sphere, { ...sphere, name: 'again' }], 'then'),
+		).toEqual([])
 	})
 
 	test('come back as a draft under the names the room knows', () => {
@@ -328,5 +330,27 @@ describe('remembered sets', () => {
 		storage.setItem('modlobby.modSets', 'not json')
 		expect(readSets(storage)).toEqual([])
 		expect(readSets(null)).toEqual([])
+	})
+
+	test('stored before these rules, come back tidied', () => {
+		const held = new Map<string, string>()
+		const storage = {
+			getItem: (key: string) => held.get(key) ?? null,
+			setItem: (key: string, value: string) => void held.set(key, value),
+		} as unknown as Storage
+		const [both] = remember([], [sphere, tiny], 'newest')
+		const [turned] = remember([], [tiny, sphere], 'older')
+		const [alone] = remember([], [tiny], 'oldest')
+		const twice = { at: 'mid', mods: [both!.mods[0]!, both!.mods[0]!] }
+		const unbuilt = {
+			at: 'early',
+			mods: [{ ...both!.mods[0]!, label: 'dev/sphere' }],
+		}
+		writeSets(storage, [both!, twice, turned!, unbuilt, alone!])
+		expect(readSets(storage).map((set) => set.at)).toEqual([
+			'newest',
+			'older',
+			'oldest',
+		])
 	})
 })

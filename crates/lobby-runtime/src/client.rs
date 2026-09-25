@@ -3536,6 +3536,13 @@ impl Runtime {
 					self.reply_join(server, Err(ClientError::Refused(reason)))
 				}
 				Effect::LeftBattle { .. } => self.game = None,
+				Effect::PlayingWith { names } => {
+					if let Some(game) = self.game.as_mut() {
+						game.view.playing_with = Some(names);
+						self.batcher
+							.push_for(server, Delta::GameRunning(Some(game.view.clone())));
+					}
+				}
 				Effect::GameStopped => {
 					if self.game.take().is_some() {
 						self.batcher.push_for(
@@ -3573,6 +3580,7 @@ impl Runtime {
 							ip,
 							port,
 							added: just_started,
+							playing_with: None,
 						},
 						script_password,
 					});

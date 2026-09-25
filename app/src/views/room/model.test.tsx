@@ -816,11 +816,42 @@ describe('readying up', () => {
 		expect(calls).toContainEqual(['setPreReady', [true]])
 	})
 
+	test('a joinas turns watching the game into playing it with them', async () => {
+		const label = async (playingWith: string[] | null) => {
+			const { container } = await open(
+				fakeRoom({
+					caps: SERVED,
+					running: () => ({
+						id: 1,
+						ip: '',
+						port: 0,
+						added: false,
+						playingWith,
+					}),
+				}),
+			)
+			return container.querySelector('.card-actions .primary')?.textContent
+		}
+
+		expect(await label(null)).toBe('Spectate the game')
+		// In, before the host has said whose ID it is.
+		expect(await label([])).toBe('Play the game')
+		expect(await label(['alice', 'bob'])).toBe(
+			'Play together with alice and bob',
+		)
+	})
+
 	test('during a game, the ready offered is one for the next', async () => {
 		const { container } = await open(
 			fakeRoom({
 				caps: SERVED,
-				running: () => ({ id: 1, ip: '', port: 0, added: true }),
+				running: () => ({
+					id: 1,
+					ip: '',
+					port: 0,
+					added: true,
+					playingWith: null,
+				}),
 			}),
 		)
 

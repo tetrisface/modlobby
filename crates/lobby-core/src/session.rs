@@ -162,6 +162,11 @@ pub enum Effect {
 	},
 	/// Our room's host came back out of its game.
 	GameStopped,
+	/// SPADS has put us in the running game on a player's ID (`!joinas`), and
+	/// these are the others on it: empty until the host has said who they are.
+	PlayingWith {
+		names: Vec<String>,
+	},
 	/// How long our room's game had been going when we walked in, from SPADS's
 	/// welcome message — the only place this protocol states it.
 	GameInProgress {
@@ -1072,7 +1077,11 @@ impl Session {
 					return vec![];
 				}
 				if status.in_game {
-					// The host's bit went up while we were standing here.
+					// The host's bit went up while we were standing here. A new
+					// game, so nobody has put us in it yet.
+					if let Some(my) = self.state.my_battle.as_mut() {
+						my.joined_id = None;
+					}
 					return self.game_running(true).into_iter().collect();
 				}
 				// The bit going the other way is the only sign a game ended.
@@ -1348,6 +1357,19 @@ impl Session {
 						elapsed_secs: seconds,
 					});
 				}
+				// Who shares the ID our room's host put us on, which is what
+				// it was asked when it did.
+				if self.hosts_my_battle(&name)
+					&& let Some(id) = self.state.my_battle.as_ref().and_then(|my| my.joined_id)
+					&& let Some(players) = spads::players_on(&text, id)
+				{
+					let me = self.state.me.as_deref();
+					let names = players
+						.into_iter()
+						.filter(|player| Some(player.as_str()) != me)
+						.collect();
+					effects.push(Effect::PlayingWith { names });
+				}
 				if let Some(password) = private_host_password(&text) {
 					self.private_host = Some(password.clone());
 					effects.push(Effect::PrivateHostOffered {
@@ -1547,6 +1569,20 @@ impl Session {
 					id: my.id,
 					elapsed_secs,
 				}]
+			}
+			// The line names the ID and not whose it is, so the host is asked.
+			Announcement::PlayerAdded { name, id } => {
+				if self.state.me.as_deref() != Some(name.as_str()) {
+					return vec![];
+				}
+				my.joined_id = Some(id);
+				let mut effects = vec![Effect::PlayingWith { names: vec![] }];
+				effects.extend(
+					battle::say_private(from, spads::GAME_STATUS_REQUEST)
+						.ok()
+						.map(Effect::Send),
+				);
+				effects
 			}
 			Announcement::SettingChanged { by, key, value } => {
 				if my.setting_changed(key.clone(), value, by) {
@@ -2794,6 +2830,55 @@ mod tests {
 
 		// Said once: a status line that changes something else is not news.
 		assert!(!feed(&mut s, &["CLIENTSTATUS host 64"]).contains(&Effect::GameStopped));
+	}
+
+	#[test]
+	fn a_joinas_asks_the_host_who_shares_the_id() {
+		let playing_with = |effects: &[Effect]| {
+			effects.iter().find_map(|effect| match effect {
+				Effect::PlayingWith { names } => Some(names.clone()),
+				_ => None,
+			})
+		};
+		let answer = r#"SAIDPRIVATE host !#JSONRPC {"jsonrpc":"2.0","result":{"game":{"clients":[{"Name":"alice","Id":3},{"Name":"+ me","Id":3},{"Name":"eve","Id":0}]}},"id":1}"#;
+		let mut s = ready_with_room();
+		s.join_battle(5, None, "4242".into());
+		feed(
+			&mut s,
+			&[
+				"JOINBATTLE 5 -1",
+				"CLIENTSTATUS host 64",
+				"CLIENTSTATUS host 65",
+			],
+		);
+
+		// Only the host is believed, and only about us.
+		assert_eq!(
+			playing_with(&feed(
+				&mut s,
+				&[
+					"SAIDBATTLEEX alice * Adding player me in ID 3",
+					"SAIDBATTLEEX host * Adding player bob in ID 3",
+					answer,
+				]
+			)),
+			None
+		);
+
+		let effects = feed(&mut s, &["SAIDBATTLEEX host * Adding player me in ID 3"]);
+		assert_eq!(playing_with(&effects), Some(vec![]));
+		assert_eq!(
+			sent_lines(&effects),
+			[format!("SAYPRIVATE host {}", spads::GAME_STATUS_REQUEST)]
+		);
+		assert_eq!(
+			playing_with(&feed(&mut s, &[answer])),
+			Some(vec!["alice".into()])
+		);
+
+		// The next game starts with nobody having put us in it.
+		feed(&mut s, &["CLIENTSTATUS host 64", "CLIENTSTATUS host 65"]);
+		assert_eq!(playing_with(&feed(&mut s, &[answer])), None);
 	}
 
 	#[test]

@@ -129,7 +129,6 @@ export function applyDelta(delta: Delta, server: string | null = null): void {
 			return
 		case 'contentCheck':
 			setLobby('contentCheck', delta.data)
-			rememberSet(delta.data.mutators)
 			return
 		case 'download':
 			setLobby('download', delta.data)
@@ -405,6 +404,9 @@ function applySessionDelta(delta: Delta, server: string): void {
 			setLobby('servers', server, 'myBattle', delta.data)
 			return
 		case 'gameRunning':
+			// A game begun in our room is a combination of mods played.
+			if (delta.data && !session.gameRunning)
+				rememberSet(lobby.contentCheck.mutators)
 			setLobby('servers', server, 'gameRunning', delta.data)
 			return
 		case 'gameStartedAgo':

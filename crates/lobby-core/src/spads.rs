@@ -47,6 +47,10 @@ pub enum Announcement {
 	/// code here, commented out in liblobby (`lobby.lua:1208,1383`) as a
 	/// Zero-K leftover.
 	GameInProgress { elapsed_secs: u64 },
+	/// `* Adding player <name> in ID <id>[ (by <user>)]` (`hJoinAs`): SPADS
+	/// putting somebody in the running game on a player's in-game ID. It names
+	/// the ID and not whose it is; [`players_on`] answers that.
+	PlayerAdded { name: String, id: u32 },
 }
 
 /// Seconds from the way SPADS writes a duration out in words.
@@ -263,6 +267,15 @@ pub fn parse(text: &str) -> Option<Announcement> {
 	if let Some(rest) = body.strip_prefix("Vote in progress: ") {
 		return parse_progress(rest);
 	}
+	if let Some(rest) = body.strip_prefix("Adding player ")
+		&& let Some((name, rest)) = rest.split_once(" in ID ")
+		&& let Some(id) = rest.split(' ').next().and_then(|id| id.parse().ok())
+	{
+		return Some(Announcement::PlayerAdded {
+			name: name.into(),
+			id,
+		});
+	}
 	if let Some(rest) = body.strip_prefix("Vote for command ") {
 		let (command, rest) = quoted(rest)?;
 		let passed = rest.trim_start().starts_with("passed");
@@ -358,6 +371,29 @@ impl Proposal {
 			value: parts.next().unwrap_or_default().to_owned(),
 		}
 	}
+}
+
+/// Who plays on in-game ID `id`, out of a `status game` answer: SPADS lists
+/// every player under their ID (`getGameStatus`), marking those it added
+/// mid-game with `+ `. `None` where the text is not such an answer.
+///
+/// `Id` is the in-game ID; `ID` in the same row is the account's.
+pub fn players_on(text: &str, id: u32) -> Option<Vec<String>> {
+	let rpc: serde_json::Value = serde_json::from_str(text.strip_prefix(RPC_PREFIX)?).ok()?;
+	let clients = rpc.get("result")?.get("game")?.get("clients")?.as_array()?;
+	let on = |client: &serde_json::Value| match client.get("Id") {
+		Some(serde_json::Value::Number(n)) => n.as_u64() == Some(u64::from(id)),
+		Some(serde_json::Value::String(s)) => s.parse() == Ok(id),
+		_ => false,
+	};
+	Some(
+		clients
+			.iter()
+			.filter(|client| on(client))
+			.filter_map(|client| client.get("Name")?.as_str())
+			.map(|name| name.trim_start_matches("+ ").to_owned())
+			.collect(),
+	)
 }
 
 /// A vote the room is holding right now.
@@ -623,6 +659,42 @@ mod tests {
 				json: "{\"onVoteStart\": {}}".into()
 			})
 		);
+	}
+
+	#[test]
+	fn a_joinas_names_the_id_it_put_somebody_on() {
+		for line in [
+			"* Adding player me in ID 3",
+			"* Adding player me in ID 3 (by bob)",
+		] {
+			assert_eq!(
+				parse(line),
+				Some(Announcement::PlayerAdded {
+					name: "me".into(),
+					id: 3
+				}),
+				"{line}"
+			);
+		}
+		// Spectators get no ID.
+		assert_eq!(parse("* Adding user me as spectator"), None);
+	}
+
+	#[test]
+	fn who_plays_on_an_id_is_read_out_of_the_game_status() {
+		let answer = r#"!#JSONRPC {"jsonrpc":"2.0","result":{"game":{"clients":[
+			{"Name":"alice","Team":1,"Id":3,"ID":101},
+			{"Name":"bob","Team":1,"Id":"3","ID":102},
+			{"Name":"+ me","Team":1,"Id":3},
+			{"Name":"eve","Team":0,"Id":0,"ID":103},
+			{"Name":"watcher","Status":"Spectating"}
+		],"status":{"gameTime":60}}},"id":1}"#;
+		assert_eq!(
+			players_on(answer, 3),
+			Some(vec!["alice".into(), "bob".into(), "me".into()])
+		);
+		assert_eq!(players_on(answer, 7), Some(vec![]));
+		assert_eq!(players_on(GAME_STATUS_REQUEST, 3), None);
 	}
 
 	#[test]

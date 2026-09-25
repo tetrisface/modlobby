@@ -119,7 +119,15 @@ describe('the posture control', () => {
 				room(
 					{ ready: true },
 					{},
-					{ running: () => ({ id: 1, ip: '', port: 0, added: true }) },
+					{
+						running: () => ({
+							id: 1,
+							ip: '',
+							port: 0,
+							added: true,
+							playingWith: null,
+						}),
+					},
 					my,
 				),
 			)

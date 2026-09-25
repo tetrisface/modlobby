@@ -91,6 +91,9 @@ const ROSTER_MIN = 64
 /** Rows past which a team card widens and flows its rows into columns. */
 const TALL = 32
 
+/** `alice, bob, and carol`. */
+const NAMES = new Intl.ListFormat('en', { type: 'conjunction' })
+
 export function Room() {
 	const navigate = useNavigate()
 	const room = useRoom()
@@ -424,6 +427,15 @@ export function Room() {
 		)
 
 	const lines = () => chat.rooms[room.log] ?? []
+
+	/** Watching, or playing on somebody's ID once `!joinas` has put us there. */
+	const joinLabel = () => {
+		const names = room.running()?.playingWith ?? null
+		if (names === null) return 'Spectate the game'
+		if (names.length === 0) return 'Play the game'
+		return `Play together with ${NAMES.format(names)}`
+	}
+
 	createEffect(() => {
 		lines().length
 		log?.scrollTo({ top: log.scrollHeight })
@@ -703,7 +715,7 @@ export function Room() {
 								</Match>
 								<Match when={room.running() && room.caps.plays}>
 									<button class='primary' onClick={launch}>
-										Spectate the game
+										{joinLabel()}
 									</button>
 								</Match>
 								{/* The game is on, and this machine has no engine allowed to

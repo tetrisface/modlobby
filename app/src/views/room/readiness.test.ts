@@ -31,7 +31,15 @@ describe('how much readying up asks of us', () => {
 				room(
 					{},
 					{},
-					{ running: () => ({ id: 1, ip: '', port: 0, added: true }) },
+					{
+						running: () => ({
+							id: 1,
+							ip: '',
+							port: 0,
+							added: true,
+							playingWith: null,
+						}),
+					},
 				),
 			),
 		).toBe('none')

@@ -243,7 +243,7 @@ describe('sharing an ID in a running game', () => {
 				}),
 			},
 			myBattle: myBattle(),
-			gameRunning: { id: 1, ip: '', port: 0, added },
+			gameRunning: { id: 1, ip: '', port: 0, added, playingWith: null },
 		})
 	}
 

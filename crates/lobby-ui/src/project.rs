@@ -206,6 +206,7 @@ impl Projector {
                     ip: ip.clone(),
                     port: *port,
                     added: *just_started,
+                    playing_with: None,
                 })))
             }
             Effect::BattleChat {
@@ -344,6 +345,8 @@ impl Projector {
             Effect::PrivateHostOffered { .. }
             | Effect::PrivateHostReady { .. }
             | Effect::Hosting { .. }
+            // The runtime holds the running game this belongs to.
+            | Effect::PlayingWith { .. }
             // The runtime reports the paste as it goes; nothing to say here.
             | Effect::PasteQueued { .. } => {}
             Effect::Notice(text) => out.push(notice(NoticeLevel::Info, text.clone())),
