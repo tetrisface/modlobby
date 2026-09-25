@@ -423,12 +423,7 @@ pub enum Verdict {
 /// rapid with a copy from a release is still playing the same game.
 pub fn against_room(game: &Path, room: u32, find: &dyn Fn(&str) -> Option<PathBuf>) -> Verdict {
 	let packaged_the_other_way = |sum: &Checksum| {
-		let odd = summed(game).is_ok_and(|summed| summed.empties % 2 == 1);
-		let mut other = *sum;
-		if odd {
-			xor(&mut other, &Sha512::digest(b"").into());
-		}
-		room_hash(&other) == room
+		summed(game).is_ok_and(|summed| room_hash(&other_packaging(sum, summed.empties)) == room)
 	};
 	match complete(game, find) {
 		Ok(sum) if room_hash(&sum) == room || packaged_the_other_way(&sum) => Verdict::Matches,
@@ -438,6 +433,51 @@ pub fn against_room(game: &Path, room: u32, find: &dyn Fn(&str) -> Option<PathBu
 		},
 		Err(err) => Verdict::Unchecked(err.to_string()),
 	}
+}
+
+/// A mutator here against the checksum its room announced for it, as 128
+/// hex digits. The engine hashes a room's game and map but loads its
+/// mutators unchecked (`PreGame.cpp:264-269`), so this is the only check a
+/// mutator gets. Its own files only: what it depends on is the game, which
+/// the room's game hash already holds.
+pub fn against_announced(mutator: &Path, announced: &str) -> Verdict {
+	let Some(room) = announced_hash(announced) else {
+		return Verdict::Unchecked(format!("the room announced {announced:?}, not a checksum"));
+	};
+	let ours = match summed(mutator) {
+		Ok(ours) => ours,
+		Err(err) => return Verdict::Unchecked(err.to_string()),
+	};
+	let same = |sum: &Checksum| crate::fetch::hex(sum) == announced;
+	if same(&ours.sum) || same(&other_packaging(&ours.sum, ours.empties)) {
+		return Verdict::Matches;
+	}
+	Verdict::Differs {
+		ours: room_hash(&ours.sum),
+		room,
+	}
+}
+
+/// An announced checksum's first four bytes, as a room writes a hash; `None`
+/// for anything but 128 lowercase hex digits.
+pub fn announced_hash(hex: &str) -> Option<u32> {
+	let valid = hex.len() == 128 && hex.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
+	if !valid {
+		return None;
+	}
+	let byte = |at: usize| u8::from_str_radix(&hex[at * 2..at * 2 + 2], 16).ok();
+	Some(u32::from_le_bytes([byte(0)?, byte(1)?, byte(2)?, byte(3)?]))
+}
+
+/// `sum` as the same files packaged the other way would give it: an empty
+/// file adds the hash of no bytes to a rapid package and nothing to an
+/// archive ([`Empty`]), so only an odd number of them tells the two apart.
+fn other_packaging(sum: &Checksum, empties: usize) -> Checksum {
+	let mut other = *sum;
+	if empties % 2 == 1 {
+		xor(&mut other, &Sha512::digest(b"").into());
+	}
+	other
 }
 
 /// What an archive depends on, as the scanner reads it
@@ -511,6 +551,36 @@ mod tests {
 			hex(&single(&path).unwrap()),
 			"6ecfd8e47b2c0bde27517e92bd171d1d036e0482cbfc929a1925b5239e4d5947ed335df18ba4775b16843a9affe42b5fcd2aad9957bacb63a48ae005c799524e"
 		);
+	}
+
+	#[test]
+	fn a_mutator_is_held_to_the_checksum_its_room_announced() {
+		let dir = tempfile::tempdir().unwrap();
+		let path = dir.path().join("maphelper.sdz");
+		std::fs::write(&path, MAPHELPER).unwrap();
+		let announced = hex(&single(&path).unwrap());
+		assert!(announced.starts_with("6ecfd8e4"));
+		assert_eq!(against_announced(&path, &announced), Verdict::Matches);
+
+		let other = format!("00{}", &announced[2..]);
+		assert_eq!(
+			against_announced(&path, &other),
+			Verdict::Differs {
+				ours: u32::from_le_bytes([0x6e, 0xcf, 0xd8, 0xe4]),
+				room: u32::from_le_bytes([0x00, 0xcf, 0xd8, 0xe4]),
+			}
+		);
+		for not_one in [
+			"",
+			"6ecf",
+			&announced.to_uppercase(),
+			&format!("{announced}0"),
+		] {
+			assert!(
+				matches!(against_announced(&path, not_one), Verdict::Unchecked(_)),
+				"{not_one:?} is no checksum"
+			);
+		}
 	}
 
 	#[test]

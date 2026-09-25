@@ -20,6 +20,11 @@ export function ContentChip(props: {
 		{ what: 'Engine', name: props.engine, check: null },
 		{ what: 'Game', name: props.game, check: props.check.game },
 		{ what: 'Map', name: props.map, check: props.check.map },
+		...props.check.mutators.map((mutator) => ({
+			what: 'Mutator',
+			name: mutator.name,
+			check: mutator.check,
+		})),
 	]
 	const differs = () =>
 		parts().some((part) => part.check?.verdict === 'differs')

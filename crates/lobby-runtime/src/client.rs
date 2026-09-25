@@ -213,18 +213,20 @@ async fn fetch_game(
 	sources: &GameSources,
 	progress: &mpsc::Sender<DownloadEvent>,
 ) -> Option<String> {
-	let name = run
+	let (want, name) = run
 		.wants
 		.iter()
-		.find(|(want, _)| *want == recoil::Want::Game)
-		.map(|(_, name)| name.clone())
-		.unwrap_or_default();
+		.find(|(want, _)| *want != recoil::Want::Map)
+		.cloned()?;
+	// A mutator is held to the checksum its room announced once it is here
+	// (`check_content`); only the room's game has a hash to hand on.
+	let room_hash = room.hash.filter(|_| want == recoil::Want::Game);
 	let ask = |after_rapid| GameAsk {
 		name: name.clone(),
 		dirs: room.dirs.clone(),
 		after_rapid,
 		engine: room.engine.clone(),
-		room_hash: room.hash,
+		room_hash,
 	};
 	let elsewhere = rapid_elsewhere(run, vet, progress);
 	if let Some(got) = ask_sources(sources, ask(false), progress, elsewhere.clone()).await {
@@ -240,6 +242,32 @@ async fn fetch_game(
 		Some(Ok(_)) => None,
 		Some(Err(more)) => Some(format!("{reason}; {more}")),
 	}
+}
+
+/// Everything a game run wants, one name at a time -- the room's game, then
+/// the mutators it loads -- each the way [`fetch_game`] fetches, so one that
+/// cannot be had does not cost the others. Why any did not come, if one did
+/// not.
+async fn fetch_games(
+	run: &recoil::Download,
+	room: &Room,
+	vet: &Vet,
+	sources: &GameSources,
+	progress: &mpsc::Sender<DownloadEvent>,
+) -> Option<String> {
+	let mut failures = Vec::new();
+	for wanted in run
+		.wants
+		.iter()
+		.filter(|(want, _)| *want != recoil::Want::Map)
+	{
+		let one = recoil::Download {
+			wants: vec![wanted.clone()],
+			..run.clone()
+		};
+		failures.extend(fetch_game(&one, room, vet, sources, progress).await);
+	}
+	(!failures.is_empty()).then(|| failures.join("; "))
 }
 
 /// What a download is for, beyond what it wants: the room's engine and the
@@ -264,7 +292,7 @@ fn rapid_elsewhere(
 		Box::pin(async move {
 			vet(master.clone()).await?;
 			run.rapid_master = master;
-			run.wants.retain(|(want, _)| *want == recoil::Want::Game);
+			run.wants.retain(|(want, _)| *want != recoil::Want::Map);
 			run_download(&run, &progress).await
 		})
 	})
@@ -1302,9 +1330,9 @@ struct Runtime {
 	/// entirely alone, which is also what happens when they already work.
 	overlay_config_dir: Option<PathBuf>,
 	menu_archive: Option<recoil::MenuArchive>,
-	/// The room's (engine, game, map) the content check last ran against;
-	/// scanning the rapid index is too slow to repeat per message.
-	checked: Option<(String, String, String)>,
+	/// The room's engine, game, map and mutators the content check last ran
+	/// against; scanning the rapid index is too slow to repeat per message.
+	checked: Option<RoomContent>,
 	/// When to let the servers go because nobody has touched the window.
 	/// Off until the app pushes a limit; the CLI has no window to watch.
 	idle: idle::Idle,
@@ -1320,7 +1348,7 @@ struct Runtime {
 	/// The room contents we have already fetched for once. A map the CDN does
 	/// not have would otherwise be retried forever, since every failed
 	/// download ends in another content check.
-	auto_fetched: Option<(String, String, String)>,
+	auto_fetched: Option<RoomContent>,
 	download_tx: mpsc::Sender<DownloadEvent>,
 	download_rx: mpsc::Receiver<DownloadEvent>,
 	latency: Arc<dyn Latency>,
@@ -1362,13 +1390,19 @@ struct Runtime {
 }
 
 /// A room's engine, and its game and map by name, each with the hash the
-/// room announced for it -- `None` for one that is not here or had none.
+/// room announced for it -- `None` for one that is not here or had none --
+/// and the mutators it loads, each with whether it is here.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CheckKey {
 	engine: String,
 	game: (String, Option<u32>),
 	map: (String, Option<u32>),
+	mutators: Vec<(lobby_core::Mutator, bool)>,
 }
+
+/// What a room asks this machine for: its engine, game and map by name, and
+/// the mutators it loads on top.
+type RoomContent = (String, String, String, Vec<lobby_core::Mutator>);
 
 /// A content check's answer.
 #[derive(Debug)]
@@ -1384,17 +1418,39 @@ fn check_content(dirs: DataDirs, key: &CheckKey) -> lobby_ui::ContentCheckView {
 	use lobby_ui::CheckView;
 	let library = content::Library::new(dirs);
 	let find = |name: &str| library.archive_named(&key.engine, name);
+	let view = |verdict, hash| match verdict {
+		Verdict::Matches => CheckView::Same { hash },
+		Verdict::Differs { ours, room } => CheckView::Differs { ours, room },
+		Verdict::Unchecked(why) => CheckView::Unchecked { why },
+	};
 	let held = |path: Option<PathBuf>, hash: Option<u32>| {
 		let (path, hash) = (path?, hash?);
-		Some(match content::checksum::against_room(&path, hash, &find) {
-			Verdict::Matches => CheckView::Same { hash },
-			Verdict::Differs { ours, room } => CheckView::Differs { ours, room },
-			Verdict::Unchecked(why) => CheckView::Unchecked { why },
-		})
+		Some(view(
+			content::checksum::against_room(&path, hash, &find),
+			hash,
+		))
+	};
+	let announced = |mutator: &lobby_core::Mutator| {
+		let checksum = mutator.checksum.as_deref()?;
+		let path = find(&mutator.name)?;
+		let hash = content::checksum::announced_hash(checksum)?;
+		Some(view(
+			content::checksum::against_announced(&path, checksum),
+			hash,
+		))
 	};
 	lobby_ui::ContentCheckView {
 		game: held(library.archive_named(&key.engine, &key.game.0), key.game.1),
 		map: held(library.map_archive(&key.map.0), key.map.1),
+		mutators: key
+			.mutators
+			.iter()
+			.map(|(mutator, here)| lobby_ui::MutatorView {
+				name: mutator.name.clone(),
+				here: *here,
+				check: announced(mutator),
+			})
+			.collect(),
 	}
 }
 
@@ -1923,7 +1979,19 @@ impl Runtime {
 			room.game_name.clone(),
 			room.map_name.clone(),
 		);
-		self.fetch(wanted, self.room(), by_hand).await
+		let mutators = conn
+			.session
+			.state
+			.my_battle
+			.as_ref()
+			.map(|my| {
+				my.mutators()
+					.into_iter()
+					.map(|mutator| mutator.name)
+					.collect()
+			})
+			.unwrap_or_default();
+		self.fetch(wanted, mutators, self.room(), by_hand).await
 	}
 
 	/// Who `map` is asked of, or why nobody is.
@@ -1987,18 +2055,20 @@ impl Runtime {
 			.as_ref()
 			.ok_or_else(|| ClientError::Refused("there is no skirmish room".into()))?;
 		let wanted = (room.engine.clone(), room.game.clone(), room.map.clone());
-		self.fetch(wanted, None, true).await
+		self.fetch(wanted, Vec::new(), None, true).await
 	}
 
-	/// Fetches whatever of an (engine, game, map) this machine lacks, for a
-	/// room on `server`: the game through that server's rapid, the map from
-	/// whoever can have it.
+	/// Fetches whatever of an (engine, game, map) and the room's `mutators`
+	/// this machine lacks, for a room on `server`: the game and the mutators
+	/// through that server's rapid, then the lists; the map from whoever can
+	/// have it.
 	///
 	/// One run at a time: pr-downloader rewrites rapid's repo index on every
 	/// run, so two at once corrupt each other's view of it.
 	async fn fetch(
 		&mut self,
 		(engine_version, game, map): (String, String, String),
+		mutators: Vec<String>,
 		server: Option<String>,
 		by_hand: bool,
 	) -> Result<(), ClientError> {
@@ -2029,6 +2099,12 @@ impl Runtime {
 				wants.push((recoil::Want::Game, want));
 			}
 		}
+		wants.extend(
+			mutators
+				.into_iter()
+				.filter(|name| library.archive_named(&engine_version, name).is_none())
+				.map(|name| (recoil::Want::Mutator, name)),
+		);
 		let mut map_searches = vec![self.bar.search.clone()];
 		// No map named is no map to ask for; the picker fetches whichever is chosen.
 		if !map.is_empty() && !library.has_map(&map) {
@@ -2123,7 +2199,7 @@ impl Runtime {
 				let mut no_game = None;
 				for run in runs {
 					if run.has_games() {
-						no_game = fetch_game(&run, &room, &vet, &sources, &progress).await;
+						no_game = fetch_games(&run, &room, &vet, &sources, &progress).await;
 						continue;
 					}
 					if found_map {
@@ -2357,6 +2433,7 @@ impl Runtime {
 			room.engine_version.clone(),
 			room.game_name.clone(),
 			room.map_name.clone(),
+			my.map(lobby_core::MyBattle::mutators).unwrap_or_default(),
 		);
 		if self.checked.as_ref() == Some(&key) {
 			return;
@@ -2364,13 +2441,24 @@ impl Runtime {
 		let Some(dirs) = self.data_dirs() else {
 			return;
 		};
-		let available = content::Library::new(dirs.clone()).check(&key.0, &key.1, &key.2);
+		let library = content::Library::new(dirs.clone());
+		let available = library.check(&key.0, &key.1, &key.2);
+		let mutators: Vec<(lobby_core::Mutator, bool)> = key
+			.3
+			.iter()
+			.map(|mutator| {
+				let here = library.archive_named(&key.0, &mutator.name).is_some();
+				(mutator.clone(), here)
+			})
+			.collect();
+		let mutators_here = mutators.iter().all(|(_, here)| *here);
 		let map_hash = content::checksum::parse_room_hash(&room.map_hash);
 		self.start_check(
 			CheckKey {
 				engine: key.0.clone(),
 				game: (key.1.clone(), game_hash.filter(|_| available.game)),
 				map: (key.2.clone(), map_hash.filter(|_| available.map)),
+				mutators,
 			},
 			dirs,
 		);
@@ -2385,15 +2473,17 @@ impl Runtime {
 			game: available.game,
 			map: available.map,
 		});
-		self.content_ready = available.complete();
-		self.set_synced(available.complete()).await;
+		// A mutator missing is a game that cannot start: the engine stops at
+		// an archive it cannot find.
+		self.content_ready = available.complete() && mutators_here;
+		self.set_synced(self.content_ready).await;
 
 		// Joining a room you have no map for is a request for the map: there is
 		// nothing else to do in it. Only what pr-downloader can fetch, only
 		// when nothing else is running, and only once per room — a name the
 		// CDN does not carry would otherwise be retried by every content check
 		// that a failed download itself provokes.
-		let fetchable = !available.game || !available.map;
+		let fetchable = !available.game || !available.map || !mutators_here;
 		if fetchable
 			&& self.auto_download
 			&& available.engine
@@ -2421,8 +2511,20 @@ impl Runtime {
 		let view = lobby_ui::ContentCheckView {
 			game: checking(key.game.1),
 			map: checking(key.map.1),
+			mutators: key
+				.mutators
+				.iter()
+				.map(|(mutator, here)| lobby_ui::MutatorView {
+					name: mutator.name.clone(),
+					here: *here,
+					check: (*here && mutator.checksum.is_some())
+						.then_some(lobby_ui::CheckView::Checking),
+				})
+				.collect(),
 		};
-		let nothing_to_hold = view == lobby_ui::ContentCheckView::default();
+		let nothing_to_hold = view.game.is_none()
+			&& view.map.is_none()
+			&& view.mutators.iter().all(|mutator| mutator.check.is_none());
 		self.content_check = view.clone();
 		self.batcher.push(Delta::ContentCheck(view));
 		if nothing_to_hold {
@@ -2447,10 +2549,19 @@ impl Runtime {
 			return;
 		}
 		let mut unsynced = false;
-		for (name, view) in [
+		let parts = [
 			(&checked.key.game.0, &checked.view.game),
 			(&checked.key.map.0, &checked.view.map),
-		] {
+		]
+		.into_iter()
+		.chain(
+			checked
+				.view
+				.mutators
+				.iter()
+				.map(|mutator| (&mutator.name, &mutator.check)),
+		);
+		for (name, view) in parts {
 			match view {
 				Some(lobby_ui::CheckView::Differs { ours, room }) => {
 					tracing::warn!(%name, ours, room, "not the room's files");
@@ -3478,16 +3589,28 @@ impl Runtime {
 				.get(&game.view.id)
 				.ok_or_else(|| ClientError::Engine("the room is gone".into()))?;
 			// Better a message naming what is missing than an engine that
-			// starts and cannot join.
-			let available = content::Library::new(dirs.clone()).check(
-				&room.engine_version,
-				&room.game_name,
-				&room.map_name,
+			// starts and cannot join -- or one that stops at a mutator it
+			// cannot find.
+			let library = content::Library::new(dirs.clone());
+			let available = library.check(&room.engine_version, &room.game_name, &room.map_name);
+			let mut missing: Vec<String> =
+				available.missing().into_iter().map(str::to_owned).collect();
+			missing.extend(
+				state
+					.my_battle
+					.iter()
+					.flat_map(lobby_core::MyBattle::mutators)
+					.filter(|mutator| {
+						library
+							.archive_named(&room.engine_version, &mutator.name)
+							.is_none()
+					})
+					.map(|mutator| format!("the mutator {}", mutator.name)),
 			);
-			if !available.complete() {
+			if !missing.is_empty() {
 				return Err(ClientError::Engine(format!(
 					"this room needs content you do not have: {}",
-					available.missing().join(", ")
+					missing.join(", ")
 				)));
 			}
 			let engine_version = room.engine_version.clone();
@@ -4048,6 +4171,7 @@ mod tests {
 			engine: "2026.09.01".into(),
 			game: (game.into(), hash),
 			map: ("Nowhere 1".into(), Some(7)),
+			mutators: Vec::new(),
 		};
 		use lobby_ui::{CheckView, ContentCheckView};
 		assert_eq!(
@@ -4055,6 +4179,7 @@ mod tests {
 			ContentCheckView {
 				game: Some(CheckView::Same { hash: ours }),
 				map: None,
+				mutators: Vec::new(),
 			}
 		);
 		assert_eq!(
@@ -4068,6 +4193,64 @@ mod tests {
 		assert_eq!(
 			check_content(dirs(), &key("Absent 2", Some(ours))),
 			ContentCheckView::default()
+		);
+	}
+
+	/// A mutator's copy here is held to the checksum its host announced, its
+	/// own files only; one that is not here is said to be missing, unchecked.
+	#[test]
+	fn a_mutator_is_held_to_the_checksum_its_host_announced() {
+		let dir = tempfile::tempdir().unwrap();
+		let sphere = dir.path().join("games").join("sphere.sdd");
+		std::fs::create_dir_all(&sphere).unwrap();
+		std::fs::write(
+			sphere.join("modinfo.lua"),
+			"name = 'Sphere'\nversion = 'v1'\nmutator = '1'\nmodtype = 1\n",
+		)
+		.unwrap();
+		let single = content::checksum::single(&sphere).unwrap();
+		let hex = |sum: &[u8]| sum.iter().map(|b| format!("{b:02x}")).collect::<String>();
+		let ours = content::checksum::room_hash(&single);
+		let mut other = single;
+		other[0] ^= 1;
+
+		let mutator = |name: &str, checksum: &str| lobby_core::Mutator {
+			name: name.into(),
+			checksum: Some(checksum.into()),
+		};
+		let key = CheckKey {
+			engine: "2026.09.01".into(),
+			game: ("Game 1".into(), None),
+			map: ("Nowhere 1".into(), None),
+			mutators: vec![
+				(mutator("Sphere v1", &hex(&single)), true),
+				(mutator("Sphere v1", &hex(&other)), true),
+				(mutator("Absent v1", &hex(&single)), false),
+			],
+		};
+		use lobby_ui::{CheckView, MutatorView};
+		assert_eq!(
+			check_content(DataDirs::only(dir.path()), &key).mutators,
+			[
+				MutatorView {
+					name: "Sphere v1".into(),
+					here: true,
+					check: Some(CheckView::Same { hash: ours }),
+				},
+				MutatorView {
+					name: "Sphere v1".into(),
+					here: true,
+					check: Some(CheckView::Differs {
+						ours,
+						room: ours ^ 1
+					}),
+				},
+				MutatorView {
+					name: "Absent v1".into(),
+					here: false,
+					check: None,
+				},
+			]
 		);
 	}
 

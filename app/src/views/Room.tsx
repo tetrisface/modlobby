@@ -1104,7 +1104,11 @@ function Minimap(props: {
 function missingParts(room: RoomModel): readonly string[] {
 	const content = room.content()
 	if (!content) return []
-	return (['engine', 'game', 'map'] as const).filter((part) => !content[part])
+	const parts = (['engine', 'game', 'map'] as const).filter(
+		(part) => !content[part],
+	)
+	const mutatorMissing = room.check().mutators.some((mutator) => !mutator.here)
+	return mutatorMissing ? [...parts, 'mutators'] : parts
 }
 
 /** `1 player`, `2 players` — a count with its word, agreeing with it. */

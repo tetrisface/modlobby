@@ -81,7 +81,7 @@ export function localRoom(): RoomModel {
 		me: () => lobby.skirmish?.me ?? null,
 		content: () => lobby.skirmish?.content ?? null,
 		// No server, so nobody announces a checksum to hold anything to.
-		check: () => ({ game: null, map: null }),
+		check: () => ({ game: null, map: null, mutators: [] }),
 		// A skirmish's engine is the only game it has; `lobby.gameRunning` is the
 		// server telling us about somebody else's, which is a different question.
 		running: () => null,

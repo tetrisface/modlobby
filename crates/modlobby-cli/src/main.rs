@@ -65,6 +65,12 @@ enum Command {
 	},
 	/// Print the default throttle policy as TOML, as a starting point for `--policy`.
 	Policy,
+	/// Print an archive's engine name and its own checksum as an entry of a
+	/// mutator host's catalog, the `mutators` list the room is held to.
+	Checksum {
+		/// A `.sdz`, `.sd7`, unpacked `.sdd` or rapid `.sdp`.
+		archive: PathBuf,
+	},
 }
 
 #[derive(Args)]
@@ -130,6 +136,16 @@ async fn main() -> anyhow::Result<()> {
 	match Cli::parse().command {
 		Command::Policy => {
 			print!("{}", toml::to_string_pretty(&ThrottlePolicy::default())?);
+			Ok(())
+		}
+		Command::Checksum { archive } => {
+			let name = content::map_name::game_of_archive(&archive)
+				.with_context(|| format!("{} has no modinfo.lua naming it", archive.display()))?;
+			let sum = content::checksum::single(&archive)?;
+			println!(
+				"- {{ name: {name:?}, checksum: \"{}\" }}",
+				content::fetch::hex(&sum)
+			);
 			Ok(())
 		}
 		Command::Rapid { url } => {

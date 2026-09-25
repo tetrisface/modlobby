@@ -880,13 +880,16 @@ mod executable_tests {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Want {
 	Game,
+	/// An archive the room loads on top of its game. pr-downloader fetches
+	/// it as it does a game; only what it is held to afterwards differs.
+	Mutator,
 	Map,
 }
 
 impl Want {
 	fn flag(self) -> &'static str {
 		match self {
-			Self::Game => "--download-game",
+			Self::Game | Self::Mutator => "--download-game",
 			Self::Map => "--download-map",
 		}
 	}
@@ -1018,7 +1021,7 @@ impl Download {
 		map_searches: &[String],
 	) -> Vec<Self> {
 		let (games, maps): (Vec<_>, Vec<_>) =
-			wants.into_iter().partition(|(want, _)| *want == Want::Game);
+			wants.into_iter().partition(|(want, _)| *want != Want::Map);
 		let one = |wants: Vec<(Want, String)>, search_url: &str| Self {
 			binary: binary.to_path_buf(),
 			data_dir: data_dir.to_path_buf(),
@@ -1043,9 +1046,9 @@ impl Download {
 		runs
 	}
 
-	/// Whether this run fetches games, and so reads a rapid index.
+	/// Whether this run fetches games or mutators, and so reads a rapid index.
 	pub fn has_games(&self) -> bool {
-		self.wants.iter().any(|(want, _)| *want == Want::Game)
+		self.wants.iter().any(|(want, _)| *want != Want::Map)
 	}
 
 	pub fn command(&self) -> Command {
@@ -1223,6 +1226,38 @@ mod download_tests {
 		for run in runs.iter().filter(|run| !run.has_games()) {
 			assert_eq!(run.wants, [(Want::Map, "Frosty Cove v1.13".to_owned())]);
 		}
+	}
+
+	/// A mutator is asked of rapid by name as a game is, so it rides in the
+	/// game run and never reaches a map search.
+	#[test]
+	fn a_mutator_is_fetched_in_the_game_run_as_a_game_is() {
+		let runs = Download::runs(
+			Path::new("prd"),
+			Path::new("C:/bar"),
+			vec![
+				(Want::Map, "Frosty Cove v1.13".into()),
+				(Want::Mutator, "Sphere v1".into()),
+				(Want::Game, "Somebody's Mod v1".into()),
+			],
+			RAPID_REPO_MASTER,
+			&[HTTP_SEARCH_URL.to_owned()],
+		);
+		assert_eq!(runs.len(), 2);
+		assert_eq!(runs[0].search_url, NO_SEARCH_URL);
+		assert!(runs[0].has_games());
+		let args: Vec<String> = runs[0]
+			.command()
+			.get_args()
+			.map(|arg| arg.to_string_lossy().into_owned())
+			.collect();
+		let asked: Vec<&[String]> = args
+			.windows(2)
+			.filter(|pair| pair[0] == "--download-game")
+			.collect();
+		assert_eq!(asked.len(), 2);
+		assert_eq!(asked[0][1], "Sphere v1");
+		assert_eq!(runs[1].wants, [(Want::Map, "Frosty Cove v1.13".to_owned())]);
 	}
 
 	#[test]

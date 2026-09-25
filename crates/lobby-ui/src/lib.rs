@@ -12,7 +12,7 @@ pub use batch::Batcher;
 pub use model::{
 	AlertKind, BATTLE_ROOM, BattleStatusView, BattleView, BotView, ChannelSummaryView, ChannelView,
 	ChatKind, ChatLine, CheckView, ContentCheckView, ContentView, Delta, DownloadStatus,
-	EngineStatus, FriendsView, GameRunningView, LayoutView, MyBattleView, NoticeLevel,
+	EngineStatus, FriendsView, GameRunningView, LayoutView, MutatorView, MyBattleView, NoticeLevel,
 	OptionChangeView, PasteStatus, Phase, ProposalView, SERVER_ROOM, SKIRMISH_ROOM, ServerSnapshot,
 	SkirmishView, Snapshot, StartRectView, SyncView, UiMessage, UserStatusView, UserView, VoteView,
 	private_room,

@@ -13,5 +13,5 @@ pub use hosting::{Rtts, SpareRoom};
 pub use session::{Effect, FriendAction, SeatError, Session, UnknownFriendAction};
 pub use spads::{Announcement, Proposal, VoteState};
 pub use state::{
-	Battle, Bot, LobbyState, MyBattle, OptionChange, Phase, SeatOnItsWay, StartRect, User,
+	Battle, Bot, LobbyState, Mutator, MyBattle, OptionChange, Phase, SeatOnItsWay, StartRect, User,
 };

@@ -58,7 +58,7 @@ describe('applyMessage', () => {
 				skirmish: null,
 				ways: {},
 				content: null,
-				contentCheck: { game: null, map: null },
+				contentCheck: { game: null, map: null, mutators: [] },
 			},
 		})
 		const runs: number[] = []

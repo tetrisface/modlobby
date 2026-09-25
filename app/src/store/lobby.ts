@@ -76,7 +76,7 @@ export function emptyLobby(): LobbyState {
 		servers: {},
 		engine: { state: 'idle' },
 		content: null,
-		contentCheck: { game: null, map: null },
+		contentCheck: { game: null, map: null, mutators: [] },
 		download: { state: 'idle' },
 		paste: { state: 'idle' },
 		skirmish: null,

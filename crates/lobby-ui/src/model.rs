@@ -822,6 +822,20 @@ pub enum CheckView {
 pub struct ContentCheckView {
 	pub game: Option<CheckView>,
 	pub map: Option<CheckView>,
+	/// What the room loads on top of its game, in load order; empty for a
+	/// room that loads nothing.
+	pub mutators: Vec<MutatorView>,
+}
+
+/// A mutator the room loads: whether it is here, and, where its host
+/// announced a checksum, this copy held to it. The engine checks a mutator
+/// against nothing, so this is the only thing that does.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct MutatorView {
+	pub name: String,
+	pub here: bool,
+	pub check: Option<CheckView>,
 }
 
 /// One change to apply to the mirrored state.

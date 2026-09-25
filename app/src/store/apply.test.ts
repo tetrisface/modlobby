@@ -90,7 +90,7 @@ const snapshot: Snapshot = {
 	skirmish: null,
 	ways: {},
 	content: null,
-	contentCheck: { game: null, map: null },
+	contentCheck: { game: null, map: null, mutators: [] },
 }
 
 describe('apply', () => {
@@ -149,7 +149,11 @@ describe('apply', () => {
 		applySnapshot({
 			...snapshot,
 			content: { engine: true, game: true, map: false },
-			contentCheck: { game: { verdict: 'same', hash: 7 }, map: null },
+			contentCheck: {
+				game: { verdict: 'same', hash: 7 },
+				map: null,
+				mutators: [],
+			},
 		})
 		expect(lobby.content).toEqual({ engine: true, game: true, map: false })
 		expect(lobby.contentCheck.game).toEqual({ verdict: 'same', hash: 7 })

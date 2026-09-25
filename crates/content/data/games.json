@@ -5,6 +5,10 @@
 		{
 			"title": "SplinterFaction",
 			"downloads": [{ "kind": "github", "value": "SplinterFaction/SplinterFaction" }]
+		},
+		{
+			"title": "sphere spawner mod",
+			"downloads": [{ "kind": "github", "value": "tetrisface/sphere-spawner" }]
 		}
 	]
 }

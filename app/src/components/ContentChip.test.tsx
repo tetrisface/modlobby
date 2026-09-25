@@ -25,6 +25,7 @@ describe('the content chip', () => {
 		const container = chip({
 			game: { verdict: 'same', hash: 1521219441 },
 			map: { verdict: 'checking' },
+			mutators: [],
 		})
 		const shown = container.querySelector('.chip.ok')
 		expect(shown?.firstChild?.textContent).toBe('Content ready')
@@ -42,6 +43,7 @@ describe('the content chip', () => {
 		const container = chip({
 			game: { verdict: 'unchecked', why: 'Spring content v1 is not here' },
 			map: { verdict: 'differs', ours: 1, room: 2 },
+			mutators: [],
 		})
 		expect(container.querySelector('.chip.warn')?.firstChild?.textContent).toBe(
 			'Content differs',
@@ -49,6 +51,28 @@ describe('the content chip', () => {
 		expect(rows(container).slice(1)).toEqual([
 			'GameSplinterFaction 0.1.86installed, not checked: Spring content v1 is not here',
 			"MapCarrot Mountains v2.0different files · checksum 1, the room's 2",
+		])
+	})
+
+	test('lists the mutators after the map, in load order, each held to its checksum', () => {
+		const container = chip({
+			game: null,
+			map: null,
+			mutators: [
+				{ name: 'Sphere v1', here: true, check: { verdict: 'same', hash: 5 } },
+				{
+					name: 'Tanks v2',
+					here: true,
+					check: { verdict: 'differs', ours: 1, room: 2 },
+				},
+				{ name: 'Unannounced v1', here: true, check: null },
+			],
+		})
+		expect(container.querySelector('.chip.warn')).not.toBeNull()
+		expect(rows(container).slice(3)).toEqual([
+			'MutatorSphere v1same files as the room · checksum 5',
+			"MutatorTanks v2different files · checksum 1, the room's 2",
+			'MutatorUnannounced v1installed',
 		])
 	})
 })

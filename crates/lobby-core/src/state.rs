@@ -28,6 +28,26 @@ pub struct User {
 /// The prefix `SETSCRIPTTAGS` puts on modoptions.
 const MODOPTION: &str = "game/modoptions/";
 
+/// The tags a mutator host names the room's mutators by: `game/mutator0`
+/// onwards, each with `game/mutator{i}checksum` beside it.
+const MUTATOR: &str = "game/mutator";
+
+/// A mutator the room loads on top of its game, as its host announces it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Mutator {
+	/// The archive's name, as the engine finds it.
+	pub name: String,
+	/// The archive's own checksum as 128 lowercase hex digits; `None` when
+	/// the host announced none, or something that is not one.
+	pub checksum: Option<String>,
+}
+
+/// Whether `hex` has the shape of an announced checksum: 128 lowercase hex
+/// digits, a SHA-512.
+fn is_checksum(hex: &str) -> bool {
+	hex.len() == 128 && hex.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
 /// A modoption changing while we watched — the raw material for a diff.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OptionChange {
@@ -130,6 +150,29 @@ impl MyBattle {
 		self.script_tags
 			.get(&format!("{MODOPTION}{key}"))
 			.map_or("", String::as_str)
+	}
+
+	/// The mutators the room loads, in load order: `game/mutator0` onwards to
+	/// the first gap or empty name, which is where the engine stops reading
+	/// `MUTATOR0` onwards too (`GameSetup.cpp:303-313`).
+	pub fn mutators(&self) -> Vec<Mutator> {
+		(0..)
+			.map_while(|index| {
+				let name = self
+					.script_tags
+					.get(&format!("{MUTATOR}{index}"))
+					.filter(|name| !name.is_empty())?;
+				let checksum = self
+					.script_tags
+					.get(&format!("{MUTATOR}{index}checksum"))
+					.filter(|hex| is_checksum(hex))
+					.cloned();
+				Some(Mutator {
+					name: name.clone(),
+					checksum,
+				})
+			})
+			.collect()
 	}
 
 	/// Applies `SETSCRIPTTAGS`. Returns the modoptions that really changed,
@@ -405,5 +448,63 @@ impl LobbyState {
 				.then_with(|| a.id.cmp(&b.id))
 		});
 		battles
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	fn with_tags(tags: &[(&str, &str)]) -> MyBattle {
+		let mut room = MyBattle::new(1, "0".into(), "pw".into());
+		room.set_script_tags(
+			tags.iter()
+				.map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+				.collect(),
+		);
+		room
+	}
+
+	#[test]
+	fn mutators_are_read_in_load_order_up_to_the_first_gap() {
+		let sum = "ab".repeat(64);
+		let room = with_tags(&[
+			("game/mutator1", "Second v1"),
+			("game/mutator0", "First v1"),
+			("game/mutator0checksum", &sum),
+			("game/mutator3", "After a gap v1"),
+			("game/modoptions/startmetal", "1000"),
+		]);
+		assert_eq!(
+			room.mutators(),
+			[
+				Mutator {
+					name: "First v1".into(),
+					checksum: Some(sum),
+				},
+				Mutator {
+					name: "Second v1".into(),
+					checksum: None,
+				},
+			]
+		);
+	}
+
+	#[test]
+	fn an_empty_name_ends_the_list_and_a_malformed_checksum_is_none() {
+		let room = with_tags(&[
+			("game/mutator0", "Only v1"),
+			("game/mutator0checksum", &"AB".repeat(64)),
+			("game/mutator1", ""),
+			("game/mutator2", "Unread v1"),
+		]);
+		assert_eq!(
+			room.mutators(),
+			[Mutator {
+				name: "Only v1".into(),
+				checksum: None,
+			}]
+		);
+		assert!(with_tags(&[]).mutators().is_empty());
 	}
 }
