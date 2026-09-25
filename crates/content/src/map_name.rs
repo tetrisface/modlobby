@@ -139,6 +139,14 @@ pub fn game_of_archive(path: &Path) -> Option<String> {
 	compose(&modinfo(path)?)
 }
 
+/// A game's name as [`game_of_archive`] has it, and the `description` its
+/// `modinfo.lua` gives, where it gives one: what a mod says it does.
+pub fn game_and_description(path: &Path) -> Option<(String, Option<String>)> {
+	let modinfo = modinfo(path)?;
+	let description = field(&modinfo, "description").filter(|text| !text.trim().is_empty());
+	Some((compose(&modinfo)?, description))
+}
+
 /// The `modinfo.lua` at an archive's root, as text.
 pub(crate) fn modinfo(path: &Path) -> Option<String> {
 	root_file(path, "modinfo.lua")
@@ -316,6 +324,19 @@ local mapinfo = {
 		assert_eq!(game_of_archive(&sdd), None, "no modinfo, no game");
 		std::fs::write(sdd.join("modinfo.lua"), "name = 'My Mod'\nversion = '2'\n").unwrap();
 		assert_eq!(game_of_archive(&sdd).as_deref(), Some("My Mod 2"));
+		assert_eq!(game_and_description(&sdd), Some(("My Mod 2".into(), None)));
+		std::fs::write(
+			sdd.join("modinfo.lua"),
+			"return {\n    name='My Mod',\n    description='spawns aggressive space spheres',\n    version='2',\n}\n",
+		)
+		.unwrap();
+		assert_eq!(
+			game_and_description(&sdd),
+			Some((
+				"My Mod 2".into(),
+				Some("spawns aggressive space spheres".into())
+			))
+		);
 	}
 
 	#[test]

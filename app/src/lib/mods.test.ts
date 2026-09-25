@@ -14,9 +14,10 @@ import {
 	readSets,
 	remember,
 	sameList,
-	sourceLine,
+	sourceLinks,
 	summary,
 	updatePick,
+	updatedTo,
 	writeSets,
 } from './mods'
 
@@ -36,6 +37,7 @@ const offered: Offer[] = [
 const sphere: MutatorView = {
 	name: 'github-dev-sphere-9108a17078f7.sdd',
 	title: 'sphere spawner mod v1.0.0',
+	description: null,
 	here: true,
 	check: null,
 	source: SPHERE_SOURCE,
@@ -44,6 +46,7 @@ const sphere: MutatorView = {
 const tiny: MutatorView = {
 	name: 'tiny maps v1',
 	title: 'tiny maps v1',
+	description: null,
 	here: true,
 	check: null,
 	source: null,
@@ -168,20 +171,64 @@ describe('editing a draft', () => {
 })
 
 describe('what a draft says', () => {
-	test('where a GitHub mod stands, and where it is going', () => {
+	test('where a GitHub mod stands, and where it is going, as links', () => {
 		const [first, second] = room()
-		expect(sourceLine(first!)).toBe('dev/sphere @ 9108a17')
-		expect(sourceLine(updatePick(first!))).toBe('dev/sphere @ 9108a17 → newest')
-		expect(sourceLine(editPick(first!, 'dev/sphere@main')!)).toBe(
-			'dev/sphere @ 9108a17 → newest of main',
+		const links = (pick: Pick) => {
+			const found = sourceLinks(pick)
+			return (
+				found &&
+				[found.at, found.to].map((link) => link && [link.text, link.url])
+			)
+		}
+		const AT = ['dev/sphere', `https://github.com/dev/sphere/tree/${SHA}`]
+		expect(links(first!)).toEqual([AT, null])
+		expect(links(updatePick(first!))).toEqual([
+			AT,
+			['newest', 'https://github.com/dev/sphere/commits'],
+		])
+		expect(links(editPick(first!, 'dev/sphere@main')!)).toEqual([
+			AT,
+			['newest of main', 'https://github.com/dev/sphere/commits/main'],
+		])
+		expect(links(editPick(first!, `dev/sphere@${OTHER}`)!)).toEqual([
+			AT,
+			['another commit', `https://github.com/dev/sphere/tree/${OTHER}`],
+		])
+		expect(links(editPick(first!, 'dev/tanks')!)).toEqual([
+			['dev/tanks', 'https://github.com/dev/tanks'],
+			['newest', 'https://github.com/dev/tanks/commits'],
+		])
+		expect(links(second!)).toBeNull()
+	})
+
+	test('the commit is in the tooltip, never in the text', () => {
+		const [first] = room()
+		const found = sourceLinks(updatePick(first!))!
+		expect(found.at.tip).toContain(SHA)
+		expect(`${found.at.text} ${found.to?.text}`).not.toMatch(/[0-9a-f]{7}/)
+	})
+
+	test('an update moves only what GitHub has a newer commit of', () => {
+		const [first, second] = room()
+		const newer = { sha: OTHER, date: '2025-11-01T00:00:00Z' }
+		expect(updatedTo(first!, { sha: SHA, date: null }, room())).toEqual({
+			pick: first,
+			already: true,
+		})
+		expect(
+			updatedTo(updatePick(first!), { sha: SHA, date: null }, room()),
+		).toEqual({ pick: first, already: true })
+		expect(updatedTo(first!, newer, room())).toEqual({
+			pick: { ...first, ref: 'dev/sphere', newest: newer.date },
+			already: false,
+		})
+		expect(sourceLinks(updatedTo(first!, newer, room()).pick)?.to?.date).toBe(
+			newer.date,
 		)
-		expect(sourceLine(editPick(first!, `dev/sphere@${OTHER}`)!)).toBe(
-			'dev/sphere @ 9108a17 → bbbbbbb',
-		)
-		expect(sourceLine(editPick(first!, 'dev/tanks')!)).toBe(
-			'dev/tanks → newest',
-		)
-		expect(sourceLine(second!)).toBeNull()
+		expect(updatedTo(second!, newer, room())).toEqual({
+			pick: second,
+			already: false,
+		})
 	})
 
 	test('how each pick differs from the room', () => {

@@ -838,6 +838,9 @@ pub struct MutatorView {
 	pub name: String,
 	/// What to call it: the name inside it where this copy is here to read.
 	pub title: String,
+	/// What it says it does, from its `modinfo.lua`, where this copy is here
+	/// to read and says anything.
+	pub description: Option<String>,
 	pub here: bool,
 	pub check: Option<CheckView>,
 	/// `github:owner/repo@<commit>` for one built from a commit.

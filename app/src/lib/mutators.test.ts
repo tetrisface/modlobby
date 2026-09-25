@@ -35,6 +35,7 @@ describe('mutators', () => {
 		const loaded: MutatorView = {
 			name: 'github-dev-sphere-9108a17078f7.sdd',
 			title: 'sphere spawner mod v1.0.0',
+			description: null,
 			here: true,
 			check: null,
 			source: `github:dev/sphere@${SHA}`,

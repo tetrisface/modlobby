@@ -1,12 +1,15 @@
 import { For, Show, createEffect, createMemo, createSignal } from 'solid-js'
 import { ActionCell, CellButton } from '../components/ActionCell'
-import { describeError } from '../ipc/client'
+import { openExternal } from '../components/Linkify'
+import { Glyph } from '../components/icons'
+import { api, describeError } from '../ipc/client'
 import { age, exactly } from '../lib/age'
 import { reorderGesture } from '../lib/drag'
 import {
 	type Change,
 	type ModSet,
 	type Pick,
+	type SourceLink,
 	addPick,
 	adopt,
 	changeOf,
@@ -17,9 +20,9 @@ import {
 	picksOf,
 	removePick,
 	sameList,
-	sourceLine,
+	sourceLinks,
 	summary,
-	updatePick,
+	updatedTo,
 } from '../lib/mods'
 import { offers } from '../lib/mutators'
 import { pushNotice } from '../store/chat'
@@ -80,6 +83,37 @@ export function Mods() {
 	}
 
 	/**
+	 * Asks GitHub for the newest commit of each of these mods and moves only
+	 * the ones it would move; the rest stay as the room has them, and are
+	 * said to be current. Whatever else changed in the draft meanwhile stays.
+	 */
+	const [checking, setChecking] = createSignal(false)
+	async function update(picks: readonly Pick[]) {
+		setChecking(true)
+		const moved = new Map<string, Pick>()
+		const already: string[] = []
+		for (const pick of picks) {
+			if (!pick.repo) continue
+			try {
+				// ponytail: the default branch; a host entry that tracks another branch is checked against the wrong one
+				const newest = await api.newestCommit(pick.repo, null)
+				const next = updatedTo(pick, newest, current())
+				moved.set(pick.repo, next.pick)
+				if (next.already) already.push(pick.label)
+			} catch (error) {
+				pushNotice('warning', `${pick.label}: ${describeError(error)}`)
+			}
+		}
+		setChecking(false)
+		const next = shown().map(
+			(pick) => (pick.repo && moved.get(pick.repo)) || pick,
+		)
+		if (drafting() || !sameList(next, current())) edit(next)
+		if (already.length > 0)
+			pushNotice('info', `Already at the newest commit: ${already.join(', ')}`)
+	}
+
+	/**
 	 * A row in flight and where it would land. The list is drawn in that order
 	 * while it is -- the others making room -- and the draft changes only on
 	 * the drop.
@@ -103,7 +137,8 @@ export function Mods() {
 					<button
 						class='chip-choice'
 						title='Move every mod from GitHub to the newest commit of the branch it follows'
-						onClick={() => edit(shown().map(updatePick))}
+						disabled={checking()}
+						onClick={() => void update(shown())}
 					>
 						Update all
 					</button>
@@ -131,13 +166,8 @@ export function Mods() {
 									onOver: setFlying,
 									onDrop: (from, to) => edit(movePick(shown(), from, to)),
 								})}
-								onUpdate={() =>
-									edit(
-										shown().map((held, at) =>
-											at === index() ? updatePick(held) : held,
-										),
-									)
-								}
+								checking={checking()}
+								onUpdate={() => void update([pick])}
 								onEdit={(text) => {
 									const next = editPick(pick, text)
 									if (next === null) return false
@@ -254,15 +284,41 @@ const CHANGE_WORDS: Record<Change, string | null> = {
 }
 
 /**
- * One mod: dragged into load order, with where it comes from
- * under its name and, from GitHub, the means to move it or point it elsewhere.
- * The commit itself stays in the tooltip.
+ * A place on GitHub, opened in the browser. A button, so a press on it is a
+ * click and not the start of a drag.
+ */
+function SourceButton(props: { link: SourceLink }) {
+	return (
+		<button
+			type='button'
+			class='mod-link'
+			title={
+				props.link.date
+					? `${props.link.tip}\ncommitted ${exactly(props.link.date)}`
+					: props.link.tip
+			}
+			onClick={() => void openExternal(props.link.url)}
+		>
+			{props.link.date
+				? `${props.link.text} · ${age(props.link.date)}`
+				: props.link.text}
+			<Glyph id='act-external' />
+		</button>
+	)
+}
+
+/**
+ * One mod: dragged into load order, with where it comes from under its name
+ * and, from GitHub, the means to move it or point it elsewhere. The commit
+ * itself stays in the tooltips.
  */
 function Row(props: {
 	pick: Pick
 	change: Change
 	/** A press anywhere but on a control picks the row up. */
 	onPress: (event: PointerEvent) => void
+	/** While GitHub is being asked, nothing else is asked of it. */
+	checking: boolean
 	onUpdate: () => void
 	/** Whether the text named a repository; the row keeps asking until it does. */
 	onEdit: (text: string) => boolean
@@ -273,7 +329,6 @@ function Row(props: {
 	const tip = () =>
 		[
 			CHANGE_WORDS[props.change],
-			props.pick.source?.replace(/^github:/, ''),
 			props.pick.date && `committed ${exactly(props.pick.date)}`,
 			'Drag to change the load order',
 		]
@@ -309,8 +364,20 @@ function Row(props: {
 				<Show
 					when={editing()}
 					fallback={
-						<Show when={sourceLine(props.pick)}>
-							{(line) => <span class='mod-source'>{line()}</span>}
+						<Show when={sourceLinks(props.pick)}>
+							{(links) => (
+								<span class='mod-source'>
+									<SourceButton link={links().at} />
+									<Show when={links().to}>
+										{(to) => (
+											<>
+												<span class='mod-arrow'>→</span>
+												<SourceButton link={to()} />
+											</>
+										)}
+									</Show>
+								</span>
+							)}
 						</Show>
 					}
 				>
@@ -335,7 +402,7 @@ function Row(props: {
 						icon='act-upgrade'
 						title='Move to the newest commit of the branch it follows'
 						label={`Update ${props.pick.label}`}
-						disabled={props.pick.ref === props.pick.repo}
+						disabled={props.checking || props.pick.ref === props.pick.repo}
 						onClick={props.onUpdate}
 					/>
 					<CellButton

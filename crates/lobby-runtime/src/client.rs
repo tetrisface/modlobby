@@ -1448,19 +1448,33 @@ fn mutator_archive(
 	library.archive_file(&built)
 }
 
+/// Whether the room has said all a fetch needs to know of a mutator. A host
+/// sends a room's tags a line at a time, and between two lines a build can be
+/// named with no commit yet, or beside the commit of the mutator that held
+/// its place before. Asked for then, it would be looked for by its file name
+/// where only a build has one, or built from the wrong commit.
+fn announced_whole(mutator: &lobby_core::Mutator) -> bool {
+	match &mutator.source {
+		Some(pin) => mutator.name == content::git::build_name(&pin.repo, &pin.commit),
+		None => !content::git::is_build_name(&mutator.name),
+	}
+}
+
 /// A mutator as the front end shows it: by the name inside it where that is
 /// known, else the repository it is built from, else the name the room
 /// loads it by.
 fn mutator_view(
 	mutator: &lobby_core::Mutator,
 	here: bool,
-	title: Option<String>,
+	inside: Option<(String, Option<String>)>,
 	check: Option<lobby_ui::CheckView>,
 ) -> lobby_ui::MutatorView {
+	let (title, description) = inside.unzip();
 	lobby_ui::MutatorView {
 		title: title
 			.or_else(|| mutator.source.as_ref().map(|pin| pin.repo.clone()))
 			.unwrap_or_else(|| mutator.name.clone()),
+		description: description.flatten(),
 		name: mutator.name.clone(),
 		here,
 		check,
@@ -1507,9 +1521,9 @@ fn check_content(dirs: DataDirs, key: &CheckKey) -> lobby_ui::ContentCheckView {
 			.mutators
 			.iter()
 			.map(|(mutator, here)| {
-				let title = mutator_archive(&library, &key.engine, mutator)
-					.and_then(|path| content::map_name::game_of_archive(&path));
-				mutator_view(mutator, *here, title, announced(mutator))
+				let inside = mutator_archive(&library, &key.engine, mutator)
+					.and_then(|path| content::map_name::game_and_description(&path));
+				mutator_view(mutator, *here, inside, announced(mutator))
 			})
 			.collect(),
 	}
@@ -2159,6 +2173,7 @@ impl Runtime {
 		wants.extend(
 			mutators
 				.iter()
+				.filter(|mutator| announced_whole(mutator))
 				.filter(|mutator| mutator_archive(&library, &engine_version, mutator).is_none())
 				.map(|mutator| (recoil::Want::Mutator, mutator.name.clone())),
 		);
@@ -2510,6 +2525,9 @@ impl Runtime {
 			})
 			.collect();
 		let mutators_here = mutators.iter().all(|(_, here)| *here);
+		let mutators_to_fetch = mutators
+			.iter()
+			.any(|(mutator, here)| !here && announced_whole(mutator));
 		let map_hash = content::checksum::parse_room_hash(&room.map_hash);
 		self.start_check(
 			CheckKey {
@@ -2541,7 +2559,7 @@ impl Runtime {
 		// when nothing else is running, and only once per room — a name the
 		// CDN does not carry would otherwise be retried by every content check
 		// that a failed download itself provokes.
-		let fetchable = !available.game || !available.map || !mutators_here;
+		let fetchable = !available.game || !available.map || mutators_to_fetch;
 		if fetchable
 			&& self.auto_download
 			&& available.engine
@@ -4331,6 +4349,7 @@ mod tests {
 				MutatorView {
 					name: "Sphere v1".into(),
 					title: "Sphere v1".into(),
+					description: None,
 					here: true,
 					check: Some(CheckView::Same { hash: ours }),
 					source: None,
@@ -4339,6 +4358,7 @@ mod tests {
 				MutatorView {
 					name: "Sphere v1".into(),
 					title: "Sphere v1".into(),
+					description: None,
 					here: true,
 					check: Some(CheckView::Differs {
 						ours,
@@ -4350,6 +4370,7 @@ mod tests {
 				MutatorView {
 					name: "Absent v1".into(),
 					title: "Absent v1".into(),
+					description: None,
 					here: false,
 					check: None,
 					source: None,
@@ -4362,6 +4383,35 @@ mod tests {
 	/// A mutator pinned to a commit is its build of that commit, found by the
 	/// file name the room loads it by: another copy of the same mod, with the
 	/// same name inside it, does not pass for it.
+	#[test]
+	fn a_mutator_half_announced_is_not_asked_for() {
+		let sha = "9108a17078f79d09925edc305ec83bc06c3a7cb3";
+		let pin = |repo: &str| lobby_core::GitPin {
+			repo: repo.into(),
+			commit: sha.into(),
+		};
+		let mutator = |name: String, source| lobby_core::Mutator {
+			name,
+			checksum: None,
+			source,
+			date: None,
+		};
+		let built = content::git::build_name("dev/sphere", sha);
+		assert!(announced_whole(&mutator(
+			built.clone(),
+			Some(pin("dev/sphere"))
+		)));
+		assert!(announced_whole(&mutator("Tiny maps v1".into(), None)));
+		assert!(
+			!announced_whole(&mutator(built.clone(), None)),
+			"no commit yet"
+		);
+		assert!(
+			!announced_whole(&mutator(built, Some(pin("dev/tanks")))),
+			"its neighbour's commit"
+		);
+	}
+
 	#[test]
 	fn a_pinned_mutator_is_its_build_and_no_other_copy() {
 		let sha = "9108a17078f79d09925edc305ec83bc06c3a7cb3";
@@ -4401,6 +4451,7 @@ mod tests {
 			[lobby_ui::MutatorView {
 				name: built,
 				title: "Sphere v1".into(),
+				description: None,
 				here: true,
 				check: None,
 				source: Some(format!("github:dev/sphere@{sha}")),

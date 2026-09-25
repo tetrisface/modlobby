@@ -16,6 +16,11 @@ export type MutatorView = {
 	 * What to call it: the name inside it where this copy is here to read.
 	 */
 	title: string
+	/**
+	 * What it says it does, from its `modinfo.lua`, where this copy is here
+	 * to read and says anything.
+	 */
+	description: string | null
 	here: boolean
 	check: CheckView | null
 	/**

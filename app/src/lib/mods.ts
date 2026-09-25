@@ -23,6 +23,11 @@ export type Pick = {
 	/** `github:owner/repo@<commit>` for one the room has pinned. */
 	source: string | null
 	date: string | null
+	/**
+	 * When the draft moves it to the newest commit: that commit's date, as
+	 * GitHub gave it when asked.
+	 */
+	newest?: string | null
 }
 
 /** What a room loads at most; the host refuses more (`MAX_MUTATORS`). */
@@ -156,6 +161,29 @@ export function updatePick(pick: Pick): Pick {
 	return pick.repo ? { ...pick, ref: pick.repo } : pick
 }
 
+/** The commit a pick is pinned to, or `null`. */
+export function commitOf(pick: Pick): string | null {
+	return pinRef(pick.source)?.split('@')[1] ?? null
+}
+
+/**
+ * A pick once GitHub has said what the newest commit of its repository is:
+ * moved there when that is another commit than the room's, else as the room
+ * has it -- an update that changes nothing is not worth a vote -- and
+ * whether it was already there.
+ */
+export function updatedTo(
+	pick: Pick,
+	newest: { sha: string; date: string | null },
+	room: readonly Pick[],
+): { pick: Pick; already: boolean } {
+	if (!pick.repo) return { pick, already: false }
+	const held = room.find((entry) => entry.repo === pick.repo)
+	if (held && commitOf(held) === newest.sha)
+		return { pick: held, already: true }
+	return { pick: { ...updatePick(pick), newest: newest.date }, already: false }
+}
+
 /**
  * A pick with its source replaced by what somebody typed: another branch or
  * commit of the same repository keeps what the room knows of it, another
@@ -175,17 +203,59 @@ export function editPick(pick: Pick, text: string): Pick | null {
 }
 
 /**
- * Where a GitHub pick stands, for a person: the commit the room has, and
- * where the ref would move it -- `dev/sphere @ 9108a17 → newest of main`.
+ * A link out to GitHub: what it reads as, where it goes, its tooltip, and
+ * the date of the commit it leads to where that is known.
  */
-export function sourceLine(pick: Pick): string | null {
-	if (!pick.repo) return null
-	const held = pick.source ? sourceWords(pick.source) : pick.repo
-	if (pick.ref === pinRef(pick.source) || !parseGithub(pick.ref)) return held
-	const asked = pick.ref.split('@')[1] ?? null
-	if (asked === null) return `${held} → newest`
-	if (COMMIT.test(asked)) return `${held} → ${asked.slice(0, 7)}`
-	return `${held} → newest of ${asked}`
+export type SourceLink = {
+	text: string
+	url: string
+	tip: string
+	date?: string | null
+}
+
+const GITHUB = 'https://github.com'
+
+/**
+ * Where a GitHub pick stands and where the draft would move it, as links:
+ * the repository at the commit the room loads -- the files a vote is about
+ * -- and, when the draft moves it, the commits it would move to. The commit
+ * itself is only ever in a tooltip.
+ */
+export function sourceLinks(
+	pick: Pick,
+): { at: SourceLink; to: SourceLink | null } | null {
+	const repo = pick.repo
+	if (!repo) return null
+	const commit = commitOf(pick)
+	const at: SourceLink = commit
+		? {
+				text: repo,
+				url: `${GITHUB}/${repo}/tree/${commit}`,
+				tip: `${sourceWords(pick.source!)}: the files the room loads\ncommit ${commit}`,
+			}
+		: { text: repo, url: `${GITHUB}/${repo}`, tip: repo }
+	const asked = parseGithub(pick.ref)
+	if (pick.ref === pinRef(pick.source) || !asked) return { at, to: null }
+	const to: SourceLink =
+		asked.ref === null
+			? {
+					text: 'newest',
+					url: `${GITHUB}/${repo}/commits`,
+					tip: 'The newest commit of the branch it follows, taken when the draft is applied',
+					date: pick.newest ?? null,
+				}
+			: COMMIT.test(asked.ref)
+				? {
+						text: 'another commit',
+						url: `${GITHUB}/${repo}/tree/${asked.ref}`,
+						tip: `commit ${asked.ref}`,
+					}
+				: {
+						text: `newest of ${asked.ref}`,
+						url: `${GITHUB}/${repo}/commits/${asked.ref}`,
+						tip: `The newest commit of ${asked.ref}, taken when the draft is applied`,
+					}
+	return { at, to }
 }
 
 /** How a pick in a draft differs from the room: not at all, new, or moved to another commit. */

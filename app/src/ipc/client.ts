@@ -7,6 +7,7 @@ import type { BarConfig } from './bindings/BarConfig'
 import type { BattleOn } from './bindings/BattleOn'
 import type { ArrangementView } from './bindings/ArrangementView'
 import type { Check } from './bindings/Check'
+import type { CommitView } from './bindings/CommitView'
 import type { Encoded } from './bindings/Encoded'
 import type { DefTags } from './bindings/DefTags'
 import type { DiffView } from './bindings/DiffView'
@@ -293,6 +294,9 @@ export const api = {
 	importPlayerFiles: (from: string) =>
 		invoke<number>('import_player_files', { from }),
 	openUrl: (url: string) => invoke<void>('open_url', { url }),
+	/** The newest commit of a branch on GitHub; the default branch for `null`. */
+	newestCommit: (repo: string, branch: string | null) =>
+		invoke<CommitView>('newest_commit', { repo, branch }),
 	openLogDir: () => invoke<void>('open_log_dir'),
 
 	/** With `ready`, a ready follows once the server has answered with the seat. */

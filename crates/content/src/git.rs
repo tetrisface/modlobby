@@ -391,6 +391,19 @@ pub fn build_name(repo: &str, sha: &str) -> String {
 	)
 }
 
+/// Whether `name` has [`build_name`]'s shape. Only a build has one, so no
+/// such name is ever asked of rapid or a list.
+pub fn is_build_name(name: &str) -> bool {
+	name.strip_prefix("github-")
+		.and_then(|rest| rest.strip_suffix(".sdd"))
+		.and_then(|rest| rest.rsplit_once('-'))
+		.is_some_and(|(repo, sha)| {
+			!repo.is_empty()
+				&& sha.len() == 12
+				&& sha.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+		})
+}
+
 /// The commit `reference` names in `repo`: a branch, a tag, `HEAD` for the
 /// default branch, or a commit hash as short as GitHub can tell apart.
 pub async fn commit_of(
@@ -615,6 +628,21 @@ mod tests {
 			zip.write_all(body).unwrap();
 		}
 		zip.finish().unwrap().into_inner()
+	}
+
+	#[test]
+	fn only_a_builds_name_has_a_builds_shape() {
+		let sha = "9108a17078f79d09925edc305ec83bc06c3a7cb3";
+		assert!(is_build_name(&build_name("tetrisface/sphere-spawner", sha)));
+		for name in [
+			"sphere spawner mod v1.0.0",
+			"github-tetrisface-sphere-spawner-9108a17.sdd",
+			"github--9108a17078f7.sdd",
+			"github-dev-sphere-9108A17078F7.sdd",
+			"github-dev-sphere-9108a17078f7.sdz",
+		] {
+			assert!(!is_build_name(name), "{name}");
+		}
 	}
 
 	#[test]

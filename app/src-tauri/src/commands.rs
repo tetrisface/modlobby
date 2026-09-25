@@ -1481,6 +1481,56 @@ pub async fn import_player_files(app: State<'_, App>, from: String) -> Result<u3
 	.await?
 }
 
+/// A commit on GitHub, as the Mods pane asks after one.
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct CommitView {
+	pub sha: String,
+	/// When it was committed, as GitHub says.
+	pub date: Option<String>,
+}
+
+/// The newest commit of `repo`'s `branch`, the default branch when `None`:
+/// what updating a mod from GitHub would move it to, asked before the room
+/// is, so an update that changes nothing is never put to a vote.
+#[tauri::command]
+pub async fn newest_commit(
+	app: State<'_, App>,
+	repo: String,
+	branch: Option<String>,
+) -> Result<CommitView> {
+	let plain = |part: &str| {
+		!part.is_empty()
+			&& part
+				.bytes()
+				.all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+	};
+	let whole = repo
+		.split_once('/')
+		.is_some_and(|(owner, name)| plain(owner) && plain(name));
+	if !whole {
+		return Err(ApiError::new(
+			"input",
+			format!("{repo:?} is not owner/repo"),
+		));
+	}
+	let cache = app
+		.settings
+		.dir()
+		.join("cache")
+		.join(content::api::CACHE_DIR);
+	let api = content::api::Api::github(Some(cache));
+	let reference = branch.as_deref().unwrap_or("HEAD");
+	let commit = content::git::commit_of(&app.http, &api, &repo, reference)
+		.await
+		.map_err(|err| ApiError::new("network", err))?;
+	Ok(CommitView {
+		date: commit.date().map(str::to_owned),
+		sha: commit.sha,
+	})
+}
+
 /// Opens a link from chat in the system browser.
 ///
 /// Only `http` and `https`: chat is text other people wrote, and handing an

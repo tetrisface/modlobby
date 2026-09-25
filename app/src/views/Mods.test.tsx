@@ -1,5 +1,6 @@
-import { cleanup, fireEvent, render } from '@solidjs/testing-library'
-import { afterEach, beforeEach, describe, expect, test } from 'vitest'
+import { cleanup, fireEvent, render, waitFor } from '@solidjs/testing-library'
+import { invoke } from '@tauri-apps/api/core'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { MutatorView } from '../ipc/bindings/MutatorView'
 import { forgetSet, modSets, rememberSet, setDraft } from '../store/mods'
 import { Mods } from './Mods'
@@ -13,6 +14,8 @@ import {
 	user,
 } from './room/fixture'
 
+vi.mock('@tauri-apps/api/core', async () => ({ invoke: vi.fn() }))
+
 const SHA = '9108a17078f79d09925edc305ec83bc06c3a7cb3'
 const SPHERE = `github:dev/sphere@${SHA}`
 
@@ -25,6 +28,7 @@ const tags = {
 const sphere: MutatorView = {
 	name: 'github-dev-sphere-9108a17078f7.sdd',
 	title: 'sphere spawner mod v1.0.0',
+	description: null,
 	here: true,
 	check: null,
 	source: SPHERE,
@@ -81,7 +85,7 @@ describe('the mods pane', () => {
 	test('shows what is loaded, where it comes from, and what the host offers', () => {
 		const { rows, offers, footer } = pane({ loaded: [sphere] })
 		expect(rows().map((row) => [row.name, row.source])).toEqual([
-			['sphere spawner mod v1.0.0', 'dev/sphere @ 9108a17'],
+			['sphere spawner mod v1.0.0', 'dev/sphere'],
 		])
 		expect(offers().map((chip) => chip.textContent)).toEqual([
 			'sphere-spawner',
@@ -166,10 +170,43 @@ describe('the mods pane', () => {
 		expect(command()).toBe('!mutator set sphere-spawner, tiny maps v1')
 	})
 
-	test('the summary is the legend of the row markers', () => {
+	test('a mod from GitHub links to the commit the room loads, and a press there is no drag', async () => {
+		const opened: string[] = []
+		vi.mocked(invoke).mockImplementation(async (command, args) => {
+			if (command === 'open_url') opened.push((args as { url: string }).url)
+		})
+		const { rows, offers, command, container } = pane({ loaded: [sphere] })
+		fireEvent.click(offers()[1]!)
+		laidOut(container)
+		const link = rows()[0]!.row.querySelector<HTMLButtonElement>('.mod-link')!
+		expect(link.title).toContain(SHA)
+		fireEvent.pointerDown(link, { clientX: 10, clientY: 20 })
+		fireEvent.pointerMove(window, { clientX: 10, clientY: 70 })
+		fireEvent.pointerUp(window, { clientX: 10, clientY: 70 })
+		expect(command()).toBe('!mutator set sphere-spawner, tiny maps v1')
+		fireEvent.click(link)
+		await waitFor(() =>
+			expect(opened).toEqual([`https://github.com/dev/sphere/tree/${SHA}`]),
+		)
+	})
+
+	/** GitHub, as the app asks it: the newest commit is `sha`. */
+	function newestIs(sha: string) {
+		vi.mocked(invoke).mockImplementation(async (command) => {
+			if (command === 'newest_commit')
+				return { sha, date: '2025-11-01T00:00:00Z' }
+		})
+	}
+	const NEWER = 'c'.repeat(40)
+
+	test('the summary is the legend of the row markers', async () => {
+		newestIs(NEWER)
 		const { rows, offers, container } = pane({ loaded: [sphere] })
 		fireEvent.click(offers()[1]!)
 		fireEvent.click(rows()[0]!.row.querySelector('[aria-label^="Update"]')!)
+		await waitFor(() =>
+			expect(rows()[0]?.row.classList.contains('moving')).toBe(true),
+		)
 		const parts = [...container.querySelectorAll('.mod-summary .mod-change')]
 		expect(parts.map((part) => [part.className, part.textContent])).toEqual([
 			['mod-change added', '1 added'],
@@ -183,17 +220,32 @@ describe('the mods pane', () => {
 		)
 	})
 
-	test('a mod from GitHub is moved to the newest commit, or pointed elsewhere', () => {
+	test('an update that GitHub says changes nothing leaves the room as it is', async () => {
+		newestIs(SHA)
+		const { rows, footer } = pane({ loaded: [sphere] })
+		const update = rows()[0]!.row.querySelector<HTMLButtonElement>(
+			'[aria-label^="Update"]',
+		)!
+		fireEvent.click(update)
+		expect(update.disabled).toBe(true)
+		await waitFor(() => expect(update.disabled).toBe(false))
+		expect(footer()).toBeNull()
+		expect(rows()[0]?.row.classList.contains('moving')).toBe(false)
+		expect(rows()[0]?.source).toBe('dev/sphere')
+	})
+
+	test('a mod from GitHub is moved to the newest commit, or pointed elsewhere', async () => {
+		newestIs(NEWER)
 		const { rows, command, container } = pane({ loaded: [sphere] })
 		fireEvent.click(rows()[0]!.row.querySelector('[aria-label^="Update"]')!)
-		expect(rows()[0]?.source).toBe('dev/sphere @ 9108a17 → newest')
+		await waitFor(() => expect(command()).toBe('!mutator set dev/sphere'))
+		expect(rows()[0]?.source).toMatch(/^dev\/sphere→newest · .+ ago$/)
 		expect(rows()[0]?.row.classList.contains('moving')).toBe(true)
-		expect(command()).toBe('!mutator set dev/sphere')
 		fireEvent.click(rows()[0]!.row.querySelector('[aria-label^="Edit"]')!)
 		const field = container.querySelector<HTMLInputElement>('.mod-source-edit')!
 		fireEvent.input(field, { target: { value: 'dev/sphere@main' } })
 		fireEvent.keyDown(field, { key: 'Enter' })
-		expect(rows()[0]?.source).toBe('dev/sphere @ 9108a17 → newest of main')
+		expect(rows()[0]?.source).toBe('dev/sphere→newest of main')
 		expect(command()).toBe('!mutator set dev/sphere@main')
 	})
 
@@ -232,6 +284,7 @@ describe('the mods pane', () => {
 			...sphere,
 			name: 'tiny maps v1',
 			title: 'tiny maps v1',
+			description: null,
 			source: null,
 		}
 		const after = pane({ loaded: [sphere, tiny] })

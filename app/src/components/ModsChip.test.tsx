@@ -15,6 +15,7 @@ afterEach(() => {
 const sphere: MutatorView = {
 	name: 'github-dev-sphere-9108a17078f7.sdd',
 	title: 'sphere spawner mod v1.0.0',
+	description: null,
 	here: true,
 	check: null,
 	source: 'github:dev/sphere@9108a17078f79d09925edc305ec83bc06c3a7cb3',
@@ -22,16 +23,31 @@ const sphere: MutatorView = {
 }
 
 describe('the mods chip', () => {
-	test('names each mod and how recent it is, and keeps the commit for the tooltip', () => {
-		const tiny = { ...sphere, title: 'tiny maps v1', source: null, date: null }
-		const chip = render(() => (
-			<ModsChip mods={[sphere, tiny]} />
-		)).container.querySelector('.chip')
-		expect(chip?.textContent).toBe(
-			'Mods: sphere spawner mod v1.0.0 · 4d ago, tiny maps v1',
+	const chip = (mods: MutatorView[]) =>
+		render(() => <ModsChip mods={mods} />).container.querySelector('.chip')
+
+	test('one mod reads with how recent it is, the commit kept for the tooltip', () => {
+		const shown = chip([sphere])
+		expect(shown?.textContent).toBe('Mods: sphere spawner mod v1.0.0 · 4d ago')
+		expect(shown?.getAttribute('title')).toBe(
+			'sphere spawner mod v1.0.0 · 4d ago · dev/sphere @ 9108a17 · committed ' +
+				new Date('2025-10-05T13:32:07Z').toLocaleString(),
 		)
-		expect(chip?.getAttribute('title')).toContain('dev/sphere @ 9108a17')
-		expect(chip?.textContent).not.toContain('9108a17')
+	})
+
+	test('several read as a count and names, each on its own line in the tooltip', () => {
+		const tiny = { ...sphere, title: 'tiny maps v1', source: null, date: null }
+		const shown = chip([sphere, tiny, { ...tiny, title: 'fast units v2' }])
+		expect(shown?.textContent).toBe(
+			'3 mods: sphere spawner mod v1.0.0, tiny maps v1, fast units v2',
+		)
+		expect(shown?.classList.contains('mods-chip')).toBe(true)
+		expect(shown?.getAttribute('title')?.split('\n')).toEqual([
+			expect.stringContaining('dev/sphere @ 9108a17'),
+			'tiny maps v1',
+			'fast units v2',
+		])
+		expect(shown?.textContent).not.toContain('9108a17')
 	})
 
 	test('is not there when the room loads none', () => {
