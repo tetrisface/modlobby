@@ -8,6 +8,7 @@ import {
 	battleKey,
 	chobbySort,
 	isModded,
+	leadWith,
 	isVsAi,
 	layoutLabel,
 	matches,
@@ -322,6 +323,27 @@ describe('modded rooms', () => {
 		expect(
 			isModded(battle({ gameName: 'beyond all reason dev' }), 's', null),
 		).toBe(false)
+		// A title that says so counts, as our autohosts name their rooms.
+		expect(isModded(battle({ title: 'Mutators 1' }), 's', null)).toBe(true)
+		expect(isModded(battle({ title: 'chill 8v8 with mods' }), 's', null)).toBe(
+			true,
+		)
+		expect(isModded(battle({ title: 'a mod for the dust' }), 's', null)).toBe(
+			false,
+		)
+	})
+
+	test('browsing puts Mods first and on, and leaves the rest alone', () => {
+		const steps = leadWith(toggled(chobbySort(), 1), 'modded')
+		expect(steps[0]).toEqual({ by: 'modded', on: true })
+		expect(steps.map((step) => step.by)).toEqual([
+			'modded',
+			'relevance',
+			'players',
+			'rank',
+			'title',
+			'map',
+		])
 	})
 
 	test('come first when Mods leads the order, and not when it is off', () => {
@@ -336,6 +358,16 @@ describe('modded rooms', () => {
 		expect(
 			titles(arrange(rows, filters({ sort: toggled(ledBy('modded'), 0) }), '')),
 		).toEqual(['plain', 'modded'])
+	})
+
+	test('an empty modded autohost outranks a busy plain room when Mods leads', () => {
+		const rows = [
+			{ ...row({ title: 'plain busy', playerCount: 9 }), modded: false },
+			{ ...row({ title: 'Mods 1', playerCount: 0 }), modded: true },
+		]
+		expect(
+			titles(arrange(rows, filters({ sort: ledBy('modded') }), '')),
+		).toEqual(['Mods 1', 'plain busy'])
 	})
 
 	test('the default order breaks ties on it only after the bands and the counts', () => {

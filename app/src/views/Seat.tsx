@@ -465,7 +465,6 @@ export function Seat() {
 					<span class='select-iconed'>
 						<SideIcon side={seat()?.side ?? 0} />
 						<Select
-							class='rich'
 							value={String(seat()?.side ?? 0)}
 							disabled={busy()}
 							onChange={(e) =>

@@ -232,6 +232,8 @@ pub struct Session {
 	ready_after_seat: bool,
 	/// A `!privatehost` we asked for and the password it came back with.
 	private_host: Option<String>,
+	/// Hosts' JSON-RPC answers still arriving in pieces.
+	rpc_chunks: spads::RpcChunks,
 	/// The spare autohost we are joining to make it ours; claimed on arrival.
 	hosting: Option<u32>,
 	/// Whether this machine has the room's engine, game and map. Claiming to be
@@ -348,6 +350,7 @@ impl Session {
 			in_flight: VecDeque::new(),
 			ready_after_seat: false,
 			private_host: None,
+			rpc_chunks: spads::RpcChunks::default(),
 			hosting: None,
 			synced: false,
 			in_game: false,
@@ -1348,8 +1351,11 @@ impl Session {
 			E::SaidPrivate { name, text } => {
 				let mut effects = Vec::new();
 				// A host answering what we asked about its game, on the side
-				// channel SPADS carries over private messages.
-				if let Some(spads::RpcStatus::Game { seconds, .. }) = spads::parse_rpc(&text)
+				// channel SPADS carries over private messages, in pieces when
+				// the answer is long.
+				let answer = self.rpc_chunks.push(&name, &text);
+				if let Some(spads::RpcStatus::Game { seconds, .. }) =
+					answer.as_deref().and_then(spads::parse_rpc)
 					&& let Some(id) = self.battle_hosted_by(&name)
 				{
 					effects.push(Effect::GameInProgress {
@@ -1361,7 +1367,9 @@ impl Session {
 				// it was asked when it did.
 				if self.hosts_my_battle(&name)
 					&& let Some(id) = self.state.my_battle.as_ref().and_then(|my| my.joined_id)
-					&& let Some(players) = spads::players_on(&text, id)
+					&& let Some(players) = answer
+						.as_deref()
+						.and_then(|answer| spads::players_on(answer, id))
 				{
 					let me = self.state.me.as_deref();
 					let names = players
@@ -2830,6 +2838,40 @@ mod tests {
 
 		// Said once: a status line that changes something else is not news.
 		assert!(!feed(&mut s, &["CLIENTSTATUS host 64"]).contains(&Effect::GameStopped));
+	}
+
+	#[test]
+	fn a_hosts_answer_split_over_messages_is_read_whole() {
+		let mut s = ready_with_room();
+		s.join_battle(5, None, "4242".into());
+		feed(
+			&mut s,
+			&[
+				"JOINBATTLE 5 -1",
+				"CLIENTSTATUS host 64",
+				"CLIENTSTATUS host 65",
+				"SAIDBATTLEEX host * Adding player me in ID 3",
+			],
+		);
+		// A room of six or more answers `status game` in pieces (`spads.pl:3462`).
+		let first = feed(
+			&mut s,
+			&[
+				r#"SAIDPRIVATE host !#JSONRPC(1/2) {"jsonrpc":"2.0","result":{"game":{"clients":[{"Name":"alice","Id":3},"#,
+			],
+		);
+		assert!(
+			!first
+				.iter()
+				.any(|effect| matches!(effect, Effect::PlayingWith { .. }))
+		);
+		let effects = feed(
+			&mut s,
+			&[r#"SAIDPRIVATE host !#JSONRPC(2/2) {"Name":"+ me","Id":3}]}},"id":1}"#],
+		);
+		assert!(effects.contains(&Effect::PlayingWith {
+			names: vec!["alice".into()]
+		}));
 	}
 
 	#[test]

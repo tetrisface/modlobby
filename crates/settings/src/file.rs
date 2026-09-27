@@ -317,6 +317,7 @@ mod tests {
 					..crate::model::ServerEntry::bar()
 				},
 				crate::model::ServerEntry::mods(),
+				crate::model::ServerEntry::recoil(),
 				// No local network: it is off until it is asked for, and a
 				// file from before it existed never asked.
 			]
@@ -372,59 +373,39 @@ mod tests {
 			[
 				"server4.beyondallreason.info",
 				"server.pve.bar",
+				"lobby.recoilengine.org",
 				"mods.example"
 			]
 		);
 	}
 
 	#[test]
-	fn recoils_entry_is_let_go_unless_it_was_used_and_the_mods_servers_first_name_is_replaced() {
+	fn the_mods_servers_first_name_is_replaced_but_not_a_name_of_the_users_own() {
 		let dir = tempfile::tempdir().unwrap();
 		let path = dir.path().join(FILE_NAME);
 		std::fs::write(
 			&path,
 			r#"{ "servers": [
-				{ "builtin": "bar", "host": "server4.beyondallreason.info" },
-				{ "builtin": "recoil", "host": "lobby.recoilengine.org", "name": "Recoil Official" },
 				{ "builtin": "mods", "host": "server.pve.bar", "name": "pve.bar" }
 			] }"#,
 		)
 		.unwrap();
-		let servers = load(&path).unwrap().servers;
-		let named: Vec<(Option<crate::model::Builtin>, &str)> = servers
-			.iter()
-			.map(|entry| (entry.builtin, entry.name.as_str()))
-			.collect();
-		assert_eq!(
-			named,
-			[
-				(Some(crate::model::Builtin::Bar), ""),
-				(Some(crate::model::Builtin::Mods), "modserver")
-			]
-		);
+		assert_eq!(load(&path).unwrap().servers[1].name, "modserver");
 
-		// Logged in to once, it stays: an ordinary entry, named as it was.
 		std::fs::write(
 			&path,
 			r#"{ "servers": [
-				{ "builtin": "recoil", "host": "lobby.recoilengine.org", "name": "Recoil Official", "username": "me" },
 				{ "builtin": "mods", "host": "server.pve.bar", "name": "mine" }
 			] }"#,
 		)
 		.unwrap();
-		let servers = load(&path).unwrap().servers;
-		let named: Vec<(Option<crate::model::Builtin>, &str)> = servers
-			.iter()
-			.map(|entry| (entry.builtin, entry.name.as_str()))
+		let names: Vec<String> = load(&path)
+			.unwrap()
+			.servers
+			.into_iter()
+			.map(|entry| entry.name)
 			.collect();
-		assert_eq!(
-			named,
-			[
-				(Some(crate::model::Builtin::Bar), "BAR"),
-				(Some(crate::model::Builtin::Mods), "mine"),
-				(None, "Recoil Official")
-			]
-		);
+		assert_eq!(names, ["BAR", "mine", "Recoil Official"]);
 	}
 
 	#[test]
@@ -441,7 +422,8 @@ mod tests {
 			reloaded.servers,
 			vec![
 				crate::model::ServerEntry::bar(),
-				crate::model::ServerEntry::mods()
+				crate::model::ServerEntry::mods(),
+				crate::model::ServerEntry::recoil()
 			]
 		);
 	}

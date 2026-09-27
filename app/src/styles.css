@@ -142,16 +142,21 @@ a:focus-visible {
 }
 
 /*
- * A select whose options carry a mark: Chromium's customizable select lets an
- * option hold markup once both it and its picker opt in. A WebView that does
- * not know the value keeps the native list and shows the options' text alone.
+ * The list is the page's own, not the WebView's: Chromium's customizable
+ * select draws the picker in the app's colours and lets an option hold
+ * markup, where the native list ignores `color-scheme` and paints itself
+ * light. A WebView that does not know the value keeps the native list and
+ * shows the options' text alone.
+ * ponytail: the closed box is sized to the chosen option, not the widest
+ * (Chromium 154), so a select's width follows its value; measure the widest
+ * option in `Select.tsx` if that starts to matter.
  */
-.select.rich,
-.select.rich::picker(select) {
+.select,
+.select::picker(select) {
 	appearance: base-select;
 }
 
-.select.rich::picker(select) {
+.select::picker(select) {
 	padding: 0.125rem;
 	color: var(--text);
 	background: var(--raised);
@@ -159,7 +164,7 @@ a:focus-visible {
 	border-radius: 2px;
 }
 
-.select.rich option {
+.select option {
 	display: flex;
 	align-items: center;
 	gap: 0.4375rem;
@@ -167,16 +172,16 @@ a:focus-visible {
 	border-radius: 2px;
 }
 
-.select.rich option:hover,
-.select.rich option:focus-visible {
+.select option:hover,
+.select option:focus-visible {
 	background: var(--sunken);
 }
 
-.select.rich option:checked {
+.select option:checked {
 	color: var(--accent);
 }
 
-.select.rich option::checkmark {
+.select option::checkmark {
 	display: none;
 }
 
@@ -603,7 +608,7 @@ textarea {
 /* The whole row is the button now, so it has to read as one. */
 .battle-row {
 	display: grid;
-	grid-template-columns: 3.5rem 5rem 1.5rem 4.5rem 1fr 17.75rem 4rem;
+	grid-template-columns: 3.5rem 5rem 1.5rem 4.5rem 1fr 17.75rem 3rem 4rem;
 	align-items: center;
 	gap: 0.75rem;
 	padding: 0 1rem;
@@ -3549,6 +3554,16 @@ input[type='checkbox'].v-edit {
 .empty-list {
 	padding: 2rem 1rem;
 	text-align: center;
+	font-size: 0.8125rem;
+}
+
+/* One line under the list: the way to the modded rooms while none are
+   listed, for whoever has not been in a room, where the Mods tab says it. */
+.list-note {
+	flex-shrink: 0;
+	margin: 0;
+	padding: 0.4rem 1rem;
+	border-top: 1px solid var(--line);
 	font-size: 0.8125rem;
 }
 
@@ -6756,10 +6771,36 @@ button.link:hover {
 	touch-action: none;
 }
 
+/* The way back, a chip like the rest with an arrow for a label. */
+.chip-reset {
+	display: inline-flex;
+	align-items: center;
+	padding: 0.1875rem 0.3125rem;
+}
+
 .chip-step.lifted {
 	opacity: 0.35;
 }
 
 .drag-ghost.chip-step {
 	background: var(--panel);
+}
+
+/* The two ways on from the mods tab, side by side under its blurb. */
+.mods-ways {
+	display: flex;
+	gap: 0.5rem;
+	margin-top: 0.5rem;
+}
+
+/* A modded room in the list: said quietly, in a column of its own so that
+   it pushes nothing beside it. */
+.mods-mark {
+	padding: 0 0.3rem;
+	font-size: 0.65rem;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--muted);
+	border: 1px solid var(--line);
+	border-radius: 2px;
 }

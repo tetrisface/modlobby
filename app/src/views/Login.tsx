@@ -1,4 +1,4 @@
-import { useNavigate } from '@solidjs/router'
+import { useNavigate, useSearchParams } from '@solidjs/router'
 import { For, Show, createSignal } from 'solid-js'
 import { LoginForm } from '../components/LoginForm'
 import { Select } from '../components/Select'
@@ -9,15 +9,21 @@ import { settings } from '../store/settings'
 
 /**
  * The way in while there is no session: the login form, for whichever server
- * is picked — the one the lobby already means, else the first listed.
+ * is picked: the one a link asked for, else the one the lobby already means,
+ * else the first listed.
  */
 export function Login() {
 	const navigate = useNavigate()
 	// The LAN has no accounts; it is joined from the battle list.
 	const servers = () => (settings()?.servers ?? []).filter((e) => !isLan(e))
 	const [picked, setPicked] = createSignal<string | null>(null)
+	/** The server a link came for: `/login?server=…`. */
+	const [params] = useSearchParams()
+	const asked = () =>
+		(Array.isArray(params.server) ? params.server[0] : params.server) ?? null
 	const server = () =>
 		picked() ??
+		asked() ??
 		mainServer() ??
 		(servers()[0] ? serverId(servers()[0]!.host) : null)
 

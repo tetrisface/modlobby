@@ -266,7 +266,7 @@
           "const": "bar"
         },
         {
-          "description": "Recoil's, the engine's own lobby: every install's until 2026-09-27,\nread from files that still say so and made an ordinary entry.",
+          "description": "Recoil's, the engine's own lobby.",
           "type": "string",
           "const": "recoil"
         },

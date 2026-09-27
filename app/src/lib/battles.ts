@@ -99,15 +99,31 @@ function matchesMode(battle: BattleView, mode: ModeFilter): boolean {
  * Whether a room plays with mods on top of its game.
  *
  * The list never sees a room's script tags, which is where a host announces
- * its mods, so this reads the two things it can see: the room is on the mods
- * server, whose hosts all run them, or its game is not BAR at all.
+ * its mods, so this reads what it can see: the room is on the mods server,
+ * whose hosts all run them; its game is not BAR at all; or its title says
+ * so, which is how our autohosts name their rooms and how any host can opt
+ * in -- the same reading the PvE filter takes off a title.
  */
+const SAYS_MODS = /\bmutators?\b|\bmods\b|\bmodded\b/i
+
 export function isModded(
 	battle: BattleView,
 	server: string,
 	modsServer: string | null,
 ): boolean {
-	return server === modsServer || !/^beyond all reason\b/i.test(battle.gameName)
+	return (
+		server === modsServer ||
+		!/^beyond all reason\b/i.test(battle.gameName) ||
+		SAYS_MODS.test(battle.title)
+	)
+}
+
+/**
+ * The steps with `key` in front and on: what "browse mod battles" asks of
+ * the list. The rest keep their order and switches.
+ */
+export function leadWith(steps: readonly SortStep[], key: SortKey): SortStep[] {
+	return [{ by: key, on: true }, ...steps.filter((step) => step.by !== key)]
 }
 
 /** What a row is read for, a number or a lowercase name, larger meaning the
@@ -125,13 +141,13 @@ const watchers: Read = (row) => row.battle.spectatorCount
 const modded: Read = (row) => (row.modded ? 1 : 0)
 
 /**
- * What each step compares, in order: Chobby's bands, then those bands with
- * the modded rooms ahead of the rest once a room is open, unlocked and has
- * somebody in it, then the columns.
+ * What each step compares, in order: Chobby's bands; the modded rooms ahead
+ * of everything, then those bands, since an empty modded autohost under
+ * three hundred busy rooms is as good as hidden; then the columns.
  */
 const CHAIN: Record<SortKey, readonly Read[]> = {
 	relevance: [open, unlocked, active, waiting, players, watchers],
-	modded: [open, unlocked, active, modded, waiting, players, watchers],
+	modded: [modded, open, unlocked, active, waiting, players, watchers],
 	players: [players],
 	rank: [(row) => row.chev ?? -1],
 	title: [(row) => row.battle.title.toLowerCase()],

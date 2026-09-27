@@ -280,6 +280,17 @@ export function IconSprite() {
 					/>
 				</symbol>
 				{/* Two arrows chasing each other round a circle: try the connection again. */}
+				{/* Back to how it was: the battle list's sort. */}
+				<symbol id='act-undo' viewBox='0 0 20 20'>
+					<path
+						d='M4.55 4.5 v3.82 h3.82 M5.56 14.03 A5.8 5.8 0 1 0 4.55 8.32'
+						fill='none'
+						stroke='currentColor'
+						stroke-width='1.7'
+						stroke-linecap='round'
+						stroke-linejoin='round'
+					/>
+				</symbol>
 				<symbol id='act-reconnect' viewBox='0 0 20 20'>
 					<path
 						d='M17 4.9 v3.8 h-3.8 M3 15.1 v-3.8 h3.8 M4.6 8.1 a5.7 5.7 0 0 1 9.45 -2.14 L17 8.7 M3 11.3 l2.95 2.77 A5.7 5.7 0 0 0 15.4 11.9'

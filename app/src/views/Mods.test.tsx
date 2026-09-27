@@ -1,3 +1,4 @@
+import { MemoryRouter, Route, createMemoryHistory } from '@solidjs/router'
 import { cleanup, fireEvent, render, waitFor } from '@solidjs/testing-library'
 import { invoke } from '@tauri-apps/api/core'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
@@ -6,6 +7,9 @@ import type { Settings } from '../ipc/bindings/Settings'
 import { newServer } from '../lib/servers'
 import { forgetSet, modSets, rememberSet, setDraft } from '../store/mods'
 import { setSettingsSignal } from '../store/settings'
+import { emptyLobby, setLobby } from '../store/lobby'
+import { seedSession } from '../store/testing'
+import { reconcile } from 'solid-js/store'
 import { Mods } from './Mods'
 import { RoomProvider } from './room/model'
 import {
@@ -42,7 +46,45 @@ beforeEach(() => {
 	setDraft(1, null)
 	for (const set of modSets()) forgetSet(set.at)
 })
-afterEach(cleanup)
+afterEach(() => {
+	cleanup()
+	setSettingsSignal(null)
+	setLobby(reconcile(emptyLobby()))
+	vi.mocked(invoke).mockReset()
+})
+
+/**
+ * The pane in a room whose host runs no mods, on a route, since the way to
+ * the list navigates. The mods server is among the settings' servers.
+ */
+function intro() {
+	setSettingsSignal({
+		servers: [
+			{ ...newServer('server.pve.bar'), builtin: 'mods', name: 'modserver' },
+		],
+		account: { rememberPassword: false, autoLogin: false },
+		chat: { muted: [] },
+		battleList: { sort: [{ by: 'relevance', on: true }] },
+	} as unknown as Settings)
+	const room = fakeRoom({
+		my: () => myBattle({ scriptTags: {} }),
+		check: () => ({ game: null, map: null, mutators: [] }),
+	})
+	const history = createMemoryHistory()
+	const { container } = render(() => (
+		<MemoryRouter history={history}>
+			<Route
+				path='/*'
+				component={() => (
+					<RoomProvider value={room}>
+						<Mods />
+					</RoomProvider>
+				)}
+			/>
+		</MemoryRouter>
+	))
+	return { container, history }
+}
 
 function pane(options: {
 	boss?: string
@@ -88,22 +130,7 @@ describe('the mods pane', () => {
 	test('in a room whose host runs no mods, says where they are and opens the way in', () => {
 		// The form behind it reaches for the app; nothing answers here.
 		vi.mocked(invoke).mockResolvedValue(null as never)
-		setSettingsSignal({
-			servers: [
-				{ ...newServer('server.pve.bar'), builtin: 'mods', name: 'modserver' },
-			],
-			account: { rememberPassword: false, autoLogin: false },
-			chat: { muted: [] },
-		} as unknown as Settings)
-		const room = fakeRoom({
-			my: () => myBattle({ scriptTags: {} }),
-			check: () => ({ game: null, map: null, mutators: [] }),
-		})
-		const { container } = render(() => (
-			<RoomProvider value={room}>
-				<Mods />
-			</RoomProvider>
-		))
+		const { container } = intro()
 
 		expect(container.querySelector('.mods-intro')?.textContent).toContain(
 			"This room's host runs none",
@@ -114,9 +141,46 @@ describe('the mods pane', () => {
 		).not.toBeNull()
 		expect(container.querySelector('input[type="email"]')).not.toBeNull()
 		expect(container.querySelector('.mod-rows')).toBeNull()
+	})
 
-		setSettingsSignal(null)
-		vi.mocked(invoke).mockReset()
+	test('logged in to the mods server, offers a room of your own and the list', async () => {
+		const asked = vi.mocked(invoke)
+		asked.mockImplementation(async (command: string, args?: unknown) => {
+			if (command === 'update_settings')
+				return (args as { settings: unknown }).settings
+			if (command === 'host_public') return 7
+			return null
+		})
+		seedSession({ phase: 'ready', me: 'tetrisface2' }, 'server.pve.bar')
+		const { container, history } = intro()
+
+		const way = (text: string) =>
+			[...container.querySelectorAll('.mods-ways button')].find((b) =>
+				b.textContent?.includes(text),
+			) as HTMLButtonElement
+		expect(container.textContent).toContain('as tetrisface2')
+		expect(container.querySelector('input[type="email"]')).toBeNull()
+
+		fireEvent.click(way('Host a battle'))
+		await waitFor(() =>
+			expect(asked).toHaveBeenCalledWith('host_public', {
+				server: 'server.pve.bar',
+			}),
+		)
+		// Still here: the room view follows the room, this tab does not navigate.
+		expect(history.get()).toBe('/')
+
+		fireEvent.click(way('Browse mod battles'))
+		await waitFor(() => expect(history.get()).toBe('/battles'))
+		const saved = asked.mock.calls.find(
+			([c]) => c === 'update_settings',
+		)?.[1] as {
+			settings: { battleList: { sort: { by: string; on: boolean }[] } }
+		}
+		expect(saved.settings.battleList.sort[0]).toEqual({
+			by: 'modded',
+			on: true,
+		})
 	})
 
 	test('shows what is loaded, where it comes from, and what the host offers', () => {

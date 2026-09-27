@@ -7,7 +7,11 @@ import { setSettingsSignal } from '../store/settings'
 import { Login } from './Login'
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
-vi.mock('@solidjs/router', () => ({ useNavigate: () => vi.fn() }))
+const address = vi.hoisted(() => ({ params: {} as Record<string, string> }))
+vi.mock('@solidjs/router', () => ({
+	useNavigate: () => vi.fn(),
+	useSearchParams: () => [address.params],
+}))
 const asked = vi.mocked(invoke)
 
 function withServers(...hosts: string[]): Settings {
@@ -36,6 +40,7 @@ beforeEach(() => {
 afterEach(() => {
 	cleanup()
 	setSettingsSignal(null)
+	address.params = {}
 })
 
 describe('the login page', () => {
@@ -60,6 +65,20 @@ describe('the login page', () => {
 			target: { value: 'server.example.com' },
 		})
 		expect(serverLine(container)).toContain('server.example.com')
+	})
+
+	test('a link that names a server gets that one, until one is picked', () => {
+		address.params = { server: 'server.example.com' }
+		setSettingsSignal(
+			withServers('server4.beyondallreason.info', 'server.example.com'),
+		)
+		const { container } = render(() => <Login />)
+		expect(serverLine(container)).toContain('server.example.com')
+
+		fireEvent.change(container.querySelector('select')!, {
+			target: { value: 'server4.beyondallreason.info' },
+		})
+		expect(serverLine(container)).toBeUndefined()
 	})
 
 	test('with none, says where one is added', () => {

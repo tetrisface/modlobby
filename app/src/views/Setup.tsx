@@ -9,6 +9,7 @@ import {
 	createMemo,
 	createResource,
 	createSignal,
+	on,
 	type Accessor,
 } from 'solid-js'
 import { ResizeHandle } from '../components/ResizeHandle'
@@ -51,7 +52,7 @@ import { SCRATCH, SLOT_KEYS, isDirty, slotOf, titleOf } from '../lib/tweakspace'
 import { pushNotice } from '../store/chat'
 import { tweakspaceFor } from '../store/tweakspaceInstance'
 import { PasteBanner } from './PasteBanner'
-import { Mods } from './Mods'
+import { Mods, runsMods } from './Mods'
 import { Presets } from './Presets'
 import { useRoom, type RoomModel } from './room/model'
 import { canSet, setRefusal } from './room/move'
@@ -104,6 +105,17 @@ const TAB_GAP = 2
 export function Setup() {
 	const room = useRoom()
 	const [pane, setPane] = createSignal<'setup' | 'presets' | 'mods'>('setup')
+	// A room whose host runs mods opens on them: they are what the room is
+	// about, and why a room on the mods server was taken. Once, as the host
+	// says so, since its tags land after the room does.
+	createEffect(
+		on(
+			() => runsMods(room),
+			(runs, ran) => {
+				if (runs && !ran) setPane('mods')
+			},
+		),
+	)
 
 	/**
 	 * The game's own option table, read from the copy installed on this machine

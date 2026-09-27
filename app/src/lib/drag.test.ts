@@ -38,6 +38,45 @@ describe('the reorder gesture', () => {
 		expect(tap).toHaveBeenCalledTimes(1)
 	})
 
+	test('a label before the rows does not shift where a chip lands', () => {
+		const over = vi.fn()
+		const drop = vi.fn()
+		const parent = document.createElement('div')
+		const label = document.createElement('span')
+		label.textContent = 'Sort'
+		parent.append(label)
+		for (let i = 0; i < 3; i++) {
+			const chip = document.createElement('button')
+			chip.className = 'chip'
+			chip.addEventListener(
+				'pointerdown',
+				reorderGesture({
+					axis: 'x',
+					rows: '.chip',
+					from: () => i,
+					onOver: over,
+					onDrop: drop,
+				}) as EventListener,
+			)
+			parent.append(chip)
+		}
+		document.body.append(parent)
+		// jsdom lays nothing out: the label at 0-20, then a chip every 20px.
+		;[...parent.children].forEach((child, at) => {
+			child.getBoundingClientRect = () =>
+				({ left: at * 20, width: 20, top: 0, height: 10 }) as DOMRect
+		})
+		fireEvent.pointerDown(parent.children[3]!, {
+			button: 0,
+			clientX: 70,
+			clientY: 5,
+		})
+		fireEvent.pointerMove(window, { clientX: 25, clientY: 5 })
+		expect(over).toHaveBeenLastCalledWith({ from: 2, to: 0 })
+		fireEvent.pointerUp(window, { clientX: 25, clientY: 5 })
+		expect(drop).toHaveBeenCalledWith(2, 0)
+	})
+
 	test('a press on a control inside a row is left to the control', () => {
 		const tap = vi.fn()
 		const rows = list('div', 2, tap)

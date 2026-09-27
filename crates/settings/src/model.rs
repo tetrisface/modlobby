@@ -14,9 +14,12 @@ pub const SCHEMA_FILE: &str = "settings.schema.json";
 /// launcher config names another.
 pub const DEFAULT_HOST: &str = "server4.beyondallreason.info";
 
-/// Where Recoil's games are: springrts' rapid, which Recoil's own lobby
-/// (`lobby.recoilengine.org`, offered when a server is added) keeps none of
-/// its own beside.
+/// Recoil's own lobby server, the engine's: uberserver, behind a certificate
+/// it made itself, so trusted on first use.
+pub const RECOIL_HOST: &str = "lobby.recoilengine.org";
+
+/// Where Recoil's games are: springrts' rapid, which Recoil's lobby keeps
+/// none of its own beside.
 pub const SPRINGRTS_RAPID: &str = "https://repos.springrts.com/repos.gz";
 
 /// The mods server: modlobby's own lobby, whose autohosts enable mods on top
@@ -155,26 +158,23 @@ impl Settings {
 			schema: Some(format!("./{SCHEMA_FILE}")),
 			// No LAN row: `lan.enabled` is off, and `ensure_lan` adds one the
 			// moment it is turned on.
-			servers: vec![ServerEntry::bar(), ServerEntry::mods()],
+			servers: vec![
+				ServerEntry::bar(),
+				ServerEntry::mods(),
+				ServerEntry::recoil(),
+			],
 			..Self::default()
 		}
 	}
 
 	/// Keeps the servers every install has on the list, whatever the file
-	/// says: BAR's first, where it always was, and the mods server second. An
-	/// entry from before there were such servers is taken for its own by its
-	/// host -- and BAR's, which raced 8201 as well as 8200 only because every
-	/// server did, gets the one port BAR's launcher config names. Recoil's,
-	/// once every install's too, is an ordinary entry now: one never logged in
-	/// to goes, and is offered again when a server is added.
+	/// says: BAR's first, where it always was, the mods server second, and
+	/// Recoil's after them. An entry from before there were such servers is
+	/// taken for its own by its host -- and BAR's, which raced 8201 as well
+	/// as 8200 only because every server did, gets the one port BAR's
+	/// launcher config names.
 	pub(crate) fn ensure_builtins(&mut self) {
-		self.servers.retain(|entry| {
-			entry.builtin != Some(Builtin::Recoil) || !entry.username.trim().is_empty()
-		});
 		for entry in &mut self.servers {
-			if entry.builtin == Some(Builtin::Recoil) {
-				entry.builtin = None;
-			}
 			if entry.builtin == Some(Builtin::Mods) && entry.name == "pve.bar" {
 				// The name it had for a day; a name of the user's own stays.
 				entry.name = ServerEntry::mods().name;
@@ -190,6 +190,8 @@ impl Settings {
 				}
 			} else if host == MODS_HOST {
 				entry.builtin = Some(Builtin::Mods);
+			} else if host == RECOIL_HOST {
+				entry.builtin = Some(Builtin::Recoil);
 			}
 		}
 		if !self.has_builtin(Builtin::Bar) {
@@ -204,6 +206,10 @@ impl Settings {
 			.map_or_else(ServerEntry::mods, |at| self.servers.remove(at));
 		let after_bar = self.after_builtin(Builtin::Bar);
 		self.servers.insert(after_bar, mods);
+		if !self.has_builtin(Builtin::Recoil) {
+			let after_mods = self.after_builtin(Builtin::Mods);
+			self.servers.insert(after_mods, ServerEntry::recoil());
+		}
 	}
 
 	fn has_builtin(&self, which: Builtin) -> bool {
@@ -291,8 +297,7 @@ pub enum Builtin {
 	/// BAR's own. Where it is follows BAR's launcher config: a host, port
 	/// or name that still says what the config said is moved with it.
 	Bar,
-	/// Recoil's, the engine's own lobby: every install's until 2026-09-27,
-	/// read from files that still say so and made an ordinary entry.
+	/// Recoil's, the engine's own lobby.
 	Recoil,
 	/// The mods server, modlobby's own: where its autohosts enable mods on
 	/// top of games, and where the Mods pane registers you.
@@ -365,6 +370,19 @@ impl ServerEntry {
 			host: MODS_HOST.into(),
 			name: "modserver".into(),
 			website: Some(format!("https://{MODS_HOST}")),
+			..Self::default()
+		}
+	}
+
+	/// Recoil's own. uberserver: STLS on 8200, and 8201 is its UDP port,
+	/// where a TCP connection only waits out its timeout.
+	pub fn recoil() -> Self {
+		Self {
+			builtin: Some(Builtin::Recoil),
+			host: RECOIL_HOST.into(),
+			name: "Recoil Official".into(),
+			ports: vec![8200],
+			rapid: Some(SPRINGRTS_RAPID.into()),
 			..Self::default()
 		}
 	}

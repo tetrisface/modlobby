@@ -61,7 +61,7 @@ function lift(row: HTMLElement, at: PointerEvent) {
  * Where it lands is read against the rows as they stood when it lifted --
  * past the middle of a row is past that row -- so the list making room under
  * the pointer never changes the answer, and nothing jitters. The list's
- * children are its rows.
+ * children are its rows, or those of them that `rows` picks out.
  */
 export function reorderGesture(options: {
 	/** Where the pressed row is in the list. */
@@ -73,6 +73,8 @@ export function reorderGesture(options: {
 	onTap?: () => void
 	/** Which way the list runs: down the page (rows) or along it (chips). */
 	axis?: 'y' | 'x'
+	/** Which of the list's children are rows, as a selector; all of them unless said. */
+	rows?: string
 }): (event: PointerEvent) => void {
 	const along = options.axis === 'x'
 	return (event: PointerEvent) => {
@@ -97,10 +99,14 @@ export function reorderGesture(options: {
 			if (!flight) {
 				if (Math.hypot(at.clientX - fromX, at.clientY - fromY) < THRESHOLD)
 					return
-				middles = [...(row.parentElement?.children ?? [])].map((child) => {
-					const rect = child.getBoundingClientRect()
-					return along ? rect.left + rect.width / 2 : rect.top + rect.height / 2
-				})
+				middles = [...(row.parentElement?.children ?? [])]
+					.filter((child) => child.matches(options.rows ?? '*'))
+					.map((child) => {
+						const rect = child.getBoundingClientRect()
+						return along
+							? rect.left + rect.width / 2
+							: rect.top + rect.height / 2
+					})
 				flight = lift(row, at)
 			}
 			flight.follow(at)

@@ -7,12 +7,14 @@ import {
 	createMemo,
 	createSignal,
 } from 'solid-js'
+import { useNavigate } from '@solidjs/router'
 import { ActionCell, CellButton } from '../components/ActionCell'
 import { openExternal } from '../components/Linkify'
 import { LoginForm } from '../components/LoginForm'
 import { Glyph } from '../components/icons'
 import { api, describeError } from '../ipc/client'
 import { age, exactly } from '../lib/age'
+import { leadWith } from '../lib/battles'
 import { reorderGesture } from '../lib/drag'
 import {
 	type Change,
@@ -38,31 +40,34 @@ import { serverId, serverName } from '../lib/servers'
 import { pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
 import { draftFor, forgetSet, modSets, setDraft } from '../store/mods'
-import { settings } from '../store/settings'
-import { useRoom } from './room/model'
+import { applySettings, settings } from '../store/settings'
+import { useRoom, type RoomModel } from './room/model'
 import { bossing, modRefusal } from './room/move'
 
 /**
  * The pane's third face: in a room whose host runs mods, what the room loads
  * on top of its game; anywhere else, where such rooms are and the way in.
  */
+/** Whether the room's host runs mods: it says so, or some are loaded. */
+export const runsMods = (room: RoomModel) =>
+	hostsMods(room.my()?.scriptTags) || room.check().mutators.length > 0
+
 export function Mods() {
 	const room = useRoom()
-	const modded = () =>
-		hostsMods(room.my()?.scriptTags) || room.check().mutators.length > 0
 	return (
-		<Show when={modded()} fallback={<Intro />}>
+		<Show when={runsMods(room)} fallback={<Intro />}>
 			<Editor />
 		</Show>
 	)
 }
 
 /**
- * A room whose host runs no mods: what mods are, and an account on the mods
- * server -- made right here, picture and all -- whose rooms then list in
- * Battles beside these.
+ * A room whose host runs no mods: what mods are, an account on the mods
+ * server -- made right here -- and, once logged in, the two ways on: a room
+ * of your own there, or the list with the modded rooms first.
  */
 function Intro() {
+	const navigate = useNavigate()
 	const entry = () =>
 		settings()?.servers.find((held) => held.builtin === 'mods')
 	const server = () => {
@@ -73,6 +78,44 @@ function Intro() {
 		const id = server()
 		return id === null ? undefined : lobby.servers[id]
 	}
+
+	/**
+	 * A room of your own on the mods server: the same empty autohost the list
+	 * page takes. The runtime leaves this room for it, and the room view
+	 * follows -- which is why nothing here navigates.
+	 */
+	const [hosting, setHosting] = createSignal(false)
+	async function host(id: string) {
+		setHosting(true)
+		try {
+			await api.hostPublic(id)
+		} catch (error) {
+			pushNotice('warning', `host a room: ${describeError(error)}`)
+		} finally {
+			setHosting(false)
+		}
+	}
+
+	/** The list with the modded rooms first: a change to the sort, kept. */
+	async function browse() {
+		const current = settings()
+		if (!current) return
+		try {
+			applySettings(
+				await api.updateSettings({
+					...current,
+					battleList: {
+						...current.battleList,
+						sort: leadWith(current.battleList.sort, 'modded'),
+					},
+				}),
+			)
+			navigate('/battles')
+		} catch (error) {
+			pushNotice('warning', describeError(error))
+		}
+	}
+
 	return (
 		<div class='mods mods-intro'>
 			<p class='muted'>
@@ -91,9 +134,25 @@ function Intro() {
 					<Switch>
 						<Match when={session()?.phase === 'ready'}>
 							<p class='muted'>
-								Logged in to {serverName(entry()!)} as {session()?.me}. Rooms
-								with mods are in Battles.
+								Logged in to {serverName(entry()!)} as {session()?.me}. Host a
+								room there and pick its mods on this tab, or find one.
 							</p>
+							<div class='mods-ways'>
+								<button
+									class='primary'
+									disabled={hosting()}
+									title='An empty autohost on the mods server becomes your room; you leave this one'
+									onClick={() => void host(id())}
+								>
+									{hosting() ? 'Hosting…' : 'Host a battle'}
+								</button>
+								<button
+									title='The battle list with the modded rooms first'
+									onClick={() => void browse()}
+								>
+									Browse mod battles
+								</button>
+							</div>
 						</Match>
 						<Match when={entry()?.username.trim()}>
 							<LoginForm server={id()} mode='login' />

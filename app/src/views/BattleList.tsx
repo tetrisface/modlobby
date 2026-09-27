@@ -18,7 +18,7 @@ import type { UserView } from '../ipc/bindings/UserView'
 import type { ModeFilter } from '../ipc/bindings/ModeFilter'
 import type { SortStep } from '../ipc/bindings/SortStep'
 import { dismiss } from '../components/dismiss'
-import { Chevrons, RankIcon } from '../components/icons'
+import { Chevrons, Glyph, RankIcon } from '../components/icons'
 import { MapPicture } from '../components/MapPicture'
 import { Thinking } from '../components/Thinking'
 import { api, describeError } from '../ipc/client'
@@ -474,6 +474,7 @@ export function BattleList() {
 									title={`${named()?.tip ?? step.by}. Drag to reorder; click to switch ${step.on ? 'off' : 'on'}.`}
 									onPointerDown={reorderGesture({
 										axis: 'x',
+										rows: '.chip-step',
 										from: index,
 										onOver: setFlying,
 										onDrop: (from, to) =>
@@ -490,11 +491,12 @@ export function BattleList() {
 					<Show when={!defaultOrder()}>
 						<button
 							type='button'
-							class='link'
-							title="Back to Chobby's order"
+							class='chip-choice chip-reset'
+							title="Back to Chobby's order, every step on"
+							aria-label='Reset the order'
 							onClick={() => void update({ sort: chobbySort() })}
 						>
-							Reset
+							<Glyph id='act-undo' />
 						</button>
 					</Show>
 				</div>
@@ -661,6 +663,16 @@ export function BattleList() {
 												</span>
 												<span class='col-title'>{r().battle.title}</span>
 												<span class='col-map'>{r().battle.mapName}</span>
+												<span class='col-mods'>
+													<Show when={r().modded}>
+														<span
+															class='mods-mark'
+															title='Plays with mods on top of the game'
+														>
+															mods
+														</span>
+													</Show>
+												</span>
 												<span class='col-flags'>
 													{/* The host is being asked how long its game has
                               been going; without this the answer arrives out
@@ -708,6 +720,36 @@ export function BattleList() {
 					)}
 				</Show>
 			</div>
+
+			{/* The way to the modded rooms for whoever has not been in a room,
+			    where the Mods tab says it: one line while there is something
+			    to say, gone once modded rooms are listed. */}
+			<Show when={anyReady() && modsServer()}>
+				{(mods) => (
+					<Switch>
+						<Match when={lobby.servers[mods()]?.phase !== 'ready'}>
+							<p class='muted list-note'>
+								Rooms with mods are on {serverLabel(mods())}.{' '}
+								<A href={`/login?server=${encodeURIComponent(mods())}`}>
+									Log in
+								</A>
+							</p>
+						</Match>
+						<Match when={!rows().some((row) => row.modded)}>
+							<p class='muted list-note'>
+								No rooms with mods right now.{' '}
+								<button
+									class='link'
+									disabled={hostBusy()}
+									onClick={() => void host(mods())}
+								>
+									Host one
+								</button>
+							</p>
+						</Match>
+					</Switch>
+				)}
+			</Show>
 		</section>
 	)
 }

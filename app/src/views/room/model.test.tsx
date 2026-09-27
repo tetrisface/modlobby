@@ -695,7 +695,7 @@ describe('the faction picker', () => {
 		)
 		const options = [
 			...container.querySelectorAll<HTMLOptionElement>(
-				'.seat .select.rich option',
+				'.seat .select-iconed option',
 			),
 		]
 		expect(options.map((o) => o.textContent?.trim())).toEqual([

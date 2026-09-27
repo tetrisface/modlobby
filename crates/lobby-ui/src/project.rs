@@ -509,21 +509,23 @@ mod tests {
 		// The reply to `!#JSONRPC status game`, which is what asking a host how
 		// long its game has been running gets back: a wall of JSON carrying
 		// every client in the room. Alerting on it puts that wall on screen.
-		let deltas = step(
-			&mut s,
-			&mut p,
+		// A long one comes in pieces (`spads.pl:3462`), each as unreadable.
+		for answer in [
 			r#"SAIDPRIVATE Host[EU2][007] !#JSONRPC {"result":{"game":{"clients":[{"Name":"someone"}]}},"id":1}"#,
-		);
-		assert!(
-			!deltas
-				.iter()
-				.any(|delta| matches!(delta, Delta::Alert { .. })),
-			"{deltas:?}"
-		);
-		let [Delta::Chat(line)] = &deltas[..] else {
-			panic!("expected one chat line, got {deltas:?}")
-		};
-		assert_eq!(line.kind, ChatKind::Machine, "and it is filterable");
+			r#"SAIDPRIVATE Host[EU2][007] !#JSONRPC(1/2) {"result":{"game":{"clients":[{"Name":"someone"},"#,
+		] {
+			let deltas = step(&mut s, &mut p, answer);
+			assert!(
+				!deltas
+					.iter()
+					.any(|delta| matches!(delta, Delta::Alert { .. })),
+				"{deltas:?}"
+			);
+			let [Delta::Chat(line)] = &deltas[..] else {
+				panic!("expected one chat line, got {deltas:?}")
+			};
+			assert_eq!(line.kind, ChatKind::Machine, "and it is filterable");
+		}
 	}
 
 	#[test]

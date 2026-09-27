@@ -192,14 +192,45 @@ pub fn answers_command(text: &str, me: &str) -> bool {
 /// Whether a line is machine-readable rather than something a person is meant
 /// to read. Cheap enough to ask on every line.
 pub fn is_machine(text: &str) -> bool {
-	text.starts_with(RPC_PREFIX)
+	text.starts_with("!#JSONRPC")
 		|| text
 			.strip_prefix("* ")
 			.is_some_and(|body| body.starts_with("BarManager|"))
 }
 
-/// How SPADS marks a JSON-RPC request or answer on a private message.
+/// How SPADS marks a JSON-RPC request or answer on a private message. An
+/// answer too long for one message comes as `!#JSONRPC(n/m) ` pieces instead
+/// (`spads.pl:3462`); [`RpcChunks`] puts those back together.
 pub const RPC_PREFIX: &str = "!#JSONRPC ";
+
+/// Reassembles an answer SPADS split over several messages: `!#JSONRPC(1/2)
+/// …` then `!#JSONRPC(2/2) …`, which a `status game` for a room of six or so
+/// already needs. One buffer per host, since two hosts' answers may
+/// interleave; one host's pieces arrive in order, on the one connection.
+#[derive(Debug, Default)]
+pub struct RpcChunks(std::collections::HashMap<String, String>);
+
+impl RpcChunks {
+	/// The whole answer once `text` completes one, or `text` itself when it
+	/// was never split. `None` while more is to come, and for anything else.
+	pub fn push(&mut self, from: &str, text: &str) -> Option<String> {
+		if text.starts_with(RPC_PREFIX) {
+			return Some(text.to_owned());
+		}
+		let (counts, part) = text.strip_prefix("!#JSONRPC(")?.split_once(") ")?;
+		let (n, of) = counts.split_once('/')?;
+		let (n, of): (u32, u32) = (n.parse().ok()?, of.parse().ok()?);
+		let buffer = self.0.entry(from.to_owned()).or_default();
+		if n == 1 {
+			buffer.clear();
+		}
+		buffer.push_str(part);
+		if n < of {
+			return None;
+		}
+		Some(format!("{RPC_PREFIX}{}", self.0.remove(from)?))
+	}
+}
 
 /// Asks a host how long its game has been going.
 ///
@@ -525,6 +556,33 @@ mod tests {
 		assert_eq!(parse_rpc(GAME_STATUS_REQUEST), None);
 		// Machine either way, so neither belongs in the chat log.
 		assert!(is_machine(GAME_STATUS_REQUEST));
+	}
+
+	#[test]
+	fn an_answer_too_long_for_one_message_is_put_back_together() {
+		let mut chunks = RpcChunks::default();
+		// Whole in one message: passed straight through.
+		assert_eq!(
+			chunks.push("host", GAME_STATUS_REQUEST).as_deref(),
+			Some(GAME_STATUS_REQUEST)
+		);
+		// Split (`spads.pl:3462`): nothing until the last piece.
+		let first = r#"!#JSONRPC(1/2) {"result":{"game":{"status":{"gameTime":803,"#;
+		assert_eq!(chunks.push("host", first), None);
+		// Another host's answer in between is kept apart.
+		assert_eq!(chunks.push("other", r#"!#JSONRPC(1/2) {"result":"#), None);
+		let last = r#"!#JSONRPC(2/2) "gameStatus":"running"}}},"id":1}"#;
+		let whole = chunks.push("host", last).unwrap();
+		assert_eq!(
+			parse_rpc(&whole),
+			Some(RpcStatus::Game {
+				seconds: 803,
+				waiting: false
+			})
+		);
+		// A piece is as unreadable as the whole, so it stays out of the chat.
+		assert!(is_machine(first));
+		assert_eq!(chunks.push("host", "hello"), None);
 	}
 
 	#[test]
