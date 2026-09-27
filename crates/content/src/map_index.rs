@@ -5,9 +5,9 @@
 //! reference nothing else knows — and where an archive's file name maps to the
 //! spring name the engine wants. It is close to a megabyte of JSON for two
 //! fields, published with an `ETag`, and it changes a few times a week. So the
-//! trimmed pairs are kept in the config directory, and when they are a day old
-//! the server is asked with `If-None-Match`, which it usually answers with a
-//! bodiless 304.
+//! trimmed pairs are kept in the config directory, and once they are older
+//! than [`FRESH_FOR`] the server is asked with `If-None-Match`, which it
+//! usually answers with a bodiless 304.
 //!
 //! Nothing here fails loudly: a lobby has to work with no network at all, and
 //! a room with no picture still has its start-box schematic. A stale index
@@ -24,8 +24,10 @@ use ts_rs::TS;
 /// and a 30-minute cache lifetime; `/latest/` is the only mutable path there.
 pub const INDEX_URL: &str =
 	"https://maps-metadata.beyondallreason.dev/latest/lobby_maps.validated.json";
-/// How long a fetched index is trusted before the server is asked again.
-pub const FRESH_FOR: Duration = Duration::from_secs(24 * 60 * 60);
+/// How long a fetched index is trusted before the server is asked again: the
+/// feed's own `max-age`. Asking again is a bodiless 304 unless a map was
+/// published, and a published map has no picture here until it is asked.
+pub const FRESH_FOR: Duration = Duration::from_secs(30 * 60);
 /// Under the config directory's `cache/`.
 pub const CACHE_FILE: &str = "map-index.json";
 
@@ -403,7 +405,7 @@ mod tests {
 	}
 
 	#[tokio::test]
-	async fn within_a_day_the_server_is_not_asked() {
+	async fn while_fresh_the_server_is_not_asked() {
 		let server = MockServer::start().await;
 		Mock::given(method("GET"))
 			.respond_with(ResponseTemplate::new(200).set_body_string(FEED))

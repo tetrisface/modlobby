@@ -25,10 +25,11 @@ const MAP_INDEX_RETRY_AFTER: std::time::Duration = std::time::Duration::from_sec
 /// that is down is asked once per visit.
 const WIDGET_USAGE_RETRY_AFTER: std::time::Duration = std::time::Duration::from_secs(5 * 60);
 
-/// The map index for this run: what was loaded, or when loading last failed.
+/// The map index for this run: what was loaded and when, or when loading last
+/// failed.
 #[derive(Default)]
 struct MapIndexHeld {
-	index: Option<content::map_index::MapIndex>,
+	index: Option<(content::map_index::MapIndex, std::time::Instant)>,
 	failed_at: Option<std::time::Instant>,
 }
 
@@ -168,14 +169,22 @@ impl App {
 
 	/// BAR's map index: each map's picture and its spring name.
 	///
-	/// Loaded once per run, from the disk cache when that is fresh. An empty
+	/// Held for [`content::map_index::FRESH_FOR`] and then asked for again,
+	/// so a map published during a run gets its picture in that run. An empty
 	/// answer — offline on a first run — is not kept, so the next ask tries
 	/// again rather than leaving the whole session without pictures.
 	pub async fn map_index(&self) -> content::map_index::MapIndex {
 		let mut held = self.map_index.lock().await;
-		if let Some(index) = held.index.as_ref() {
+		if let Some((index, at)) = held.index.as_ref()
+			&& at.elapsed() < content::map_index::FRESH_FOR
+		{
 			return index.clone();
 		}
+		let kept = held
+			.index
+			.as_ref()
+			.map(|(index, _)| index.clone())
+			.unwrap_or_default();
 		// An empty index is not kept, so a run that started offline gets the
 		// pictures once the network is back. But it is asked for by every
 		// picture on the screen, and a server that is down would otherwise be
@@ -184,8 +193,11 @@ impl App {
 		if let Some(failed) = held.failed_at
 			&& failed.elapsed() < MAP_INDEX_RETRY_AFTER
 		{
-			return content::map_index::MapIndex::default();
+			return kept;
 		}
+		// A server that cannot be reached answers with the stale copy from
+		// disk, which is held for another while like a fresh one: asked
+		// again then, not on every picture meanwhile.
 		let index = content::map_index::load(
 			&self.http,
 			content::map_index::INDEX_URL,
@@ -195,12 +207,12 @@ impl App {
 		.await;
 		if index.is_empty() {
 			held.failed_at = Some(std::time::Instant::now());
-		} else {
-			held.index = Some(index.clone());
-			// Whose maps are BAR's decides who a map is asked of.
-			let names = index.names.values().cloned().collect();
-			let _ = self.client.set_bar_maps(names).await;
+			return kept;
 		}
+		held.index = Some((index.clone(), std::time::Instant::now()));
+		// Whose maps are BAR's decides who a map is asked of.
+		let names = index.names.values().cloned().collect();
+		let _ = self.client.set_bar_maps(names).await;
 		index
 	}
 
