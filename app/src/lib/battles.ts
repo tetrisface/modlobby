@@ -9,7 +9,8 @@
 
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { BattleList } from '../ipc/bindings/BattleList'
-import type { BattleSort } from '../ipc/bindings/BattleSort'
+import type { SortKey } from '../ipc/bindings/SortKey'
+import type { SortStep } from '../ipc/bindings/SortStep'
 import type { ModeFilter } from '../ipc/bindings/ModeFilter'
 import { ordered } from './reorder'
 import { hasEveryWord } from './search'
@@ -25,6 +26,8 @@ export type Row = {
 	hasFriend: boolean
 	/** The room's median rank, 0-7; see `medianChevron`. */
 	chev: number | null
+	/** Mods on top of the game; see `isModded`. */
+	modded: boolean
 }
 
 /** A room's name across every server: two servers can each have a battle 12. */
@@ -93,60 +96,68 @@ function matchesMode(battle: BattleView, mode: ModeFilter): boolean {
 }
 
 /**
- * Chobby's bands, outermost first: open rooms, then running, then locked, then
- * passworded. Player count decides inside a band, and the id breaks the tie so
- * the order never flickers between updates.
+ * Whether a room plays with mods on top of its game.
+ *
+ * The list never sees a room's script tags, which is where a host announces
+ * its mods, so this reads the two things it can see: the room is on the mods
+ * server, whose hosts all run them, or its game is not BAR at all.
  */
-function relevance(a: Row, b: Row): number {
-	if (a.battle.passworded !== b.battle.passworded)
-		return a.battle.passworded ? 1 : -1
-	if (a.battle.passworded)
-		return a.battle.title.toLowerCase() < b.battle.title.toLowerCase() ? -1 : 1
-
-	if (a.battle.locked !== b.battle.locked) return a.battle.locked ? 1 : -1
-
-	const idle = (row: Row) => !row.running && row.battle.playerCount === 0
-	if (idle(a) !== idle(b)) return idle(a) ? 1 : -1
-
-	if (a.running !== b.running) return a.running ? 1 : -1
-
-	if (a.battle.playerCount !== b.battle.playerCount)
-		return b.battle.playerCount - a.battle.playerCount
-
-	return watchers(a, b) || b.battle.id - a.battle.id
+export function isModded(
+	battle: BattleView,
+	server: string,
+	modsServer: string | null,
+): boolean {
+	return server === modsServer || !/^beyond all reason\b/i.test(battle.gameName)
 }
+
+/** What a row is read for, a number or a lowercase name, larger meaning the
+ * notable thing: open, unlocked, with people, not started, full, watched,
+ * modded, high ranked. */
+type Read = (row: Row) => number | string
+
+const open: Read = (row) => (row.battle.passworded ? 0 : 1)
+const unlocked: Read = (row) => (row.battle.locked ? 0 : 1)
+const active: Read = (row) =>
+	!row.running && row.battle.playerCount === 0 ? 0 : 1
+const waiting: Read = (row) => (row.running ? 0 : 1)
+const players: Read = (row) => row.battle.playerCount
+const watchers: Read = (row) => row.battle.spectatorCount
+const modded: Read = (row) => (row.modded ? 1 : 0)
 
 /**
- * Relevance's second key: more spectators first.
- *
- * Among rooms with the same number of players, the one people are watching is
- * the more interesting one. The column sorts keep their plain id tie-break —
- * this is the default order's opinion, not a rule about every column.
+ * What each step compares, in order: Chobby's bands, then those bands with
+ * the modded rooms ahead of the rest once a room is open, unlocked and has
+ * somebody in it, then the columns.
  */
-function watchers(a: Row, b: Row): number {
-	return b.battle.spectatorCount - a.battle.spectatorCount
+const CHAIN: Record<SortKey, readonly Read[]> = {
+	relevance: [open, unlocked, active, waiting, players, watchers],
+	modded: [open, unlocked, active, modded, waiting, players, watchers],
+	players: [players],
+	rank: [(row) => row.chev ?? -1],
+	title: [(row) => row.battle.title.toLowerCase()],
+	map: [(row) => row.battle.mapName.toLowerCase()],
 }
 
-const BY: Record<
-	Exclude<BattleSort, 'relevance'>,
-	(row: Row) => string | number
-> = {
-	players: (row) => row.battle.playerCount,
-	title: (row) => row.battle.title.toLowerCase(),
-	map: (row) => row.battle.mapName.toLowerCase(),
-	rank: (row) => row.chev ?? -1,
-}
+/** Names read best from A; everything else with the notable rooms first. */
+const largerFirst = (key: SortKey) => key !== 'title' && key !== 'map'
 
-export function compare(a: Row, b: Row, sort: BattleSort, descending: boolean) {
-	if (sort === 'relevance') return relevance(a, b)
-
-	const key = BY[sort]
-	const left = key(a)
-	const right = key(b)
-	if (left === right) return a.battle.id - b.battle.id
-
-	const order = left < right ? -1 : 1
-	return descending ? -order : order
+/**
+ * The steps that are on, in order: the first that tells two rooms apart
+ * decides, and the id breaks whatever tie is left so the order never
+ * flickers between updates.
+ */
+export function compare(a: Row, b: Row, steps: readonly SortStep[]): number {
+	for (const step of steps) {
+		if (!step.on) continue
+		for (const read of CHAIN[step.by]) {
+			const left = read(a)
+			const right = read(b)
+			if (left === right) continue
+			const order = left < right ? -1 : 1
+			return largerFirst(step.by) ? -order : order
+		}
+	}
+	return a.battle.id - b.battle.id
 }
 
 export function arrange(
@@ -156,16 +167,46 @@ export function arrange(
 ): Row[] {
 	return rows
 		.filter((row) => keep(row, filters, query))
-		.sort((a, b) => compare(a, b, filters.sort, filters.sortDescending))
+		.sort((a, b) => compare(a, b, filters.sort))
 }
 
-export const SORTS: ReadonlyArray<{ key: BattleSort; label: string }> = [
-	{ key: 'relevance', label: 'Relevance' },
-	{ key: 'players', label: 'Players' },
-	{ key: 'title', label: 'Title' },
-	{ key: 'map', label: 'Map' },
-	{ key: 'rank', label: 'Rank' },
+/** Every step, with what its chip says and what a hover explains. */
+export const SORT_KEYS: ReadonlyArray<{
+	key: SortKey
+	label: string
+	tip: string
+}> = [
+	{
+		key: 'relevance',
+		label: 'Relevance',
+		tip: "Chobby's order: open rooms, then the fuller and the more watched",
+	},
+	{
+		key: 'modded',
+		label: 'Mods',
+		tip: 'Relevance, with rooms that play with mods ahead of the rest',
+	},
+	{ key: 'players', label: 'Players', tip: 'How many are playing' },
+	{ key: 'rank', label: 'Rank', tip: "The room's median rank" },
+	{ key: 'title', label: 'Title', tip: 'By name' },
+	{ key: 'map', label: 'Map', tip: 'By map' },
 ]
+
+/**
+ * Every step in the order it comes untouched, all on: Chobby's order, then
+ * it again with the modded rooms ahead, then the columns, each only
+ * breaking ties.
+ */
+export function chobbySort(): SortStep[] {
+	return SORT_KEYS.map(({ key }) => ({ by: key, on: true }))
+}
+
+/** The steps with `at` switched the other way. */
+export function toggled(steps: readonly SortStep[], at: number): SortStep[] {
+	return steps.map((step, index) =>
+		index === at ? { ...step, on: !step.on } : step,
+	)
+}
 
 export const MODES: ReadonlyArray<{ key: ModeFilter; label: string }> = [
 	{ key: 'all', label: 'All' },

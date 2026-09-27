@@ -3,4 +3,4 @@
 /**
  * A server every install has: its card stays on the list.
  */
-export type Builtin = 'bar' | 'recoil'
+export type Builtin = 'bar' | 'recoil' | 'mods'

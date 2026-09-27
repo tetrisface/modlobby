@@ -80,14 +80,18 @@ export function guessedRapid(host: string): string {
 }
 
 /**
- * Servers worth offering by name when one is added, with what is known of
- * them already. BAR's and Recoil's are not among them: every install has
- * those (`ServerEntry.builtin`).
+ * Servers worth offering by name when one is added, alphabetical, with what
+ * is known of them already. BAR's and the mods server are not among them:
+ * every install has those (`ServerEntry.builtin`).
  *
  * Modded BAR is a teiserver whose `STLS` says yes and then drops the
  * handshake, and whose 8201 resets: unencrypted on 8200 is the only way in.
  * Its games are on its own rapid, and its maps behind a search of its own on
  * the lobby's host.
+ *
+ * Recoil's own lobby is uberserver: STLS on 8200, and 8201 is its UDP port,
+ * where a TCP connection only waits out its timeout. Its games are on
+ * springrts' rapid, which it keeps none of its own beside.
  */
 export const KNOWN: Pick<
 	ServerEntry,
@@ -100,6 +104,14 @@ export const KNOWN: Pick<
 		allowUnencrypted: true,
 		rapid: 'https://randomguyrapid.duckdns.org/repos.gz',
 		maps: 'https://moddedbar.duckdns.org/find',
+	},
+	{
+		host: 'lobby.recoilengine.org',
+		name: 'Recoil Official',
+		ports: [8200],
+		allowUnencrypted: false,
+		rapid: 'https://repos.springrts.com/repos.gz',
+		maps: null,
 	},
 ]
 

@@ -6742,3 +6742,24 @@ button.link:hover {
 		display: none;
 	}
 }
+
+.mods-intro {
+	padding: 0.5rem 0.75rem;
+	max-width: 32rem;
+}
+
+/* The order's chips, on or off as any choice chip; a chip in flight rides
+   under the pointer and its place stays, dimmed. */
+.sort-steps .chip-step {
+	cursor: grab;
+	user-select: none;
+	touch-action: none;
+}
+
+.chip-step.lifted {
+	opacity: 0.35;
+}
+
+.drag-ghost.chip-step {
+	background: var(--panel);
+}

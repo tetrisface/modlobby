@@ -2,7 +2,10 @@ import { cleanup, fireEvent, render, waitFor } from '@solidjs/testing-library'
 import { invoke } from '@tauri-apps/api/core'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { MutatorView } from '../ipc/bindings/MutatorView'
+import type { Settings } from '../ipc/bindings/Settings'
+import { newServer } from '../lib/servers'
 import { forgetSet, modSets, rememberSet, setDraft } from '../store/mods'
+import { setSettingsSignal } from '../store/settings'
 import { Mods } from './Mods'
 import { RoomProvider } from './room/model'
 import {
@@ -82,6 +85,40 @@ function pane(options: {
 }
 
 describe('the mods pane', () => {
+	test('in a room whose host runs no mods, says where they are and opens the way in', () => {
+		// The form behind it reaches for the app; nothing answers here.
+		vi.mocked(invoke).mockResolvedValue(null as never)
+		setSettingsSignal({
+			servers: [
+				{ ...newServer('server.pve.bar'), builtin: 'mods', name: 'modserver' },
+			],
+			account: { rememberPassword: false, autoLogin: false },
+			chat: { muted: [] },
+		} as unknown as Settings)
+		const room = fakeRoom({
+			my: () => myBattle({ scriptTags: {} }),
+			check: () => ({ game: null, map: null, mutators: [] }),
+		})
+		const { container } = render(() => (
+			<RoomProvider value={room}>
+				<Mods />
+			</RoomProvider>
+		))
+
+		expect(container.querySelector('.mods-intro')?.textContent).toContain(
+			"This room's host runs none",
+		)
+		// No account there yet: the way in is to make one, right here.
+		expect(
+			container.querySelector('input[autocomplete="username"]'),
+		).not.toBeNull()
+		expect(container.querySelector('input[type="email"]')).not.toBeNull()
+		expect(container.querySelector('.mod-rows')).toBeNull()
+
+		setSettingsSignal(null)
+		vi.mocked(invoke).mockReset()
+	})
+
 	test('shows what is loaded, where it comes from, and what the host offers', () => {
 		const { rows, offers, footer } = pane({ loaded: [sphere] })
 		expect(rows().map((row) => [row.name, row.source])).toEqual([

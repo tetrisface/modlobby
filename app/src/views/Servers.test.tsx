@@ -116,7 +116,10 @@ describe('the servers section', () => {
 			[...container.querySelectorAll('#known-servers option')].map((option) =>
 				option.getAttribute('value'),
 			)
-		expect(offered()).toEqual(['moddedbar.duckdns.org'])
+		expect(offered()).toEqual([
+			'moddedbar.duckdns.org',
+			'lobby.recoilengine.org',
+		])
 
 		typeHost(container, 'moddedbar.duckdns.org')
 		fireEvent.click(button(container, 'Add'))
@@ -141,7 +144,8 @@ describe('the servers section', () => {
 		expect(asked).not.toHaveBeenCalledWith('check_rapid', {
 			url: 'https://moddedbar.duckdns.org/repos.gz',
 		})
-		expect(offered()).toEqual([])
+		// Added, it is no longer offered; the others still are.
+		expect(offered()).toEqual(['lobby.recoilengine.org'])
 	})
 
 	test("the servers every install has stay, and an empty address shows BAR's", async () => {
@@ -160,7 +164,7 @@ describe('the servers section', () => {
 			...blankSettings(),
 			servers: [
 				{ ...newServer(BAR), builtin: 'bar', name: 'BAR' },
-				{ ...newServer('lobby.recoilengine.org'), builtin: 'recoil' },
+				{ ...newServer('server.pve.bar'), builtin: 'mods', name: 'modserver' },
 				newServer('mods.example'),
 			],
 		})

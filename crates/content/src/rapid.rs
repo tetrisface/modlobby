@@ -163,6 +163,21 @@ pub fn parse_versions(unpacked: &str) -> Vec<Version> {
 /// BAR's names and the hashes it publishes each under.
 type Names = HashMap<String, Vec<String>>;
 
+/// What fetches each name `versions` publishes: its `git:` tag where it has
+/// one, since that never moves, else whichever tag it goes by.
+fn tags_of(versions: &[Version]) -> recoil::Tags {
+	let mut tags = recoil::Tags::new();
+	for version in versions {
+		let tag = tags
+			.entry(version.name.clone())
+			.or_insert_with(|| version.tag.clone());
+		if version.tag.contains(":git:") {
+			*tag = version.tag.clone();
+		}
+	}
+	tags
+}
+
 /// The first of `theirs` that carries one of BAR's names with contents BAR
 /// never published under it -- other than a copy already looked at, which
 /// the runtime never fetches from anyone but BAR ([`recoil::STALE_COPIES`]).
@@ -216,12 +231,14 @@ impl Vetter {
 		self.https_only && !url.starts_with("https://")
 	}
 
-	/// Whether games may be fetched through `master`. BAR's own needs no
-	/// looking at; anyone else's is read, and refused if it is not a rapid
-	/// index over https or publishes one of BAR's names as its own.
-	pub async fn vet(&self, master: &str) -> Result<(), Error> {
+	/// Whether games may be fetched through `master`, and by what tag each
+	/// game it publishes goes. BAR's own needs no looking at; anyone else's
+	/// is read, and refused if it is not a rapid index over https or
+	/// publishes one of BAR's names as its own.
+	pub async fn vet(&self, master: &str) -> Result<recoil::Tags, Error> {
+		let mut tags = recoil::Tags::new();
 		if master == self.bars_master {
-			return Ok(());
+			return Ok(tags);
 		}
 		// Theirs first: an address that is refused outright costs BAR's
 		// servers nothing.
@@ -233,8 +250,9 @@ impl Vetter {
 			if let Some(name) = shadowed(&bars_names, &theirs) {
 				return Err(Error::Shadows(name.to_owned()));
 			}
+			tags.extend(tags_of(&theirs));
 		}
-		Ok(())
+		Ok(tags)
 	}
 
 	/// Everything `master`'s own repos publish, repo by repo: what a server
@@ -494,7 +512,8 @@ mod tests {
 		let (server, vetter) =
 			served("mods:test,bbbb,Beyond All Reason test-1,Somebody's Mod v1\n").await;
 		let master = format!("{}/theirs/repos.gz", server.uri());
-		vetter.vet(&master).await.unwrap();
+		let tags = vetter.vet(&master).await.unwrap();
+		assert_eq!(tags["Somebody's Mod v1"], "mods:test");
 		assert_eq!(
 			vetter.summary(&master).await.unwrap(),
 			RapidSummary { own: 1, bars: 1 }
@@ -508,6 +527,21 @@ mod tests {
 			.filter(|request| request.url.path() == "/bar/byar/versions.gz")
 			.count();
 		assert_eq!(bars_index, 1);
+	}
+
+	#[test]
+	fn a_name_goes_by_its_git_tag_where_it_has_one() {
+		let versions = parse_versions(concat!(
+			"mcl:test,b30b,,MechCommander: Legacy test-3916-d2ca10c\n",
+			"mcl:git:d2ca10c88c3c,b30b,,MechCommander: Legacy test-3916-d2ca10c\n",
+			"mcl:stable,c4a3,,MechCommander: Legacy v1\n",
+		));
+		let tags = tags_of(&versions);
+		assert_eq!(
+			tags["MechCommander: Legacy test-3916-d2ca10c"],
+			"mcl:git:d2ca10c88c3c"
+		);
+		assert_eq!(tags["MechCommander: Legacy v1"], "mcl:stable");
 	}
 
 	#[test]

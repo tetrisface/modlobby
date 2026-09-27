@@ -913,6 +913,10 @@ pub struct Download {
 	pub search_url: String,
 }
 
+/// What fetches each game a rapid index publishes, by the game's name: a tag
+/// such as `mcl:git:d2ca10c…`.
+pub type Tags = std::collections::BTreeMap<String, String>;
+
 /// Where pr-downloader looks for BAR's content.
 ///
 /// Without these it falls back to springrts.com, which does not carry BAR and
@@ -1044,6 +1048,24 @@ impl Download {
 			);
 		}
 		runs
+	}
+
+	/// The same run with every game pr-downloader would misread asked for by
+	/// its tag instead. pr-downloader tells a name from a tag by a colon and
+	/// reads what is before it as the repo: "MechCommander: Legacy
+	/// test-3916-d2ca10c" is looked for in a repo called MechCommander, which
+	/// nobody has, and then of the search nobody answers. Such a name goes as
+	/// the tag `tags` has for it, when it has one.
+	pub fn by_tag(mut self, tags: &Tags) -> Self {
+		for (_, name) in &mut self.wants {
+			if !name.contains(':') {
+				continue;
+			}
+			if let Some(tag) = tags.get(name.as_str()) {
+				*name = tag.clone();
+			}
+		}
+		self
 	}
 
 	/// Whether this run fetches games or mutators, and so reads a rapid index.
@@ -1258,6 +1280,38 @@ mod download_tests {
 		assert_eq!(asked.len(), 2);
 		assert_eq!(asked[0][1], "Sphere v1");
 		assert_eq!(runs[1].wants, [(Want::Map, "Frosty Cove v1.13".to_owned())]);
+	}
+
+	#[test]
+	fn a_name_with_a_colon_goes_by_its_tag_and_the_rest_as_they_are() {
+		let tags = Tags::from([
+			(
+				"MechCommander: Legacy test-3916-d2ca10c".to_owned(),
+				"mcl:git:d2ca10c".to_owned(),
+			),
+			("Somebody's Mod v1".to_owned(), "mods:test".to_owned()),
+		]);
+		let run = Download::runs(
+			Path::new("prd"),
+			Path::new("C:/bar"),
+			vec![
+				(Want::Game, "MechCommander: Legacy test-3916-d2ca10c".into()),
+				(Want::Mutator, "Somebody's Mod v1".into()),
+				(Want::Mutator, "Sphere: v1".into()),
+			],
+			RAPID_REPO_MASTER,
+			&[],
+		)
+		.remove(0)
+		.by_tag(&tags);
+		assert_eq!(
+			run.wants,
+			[
+				(Want::Game, "mcl:git:d2ca10c".to_owned()),
+				(Want::Mutator, "Somebody's Mod v1".to_owned()),
+				(Want::Mutator, "Sphere: v1".to_owned()),
+			]
+		);
 	}
 
 	#[test]

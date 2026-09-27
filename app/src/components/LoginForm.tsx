@@ -102,7 +102,6 @@ export function LoginForm(props: {
 	const [wait, setWait] = createSignal(0)
 	/** Whether `wait` has been asked yet: before then, 0 means nothing. */
 	const [waitKnown, setWaitKnown] = createSignal(false)
-
 	// The server refuses a login within twenty seconds of the account's last,
 	// and the clock is kept across restarts — a rebuild loop reaches it easily,
 	// so rather than failing the login we count down and go when it lapses.

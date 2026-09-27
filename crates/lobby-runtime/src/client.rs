@@ -93,12 +93,16 @@ type ConnectFuture = Pin<Box<dyn Future<Output = Result<Connected, TransportErro
 /// How the runtime reaches a server; tests hand it an in-memory stream.
 pub type Connector = Arc<dyn Fn(Endpoint, ThrottlePolicy) -> ConnectFuture + Send + Sync>;
 
-/// Whether games may be fetched through a rapid master index, by its URL; the
+/// Whether games may be fetched through a rapid master index, by its URL, and
+/// by what tag each game it publishes goes ([`recoil::Download::by_tag`]); the
 /// refusal is for a person to read. The reading of somebody else's rapid
 /// server is handed in (`content::rapid::Vetter`), so the runtime needs no
 /// HTTP client and a test needs no network.
-pub type Vet =
-	Arc<dyn Fn(String) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> + Send + Sync>;
+pub type Vet = Arc<
+	dyn Fn(String) -> Pin<Box<dyn Future<Output = Result<recoil::Tags, String>> + Send>>
+		+ Send
+		+ Sync,
+>;
 
 /// The last resort for a map: the room's own host, which is playing it and
 /// so has the file. Handed in for the same reason [`Vet`] is -- the runtime
@@ -245,7 +249,7 @@ async fn fetch_game(
 		return got.err();
 	}
 	let rapid = match vet(run.rapid_master.clone()).await {
-		Ok(()) => run_download(run, progress).await,
+		Ok(tags) => run_download(&run.clone().by_tag(&tags), progress).await,
 		Err(refused) => Err(refused),
 	};
 	let reason = rapid.err()?;
@@ -304,10 +308,10 @@ fn rapid_elsewhere(
 	Arc::new(move |master: String| {
 		let (mut run, vet, progress) = (run.clone(), vet.clone(), progress.clone());
 		Box::pin(async move {
-			vet(master.clone()).await?;
+			let tags = vet(master.clone()).await?;
 			run.rapid_master = master;
 			run.wants.retain(|(want, _)| *want != recoil::Want::Map);
-			run_download(&run, &progress).await
+			run_download(&run.by_tag(&tags), &progress).await
 		})
 	})
 }
@@ -351,7 +355,7 @@ fn vet_bars_only() -> Vet {
 	Arc::new(|master| {
 		Box::pin(async move {
 			if master == recoil::RAPID_REPO_MASTER {
-				return Ok(());
+				return Ok(recoil::Tags::new());
 			}
 			Err(format!(
 				"nothing here can check the rapid server at {master}"
@@ -4792,7 +4796,10 @@ mod tests {
 	#[tokio::test]
 	async fn with_nobody_to_read_another_rapid_server_only_bars_is_used() {
 		let vet = vet_bars_only();
-		assert_eq!(vet(recoil::RAPID_REPO_MASTER.into()).await, Ok(()));
+		assert_eq!(
+			vet(recoil::RAPID_REPO_MASTER.into()).await,
+			Ok(recoil::Tags::new())
+		);
 		assert!(vet("https://mods.example/repos.gz".into()).await.is_err());
 	}
 

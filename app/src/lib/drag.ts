@@ -71,13 +71,21 @@ export function reorderGesture(options: {
 	onDrop: (from: number, to: number) => void
 	/** A press let go of where it began: a click on the row, not a drag. */
 	onTap?: () => void
+	/** Which way the list runs: down the page (rows) or along it (chips). */
+	axis?: 'y' | 'x'
 }): (event: PointerEvent) => void {
+	const along = options.axis === 'x'
 	return (event: PointerEvent) => {
 		if (event.button !== 0) return
-		if ((event.target as Element | null)?.closest('button, input, select'))
-			return
-		event.preventDefault()
 		const row = event.currentTarget as HTMLElement
+		// A press on a control inside the row -- update, edit, remove -- is
+		// that control's. The row may itself be a button (the sort chips), and
+		// then the press is the row's.
+		const control = (event.target as Element | null)?.closest(
+			'button, input, select',
+		)
+		if (control && control !== row) return
+		event.preventDefault()
 		const from = options.from()
 		const fromX = event.clientX
 		const fromY = event.clientY
@@ -91,13 +99,14 @@ export function reorderGesture(options: {
 					return
 				middles = [...(row.parentElement?.children ?? [])].map((child) => {
 					const rect = child.getBoundingClientRect()
-					return rect.top + rect.height / 2
+					return along ? rect.left + rect.width / 2 : rect.top + rect.height / 2
 				})
 				flight = lift(row, at)
 			}
 			flight.follow(at)
+			const pointer = along ? at.clientX : at.clientY
 			const next = middles.filter(
-				(middle, index) => index !== from && middle < at.clientY,
+				(middle, index) => index !== from && middle < pointer,
 			).length
 			if (next === to) return
 			to = next

@@ -48,7 +48,6 @@ import {
 	type Tab,
 } from '../lib/setup'
 import { SCRATCH, SLOT_KEYS, isDirty, slotOf, titleOf } from '../lib/tweakspace'
-import { hostsMods } from '../lib/mutators'
 import { pushNotice } from '../store/chat'
 import { tweakspaceFor } from '../store/tweakspaceInstance'
 import { PasteBanner } from './PasteBanner'
@@ -99,18 +98,12 @@ const TAB_GAP = 2
  *
  * Presets share the pane as a second face of it: they are read from and
  * written to this room, so beside the settings is where they belong. Mods
- * are its third, in a room whose host runs them.
+ * are its third: the room's own where its host runs them, and elsewhere the
+ * way to rooms that do.
  */
 export function Setup() {
 	const room = useRoom()
-	const [chosenPane, setPane] = createSignal<'setup' | 'presets' | 'mods'>(
-		'setup',
-	)
-	/** A room whose host runs mods, or that loads any: the ones with the third face. */
-	const modded = () =>
-		hostsMods(room.my()?.scriptTags) || room.check().mutators.length > 0
-	const pane = () =>
-		chosenPane() === 'mods' && !modded() ? 'setup' : chosenPane()
+	const [pane, setPane] = createSignal<'setup' | 'presets' | 'mods'>('setup')
 
 	/**
 	 * The game's own option table, read from the copy installed on this machine
@@ -303,15 +296,13 @@ export function Setup() {
 				>
 					Presets
 				</button>
-				<Show when={modded()}>
-					<button
-						class='pane-tab'
-						classList={{ on: pane() === 'mods' }}
-						onClick={() => setPane('mods')}
-					>
-						Mods
-					</button>
-				</Show>
+				<button
+					class='pane-tab'
+					classList={{ on: pane() === 'mods' }}
+					onClick={() => setPane('mods')}
+				>
+					Mods
+				</button>
 				<Show when={pane() === 'setup'}>
 					<span class='note'>{noteOfPane(room)}</span>
 					<Show when={space.unsent() > 0}>

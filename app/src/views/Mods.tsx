@@ -1,6 +1,15 @@
-import { For, Show, createEffect, createMemo, createSignal } from 'solid-js'
+import {
+	For,
+	Match,
+	Show,
+	Switch,
+	createEffect,
+	createMemo,
+	createSignal,
+} from 'solid-js'
 import { ActionCell, CellButton } from '../components/ActionCell'
 import { openExternal } from '../components/Linkify'
+import { LoginForm } from '../components/LoginForm'
 import { Glyph } from '../components/icons'
 import { api, describeError } from '../ipc/client'
 import { age, exactly } from '../lib/age'
@@ -24,15 +33,83 @@ import {
 	summary,
 	updatedTo,
 } from '../lib/mods'
-import { offers } from '../lib/mutators'
+import { hostsMods, offers } from '../lib/mutators'
+import { serverId, serverName } from '../lib/servers'
 import { pushNotice } from '../store/chat'
+import { lobby } from '../store/lobby'
 import { draftFor, forgetSet, modSets, setDraft } from '../store/mods'
+import { settings } from '../store/settings'
 import { useRoom } from './room/model'
 import { bossing, modRefusal } from './room/move'
 
 /**
- * What the room loads on top of its game: the pane's third face, in a room
- * whose host runs mods.
+ * The pane's third face: in a room whose host runs mods, what the room loads
+ * on top of its game; anywhere else, where such rooms are and the way in.
+ */
+export function Mods() {
+	const room = useRoom()
+	const modded = () =>
+		hostsMods(room.my()?.scriptTags) || room.check().mutators.length > 0
+	return (
+		<Show when={modded()} fallback={<Intro />}>
+			<Editor />
+		</Show>
+	)
+}
+
+/**
+ * A room whose host runs no mods: what mods are, and an account on the mods
+ * server -- made right here, picture and all -- whose rooms then list in
+ * Battles beside these.
+ */
+function Intro() {
+	const entry = () =>
+		settings()?.servers.find((held) => held.builtin === 'mods')
+	const server = () => {
+		const held = entry()
+		return held ? serverId(held.host) : null
+	}
+	const session = () => {
+		const id = server()
+		return id === null ? undefined : lobby.servers[id]
+	}
+	return (
+		<div class='mods mods-intro'>
+			<p class='muted'>
+				Mods go on top of a game: new units, rules or whole modes, loaded by the
+				room's host straight from GitHub. This room's host runs none. modlobby's
+				own server does, and its rooms list in Battles beside these once you
+				have an account there.
+			</p>
+			<Show
+				when={server()}
+				fallback={
+					<p class='muted'>The mods server is not among your servers.</p>
+				}
+			>
+				{(id) => (
+					<Switch>
+						<Match when={session()?.phase === 'ready'}>
+							<p class='muted'>
+								Logged in to {serverName(entry()!)} as {session()?.me}. Rooms
+								with mods are in Battles.
+							</p>
+						</Match>
+						<Match when={entry()?.username.trim()}>
+							<LoginForm server={id()} mode='login' />
+						</Match>
+						<Match when={true}>
+							<LoginForm server={id()} mode='register' />
+						</Match>
+					</Switch>
+				)}
+			</Show>
+		</div>
+	)
+}
+
+/**
+ * What the room loads on top of its game.
  *
  * The list is edited as a draft -- dragged into order, added to from what the
  * host offers or from a pasted GitHub page, trimmed, moved to a newer commit
@@ -44,7 +121,7 @@ import { bossing, modRefusal } from './room/move'
  * a difference from what the host announces, and clears itself once the host
  * announces it.
  */
-export function Mods() {
+function Editor() {
 	const room = useRoom()
 	const offered = createMemo(() => offers(room.my()?.scriptTags))
 	const current = createMemo(() => picksOf(room.check().mutators, offered()))

@@ -14,13 +14,14 @@ pub const SCHEMA_FILE: &str = "settings.schema.json";
 /// launcher config names another.
 pub const DEFAULT_HOST: &str = "server4.beyondallreason.info";
 
-/// Recoil's own lobby server, the engine's: uberserver, behind a certificate
-/// it made itself, so trusted on first use.
-pub const RECOIL_HOST: &str = "lobby.recoilengine.org";
-
-/// Where Recoil's games are: springrts' rapid, which Recoil's lobby keeps
-/// none of its own beside.
+/// Where Recoil's games are: springrts' rapid, which Recoil's own lobby
+/// (`lobby.recoilengine.org`, offered when a server is added) keeps none of
+/// its own beside.
 pub const SPRINGRTS_RAPID: &str = "https://repos.springrts.com/repos.gz";
+
+/// The mods server: modlobby's own lobby, whose autohosts enable mods on top
+/// of games. Its games come through BAR's rapid, so it names none of its own.
+pub const MODS_HOST: &str = "server.pve.bar";
 
 /// The host of the servers entry that is not a server: whoever on the local
 /// network is hosting a room. Nothing resolves it; the app points it at an
@@ -154,18 +155,30 @@ impl Settings {
 			schema: Some(format!("./{SCHEMA_FILE}")),
 			// No LAN row: `lan.enabled` is off, and `ensure_lan` adds one the
 			// moment it is turned on.
-			servers: vec![ServerEntry::bar(), ServerEntry::recoil()],
+			servers: vec![ServerEntry::bar(), ServerEntry::mods()],
 			..Self::default()
 		}
 	}
 
 	/// Keeps the servers every install has on the list, whatever the file
-	/// says: BAR's first, where it always was, and Recoil's after it. An
+	/// says: BAR's first, where it always was, and the mods server second. An
 	/// entry from before there were such servers is taken for its own by its
 	/// host -- and BAR's, which raced 8201 as well as 8200 only because every
-	/// server did, gets the one port BAR's launcher config names.
+	/// server did, gets the one port BAR's launcher config names. Recoil's,
+	/// once every install's too, is an ordinary entry now: one never logged in
+	/// to goes, and is offered again when a server is added.
 	pub(crate) fn ensure_builtins(&mut self) {
+		self.servers.retain(|entry| {
+			entry.builtin != Some(Builtin::Recoil) || !entry.username.trim().is_empty()
+		});
 		for entry in &mut self.servers {
+			if entry.builtin == Some(Builtin::Recoil) {
+				entry.builtin = None;
+			}
+			if entry.builtin == Some(Builtin::Mods) && entry.name == "pve.bar" {
+				// The name it had for a day; a name of the user's own stays.
+				entry.name = ServerEntry::mods().name;
+			}
 			if entry.builtin.is_some() {
 				continue;
 			}
@@ -175,29 +188,36 @@ impl Settings {
 				if entry.ports == [8200, 8201] {
 					entry.ports = vec![8200];
 				}
-			} else if host == RECOIL_HOST {
-				entry.builtin = Some(Builtin::Recoil);
+			} else if host == MODS_HOST {
+				entry.builtin = Some(Builtin::Mods);
 			}
 		}
-		if !self
-			.servers
-			.iter()
-			.any(|entry| entry.builtin == Some(Builtin::Bar))
-		{
+		if !self.has_builtin(Builtin::Bar) {
 			self.servers.insert(0, ServerEntry::bar());
 		}
-		if !self
+		// Second whatever the file says: the list has no way to reorder, so
+		// this is the one place the order is decided.
+		let mods = self
 			.servers
 			.iter()
-			.any(|entry| entry.builtin == Some(Builtin::Recoil))
-		{
-			let after_bar = self
-				.servers
-				.iter()
-				.position(|entry| entry.builtin == Some(Builtin::Bar))
-				.map_or(0, |at| at + 1);
-			self.servers.insert(after_bar, ServerEntry::recoil());
-		}
+			.position(|entry| entry.builtin == Some(Builtin::Mods))
+			.map_or_else(ServerEntry::mods, |at| self.servers.remove(at));
+		let after_bar = self.after_builtin(Builtin::Bar);
+		self.servers.insert(after_bar, mods);
+	}
+
+	fn has_builtin(&self, which: Builtin) -> bool {
+		self.servers
+			.iter()
+			.any(|entry| entry.builtin == Some(which))
+	}
+
+	/// The place right after `which`'s entry; the front when it has none.
+	fn after_builtin(&self, which: Builtin) -> usize {
+		self.servers
+			.iter()
+			.position(|entry| entry.builtin == Some(which))
+			.map_or(0, |at| at + 1)
 	}
 
 	/// Keeps the server list's LAN row in step with `lan.enabled`: a row
@@ -271,8 +291,12 @@ pub enum Builtin {
 	/// BAR's own. Where it is follows BAR's launcher config: a host, port
 	/// or name that still says what the config said is moved with it.
 	Bar,
-	/// Recoil's, the engine's own lobby.
+	/// Recoil's, the engine's own lobby: every install's until 2026-09-27,
+	/// read from files that still say so and made an ordinary entry.
 	Recoil,
+	/// The mods server, modlobby's own: where its autohosts enable mods on
+	/// top of games, and where the Mods pane registers you.
+	Mods,
 }
 
 /// A lobby server, and the account on it.
@@ -332,15 +356,15 @@ impl ServerEntry {
 		}
 	}
 
-	/// Recoil's own. uberserver: STLS on 8200, and 8201 is its UDP port,
-	/// where a TCP connection only waits out its timeout.
-	pub fn recoil() -> Self {
+	/// The mods server, a teiserver of our own: encrypted on its two ports,
+	/// its website where the registration picture and a forgotten password
+	/// are, and its games through BAR's rapid, so none of its own.
+	pub fn mods() -> Self {
 		Self {
-			builtin: Some(Builtin::Recoil),
-			host: RECOIL_HOST.into(),
-			name: "Recoil Official".into(),
-			ports: vec![8200],
-			rapid: Some(SPRINGRTS_RAPID.into()),
+			builtin: Some(Builtin::Mods),
+			host: MODS_HOST.into(),
+			name: "modserver".into(),
+			website: Some(format!("https://{MODS_HOST}")),
 			..Self::default()
 		}
 	}
@@ -496,10 +520,14 @@ pub struct BattleList {
 	/// empties the list for anyone who has not added anybody.
 	pub friends_only: bool,
 	pub mode: ModeFilter,
-	pub sort: BattleSort,
-	/// Largest or latest first. Ignored by `BattleSort::Relevance`, which has
-	/// a fixed order of its own.
-	pub sort_descending: bool,
+	/// How the rooms are ordered: every factor there is, the first deciding
+	/// and each later one breaking the ties left by those before it. The list
+	/// page drags them into order and flips each one's direction. A file that
+	/// names some of them, or a sort from before there were steps, is
+	/// completed from the default order.
+	#[ts(as = "Vec<SortStep>")]
+	#[schemars(with = "Vec<SortStep>")]
+	pub sort: SortSteps,
 }
 
 impl Default for BattleList {
@@ -513,9 +541,148 @@ impl Default for BattleList {
 			show_running: true,
 			friends_only: false,
 			mode: ModeFilter::default(),
-			sort: BattleSort::default(),
-			sort_descending: false,
+			sort: SortSteps(SortStep::chobby()),
 		}
+	}
+}
+
+/// One factor of the room order, and whether it takes part. Each runs its
+/// natural way: the notable rooms first, names from A.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SortStep {
+	pub by: SortKey,
+	/// Off, it is skipped; the list page toggles it with a click.
+	pub on: bool,
+}
+
+impl SortStep {
+	/// Every factor in the order it comes untouched, all taking part:
+	/// Chobby's order, then it again with the modded rooms ahead, then the
+	/// columns, each breaking the ties left by those before it.
+	pub fn chobby() -> Vec<Self> {
+		SortKey::ALL
+			.into_iter()
+			.map(|by| Self { by, on: true })
+			.collect()
+	}
+
+	/// `steps` with every factor exactly once: a repeat is dropped, a factor
+	/// missing (a file from a build with fewer, a hand edit) joins at the end
+	/// in the default order.
+	pub fn completed(steps: Vec<Self>) -> Vec<Self> {
+		let mut seen = Vec::with_capacity(steps.len());
+		let mut out: Vec<Self> = Vec::with_capacity(SortKey::ALL.len());
+		for step in steps {
+			if !seen.contains(&step.by) {
+				seen.push(step.by);
+				out.push(step);
+			}
+		}
+		out.extend(
+			Self::chobby()
+				.into_iter()
+				.filter(|step| !seen.contains(&step.by)),
+		);
+		out
+	}
+
+	/// The order a sort from before there were steps meant: that column
+	/// first, and the default order behind it.
+	fn promoted(by: SortKey) -> Vec<Self> {
+		let mut steps = vec![Self { by, on: true }];
+		steps.extend(Self::chobby().into_iter().filter(|step| step.by != by));
+		steps
+	}
+}
+
+/// What a room can be ordered by: two orders made of several things, and
+/// the columns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum SortKey {
+	/// Chobby's order: open rooms, then unlocked, then those with somebody
+	/// in them, then the ones not yet running, the fuller first and the more
+	/// watched among those.
+	Relevance,
+	/// Chobby's order with the modded rooms -- on the mods server, or running
+	/// a game that is not BAR -- ahead of the rest, once open, unlocked and
+	/// with somebody in them.
+	Modded,
+	Players,
+	/// The room's median rank; rooms with nobody known sort below rank 1.
+	Rank,
+	Title,
+	Map,
+}
+
+impl SortKey {
+	pub const ALL: [Self; 6] = [
+		Self::Relevance,
+		Self::Modded,
+		Self::Players,
+		Self::Rank,
+		Self::Title,
+		Self::Map,
+	];
+}
+
+/// The steps as the file holds them: a list, completed when read, or as an
+/// older build wrote it, one word (`relevance`, a column, or a sort since
+/// withdrawn -- `host` was one until 2026-09-03), read as the order it meant.
+/// Neither makes the file unreadable.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct SortSteps(pub Vec<SortStep>);
+
+impl std::ops::Deref for SortSteps {
+	type Target = Vec<SortStep>;
+
+	fn deref(&self) -> &Self::Target {
+		&self.0
+	}
+}
+
+impl<'de> Deserialize<'de> for SortSteps {
+	fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+		/// A step as written, its factor still a word: one this build does not
+		/// know (a build that had more of them) is dropped rather than read as
+		/// an error. A step from before `on` takes part.
+		#[derive(Deserialize)]
+		struct Loose {
+			by: String,
+			#[serde(default = "yes")]
+			on: bool,
+		}
+		fn yes() -> bool {
+			true
+		}
+		#[derive(Deserialize)]
+		#[serde(untagged)]
+		enum Written {
+			Steps(Vec<Loose>),
+			Word(String),
+		}
+		Ok(Self(match Written::deserialize(deserializer)? {
+			Written::Steps(steps) => SortStep::completed(
+				steps
+					.into_iter()
+					.filter_map(|step| {
+						let by = serde_json::from_value(serde_json::Value::String(step.by)).ok()?;
+						Some(SortStep { by, on: step.on })
+					})
+					.collect(),
+			),
+			Written::Word(word) => match word.as_str() {
+				"players" => SortStep::promoted(SortKey::Players),
+				"title" => SortStep::promoted(SortKey::Title),
+				"map" => SortStep::promoted(SortKey::Map),
+				"rank" => SortStep::promoted(SortKey::Rank),
+				_ => SortStep::chobby(),
+			},
+		}))
 	}
 }
 
@@ -531,35 +698,6 @@ pub enum ModeFilter {
 	Pve,
 	/// Only rooms that do not.
 	Pvp,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema, TS, Default)]
-#[serde(rename_all = "camelCase")]
-#[ts(export)]
-pub enum BattleSort {
-	/// Chobby's own order: joinable first, then busy, then locked, then
-	/// passworded, with player count deciding inside each band.
-	#[default]
-	Relevance,
-	Players,
-	Title,
-	Map,
-	/// The room's median rank; rooms with nobody known sort below rank 1.
-	Rank,
-}
-
-/// A sort this build no longer offers — `host` was one until 2026-09-03 —
-/// falls back to the default rather than making the whole file unreadable.
-impl<'de> Deserialize<'de> for BattleSort {
-	fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-		Ok(match String::deserialize(deserializer)?.as_str() {
-			"players" => BattleSort::Players,
-			"title" => BattleSort::Title,
-			"map" => BattleSort::Map,
-			"rank" => BattleSort::Rank,
-			_ => BattleSort::Relevance,
-		})
-	}
 }
 
 /// What sitting down in a room you just joined should mean.
@@ -982,14 +1120,44 @@ mod tests {
 	}
 
 	#[test]
-	fn a_sort_that_was_withdrawn_reads_as_the_default() {
+	fn a_sort_from_before_there_were_steps_reads_as_the_order_it_meant() {
 		let s: Settings =
 			serde_json::from_str(r#"{"battleList":{"sort":"host","sortDescending":true}}"#)
 				.unwrap();
-		assert_eq!(s.battle_list.sort, BattleSort::Relevance);
-		assert!(s.battle_list.sort_descending);
+		assert_eq!(
+			s.battle_list.sort.0,
+			SortStep::chobby(),
+			"a sort since withdrawn"
+		);
 		let s: Settings = serde_json::from_str(r#"{"battleList":{"sort":"map"}}"#).unwrap();
-		assert_eq!(s.battle_list.sort, BattleSort::Map);
+		assert_eq!(s.battle_list.sort[0].by, SortKey::Map);
+		assert!(s.battle_list.sort[0].on);
+		assert_eq!(
+			s.battle_list.sort.len(),
+			SortKey::ALL.len(),
+			"the rest follow"
+		);
+	}
+
+	#[test]
+	fn a_list_of_steps_is_completed_and_repeats_are_dropped() {
+		let s: Settings = serde_json::from_str(
+			r#"{"battleList":{"sort":[{"by":"modded","on":true},{"by":"players","on":false},{"by":"modded","on":true}]}}"#,
+		)
+		.unwrap();
+		let by: Vec<SortKey> = s.battle_list.sort.iter().map(|step| step.by).collect();
+		assert_eq!(&by[..2], [SortKey::Modded, SortKey::Players]);
+		assert_eq!(by.len(), SortKey::ALL.len());
+		assert!(!s.battle_list.sort[1].on, "the file's switch is kept");
+		assert_eq!(SortStep::completed(Vec::new()), SortStep::chobby());
+
+		// A factor from a build that had more of them is left out, not fatal.
+		let s: Settings = serde_json::from_str(
+			r#"{"battleList":{"sort":[{"by":"open","descending":true},{"by":"title","descending":false}]}}"#,
+		)
+		.unwrap();
+		assert_eq!(s.battle_list.sort[0].by, SortKey::Title);
+		assert_eq!(s.battle_list.sort.len(), SortKey::ALL.len());
 	}
 
 	/// `schema/settings.schema.json` is what editors read; keep it in sync.

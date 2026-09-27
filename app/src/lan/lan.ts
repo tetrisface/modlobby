@@ -95,6 +95,7 @@ export function lanRows(
 			hasFriend: false,
 			// Nobody on the LAN has a server-given rank.
 			chev: null,
+			modded: false,
 		}))
 }
 

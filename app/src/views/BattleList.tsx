@@ -12,11 +12,11 @@ import {
 	onMount,
 } from 'solid-js'
 import type { BattleList as Filters } from '../ipc/bindings/BattleList'
-import type { BattleSort } from '../ipc/bindings/BattleSort'
 import type { BattleOn } from '../ipc/bindings/BattleOn'
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { UserView } from '../ipc/bindings/UserView'
 import type { ModeFilter } from '../ipc/bindings/ModeFilter'
+import type { SortStep } from '../ipc/bindings/SortStep'
 import { dismiss } from '../components/dismiss'
 import { Chevrons, RankIcon } from '../components/icons'
 import { MapPicture } from '../components/MapPicture'
@@ -24,6 +24,8 @@ import { Thinking } from '../components/Thinking'
 import { api, describeError } from '../ipc/client'
 import { LAN } from '../lan/lan'
 import { heardRows, watchLan } from '../lan/store'
+import { reorderGesture } from '../lib/drag'
+import { move } from '../lib/reorder'
 import { elapsed } from '../lib/running'
 import {
 	asking as askingAbout,
@@ -33,9 +35,12 @@ import {
 } from '../store/running'
 import {
 	MODES,
-	SORTS,
+	SORT_KEYS,
 	arrange,
 	battleKey,
+	chobbySort,
+	isModded,
+	toggled,
 	layoutLabel,
 	medianChevron,
 	stabilize,
@@ -54,6 +59,7 @@ import {
 	sessions,
 	severalServers,
 } from '../store/lobby'
+import { serverId } from '../lib/servers'
 import { applySettings, serverLabel, settings } from '../store/settings'
 
 /** A row's height, in rem so that sizing the interface sizes the list too. */
@@ -66,8 +72,7 @@ const DEFAULTS: Filters = {
 	showRunning: true,
 	friendsOnly: false,
 	mode: 'all',
-	sort: 'relevance',
-	sortDescending: false,
+	sort: chobbySort(),
 }
 
 /**
@@ -108,6 +113,12 @@ export function BattleList() {
 	// Rooms on the network are heard for as long as this list is on screen.
 	onCleanup(watchLan())
 
+	/** The mods server, whose rooms all play with mods. */
+	const modsServer = () => {
+		const entry = settings()?.servers.find((held) => held.builtin === 'mods')
+		return entry ? serverId(entry.host) : null
+	}
+
 	/** Every server's rooms, each read against its own server's people. */
 	const all = createMemo<Row[]>(() => [
 		...sessions().flatMap(([server, session]) => {
@@ -119,6 +130,7 @@ export function BattleList() {
 				running: session.users[battle.founder]?.status.inGame ?? false,
 				hasFriend: battle.members.some((name) => known.has(name)),
 				chev: chev(battle.members, session.users),
+				modded: isModded(battle, server, modsServer()),
 			}))
 		}),
 		...heardRows(),
@@ -253,16 +265,21 @@ export function BattleList() {
 		}
 	}
 
-	/** Clicking the sort you are already on flips it, as a table header would. */
-	function sortBy(key: BattleSort) {
-		if (key === filters().sort && key !== 'relevance')
-			return update({ sortDescending: !filters().sortDescending })
-		// Biggest and most experienced first: that is what these are sorted for.
-		return update({
-			sort: key,
-			sortDescending: key === 'players' || key === 'rank',
-		})
+	/**
+	 * The order's chips: the leftmost that is on decides, the rest break
+	 * ties. A click switches one on or off; a drag moves it. While one is in
+	 * flight the chips are drawn where it would land, and the setting changes
+	 * only on the drop.
+	 */
+	const [flying, setFlying] = createSignal<{ from: number; to: number } | null>(
+		null,
+	)
+	const steps = (): SortStep[] => {
+		const held = flying()
+		return held ? move(filters().sort, held.from, held.to) : filters().sort
 	}
+	const defaultOrder = () =>
+		JSON.stringify(filters().sort) === JSON.stringify(chobbySort())
 
 	/**
 	 * A room of your own without joining one first: the same empty autohost
@@ -439,21 +456,47 @@ export function BattleList() {
 					</For>
 				</div>
 
-				<div class='filter-group' role='group' aria-label='Sort'>
+				<div
+					class='filter-group sort-steps'
+					role='group'
+					aria-label='Sort, first to last'
+					title='The first that is on decides, the rest break ties. Drag to reorder; click to switch one off.'
+				>
 					<span class='filter-label'>Sort</span>
-					<For each={SORTS}>
-						{(sort) => (
-							<Choice
-								label={
-									filters().sort === sort.key && sort.key !== 'relevance'
-										? `${sort.label} ${filters().sortDescending ? '↓' : '↑'}`
-										: sort.label
-								}
-								on={filters().sort === sort.key}
-								onClick={() => sortBy(sort.key)}
-							/>
-						)}
+					<For each={steps()}>
+						{(step, index) => {
+							const named = () => SORT_KEYS.find((held) => held.key === step.by)
+							return (
+								<button
+									class='chip-choice chip-step'
+									classList={{ on: step.on }}
+									aria-pressed={step.on}
+									title={`${named()?.tip ?? step.by}. Drag to reorder; click to switch ${step.on ? 'off' : 'on'}.`}
+									onPointerDown={reorderGesture({
+										axis: 'x',
+										from: index,
+										onOver: setFlying,
+										onDrop: (from, to) =>
+											void update({ sort: move(filters().sort, from, to) }),
+										onTap: () =>
+											void update({ sort: toggled(filters().sort, index()) }),
+									})}
+								>
+									{named()?.label ?? step.by}
+								</button>
+							)
+						}}
 					</For>
+					<Show when={!defaultOrder()}>
+						<button
+							type='button'
+							class='link'
+							title="Back to Chobby's order"
+							onClick={() => void update({ sort: chobbySort() })}
+						>
+							Reset
+						</button>
+					</Show>
 				</div>
 
 				<span class='spacer' />
