@@ -1708,7 +1708,9 @@ async fn run_download(
 	}
 	if let Some(map) = missed(run, &tail) {
 		let search = run.search_url.clone();
+		let reason = format!("{search} does not have {map}");
 		let _ = progress.send(DownloadEvent::Missed { search, map }).await;
+		return Err(reason);
 	}
 	Err(unpublished(run, &tail).unwrap_or_else(|| failure_reason(&tail)))
 }
@@ -1731,19 +1733,24 @@ fn fetched(game: Option<String>, map: Result<(), String>) -> Result<(), String> 
 	}
 }
 
-/// The map a map run's search answered "no such thing" for: a 404, which is
-/// an answer. Anything else — no network, a server down — is not, and is not
-/// remembered as one.
+/// The map a map run's search answered "no such thing" for: a 404, or an
+/// empty list, which pr-downloader takes as nothing left to fetch and ends
+/// on with exit 1 and no other word. Either is an answer. Anything else — no
+/// network, a server down — is not, and is not remembered as one.
 fn missed(run: &recoil::Download, tail: &[String]) -> Option<String> {
-	let not_found = !run.has_games() && tail.iter().any(|line| line.contains("error: 404"));
+	let nothing = |line: &String| {
+		line.contains("error: 404") || line.contains("Error occurred while downloading: 1")
+	};
+	let not_found = !run.has_games() && tail.iter().any(nothing);
 	let (_, map) = run.wants.first()?;
 	not_found.then(|| map.clone())
 }
 
 /// Who a map is asked of, in the order they are asked, until one answers.
 ///
-/// BAR's search for one of BAR's maps; the room's server's own for any other,
-/// so neither is asked about the other's; then springfiles, which is nobody's
+/// BAR's search for one of BAR's maps; the room's server's own for any other
+/// -- BAR's again for a server without one, as its rapid is -- so a third
+/// party is never asked about BAR's; then springfiles, which is nobody's
 /// server and has what no server publishes.
 ///
 /// A third-party search is still never asked for one of BAR's names, so it
@@ -1751,6 +1758,10 @@ fn missed(run: &recoil::Download, tail: &[String]) -> Option<String> {
 /// fallback needs to *know* the name is not BAR's rather than merely not find
 /// it in the list: with `bar_maps` empty the list has not loaded, every name
 /// is unknown, and the old answer stands.
+///
+/// The list is as fresh as its last fetch, so a map BAR published since is
+/// not in it. It is still found: on BAR's server, BAR's search is the one
+/// asked first.
 ///
 /// Never empty, so a map is always looked for somewhere. Before this, a
 /// custom map on a server naming no search was refused outright, which is
@@ -1766,15 +1777,17 @@ fn map_searches_for(
 	map: &str,
 	bars: &str,
 ) -> Vec<String> {
-	let own = server.and_then(|server| searches.get(server));
-	if bar_maps.contains(map) || (own.is_none() && bar_maps.is_empty()) {
+	let own = server
+		.and_then(|server| searches.get(server))
+		.map_or(bars, String::as_str);
+	if bar_maps.contains(map) {
 		return vec![bars.to_owned()];
 	}
 	let mut asked = Vec::new();
-	match own {
-		Some(search) if search.starts_with("https://") => asked.push(search.clone()),
-		Some(search) => tracing::warn!(%search, "map search is not https; not asked"),
-		None => {}
+	if own.starts_with("https://") {
+		asked.push(own.to_owned());
+	} else {
+		tracing::warn!(search = own, "map search is not https; not asked");
 	}
 	// Only for a name we know is not BAR's: an unloaded list is not evidence.
 	if !bar_maps.is_empty() {
@@ -4713,19 +4726,20 @@ mod tests {
 			ask(&bars, mods, "Bathtub Brawl V2"),
 			["https://mods.example/find", files]
 		);
-		// BAR's own server names no map search, so only the fallback is left
-		// -- and BAR is still not asked for a map it does not have.
+		// BAR's own server names no map search, so BAR's stands in for it: a
+		// map BAR published since the list was fetched is only there. The
+		// fallback is still asked after it.
 		assert_eq!(
 			ask(
 				&bars,
 				Some("server4.beyondallreason.info"),
 				"Bathtub Brawl V2"
 			),
-			[files]
+			[bar, files]
 		);
 		// A room on the LAN, whose server publishes nothing at all: the
 		// refusal this replaced is what a custom map used to get.
-		assert_eq!(ask(&bars, Some("lan"), "Frosty Cove v1.13"), [files]);
+		assert_eq!(ask(&bars, Some("lan"), "Frosty Cove v1.13"), [bar, files]);
 
 		// BAR's maps not known yet: every name is unknown, which is not the
 		// same as known not to be BAR's, so the fallback stays out of it.
@@ -4767,7 +4781,7 @@ mod tests {
 	}
 
 	#[test]
-	fn only_a_404_from_a_map_search_is_a_miss() {
+	fn a_404_or_an_empty_list_from_a_map_search_is_a_miss() {
 		let runs = |want| {
 			recoil::Download::runs(
 				std::path::Path::new("prd"),
@@ -4781,6 +4795,13 @@ mod tests {
 			["DownloadUrl():Error in curl (The requested URL returned error: 404)".to_owned()];
 		assert_eq!(
 			missed(&runs(recoil::Want::Map)[0], &not_found).as_deref(),
+			Some("Nowhere v1")
+		);
+		// springfiles answers `[]` for a name it lacks; pr-downloader finds
+		// nothing to fetch in that and exits 1, saying only so.
+		let empty = ["[Error] main.cpp:187:main():Error occurred while downloading: 1".to_owned()];
+		assert_eq!(
+			missed(&runs(recoil::Want::Map)[0], &empty).as_deref(),
 			Some("Nowhere v1")
 		);
 		assert_eq!(

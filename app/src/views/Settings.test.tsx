@@ -1,4 +1,3 @@
-import { chobbySort } from '../lib/battles'
 import { MemoryRouter, Route, createMemoryHistory } from '@solidjs/router'
 import { fireEvent, render } from '@solidjs/testing-library'
 import { beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
@@ -61,7 +60,8 @@ function loaded(): Settings {
 			showEmpty: false,
 			friendsOnly: false,
 			mode: 'all',
-			sort: chobbySort(),
+			sort: 'relevance',
+			sortDescending: false,
 		},
 		chat: {
 			filterHostChatter: true,

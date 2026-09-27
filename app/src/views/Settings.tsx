@@ -1,4 +1,3 @@
-import { chobbySort } from '../lib/battles'
 import { useSearchParams } from '@solidjs/router'
 import {
 	For,
@@ -878,7 +877,8 @@ export function blankSettings(): Settings {
 			showRunning: true,
 			friendsOnly: false,
 			mode: 'all',
-			sort: chobbySort(),
+			sort: 'relevance',
+			sortDescending: false,
 		},
 		chat: {
 			filterHostChatter: true,

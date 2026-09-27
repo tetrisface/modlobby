@@ -4,5 +4,5 @@
  * What a room can be ordered by: two orders made of several things, and
  * the columns.
  */
-export type SortKey =
-	'relevance' | 'modded' | 'players' | 'rank' | 'title' | 'map'
+export type BattleSort =
+	'relevance' | 'modded' | 'players' | 'title' | 'map' | 'rank'

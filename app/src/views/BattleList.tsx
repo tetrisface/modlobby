@@ -12,20 +12,18 @@ import {
 	onMount,
 } from 'solid-js'
 import type { BattleList as Filters } from '../ipc/bindings/BattleList'
+import type { BattleSort } from '../ipc/bindings/BattleSort'
 import type { BattleOn } from '../ipc/bindings/BattleOn'
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { UserView } from '../ipc/bindings/UserView'
 import type { ModeFilter } from '../ipc/bindings/ModeFilter'
-import type { SortStep } from '../ipc/bindings/SortStep'
 import { dismiss } from '../components/dismiss'
-import { Chevrons, Glyph, RankIcon } from '../components/icons'
+import { Chevrons, RankIcon } from '../components/icons'
 import { MapPicture } from '../components/MapPicture'
 import { Thinking } from '../components/Thinking'
 import { api, describeError } from '../ipc/client'
 import { LAN } from '../lan/lan'
 import { heardRows, watchLan } from '../lan/store'
-import { reorderGesture } from '../lib/drag'
-import { move } from '../lib/reorder'
 import { elapsed } from '../lib/running'
 import {
 	asking as askingAbout,
@@ -35,12 +33,11 @@ import {
 } from '../store/running'
 import {
 	MODES,
-	SORT_KEYS,
+	SORTS,
 	arrange,
 	battleKey,
-	chobbySort,
+	fixed,
 	isModded,
-	toggled,
 	layoutLabel,
 	medianChevron,
 	stabilize,
@@ -72,7 +69,8 @@ const DEFAULTS: Filters = {
 	showRunning: true,
 	friendsOnly: false,
 	mode: 'all',
-	sort: chobbySort(),
+	sort: 'relevance',
+	sortDescending: false,
 }
 
 /**
@@ -265,21 +263,16 @@ export function BattleList() {
 		}
 	}
 
-	/**
-	 * The order's chips: the leftmost that is on decides, the rest break
-	 * ties. A click switches one on or off; a drag moves it. While one is in
-	 * flight the chips are drawn where it would land, and the setting changes
-	 * only on the drop.
-	 */
-	const [flying, setFlying] = createSignal<{ from: number; to: number } | null>(
-		null,
-	)
-	const steps = (): SortStep[] => {
-		const held = flying()
-		return held ? move(filters().sort, held.from, held.to) : filters().sort
+	/** Clicking the sort you are already on flips it, as a table header would. */
+	function sortBy(key: BattleSort) {
+		if (key === filters().sort && !fixed(key))
+			return update({ sortDescending: !filters().sortDescending })
+		// Biggest and most experienced first: that is what these are sorted for.
+		return update({
+			sort: key,
+			sortDescending: key === 'players' || key === 'rank',
+		})
 	}
-	const defaultOrder = () =>
-		JSON.stringify(filters().sort) === JSON.stringify(chobbySort())
 
 	/**
 	 * A room of your own without joining one first: the same empty autohost
@@ -456,49 +449,22 @@ export function BattleList() {
 					</For>
 				</div>
 
-				<div
-					class='filter-group sort-steps'
-					role='group'
-					aria-label='Sort, first to last'
-					title='The first that is on decides, the rest break ties. Drag to reorder; click to switch one off.'
-				>
+				<div class='filter-group' role='group' aria-label='Sort'>
 					<span class='filter-label'>Sort</span>
-					<For each={steps()}>
-						{(step, index) => {
-							const named = () => SORT_KEYS.find((held) => held.key === step.by)
-							return (
-								<button
-									class='chip-choice chip-step'
-									classList={{ on: step.on }}
-									aria-pressed={step.on}
-									title={`${named()?.tip ?? step.by}. Drag to reorder; click to switch ${step.on ? 'off' : 'on'}.`}
-									onPointerDown={reorderGesture({
-										axis: 'x',
-										rows: '.chip-step',
-										from: index,
-										onOver: setFlying,
-										onDrop: (from, to) =>
-											void update({ sort: move(filters().sort, from, to) }),
-										onTap: () =>
-											void update({ sort: toggled(filters().sort, index()) }),
-									})}
-								>
-									{named()?.label ?? step.by}
-								</button>
-							)
-						}}
+					<For each={SORTS}>
+						{(sort) => (
+							<Choice
+								label={
+									filters().sort === sort.key && !fixed(sort.key)
+										? `${sort.label} ${filters().sortDescending ? '↓' : '↑'}`
+										: sort.label
+								}
+								title={sort.tip}
+								on={filters().sort === sort.key}
+								onClick={() => sortBy(sort.key)}
+							/>
+						)}
 					</For>
-					<Show when={!defaultOrder()}>
-						<button
-							type='button'
-							class='chip-choice chip-reset'
-							title="Back to Chobby's order, every step on"
-							aria-label='Reset the order'
-							onClick={() => void update({ sort: chobbySort() })}
-						>
-							<Glyph id='act-undo' />
-						</button>
-					</Show>
 				</div>
 
 				<span class='spacer' />
@@ -985,12 +951,18 @@ function Include(props: {
 }
 
 /** One of a set, where exactly one is active. */
-function Choice(props: { label: string; on: boolean; onClick: () => void }) {
+function Choice(props: {
+	label: string
+	title?: string
+	on: boolean
+	onClick: () => void
+}) {
 	return (
 		<button
 			class='chip-choice'
 			classList={{ on: props.on }}
 			aria-pressed={props.on}
+			title={props.title}
 			onClick={props.onClick}
 		>
 			{props.label}

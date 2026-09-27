@@ -6768,29 +6768,6 @@ button.link:hover {
 	max-width: 32rem;
 }
 
-/* The order's chips, on or off as any choice chip; a chip in flight rides
-   under the pointer and its place stays, dimmed. */
-.sort-steps .chip-step {
-	cursor: grab;
-	user-select: none;
-	touch-action: none;
-}
-
-/* The way back, a chip like the rest with an arrow for a label. */
-.chip-reset {
-	display: inline-flex;
-	align-items: center;
-	padding: 0.1875rem 0.3125rem;
-}
-
-.chip-step.lifted {
-	opacity: 0.35;
-}
-
-.drag-ghost.chip-step {
-	background: var(--panel);
-}
-
 /* The two ways on from the mods tab, side by side under its blurb. */
 .mods-ways {
 	display: flex;

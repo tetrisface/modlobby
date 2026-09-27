@@ -14,7 +14,6 @@ import { LoginForm } from '../components/LoginForm'
 import { Glyph } from '../components/icons'
 import { api, describeError } from '../ipc/client'
 import { age, exactly } from '../lib/age'
-import { leadWith } from '../lib/battles'
 import { reorderGesture } from '../lib/drag'
 import {
 	type Change,
@@ -105,10 +104,7 @@ function Intro() {
 			applySettings(
 				await api.updateSettings({
 					...current,
-					battleList: {
-						...current.battleList,
-						sort: leadWith(current.battleList.sort, 'modded'),
-					},
+					battleList: { ...current.battleList, sort: 'modded' },
 				}),
 			)
 			navigate('/battles')

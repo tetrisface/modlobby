@@ -61,7 +61,7 @@ function lift(row: HTMLElement, at: PointerEvent) {
  * Where it lands is read against the rows as they stood when it lifted --
  * past the middle of a row is past that row -- so the list making room under
  * the pointer never changes the answer, and nothing jitters. The list's
- * children are its rows, or those of them that `rows` picks out.
+ * children are its rows.
  */
 export function reorderGesture(options: {
 	/** Where the pressed row is in the list. */
@@ -71,23 +71,15 @@ export function reorderGesture(options: {
 	onDrop: (from: number, to: number) => void
 	/** A press let go of where it began: a click on the row, not a drag. */
 	onTap?: () => void
-	/** Which way the list runs: down the page (rows) or along it (chips). */
-	axis?: 'y' | 'x'
-	/** Which of the list's children are rows, as a selector; all of them unless said. */
-	rows?: string
 }): (event: PointerEvent) => void {
-	const along = options.axis === 'x'
 	return (event: PointerEvent) => {
 		if (event.button !== 0) return
-		const row = event.currentTarget as HTMLElement
 		// A press on a control inside the row -- update, edit, remove -- is
-		// that control's. The row may itself be a button (the sort chips), and
-		// then the press is the row's.
-		const control = (event.target as Element | null)?.closest(
-			'button, input, select',
-		)
-		if (control && control !== row) return
+		// that control's.
+		if ((event.target as Element | null)?.closest('button, input, select'))
+			return
 		event.preventDefault()
+		const row = event.currentTarget as HTMLElement
 		const from = options.from()
 		const fromX = event.clientX
 		const fromY = event.clientY
@@ -99,20 +91,15 @@ export function reorderGesture(options: {
 			if (!flight) {
 				if (Math.hypot(at.clientX - fromX, at.clientY - fromY) < THRESHOLD)
 					return
-				middles = [...(row.parentElement?.children ?? [])]
-					.filter((child) => child.matches(options.rows ?? '*'))
-					.map((child) => {
-						const rect = child.getBoundingClientRect()
-						return along
-							? rect.left + rect.width / 2
-							: rect.top + rect.height / 2
-					})
+				middles = [...(row.parentElement?.children ?? [])].map((child) => {
+					const rect = child.getBoundingClientRect()
+					return rect.top + rect.height / 2
+				})
 				flight = lift(row, at)
 			}
 			flight.follow(at)
-			const pointer = along ? at.clientX : at.clientY
 			const next = middles.filter(
-				(middle, index) => index !== from && middle < pointer,
+				(middle, index) => index !== from && middle < at.clientY,
 			).length
 			if (next === to) return
 			to = next

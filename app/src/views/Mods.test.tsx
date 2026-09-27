@@ -64,7 +64,7 @@ function intro() {
 		],
 		account: { rememberPassword: false, autoLogin: false },
 		chat: { muted: [] },
-		battleList: { sort: [{ by: 'relevance', on: true }] },
+		battleList: { sort: 'relevance' },
 	} as unknown as Settings)
 	const room = fakeRoom({
 		my: () => myBattle({ scriptTags: {} }),
@@ -174,13 +174,8 @@ describe('the mods pane', () => {
 		await waitFor(() => expect(history.get()).toBe('/battles'))
 		const saved = asked.mock.calls.find(
 			([c]) => c === 'update_settings',
-		)?.[1] as {
-			settings: { battleList: { sort: { by: string; on: boolean }[] } }
-		}
-		expect(saved.settings.battleList.sort[0]).toEqual({
-			by: 'modded',
-			on: true,
-		})
+		)?.[1] as { settings: { battleList: { sort: string } } }
+		expect(saved.settings.battleList.sort).toBe('modded')
 	})
 
 	test('shows what is loaded, where it comes from, and what the host offers', () => {

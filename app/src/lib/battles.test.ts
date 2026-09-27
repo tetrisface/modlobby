@@ -2,19 +2,15 @@ import { describe, expect, test } from 'vitest'
 import type { BattleList } from '../ipc/bindings/BattleList'
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { BotView } from '../ipc/bindings/BotView'
-import type { SortKey } from '../ipc/bindings/SortKey'
 import {
 	arrange,
 	battleKey,
-	chobbySort,
 	isModded,
-	leadWith,
 	isVsAi,
 	layoutLabel,
 	matches,
 	medianChevron,
 	stabilize,
-	toggled,
 	type Row,
 } from './battles'
 
@@ -74,18 +70,12 @@ const filters = (over: Partial<BattleList> = {}): BattleList => ({
 	showRunning: true,
 	friendsOnly: false,
 	mode: 'all',
-	sort: chobbySort(),
+	sort: 'relevance',
+	sortDescending: false,
 	...over,
 })
 
 const titles = (rows: Row[]) => rows.map((r) => r.battle.title)
-
-/** The order with `key` moved to the front. */
-const ledBy = (key: SortKey) => {
-	const steps = chobbySort()
-	const at = steps.findIndex((step) => step.by === key)
-	return [steps[at]!, ...steps.filter((_, i) => i !== at)]
-}
 
 describe('search', () => {
 	const room = battle({
@@ -261,24 +251,17 @@ describe('sorting by a column', () => {
 		row({ title: 'gamma', mapName: 'Xray', founder: 'bob', playerCount: 8 }),
 	]
 
-	test('names read from A, counts with the most first', () => {
-		expect(
-			titles(arrange(rows, filters({ sort: ledBy('title') }), '')),
-		).toEqual(['alpha', 'beta', 'gamma'])
-		expect(
-			titles(arrange(rows, filters({ sort: ledBy('players') }), '')),
-		).toEqual(['alpha', 'gamma', 'beta'])
-	})
-
-	test('a step switched off is skipped, and the next one decides', () => {
-		const steps = toggled(ledBy('title'), 0)
-		expect(steps[0]).toEqual({ by: 'title', on: false })
-		// Relevance leads now: all open, so the fuller first.
-		expect(titles(arrange(rows, filters({ sort: steps }), ''))).toEqual([
+	test('ascending and descending are mirror images', () => {
+		expect(titles(arrange(rows, filters({ sort: 'title' }), ''))).toEqual([
 			'alpha',
-			'gamma',
 			'beta',
+			'gamma',
 		])
+		expect(
+			titles(
+				arrange(rows, filters({ sort: 'title', sortDescending: true }), ''),
+			),
+		).toEqual(['gamma', 'beta', 'alpha'])
 	})
 
 	test('rank sorts on the median, unknown rooms last going down', () => {
@@ -288,26 +271,30 @@ describe('sorting by a column', () => {
 			{ ...row({ id: 3, title: 'high' }), chev: 4.5 },
 		]
 		expect(
-			titles(arrange(ranked, filters({ sort: ledBy('rank') }), '')),
+			titles(
+				arrange(ranked, filters({ sort: 'rank', sortDescending: true }), ''),
+			),
 		).toEqual(['high', 'low', 'unknown'])
 	})
 
 	test('map sorts on its own field', () => {
 		// Xray, Yankee, Zulu.
-		expect(titles(arrange(rows, filters({ sort: ledBy('map') }), ''))).toEqual([
+		expect(titles(arrange(rows, filters({ sort: 'map' }), ''))).toEqual([
 			'gamma',
 			'alpha',
 			'beta',
 		])
 	})
 
-	test('a column put first outranks the bands relevance cares about', () => {
+	test('a column sort ignores the bands relevance cares about', () => {
 		const banded = [
 			row({ title: 'locked big', locked: true, playerCount: 16 }),
 			row({ title: 'open small', playerCount: 1 }),
 		]
 		expect(
-			titles(arrange(banded, filters({ sort: ledBy('players') }), '')),
+			titles(
+				arrange(banded, filters({ sort: 'players', sortDescending: true }), ''),
+			),
 		).toEqual(['locked big', 'open small'])
 	})
 })
@@ -333,53 +320,26 @@ describe('modded rooms', () => {
 		)
 	})
 
-	test('browsing puts Mods first and on, and leaves the rest alone', () => {
-		const steps = leadWith(toggled(chobbySort(), 1), 'modded')
-		expect(steps[0]).toEqual({ by: 'modded', on: true })
-		expect(steps.map((step) => step.by)).toEqual([
-			'modded',
-			'relevance',
-			'players',
-			'rank',
-			'title',
-			'map',
-		])
-	})
-
-	test('come first when Mods leads the order, and not when it is off', () => {
+	test('come first under the Mods order, and where the bands put them under relevance', () => {
 		const rows = [
 			{ ...row({ title: 'plain', playerCount: 9 }), modded: false },
 			{ ...row({ title: 'modded', playerCount: 2 }), modded: true },
 		]
-		expect(
-			titles(arrange(rows, filters({ sort: ledBy('modded') }), '')),
-		).toEqual(['modded', 'plain'])
-		// Off, relevance decides: the fuller first.
-		expect(
-			titles(arrange(rows, filters({ sort: toggled(ledBy('modded'), 0) }), '')),
-		).toEqual(['plain', 'modded'])
+		expect(titles(arrange(rows, filters({ sort: 'modded' }), ''))).toEqual([
+			'modded',
+			'plain',
+		])
+		expect(titles(arrange(rows, filters(), ''))).toEqual(['plain', 'modded'])
 	})
 
-	test('an empty modded autohost outranks a busy plain room when Mods leads', () => {
+	test('an empty modded autohost outranks a busy plain room under the Mods order', () => {
 		const rows = [
 			{ ...row({ title: 'plain busy', playerCount: 9 }), modded: false },
 			{ ...row({ title: 'Mods 1', playerCount: 0 }), modded: true },
 		]
-		expect(
-			titles(arrange(rows, filters({ sort: ledBy('modded') }), '')),
-		).toEqual(['Mods 1', 'plain busy'])
-	})
-
-	test('the default order breaks ties on it only after the bands and the counts', () => {
-		const rows = [
-			{ ...row({ title: 'plain full', playerCount: 9 }), modded: false },
-			{ ...row({ title: 'modded small', playerCount: 2 }), modded: true },
-			{ ...row({ title: 'modded full', playerCount: 9 }), modded: true },
-		]
-		expect(titles(arrange(rows, filters(), ''))).toEqual([
-			'modded full',
-			'plain full',
-			'modded small',
+		expect(titles(arrange(rows, filters({ sort: 'modded' }), ''))).toEqual([
+			'Mods 1',
+			'plain busy',
 		])
 	})
 })

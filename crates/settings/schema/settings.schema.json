@@ -26,32 +26,8 @@
         "showLocked": true,
         "showPassworded": true,
         "showRunning": true,
-        "sort": [
-          {
-            "by": "relevance",
-            "on": true
-          },
-          {
-            "by": "modded",
-            "on": true
-          },
-          {
-            "by": "players",
-            "on": true
-          },
-          {
-            "by": "rank",
-            "on": true
-          },
-          {
-            "by": "title",
-            "on": true
-          },
-          {
-            "by": "map",
-            "on": true
-          }
-        ]
+        "sort": "relevance",
+        "sortDescending": false
       }
     },
     "chat": {
@@ -223,39 +199,43 @@
           "default": true
         },
         "sort": {
-          "description": "How the rooms are ordered: every factor there is, the first deciding\nand each later one breaking the ties left by those before it. The list\npage drags them into order and flips each one's direction. A file that\nnames some of them, or a sort from before there were steps, is\ncompleted from the default order.",
-          "type": "array",
-          "default": [
-            {
-              "by": "relevance",
-              "on": true
-            },
-            {
-              "by": "modded",
-              "on": true
-            },
-            {
-              "by": "players",
-              "on": true
-            },
-            {
-              "by": "rank",
-              "on": true
-            },
-            {
-              "by": "title",
-              "on": true
-            },
-            {
-              "by": "map",
-              "on": true
-            }
-          ],
-          "items": {
-            "$ref": "#/$defs/SortStep"
-          }
+          "$ref": "#/$defs/BattleSort",
+          "default": "relevance"
+        },
+        "sortDescending": {
+          "description": "Largest or latest first. Ignored by `Relevance` and `Modded`, which\neach have a fixed order of their own.",
+          "type": "boolean",
+          "default": false
         }
       }
+    },
+    "BattleSort": {
+      "description": "What a room can be ordered by: two orders made of several things, and\nthe columns.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "players",
+            "title",
+            "map"
+          ]
+        },
+        {
+          "description": "Chobby's own order: joinable first, then busy, then locked, then\npassworded, with player count deciding inside each band.",
+          "type": "string",
+          "const": "relevance"
+        },
+        {
+          "description": "Chobby's order with the modded rooms -- on the mods server, running a\ngame that is not BAR, or saying so in their title -- ahead of the rest.",
+          "type": "string",
+          "const": "modded"
+        },
+        {
+          "description": "The room's median rank; rooms with nobody known sort below rank 1.",
+          "type": "string",
+          "const": "rank"
+        }
+      ]
     },
     "Builtin": {
       "description": "A server every install has: its card stays on the list.",
@@ -744,51 +724,6 @@
           "default": null
         }
       }
-    },
-    "SortKey": {
-      "description": "What a room can be ordered by: two orders made of several things, and\nthe columns.",
-      "oneOf": [
-        {
-          "type": "string",
-          "enum": [
-            "players",
-            "title",
-            "map"
-          ]
-        },
-        {
-          "description": "Chobby's order: open rooms, then unlocked, then those with somebody\nin them, then the ones not yet running, the fuller first and the more\nwatched among those.",
-          "type": "string",
-          "const": "relevance"
-        },
-        {
-          "description": "Chobby's order with the modded rooms -- on the mods server, or running\na game that is not BAR -- ahead of the rest, once open, unlocked and\nwith somebody in them.",
-          "type": "string",
-          "const": "modded"
-        },
-        {
-          "description": "The room's median rank; rooms with nobody known sort below rank 1.",
-          "type": "string",
-          "const": "rank"
-        }
-      ]
-    },
-    "SortStep": {
-      "description": "One factor of the room order, and whether it takes part. Each runs its\nnatural way: the notable rooms first, names from A.",
-      "type": "object",
-      "properties": {
-        "by": {
-          "$ref": "#/$defs/SortKey"
-        },
-        "on": {
-          "description": "Off, it is skipped; the list page toggles it with a click.",
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "by",
-        "on"
-      ]
     },
     "Tweaks": {
       "type": "object",

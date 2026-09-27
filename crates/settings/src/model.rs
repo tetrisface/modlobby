@@ -538,14 +538,10 @@ pub struct BattleList {
 	/// empties the list for anyone who has not added anybody.
 	pub friends_only: bool,
 	pub mode: ModeFilter,
-	/// How the rooms are ordered: every factor there is, the first deciding
-	/// and each later one breaking the ties left by those before it. The list
-	/// page drags them into order and flips each one's direction. A file that
-	/// names some of them, or a sort from before there were steps, is
-	/// completed from the default order.
-	#[ts(as = "Vec<SortStep>")]
-	#[schemars(with = "Vec<SortStep>")]
-	pub sort: SortSteps,
+	pub sort: BattleSort,
+	/// Largest or latest first. Ignored by `Relevance` and `Modded`, which
+	/// each have a fixed order of their own.
+	pub sort_descending: bool,
 }
 
 impl Default for BattleList {
@@ -559,148 +555,47 @@ impl Default for BattleList {
 			show_running: true,
 			friends_only: false,
 			mode: ModeFilter::default(),
-			sort: SortSteps(SortStep::chobby()),
+			sort: BattleSort::default(),
+			sort_descending: false,
 		}
-	}
-}
-
-/// One factor of the room order, and whether it takes part. Each runs its
-/// natural way: the notable rooms first, names from A.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export)]
-pub struct SortStep {
-	pub by: SortKey,
-	/// Off, it is skipped; the list page toggles it with a click.
-	pub on: bool,
-}
-
-impl SortStep {
-	/// Every factor in the order it comes untouched, all taking part:
-	/// Chobby's order, then it again with the modded rooms ahead, then the
-	/// columns, each breaking the ties left by those before it.
-	pub fn chobby() -> Vec<Self> {
-		SortKey::ALL
-			.into_iter()
-			.map(|by| Self { by, on: true })
-			.collect()
-	}
-
-	/// `steps` with every factor exactly once: a repeat is dropped, a factor
-	/// missing (a file from a build with fewer, a hand edit) joins at the end
-	/// in the default order.
-	pub fn completed(steps: Vec<Self>) -> Vec<Self> {
-		let mut seen = Vec::with_capacity(steps.len());
-		let mut out: Vec<Self> = Vec::with_capacity(SortKey::ALL.len());
-		for step in steps {
-			if !seen.contains(&step.by) {
-				seen.push(step.by);
-				out.push(step);
-			}
-		}
-		out.extend(
-			Self::chobby()
-				.into_iter()
-				.filter(|step| !seen.contains(&step.by)),
-		);
-		out
-	}
-
-	/// The order a sort from before there were steps meant: that column
-	/// first, and the default order behind it.
-	fn promoted(by: SortKey) -> Vec<Self> {
-		let mut steps = vec![Self { by, on: true }];
-		steps.extend(Self::chobby().into_iter().filter(|step| step.by != by));
-		steps
 	}
 }
 
 /// What a room can be ordered by: two orders made of several things, and
 /// the columns.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema, TS, Default)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
-pub enum SortKey {
-	/// Chobby's order: open rooms, then unlocked, then those with somebody
-	/// in them, then the ones not yet running, the fuller first and the more
-	/// watched among those.
+pub enum BattleSort {
+	/// Chobby's own order: joinable first, then busy, then locked, then
+	/// passworded, with player count deciding inside each band.
+	#[default]
 	Relevance,
-	/// Chobby's order with the modded rooms -- on the mods server, or running
-	/// a game that is not BAR -- ahead of the rest, once open, unlocked and
-	/// with somebody in them.
+	/// Chobby's order with the modded rooms -- on the mods server, running a
+	/// game that is not BAR, or saying so in their title -- ahead of the rest.
 	Modded,
 	Players,
-	/// The room's median rank; rooms with nobody known sort below rank 1.
-	Rank,
 	Title,
 	Map,
+	/// The room's median rank; rooms with nobody known sort below rank 1.
+	Rank,
 }
 
-impl SortKey {
-	pub const ALL: [Self; 6] = [
-		Self::Relevance,
-		Self::Modded,
-		Self::Players,
-		Self::Rank,
-		Self::Title,
-		Self::Map,
-	];
-}
-
-/// The steps as the file holds them: a list, completed when read, or as an
-/// older build wrote it, one word (`relevance`, a column, or a sort since
-/// withdrawn -- `host` was one until 2026-09-03), read as the order it meant.
-/// Neither makes the file unreadable.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(transparent)]
-pub struct SortSteps(pub Vec<SortStep>);
-
-impl std::ops::Deref for SortSteps {
-	type Target = Vec<SortStep>;
-
-	fn deref(&self) -> &Self::Target {
-		&self.0
-	}
-}
-
-impl<'de> Deserialize<'de> for SortSteps {
+/// A sort this build does not offer -- `host` was one until 2026-09-03, and
+/// for a few days of September 2026 the file held a list of steps -- falls
+/// back to the default rather than making the whole file unreadable.
+impl<'de> Deserialize<'de> for BattleSort {
 	fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-		/// A step as written, its factor still a word: one this build does not
-		/// know (a build that had more of them) is dropped rather than read as
-		/// an error. A step from before `on` takes part.
-		#[derive(Deserialize)]
-		struct Loose {
-			by: String,
-			#[serde(default = "yes")]
-			on: bool,
-		}
-		fn yes() -> bool {
-			true
-		}
-		#[derive(Deserialize)]
-		#[serde(untagged)]
-		enum Written {
-			Steps(Vec<Loose>),
-			Word(String),
-		}
-		Ok(Self(match Written::deserialize(deserializer)? {
-			Written::Steps(steps) => SortStep::completed(
-				steps
-					.into_iter()
-					.filter_map(|step| {
-						let by = serde_json::from_value(serde_json::Value::String(step.by)).ok()?;
-						Some(SortStep { by, on: step.on })
-					})
-					.collect(),
-			),
-			Written::Word(word) => match word.as_str() {
-				"players" => SortStep::promoted(SortKey::Players),
-				"title" => SortStep::promoted(SortKey::Title),
-				"map" => SortStep::promoted(SortKey::Map),
-				"rank" => SortStep::promoted(SortKey::Rank),
-				_ => SortStep::chobby(),
+		Ok(
+			match serde_json::Value::deserialize(deserializer)?.as_str() {
+				Some("modded") => BattleSort::Modded,
+				Some("players") => BattleSort::Players,
+				Some("title") => BattleSort::Title,
+				Some("map") => BattleSort::Map,
+				Some("rank") => BattleSort::Rank,
+				_ => BattleSort::Relevance,
 			},
-		}))
+		)
 	}
 }
 
@@ -1138,44 +1033,18 @@ mod tests {
 	}
 
 	#[test]
-	fn a_sort_from_before_there_were_steps_reads_as_the_order_it_meant() {
+	fn a_sort_that_was_withdrawn_reads_as_the_default() {
 		let s: Settings =
 			serde_json::from_str(r#"{"battleList":{"sort":"host","sortDescending":true}}"#)
 				.unwrap();
-		assert_eq!(
-			s.battle_list.sort.0,
-			SortStep::chobby(),
-			"a sort since withdrawn"
-		);
+		assert_eq!(s.battle_list.sort, BattleSort::Relevance);
+		assert!(s.battle_list.sort_descending);
 		let s: Settings = serde_json::from_str(r#"{"battleList":{"sort":"map"}}"#).unwrap();
-		assert_eq!(s.battle_list.sort[0].by, SortKey::Map);
-		assert!(s.battle_list.sort[0].on);
-		assert_eq!(
-			s.battle_list.sort.len(),
-			SortKey::ALL.len(),
-			"the rest follow"
-		);
-	}
-
-	#[test]
-	fn a_list_of_steps_is_completed_and_repeats_are_dropped() {
-		let s: Settings = serde_json::from_str(
-			r#"{"battleList":{"sort":[{"by":"modded","on":true},{"by":"players","on":false},{"by":"modded","on":true}]}}"#,
-		)
-		.unwrap();
-		let by: Vec<SortKey> = s.battle_list.sort.iter().map(|step| step.by).collect();
-		assert_eq!(&by[..2], [SortKey::Modded, SortKey::Players]);
-		assert_eq!(by.len(), SortKey::ALL.len());
-		assert!(!s.battle_list.sort[1].on, "the file's switch is kept");
-		assert_eq!(SortStep::completed(Vec::new()), SortStep::chobby());
-
-		// A factor from a build that had more of them is left out, not fatal.
-		let s: Settings = serde_json::from_str(
-			r#"{"battleList":{"sort":[{"by":"open","descending":true},{"by":"title","descending":false}]}}"#,
-		)
-		.unwrap();
-		assert_eq!(s.battle_list.sort[0].by, SortKey::Title);
-		assert_eq!(s.battle_list.sort.len(), SortKey::ALL.len());
+		assert_eq!(s.battle_list.sort, BattleSort::Map);
+		// A list of steps, as the file held for a few days, is not fatal either.
+		let s: Settings =
+			serde_json::from_str(r#"{"battleList":{"sort":[{"by":"modded","on":true}]}}"#).unwrap();
+		assert_eq!(s.battle_list.sort, BattleSort::Relevance);
 	}
 
 	/// `schema/settings.schema.json` is what editors read; keep it in sync.
