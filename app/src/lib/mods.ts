@@ -173,9 +173,10 @@ export function commitOf(pick: Pick): string | null {
 
 /**
  * A pick once GitHub has said what the newest commit of its repository is:
- * moved there when that is another commit than the room's, else as the room
- * has it -- an update that changes nothing is not worth a vote -- and
- * whether it was already there.
+ * moved there when that is another commit than the one it stands at -- the
+ * room's, or its own pin for one the room has not loaded -- else as it is,
+ * since an update that changes nothing is not worth a vote; and whether it
+ * was already there.
  */
 export function updatedTo(
 	pick: Pick,
@@ -183,9 +184,8 @@ export function updatedTo(
 	room: readonly Pick[],
 ): { pick: Pick; already: boolean } {
 	if (!pick.repo) return { pick, already: false }
-	const held = room.find((entry) => entry.repo === pick.repo)
-	if (held && commitOf(held) === newest.sha)
-		return { pick: held, already: true }
+	const held = room.find((entry) => entry.repo === pick.repo) ?? pick
+	if (commitOf(held) === newest.sha) return { pick: held, already: true }
 	return { pick: { ...updatePick(pick), newest: newest.date }, already: false }
 }
 
@@ -223,25 +223,26 @@ const GITHUB = 'https://github.com'
 
 /**
  * Where a GitHub pick stands and where the draft would move it, as links:
- * the repository at the commit the room loads -- the files a vote is about
- * -- and, when the draft moves it, the commits it would move to. The commit
- * itself is only ever in a tooltip.
+ * the repository; the commit the room loads -- the files a vote is about --
+ * as its short hash; and, when the draft moves it, the commits it would
+ * move to.
  */
 export function sourceLinks(
 	pick: Pick,
-): { at: SourceLink; to: SourceLink | null } | null {
+): { at: SourceLink; pin: SourceLink | null; to: SourceLink | null } | null {
 	const repo = pick.repo
 	if (!repo) return null
+	const at: SourceLink = { text: repo, url: `${GITHUB}/${repo}`, tip: repo }
 	const commit = commitOf(pick)
-	const at: SourceLink = commit
+	const pin: SourceLink | null = commit
 		? {
-				text: repo,
+				text: commit.slice(0, 7),
 				url: `${GITHUB}/${repo}/tree/${commit}`,
 				tip: `${sourceWords(pick.source!)}: the files the room loads\ncommit ${commit}`,
 			}
-		: { text: repo, url: `${GITHUB}/${repo}`, tip: repo }
+		: null
 	const asked = parseGithub(pick.ref)
-	if (pick.ref === pinRef(pick.source) || !asked) return { at, to: null }
+	if (pick.ref === pinRef(pick.source) || !asked) return { at, pin, to: null }
 	const to: SourceLink =
 		asked.ref === null
 			? {
@@ -261,7 +262,7 @@ export function sourceLinks(
 						url: `${GITHUB}/${repo}/commits/${asked.ref}`,
 						tip: `The newest commit of ${asked.ref}, taken when the draft is applied`,
 					}
-	return { at, to }
+	return { at, pin, to }
 }
 
 /** How a pick in a draft differs from the room: not at all, new, or moved to another commit. */

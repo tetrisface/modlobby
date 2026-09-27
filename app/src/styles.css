@@ -608,7 +608,11 @@ textarea {
 /* The whole row is the button now, so it has to read as one. */
 .battle-row {
 	display: grid;
-	grid-template-columns: 3.5rem 5rem 1.5rem 4.5rem 1fr 17.75rem 3rem 4rem;
+	/* The last column fits `1h04+ ▶ 🔒 🔑`, the most a room shows there:
+	   the list fixes the row's height, not its grid track, and a cell that
+	   wrapped made the track taller than the row -- every cell centred in
+	   that, and the thumb stretched to it. */
+	grid-template-columns: 3.5rem 5rem 1.5rem 4.5rem 1fr 17.75rem 3rem 6.75rem;
 	align-items: center;
 	gap: 0.75rem;
 	padding: 0 1rem;
@@ -673,7 +677,8 @@ textarea {
 }
 .col-title,
 .col-map,
-.col-layout {
+.col-layout,
+.col-flags {
 	overflow: hidden;
 	white-space: nowrap;
 	text-overflow: ellipsis;
@@ -4531,8 +4536,8 @@ input[type='checkbox'].v-edit {
    Shared by the segment and the card's copy of the toggle. */
 .posture-ready.asked,
 .choice.posture button.ready.asked {
-	color: var(--warn);
-	border-color: var(--warn);
+	color: color-mix(in srgb, var(--warn) 81%, var(--muted));
+	border-color: currentColor;
 }
 
 .posture-ready.on,
@@ -4791,7 +4796,7 @@ input[type='checkbox'].v-edit {
 }
 
 /* Where a mod from GitHub stands and where it is going, as links: `dev/sphere
-   → newest of main`, the commit itself left to their tooltips. */
+   9108a17 → newest of main`, the whole commit left to the hash's tooltip. */
 .mod-source {
 	display: flex;
 	align-items: center;

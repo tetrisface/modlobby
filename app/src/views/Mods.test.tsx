@@ -186,7 +186,7 @@ describe('the mods pane', () => {
 	test('shows what is loaded, where it comes from, and what the host offers', () => {
 		const { rows, offers, footer } = pane({ loaded: [sphere] })
 		expect(rows().map((row) => [row.name, row.source])).toEqual([
-			['sphere spawner mod v1.0.0', 'dev/sphere'],
+			['sphere spawner mod v1.0.0', 'dev/sphere9108a17'],
 		])
 		expect(offers().map((chip) => chip.textContent)).toEqual([
 			'sphere-spawner',
@@ -279,15 +279,21 @@ describe('the mods pane', () => {
 		const { rows, offers, command, container } = pane({ loaded: [sphere] })
 		fireEvent.click(offers()[1]!)
 		laidOut(container)
-		const link = rows()[0]!.row.querySelector<HTMLButtonElement>('.mod-link')!
+		const links =
+			rows()[0]!.row.querySelectorAll<HTMLButtonElement>('.mod-link')
+		const link = links[1]!
 		expect(link.title).toContain(SHA)
 		fireEvent.pointerDown(link, { clientX: 10, clientY: 20 })
 		fireEvent.pointerMove(window, { clientX: 10, clientY: 70 })
 		fireEvent.pointerUp(window, { clientX: 10, clientY: 70 })
 		expect(command()).toBe('!mutator set sphere-spawner, tiny maps v1')
 		fireEvent.click(link)
+		fireEvent.click(links[0]!)
 		await waitFor(() =>
-			expect(opened).toEqual([`https://github.com/dev/sphere/tree/${SHA}`]),
+			expect(opened).toEqual([
+				`https://github.com/dev/sphere/tree/${SHA}`,
+				'https://github.com/dev/sphere',
+			]),
 		)
 	})
 
@@ -356,10 +362,14 @@ describe('the mods pane', () => {
 		)!
 		fireEvent.click(update)
 		expect(update.disabled).toBe(true)
-		await waitFor(() => expect(update.disabled).toBe(false))
+		await waitFor(() =>
+			expect(rows()[0]?.source).toBe('dev/sphere9108a17· newest'),
+		)
+		// Nothing to move: the row says so, and the button stays off.
+		expect(update.disabled).toBe(true)
+		expect(update.title).toBe('At the newest commit already')
 		expect(footer()).toBeNull()
 		expect(rows()[0]?.row.classList.contains('moving')).toBe(false)
-		expect(rows()[0]?.source).toBe('dev/sphere')
 	})
 
 	test('a mod from GitHub is moved to the newest commit, or pointed elsewhere', async () => {
@@ -367,13 +377,13 @@ describe('the mods pane', () => {
 		const { rows, command, container } = pane({ loaded: [sphere] })
 		fireEvent.click(rows()[0]!.row.querySelector('[aria-label^="Update"]')!)
 		await waitFor(() => expect(command()).toBe('!mutator set dev/sphere'))
-		expect(rows()[0]?.source).toMatch(/^dev\/sphere→newest · .+ ago$/)
+		expect(rows()[0]?.source).toMatch(/^dev\/sphere9108a17→newest · .+ ago$/)
 		expect(rows()[0]?.row.classList.contains('moving')).toBe(true)
 		fireEvent.click(rows()[0]!.row.querySelector('[aria-label^="Edit"]')!)
 		const field = container.querySelector<HTMLInputElement>('.mod-source-edit')!
 		fireEvent.input(field, { target: { value: 'dev/sphere@main' } })
 		fireEvent.keyDown(field, { key: 'Enter' })
-		expect(rows()[0]?.source).toBe('dev/sphere→newest of main')
+		expect(rows()[0]?.source).toBe('dev/sphere9108a17→newest of main')
 		expect(command()).toBe('!mutator set dev/sphere@main')
 	})
 

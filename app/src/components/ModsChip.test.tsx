@@ -28,9 +28,11 @@ describe('the mods chip', () => {
 
 	test('one mod reads with how recent it is, the commit kept for the tooltip', () => {
 		const shown = chip([sphere])
-		expect(shown?.textContent).toBe('Mods: sphere spawner mod v1.0.0 · 4d ago')
+		expect(shown?.textContent).toBe(
+			'Mods: sphere spawner mod v1.0.0 · 4d 22h ago',
+		)
 		expect(shown?.getAttribute('title')).toBe(
-			'sphere spawner mod v1.0.0 · 4d ago · dev/sphere @ 9108a17 · committed ' +
+			'sphere spawner mod v1.0.0 · 4d 22h ago · dev/sphere @ 9108a17 · committed ' +
 				new Date('2025-10-05T13:32:07Z').toLocaleString(),
 		)
 	})

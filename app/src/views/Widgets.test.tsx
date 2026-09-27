@@ -722,7 +722,7 @@ describe('dates', () => {
 		const Widgets = await fresh()
 		const { container, getByText } = render(() => <Widgets />)
 		await drawn(container)
-		const cell = getByText('1y 1m ago')
+		const cell = getByText('1y 1mo ago')
 		expect(cell.getAttribute('title')).toBe(new Date(updated).toLocaleString())
 		expect(container.querySelector('th')?.parentElement?.textContent).toContain(
 			'Updated',

@@ -185,38 +185,47 @@ describe('what a draft says', () => {
 			const found = sourceLinks(pick)
 			return (
 				found &&
-				[found.at, found.to].map((link) => link && [link.text, link.url])
+				[found.at, found.pin, found.to].map(
+					(link) => link && [link.text, link.url],
+				)
 			)
 		}
-		const AT = ['dev/sphere', `https://github.com/dev/sphere/tree/${SHA}`]
-		expect(links(first!)).toEqual([AT, null])
+		const AT = ['dev/sphere', 'https://github.com/dev/sphere']
+		const PIN = ['9108a17', `https://github.com/dev/sphere/tree/${SHA}`]
+		expect(links(first!)).toEqual([AT, PIN, null])
 		expect(links(updatePick(first!))).toEqual([
 			AT,
+			PIN,
 			['newest', 'https://github.com/dev/sphere/commits'],
 		])
 		expect(links(editPick(first!, 'dev/sphere@main')!)).toEqual([
 			AT,
+			PIN,
 			['newest of main', 'https://github.com/dev/sphere/commits/main'],
 		])
 		expect(links(editPick(first!, `dev/sphere@${OTHER}`)!)).toEqual([
 			AT,
+			PIN,
 			['another commit', `https://github.com/dev/sphere/tree/${OTHER}`],
 		])
 		expect(links(editPick(first!, 'dev/sphere@bbbbbbb')!)).toEqual([
 			AT,
+			PIN,
 			['another commit', 'https://github.com/dev/sphere/tree/bbbbbbb'],
 		])
 		expect(links(editPick(first!, 'dev/tanks')!)).toEqual([
 			['dev/tanks', 'https://github.com/dev/tanks'],
+			null,
 			['newest', 'https://github.com/dev/tanks/commits'],
 		])
 		expect(links(second!)).toBeNull()
 	})
 
-	test('the commit is in the tooltip, never in the text', () => {
+	test('the commit is its short hash, the whole of it in the tooltip', () => {
 		const [first] = room()
 		const found = sourceLinks(updatePick(first!))!
-		expect(found.at.tip).toContain(SHA)
+		expect(found.pin?.text).toBe(SHA.slice(0, 7))
+		expect(found.pin?.tip).toContain(SHA)
 		expect(`${found.at.text} ${found.to?.text}`).not.toMatch(/[0-9a-f]{7}/)
 	})
 
@@ -230,6 +239,11 @@ describe('what a draft says', () => {
 		expect(
 			updatedTo(updatePick(first!), { sha: SHA, date: null }, room()),
 		).toEqual({ pick: first, already: true })
+		// One the room has not loaded stands at its own pin.
+		expect(updatedTo(first!, { sha: SHA, date: null }, [])).toEqual({
+			pick: first,
+			already: true,
+		})
 		expect(updatedTo(first!, newer, room())).toEqual({
 			pick: { ...first, ref: 'dev/sphere', newest: newer.date },
 			already: false,

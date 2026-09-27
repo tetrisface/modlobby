@@ -25,6 +25,7 @@ import {
 	adopt,
 	changeOf,
 	command,
+	commitOf,
 	editPick,
 	movePick,
 	offerOf,
@@ -220,22 +221,24 @@ function Editor() {
 
 	/**
 	 * Asks GitHub for the newest commit of each of these mods and moves only
-	 * the ones it would move; the rest stay as the room has them, and are
-	 * said to be current. Whatever else changed in the draft meanwhile stays.
+	 * the ones it would move; the rest stay as the room has them, and their
+	 * rows say so. Whatever else changed in the draft meanwhile stays.
 	 */
 	const [checking, setChecking] = createSignal(false)
+	/** The newest commit of each repository asked about, as GitHub said. */
+	const [newestOf, setNewestOf] = createSignal<ReadonlyMap<string, string>>(
+		new Map(),
+	)
 	async function update(picks: readonly Pick[]) {
 		setChecking(true)
 		const moved = new Map<string, Pick>()
-		const already: string[] = []
 		for (const pick of picks) {
 			if (!pick.repo) continue
 			try {
 				// ponytail: the default branch; a host entry that tracks another branch is checked against the wrong one
 				const newest = await api.newestCommit(pick.repo, null)
-				const next = updatedTo(pick, newest, current())
-				moved.set(pick.repo, next.pick)
-				if (next.already) already.push(pick.label)
+				setNewestOf(new Map(newestOf()).set(pick.repo, newest.sha))
+				moved.set(pick.repo, updatedTo(pick, newest, current()).pick)
 			} catch (error) {
 				pushNotice('warning', `${pick.label}: ${describeError(error)}`)
 			}
@@ -245,8 +248,6 @@ function Editor() {
 			(pick) => (pick.repo && moved.get(pick.repo)) || pick,
 		)
 		if (drafting() || !sameList(next, current())) edit(next)
-		if (already.length > 0)
-			pushNotice('info', `Already at the newest commit: ${already.join(', ')}`)
 	}
 
 	/**
@@ -318,6 +319,10 @@ function Editor() {
 									onTap: () => pick.description && toggle(pick),
 								})}
 								checking={checking()}
+								atNewest={
+									pick.repo !== null &&
+									newestOf().get(pick.repo) === commitOf(pick)
+								}
 								onUpdate={() => void update([pick])}
 								onEdit={(text) => {
 									const next = editPick(pick, text)
@@ -467,7 +472,7 @@ function SourceButton(props: { link: SourceLink }) {
 /**
  * One mod: dragged into load order, with where it comes from under its name
  * and, from GitHub, the means to move it or point it elsewhere. The commit
- * itself stays in the tooltips.
+ * shows as its short hash, the whole of it in the tooltip.
  */
 function Row(props: {
 	pick: Pick
@@ -479,6 +484,8 @@ function Row(props: {
 	onPress: (event: PointerEvent) => void
 	/** While GitHub is being asked, nothing else is asked of it. */
 	checking: boolean
+	/** At the newest commit of its branch, as GitHub said when last asked. */
+	atNewest: boolean
 	onUpdate: () => void
 	/** Whether the text named a repository; the row keeps asking until it does. */
 	onEdit: (text: string) => boolean
@@ -543,6 +550,9 @@ function Row(props: {
 							{(links) => (
 								<span class='mod-source'>
 									<SourceButton link={links().at} />
+									<Show when={links().pin}>
+										{(pin) => <SourceButton link={pin()} />}
+									</Show>
 									<Show when={links().to}>
 										{(to) => (
 											<>
@@ -550,6 +560,14 @@ function Row(props: {
 												<SourceButton link={to()} />
 											</>
 										)}
+									</Show>
+									<Show when={props.atNewest}>
+										<span
+											class='mod-current'
+											title='At the newest commit of the branch it follows, as GitHub said when last asked'
+										>
+											· newest
+										</span>
 									</Show>
 								</span>
 							)}
@@ -575,9 +593,17 @@ function Row(props: {
 				<Show when={props.pick.repo}>
 					<CellButton
 						icon='act-upgrade'
-						title='Move to the newest commit of the branch it follows'
+						title={
+							props.atNewest
+								? 'At the newest commit already'
+								: 'Move to the newest commit of the branch it follows'
+						}
 						label={`Update ${props.pick.label}`}
-						disabled={props.checking || props.pick.ref === props.pick.repo}
+						disabled={
+							props.checking ||
+							props.pick.ref === props.pick.repo ||
+							props.atNewest
+						}
 						onClick={props.onUpdate}
 					/>
 					<CellButton
