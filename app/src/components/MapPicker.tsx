@@ -442,25 +442,61 @@ function cardTitle(entry: Entry): string {
 	return parts.join(' · ')
 }
 
+/** A version to pick: what picking it says, and the name it goes by. */
+export type Version = { value: string; label: string }
+
+/** The games or engines this machine has, newest first. */
+export async function installed(what: 'Game' | 'Engine'): Promise<Version[]> {
+	try {
+		const options = await api.skirmishOptions()
+		const held = what === 'Game' ? options.games : options.engines
+		return held.map((value) => ({ value, label: value }))
+	} catch {
+		return []
+	}
+}
+
+/** The host's own game, which `!gameVersion` alone goes back to. */
+const HOST_GAME: Version = { value: '', label: 'The host’s own game' }
+
 /**
- * The games or engines this machine has.
+ * The games `server`'s own rapid publishes, after the way back to the host's
+ * own: what a room there can be switched to.
+ */
+export async function published(
+	server: string | undefined,
+): Promise<Version[]> {
+	if (server === undefined) return [HOST_GAME]
+	try {
+		const games = await api.rapidGames(server)
+		return [
+			HOST_GAME,
+			...games.map((game) => ({ value: game.tag, label: game.name })),
+		]
+	} catch (error) {
+		pushNotice('warning', `Games: ${describeError(error)}`)
+		return [HOST_GAME]
+	}
+}
+
+/**
+ * A game or an engine to play, out of what `load` finds.
  *
  * Newest first, which is what rapid's own ordering makes them and what
  * somebody looking for "the current one" wants at the top.
  */
 export function VersionPicker(props: {
 	what: 'Game' | 'Engine'
+	/** The name of the one in play, marked in the list. */
 	current: string
+	load: () => Promise<Version[]>
+	/** Said when there is nothing to pick. */
+	empty: string
 	onPick: (version: string) => void
 	onClose: () => void
 }) {
-	const [options] = createResource(() =>
-		api.skirmishOptions().catch(() => null),
-	)
-	const versions = createMemo(() => {
-		const held = props.what === 'Game' ? options()?.games : options()?.engines
-		return (held ?? []).map((value) => ({ value, label: value }))
-	})
+	const [loaded] = createResource(props.load)
+	const versions = () => loaded() ?? []
 
 	const [search, setSearch] = createSignal('')
 	const shown = createMemo(() => {
@@ -490,11 +526,8 @@ export function VersionPicker(props: {
 					</button>
 				</header>
 
-				<Show when={versions().length === 0}>
-					<p class='muted setup-note'>
-						Nothing is installed to play {props.what === 'Game' ? 'with' : 'on'}
-						. The room offers a download for what it needs.
-					</p>
+				<Show when={loaded.state === 'ready' && versions().length === 0}>
+					<p class='muted setup-note'>{props.empty}</p>
 				</Show>
 
 				<div class='map-list'>
@@ -505,7 +538,7 @@ export function VersionPicker(props: {
 						{(entry) => (
 							<button
 								class='room-tab'
-								classList={{ on: props.current === entry.value }}
+								classList={{ on: props.current === entry.label }}
 								onClick={() => props.onPick(entry.value)}
 							>
 								<span class='room-name'>{entry.label}</span>

@@ -16,6 +16,7 @@ import type { MapIndex } from './bindings/MapIndex'
 import type { NewsFeed } from './bindings/NewsFeed'
 import type { Prepared } from './bindings/Prepared'
 import type { RapidSummary } from './bindings/RapidSummary'
+import type { Published } from './bindings/Published'
 import type { ReplayView } from './bindings/ReplayView'
 import type { SkirmishOptions } from './bindings/SkirmishOptions'
 import type { BoxesView } from './bindings/BoxesView'
@@ -68,6 +69,9 @@ export const api = {
 	logout: (server: string | null = null) => invoke<void>('logout', { server }),
 	/** What the rapid master index at `url` lists; refused if it is not one. */
 	checkRapid: (url: string) => invoke<RapidSummary>('check_rapid', { url }),
+	/** What `server`'s own rapid publishes, newest first; empty without one. */
+	rapidGames: (server: string) =>
+		invoke<Published[]>('rapid_games', { server }),
 	/** Resolves if `url` answers like a map search; refused with why if not. */
 	checkMapSearch: (url: string) => invoke<void>('check_map_search', { url }),
 	/**

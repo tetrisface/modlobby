@@ -43,8 +43,20 @@ pub enum Error {
 	Read { path: String, reason: String },
 	#[error("{0} is not an archive the engine loads")]
 	NotAnArchive(String),
-	#[error("{name}, which {needed_by} depends on, is not here")]
-	Missing { name: String, needed_by: String },
+	/// `needed_by` is `None` for what was asked after itself: its name is
+	/// the caller's to say, and its path is nobody's business.
+	#[error("{}", missing(.name, .needed_by.as_deref()))]
+	Missing {
+		name: String,
+		needed_by: Option<String>,
+	},
+}
+
+fn missing(name: &str, needed_by: Option<&str>) -> String {
+	match needed_by {
+		Some(needed_by) => format!("{needed_by} needs {name}, which is not here"),
+		None => format!("needs {name}, which is not here"),
+	}
 }
 
 /// The hash a room announces for its game or map, however its host wrote
@@ -382,7 +394,7 @@ fn read_single(path: &Path) -> Result<Summed, Error> {
 pub fn complete(game: &Path, find: &dyn Fn(&str) -> Option<PathBuf>) -> Result<Checksum, Error> {
 	let mut sum = [0; 64];
 	let mut seen = HashSet::new();
-	let mut pending = vec![(game.to_path_buf(), game.display().to_string())];
+	let mut pending = vec![(game.to_path_buf(), None)];
 	while let Some((path, name)) = pending.pop() {
 		xor(&mut sum, &single(&path)?);
 		for needed in needs(&path) {
@@ -393,7 +405,7 @@ pub fn complete(game: &Path, find: &dyn Fn(&str) -> Option<PathBuf>) -> Result<C
 				name: needed.clone(),
 				needed_by: name.clone(),
 			})?;
-			pending.push((found, needed));
+			pending.push((found, Some(needed)));
 		}
 	}
 	Ok(sum)
@@ -721,7 +733,7 @@ mod tests {
 		let orphan = write("Orphan.sdd", "name = 'Orphan'\ndepend = { 'Nowhere v2' }\n");
 		assert!(matches!(
 			complete(&orphan, &by_name),
-			Err(Error::Missing { name, .. }) if name == "Nowhere v2"
+			Err(Error::Missing { name, needed_by: None }) if name == "Nowhere v2"
 		));
 	}
 

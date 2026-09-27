@@ -389,6 +389,26 @@ pub async fn check_rapid(app: State<'_, App>, url: String) -> Result<content::ra
 	app.rapid.summary(url).await.map_err(rapid_refusal)
 }
 
+/// The games `server`'s own rapid publishes, newest first, each by the tag
+/// that fetches it: what a room there can be switched to. Empty for a
+/// server with no rapid of its own. Only names are read here; a game is
+/// held to BAR's names when it is fetched.
+#[tauri::command]
+pub async fn rapid_games(
+	app: State<'_, App>,
+	server: String,
+) -> Result<Vec<content::rapid::Published>> {
+	let Some(master) = entry(&app, &server)?.rapid else {
+		return Ok(Vec::new());
+	};
+	let published = app
+		.rapid
+		.published(&master)
+		.await
+		.map_err(|err| ApiError::new("network", err.to_string()))?;
+	Ok(content::rapid::switchable(&published))
+}
+
 /// Whether `url` answers like a map search, for the person typing one in.
 #[tauri::command]
 pub async fn check_map_search(app: State<'_, App>, url: String) -> Result<()> {
@@ -1234,15 +1254,13 @@ pub async fn set_option(app: State<'_, App>, key: String, value: String) -> Resu
 	if key.is_empty() || !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
 		return Err(ApiError::new("input", "a modoption key is alphanumeric"));
 	}
-	// SPADS' own value pattern for a preset setting is `[A-Za-z0-9\-\_]*`
-	// (`battlePresets.conf`); anything else it will not accept anyway.
-	if !value
-		.chars()
-		.all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
-	{
+	// Printable ASCII: SPADS takes the rest of the line as the value, and a
+	// control character would break the chat line. What the value may be is
+	// the host's battle preset's to say.
+	if !value.chars().all(|c| c == ' ' || c.is_ascii_graphic()) {
 		return Err(ApiError::new(
 			"input",
-			"a modoption value is alphanumeric, `-`, `_` or `.`",
+			"a modoption value is printable ASCII",
 		));
 	}
 

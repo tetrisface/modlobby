@@ -18,7 +18,13 @@ import { ModsChip } from '../components/ModsChip'
 import { GetEngine } from '../components/GetEngine'
 import { Linkify } from '../components/Linkify'
 import { MapEditor } from '../components/MapEditor'
-import { MapPicker, VersionPicker, picked } from '../components/MapPicker'
+import {
+	MapPicker,
+	VersionPicker,
+	installed,
+	picked,
+	published,
+} from '../components/MapPicker'
 import { BotOptions } from '../components/BotOptions'
 import { MapPicture } from '../components/MapPicture'
 import { showPlayerMenu, showTeamMenu } from '../components/PlayerMenu'
@@ -72,7 +78,8 @@ import { WatcherStack } from './room/Watchers'
 import { readiness } from './room/readiness'
 import { dragging } from '../lib/drag'
 import { Seat, canAddAi, showAddAi, sitOn } from './Seat'
-import { movable, moveTo, setBonus, type Target } from './room/move'
+import { modRefusal, movable, moveTo, setBonus, type Target } from './room/move'
+import { hostsMods } from '../lib/mutators'
 import { StartBoxes } from './StartBoxes'
 import { Setup } from './Setup'
 import { VoteBar } from './VoteBar'
@@ -447,6 +454,15 @@ export function Room() {
 			? undefined
 			: room.battle()?.bots.find((bot) => bot.name === name)
 
+	/**
+	 * Whether we may ask this room's host for another game: one that runs mods
+	 * runs BAR's `!gameVersion` beside them, fetching from its server's rapid.
+	 */
+	const switchesGame = () =>
+		room.caps.spads &&
+		hostsMods(room.my()?.scriptTags) &&
+		modRefusal(room) === null
+
 	/** Where players start, out of the room's script tags. */
 	const startPos = () => Number(room.my()?.scriptTags['game/startpostype'] ?? 2)
 
@@ -561,15 +577,25 @@ export function Room() {
 								current={
 									picking() === 'game' ? b().gameName : b().engineVersion
 								}
+								load={() =>
+									room.caps.picksContent
+										? installed(picking() === 'game' ? 'Game' : 'Engine')
+										: published(roomServer())
+								}
+								empty={
+									room.caps.picksContent
+										? 'Nothing is installed. The room offers a download for what it needs.'
+										: 'This server publishes no games of its own.'
+								}
 								onPick={(version) => {
 									const what = picking()
 									setPicking(null)
 									if (what === null) return
-									void picked(
-										(name) => room.io.sayBattle(`!${what} ${name}`),
-										what,
-										version,
-									)
+									// `!gameVersion` alone goes back to the host's own game.
+									const line = room.caps.picksContent
+										? `!${what} ${version}`
+										: `!gameVersion ${version}`.trim()
+									void picked((said) => room.io.sayBattle(said), what, line)
 								}}
 								onClose={() => setPicking(null)}
 							/>
@@ -653,7 +679,7 @@ export function Room() {
 									<Choice
 										what='game'
 										shown={b().gameName}
-										picks={room.caps.picksContent}
+										picks={room.caps.picksContent || switchesGame()}
 									/>
 									<Show when={newerGame()}>
 										{(version) => (

@@ -43,7 +43,7 @@ export function ContentChip(props: {
 					{(part) => (
 						<span class='content-tip-row'>
 							<span class='content-tip-what'>{part.what}</span>
-							<span>{part.name}</span>
+							<span class='content-tip-name'>{part.name}</span>
 							<span
 								class='content-tip-said'
 								classList={{ differs: part.check?.verdict === 'differs' }}

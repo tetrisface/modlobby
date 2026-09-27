@@ -41,6 +41,9 @@ pub struct Repo {
 /// A version a repo publishes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Version {
+	/// What fetches it: `repo:git:<commit>`, or a tag that moves such as
+	/// `repo:test`.
+	pub tag: String,
 	pub md5: String,
 	pub name: String,
 }
@@ -72,6 +75,51 @@ pub struct RapidSummary {
 	pub bars: u32,
 }
 
+/// A game a server's own rapid publishes, and the tag that fetches it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct Published {
+	pub tag: String,
+	pub name: String,
+}
+
+/// What a room could switch to among `published`, newest first: each name
+/// once, by its `git:` tag where it has one, since that tag never moves. A
+/// name published under more than one hash is left out, because which of
+/// them a player fetches and which the host loads would be a guess. A lobby
+/// menu is left out too: no room can play one.
+pub fn switchable(published: &[(Repo, Vec<Version>)]) -> Vec<Published> {
+	// ponytail: a menu is known here only by its repo's name; its modtype is
+	// inside the archive. Read that if a menu ever goes by another name.
+	let versions: Vec<&Version> = published
+		.iter()
+		.filter(|(repo, _)| !repo.name.ends_with("chobby"))
+		.flat_map(|(_, all)| all)
+		.collect();
+	let mut names: Vec<String> = versions
+		.iter()
+		.filter(|version| {
+			versions
+				.iter()
+				.all(|other| other.name != version.name || other.md5 == version.md5)
+		})
+		.map(|version| version.name.clone())
+		.collect();
+	names.sort();
+	names.dedup();
+	crate::newest_first(&mut names);
+	names
+		.into_iter()
+		.filter_map(|name| {
+			let tagged = versions.iter().filter(|version| version.name == name);
+			let pinned = tagged.clone().find(|version| version.tag.contains(":git:"));
+			let tag = pinned.or(tagged.clone().next())?.tag.clone();
+			Some(Published { tag, name })
+		})
+		.collect()
+}
+
 /// `name,url,,` a line; a line with fewer fields is not one of these.
 pub fn parse_repos(unpacked: &str) -> Option<Vec<Repo>> {
 	let repos: Option<Vec<Repo>> = unpacked
@@ -96,13 +144,14 @@ pub fn parse_versions(unpacked: &str) -> Vec<Version> {
 		.lines()
 		.filter_map(|line| {
 			let mut fields = line.splitn(4, ',');
-			let (_tag, md5, _depends, name) = (
+			let (tag, md5, _depends, name) = (
 				fields.next()?,
 				fields.next()?,
 				fields.next()?,
 				fields.next()?,
 			);
 			Some(Version {
+				tag: tag.trim().to_owned(),
 				md5: md5.trim().to_owned(),
 				name: name.trim().to_owned(),
 			})
@@ -332,9 +381,46 @@ mod tests {
 		assert_eq!(
 			versions,
 			[Version {
+				tag: "mod:test".into(),
 				md5: "392134f8".into(),
 				name: "RandomGuy Hosting v1".into()
 			}]
+		);
+	}
+
+	#[test]
+	fn a_room_is_offered_each_name_once_by_its_pinned_tag_newest_first() {
+		let repo = Repo {
+			name: "hosting".into(),
+			url: "https://rapid.example/hosting".into(),
+		};
+		let versions = parse_versions(concat!(
+			"hosting:git:aaa,11,rapid://byar:test,Hosting test-9-aaa\n",
+			"hosting:git:bbb,22,rapid://byar:test,Hosting test-10-bbb\n",
+			"hosting:test,22,rapid://byar:test,Hosting test-10-bbb\n",
+			"hosting:git:ccc,33,,Hosting v1\n",
+			"hosting:git:ddd,44,,Hosting v1\n",
+			"hosting:stable,55,,Hosting stable\n",
+		));
+		let menu = Repo {
+			name: "modded-chobby".into(),
+			url: "https://rapid.example/modded-chobby".into(),
+		};
+		let menus =
+			parse_versions("modded-chobby:git:eee,66,rapid://byar-chobby:test,Chobby test-4-eee\n");
+		let offered = switchable(&[(repo, versions), (menu, menus)]);
+		let pairs: Vec<(&str, &str)> = offered
+			.iter()
+			.map(|game| (game.tag.as_str(), game.name.as_str()))
+			.collect();
+		assert_eq!(
+			pairs,
+			[
+				("hosting:git:bbb", "Hosting test-10-bbb"),
+				("hosting:git:aaa", "Hosting test-9-aaa"),
+				("hosting:stable", "Hosting stable"),
+			],
+			"v1 is two different games under one name"
 		);
 	}
 
@@ -345,6 +431,7 @@ mod tests {
 			vec!["aaaa".to_owned()],
 		)]);
 		let version = |name: &str, md5: &str| Version {
+			tag: String::new(),
 			name: name.into(),
 			md5: md5.into(),
 		};
@@ -432,6 +519,7 @@ mod tests {
 		)]
 		.into();
 		let stale = Version {
+			tag: String::new(),
 			md5: md5.to_owned(),
 			name: name.to_owned(),
 		};

@@ -731,6 +731,16 @@ function Control(props: {
 					</For>
 				</Select>
 			</Match>
+			<Match when={props.row.option.type === 'string'}>
+				<input
+					class='v-edit'
+					type='text'
+					spellcheck={false}
+					placeholder='empty'
+					value={value()}
+					onChange={(event) => void set(event.currentTarget.value.trim())}
+				/>
+			</Match>
 		</Switch>
 	)
 }

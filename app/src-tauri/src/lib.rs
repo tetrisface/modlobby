@@ -389,6 +389,7 @@ pub fn run() {
 			commands::forget_way,
 			commands::bar_config,
 			commands::check_rapid,
+			commands::rapid_games,
 			commands::check_map_search,
 			commands::reconnect,
 			commands::register,

@@ -121,6 +121,13 @@ pub struct Library {
 	dirs: DataDirs,
 }
 
+/// One `tag,md5,depends,name` line of a rapid index.
+struct RapidEntry {
+	tag: String,
+	md5: String,
+	name: String,
+}
+
 /// What each game archive calls itself, kept for the process: finding one
 /// means opening every archive under `games/`, and a `.sd7` has to be
 /// decompressed up to its `modinfo.lua`. Keyed by the file's size and time,
@@ -288,7 +295,19 @@ impl Library {
 	/// The archive named `name` that a game on `engine` would load: one of
 	/// that engine's own base archives, else a game installed as a file, else
 	/// a rapid package.
+	///
+	/// A `rapid://<tag>` name is the version that tag points at here, as the
+	/// engine reads one (`RapidHandler.cpp`, `GetRapidPackageFromTag`): how a
+	/// mod depends on whichever BAR build `byar:test` is.
 	pub fn archive_named(&self, engine: &str, name: &str) -> Option<PathBuf> {
+		let tagged;
+		let name = match name.strip_prefix("rapid://") {
+			Some(tag) => {
+				tagged = self.rapid_entries().find(|entry| entry.tag == tag)?.name;
+				tagged.as_str()
+			}
+			None => name,
+		};
 		let base = self
 			.find_engine(engine)
 			.map(|found| found.content.join("base"));
@@ -398,27 +417,39 @@ impl Library {
 		if display_name.is_empty() {
 			return None;
 		}
-		for index in self.rapid_indexes() {
-			let Ok(file) = std::fs::File::open(&index) else {
-				continue;
-			};
-			for line in BufReader::new(GzDecoder::new(file))
-				.lines()
-				.map_while(Result::ok)
-			{
+		self.rapid_entries()
+			.find(|entry| entry.name == display_name)
+			.map(|entry| entry.md5)
+	}
+
+	/// Every line of every rapid index, read as it is asked for.
+	///
+	/// ponytail: the first index to hold a tag answers for it; the engine
+	/// prefers repos.springrts.com's and warns about any other tie, which no
+	/// index here has yet.
+	fn rapid_entries(&self) -> impl Iterator<Item = RapidEntry> {
+		self.rapid_indexes()
+			.into_iter()
+			.filter_map(|index| std::fs::File::open(index).ok())
+			.flat_map(|file| {
+				BufReader::new(GzDecoder::new(file))
+					.lines()
+					.map_while(Result::ok)
+			})
+			.filter_map(|line| {
 				// tag,md5,depends,name
 				let mut fields = line.split(',');
-				let (Some(_tag), Some(md5), Some(_depends), Some(name)) =
+				let (Some(tag), Some(md5), Some(_depends), Some(name)) =
 					(fields.next(), fields.next(), fields.next(), fields.next())
 				else {
-					continue;
+					return None;
 				};
-				if name.trim() == display_name {
-					return Some(md5.to_owned());
-				}
-			}
-		}
-		None
+				Some(RapidEntry {
+					tag: tag.trim().to_owned(),
+					md5: md5.trim().to_owned(),
+					name: name.trim().to_owned(),
+				})
+			})
 	}
 
 	/// `<data>/rapid/<repo host>/<repo>/versions.gz`.
@@ -527,6 +558,11 @@ mod tests {
 			"byar:git:bbb,notdownloaded,,Beyond All Reason test-99999-ffffff"
 		)
 		.unwrap();
+		writeln!(
+			index,
+			"byar:test,abc123,,Beyond All Reason test-31115-21dbf79"
+		)
+		.unwrap();
 		index.finish().unwrap();
 
 		let library = Library::new(root);
@@ -551,6 +587,21 @@ mod tests {
 		);
 		assert!(check.complete());
 		assert!(check.missing().is_empty());
+	}
+
+	#[test]
+	fn a_rapid_tag_names_the_version_it_points_at_here() {
+		let (dir, library) = library();
+		let sdp = dir.path().join("packages").join("abc123.sdp");
+		assert_eq!(
+			library.archive_named("2026.07.04", "rapid://byar:test"),
+			Some(sdp)
+		);
+		assert_eq!(
+			library.archive_named("2026.07.04", "rapid://byar:stable"),
+			None
+		);
+		assert_eq!(library.archive_named("2026.07.04", "byar:test"), None);
 	}
 
 	#[test]
@@ -723,31 +774,14 @@ impl Library {
 	/// Every game version whose package is actually on the disk, newest name
 	/// first. Rapid lists far more than is installed, so the `.sdp` decides.
 	pub fn installed_games(&self) -> Vec<String> {
-		let mut names: Vec<String> = Vec::new();
-		for index in self.rapid_indexes() {
-			let Ok(file) = std::fs::File::open(&index) else {
-				continue;
-			};
-			for line in BufReader::new(GzDecoder::new(file))
-				.lines()
-				.map_while(Result::ok)
-			{
-				// tag,md5,depends,name
-				let mut fields = line.split(',');
-				let (Some(_tag), Some(md5), Some(_depends), Some(name)) =
-					(fields.next(), fields.next(), fields.next(), fields.next())
-				else {
-					continue;
-				};
-				let name = name.trim();
-				if name.is_empty() {
-					continue;
-				}
-				if self.any_has(Path::new("packages").join(format!("{md5}.sdp"))) {
-					names.push(name.to_owned());
-				}
-			}
-		}
+		let mut names: Vec<String> = self
+			.rapid_entries()
+			.filter(|entry| {
+				!entry.name.is_empty()
+					&& self.any_has(Path::new("packages").join(format!("{}.sdp", entry.md5)))
+			})
+			.map(|entry| entry.name)
+			.collect();
 		names.sort();
 		names.dedup();
 		newest_first(&mut names);
