@@ -635,7 +635,7 @@ export function BattleList() {
 															class='mods-mark'
 															title='Plays with mods on top of the game'
 														>
-															mods
+															mod
 														</span>
 													</Show>
 												</span>

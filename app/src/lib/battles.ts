@@ -205,7 +205,7 @@ export const SORTS: ReadonlyArray<{
 	},
 	{
 		key: 'modded',
-		label: 'Mods',
+		label: 'Modded',
 		tip: 'Relevance, with rooms that play with mods ahead of the rest',
 	},
 	{ key: 'players', label: 'Players', tip: 'How many are playing' },
