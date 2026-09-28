@@ -113,14 +113,36 @@ export async function mapFacts(): Promise<MapIndex['maps']> {
 	return (await index())?.maps ?? {}
 }
 
+/** The version a map's name ends in: ` v3.4.4`, `_V4`, ` 1.3`. */
+const VERSION = /[\s_-]+v?\d[\w.]*$/i
+
 /** A map's name less its version, to tell versions of one map by:
  *  `Aurelia v4.1` and `Aurelia_V4` are both `aurelia`. */
 function family(spring: string): string {
-	return spring
-		.replace(/[\s_-]+v?\d[\w.]*$/i, '')
-		.replace(/_/g, ' ')
-		.trim()
-		.toLowerCase()
+	return spring.replace(VERSION, '').replace(/_/g, ' ').trim().toLowerCase()
+}
+
+/**
+ * What a list calls each of its maps, by spring name: the name less its
+ * version — `Supreme Isthmus` for `Supreme Isthmus v1.8` — except where the
+ * list holds two versions of one map, which keep their full names to be
+ * told apart by.
+ */
+export function shownMapNames(
+	names: readonly string[],
+): ReadonlyMap<string, string> {
+	const versions = new Map<string, Set<string>>()
+	for (const name of names) {
+		const kin = versions.get(family(name)) ?? new Set<string>()
+		kin.add(name)
+		versions.set(family(name), kin)
+	}
+	return new Map(
+		names.map((name) => {
+			if (versions.get(family(name))!.size > 1) return [name, name]
+			return [name, name.replace(VERSION, '') || name]
+		}),
+	)
 }
 
 /**

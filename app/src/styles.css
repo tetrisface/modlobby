@@ -6782,12 +6782,36 @@ button.link:hover {
 
 /* A modded room in the list: said quietly, in a column of its own so that
    it pushes nothing beside it. */
-.mods-mark {
+/* The server's name before the map, on every row not on BAR's: kept in the
+   name's own case, since it is a name and not a label like `mod`. */
+.mods-mark,
+.server-mark {
 	padding: 0 0.3rem;
 	font-size: 0.65rem;
 	letter-spacing: 0.04em;
-	text-transform: uppercase;
 	color: var(--muted);
 	border: 1px solid var(--line);
 	border-radius: 2px;
+}
+
+.mods-mark {
+	text-transform: uppercase;
+}
+
+/* A track of its own between title and map while any room is off BAR's
+   server, so the tags line up and never push a map name over. */
+.battle-row.marked {
+	grid-template-columns: 3.5rem 5rem 1.5rem 4.5rem 1fr 6rem 17.75rem 3rem 6.75rem;
+}
+
+.col-server {
+	overflow: hidden;
+	white-space: nowrap;
+}
+
+.server-mark {
+	display: inline-block;
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }

@@ -43,7 +43,7 @@ import {
 	stabilize,
 	type Row,
 } from '../lib/battles'
-import { TILES, warmMapPictures } from '../lib/maps'
+import { TILES, shownMapNames, warmMapPictures } from '../lib/maps'
 import { remPx } from '../lib/rem'
 import { pushNotice } from '../store/chat'
 import { joinMilestone, markJoinAsked } from '../store/join'
@@ -117,6 +117,11 @@ export function BattleList() {
 		const entry = settings()?.servers.find((held) => held.builtin === 'mods')
 		return entry ? serverId(entry.host) : null
 	}
+	/** BAR's own server: the one whose rooms need no saying where they are. */
+	const barServer = () => {
+		const entry = settings()?.servers.find((held) => held.builtin === 'bar')
+		return entry ? serverId(entry.host) : null
+	}
 
 	/** Every server's rooms, each read against its own server's people. */
 	const all = createMemo<Row[]>(() => [
@@ -187,6 +192,20 @@ export function BattleList() {
 		{ equals: (a, b) => a.join('\n') === b.join('\n') },
 	)
 	createEffect(() => void warmMapPictures(mapsShown()))
+
+	/**
+	 * Each map's name as the list shows it: less its version, unless the
+	 * list holds two versions of one map, which keep their full names.
+	 */
+	const mapLabels = createMemo(() => shownMapNames(mapsShown()))
+
+	/**
+	 * Whether any listed room is off BAR's server. While one is, every row
+	 * carries the server column, so the tags line up and push nothing.
+	 */
+	const marked = createMemo(() =>
+		rows().some((row) => row.server !== barServer()),
+	)
 
 	// How long each running game has been going. The store holds it, because a
 	// host can also tell us outright — see `store/running`.
@@ -570,6 +589,7 @@ export function BattleList() {
 												classList={{
 													running: r().running,
 													locked: r().battle.locked,
+													marked: marked(),
 												}}
 												style={{
 													position: 'absolute',
@@ -629,7 +649,22 @@ export function BattleList() {
 													{layoutLabel(r().battle)}
 												</span>
 												<span class='col-title'>{r().battle.title}</span>
-												<span class='col-map'>{r().battle.mapName}</span>
+												{/* Its own column, before the map, so the tags line
+												    up and never push a map name; BAR's rooms are the
+												    rule and go unmarked. */}
+												<Show when={marked()}>
+													<span class='col-server'>
+														<Show when={r().server !== barServer()}>
+															<span class='server-mark'>
+																{serverLabel(r().server)}
+															</span>
+														</Show>
+													</span>
+												</Show>
+												<span class='col-map'>
+													{mapLabels().get(r().battle.mapName) ??
+														r().battle.mapName}
+												</span>
 												<span class='col-mods'>
 													<Show when={r().modded}>
 														<span

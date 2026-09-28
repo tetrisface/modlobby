@@ -150,3 +150,33 @@ describe('the name beyondallreason.info lists a map under', () => {
 		expect(mapSiteName('Aurelia v4', {})).toBeNull()
 	})
 })
+
+describe('the names a list shows its maps under', () => {
+	it('drops each version tail', async () => {
+		const { shownMapNames } = await import('./maps')
+		const shown = shownMapNames([
+			'Supreme Isthmus v1.8',
+			'Adamantium_Factory_V2',
+		])
+		expect(shown.get('Supreme Isthmus v1.8')).toBe('Supreme Isthmus')
+		expect(shown.get('Adamantium_Factory_V2')).toBe('Adamantium_Factory')
+	})
+
+	it('keeps full names only where two versions of one map are on show', async () => {
+		const { shownMapNames } = await import('./maps')
+		const shown = shownMapNames([
+			'Aurelia v4.1',
+			'Aurelia_V4',
+			'Supreme Isthmus v1.8',
+		])
+		expect(shown.get('Aurelia v4.1')).toBe('Aurelia v4.1')
+		expect(shown.get('Aurelia_V4')).toBe('Aurelia_V4')
+		// A clash elsewhere costs no other map its short name.
+		expect(shown.get('Supreme Isthmus v1.8')).toBe('Supreme Isthmus')
+	})
+
+	it('leaves a name that is nothing but a version alone', async () => {
+		const { shownMapNames } = await import('./maps')
+		expect(shownMapNames(['v2.1']).get('v2.1')).toBe('v2.1')
+	})
+})
