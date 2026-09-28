@@ -465,6 +465,7 @@ pub fn run() {
 			update::note_trouble,
 			commands::flash_engine,
 			commands::engine_in_front,
+			commands::engine_has_window,
 			commands::remember_played,
 			commands::game_modoptions,
 			presets::pve_score,

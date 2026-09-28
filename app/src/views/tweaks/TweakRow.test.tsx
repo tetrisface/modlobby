@@ -47,7 +47,11 @@ const row = (key: string, current: string | null): Row => ({
 })
 
 let rooms = 0
-function mount(current: string | null, over: Partial<RoomModel> = {}) {
+function mount(
+	current: string | null,
+	over: Partial<RoomModel> = {},
+	key = 'tweakdefs1',
+) {
 	const calls: Calls = []
 	const room = fakeRoom({
 		// A workspace lives as long as its room; each test gets a room of its own.
@@ -56,13 +60,13 @@ function mount(current: string | null, over: Partial<RoomModel> = {}) {
 		my: () =>
 			myBattle({
 				scriptTags:
-					current === null ? {} : { 'game/modoptions/tweakdefs1': current },
+					current === null ? {} : { [`game/modoptions/${key}`]: current },
 			}),
 		...over,
 	})
 	const view = render(() => (
 		<RoomProvider value={room}>
-			<TweakRow row={row('tweakdefs1', current)} />
+			<TweakRow row={row(key, current)} />
 		</RoomProvider>
 	))
 	return { calls, room, space: tweakspaceFor(room), ...view }
@@ -159,5 +163,21 @@ describe('TweakRow', () => {
 		)
 		expect(view.queryByText('the editor')).toBeNull()
 		expect(view.getByText('unsent')).toBeTruthy()
+	})
+
+	test('a map table reads like a slot and opens the same editor, refused from anyone', async () => {
+		const view = mount('eJyr', {}, 'mapmetadata_startpos')
+		await settle()
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('tweak_decode', {
+			blob: 'eJyr',
+			kind: 'boxes',
+		})
+		const field = view.getByLabelText(
+			'mapmetadata_startpos as base64url',
+		) as HTMLInputElement
+		expect(field.readOnly).toBe(true)
+		expect(field.title).toBe('Set by the map; pick another map to change it')
+		fireEvent.click(view.getByTitle('Open mapmetadata_startpos in the editor'))
+		expect(view.getByText('the editor')).toBeTruthy()
 	})
 })

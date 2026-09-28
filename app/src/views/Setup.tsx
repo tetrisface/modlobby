@@ -3,7 +3,6 @@ import {
 	For,
 	Index,
 	Match,
-	createContext,
 	createEffect,
 	Show,
 	Switch,
@@ -11,10 +10,8 @@ import {
 	createResource,
 	createSignal,
 	on,
-	useContext,
 	type Accessor,
 } from 'solid-js'
-import { ActionCell, CellButton } from '../components/ActionCell'
 import { ResizeHandle } from '../components/ResizeHandle'
 import { SearchBox } from '../components/SearchBox'
 import { api, describeError } from '../ipc/client'
@@ -38,7 +35,6 @@ import {
 	defaultText,
 	displayText,
 	isOn,
-	isMapOption,
 	readModOptions,
 	label,
 	rowsByGroup,
@@ -51,7 +47,14 @@ import {
 	type Section,
 	type Tab,
 } from '../lib/setup'
-import { SCRATCH, SLOT_KEYS, isDirty, slotOf, titleOf } from '../lib/tweakspace'
+import {
+	DOC_KEYS,
+	SCRATCH,
+	isDirty,
+	isMapTable,
+	slotOf,
+	titleOf,
+} from '../lib/tweakspace'
 import { pushNotice } from '../store/chat'
 import { tweakspaceFor } from '../store/tweakspaceInstance'
 import { PasteBanner } from './PasteBanner'
@@ -63,13 +66,6 @@ import { TweakRow } from './tweaks/TweakRow'
 import { Tweaks } from './tweaks/Tweaks'
 
 const TWEAK_GROUP = 'Tweak slots'
-
-/**
- * Opens the room's map sheet, where the start boxes are drawn. The room
- * provides it; a map-metadata row offers it, seat or no seat, since the
- * sheet reads as well as it edits.
- */
-export const OpenMap = createContext<() => void>()
 
 /** Shown before the game is installed, when there is no table to read. */
 const NO_TABS: Tab = { key: '', name: '', desc: '', groups: [] }
@@ -145,9 +141,7 @@ export function Setup() {
 	const extraSlots = createMemo(
 		() =>
 			Object.values(space.ws.docs)
-				.filter(
-					(doc) => doc.origin === 'slot' && !SLOT_KEYS.includes(doc.title),
-				)
+				.filter((doc) => doc.origin === 'slot' && !DOC_KEYS.includes(doc.title))
 				.map((doc) => doc.title)
 				.sort(byRunOrder),
 		undefined,
@@ -623,9 +617,9 @@ function Found(props: {
 }
 
 /**
- * Settings as rows. A base64url slot -- a tweak, or the start-box override --
- * is a `TweakRow` wherever it appears: its blob to read or paste over, and the
- * editor one press away.
+ * Settings as rows. A base64url document -- a tweak, the start-box override,
+ * or one of the map's own tables -- is a `TweakRow` wherever it appears: its
+ * blob to read or paste over, and the editor one press away.
  *
  * Exported because an AI's own options are the same kind of table -- BAR's
  * `modoptions.lua` and an engine AI's `AIOptions.lua` are one format -- and
@@ -646,24 +640,18 @@ export function Rows(props: {
 				<Index each={props.rows}>
 					{(row) => (
 						<Show
-							when={slotOf(row().option.key) === null}
+							when={
+								slotOf(row().option.key) === null &&
+								!isMapTable(row().option.key)
+							}
 							fallback={<TweakRow row={row()} />}
 						>
-							<div
-								class='opt'
-								classList={{
-									changed: row().changed,
-									map: isMapOption(row().option),
-								}}
-							>
+							<div class='opt' classList={{ changed: row().changed }}>
 								<span class='mark' />
 								<span class='k' title={row().option.desc ?? ''}>
 									{label(row().option)}
 								</span>
 								<Switch fallback={<span class='v'>{displayText(row())}</span>}>
-									<Match when={isMapOption(row().option)}>
-										<MapValue row={row()} />
-									</Match>
 									<Match when={props.editable}>
 										<Control row={row()} set={props.set} />
 									</Match>
@@ -674,38 +662,6 @@ export function Rows(props: {
 				</Index>
 			</Show>
 		</div>
-	)
-}
-
-/**
- * A map-metadata row's value in words. The blob is base64url(zlib(json)) and
- * says nothing; Rust decodes it (`boxes::describe_map_option`) and answers
- * with what it holds. These two are the ones SPADS sets from the map's
- * metadata, and read-only; the override is somebody's own, and a `TweakRow`.
- */
-function MapValue(props: { row: Row }) {
-	const openMap = useContext(OpenMap)
-	const [words] = createResource(
-		() => [props.row.option.key, props.row.current ?? ''] as const,
-		([key, raw]) => api.describeMapOption(key, raw).catch(() => null),
-	)
-	return (
-		<>
-			<span class='v' title={props.row.current ?? ''}>
-				{words.loading ? '…' : (words() ?? displayText(props.row))}
-			</span>
-			<Show when={openMap}>
-				{(open) => (
-					<ActionCell filled>
-						<CellButton
-							icon='act-pen'
-							title='Open the map and its start boxes'
-							onClick={() => open()()}
-						/>
-					</ActionCell>
-				)}
-			</Show>
-		</>
 	)
 }
 

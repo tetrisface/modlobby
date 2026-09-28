@@ -1,4 +1,4 @@
-import { createSignal } from 'solid-js'
+import { createMemo, createRoot, createSignal } from 'solid-js'
 import { api } from '../ipc/client'
 import type { Fork } from '../ipc/bindings/Fork'
 import type { Install } from '../ipc/bindings/Install'
@@ -32,6 +32,29 @@ const [loaded, setLoaded] = createSignal(false)
 const [status, setStatus] = createSignal<WidgetStatus | null>(null)
 
 export { usage, loaded, status }
+
+/**
+ * The status lists as maps, built once per refresh rather than scanned once
+ * per question: a sort by status asks about every widget several times over.
+ */
+const lookup = createRoot(() =>
+	createMemo(() => {
+		const held = status()
+		if (!held) return null
+		const local = new Map<string, LocalWidget[]>()
+		for (const file of held.local)
+			local.set(file.name, [...(local.get(file.name) ?? []), file])
+		return {
+			installed: new Map(
+				held.installed.map((entry) => [entry.key, entry] as const),
+			),
+			configured: new Map(
+				held.configured.map((state) => [state.name, state] as const),
+			),
+			local,
+		}
+	}),
+)
 
 /** One request, however many callers arrive together. */
 let pending: Promise<Usage | null> | null = null
@@ -268,14 +291,12 @@ export type Action = 'install' | 'update' | 'disable' | 'enable' | 'delete'
 
 /** Modlobby's record of installing a version, by its lineage key. */
 export function installedEntry(key: string) {
-	return status()?.installed.find((entry) => entry.key === key) ?? null
+	return lookup()?.installed.get(key) ?? null
 }
 
 /** What BAR's config says about a widget name, whoever installed it. */
 export function configuredState(widget: WidgetUsage): WidgetState | null {
-	return (
-		status()?.configured.find((state) => state.name === widget.name) ?? null
-	)
+	return lookup()?.configured.get(widget.name) ?? null
 }
 
 /**
@@ -377,8 +398,7 @@ export interface LocalMatch {
 /** Every file on disk declaring this widget's name, matched ones first. */
 export function localFor(widget: WidgetUsage): LocalMatch[] {
 	const forks = forksOf(widget)
-	return (status()?.local ?? [])
-		.filter((file) => file.name === widget.name)
+	return (lookup()?.local.get(widget.name) ?? [])
 		.map((file) => ({
 			file,
 			fork:
@@ -537,16 +557,20 @@ export function sortWidgets(
 				return standing(widget)
 		}
 	}
-	const rank = (widget: WidgetUsage) =>
-		stats(widget)?.rank ?? Number.MAX_SAFE_INTEGER
-	return [...widgets].sort((a, b) => {
-		const left = value(a)
-		const right = value(b)
+	// Each key once per widget rather than once per comparison: the status
+	// key alone is three lookups.
+	const keyed = widgets.map((widget) => ({
+		widget,
+		value: value(widget),
+		rank: stats(widget)?.rank ?? Number.MAX_SAFE_INTEGER,
+	}))
+	keyed.sort((a, b) => {
 		const order =
-			typeof left === 'string' && typeof right === 'string'
-				? left.localeCompare(right)
-				: (left as number) - (right as number)
+			typeof a.value === 'string' && typeof b.value === 'string'
+				? a.value.localeCompare(b.value)
+				: (a.value as number) - (b.value as number)
 		if (order !== 0) return descending ? -order : order
-		return rank(a) - rank(b)
+		return a.rank - b.rank
 	})
+	return keyed.map((entry) => entry.widget)
 }

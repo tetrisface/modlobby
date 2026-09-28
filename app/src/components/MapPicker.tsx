@@ -17,10 +17,13 @@ const LIST_KEY = 'modlobby.maps.list'
 const blank = (value: string | number): number =>
 	value === 0 || value === '' ? 1 : 0
 
+/** One collator for every name comparison: `map 2` before `map 10`. */
+const collate = new Intl.Collator(undefined, { numeric: true }).compare
+
 /** Numbers as numbers, names as names. */
 function compare(a: string | number, b: string | number): number {
 	if (typeof a === 'number' && typeof b === 'number') return a - b
-	return String(a).localeCompare(String(b), undefined, { numeric: true })
+	return collate(String(a), String(b))
 }
 
 /** One map as the grid draws it. */
@@ -33,6 +36,8 @@ type Entry = {
 	facts: MapFacts | null
 	/** On this machine already: the room can play it without fetching. */
 	held: boolean
+	/** Everything a search looks through, lowercased once. */
+	haystack: string
 }
 
 /**
@@ -62,7 +67,7 @@ const COLUMNS = [
 		key: 'name',
 		label: 'Name',
 		cell: (entry) => entry.label,
-		of: (entry) => entry.label.toLowerCase(),
+		of: (entry) => entry.label,
 		numeric: false,
 	},
 	{
@@ -83,7 +88,7 @@ const COLUMNS = [
 		key: 'author',
 		label: 'Author',
 		cell: (entry) => entry.facts?.author || null,
-		of: (entry) => (entry.facts?.author ?? '').toLowerCase(),
+		of: (entry) => entry.facts?.author ?? '',
 		numeric: false,
 	},
 ] as const satisfies readonly Column[]
@@ -170,9 +175,11 @@ export function MapPicker(props: {
 		// which is only right when the file was named after the map.
 		const held = new Set(options()?.maps ?? [])
 		const listed = new Map<string, Entry>()
+		const add = (entry: Omit<Entry, 'haystack'>) =>
+			listed.set(entry.value, { ...entry, haystack: haystack(entry) })
 
 		for (const [spring, about] of Object.entries(known))
-			listed.set(spring, {
+			add({
 				value: spring,
 				label: about.displayName || spring,
 				facts: about,
@@ -181,12 +188,7 @@ export function MapPicker(props: {
 		// On the disk and not in the index: still playable, still worth listing.
 		for (const spring of held)
 			if (!listed.has(spring))
-				listed.set(spring, {
-					value: spring,
-					label: spring,
-					facts: null,
-					held: true,
-				})
+				add({ value: spring, label: spring, facts: null, held: true })
 		return [...listed.values()]
 	})
 
@@ -197,7 +199,7 @@ export function MapPicker(props: {
 		const matching = entries().filter((entry) => {
 			if (heldOnly() && !entry.held) return false
 			if (!needle) return true
-			return haystack(entry).includes(needle)
+			return entry.haystack.includes(needle)
 		})
 		return matching
 			.sort((a, b) => {
@@ -210,7 +212,7 @@ export function MapPicker(props: {
 					way * compare(x, y) ||
 					// The name breaks every tie, so the order never flickers
 					// between two maps the sorted column cannot tell apart.
-					a.label.localeCompare(b.label, undefined, { numeric: true })
+					collate(a.label, b.label)
 				)
 			})
 			.slice(0, SHOWN)
@@ -420,7 +422,7 @@ export function MapPicker(props: {
 }
 
 /** Everything a search looks through, lowercased once per entry. */
-function haystack(entry: Entry): string {
+function haystack(entry: Omit<Entry, 'haystack'>): string {
 	const facts = entry.facts
 	return [
 		entry.label,

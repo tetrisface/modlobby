@@ -36,6 +36,7 @@ import { showPlayerMenu } from '../components/PlayerMenu'
 import { Glyph } from '../components/icons'
 import { isMuted, rememberChannel, toggleMute } from '../store/channels'
 import { TabStrip, type Tab as StripTab } from '../components/TabStrip'
+import { clock } from '../lib/age'
 import { ordered } from '../lib/reorder'
 import { clashes } from '../lib/servers'
 import {
@@ -74,10 +75,13 @@ const online = (key: string) => {
 	return server !== null && partner(key) in (lobby.servers[server]?.users ?? {})
 }
 
+/** The friends list on `server`; nobody's, with no server. */
+const friendsOn = (server: string | undefined): readonly string[] =>
+	server === undefined ? [] : (lobby.servers[server]?.friends.friends ?? [])
+
 /** Whether a person on `server` is on its friends list. */
 const befriended = (server: string | undefined, name: string) =>
-	server !== undefined &&
-	(lobby.servers[server]?.friends.friends.includes(name) ?? false)
+	friendsOn(server).includes(name)
 
 /** Who we are on the server a room is on. */
 const meIn = (key: string) => {
@@ -268,10 +272,9 @@ export function Chat() {
 	const members = () => chat.channels[room()]?.members ?? []
 	/** Friends first, then alphabetical — the same order as everywhere else. */
 	const sortedMembers = createMemo(() => {
-		const server = serverOf(room())
+		const friends = new Set(friendsOn(serverOf(room())))
 		return [...members()].sort((a, b) => {
-			const known =
-				Number(befriended(server, b)) - Number(befriended(server, a))
+			const known = Number(friends.has(b)) - Number(friends.has(a))
 			return known || a.localeCompare(b)
 		})
 	})
@@ -878,15 +881,6 @@ function Line(props: {
 			</span>
 		</div>
 	)
-}
-
-/** `14:07` — the hour and minute is all a backlog needs. */
-function clock(at: number): string {
-	if (!at) return ''
-	return new Date(at * 1000).toLocaleTimeString([], {
-		hour: '2-digit',
-		minute: '2-digit',
-	})
 }
 
 /**

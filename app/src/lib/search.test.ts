@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { hasEveryWord } from './search'
+import { hasEveryWord, wordsOf } from './search'
 
 describe('hasEveryWord', () => {
 	test('an empty or blank query matches anything', () => {
@@ -15,5 +15,12 @@ describe('hasEveryWord', () => {
 
 	test('a word may sit inside a longer one', () => {
 		expect(hasEveryWord('a metered connection', 'meter')).toBe(true)
+	})
+
+	test('words split once match the same as the query', () => {
+		const words = wordsOf('  ROOM download ')
+		expect(words).toEqual(['room', 'download'])
+		expect(hasEveryWord('Download what a room needs', words)).toBe(true)
+		expect(hasEveryWord('Upload what a room needs', words)).toBe(false)
 	})
 })

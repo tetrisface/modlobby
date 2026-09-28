@@ -210,6 +210,32 @@ button.primary:disabled {
 	border-color: var(--line);
 }
 
+/* The primary while our engine is up and its window is not: nothing to go
+   back to yet. Diagonal stripes drifting rather than a spinner. They drift
+   regardless of prefers-reduced-motion for the reason `.thinking` does: the
+   whole job is to say "still loading", a frozen one says nothing, and a slow
+   low-contrast drift is as little motion as that can be. Below the disabled
+   rule on purpose: its `background` shorthand would clear the image. */
+button.primary.launching {
+	background-image: linear-gradient(
+		45deg,
+		color-mix(in srgb, var(--accent) 18%, transparent) 25%,
+		transparent 25% 50%,
+		color-mix(in srgb, var(--accent) 18%, transparent) 50% 75%,
+		transparent 75%
+	);
+	background-size: 1rem 1rem;
+	cursor: progress;
+	animation: launching 1.2s linear infinite;
+}
+
+/* One tile of travel per cycle, so the loop has no seam. */
+@keyframes launching {
+	to {
+		background-position-x: 1rem;
+	}
+}
+
 input,
 textarea {
 	background: var(--sunken);
@@ -3218,12 +3244,6 @@ body.resizing {
 
 .opt.changed .v {
 	color: var(--accent);
-}
-
-/* A map-metadata row carries a pen after its words: the map sheet, where
-   what the words describe is drawn. */
-.opt.map {
-	grid-template-columns: 0.125rem 1fr auto auto;
 }
 
 .setup-empty {

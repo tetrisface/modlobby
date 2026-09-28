@@ -18,8 +18,8 @@ import { NO_ASSIST, type Assist } from '../lib/assist'
 import { BOX_OVERRIDE } from '../lib/boxes'
 import { isCleared, nextTweak } from '../lib/setup'
 import {
+	DOC_KEYS,
 	SCRATCH,
-	SLOT_KEYS,
 	defaultTarget,
 	draftDoc,
 	draftId,
@@ -157,10 +157,11 @@ export function createTweakspace(
 
 		createEffect(() => {
 			const values = room()
-			// The twenty, any slot past 9 the room holds, and any it held before
-			// -- so one cleared since is seen to be empty rather than kept full.
+			// The twenty and the map's tables, any slot past 9 the room holds, and
+			// any it held before -- so one cleared since is seen to be empty
+			// rather than kept full.
 			const keys = new Set([
-				...SLOT_KEYS,
+				...DOC_KEYS,
 				...Object.keys(values).filter((key) => slotOf(key) !== null),
 				...untrack(() => Object.values(ws.docs))
 					.filter((doc) => doc.origin === 'slot')

@@ -44,6 +44,7 @@ import type { DownloadStatus } from '../ipc/bindings/DownloadStatus'
 import type { StartRectView } from '../ipc/bindings/StartRectView'
 import type { UserView } from '../ipc/bindings/UserView'
 import { api, describeError } from '../ipc/client'
+import { clock } from '../lib/age'
 import { layoutLabel } from '../lib/battles'
 import { boxSignature, centre, outline } from '../lib/boxes'
 import { downloadFraction } from '../lib/download'
@@ -68,6 +69,7 @@ import { readSkills, teamSkill, type Skill } from '../lib/skill'
 import { chat, pushNotice } from '../store/chat'
 import { joinMilestone } from '../store/join'
 import { lobby, roomServer, roomSession, severalServers } from '../store/lobby'
+import { launching } from '../store/launch'
 import { over } from '../store/overlay'
 import { serverLabel, settings } from '../store/settings'
 import { HostBar } from './HostBar'
@@ -80,7 +82,7 @@ import { dragging } from '../lib/drag'
 import { Seat, canAddAi, showAddAi, sitOn } from './Seat'
 import { modRefusal, movable, moveTo, setBonus, type Target } from './room/move'
 import { hostsMods } from '../lib/mutators'
-import { OpenMap, Setup } from './Setup'
+import { Setup } from './Setup'
 import { VoteBar } from './VoteBar'
 
 /** `startpostype`, by the names Chobby gives the three. */
@@ -523,13 +525,25 @@ export function Room() {
 		}
 	}
 
+	/** A launch of ours on its way to the runtime; see `loading`. */
+	const [asked, setAsked] = createSignal(false)
+
 	async function launch() {
+		setAsked(true)
 		try {
 			await room.io.launch()
 		} catch (error) {
 			pushNotice('error', describeError(error))
+		} finally {
+			setAsked(false)
 		}
 	}
+
+	/**
+	 * From the click until the engine has a window. The column is locked for
+	 * it: there is nothing to go back to yet, and a second click is an error.
+	 */
+	const loading = () => asked() || launching()
 
 	return (
 		<Show when={battle()}>
@@ -723,8 +737,14 @@ export function Room() {
 						<div class='card-actions'>
 							{/* While our own engine runs, the useful button is not another
                   launch — it is the way back to the game the lobby is
-                  sitting on top of. */}
+                  sitting on top of. Until it has a window there is nothing
+                  to go back to, and the column waits. */}
 							<Switch>
+								<Match when={loading()}>
+									<button class='primary launching' disabled>
+										Loading the game
+									</button>
+								</Match>
 								<Match when={lobby.engine.state === 'running'}>
 									<button
 										class='primary'
@@ -786,14 +806,17 @@ export function Room() {
 								</Match>
 							</Switch>
 							<Show when={room.caps.leave}>
-								<button onClick={() => room.io.leaveBattle()}>
+								<button
+									disabled={loading()}
+									onClick={() => room.io.leaveBattle()}
+								>
 									Leave room
 								</button>
 							</Show>
 							{/* Ending the game belongs beside leaving the room: one column
                   for every way out, rather than two corners of the window
                   offering much the same thing. */}
-							<Show when={lobby.engine.state === 'running'}>
+							<Show when={lobby.engine.state === 'running' && !launching()}>
 								<GameActions />
 							</Show>
 						</div>
@@ -1025,9 +1048,7 @@ export function Room() {
 							</div>
 						</div>
 
-						<OpenMap.Provider value={() => setEditing(true)}>
-							<Setup />
-						</OpenMap.Provider>
+						<Setup />
 					</div>
 				</section>
 			)}
@@ -1295,13 +1316,4 @@ function Line(props: { line: ChatLine }) {
 			</span>
 		</div>
 	)
-}
-
-/** `14:07` — the hour and minute is all a backlog needs. */
-function clock(at: number): string {
-	if (!at) return ''
-	return new Date(at * 1000).toLocaleTimeString([], {
-		hour: '2-digit',
-		minute: '2-digit',
-	})
 }

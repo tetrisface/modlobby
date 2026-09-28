@@ -346,3 +346,61 @@ describe('whose folder', () => {
 		).toBe('Chobby')
 	})
 })
+
+describe('sorting by status', () => {
+	beforeEach(() => {
+		asked.mockReset()
+	})
+
+	test('installed and on, then off, then installable, then the rest', async () => {
+		// One of each way a widget can be here: "On" by a file on disk that no
+		// ledger entry claims, "Off" by modlobby's ledger with BAR's config
+		// switching it off.
+		asked.mockResolvedValue({
+			installed: [
+				{
+					key: 'widget:off',
+					name: 'Off',
+					files: ['off.lua'],
+					hashes: ['aGFzaA=='],
+					source: 'https://example.test/off.lua',
+					installed_at: 0n,
+					settings_before: [],
+				},
+			],
+			configured: [{ name: 'Off', order: 0n, has_settings: false }],
+			locked: false,
+			writeDir: 'C:/modlobby',
+			local: [
+				{
+					name: 'On',
+					file: 'on.lua',
+					dir: 'C:/modlobby',
+					writable: true,
+					hash: 'x',
+					hash_text: 'x',
+				},
+			],
+			dirs: ['C:/modlobby'],
+		})
+		const store = await fresh()
+		await store.refreshInstalled()
+
+		const named = (key: string, name: string, install = withheld()) =>
+			widget({}, { key: `widget:${key}`, name, install })
+		const rows = [
+			named('rest', 'Rest'),
+			named('get', 'Installable', downloadable()),
+			named('off', 'Off'),
+			named('on', 'On'),
+		]
+
+		const sorted = store.sortWidgets(rows, 'status', true, 'all', '30d')
+		expect(sorted.map((row) => row.name)).toEqual([
+			'On',
+			'Off',
+			'Installable',
+			'Rest',
+		])
+	})
+})

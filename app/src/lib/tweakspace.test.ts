@@ -3,6 +3,8 @@ import { BOX_OVERRIDE } from './boxes'
 import { TWEAK_SLOTS } from './setup'
 import {
 	SCRATCH,
+	DOC_KEYS,
+	MAP_TABLES,
 	SLOT_KEYS,
 	compareChange,
 	defaultCompare,
@@ -75,6 +77,18 @@ describe('slots', () => {
 		expect(kindOf(BOX_OVERRIDE)).toBe('boxes')
 		expect(defaultTarget('boxes')).toBe(BOX_OVERRIDE)
 		expect(slotOf('mapmetadata_startboxes_set')).toBeNull()
+	})
+
+	test('the map’s tables are documents of the override’s kind, with no slot to send to', () => {
+		expect(DOC_KEYS).toEqual([...SLOT_KEYS, ...MAP_TABLES])
+		for (const key of MAP_TABLES) {
+			expect(kindOf(key)).toBe('boxes')
+			expect(slotOf(key)).toBeNull()
+			expect(emptyWorkspace().docs[slotId(key)]).toMatchObject({
+				origin: 'slot',
+				kind: 'boxes',
+			})
+		}
 	})
 
 	test('ids carry their title', () => {

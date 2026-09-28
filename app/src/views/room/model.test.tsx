@@ -5,6 +5,7 @@ import { reconcile } from 'solid-js/store'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { BotView } from '../../ipc/bindings/BotView'
 import type { ModOption } from '../../ipc/bindings/ModOption'
+import { setWindowSeen } from '../../store/launch'
 import { emptyLobby, setLobby } from '../../store/lobby'
 import { seedSession } from '../../store/testing'
 import { PlayerMenu } from '../../components/PlayerMenu'
@@ -99,6 +100,7 @@ afterEach(() => {
 	vi.clearAllMocks()
 	// The engine tests below write the mirrored state; nothing else here does.
 	setLobby(reconcile(emptyLobby()))
+	setWindowSeen(null)
 })
 
 async function open(model: RoomModel) {
@@ -562,7 +564,36 @@ function cardButton(container: HTMLElement, label: string): HTMLButtonElement {
 const invoked = () => vi.mocked(invoke).mock.calls.map(([name]) => name)
 
 describe('while our own engine is running', () => {
-	beforeEach(() => setLobby('engine', { state: 'running', pid: 1 }))
+	beforeEach(() => {
+		setLobby('engine', { state: 'running', pid: 1 })
+		setWindowSeen(1)
+	})
+
+	test('until it has a window, the column waits and nothing in it acts', async () => {
+		setWindowSeen(null)
+		const { container } = await open(
+			fakeRoom({
+				caps: SERVED,
+				my: () => myBattle({ boss: 'me' }),
+				io: recordingIo([]),
+			}),
+		)
+		expect(buttons(container, '.card-actions')).toEqual([
+			'Loading the game',
+			'Leave room',
+		])
+		expect(cardButton(container, 'Loading the game').disabled).toBe(true)
+		expect(cardButton(container, 'Leave room').disabled).toBe(true)
+
+		setWindowSeen(1)
+		await settle()
+		expect(buttons(container, '.card-actions')).toEqual([
+			'Back to game',
+			'Leave room',
+			'Leave game',
+			'Quit',
+		])
+	})
 
 	test('a served room holds every way out, in one column', async () => {
 		const { container } = await open(

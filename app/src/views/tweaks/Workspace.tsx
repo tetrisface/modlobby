@@ -13,11 +13,13 @@ import { describeError } from '../../ipc/client'
 import { when } from '../../lib/presets'
 import {
 	KINDS,
+	MAP_TABLE_REFUSAL,
 	compareChange,
 	defaultCompare,
 	draftId,
 	draftNameFor,
 	isDirty,
+	isMapTable,
 	resolveSide,
 	searchSlots,
 	sideOptions,
@@ -113,8 +115,12 @@ export function Workspace(props: { drafts: boolean; onClose?: () => void }) {
 		})
 	}
 
-	/** Why the room would refuse a change from us, if it would. */
-	const refusal = createMemo(() => setRefusal(room))
+	/** Why the room would refuse a change from us, if it would; a map table it refuses from anyone. */
+	const refusal = createMemo(() =>
+		doc().origin === 'slot' && isMapTable(doc().title)
+			? MAP_TABLE_REFUSAL
+			: setRefusal(room),
+	)
 
 	/** The vote in progress, when it proposes the open slot. */
 	const proposal = createMemo(() => {

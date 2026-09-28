@@ -32,3 +32,16 @@ export function exactly(iso: string): string {
 	const at = Date.parse(iso)
 	return Number.isNaN(at) ? '' : new Date(at).toLocaleString()
 }
+
+const CLOCK = new Intl.DateTimeFormat([], {
+	hour: '2-digit',
+	minute: '2-digit',
+})
+
+/**
+ * `14:07` — the hour and minute is all a backlog needs. `at` is seconds
+ * since the epoch; zero is a line with no time.
+ */
+export function clock(at: number): string {
+	return at ? CLOCK.format(at * 1000) : ''
+}

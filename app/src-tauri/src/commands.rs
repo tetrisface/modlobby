@@ -1081,6 +1081,24 @@ pub async fn engine_in_front(app: State<'_, App>) -> Result<bool> {
 	}
 }
 
+/// Whether the running engine has opened a window yet. A game that is loading
+/// has none, and until it does the room has nothing to go back to.
+#[tauri::command]
+pub async fn engine_has_window(app: State<'_, App>) -> Result<bool> {
+	let Some(pid) = app.client.engine_pid().await? else {
+		return Ok(false);
+	};
+	#[cfg(windows)]
+	return Ok(!crate::win::visible_windows_of(pid).is_empty());
+	// Nothing to ask elsewhere: answering yes locks nothing, which is what the
+	// room did before it asked.
+	#[cfg(not(windows))]
+	{
+		let _ = pid;
+		Ok(true)
+	}
+}
+
 /// Whether the window is currently sitting over a running game.
 #[tauri::command]
 pub fn overlay_active(overlay: State<'_, std::sync::Arc<crate::overlay::Controller>>) -> bool {

@@ -60,6 +60,7 @@ import {
 	soonestRetry,
 } from './store/lobby'
 import { loadNews, unreadNews } from './store/news'
+import { watchLaunch } from './store/launch'
 import { over, setOver } from './store/overlay'
 import { autoLogin, loginHold } from './store/session'
 import {
@@ -249,6 +250,7 @@ function Layout(props: ParentProps) {
 			.then(setBuild)
 			.catch(() => {})
 		onCleanup(watchUpdates())
+		onCleanup(watchLaunch())
 	})
 	/** Why the last look failed, said in the tooltip for a while, not forever. */
 	const [failedFor, setFailedFor] = createSignal<string | null>(null)

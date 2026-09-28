@@ -339,6 +339,26 @@ describe('the workspace', () => {
 		space.dispose()
 	})
 
+	test('a map table is decoded as boxes into a document with nowhere to send', async () => {
+		const { io } = fakeIo()
+		const [room] = createSignal<Record<string, string>>({
+			mapmetadata_startpos: 'eJyr',
+		})
+		const space = createTweakspace(io, room, slotId('mapmetadata_startpos'))
+		await flush()
+		expect(io.tweakDecode).toHaveBeenLastCalledWith('eJyr', 'boxes')
+		expect(space.active()).toMatchObject({
+			kind: 'boxes',
+			loaded: true,
+			name: 'eJyr',
+		})
+		space.edit(slotId('mapmetadata_startpos'), '{}')
+		expect(space.unsent()).toBe(0)
+		expect(await space.send(true)).toBeNull()
+		expect(io.tweakSend).not.toHaveBeenCalled()
+		space.dispose()
+	})
+
 	test('the list is searched and sorted through the filter', async () => {
 		const { io, files } = fakeIo()
 		files.set('walls', '-- XYZ\n{}')

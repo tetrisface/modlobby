@@ -14,17 +14,36 @@ import type { Diagnostic } from '../ipc/bindings/Diagnostic'
 import type { Kind } from '../ipc/bindings/Kind'
 import type { OptionChangeView } from '../ipc/bindings/OptionChangeView'
 import type { Slot } from '../ipc/bindings/Slot'
-import { BOX_OVERRIDE } from './boxes'
+import { BOX_KEYS, BOX_OVERRIDE } from './boxes'
 import { when } from './presets'
 import { TWEAK_SLOTS, byRunOrder, isCleared, tweakKey } from './setup'
 
 /**
- * The room's documents: the twenty tweak slots, then the start-box override.
- * A slot past 9 joins them when a room turns out to hold one. The override
- * is JSON where the rest are Lua, with zlib inside its base64url; Rust tells
- * them apart by the kind.
+ * The room's documents that can be sent: the twenty tweak slots, then the
+ * start-box override. A slot past 9 joins them when a room turns out to hold
+ * one. The override is JSON where the rest are Lua, with zlib inside its
+ * base64url; Rust tells them apart by the kind.
  */
 export const SLOT_KEYS: readonly string[] = [...TWEAK_SLOTS, BOX_OVERRIDE]
+
+/**
+ * The map's own tables, which SPADS writes from the map: its box sets by
+ * team count, and its fixed start positions. JSON carried like the override
+ * and read in the same editor, but sent nowhere -- picking another map is
+ * what changes them.
+ */
+export const MAP_TABLES: readonly string[] = [
+	BOX_KEYS[1],
+	'mapmetadata_startpos',
+]
+
+export const isMapTable = (key: string): boolean => MAP_TABLES.includes(key)
+
+/** What the send bar says over a map table, as `setRefusal` says why a slot is refused. */
+export const MAP_TABLE_REFUSAL = 'Set by the map; pick another map to change it'
+
+/** Every document the room's values fill: the slots, then the map's tables. */
+export const DOC_KEYS: readonly string[] = [...SLOT_KEYS, ...MAP_TABLES]
 
 /**
  * Each kind as the screen names it: what Monaco highlights it as, what the
@@ -123,7 +142,7 @@ export const isSlotId = (id: DocId): boolean => id.startsWith('slot:')
 export const titleOf = (id: DocId): string => id.slice(id.indexOf(':') + 1)
 
 export function kindOf(key: string): Kind {
-	if (key === BOX_OVERRIDE) return 'boxes'
+	if (key === BOX_OVERRIDE || isMapTable(key)) return 'boxes'
 	return key.startsWith('tweakunits') ? 'units' : 'defs'
 }
 
@@ -211,7 +230,7 @@ export function emptyWorkspace(
 	active: DocId = slotId(SLOT_KEYS[0]!),
 ): Workspace {
 	const docs: Record<string, Doc> = {}
-	for (const key of SLOT_KEYS) docs[slotId(key)] = slotDoc(key)
+	for (const key of DOC_KEYS) docs[slotId(key)] = slotDoc(key)
 	docs[SCRATCH] = scratchDoc('defs')
 	return {
 		docs,
@@ -347,10 +366,10 @@ export function listItems(ws: Workspace, filter: Filter = ws.filter): Item[] {
 	return [itemOf(ws.docs[SCRATCH]!), ...drafts]
 }
 
-/** Slots holding an edit the room has not been sent. */
+/** Slots holding an edit the room has not been sent; a map table has nowhere to go. */
 export function unsentCount(ws: Workspace): number {
 	return Object.values(ws.docs).filter(
-		(doc) => doc.origin === 'slot' && isDirty(doc),
+		(doc) => doc.origin === 'slot' && !isMapTable(doc.title) && isDirty(doc),
 	).length
 }
 

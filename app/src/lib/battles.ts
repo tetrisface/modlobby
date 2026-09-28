@@ -12,7 +12,7 @@ import type { BattleList } from '../ipc/bindings/BattleList'
 import type { BattleSort } from '../ipc/bindings/BattleSort'
 import type { ModeFilter } from '../ipc/bindings/ModeFilter'
 import { ordered } from './reorder'
-import { hasEveryWord } from './search'
+import { hasEveryWord, wordsOf } from './search'
 
 export type Row = {
 	/** Which server the room is on. */
@@ -67,14 +67,21 @@ export function isVsAi(battle: BattleView): boolean {
  * each appear somewhere, in any field and any order
  * (`battle_list_window.lua:803-845`).
  */
-export function matches(battle: BattleView, query: string): boolean {
+export function matches(
+	battle: BattleView,
+	query: string | readonly string[],
+): boolean {
 	return hasEveryWord(
 		[battle.title, battle.mapName, battle.founder, battle.gameName].join(' '),
 		query,
 	)
 }
 
-export function keep(row: Row, filters: BattleList, query: string): boolean {
+export function keep(
+	row: Row,
+	filters: BattleList,
+	query: string | readonly string[],
+): boolean {
 	const { battle } = row
 	if (filters.friendsOnly && !row.hasFriend) return false
 	if (!filters.showPassworded && battle.passworded) return false
@@ -192,8 +199,9 @@ export function arrange(
 	filters: BattleList,
 	query: string,
 ): Row[] {
+	const words = wordsOf(query)
 	return rows
-		.filter((row) => keep(row, filters, query))
+		.filter((row) => keep(row, filters, words))
 		.sort((a, b) => compare(a, b, filters.sort, filters.sortDescending))
 }
 

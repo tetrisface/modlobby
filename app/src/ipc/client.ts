@@ -195,6 +195,8 @@ export const api = {
 		invoke<string>('describe_map_option', { key, raw }),
 	flashEngine: () => invoke<boolean>('flash_engine'),
 	engineInFront: () => invoke<boolean>('engine_in_front'),
+	/** Whether the running engine has opened a window yet. */
+	engineHasWindow: () => invoke<boolean>('engine_has_window'),
 	requestGameStatus: (server: string, founder: string) =>
 		invoke<void>('request_game_status', { server, founder }),
 
