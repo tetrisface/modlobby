@@ -120,19 +120,66 @@ impl InGame {
 
 	/// Takes both files back out. Called on the way down, and safe to repeat.
 	pub fn uninstall(&mut self) {
-		if let Some(archive) = self.menu.take()
-			&& let Err(err) = std::fs::remove_dir_all(&archive)
-		{
-			tracing::warn!(%err, path = %archive.display(), "leaving the in-game menu behind");
+		self.uninstall_with(menu::engine_running_anywhere);
+	}
+
+	fn uninstall_with(&mut self, engine_running: impl Fn() -> bool) {
+		if let Some(archive) = self.menu.take() {
+			remove_menu(&archive, engine_running);
 		}
-		let Some(path) = self.installed.take() else {
-			return;
-		};
-		// A widget we cannot remove is inert anyway: it fails to connect and
-		// stops consuming the key.
-		if let Err(err) = std::fs::remove_file(&path) {
-			tracing::warn!(%err, path = %path.display(), "leaving the in-game widget behind");
+		if let Some(path) = self.installed.take() {
+			remove_widget(&path);
 		}
+	}
+}
+
+/// Takes out what an earlier run left and this one will not rewrite: a killed
+/// run never reaches its exit handler, and the menu is kept for as long as any
+/// engine runs.
+pub fn sweep(data_dir: &Path, widget_wanted: bool, menu_wanted: bool) {
+	sweep_with(
+		data_dir,
+		widget_wanted,
+		menu_wanted,
+		menu::engine_running_anywhere,
+	);
+}
+
+fn sweep_with(
+	data_dir: &Path,
+	widget_wanted: bool,
+	menu_wanted: bool,
+	engine_running: impl Fn() -> bool,
+) {
+	let path = widget::path(data_dir);
+	if !widget_wanted && path.is_file() {
+		remove_widget(&path);
+	}
+	let archive = menu::dir(data_dir);
+	if !menu_wanted && archive.is_dir() {
+		remove_menu(&archive, engine_running);
+	}
+}
+
+/// Any engine may have been started against the menu -- by an earlier run of
+/// ours, say -- and asks for it again when its game ends. Finding it gone is a
+/// content error in the player's face, so it stays until no engine runs.
+fn remove_menu(archive: &Path, engine_running: impl Fn() -> bool) {
+	if engine_running() {
+		tracing::info!(path = %archive.display(), "leaving the in-game menu for a running engine");
+		return;
+	}
+	if let Err(err) = std::fs::remove_dir_all(archive) {
+		tracing::warn!(%err, path = %archive.display(), "leaving the in-game menu behind");
+	}
+}
+
+/// A widget we cannot remove is inert anyway: it fails to connect and stops
+/// consuming the key. One taken from under a game costs nothing either, since
+/// the engine read it when the game began.
+fn remove_widget(path: &Path) {
+	if let Err(err) = std::fs::remove_file(path) {
+		tracing::warn!(%err, path = %path.display(), "leaving the in-game widget behind");
 	}
 }
 
@@ -259,7 +306,7 @@ mod tests {
 	}
 
 	#[test]
-	fn the_widget_is_written_and_taken_back_out() {
+	fn both_files_are_written_and_taken_back_out() {
 		let home = tempfile::tempdir().unwrap();
 		let mut ingame = InGame {
 			port: 4242,
@@ -269,15 +316,60 @@ mod tests {
 		};
 
 		let path = ingame.install(home.path()).unwrap();
+		let menu = ingame.install_menu(home.path()).unwrap();
 		assert!(path.is_file());
 		let source = std::fs::read_to_string(&path).unwrap();
 		assert!(source.contains("4242"), "the port is baked in");
 		assert!(source.contains("abc"), "and so is the token");
 
-		ingame.uninstall();
+		ingame.uninstall_with(|| false);
 		assert!(!path.exists());
+		assert!(!menu.exists());
 		// Removing twice is what a drop after an explicit stop does.
-		ingame.uninstall();
+		ingame.uninstall_with(|| false);
+	}
+
+	/// The bug: an exit took the menu from under a game an earlier run of ours
+	/// had started, and the game's end was a content error.
+	#[test]
+	fn a_running_engine_keeps_the_menu() {
+		let home = tempfile::tempdir().unwrap();
+		let mut ingame = InGame {
+			port: 4242,
+			token: "abc".into(),
+			installed: None,
+			menu: None,
+		};
+		let widget = ingame.install(home.path()).unwrap();
+		let menu = ingame.install_menu(home.path()).unwrap();
+
+		ingame.uninstall_with(|| true);
+
+		assert!(menu.join("modinfo.lua").is_file());
+		assert!(!widget.exists(), "the widget was read when the game began");
+	}
+
+	#[test]
+	fn leftovers_nobody_wants_are_swept_once_no_engine_runs() {
+		let home = tempfile::tempdir().unwrap();
+		let mut ingame = InGame {
+			port: 4242,
+			token: "abc".into(),
+			installed: None,
+			menu: None,
+		};
+		let widget = ingame.install(home.path()).unwrap();
+		let menu = ingame.install_menu(home.path()).unwrap();
+		// A killed run: nothing is taken out.
+		ingame.leave_behind();
+
+		sweep_with(home.path(), true, false, || true);
+		assert!(widget.is_file(), "wanted, so the install rewrites it");
+		assert!(menu.is_dir(), "an engine still runs");
+
+		sweep_with(home.path(), false, false, || false);
+		assert!(!widget.exists());
+		assert!(!menu.exists());
 	}
 
 	#[test]

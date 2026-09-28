@@ -29,7 +29,12 @@ use std::path::{Path, PathBuf};
 pub const ARCHIVE_NAME: &str = "modlobby chobby shim";
 
 /// The archive's version, which is half of how the engine indexes it.
-const ARCHIVE_VERSION: &str = env!("CARGO_PKG_VERSION");
+///
+/// Fixed rather than the app's: an engine looks the menu up again, by the name
+/// it was launched with, when its game ends, and every build rewrites this
+/// archive on start. A release beside a dev build, or an update landing under
+/// a running game, would otherwise rename it from under the engine.
+const ARCHIVE_VERSION: &str = "1";
 
 /// What to pass to `--menu`: the archive's *versioned* name.
 ///
@@ -90,8 +95,8 @@ fn main_lua(port: u16, token: &str) -> String {
 	format!(
 		r#"-- modlobby: BAR's in-game Lobby button.
 --
--- Written by modlobby when it launches a game and removed when it exits. It
--- has no interface of its own. BAR offers a "Lobby" button in place of "Quit"
+-- Written by modlobby when it starts, and removed once it exits with no game
+-- left that could ask for it. It has no interface of its own. BAR offers a "Lobby" button in place of "Quit"
 -- when a menu is loaded, and this turns that button into modlobby's overlay.
 --
 -- If modlobby is not listening it quits the game rather than stranding anyone
@@ -166,9 +171,78 @@ pub fn install(data_dir: &Path, port: u16, token: &str) -> std::io::Result<PathB
 	Ok(root)
 }
 
+/// Whether any engine runs on this machine, whoever started it: one launched
+/// by an earlier run of ours that was killed still asks for the archive when
+/// its game ends. Unsure reads as yes, because the archive left behind is
+/// inert and taken from under an engine is a content error.
+// ponytail: without tasklist/pgrep the archive is never removed; the next
+// start rewrites it and the uninstaller takes it.
+pub fn engine_running_anywhere() -> bool {
+	probe().unwrap_or(true)
+}
+
+#[cfg(windows)]
+fn probe() -> Option<bool> {
+	use std::os::windows::process::CommandExt;
+	const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+	let filter = format!("IMAGENAME eq {}", recoil::ENGINE_BINARY);
+	let output = std::process::Command::new("tasklist")
+		.args(["/FI", &filter, "/FO", "CSV", "/NH"])
+		.creation_flags(CREATE_NO_WINDOW)
+		.output()
+		.ok()?;
+	output
+		.status
+		.success()
+		.then(|| listed(&String::from_utf8_lossy(&output.stdout)))
+}
+
+#[cfg(not(windows))]
+fn probe() -> Option<bool> {
+	let status = std::process::Command::new("pgrep")
+		.args(["-x", recoil::ENGINE_BINARY])
+		.stdout(std::process::Stdio::null())
+		.status()
+		.ok()?;
+	// 1 is "no match"; anything past it is pgrep failing.
+	match status.code() {
+		Some(0) => Some(true),
+		Some(1) => Some(false),
+		_ => None,
+	}
+}
+
+/// `tasklist /FO CSV /NH` prints one quoted row per match and, when there is
+/// none, a sentence in the system's language. Only the image name is never
+/// translated.
+#[cfg(any(windows, test))]
+fn listed(stdout: &str) -> bool {
+	let quoted = format!("\"{}\"", recoil::ENGINE_BINARY);
+	stdout
+		.lines()
+		.any(|line| line.to_ascii_lowercase().starts_with(&quoted))
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn an_engine_is_read_from_its_row_not_from_the_sentence() {
+		let engine = recoil::ENGINE_BINARY;
+		assert!(listed(&format!(
+			"\"{engine}\",\"4242\",\"Console\",\"1\",\"812\u{a0}344 K\"\r\n"
+		)));
+		assert!(!listed(
+			"INFO: No tasks are running which match the specified criteria.\r\n"
+		));
+		assert!(!listed(
+			"INFORMATION: Det finns inga aktiviteter som matchar angivna villkor.\r\n"
+		));
+		assert!(!listed(
+			"\"spring-headless.exe\",\"4242\",\"Console\",\"1\",\"1 K\"\r\n"
+		));
+	}
 
 	#[test]
 	fn the_name_is_what_bar_looks_for() {

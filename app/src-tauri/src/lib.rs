@@ -291,6 +291,9 @@ pub fn run() {
 			let held: InGameHandle = std::sync::Arc::new(std::sync::Mutex::new(None));
 			tauri_app.manage(held.clone());
 			tauri::async_runtime::spawn(async move {
+				if let Some(dir) = widget_dir.as_deref() {
+					ingame::sweep(dir, want_widget, want_menu);
+				}
 				match ingame::InGame::start(actions).await {
 					Ok(mut ingame) => {
 						if let (true, Some(dir)) = (want_widget, widget_dir.as_deref()) {
