@@ -141,18 +141,31 @@ pub(crate) fn since_start() -> u128 {
 		.unwrap_or(0)
 }
 
+/// Says why the app is not starting, and stops. For the moment before there
+/// is a log or a window: a release build has no console, so on Windows this
+/// is a message box, and the exit is a plain failure rather than a panic.
+fn fatal(message: &str) -> ! {
+	eprintln!("{message}");
+	#[cfg(windows)]
+	win::alert("modlobby", message);
+	std::process::exit(1)
+}
+
 pub fn run() {
-	let started = *STARTED.get_or_init(std::time::Instant::now);
+	STARTED.get_or_init(std::time::Instant::now);
 	// Before anything reads the environment: the config dir and the update
 	// switch both come from it. A dev run finds the repo's `.env` by walking
 	// up from the working directory; an installed app has none and skips it.
 	let dotenv = dotenvy::dotenv();
-	let app = state::App::open().unwrap_or_else(|err| panic!("starting modlobby: {err}"));
-	let opened = started.elapsed().as_millis();
+	// Settings that will not open are the one failure with nowhere to go:
+	// no log yet, no window ever. So it is told where the user is looking.
+	let settings = settings::Store::open(settings::config_dir())
+		.unwrap_or_else(|err| fatal(&format!("modlobby cannot start.\n\n{err}")));
 	// Held for the life of the process: dropping it stops the file writer.
-	let _logging = logging::start(app.settings.dir(), &app.settings.get().logging.filter);
-	tracing::debug!(ms = opened, "startup: app opened");
+	let _logging = logging::start(settings.dir(), &settings.get().logging.filter);
 	tracing::debug!(ms = since_start(), "startup: logging up");
+	let app = state::App::open(settings);
+	tracing::debug!(ms = since_start(), "startup: app opened");
 	match dotenv {
 		Ok(path) => tracing::info!(path = %path.display(), "loaded .env"),
 		Err(err) if err.not_found() => {}

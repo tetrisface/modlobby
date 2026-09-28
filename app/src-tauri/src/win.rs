@@ -1,4 +1,5 @@
-//! Finding the windows another process owns.
+//! Talking to Windows itself: the windows another process owns, and a box
+//! for what has to be said before there is a window of our own.
 //!
 //! Two features need this and they need the same half of it: flashing the
 //! engine's taskbar entry when a game starts, and putting the engine's window
@@ -62,4 +63,22 @@ pub fn owns_foreground(pid: u32) -> bool {
 	// so matches no process we spawned.
 	unsafe { GetWindowThreadProcessId(GetForegroundWindow(), &mut owner) };
 	owner == pid
+}
+
+/// A modal error box with nothing behind it.
+pub fn alert(title: &str, message: &str) {
+	use windows_sys::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW};
+
+	let wide = |text: &str| text.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+	let (title, message) = (wide(title), wide(message));
+	// SAFETY: both strings are NUL-terminated and outlive the call, which
+	// blocks until the box is dismissed; a null owner window is accepted.
+	unsafe {
+		MessageBoxW(
+			std::ptr::null_mut(),
+			message.as_ptr(),
+			title.as_ptr(),
+			MB_OK | MB_ICONERROR,
+		)
+	};
 }

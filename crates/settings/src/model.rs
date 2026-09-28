@@ -1,5 +1,6 @@
 //! The settings shape. Every field has a default so a partial file is valid;
-//! unknown keys are kept on disk and ignored here.
+//! unknown keys are kept on disk and ignored here, and a value a newer build
+//! wrote that this one has no name for reads as the default (`lenient`).
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -9,6 +10,43 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 pub const SCHEMA_FILE: &str = "settings.schema.json";
+
+/// Reads a value this build has no name for as the field's default, so a file
+/// a newer build wrote still opens here: a variant added later is no reason
+/// to refuse the whole file. The file keeps what it said, since a write only
+/// touches what changed.
+fn lenient<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+	D: serde::Deserializer<'de>,
+	T: serde::de::DeserializeOwned + Default,
+{
+	let value = serde_json::Value::deserialize(deserializer)?;
+	Ok(T::deserialize(&value).unwrap_or_else(|err| {
+		tracing::warn!(%value, %err, "settings: unknown value read as the default");
+		T::default()
+	}))
+}
+
+/// Reads a list keeping the entries this build can read, so one entry of a
+/// kind added later does not take the whole file with it. An entry left out
+/// is not in what this build writes back, should it write the list.
+fn lenient_list<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
+where
+	D: serde::Deserializer<'de>,
+	T: serde::de::DeserializeOwned,
+{
+	let items = Vec::<serde_json::Value>::deserialize(deserializer)?;
+	Ok(items
+		.iter()
+		.filter_map(|item| match T::deserialize(item) {
+			Ok(read) => Some(read),
+			Err(err) => {
+				tracing::warn!(%item, %err, "settings: unreadable entry left out");
+				None
+			}
+		})
+		.collect())
+}
 
 /// BAR's lobby server: the one every install starts with, until BAR's
 /// launcher config names another.
@@ -71,6 +109,7 @@ pub struct Games {
 	/// Where exactly one game is to be had, above every list and above the
 	/// room's own rapid: a room naming `name` gets it from `source` and from
 	/// nowhere else.
+	#[serde(deserialize_with = "lenient_list")]
 	pub overrides: Vec<GameOverride>,
 }
 
@@ -310,6 +349,7 @@ pub enum Builtin {
 #[ts(export)]
 pub struct ServerEntry {
 	/// Which of the servers every install has this is, if it is one.
+	#[serde(deserialize_with = "lenient")]
 	pub builtin: Option<Builtin>,
 	/// Where it is. The server is known by this, trimmed and lowercased, so
 	/// changing it makes a different server: a new account, a new password.
@@ -537,7 +577,9 @@ pub struct BattleList {
 	/// Narrow the list to rooms with a friend in them. Off by default: it
 	/// empties the list for anyone who has not added anybody.
 	pub friends_only: bool,
+	#[serde(deserialize_with = "lenient")]
 	pub mode: ModeFilter,
+	#[serde(deserialize_with = "lenient")]
 	pub sort: BattleSort,
 	/// Largest or latest first. Ignored by `Relevance` and `Modded`, which
 	/// each have a fixed order of their own.
@@ -563,7 +605,7 @@ impl Default for BattleList {
 
 /// What a room can be ordered by: two orders made of several things, and
 /// the columns.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema, TS, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS, Default)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub enum BattleSort {
@@ -579,24 +621,6 @@ pub enum BattleSort {
 	Map,
 	/// The room's median rank; rooms with nobody known sort below rank 1.
 	Rank,
-}
-
-/// A sort this build does not offer -- `host` was one until 2026-09-03, and
-/// for a few days of September 2026 the file held a list of steps -- falls
-/// back to the default rather than making the whole file unreadable.
-impl<'de> Deserialize<'de> for BattleSort {
-	fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-		Ok(
-			match serde_json::Value::deserialize(deserializer)?.as_str() {
-				Some("modded") => BattleSort::Modded,
-				Some("players") => BattleSort::Players,
-				Some("title") => BattleSort::Title,
-				Some("map") => BattleSort::Map,
-				Some("rank") => BattleSort::Rank,
-				_ => BattleSort::Relevance,
-			},
-		)
-	}
 }
 
 /// Player-versus-what. Read off the room title, which is all the list has:
@@ -618,10 +642,11 @@ pub enum ModeFilter {
 /// Chobby's three, under the same names it gives them
 /// (`gui_settings_window.lua:906`): remember what you did last time, or always
 /// one or the other.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS, Default)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub enum JoinAs {
+	#[default]
 	Remember,
 	Spectator,
 	Player,
@@ -633,6 +658,7 @@ pub enum JoinAs {
 #[ts(export)]
 pub struct Play {
 	/// Whether joining a room seats you.
+	#[serde(deserialize_with = "lenient")]
 	pub join_as: JoinAs,
 	/// Whether the engine starts on its own when your room's game does.
 	///
@@ -1030,6 +1056,32 @@ mod tests {
 		assert_eq!(s.notifications.mention, Alert::Lobby);
 		assert_eq!(s.notifications.ring, Alert::Off);
 		assert_eq!(s.notifications.vote, Alert::Desktop);
+	}
+
+	/// A newer build writes values this one has no name for. Each reads as
+	/// its default -- a server it does not know as one of the user's own, an
+	/// override it cannot fetch as none -- and the file opens.
+	#[test]
+	fn values_from_a_newer_build_read_as_defaults() {
+		let s: Settings = serde_json::from_str(
+			r#"{
+				"servers": [{"builtin": "later", "host": "later.example"}],
+				"battleList": {"mode": "later", "sort": "later"},
+				"play": {"joinAs": "later"},
+				"games": {"overrides": [
+					{"name": "Kept 1", "source": {"kind": "rapid", "value": "kept:stable"}},
+					{"name": "Later 1", "source": {"kind": "later", "value": "x"}}
+				]}
+			}"#,
+		)
+		.unwrap();
+		assert_eq!(s.servers[0].builtin, None);
+		assert_eq!(s.servers[0].host, "later.example");
+		assert_eq!(s.battle_list.mode, ModeFilter::All);
+		assert_eq!(s.battle_list.sort, BattleSort::Relevance);
+		assert_eq!(s.play.join_as, JoinAs::Remember);
+		let kept: Vec<_> = s.games.overrides.iter().map(|o| o.name.as_str()).collect();
+		assert_eq!(kept, ["Kept 1"]);
 	}
 
 	#[test]

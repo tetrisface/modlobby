@@ -123,6 +123,23 @@ describe('mode', () => {
 			'SuPrEmE MuFF | 8v8',
 		])
 	})
+
+	test('an idle modded room has no side yet, so both filters keep it', () => {
+		const rows = [
+			{ ...row({ title: 'Mods 1', playerCount: 0 }), modded: true },
+			{ ...row({ title: 'Mods 2 | 4v4', playerCount: 6 }), modded: true },
+			{ ...row({ title: 'Host 3', playerCount: 0 }), modded: false },
+		]
+		expect(titles(arrange(rows, filters({ mode: 'pve' }), ''))).toEqual([
+			'Mods 1',
+		])
+		// Sorted: this is about what is kept, not the order it comes in.
+		expect(titles(arrange(rows, filters({ mode: 'pvp' }), '')).sort()).toEqual([
+			'Host 3',
+			'Mods 1',
+			'Mods 2 | 4v4',
+		])
+	})
 })
 
 describe('friends only', () => {

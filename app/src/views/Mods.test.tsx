@@ -64,7 +64,8 @@ function intro() {
 		],
 		account: { rememberPassword: false, autoLogin: false },
 		chat: { muted: [] },
-		// Filters that would hide an empty mods autohost, kept from last time.
+		// Kept from last time: Empty off would hide a spare mods autohost;
+		// PvE would not, and is the reader's to keep.
 		battleList: { sort: 'relevance', mode: 'pve', showEmpty: false },
 	} as unknown as Settings)
 	const room = fakeRoom({
@@ -176,10 +177,10 @@ describe('the mods pane', () => {
 		const saved = asked.mock.calls.find(
 			([c]) => c === 'update_settings',
 		)?.[1] as { settings: { battleList: object } }
-		// The sort, and the filters opened so the modded rooms are in the list.
+		// The sort, and Empty opened so the spare mods rooms are in the list.
 		expect(saved.settings.battleList).toEqual({
 			sort: 'modded',
-			mode: 'all',
+			mode: 'pve',
 			showEmpty: true,
 		})
 	})

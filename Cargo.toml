@@ -155,7 +155,11 @@ toml = "=1.1.4"
 tracing = "=0.1.44"
 tracing-appender = "=0.2.5"
 tracing-subscriber = { version = "=0.3.23", features = ["env-filter", "json"] }
-ts-rs = "=12.0.1"
+# `no-serde-warnings`: ts-rs prints a warning for every serde attribute it
+# does not model, `deserialize_with` among them (`settings::model::lenient`),
+# and has no per-field way to say the TS type is untouched. The bindings
+# diff in CI is what checks the exported types.
+ts-rs = { version = "=12.0.1", features = ["no-serde-warnings"] }
 webpki-roots = "=1.0.9"
 # HTTP mocking for the download and index tests; never touches the network.
 wiremock = "=0.6.5"

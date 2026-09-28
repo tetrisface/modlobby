@@ -80,18 +80,23 @@ export function keep(row: Row, filters: BattleList, query: string): boolean {
 	if (!filters.showPassworded && battle.passworded) return false
 	if (!filters.showLocked && battle.locked) return false
 	if (!filters.showRunning && row.running) return false
-	// A running room with nobody in it is still worth watching; an idle one is
-	// what people mean by empty. Chobby's comparator draws the same line, so the
-	// filter follows it.
-	if (!filters.showEmpty && battle.playerCount === 0 && !row.running)
-		return false
-	if (!matchesMode(battle, filters.mode)) return false
+	if (!filters.showEmpty && idle(row)) return false
+	if (!matchesMode(row, filters.mode)) return false
 	return matches(battle, query)
 }
 
-function matchesMode(battle: BattleView, mode: ModeFilter): boolean {
+/**
+ * What people mean by empty. A running room with nobody in it is still worth
+ * watching; Chobby's comparator draws the same line.
+ */
+const idle = (row: Row) => row.battle.playerCount === 0 && !row.running
+
+function matchesMode(row: Row, mode: ModeFilter): boolean {
 	if (mode === 'all') return true
-	return mode === 'pve' ? isVsAi(battle) : !isVsAi(battle)
+	// An idle modded room has no side yet: whoever walks in makes it one, so
+	// both filters keep it.
+	if (row.modded && idle(row)) return true
+	return mode === 'pve' ? isVsAi(row.battle) : !isVsAi(row.battle)
 }
 
 /**

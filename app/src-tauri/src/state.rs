@@ -89,13 +89,14 @@ pub struct App {
 }
 
 impl App {
-	/// Opens the settings directory and spawns the runtime on Tauri's async runtime.
-	pub fn open() -> Result<Self, settings::Error> {
+	/// Spawns the runtime on Tauri's async runtime, around settings already
+	/// open: opening them is the one thing that can fail, and it fails before
+	/// there is a log to say so in (see `run`).
+	pub fn open(settings: Store) -> Self {
 		// First, because building it installs the crypto provider that every
 		// TLS user in the process — the lobby transport included — relies on
 		// being there; without one, rustls panics rather than guesses.
 		let http = content::http::client(env!("CARGO_PKG_VERSION"));
-		let settings = Store::open(settings::config_dir())?;
 		let cache_dir = settings.dir().join("cache");
 		let credentials = credential_store();
 		// Before anything connects, so BAR's entry is where BAR says it is.
@@ -113,7 +114,7 @@ impl App {
 				Some(settings.dir().to_path_buf()),
 			)
 		});
-		Ok(Self {
+		Self {
 			login_guard: LoginGuard::new(settings.dir()),
 			rejoin: RejoinMemory::new(settings.dir()),
 			update_memory: UpdateMemory::new(settings.dir()),
@@ -138,7 +139,7 @@ impl App {
 			lan,
 			bar: held.config,
 			bar_fresh: held.fresh,
-		})
+		}
 	}
 
 	/// Asks for BAR's launcher config again once the copy on disk is a week
