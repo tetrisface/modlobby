@@ -3,6 +3,7 @@ import {
 	For,
 	Index,
 	Match,
+	createContext,
 	createEffect,
 	Show,
 	Switch,
@@ -10,8 +11,10 @@ import {
 	createResource,
 	createSignal,
 	on,
+	useContext,
 	type Accessor,
 } from 'solid-js'
+import { ActionCell, CellButton } from '../components/ActionCell'
 import { ResizeHandle } from '../components/ResizeHandle'
 import { SearchBox } from '../components/SearchBox'
 import { api, describeError } from '../ipc/client'
@@ -60,6 +63,13 @@ import { TweakRow } from './tweaks/TweakRow'
 import { Tweaks } from './tweaks/Tweaks'
 
 const TWEAK_GROUP = 'Tweak slots'
+
+/**
+ * Opens the room's map sheet, where the start boxes are drawn. The room
+ * provides it; a map-metadata row offers it, seat or no seat, since the
+ * sheet reads as well as it edits.
+ */
+export const OpenMap = createContext<() => void>()
 
 /** Shown before the game is installed, when there is no table to read. */
 const NO_TABS: Tab = { key: '', name: '', desc: '', groups: [] }
@@ -639,7 +649,13 @@ export function Rows(props: {
 							when={slotOf(row().option.key) === null}
 							fallback={<TweakRow row={row()} />}
 						>
-							<div class='opt' classList={{ changed: row().changed }}>
+							<div
+								class='opt'
+								classList={{
+									changed: row().changed,
+									map: isMapOption(row().option),
+								}}
+							>
 								<span class='mark' />
 								<span class='k' title={row().option.desc ?? ''}>
 									{label(row().option)}
@@ -668,14 +684,28 @@ export function Rows(props: {
  * metadata, and read-only; the override is somebody's own, and a `TweakRow`.
  */
 function MapValue(props: { row: Row }) {
+	const openMap = useContext(OpenMap)
 	const [words] = createResource(
 		() => [props.row.option.key, props.row.current ?? ''] as const,
 		([key, raw]) => api.describeMapOption(key, raw).catch(() => null),
 	)
 	return (
-		<span class='v' title={props.row.current ?? ''}>
-			{words.loading ? '…' : (words() ?? displayText(props.row))}
-		</span>
+		<>
+			<span class='v' title={props.row.current ?? ''}>
+				{words.loading ? '…' : (words() ?? displayText(props.row))}
+			</span>
+			<Show when={openMap}>
+				{(open) => (
+					<ActionCell filled>
+						<CellButton
+							icon='act-pen'
+							title='Open the map and its start boxes'
+							onClick={() => open()()}
+						/>
+					</ActionCell>
+				)}
+			</Show>
+		</>
 	)
 }
 

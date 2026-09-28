@@ -1051,11 +1051,24 @@ body.resizing-y {
 	margin-left: auto;
 }
 
+/* Both cards abreast on that row instead of one over the other: when a
+   second card's width fits there too and, stacked, they would stand taller
+   than the tallest team (`Watchers.tsx` measures). Each card keeps its own
+   height, so the measurement reads the same whichever way they stand. */
+.watchers-stack.abreast {
+	flex-direction: row;
+	align-items: flex-start;
+	gap: 0.875rem 1.75rem;
+	flex-basis: calc(2 * 16.75rem + 1.75rem);
+	min-width: calc(2 * 13.75rem + 1.75rem);
+}
+
 .watchers-stack.flow {
 	display: contents;
 }
 
-.watchers-stack.flow .watchers {
+.watchers-stack.flow .watchers,
+.watchers-stack.abreast > .watchers {
 	flex: 0 1 16.75rem;
 	min-width: 13.75rem;
 }
@@ -3205,6 +3218,12 @@ body.resizing {
 
 .opt.changed .v {
 	color: var(--accent);
+}
+
+/* A map-metadata row carries a pen after its words: the map sheet, where
+   what the words describe is drawn. */
+.opt.map {
+	grid-template-columns: 0.125rem 1fr auto auto;
 }
 
 .setup-empty {
@@ -5478,21 +5497,6 @@ html.overlay .shell {
 	paint-order: stroke;
 	stroke: rgba(0, 0, 0, 0.65);
 	stroke-width: 3;
-}
-
-.box-history {
-	padding: 0.375rem 1rem;
-	border-bottom: 1px solid var(--line);
-	font-size: 0.78125rem;
-}
-
-.box-history > summary {
-	cursor: pointer;
-	color: var(--muted);
-}
-
-.box-history[open] > summary {
-	margin-bottom: 0.5rem;
 }
 
 /* A button that reads as prose, for switching between logging in and

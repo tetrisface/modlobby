@@ -37,18 +37,38 @@ export function fitsBeside(
 }
 
 /**
+ * Whether the stack's two cards stand abreast on the teams' row rather than
+ * one over the other: when a second card's width fits there too, and one
+ * over the other they would stand taller than the tallest team. The stack
+ * would then be what sets the roster's height, and two columns halve it.
+ */
+export function standsAbreast(
+	teams: number,
+	tall: boolean,
+	card: number,
+	gap: number,
+	row: number,
+	stacked: number,
+	tallestTeam: number,
+): boolean {
+	return stacked > tallestTeam && fitsBeside(teams + 1, tall, card, gap, row)
+}
+
+/**
  * The people watching: the join queue over the spectators.
  *
- * Two placements, by one measurement. When a card's width fits on the
+ * Three placements, by one measurement. When a card's width fits on the
  * teams' row beside every team, the two are one stack hugging the right of
- * the people area. When it does not, the stack dissolves (`display:
+ * the people area -- abreast rather than one over the other when a second
+ * card fits there too and stacking them would outgrow the teams
+ * (`standsAbreast`). When no card fits, the stack dissolves (`display:
  * contents`) and the two are ordinary cards flowing after the last team,
  * filling the row's remaining slots exactly as another team would. The
  * teams always come first either way.
  *
  * The measurement is the row's width against the cards' natural width and
- * the team count -- never where the stack itself landed -- so the answer
- * cannot depend on itself.
+ * the team count, and the cards' own heights against the teams' -- never
+ * where the stack itself landed -- so the answer cannot depend on itself.
  *
  * A card spread across the width leaves the stack for a full-width row of
  * its own below the teams; whatever is not spread keeps its place. Each
@@ -74,18 +94,45 @@ export function WatcherStack(
 
 	let root: HTMLDivElement | undefined
 	const [beside, setBeside] = createSignal(false)
+	const [abreast, setAbreast] = createSignal(false)
 	/** Asks the row what a card measures, so the stylesheet stays the truth. */
 	function measure() {
 		const row = root?.parentElement
-		if (!row) return
-		const team = row.querySelector<HTMLElement>(':scope > .team')
-		const card = team ? parseFloat(getComputedStyle(team).flexBasis) : 0
-		const gap = parseFloat(getComputedStyle(row).columnGap) || 0
+		if (!root || !row) return
+		const teams = [...row.querySelectorAll<HTMLElement>(':scope > .team')]
+		const card = teams[0] ? parseFloat(getComputedStyle(teams[0]).flexBasis) : 0
+		const gaps = getComputedStyle(row)
+		const gap = parseFloat(gaps.columnGap) || 0
 		setBeside(fitsBeside(props.teams, props.tall, card, gap, row.clientWidth))
+		// Only the cards still in the stack; the stack's row gap is the teams'.
+		const cards = [...root.querySelectorAll<HTMLElement>(':scope > .watchers')]
+		const stacked =
+			cards.reduce((sum, card) => sum + contentHeight(card), 0) +
+			(cards.length - 1) * (parseFloat(gaps.rowGap) || 0)
+		const tallest = Math.max(0, ...teams.map(contentHeight))
+		setAbreast(
+			cards.length === 2 &&
+				standsAbreast(
+					props.teams,
+					props.tall,
+					card,
+					gap,
+					row.clientWidth,
+					stacked,
+					tallest,
+				),
+		)
 	}
 	createEffect(() => {
 		props.teams
 		props.tall
+		// A card's height is its rows: a watcher arriving, or a card spread
+		// out of the stack, changes what stacking would cost.
+		props.queue.length
+		props.spectators.length
+		props.pending.length
+		queueSpread()
+		spectatorsSpread()
 		measure()
 	})
 	onMount(() => {
@@ -126,6 +173,7 @@ export function WatcherStack(
 				class='watchers-stack'
 				classList={{
 					beside: beside(),
+					abreast: abreast(),
 					flow: !beside(),
 					empty: (!hasQueue() || queueSpread()) && spectatorsSpread(),
 				}}
@@ -137,6 +185,17 @@ export function WatcherStack(
 			<Show when={spectatorsSpread()}>{spectatorsCard()}</Show>
 		</>
 	)
+}
+
+/**
+ * What a card's contents take. The row stretches every card to its tallest
+ * item, so a card's box says how tall the row is, not how tall the card
+ * would stand on its own; its last child's foot does.
+ */
+function contentHeight(card: HTMLElement): number {
+	const last = card.lastElementChild
+	if (!last) return card.offsetHeight
+	return last.getBoundingClientRect().bottom - card.getBoundingClientRect().top
 }
 
 const people = (p: People): People => ({

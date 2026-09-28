@@ -80,8 +80,7 @@ import { dragging } from '../lib/drag'
 import { Seat, canAddAi, showAddAi, sitOn } from './Seat'
 import { modRefusal, movable, moveTo, setBonus, type Target } from './room/move'
 import { hostsMods } from '../lib/mutators'
-import { StartBoxes } from './StartBoxes'
-import { Setup } from './Setup'
+import { OpenMap, Setup } from './Setup'
 import { VoteBar } from './VoteBar'
 
 /** `startpostype`, by the names Chobby gives the three. */
@@ -806,10 +805,6 @@ export function Room() {
 					<Show when={room.caps.spads}>
 						<VoteBar teams={Math.max(occupants().teams.length, 2)} />
 					</Show>
-					<StartBoxes
-						teams={Math.max(occupants().teams.length, 2)}
-						mapName={b().mapName}
-					/>
 					<Show when={room.caps.spads}>
 						<HostBar />
 					</Show>
@@ -1030,7 +1025,9 @@ export function Room() {
 							</div>
 						</div>
 
-						<Setup />
+						<OpenMap.Provider value={() => setEditing(true)}>
+							<Setup />
+						</OpenMap.Provider>
 					</div>
 				</section>
 			)}

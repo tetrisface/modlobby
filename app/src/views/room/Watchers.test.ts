@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { fitsBeside } from './Watchers'
+import { fitsBeside, standsAbreast } from './Watchers'
 
 /** A card is 268 px and the gap 28 px, as the stylesheet has them at 16 px. */
 const CARD = 268
@@ -22,5 +22,21 @@ describe('fitsBeside', () => {
 	test('a row with no width yet, or no card to measure, fits nothing', () => {
 		expect(fitsBeside(2, false, CARD, GAP, 0)).toBe(false)
 		expect(fitsBeside(2, false, 0, GAP, 860)).toBe(false)
+	})
+})
+
+describe('standsAbreast', () => {
+	test('two cards stand abreast when both fit beside the teams and, stacked, would outgrow them', () => {
+		// Two teams and two cards: 4 × 268 + 3 × 28 = 1156.
+		expect(standsAbreast(2, false, CARD, GAP, 1156, 400, 300)).toBe(true)
+		expect(standsAbreast(2, false, CARD, GAP, 1155, 400, 300)).toBe(false)
+	})
+
+	test('a stack no taller than the tallest team stays one over the other', () => {
+		expect(standsAbreast(2, false, CARD, GAP, 2000, 300, 300)).toBe(false)
+	})
+
+	test('nothing stands beside a team that spans the row', () => {
+		expect(standsAbreast(2, true, CARD, GAP, 5000, 400, 300)).toBe(false)
 	})
 })
