@@ -1709,10 +1709,12 @@ impl Session {
 	///
 	/// Joining one is how Chobby's Host button makes a *public* room: the
 	/// autohost is already listed, and the first person in it becomes its
-	/// boss. Chobby's tests (`battle_list_window.lua:1719-1727`), with one
-	/// stand-in: it wants the engine it runs on, which has no meaning for a
+	/// boss. Chobby's tests (`battle_list_window.lua:1969-1975`), with two
+	/// stand-ins: it wants the engine it runs on, which has no meaning for a
 	/// lobby that fetches engines, so the engine most rooms are on is taken
-	/// to be the current one. That keeps the `ENGINE TESTING` hosts out.
+	/// to be the current one, which keeps the `ENGINE TESTING` hosts out; and
+	/// it takes a cluster's rooms only, where a bot hosting on its own, as the
+	/// mods server's do, is a cluster of one.
 	pub fn spare_rooms(&self) -> Vec<SpareRoom> {
 		let Some(engine) = self.common_engine() else {
 			return vec![];
@@ -1722,6 +1724,12 @@ impl Session {
 				.users
 				.get(founder)
 				.is_some_and(|user| user.status.in_game)
+		};
+		let lone_bot = |founder: &str| {
+			self.state
+				.users
+				.get(founder)
+				.is_some_and(|user| user.status.bot)
 		};
 		let mut rooms: Vec<SpareRoom> =
 			self.state
@@ -1735,10 +1743,15 @@ impl Session {
 						&& !host_in_game(&battle.founder)
 				})
 				.filter_map(|battle| {
+					// ponytail: a lone bot ties with a one-spare cluster in
+					// `hosting::pick`; rank clusters ahead if a stranger's bot
+					// ever gets taken on BAR's server.
+					let cluster = hosting::cluster_of(&battle.founder)
+						.or_else(|| lone_bot(&battle.founder).then_some(battle.founder.as_str()))?;
 					Some(SpareRoom {
 						id: battle.id,
 						founder: battle.founder.clone(),
-						cluster: hosting::cluster_of(&battle.founder)?.to_owned(),
+						cluster: cluster.to_owned(),
 						ip: battle.ip.parse().ok(),
 					})
 				})
@@ -2286,6 +2299,8 @@ mod tests {
 			&[
 				"ADDUSER Host[EU1][006] DE 9 SPADS",
 				"CLIENTSTATUS Host[EU1][006] 65",
+				"ADDUSER ModsHost DE 9 SPADS",
+				"CLIENTSTATUS ModsHost 64",
 				// Busy: someone is already in it.
 				"BATTLEOPENED 1 0 0 Host[EU1][001] 1.2.3.4 8452 16 0 0 -1 R\tv\tm\tt\tg",
 				"JOINEDBATTLE 1 alice",
@@ -2303,26 +2318,34 @@ mod tests {
 				// Its host is in a game, which after a server restart is what
 				// an empty room whose game is still running looks like.
 				"BATTLEOPENED 6 0 0 Host[EU1][006] 1.2.3.4 8452 16 0 0 -1 R\tv\tm\tt\tg",
-				// Not a cluster's room at all.
-				"BATTLEOPENED 7 0 0 [teh]host 1.2.3.4 8452 16 0 0 -1 R\tv\tm\tt\tg",
+				// A person's own room: no cluster, and not a bot.
+				"BATTLEOPENED 7 0 0 carol 1.2.3.4 8452 16 0 0 -1 R\tv\tm\tt\tg",
 				// Another region is as good as any.
 				"BATTLEOPENED 8 0 0 Host[US1][001] 5.6.7.8 8452 16 0 0 -1 R\tv\tm\tt\tg",
 				// A second spare on the first machine.
 				"BATTLEOPENED 9 0 0 Host[EU1][009] 1.2.3.4 8452 16 0 0 -1 R\tv\tm\tt\tg",
+				// A bot hosting on its own, as the mods server's do.
+				"BATTLEOPENED 10 0 0 ModsHost 9.9.9.9 8452 16 0 0 -1 R\tv\tm\tt\tg",
 			],
 		);
 
 		let spares = s.spare_rooms();
 		assert_eq!(
 			spares.iter().map(|room| room.id).collect::<Vec<_>>(),
-			[3, 8, 9]
+			[3, 8, 9, 10]
 		);
 		assert_eq!(spares[0].cluster, "Host[EU1]");
 		assert_eq!(spares[1].ip, "5.6.7.8".parse().ok());
+		// A lone bot is a cluster of one, under its own name.
+		assert_eq!(spares[3].cluster, "ModsHost");
 		// Each machine once, however many spares it runs.
 		assert_eq!(
 			s.spare_machines(),
-			[Ipv4Addr::new(1, 2, 3, 4), Ipv4Addr::new(5, 6, 7, 8)]
+			[
+				Ipv4Addr::new(1, 2, 3, 4),
+				Ipv4Addr::new(5, 6, 7, 8),
+				Ipv4Addr::new(9, 9, 9, 9)
+			]
 		);
 	}
 

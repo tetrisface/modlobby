@@ -64,7 +64,8 @@ function intro() {
 		],
 		account: { rememberPassword: false, autoLogin: false },
 		chat: { muted: [] },
-		battleList: { sort: 'relevance' },
+		// Filters that would hide an empty mods autohost, kept from last time.
+		battleList: { sort: 'relevance', mode: 'pve', showEmpty: false },
 	} as unknown as Settings)
 	const room = fakeRoom({
 		my: () => myBattle({ scriptTags: {} }),
@@ -174,8 +175,13 @@ describe('the mods pane', () => {
 		await waitFor(() => expect(history.get()).toBe('/battles'))
 		const saved = asked.mock.calls.find(
 			([c]) => c === 'update_settings',
-		)?.[1] as { settings: { battleList: { sort: string } } }
-		expect(saved.settings.battleList.sort).toBe('modded')
+		)?.[1] as { settings: { battleList: object } }
+		// The sort, and the filters opened so the modded rooms are in the list.
+		expect(saved.settings.battleList).toEqual({
+			sort: 'modded',
+			mode: 'all',
+			showEmpty: true,
+		})
 	})
 
 	test('shows what is loaded, where it comes from, and what the host offers', () => {

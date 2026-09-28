@@ -96,7 +96,12 @@ function Intro() {
 		}
 	}
 
-	/** The list with the modded rooms first: a change to the sort, kept. */
+	/**
+	 * The list with the modded rooms first: a change to the sort, kept. The
+	 * mode and Empty filters open with it: a spare mods autohost is empty and
+	 * its title says neither PvE nor PvP, so either would hide the very rooms
+	 * the button promises.
+	 */
 	async function browse() {
 		const current = settings()
 		if (!current) return
@@ -104,7 +109,12 @@ function Intro() {
 			applySettings(
 				await api.updateSettings({
 					...current,
-					battleList: { ...current.battleList, sort: 'modded' },
+					battleList: {
+						...current.battleList,
+						sort: 'modded',
+						mode: 'all',
+						showEmpty: true,
+					},
 				}),
 			)
 			navigate('/battles')

@@ -26,7 +26,8 @@ pub type Rtts = HashMap<Ipv4Addr, Duration>;
 pub struct SpareRoom {
 	pub id: u32,
 	pub founder: String,
-	/// The manager that runs it: `Host[EU6]` for `Host[EU6][012]`.
+	/// The manager that runs it: `Host[EU6]` for `Host[EU6][012]`; a bot
+	/// hosting on its own is a cluster of one, under its own name.
 	pub cluster: String,
 	/// The machine the game would run on; `None` when the server sent
 	/// something that is not an address.
