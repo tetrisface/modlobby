@@ -113,10 +113,14 @@ pub async fn widget_install(
 	install: widgets::Install,
 ) -> Result<InstalledWidget> {
 	let write_dir = write_dir(&app)?;
+	// Refused before anything is put on disk: files a ledger cannot record
+	// would no longer be modlobby's to update or remove.
+	Ledger::load(&write_dir).map_err(manage_error)?;
 	let entry = widgets::manage::install(&app.http, &key, &name, &install, &write_dir, now())
 		.await
 		.map_err(manage_error)?;
-	let mut ledger = Ledger::read(&write_dir);
+	// Read again: another change may have been recorded during the download.
+	let mut ledger = Ledger::load(&write_dir).map_err(manage_error)?;
 	ledger.widgets.insert(key, entry.clone());
 	ledger.write(&write_dir).map_err(manage_error)?;
 	tracing::info!(name, files = entry.files.len(), "widget installed");
@@ -181,7 +185,7 @@ pub async fn widget_delete(app: State<'_, App>, key: String) -> Result<Deleted> 
 			"a game is running; BAR rewrites its widget config on exit and would discard this",
 		));
 	}
-	let mut ledger = Ledger::read(&write_dir);
+	let mut ledger = Ledger::load(&write_dir).map_err(manage_error)?;
 	let entry = ledger.widgets.get(&key).cloned().ok_or_else(|| {
 		ApiError::new(
 			"notInstalled",
@@ -251,6 +255,7 @@ fn manage_error(err: widgets::manage::ManageError) -> ApiError {
 		E::UnsafePath(_) => "unsafePath",
 		E::Config(_) => "widgetConfig",
 		E::Io(..) => "io",
+		E::Ledger(..) => "widgetLedger",
 	};
 	ApiError::new(code, err.to_string())
 }

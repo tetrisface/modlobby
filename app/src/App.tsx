@@ -415,6 +415,10 @@ function Layout(props: ParentProps) {
 		try {
 			const saved = await api.getSettings()
 			applySettings(saved)
+			// A settings file this build could not parse was kept and started
+			// past; the user hears it once, here.
+			const recovered = await api.settingsRecovered()
+			if (recovered) pushNotice('warning', recovered)
 			await connectChannel()
 			// A download an earlier run kept installs now, before the login: the
 			// restart it ends in would only spend another login on the server's

@@ -7,7 +7,7 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use jsonc_parser::cst::{CstInputValue, CstObject, CstRootNode};
+use jsonc_parser::cst::{CstInputValue, CstNode, CstObject, CstRootNode};
 use jsonc_parser::{ParseOptions, parse_to_serde_value};
 use serde_json::Value;
 
@@ -45,10 +45,16 @@ pub struct Store {
 	current: Arc<Mutex<Settings>>,
 	/// Hash of what we wrote last, so the watcher can tell our writes from the user's.
 	last_written: Arc<Mutex<Option<u64>>>,
+	/// What was done at this start about a file that did not parse.
+	recovered: Option<String>,
 }
 
 impl Store {
-	/// Creates the directory, the template and the schema on first run, then loads.
+	/// Creates the directory, the template and the schema on first run, then
+	/// loads. A file this build cannot parse -- a hand edit gone wrong, a type
+	/// a newer build changed -- does not stop the app: it is kept beside the
+	/// one started from (see `recover`), and [`Store::recovered`] says so. One
+	/// that cannot be read at all is left alone, and is the error.
 	pub fn open(dir: impl Into<PathBuf>) -> Result<Self, Error> {
 		let dir = dir.into();
 		std::fs::create_dir_all(&dir).map_err(|source| Error::Io {
@@ -61,15 +67,33 @@ impl Store {
 		}
 		let schema_path = dir.join(SCHEMA_FILE);
 		let schema = schema_json();
-		if std::fs::read_to_string(&schema_path).ok().as_deref() != Some(schema.as_str()) {
-			write_atomic(&schema_path, &schema)?;
+		// For editors only: one that cannot be written costs completion, not a start.
+		if std::fs::read_to_string(&schema_path).ok().as_deref() != Some(schema.as_str())
+			&& let Err(err) = write_atomic(&schema_path, &schema)
+		{
+			tracing::warn!(%err, "settings: the schema was not written");
 		}
-		let settings = load(&path)?;
+		let (settings, recovered) = match load(&path) {
+			Ok(settings) => (settings, None),
+			Err(invalid @ Error::Invalid { .. }) => {
+				let (settings, told) = recover(&dir, &invalid)?;
+				tracing::warn!(%told, "settings: recovered");
+				(settings, Some(told))
+			}
+			Err(unreadable) => return Err(unreadable),
+		};
 		Ok(Self {
 			dir,
 			current: Arc::new(Mutex::new(settings)),
 			last_written: Arc::new(Mutex::new(None)),
+			recovered,
 		})
+	}
+
+	/// What was done at this start about a file that did not parse, to tell
+	/// the user; `None` when it did.
+	pub fn recovered(&self) -> Option<&str> {
+		self.recovered.as_deref()
 	}
 
 	pub fn dir(&self) -> &Path {
@@ -110,7 +134,12 @@ impl Store {
 				message: err.to_string(),
 			})?;
 		let object = root.object_value_or_set();
-		apply_changes(&object, &to_value(&before), &to_value(&after));
+		apply_changes(
+			&object,
+			&to_value(&before),
+			&to_value(&after),
+			&as_read(&text),
+		);
 		let edited = root.to_string();
 		// A backup of the last user-visible version before we touch it.
 		let _ = std::fs::copy(&path, self.dir.join(format!("{FILE_NAME}.bak")));
@@ -142,6 +171,48 @@ pub fn load(path: &Path) -> Result<Settings, Error> {
 		source,
 	})?;
 	parse(path, &text)
+}
+
+/// Keeps a file this build cannot parse beside the one it starts from: the
+/// backup of before the last write when that parses, else the defaults.
+/// Answers with the settings and what to tell the user.
+fn recover(dir: &Path, invalid: &Error) -> Result<(Settings, String), Error> {
+	let path = dir.join(FILE_NAME);
+	let seconds = std::time::SystemTime::now()
+		.duration_since(std::time::UNIX_EPOCH)
+		.map_or(0, |since| since.as_secs());
+	let kept = dir.join(format!("{FILE_NAME}.broken-{seconds}"));
+	std::fs::rename(&path, &kept).map_err(|source| Error::Io {
+		path: path.clone(),
+		source,
+	})?;
+	let backup = dir.join(format!("{FILE_NAME}.bak"));
+	let restored = std::fs::read_to_string(&backup)
+		.ok()
+		.and_then(|text| Some((parse(&backup, &text).ok()?, text)));
+	let ((settings, text), from) = match restored {
+		Some(restored) => (restored, "the version from before its last change"),
+		None => (
+			(Settings::initial(), template()),
+			"the defaults; saved passwords are still in the OS keyring",
+		),
+	};
+	write_atomic(&path, &text)?;
+	let told = format!(
+		"modlobby could not read its settings file ({invalid}). It was kept as {} and modlobby started from {from}.",
+		kept.display()
+	);
+	Ok((settings, told))
+}
+
+/// The file as this build reads it, with nothing implied added (no
+/// `ensure_*`): a list `apply_changes` edits item by item must match it.
+/// `Null` when it does not read, which leaves every list to be written whole.
+fn as_read(text: &str) -> Value {
+	parse_to_serde_value::<Value>(text, &ParseOptions::default())
+		.ok()
+		.and_then(|value| serde_json::from_value::<Settings>(value).ok())
+		.map_or(Value::Null, |settings| to_value(&settings))
 }
 
 /// A file from before there was a server list is read as the list it
@@ -176,8 +247,12 @@ pub fn template() -> String {
 	)
 }
 
-/// Walks both trees; a leaf that differs is set in place, a key that vanished is removed.
-fn apply_changes(object: &CstObject, before: &Value, after: &Value) {
+/// Walks both trees; a leaf that differs is set in place, a key that vanished
+/// is removed. A list is written whole -- unless `read`, the file as this
+/// build reads it, shows its items line up with `before`'s one for one: then
+/// each item is walked like an object, so the keys and values in it this
+/// build has no name for, a newer build's, stay as they were.
+fn apply_changes(object: &CstObject, before: &Value, after: &Value, read: &Value) {
 	let (Value::Object(before), Value::Object(after)) = (before, after) else {
 		return;
 	};
@@ -186,10 +261,20 @@ fn apply_changes(object: &CstObject, before: &Value, after: &Value) {
 		if old == Some(new) {
 			continue;
 		}
+		let read = read.get(key).unwrap_or(&Value::Null);
+		if let (Some(Value::Array(old)), Value::Array(new), Value::Array(read)) = (old, new, read)
+			&& let Some(items) = items_in_step(object, key, old, new, read)
+		{
+			for (item, (old, (new, read))) in items.iter().zip(old.iter().zip(new.iter().zip(read)))
+			{
+				apply_changes(item, old, new, read);
+			}
+			continue;
+		}
 		match (old, new) {
 			(Some(Value::Object(_)), Value::Object(_)) => {
 				let child = object.object_value_or_set(key);
-				apply_changes(&child, old.expect("checked"), new);
+				apply_changes(&child, old.expect("checked"), new, read);
 			}
 			_ => match object.get(key) {
 				Some(prop) => prop.set_value(input_value(new)),
@@ -206,6 +291,30 @@ fn apply_changes(object: &CstObject, before: &Value, after: &Value) {
 			prop.remove();
 		}
 	}
+}
+
+/// The list under `key` as objects to walk one by one, when that is safe:
+/// as long before as after, every item an object, and the file's items the
+/// ones `before` holds, in order. Anything else -- an item added or taken
+/// away, a list this build reordered or read short -- is written whole.
+fn items_in_step(
+	object: &CstObject,
+	key: &str,
+	old: &[Value],
+	new: &[Value],
+	read: &[Value],
+) -> Option<Vec<CstObject>> {
+	let objects = |items: &[Value]| items.iter().all(Value::is_object);
+	if old.len() != new.len() || read != old || !objects(old) || !objects(new) {
+		return None;
+	}
+	let items = object
+		.array_value(key)?
+		.elements()
+		.iter()
+		.map(CstNode::as_object)
+		.collect::<Option<Vec<_>>>()?;
+	(items.len() == old.len()).then_some(items)
 }
 
 fn input_value(value: &Value) -> CstInputValue {
@@ -443,6 +552,85 @@ mod tests {
 				crate::model::ServerEntry::recoil()
 			]
 		);
+	}
+
+	/// A file this build cannot parse is kept, and the app starts from the
+	/// backup of before the last change -- and says so.
+	#[test]
+	fn a_file_that_does_not_parse_is_kept_and_the_backup_used() {
+		let dir = tempfile::tempdir().unwrap();
+		let store = Store::open(dir.path()).unwrap();
+		store.update(|s| s.chat.max_lines = 5).unwrap();
+		store.update(|s| s.chat.max_lines = 6).unwrap();
+		let broken = "{ \"chat\": { \"maxLines\": \"many\" } }";
+		std::fs::write(store.path(), broken).unwrap();
+
+		let reopened = Store::open(dir.path()).unwrap();
+		assert_eq!(reopened.get().chat.max_lines, 5, "the backup");
+		assert!(
+			reopened
+				.recovered()
+				.unwrap()
+				.contains("before its last change")
+		);
+		assert_eq!(
+			load(&reopened.path()).unwrap().chat.max_lines,
+			5,
+			"and it reads again"
+		);
+		let kept: Vec<_> = std::fs::read_dir(dir.path())
+			.unwrap()
+			.map(|entry| entry.unwrap().path())
+			.filter(|path| {
+				path.file_name().is_some_and(|name| {
+					name.to_string_lossy().starts_with("settings.jsonc.broken-")
+				})
+			})
+			.collect();
+		assert_eq!(kept.len(), 1);
+		assert_eq!(std::fs::read_to_string(&kept[0]).unwrap(), broken);
+	}
+
+	#[test]
+	fn with_no_backup_that_parses_the_defaults_are_used() {
+		let dir = tempfile::tempdir().unwrap();
+		std::fs::write(dir.path().join(FILE_NAME), "{ not json").unwrap();
+		let store = Store::open(dir.path()).unwrap();
+		assert_eq!(store.get(), Settings::initial());
+		assert!(store.recovered().unwrap().contains("the defaults"));
+	}
+
+	/// Nothing is known about a file that cannot be read at all, and it may
+	/// be fine: it is left where it is, and opening fails.
+	#[test]
+	fn a_file_that_cannot_be_read_is_left_alone() {
+		let dir = tempfile::tempdir().unwrap();
+		std::fs::create_dir(dir.path().join(FILE_NAME)).unwrap();
+		assert!(matches!(Store::open(dir.path()), Err(Error::Io { .. })));
+		assert!(dir.path().join(FILE_NAME).is_dir());
+	}
+
+	/// A newer build's server, of a kind and with a key this build has no
+	/// name for. A change to it here edits it in place, so both stay.
+	#[test]
+	fn an_older_build_keeps_what_it_cannot_read_in_a_server_it_changes() {
+		let dir = tempfile::tempdir().unwrap();
+		let store = Store::open(dir.path()).unwrap();
+		let mut file = serde_json::to_value(Settings::initial()).unwrap();
+		let later = serde_json::json!({ "builtin": "later", "host": "later.example", "later": 1 });
+		file["servers"].as_array_mut().unwrap().push(later);
+		std::fs::write(store.path(), file.to_string()).unwrap();
+		store.reload().unwrap().unwrap();
+
+		store
+			.update(|s| s.servers[3].username = "me".into())
+			.unwrap();
+		let text = std::fs::read_to_string(store.path()).unwrap();
+		let written: Value = parse_to_serde_value(&text, &ParseOptions::default()).unwrap();
+		let entry = &written["servers"][3];
+		assert_eq!(entry["builtin"], "later");
+		assert_eq!(entry["later"], 1);
+		assert_eq!(entry["username"], "me");
 	}
 
 	#[test]

@@ -453,6 +453,23 @@ fn an_unreadable_ledger_reads_as_empty_rather_than_failing() {
 }
 
 #[test]
+fn a_change_refuses_a_ledger_it_cannot_read() {
+	// Written back from empty, it would forget every widget it recorded.
+	let dir = tempfile::tempdir().unwrap();
+	std::fs::create_dir_all(dir.path().join("LuaUI")).unwrap();
+	std::fs::write(dir.path().join(widgets::manage::LEDGER_FILE), "{ not json").unwrap();
+	assert!(matches!(
+		Ledger::load(dir.path()),
+		Err(ManageError::Ledger(..))
+	));
+	assert_eq!(
+		Ledger::load(&dir.path().join("nowhere")).unwrap(),
+		Ledger::default(),
+		"none yet is an empty one"
+	);
+}
+
+#[test]
 fn a_widget_whose_files_were_removed_by_hand_is_not_intact() {
 	let dir = tempfile::tempdir().unwrap();
 	let entry = widgets::manage::InstalledWidget {

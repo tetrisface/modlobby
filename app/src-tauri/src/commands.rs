@@ -1332,6 +1332,13 @@ pub fn get_settings(app: State<'_, App>) -> Settings {
 	app.settings.get()
 }
 
+/// What was done at this start about a settings file that did not parse, if
+/// anything: the front end shows it once, as a warning.
+#[tauri::command]
+pub fn settings_recovered(app: State<'_, App>) -> Option<String> {
+	app.settings.recovered().map(str::to_owned)
+}
+
 /// Replaces the settings; the file keeps the user's comments and layout.
 /// What the runtime and the overlay go by is told to them here: the file
 /// watcher, which tells them of an edit made in the file, skips our own write.

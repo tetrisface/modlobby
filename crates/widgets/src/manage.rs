@@ -77,6 +77,8 @@ pub enum ManageError {
 	Config(#[from] ConfigError),
 	#[error("{0}: {1}")]
 	Io(String, String),
+	#[error("{0} cannot be read ({1}); widgets are left as they are until it can")]
+	Ledger(String, String),
 }
 
 /// What an install put on disk, so a delete can undo exactly it.
@@ -157,18 +159,28 @@ pub struct Ledger {
 }
 
 impl Ledger {
+	/// For showing. A ledger we cannot read is worse than none: it would make
+	/// delete claim ownership of nothing while the files stay. Say so loudly
+	/// and carry on with an empty one rather than failing the page.
 	pub fn read(write_dir: &Path) -> Self {
-		let path = write_dir.join(LEDGER_FILE);
-		let Ok(text) = std::fs::read_to_string(&path) else {
-			return Self::default();
-		};
-		serde_json::from_str(&text).unwrap_or_else(|err| {
-			// A ledger we cannot read is worse than none: it would make delete
-			// claim ownership of nothing while the files stay. Say so loudly
-			// and carry on with an empty one rather than failing the page.
-			tracing::warn!(?path, %err, "widget ledger unreadable; treating as empty");
+		Self::load(write_dir).unwrap_or_else(|err| {
+			tracing::warn!(%err, "widget ledger unreadable; treating as empty");
 			Self::default()
 		})
+	}
+
+	/// For a change. One that cannot be read -- a newer build's, say -- is
+	/// the error: written back from empty it would forget every widget it
+	/// recorded, and their files would no longer be modlobby's to remove.
+	pub fn load(write_dir: &Path) -> Result<Self, ManageError> {
+		let path = write_dir.join(LEDGER_FILE);
+		let text = match std::fs::read_to_string(&path) {
+			Ok(text) => text,
+			Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Self::default()),
+			Err(err) => return Err(ManageError::Io(path.display().to_string(), err.to_string())),
+		};
+		serde_json::from_str(&text)
+			.map_err(|err| ManageError::Ledger(path.display().to_string(), err.to_string()))
 	}
 
 	pub fn write(&self, write_dir: &Path) -> Result<(), ManageError> {

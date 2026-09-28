@@ -285,6 +285,7 @@ export const api = {
 		user: string,
 	) => invoke<void>('friend_action', { server, action, user }),
 	getSettings: () => invoke<Settings>('get_settings'),
+	settingsRecovered: () => invoke<string | null>('settings_recovered'),
 	updateSettings: (settings: Settings) =>
 		invoke<Settings>('update_settings', { settings }),
 	hasPassword: (server: string, username: string) =>

@@ -4,7 +4,10 @@
 //! evening of tuning a room, and this file is the only copy of the ones that
 //! never went to Chobby.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+
+use serde_json::{Map, Value};
 
 use crate::chobby;
 use crate::model::{Book, Preset, Stamp, VERSION};
@@ -66,19 +69,29 @@ impl Store {
 		})
 	}
 
-	/// Replaces the file, keeping the version it was written under.
+	/// Replaces the file, written under this build's version -- keeping what
+	/// a newer build put in it that this one has no field for, which a save
+	/// here would otherwise strip (see `carry_unknown`).
 	pub fn save(&self, book: &Book) -> Result<(), Error> {
 		if let Some(parent) = self.path.parent() {
 			std::fs::create_dir_all(parent).map_err(io(parent))?;
 		}
-		let text = serde_json::to_string_pretty(&Book {
+		let invalid = |err: serde_json::Error| Error::Invalid {
+			path: self.path.clone(),
+			message: err.to_string(),
+		};
+		let mut next = serde_json::to_value(Book {
 			version: VERSION,
 			presets: book.presets.clone(),
 		})
-		.map_err(|err| Error::Invalid {
-			path: self.path.clone(),
-			message: err.to_string(),
-		})?;
+		.map_err(invalid)?;
+		let previous = std::fs::read_to_string(&self.path)
+			.ok()
+			.and_then(|text| serde_json::from_str::<Value>(&text).ok());
+		if let Some(previous) = previous {
+			carry_unknown(&previous, &mut next);
+		}
+		let text = serde_json::to_string_pretty(&next).map_err(invalid)?;
 
 		// The previous file, kept: this is the only copy of any preset that was
 		// never exported.
@@ -219,10 +232,81 @@ impl Store {
 	}
 }
 
+/// Keys a newer build wrote that this one has no field for, carried from the
+/// file being replaced into its replacement: on the book, and on each preset
+/// by its name -- so a preset renamed here loses its own. A newer version
+/// number stays as well: the file still holds that build's shape.
+fn carry_unknown(previous: &Value, next: &mut Value) {
+	let (Some(previous), Some(next)) = (previous.as_object(), next.as_object_mut()) else {
+		return;
+	};
+	let by_name: HashMap<&str, &Map<String, Value>> = previous
+		.get("presets")
+		.and_then(Value::as_array)
+		.into_iter()
+		.flatten()
+		.filter_map(|preset| Some((preset.get("name")?.as_str()?, preset.as_object()?)))
+		.collect();
+	let presets = next.get_mut("presets").and_then(Value::as_array_mut);
+	for preset in presets
+		.into_iter()
+		.flatten()
+		.filter_map(Value::as_object_mut)
+	{
+		let name = preset
+			.get("name")
+			.and_then(Value::as_str)
+			.unwrap_or_default()
+			.to_owned();
+		for (key, value) in by_name
+			.get(name.as_str())
+			.into_iter()
+			.flat_map(|held| held.iter())
+		{
+			preset.entry(key.clone()).or_insert_with(|| value.clone());
+		}
+	}
+	for (key, value) in previous {
+		next.entry(key.clone()).or_insert_with(|| value.clone());
+	}
+	let newer = previous
+		.get("version")
+		.filter(|version| version.as_u64() > Some(u64::from(VERSION)));
+	if let Some(version) = newer {
+		next.insert("version".into(), version.clone());
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
 	use crate::model::StartBox;
+
+	/// A newer build's keys, on the book and on a preset, and its version
+	/// number survive a save here.
+	#[test]
+	fn a_save_keeps_what_a_newer_build_wrote() {
+		let (_dir, store) = store();
+		store.put(Preset::new("raptors", 100), 100).unwrap();
+		let read = |store: &Store| -> Value {
+			serde_json::from_str(&std::fs::read_to_string(store.path()).unwrap()).unwrap()
+		};
+		let mut file = read(&store);
+		file["version"] = 2.into();
+		file["shelf"] = "later".into();
+		file["presets"][0]["mutators"] = serde_json::json!(["later"]);
+		std::fs::write(store.path(), file.to_string()).unwrap();
+
+		store.touch("raptors", 200).unwrap();
+		let saved = read(&store);
+		assert_eq!(saved["version"], 2);
+		assert_eq!(saved["shelf"], "later");
+		assert_eq!(
+			saved["presets"][0]["mutators"],
+			serde_json::json!(["later"])
+		);
+		assert_eq!(saved["presets"][0]["lastUsed"], 200);
+	}
 
 	fn store() -> (tempfile::TempDir, Store) {
 		let dir = tempfile::tempdir().unwrap();

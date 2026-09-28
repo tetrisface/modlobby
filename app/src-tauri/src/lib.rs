@@ -142,28 +142,57 @@ pub(crate) fn since_start() -> u128 {
 }
 
 /// Says why the app is not starting, and stops. For the moment before there
-/// is a log or a window: a release build has no console, so on Windows this
-/// is a message box, and the exit is a plain failure rather than a panic.
+/// is a window: a release build has no console, so this is a box as well as a
+/// log line, and the exit is a plain failure rather than a panic.
 fn fatal(message: &str) -> ! {
+	tracing::error!("{message}");
 	eprintln!("{message}");
+	alert(message);
+	std::process::exit(1)
+}
+
+/// A box for what has to be said before, or instead of, a window of our own.
+/// Windows only: elsewhere the log and stderr are what there is.
+fn alert(message: &str) {
 	#[cfg(windows)]
 	win::alert("modlobby", message);
-	std::process::exit(1)
+	#[cfg(not(windows))]
+	let _ = message;
+}
+
+/// Every panic reaches the log. One on the main thread also ends the process,
+/// and a release build has no console to say so in, so that one is told in a
+/// box as well, like [`fatal`].
+fn report_panics() {
+	let default = std::panic::take_hook();
+	std::panic::set_hook(Box::new(move |info| {
+		tracing::error!(%info, "panic");
+		default(info);
+		if std::thread::current().name() == Some("main") {
+			alert(&format!("modlobby stopped unexpectedly.\n\n{info}"));
+		}
+	}));
 }
 
 pub fn run() {
 	STARTED.get_or_init(std::time::Instant::now);
+	report_panics();
 	// Before anything reads the environment: the config dir and the update
 	// switch both come from it. A dev run finds the repo's `.env` by walking
 	// up from the working directory; an installed app has none and skips it.
 	let dotenv = dotenvy::dotenv();
-	// Settings that will not open are the one failure with nowhere to go:
-	// no log yet, no window ever. So it is told where the user is looking.
-	let settings = settings::Store::open(settings::config_dir())
-		.unwrap_or_else(|err| fatal(&format!("modlobby cannot start.\n\n{err}")));
-	// Held for the life of the process: dropping it stops the file writer.
-	let _logging = logging::start(settings.dir(), &settings.get().logging.filter);
+	let config_dir = settings::config_dir();
+	// Before the settings, so that reading them is logged; their filter is
+	// applied once they are. Held for the life of the process: dropping it
+	// stops the file writer.
+	let logging = logging::start(&config_dir);
 	tracing::debug!(ms = since_start(), "startup: logging up");
+	// A file that does not parse is kept and started past (`Store::open`).
+	// What is left is one that cannot be read at all, and no window opens
+	// without settings, so it is told where the user is looking.
+	let settings = settings::Store::open(config_dir)
+		.unwrap_or_else(|err| fatal(&format!("modlobby cannot start.\n\n{err}")));
+	logging.set_filter(&settings.get().logging.filter);
 	let app = state::App::open(settings);
 	tracing::debug!(ms = since_start(), "startup: app opened");
 	match dotenv {
@@ -502,6 +531,7 @@ pub fn run() {
 			commands::refresh_friends,
 			commands::friend_action,
 			commands::get_settings,
+			commands::settings_recovered,
 			commands::update_settings,
 			commands::has_password,
 			commands::clear_password,
