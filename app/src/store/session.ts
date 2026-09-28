@@ -1,9 +1,11 @@
 import { createSignal } from 'solid-js'
+import type { ServerEntry } from '../ipc/bindings/ServerEntry'
 import type { Settings } from '../ipc/bindings/Settings'
 import { api, describeError } from '../ipc/client'
 import { logsInAtStart, serverId } from '../lib/servers'
 import { pushNotice } from './chat'
-import { applySettings } from './settings'
+import { lobby } from './lobby'
+import { applySettings, serverLabel } from './settings'
 
 /**
  * When each held auto-login goes out, as a `Date.now()` moment, by server,
@@ -31,28 +33,69 @@ export function loginHold(): number | null {
 let attempted = false
 
 export async function autoLogin(settings: Settings): Promise<void> {
-	if (attempted) return
-	const due = settings.servers.filter(
-		(entry) => entry.username.trim() && logsInAtStart(entry, settings.account),
-	)
-	if (due.length === 0) return
+	if (attempted || unattended(settings).length === 0) return
 	attempted = true
+	await loginUnattended(settings)
+}
 
-	// Every server due, with a remembered password, side by side: each waits
-	// out its own login limit, and one being slow holds up none.
-	await Promise.all(
-		due.map(async (entry) => {
-			const username = entry.username.trim()
-			const server = serverId(entry.host)
-			const stored = await api.hasPassword(server, username).catch(() => false)
-			if (stored) await loginTo(server, username, settings.account.autoLogin)
-		}),
+/**
+ * The servers that log in without being asked: set to log in at startup,
+ * with an account to do it as, and without a session yet.
+ */
+export function unattended(settings: Settings): ServerEntry[] {
+	return settings.servers.filter(
+		(entry) =>
+			entry.username.trim() !== '' &&
+			logsInAtStart(entry, settings.account) &&
+			!lobby.servers[serverId(entry.host)]?.phase,
 	)
 }
 
-async function loginTo(
+/**
+ * Logs in to every server that logs in without being asked, each with the
+ * password the keyring remembers for it: what a startup does, and what the
+ * battle list's Log in does. `false` at once when none has a password to go
+ * in with, so a press can open the login page instead.
+ */
+export async function loginUnattended(settings: Settings): Promise<boolean> {
+	const kept = await Promise.all(
+		unattended(settings).map(async (entry) => {
+			const stored = await api
+				.hasPassword(serverId(entry.host), entry.username.trim())
+				.catch(() => false)
+			return stored ? entry : null
+		}),
+	)
+	const going = kept.filter((entry) => entry !== null)
+	if (going.length === 0) return false
+	// Side by side: each waits out its own login limit, and one being slow
+	// holds up none. The account's own answer goes back as it was, since a
+	// login writes it: a server that logs in at startup on its own say turns
+	// it on for no other.
+	await Promise.all(
+		going.map((entry) =>
+			loginTo(
+				serverId(entry.host),
+				entry.username.trim(),
+				true,
+				settings.account.autoLogin,
+			),
+		),
+	)
+	return true
+}
+
+/**
+ * Logs in to `server` as `username` with the password the keyring remembers,
+ * waiting out the server's login limit first. What a startup auto-login is,
+ * and what the login page does for its other servers beside the one typed
+ * into. `remember` and `autoLogin` are written back as the account's
+ * answers, so every login of one press should carry the same two.
+ */
+export async function loginTo(
 	server: string,
 	username: string,
+	remember: boolean,
 	autoLogin: boolean,
 ): Promise<void> {
 	// teiserver refuses a login within twenty seconds of the account's last,
@@ -67,12 +110,13 @@ async function loginTo(
 	}
 
 	try {
-		// No password given: Rust falls back to the one in the keyring. The
-		// account's own answer goes back as it was, since a login writes it: a
-		// server that logs in at startup on its own say turns it on for no other.
-		applySettings(await api.login(server, username, null, true, autoLogin))
+		// No password given: Rust falls back to the one in the keyring.
+		applySettings(await api.login(server, username, null, remember, autoLogin))
 	} catch (error) {
-		pushNotice('warning', `could not log in: ${describeError(error)}`)
+		pushNotice(
+			'warning',
+			`could not log in to ${serverLabel(server)}: ${describeError(error)}`,
+		)
 	}
 }
 

@@ -409,6 +409,23 @@ mod tests {
 	}
 
 	#[test]
+	fn the_mods_servers_first_ports_are_replaced_but_not_ports_of_the_users_own() {
+		let dir = tempfile::tempdir().unwrap();
+		let path = dir.path().join(FILE_NAME);
+		let ports = |json: &str| {
+			std::fs::write(&path, json).unwrap();
+			load(&path).unwrap().servers[1].ports.clone()
+		};
+		let entry = |ports: &str| {
+			format!(
+				r#"{{ "servers": [ {{ "builtin": "mods", "host": "server.pve.bar", "ports": {ports} }} ] }}"#
+			)
+		};
+		assert_eq!(ports(&entry("[8200, 8201]")), [8201]);
+		assert_eq!(ports(&entry("[8200]")), [8200]);
+	}
+
+	#[test]
 	fn the_old_port_and_tls_keys_fall_back_to_the_defaults() {
 		let dir = tempfile::tempdir().unwrap();
 		let store = Store::open(dir.path()).unwrap();

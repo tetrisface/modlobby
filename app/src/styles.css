@@ -552,10 +552,15 @@ textarea {
 	margin: 5rem auto;
 }
 
-.login-page > label {
-	display: flex;
-	flex-direction: column;
-	gap: 0.25rem;
+/* The servers as chips, the form's lit and the ones that go in beside it
+   ticked; past ten they fold into a dropdown on the same row. */
+.login-servers {
+	align-items: center;
+}
+
+.login-servers .chip-choice.also::before {
+	content: '✓ ';
+	color: var(--ok);
 }
 
 .login label,

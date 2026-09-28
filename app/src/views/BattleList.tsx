@@ -47,6 +47,7 @@ import { TILES, warmMapPictures } from '../lib/maps'
 import { remPx } from '../lib/rem'
 import { pushNotice } from '../store/chat'
 import { joinMilestone, markJoinAsked } from '../store/join'
+import { loginUnattended } from '../store/session'
 import {
 	anyReady,
 	lobby,
@@ -762,11 +763,27 @@ export function cardLeft(x: number, viewport: number): number {
  * that looks like a broken server.
  */
 function EmptyList(props: { total: number; hidden: number }) {
+	const navigate = useNavigate()
+	const [going, setGoing] = createSignal(false)
+	/**
+	 * Goes in wherever that needs no asking, and opens the login page only
+	 * with nowhere like that: the press that used to be a link there.
+	 */
+	async function logIn() {
+		setGoing(true)
+		const saved = settings()
+		const went = saved !== null && (await loginUnattended(saved))
+		setGoing(false)
+		if (!went) navigate('/login')
+	}
 	return (
 		<p class='muted empty-list'>
 			<Switch fallback='No rooms open right now.'>
 				<Match when={!anyReady()}>
-					<A href='/login'>Log in</A> to see the rooms people are playing in.
+					<button class='link' disabled={going()} onClick={() => void logIn()}>
+						{going() ? 'Logging in…' : 'Log in'}
+					</button>{' '}
+					to see the rooms people are playing in.
 				</Match>
 				<Match when={props.total > 0}>
 					Nothing matches. {props.hidden} rooms are hidden by the filters above.

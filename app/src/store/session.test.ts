@@ -15,8 +15,13 @@ vi.mock('../ipc/client', () => ({
 	},
 	describeError: (error: unknown) => String(error),
 }))
-// What a login writes back is applied; nothing here reads it again.
-vi.mock('./settings', () => ({ applySettings: vi.fn() }))
+// What a login writes back is applied; nothing here reads it again. The
+// lobby store, imported for which servers are up, reads `settings` lazily.
+vi.mock('./settings', () => ({
+	applySettings: vi.fn(),
+	serverLabel: (id: string) => id,
+	settings: () => null,
+}))
 
 /** The once-per-run flag is module state; each test wants a run of its own. */
 async function fresh() {
@@ -144,6 +149,19 @@ describe('logging back in on startup', () => {
 		expect(login).toHaveBeenCalledTimes(1)
 		expect(loginWait).toHaveBeenCalledWith(BAR)
 		expect(session.loginHold()).toBeNull()
+	})
+
+	test('pressed, says at once when nowhere can go in without asking', async () => {
+		hasPassword.mockResolvedValue(false)
+		const session = await fresh()
+
+		expect(await session.loginUnattended(remembered())).toBe(false)
+		expect(login).not.toHaveBeenCalled()
+
+		hasPassword.mockImplementation(async (server: string) => server === BAR)
+		expect(await session.loginUnattended(remembered())).toBe(true)
+		expect(login).toHaveBeenCalledTimes(1)
+		expect(login).toHaveBeenCalledWith(BAR, 'me', null, true, true)
 	})
 
 	test('a refused login is said once and not tried again', async () => {

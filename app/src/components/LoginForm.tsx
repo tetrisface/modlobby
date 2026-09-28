@@ -2,9 +2,11 @@ import { For, Show, createEffect, createSignal, onCleanup } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import { Glyph } from './icons'
 import { Linkify, openExternal } from './Linkify'
+import type { ServerEntry } from '../ipc/bindings/ServerEntry'
 import { api, describeError, errorCode } from '../ipc/client'
 import { forgotPasswordUrl, serverId, serverName } from '../lib/servers'
 import { lobby } from '../store/lobby'
+import { loginTo } from '../store/session'
 import { applySettings, settings } from '../store/settings'
 
 const phaseText: Record<string, string> = {
@@ -54,6 +56,12 @@ export function LoginForm(props: {
 	 * over a page by somebody who pressed Log in, there is nothing to ask.
 	 */
 	startsAtOnce?: boolean
+	/**
+	 * Servers logged in to as well when Log in is pressed, each as its own
+	 * account with the password the keyring remembers: the login page's other
+	 * servers that log in at startup. Each answers for itself, in the notices.
+	 */
+	beside?: readonly ServerEntry[]
 }) {
 	/** The server as the settings list it. */
 	const entry = () =>
@@ -167,6 +175,17 @@ export function LoginForm(props: {
 	async function login() {
 		setError(null)
 		setBusy(true)
+		// Side by side with this one, not after it: they are other accounts on
+		// other servers, and what this login is refused for says nothing about
+		// them. The same two answers as this login's, so whichever lands last
+		// writes the account the same way.
+		for (const entry of props.beside ?? [])
+			void loginTo(
+				serverId(entry.host),
+				entry.username.trim(),
+				remember(),
+				autoLogin(),
+			)
 		try {
 			applySettings(
 				await api.login(

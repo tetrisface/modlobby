@@ -211,12 +211,18 @@ impl Settings {
 	/// Recoil's after them. An entry from before there were such servers is
 	/// taken for its own by its host -- and BAR's, which raced 8201 as well
 	/// as 8200 only because every server did, gets the one port BAR's
-	/// launcher config names.
+	/// launcher config names. The mods server's card sheds 8200 the same
+	/// way: it raced both ports for a day.
 	pub(crate) fn ensure_builtins(&mut self) {
 		for entry in &mut self.servers {
-			if entry.builtin == Some(Builtin::Mods) && entry.name == "pve.bar" {
-				// The name it had for a day; a name of the user's own stays.
-				entry.name = ServerEntry::mods().name;
+			if entry.builtin == Some(Builtin::Mods) {
+				// What it had for a day; a name or ports of the user's own stay.
+				if entry.name == "pve.bar" {
+					entry.name = ServerEntry::mods().name;
+				}
+				if entry.ports == [8200, 8201] {
+					entry.ports = ServerEntry::mods().ports;
+				}
 			}
 			if entry.builtin.is_some() {
 				continue;
@@ -401,14 +407,16 @@ impl ServerEntry {
 		}
 	}
 
-	/// The mods server, a teiserver of our own: encrypted on its two ports,
-	/// its website where the registration picture and a forgotten password
-	/// are, and its games through BAR's rapid, so none of its own.
+	/// The mods server, a teiserver of our own: TLS on 8201, which greets
+	/// sooner than `STLS` on 8200 does and needs no fallback. Its website is
+	/// where the registration picture and a forgotten password are, and its
+	/// games come through BAR's rapid, so it names none of its own.
 	pub fn mods() -> Self {
 		Self {
 			builtin: Some(Builtin::Mods),
 			host: MODS_HOST.into(),
 			name: "modserver".into(),
+			ports: vec![8201],
 			website: Some(format!("https://{MODS_HOST}")),
 			..Self::default()
 		}
