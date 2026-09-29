@@ -44,7 +44,9 @@ const MUTATOR_OFFER: &str = "game/mutatoroffer0";
 /// What a lobby that loads a room's mutators tells the host, in a private
 /// message, once it sees the room's tags. The host tells everyone else what
 /// the room loads, and holds the start while such a player is seated.
-pub const MUTATORS_SUPPORTED: &str = "mutators supported";
+/// Worded for a person all the same: a lobby that shows its own private
+/// messages, and the host's log, put it in front of one.
+pub const MUTATORS_SUPPORTED: &str = "I support mutators [automatic]";
 
 /// A mutator the room loads on top of its game, as its host announces it.
 #[derive(Debug, Clone, PartialEq, Eq)]

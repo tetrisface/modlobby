@@ -193,6 +193,7 @@ pub fn answers_command(text: &str, me: &str) -> bool {
 /// to read. Cheap enough to ask on every line.
 pub fn is_machine(text: &str) -> bool {
 	text.starts_with("!#JSONRPC")
+		|| text == crate::MUTATORS_SUPPORTED
 		|| text
 			.strip_prefix("* ")
 			.is_some_and(|body| body.starts_with("BarManager|"))

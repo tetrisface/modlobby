@@ -529,6 +529,19 @@ mod tests {
 	}
 
 	#[test]
+	fn our_mutator_handshake_echoed_back_is_filterable() {
+		let (mut s, mut p) = live();
+		// The runtime says it to a mutator host; nobody typed it, but the
+		// server echoes our own private messages back like any other.
+		let echo = format!("SAYPRIVATE host {}", lobby_core::MUTATORS_SUPPORTED);
+		let deltas = step(&mut s, &mut p, &echo);
+		let [Delta::Chat(line)] = &deltas[..] else {
+			panic!("expected one chat line, got {deltas:?}")
+		};
+		assert_eq!(line.kind, ChatKind::Machine);
+	}
+
+	#[test]
 	fn an_actual_private_message_still_alerts() {
 		let (mut s, mut p) = live();
 		let deltas = step(&mut s, &mut p, "SAIDPRIVATE friend are you playing?");

@@ -172,7 +172,8 @@ export function LoginForm(props: {
 	 * it already says. Several kept names start from the first.
 	 */
 	async function startFromKeyring() {
-		const [first] = await api.keptUsernames(props.server).catch(() => [])
+		const kept = await api.keptUsernames(props.server).catch(() => [])
+		const first = kept?.[0]
 		if (!first || username()) return
 		setUsername(first)
 		setRemember(true)
