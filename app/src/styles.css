@@ -104,6 +104,10 @@ button:hover:not(:disabled) {
 	border-color: var(--muted);
 }
 
+a {
+	color: var(--accent);
+}
+
 button:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
