@@ -290,6 +290,8 @@ export const api = {
 		invoke<Settings>('update_settings', { settings }),
 	hasPassword: (server: string, username: string) =>
 		invoke<boolean>('has_password', { server, username }),
+	keptUsernames: (server: string) =>
+		invoke<string[]>('kept_usernames', { server }),
 	clearPassword: (server: string, username: string) =>
 		invoke<void>('clear_password', { server, username }),
 	openSettingsFile: () => invoke<void>('open_settings_file'),

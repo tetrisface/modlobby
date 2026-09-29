@@ -537,6 +537,7 @@ pub fn run() {
 			commands::settings_recovered,
 			commands::update_settings,
 			commands::has_password,
+			commands::kept_usernames,
 			commands::clear_password,
 			commands::open_settings_file,
 			commands::open_data_dir,

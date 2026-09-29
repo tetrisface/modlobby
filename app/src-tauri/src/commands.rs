@@ -1378,6 +1378,13 @@ pub fn has_password(app: State<'_, App>, server: String, username: String) -> Re
 	Ok(credentials::password(&*app.credentials, &server, &username)?.is_some())
 }
 
+/// The usernames with a password kept for `server`, for a login form with
+/// no name to start from.
+#[tauri::command]
+pub fn kept_usernames(app: State<'_, App>, server: String) -> Result<Vec<String>> {
+	Ok(credentials::usernames(&*app.credentials, &server)?)
+}
+
 #[tauri::command]
 pub fn clear_password(app: State<'_, App>, server: String, username: String) -> Result<()> {
 	Ok(credentials::forget(&*app.credentials, &server, &username)?)

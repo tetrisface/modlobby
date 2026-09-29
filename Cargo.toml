@@ -90,6 +90,8 @@ full_moon = "=2.2.0"
 httpdate = "=1.0.3"
 jsonc-parser = { version = "=0.33.1", features = ["cst", "serde"] }
 keyring = "=4.1.6"
+# The store search `keyring` wraps but does not re-export.
+keyring-core = "=1.0.0"
 md-5 = "=0.11.0"
 # Rooms on the local network: DNS-SD over mDNS (its own responder, so nothing
 # has to be installed), the interface list for subnet broadcasts, and the

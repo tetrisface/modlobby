@@ -34,6 +34,8 @@ function serve(answers: Record<string, unknown> = {}) {
 				return 0
 			case 'has_password':
 				return false
+			case 'kept_usernames':
+				return []
 			case 'name_problem':
 				return null
 			case 'register':
@@ -155,6 +157,38 @@ describe('the login form', () => {
 				autoLogin: false,
 			}),
 		)
+	})
+
+	test('with nobody named in the settings, the name comes from the keyring, its password kept', async () => {
+		serve({ kept_usernames: ['me'] })
+		const { container } = render(() => <LoginForm server={SERVER} asksFlags />)
+		const name = container.querySelector<HTMLInputElement>(
+			'input[autocomplete="username"]',
+		)!
+		await waitFor(() => expect(name.value).toBe('me'))
+		const field = container.querySelector<HTMLInputElement>(
+			'input[autocomplete="current-password"]',
+		)!
+		expect(field.value).toBe('••••••••')
+		// Kept is what the keyring already says, whatever the fresh file did.
+		const remember = container.querySelector<HTMLInputElement>(
+			'input[type=checkbox]',
+		)!
+		expect(remember.checked).toBe(true)
+	})
+
+	test('a typed name the keyring knows shows its password as kept once the field is left', async () => {
+		serve({ has_password: true })
+		const kept = settingsWith()
+		kept.account = { rememberPassword: true, autoLogin: false }
+		setSettingsSignal(kept)
+		const { container } = render(() => <Login />)
+		fill(container, 'input[autocomplete="username"]', 'me')
+		fireEvent.blur(container.querySelector('input[autocomplete="username"]')!)
+		const field = container.querySelector<HTMLInputElement>(
+			'input[autocomplete="current-password"]',
+		)!
+		await waitFor(() => expect(field.value).toBe('••••••••'))
 	})
 
 	test('the way to register sits under the button, and the error above it', () => {

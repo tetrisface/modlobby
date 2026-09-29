@@ -64,6 +64,26 @@ pub fn forget(
 	Ok(())
 }
 
+/// The usernames with a password kept for `server`: what a login form can
+/// start from when the settings name nobody -- a fresh config directory on a
+/// machine whose keyring remembers. A bare key is BAR's, as in `password`.
+pub fn usernames(
+	store: &dyn CredentialStore,
+	server: &str,
+) -> Result<Vec<String>, CredentialError> {
+	let mut names: Vec<String> = store
+		.keys()?
+		.into_iter()
+		.filter_map(|key| match key.rsplit_once('@') {
+			Some((name, host)) => (host == server).then(|| name.to_owned()),
+			None => (server == DEFAULT_HOST).then_some(key),
+		})
+		.collect();
+	names.sort();
+	names.dedup();
+	Ok(names)
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("credential store: {0}")]
 pub struct CredentialError(pub String);
@@ -72,6 +92,8 @@ pub trait CredentialStore: Send + Sync {
 	fn get(&self, username: &str) -> Result<Option<String>, CredentialError>;
 	fn set(&self, username: &str, password: &str) -> Result<(), CredentialError>;
 	fn delete(&self, username: &str) -> Result<(), CredentialError>;
+	/// Every key a password is kept under.
+	fn keys(&self) -> Result<Vec<String>, CredentialError>;
 }
 
 /// The platform keyring, keyed by `modlobby` / `<username>`.
@@ -105,6 +127,32 @@ impl CredentialStore for KeyringStore {
 			Err(err) => Err(CredentialError(err.to_string())),
 		}
 	}
+
+	fn keys(&self) -> Result<Vec<String>, CredentialError> {
+		// Asking after the store is what sets it up; a search before that
+		// finds no store at all.
+		keyring::Entry::store_status()
+			.as_ref()
+			.map_err(|err| CredentialError(err.to_string()))?;
+		// Each platform's store searches in its own terms: Windows by a
+		// pattern over the credential's target name, `<user>.<service>`, the
+		// others by the service attribute. `SERVICE` has nothing a pattern
+		// would read as more than itself.
+		#[cfg(windows)]
+		let pattern = format!(r"\.{SERVICE}$");
+		#[cfg(windows)]
+		let spec = HashMap::from([("pattern", pattern.as_str())]);
+		#[cfg(not(windows))]
+		let spec = HashMap::from([("service", SERVICE)]);
+		let found =
+			keyring_core::Entry::search(&spec).map_err(|err| CredentialError(err.to_string()))?;
+		Ok(found
+			.iter()
+			.filter_map(keyring_core::Entry::get_specifiers)
+			.filter(|(service, _)| service == SERVICE)
+			.map(|(_, key)| key)
+			.collect())
+	}
 }
 
 /// In-memory store for tests.
@@ -130,6 +178,10 @@ impl CredentialStore for MemoryStore {
 	fn delete(&self, username: &str) -> Result<(), CredentialError> {
 		self.0.lock().expect("store lock").remove(username);
 		Ok(())
+	}
+
+	fn keys(&self) -> Result<Vec<String>, CredentialError> {
+		Ok(self.0.lock().expect("store lock").keys().cloned().collect())
 	}
 }
 
@@ -207,5 +259,22 @@ mod tests {
 		forget(&store, BAR, "tetrisface").unwrap();
 		assert_eq!(password(&store, BAR, "tetrisface").unwrap(), None);
 		assert_eq!(store.get("tetrisface").unwrap(), None);
+	}
+
+	#[test]
+	fn usernames_are_read_back_from_the_keys() {
+		let store = MemoryStore::default();
+		keep(&store, BAR, "tetrisface", "pw").unwrap();
+		keep(&store, "rapid", "tetrisface2", "pw").unwrap();
+		keep(&store, "rapid", "alice", "pw").unwrap();
+		store.set("old", "pw").unwrap();
+		assert_eq!(
+			usernames(&store, "rapid").unwrap(),
+			["alice", "tetrisface2"]
+		);
+		// BAR's once, though kept under two keys, and the bare one from
+		// before servers beside it.
+		assert_eq!(usernames(&store, BAR).unwrap(), ["old", "tetrisface"]);
+		assert!(usernames(&store, "nowhere").unwrap().is_empty());
 	}
 }

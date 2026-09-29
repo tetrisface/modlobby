@@ -4973,6 +4973,7 @@ dependencies = [
  "directories",
  "jsonc-parser",
  "keyring",
+ "keyring-core",
  "notify",
  "schemars 1.2.2",
  "serde",

@@ -129,16 +129,15 @@ export function LoginForm(props: {
 	createEffect(() => {
 		const s = settings()
 		if (!s || username()) return
-		const known = entry()?.username ?? ''
-		setUsername(known)
 		setRemember(s.account.rememberPassword)
 		setAutoLogin(s.account.autoLogin)
-		if (s.account.rememberPassword && known) {
-			void api
-				.hasPassword(props.server, known)
-				.then((stored) => setStoredFor(stored ? known : null))
-				.catch(() => setStoredFor(null))
+		const known = entry()?.username ?? ''
+		if (!known) {
+			void startFromKeyring()
+			return
 		}
+		setUsername(known)
+		void checkStored(known)
 	})
 
 	// Once, and only once the server's login limit is known to be clear: a
@@ -156,6 +155,29 @@ export function LoginForm(props: {
 	createEffect(() => {
 		if (phase() === 'ready') props.onDone?.()
 	})
+
+	/** Whether this machine keeps a password for `name` here; drawn as one if so. */
+	async function checkStored(name: string) {
+		const kept =
+			remember() &&
+			name !== '' &&
+			(await api.hasPassword(props.server, name).catch(() => false))
+		setStoredFor(kept ? name : null)
+	}
+
+	/**
+	 * A settings file that names nobody on this server beside a keyring that
+	 * does -- a fresh install on a machine that has logged in before: the name
+	 * is filled in and its password drawn as kept, which the keyring having
+	 * it already says. Several kept names start from the first.
+	 */
+	async function startFromKeyring() {
+		const [first] = await api.keptUsernames(props.server).catch(() => [])
+		if (!first || username()) return
+		setUsername(first)
+		setRemember(true)
+		setStoredFor(first)
+	}
 
 	/**
 	 * The name rules, checked when the field is left rather than per keystroke:
@@ -350,7 +372,10 @@ export function LoginForm(props: {
 						setUsername(e.currentTarget.value)
 						setNameProblem(null)
 					}}
-					onBlur={() => void checkName()}
+					onBlur={() => {
+						void checkName()
+						void checkStored(username().trim())
+					}}
 					disabled={awaitingCode()}
 					autocomplete='username'
 				/>
