@@ -1,6 +1,7 @@
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { BotView } from '../ipc/bindings/BotView'
 import type { UserView } from '../ipc/bindings/UserView'
+import type { VacancyView } from '../ipc/bindings/VacancyView'
 import { isUnrated, type Skill } from './skill'
 
 /**
@@ -43,6 +44,8 @@ export type Team = {
 	bots: BotView[]
 	/** Seated here as a guess, until the server says where they really sit. */
 	guessed: UserView[]
+	/** Left the running game with nobody on their ID since: `!joinas` seats. */
+	ghosts: string[]
 	/** Seats to draw, filled or not: at least the ones taken. */
 	expected: number
 }
@@ -60,6 +63,11 @@ export type Roster = {
 	 * being placed, since most of the unplaced are players on their way.
 	 */
 	spectatorCount: number
+	/**
+	 * Ghosts whose whole team has gone from the room, so there is no team of
+	 * the room's to draw them on. Drawn together, apart from the teams.
+	 */
+	leavers: string[]
 }
 
 /**
@@ -69,21 +77,50 @@ export type Roster = {
  */
 export const DEFAULT_TEAMS = 2
 
+const emptyTeam = (allyTeam: number): Team => ({
+	allyTeam,
+	users: [],
+	bots: [],
+	guessed: [],
+	ghosts: [],
+	expected: 0,
+})
+
+/**
+ * The room as it stands, with the running game's leavers as ghosts: on their
+ * team where the room still has it, among the `leavers` where it does not. A
+ * ghost is never a seat -- `expected`, the empty seats and the team count
+ * leave them out.
+ */
 export function arrange(
 	room: BattleView,
 	users: Record<string, UserView>,
 	me: string | null = null,
 	skillOf: SkillOf = () => null,
+	vacated: readonly VacancyView[] = [],
 ): Roster {
+	const roster = seat(room, users, me, skillOf)
+	const leavers: string[] = []
+	for (const { name, allyTeam } of vacated) {
+		// Back in the room and seated, a leaver's own row stands for them.
+		if (room.members.includes(name) && users[name]?.battleStatus?.player)
+			continue
+		const on = roster.teams.find((t) => t.allyTeam === allyTeam)
+		if (on) on.ghosts.push(name)
+		else leavers.push(name)
+	}
+	return { ...roster, leavers }
+}
+
+function seat(
+	room: BattleView,
+	users: Record<string, UserView>,
+	me: string | null,
+	skillOf: SkillOf,
+): Omit<Roster, 'leavers'> {
 	const teams = new Map<number, Team>()
 	const team = (allyTeam: number) => {
-		const found = teams.get(allyTeam) ?? {
-			allyTeam,
-			users: [],
-			bots: [],
-			guessed: [],
-			expected: 0,
-		}
+		const found = teams.get(allyTeam) ?? emptyTeam(allyTeam)
 		teams.set(allyTeam, found)
 		return found
 	}

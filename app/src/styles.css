@@ -1289,6 +1289,12 @@ body.resizing-y {
 	opacity: 0.55;
 }
 
+/* Left the running game: a seat somebody could still take. */
+.player.ghost {
+	opacity: 0.35;
+	font-style: italic;
+}
+
 .icon {
 	display: block;
 	width: 1.125rem;

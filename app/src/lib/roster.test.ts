@@ -139,6 +139,36 @@ describe('arrange', () => {
 		expect(roster.spectatorCount).toBe(4)
 	})
 
+	test('a leaver is a ghost, never a seat, and never a team the room has not', () => {
+		const settled = byName(
+			user('Host', seat(0, false), true),
+			user('alice', seat(0)),
+			user('bob', seat(1)),
+			user('carol', seat(1)),
+			user('dave', seat(0, false)),
+			user('me', seat(0, false)),
+		)
+		const plain = arrange(room({ playerCount: 3 }), settled, 'me')
+		const roster = arrange(room({ playerCount: 3 }), settled, 'me', undefined, [
+			{ name: 'eve', allyTeam: 1 },
+			// Their whole team gone: no teammate left to say where it sat.
+			{ name: 'fred', allyTeam: null },
+			{ name: 'gus', allyTeam: null },
+			// Back and seated: carol's own row stands for her.
+			{ name: 'carol', allyTeam: 1 },
+		])
+
+		expect(roster.teams.map((t) => t.ghosts)).toEqual([[], ['eve']])
+		// Counts, empty seats, the teams and the watchers are the room's alone.
+		expect(roster.teams.map((t) => t.allyTeam)).toEqual([0, 1])
+		expect(roster.teams.map((t) => t.expected)).toEqual(
+			plain.teams.map((t) => t.expected),
+		)
+		expect(roster.teams.map(emptySeats)).toEqual(plain.teams.map(emptySeats))
+		expect(roster.spectatorCount).toBe(plain.spectatorCount)
+		expect(roster.leavers).toEqual(['fred', 'gus'])
+	})
+
 	test('spectators read host first, then by name with case folded', () => {
 		const roster = arrange(
 			room({

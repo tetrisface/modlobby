@@ -32,6 +32,7 @@ import type { Moves } from '../components/PlayerMenu'
 import {
 	BotRow,
 	EmptySeat,
+	GhostRow,
 	GuessedRow,
 	PlayerRow,
 } from '../components/PlayerRow'
@@ -71,7 +72,7 @@ import { joinMilestone } from '../store/join'
 import { lobby, roomServer, roomSession, severalServers } from '../store/lobby'
 import { launching } from '../store/launch'
 import { over } from '../store/overlay'
-import { serverLabel, settings } from '../store/settings'
+import { serverLabel, settings, showsLeavers } from '../store/settings'
 import { HostBar } from './HostBar'
 import { PveScore } from './PveScore'
 import { RoomTitle } from './RoomTitle'
@@ -117,6 +118,9 @@ export function Room() {
 	const skillOf = (name: string): Skill | null =>
 		skills()[name.toLowerCase()] ?? null
 
+	/** Who left the running game, where Settings draws them for this room. */
+	const leavers = (b: BattleView) =>
+		showsLeavers(b) ? (room.running()?.vacated ?? []) : []
 	const occupants = createMemo((): Roster => {
 		const b = battle()
 		if (!b)
@@ -126,8 +130,9 @@ export function Room() {
 				spectators: [],
 				pending: [],
 				spectatorCount: 0,
+				leavers: [],
 			}
-		return arrange(b, room.users(), room.me(), skillOf)
+		return arrange(b, room.users(), room.me(), skillOf, leavers(b))
 	})
 
 	/**
@@ -931,6 +936,9 @@ export function Room() {
 															/>
 														)}
 													</For>
+													<For each={team().ghosts}>
+														{(name) => <GhostRow name={name} />}
+													</For>
 													<For each={team().bots}>
 														{(bot) => (
 															<BotRow
@@ -991,13 +999,30 @@ export function Room() {
 											</section>
 										)}
 									</Index>
+									{/* A team that left the room whole: not the room's to
+                      seat, move or drop on, so no count or data-ally. */}
+									<Show when={occupants().leavers.length > 0}>
+										<section class='team'>
+											<header class='team-head'>
+												<span class='name'>Left the game</span>
+											</header>
+											<div class='rows'>
+												<For each={occupants().leavers}>
+													{(name) => <GhostRow name={name} />}
+												</For>
+											</div>
+										</section>
+									</Show>
 									{/* The watchers come last in the row, so players get
                       first claim on the visible area. `pending` is not
                       placed by the server yet: listed so the room has its
                       names at once, dimmed because most are about to take
                       a seat above. */}
 									<WatcherStack
-										teams={occupants().teams.length}
+										teams={
+											occupants().teams.length +
+											(occupants().leavers.length > 0 ? 1 : 0)
+										}
 										tall={occupants().teams.some((t) => t.expected > TALL)}
 										queue={occupants().queue}
 										spectators={occupants().spectators}

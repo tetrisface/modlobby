@@ -36,6 +36,19 @@ export type Play = {
 	 */
 	pveStats: boolean
 	/**
+	 * Whether a PvE room draws the players who left its running game, as
+	 * ghosts with `!joinas` on their menu.
+	 *
+	 * On, because a room with AIs is the one place joinas works: teiserver
+	 * turns it into `joinas spec` anywhere else (`chat_lib.ex`).
+	 */
+	showLeaversPve: boolean
+	/**
+	 * The same in every other room, undecided ones included. Off: there the
+	 * seat cannot be taken, and a ghost is only news of who quit.
+	 */
+	showLeaversPvp: boolean
+	/**
 	 * What [`JoinAs::Remember`] remembers: whether you played last time.
 	 * Written when you take or leave a seat, never chosen directly.
 	 */

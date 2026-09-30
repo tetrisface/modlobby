@@ -7,6 +7,8 @@
  *                        (seated, between games; seats a stand-in if alone)
  *   dev.inGame('name')   a player's crossed swords; `false` takes them off
  *   dev.standIn(ally)    a made-up player joins, seated on that ally team
+ *   dev.vacated('a', 1)  a player gone from the running game: a ghost on team 2
+ *                        (`null`: their whole team gone)
  *   dev.emit(delta)      any delta, to the room's server
  *
  * A fake lasts until the server's next word on the same thing. Reloading the
@@ -148,4 +150,28 @@ export function inGame(name?: string, on = true): void {
 	})
 }
 
-Object.assign(window, { dev: { emit, held, breath, inGame, standIn } })
+/**
+ * A game under way that we walked into, with `name` gone from it and nobody
+ * on their ID: their ghost on `allyTeam`, or with the leavers apart when
+ * `null`, their whole team gone. Each call adds one. Drawn only where
+ * Settings shows leavers for the room.
+ */
+export function vacated(name = 'alice', allyTeam: number | null = 0): void {
+	const game = roomSession()?.gameRunning
+	emit({
+		type: 'gameRunning',
+		data: {
+			id: mine().my.id,
+			ip: '',
+			port: 0,
+			added: false,
+			playingWith: null,
+			...game,
+			vacated: [...(game?.vacated ?? []), { name, allyTeam }],
+		},
+	})
+}
+
+Object.assign(window, {
+	dev: { emit, held, breath, inGame, standIn, vacated },
+})

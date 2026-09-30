@@ -3572,6 +3572,13 @@ impl Runtime {
 							.push_for(server, Delta::GameRunning(Some(game.view.clone())));
 					}
 				}
+				Effect::Vacated { seats } => {
+					if let Some(game) = self.game.as_mut() {
+						game.view.vacated = seats.into_iter().map(Into::into).collect();
+						self.batcher
+							.push_for(server, Delta::GameRunning(Some(game.view.clone())));
+					}
+				}
 				Effect::GameStopped => {
 					if self.game.take().is_some() {
 						self.batcher.push_for(
@@ -3610,6 +3617,7 @@ impl Runtime {
 							port,
 							added: just_started,
 							playing_with: None,
+							vacated: vec![],
 						},
 						script_password,
 					});

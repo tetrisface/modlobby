@@ -1,6 +1,8 @@
 import { createSignal } from 'solid-js'
+import type { BattleView } from '../ipc/bindings/BattleView'
 import type { Settings } from '../ipc/bindings/Settings'
 import { api } from '../ipc/client'
+import { isVsAi } from '../lib/battles'
 import { bucket, clamp, derived, scaleFor, step } from '../lib/scale'
 import { labelOf } from '../lib/servers'
 import { pushNotice, setChat } from './chat'
@@ -78,6 +80,26 @@ export function setScale(percent: number): void {
 			.updateSettings(written)
 			.catch(() => pushNotice('warning', 'could not save the interface size'))
 	}, SAVE_AFTER)
+}
+
+/** The setting that draws a running game's leavers in rooms like `battle`. */
+const leaversKey = (battle: BattleView) =>
+	isVsAi(battle) ? 'showLeaversPve' : 'showLeaversPvp'
+
+/** Whether rooms like `battle` draw the players who left their running game. */
+export const showsLeavers = (battle: BattleView): boolean =>
+	settings()?.play[leaversKey(battle)] ?? false
+
+/** Stops drawing leavers in rooms like `battle`, and writes it down. */
+export async function hideLeavers(battle: BattleView): Promise<void> {
+	const current = settings()
+	if (current === null) return
+	applySettings(
+		await api.updateSettings({
+			...current,
+			play: { ...current.play, [leaversKey(battle)]: false },
+		}),
+	)
 }
 
 /** One notch of the wheel. */

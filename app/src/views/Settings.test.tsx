@@ -42,6 +42,8 @@ function loaded(): Settings {
 			autoLaunch: true,
 			autoDownload: true,
 			pveStats: true,
+			showLeaversPve: true,
+			showLeaversPvp: false,
 		},
 		notifications: {
 			privateMessage: 'desktop',

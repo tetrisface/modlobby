@@ -411,21 +411,100 @@ impl Proposal {
 ///
 /// `Id` is the in-game ID; `ID` in the same row is the account's.
 pub fn players_on(text: &str, id: u32) -> Option<Vec<String>> {
-	let rpc: serde_json::Value = serde_json::from_str(text.strip_prefix(RPC_PREFIX)?).ok()?;
-	let clients = rpc.get("result")?.get("game")?.get("clients")?.as_array()?;
-	let on = |client: &serde_json::Value| match client.get("Id") {
-		Some(serde_json::Value::Number(n)) => n.as_u64() == Some(u64::from(id)),
-		Some(serde_json::Value::String(s)) => s.parse() == Ok(id),
-		_ => false,
-	};
 	Some(
-		clients
+		game_clients(text)?
 			.iter()
-			.filter(|client| on(client))
-			.filter_map(|client| client.get("Name")?.as_str())
-			.map(|name| name.trim_start_matches("+ ").to_owned())
+			.filter(|client| number(client, "Id") == Some(u64::from(id)))
+			.filter_map(player_name)
 			.collect(),
 	)
+}
+
+/// A seat left in a running game: who left it, and the room's ally team it
+/// belongs to, where anyone from that team still sits in the room.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Vacancy {
+	pub name: String,
+	pub ally_team: Option<u32>,
+}
+
+/// Who left the running game with nobody playing on their in-game ID since,
+/// out of a `status game` answer: the names `!joinas` can still stand in for.
+///
+/// SPADS lists everyone the game started with, in the room or not, and
+/// everyone it added since (`getGameStatus`), and `hJoinAs` looks the name up
+/// in that same list -- so this is the one place a player who also left the
+/// room can still be found. An ID is vacated when every row on it has gone.
+/// `Spectating` is a player whose team lost, which is no seat to take; an
+/// AI's row has no status and so never goes. `None` where the text is not
+/// such an answer.
+///
+/// The answer's `Team` is SPADS's own number, handed out in the order it met
+/// each team at the start -- players by ID, then AIs (`generateStartData`) --
+/// so it is not the room's. `seated` says which room team a name sits on
+/// now, player or AI, and a leaver goes on whichever one a teammate from the
+/// game is found on.
+pub fn vacated(text: &str, seated: impl Fn(&str) -> Option<u32>) -> Option<Vec<Vacancy>> {
+	const GONE: [&str; 4] = ["Disconnected", "Timeouted", "Kicked", "Not connected"];
+	struct Row {
+		name: String,
+		id: u64,
+		team: Option<u64>,
+		gone: bool,
+	}
+	let rows: Vec<Row> = game_clients(text)?
+		.iter()
+		.filter_map(|client| {
+			let status = client.get("Status").and_then(serde_json::Value::as_str);
+			Some(Row {
+				name: player_name(client)?,
+				id: number(client, "Id")?,
+				team: number(client, "Team"),
+				gone: status.is_some_and(|s| GONE.contains(&s)),
+			})
+		})
+		.collect();
+	let empty = |id: u64| rows.iter().all(|row| row.id != id || row.gone);
+	let room_team = |team: Option<u64>| {
+		rows.iter()
+			.filter(|row| team.is_some() && row.team == team)
+			.find_map(|row| seated(&row.name))
+	};
+	Some(
+		rows.iter()
+			.filter(|row| empty(row.id))
+			.map(|row| Vacancy {
+				name: row.name.clone(),
+				ally_team: room_team(row.team),
+			})
+			.collect(),
+	)
+}
+
+/// The `result.game.clients` rows of a `status game` answer.
+fn game_clients(text: &str) -> Option<Vec<serde_json::Value>> {
+	let mut rpc: serde_json::Value = serde_json::from_str(text.strip_prefix(RPC_PREFIX)?).ok()?;
+	match rpc.pointer_mut("/result/game/clients")?.take() {
+		serde_json::Value::Array(rows) => Some(rows),
+		_ => None,
+	}
+}
+
+/// A row's number under `key`, which comes as a number or a numeric string.
+fn number(client: &serde_json::Value, key: &str) -> Option<u64> {
+	match client.get(key)? {
+		serde_json::Value::Number(n) => n.as_u64(),
+		serde_json::Value::String(s) => s.parse().ok(),
+		_ => None,
+	}
+}
+
+/// A row's name as the room has it: without the `+ ` SPADS marks a mid-game
+/// addition with, or the ` (bot)` it puts after an AI's.
+fn player_name(client: &serde_json::Value) -> Option<String> {
+	let name = client.get("Name")?.as_str()?;
+	let name = name.trim_start_matches("+ ");
+	Some(name.strip_suffix(" (bot)").unwrap_or(name).to_owned())
 }
 
 /// A vote the room is holding right now.
@@ -754,6 +833,44 @@ mod tests {
 		);
 		assert_eq!(players_on(answer, 7), Some(vec![]));
 		assert_eq!(players_on(GAME_STATUS_REQUEST, 3), None);
+	}
+
+	#[test]
+	fn a_seat_is_vacated_once_everyone_on_its_id_has_gone() {
+		let answer = r#"!#JSONRPC {"jsonrpc":"2.0","result":{"game":{"clients":[
+			{"Name":"quit","Team":0,"Id":1,"Status":"Disconnected"},
+			{"Name":"dropped","Team":"1","Id":"2","Status":"Timeouted"},
+			{"Name":"+ late","Team":1,"Id":2,"Status":"Kicked"},
+			{"Name":"crashed","Team":0,"Id":3,"Status":"Not connected"},
+			{"Name":"left","Team":1,"Id":4,"Status":"Disconnected"},
+			{"Name":"+ stood-in","Team":1,"Id":4,"Status":"Playing"},
+			{"Name":"beaten","Team":0,"Id":5,"Status":"Spectating"},
+			{"Name":"BARb (bot)","Team":1,"Id":6,"Version":"BARb (host)"},
+			{"Name":"solo","Team":2,"Id":7,"Status":"Disconnected"},
+			{"Name":"watcher","Status":"Disconnected"}
+		]}},"id":1}"#;
+		// SPADS numbered its teams its own way; the room has them as 3 and 7.
+		let room = |name: &str| match name {
+			"stood-in" | "BARb" => Some(7),
+			"beaten" => Some(3),
+			_ => None,
+		};
+		let seat = |name: &str, ally_team| Vacancy {
+			name: name.into(),
+			ally_team,
+		};
+		assert_eq!(
+			vacated(answer, room),
+			Some(vec![
+				seat("quit", Some(3)),
+				seat("dropped", Some(7)),
+				seat("late", Some(7)),
+				seat("crashed", Some(3)),
+				// Nobody from solo's team is left to say where it sat.
+				seat("solo", None),
+			])
+		);
+		assert_eq!(vacated(GAME_STATUS_REQUEST, room), None);
 	}
 
 	#[test]

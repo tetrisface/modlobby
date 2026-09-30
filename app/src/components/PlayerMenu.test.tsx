@@ -2,7 +2,10 @@ import { cleanup, fireEvent, render } from '@solidjs/testing-library'
 import { invoke } from '@tauri-apps/api/core'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { BotView } from '../ipc/bindings/BotView'
+import type { Settings } from '../ipc/bindings/Settings'
+import type { VacancyView } from '../ipc/bindings/VacancyView'
 import { emptyLobby, setLobby } from '../store/lobby'
+import { setSettingsSignal } from '../store/settings'
 import { seedSession } from '../store/testing'
 import { battle, bot, myBattle, status, user } from '../views/room/fixture'
 import {
@@ -226,7 +229,12 @@ describe('boss and unboss', () => {
 
 describe('sharing an ID in a running game', () => {
 	/** Us walked in on a game alice is in, in a room with `ais` AIs. */
-	function room(ais: number, added: boolean, alicePlays = true) {
+	function room(
+		ais: number,
+		added: boolean,
+		alicePlays = true,
+		vacated: VacancyView[] = [],
+	) {
 		setLobby(emptyLobby())
 		seedSession({
 			me: 'me',
@@ -243,7 +251,14 @@ describe('sharing an ID in a running game', () => {
 				}),
 			},
 			myBattle: myBattle(),
-			gameRunning: { id: 1, ip: '', port: 0, added, playingWith: null },
+			gameRunning: {
+				id: 1,
+				ip: '',
+				port: 0,
+				added,
+				playingWith: null,
+				vacated,
+			},
 		})
 	}
 
@@ -281,6 +296,51 @@ describe('sharing an ID in a running game', () => {
 		expect(labels(await menuFor('alice'))).not.toContain(
 			'joinas - share their ID',
 		)
+	})
+
+	test('onto a seat somebody left, whether or not they are still here', async () => {
+		vi.mocked(invoke).mockClear()
+		room(1, false, true, [{ name: 'bob', allyTeam: 0 }])
+		const container = await menuFor('bob')
+		// A person's row already says who they are.
+		expect(container.querySelector('.player-menu-name')).toBeNull()
+		click(
+			[...container.querySelectorAll('button')].find(
+				(b) => b.textContent === 'joinas - take their seat',
+			) as HTMLElement,
+		)
+		await settle()
+		expect(invoke).toHaveBeenCalledWith('say_battle', {
+			text: '!cv joinas bob',
+		})
+	})
+
+	test('hide leavers sits under joinas and turns this kind of room off', async () => {
+		vi.mocked(invoke).mockClear()
+		setSettingsSignal({
+			play: { showLeaversPve: true, showLeaversPvp: true },
+			chat: { maxLines: 500, filterHostChatter: false },
+		} as unknown as Settings)
+		room(1, false, true, [{ name: 'bob', allyTeam: 0 }])
+		const container = await menuFor('bob')
+		const shown = labels(container)
+		expect(shown.indexOf('Hide leavers')).toBe(
+			shown.indexOf('joinas - take their seat') + 1,
+		)
+
+		click(
+			[...container.querySelectorAll('button')].find(
+				(b) => b.textContent === 'Hide leavers',
+			) as HTMLElement,
+		)
+		await settle()
+		// The fixture room is titled like no PvE room, so it is the other switch.
+		expect(invoke).toHaveBeenCalledWith('update_settings', {
+			settings: expect.objectContaining({
+				play: { showLeaversPve: true, showLeaversPvp: false },
+			}),
+		})
+		setSettingsSignal(null)
 	})
 
 	test('not onto someone who is only watching', async () => {

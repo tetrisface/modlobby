@@ -688,6 +688,15 @@ pub struct Play {
 	/// third-party service — never a name or an account — so it stays
 	/// something that can be turned off.
 	pub pve_stats: bool,
+	/// Whether a PvE room draws the players who left its running game, as
+	/// ghosts with `!joinas` on their menu.
+	///
+	/// On, because a room with AIs is the one place joinas works: teiserver
+	/// turns it into `joinas spec` anywhere else (`chat_lib.ex`).
+	pub show_leavers_pve: bool,
+	/// The same in every other room, undecided ones included. Off: there the
+	/// seat cannot be taken, and a ghost is only news of who quit.
+	pub show_leavers_pvp: bool,
 	/// What [`JoinAs::Remember`] remembers: whether you played last time.
 	/// Written when you take or leave a seat, never chosen directly.
 	pub last_was_player: bool,
@@ -700,6 +709,8 @@ impl Default for Play {
 			auto_launch: true,
 			auto_download: true,
 			pve_stats: true,
+			show_leavers_pve: true,
+			show_leavers_pvp: false,
 			// Nothing remembered yet, and this is a lobby.
 			last_was_player: true,
 		}

@@ -224,6 +224,27 @@ export function GuessedRow(props: {
 }
 
 /**
+ * Somebody who left the running game with nobody on their ID since, known only
+ * from what the host said: a name and nothing else, since they may be out of
+ * the room or offline. Their menu offers `!joinas` onto the seat.
+ */
+export function GhostRow(props: { name: string }) {
+	const menu = (event: MouseEvent) => showPlayerMenu(props.name, event)
+	return (
+		<div class='player ghost' title='Left the game'>
+			<span />
+			<span />
+			<span />
+			<span />
+			<span />
+			<span class='pname' onClick={menu} onContextMenu={menu}>
+				{props.name}
+			</span>
+		</div>
+	)
+}
+
+/**
  * Somebody watching: in the join queue or simply spectating. No status and
  * no faction, as Chobby hides both for spectators; the skill stays, since
  * who is waiting to play is a question about strength as much as names. A

@@ -5,7 +5,10 @@ import { reconcile } from 'solid-js/store'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { BotView } from '../../ipc/bindings/BotView'
 import type { ModOption } from '../../ipc/bindings/ModOption'
+import type { Settings } from '../../ipc/bindings/Settings'
+import type { VacancyView } from '../../ipc/bindings/VacancyView'
 import { setWindowSeen } from '../../store/launch'
+import { setSettingsSignal } from '../../store/settings'
 import { emptyLobby, setLobby } from '../../store/lobby'
 import { seedSession } from '../../store/testing'
 import { PlayerMenu } from '../../components/PlayerMenu'
@@ -858,6 +861,7 @@ describe('readying up', () => {
 						port: 0,
 						added: false,
 						playingWith,
+						vacated: [],
 					}),
 				}),
 			)
@@ -872,6 +876,78 @@ describe('readying up', () => {
 		)
 	})
 
+	describe('leavers', () => {
+		/** Settings' two switches: PvE rooms, and every other room. */
+		const showing = (pve: boolean, pvp: boolean) =>
+			setSettingsSignal({
+				play: { showLeaversPve: pve, showLeaversPvp: pvp },
+			} as unknown as Settings)
+		afterEach(() => setSettingsSignal(null))
+
+		const walkedIn = (title: string, vacated: VacancyView[]) =>
+			open(
+				fakeRoom({
+					caps: SERVED,
+					battle: () => battle({ title, members: ['me', 'carol'] }),
+					users: () => ({
+						me: user('me', { battleStatus: status({ player: false }) }),
+						carol: user('carol', { battleStatus: status({ allyTeam: 1 }) }),
+					}),
+					running: () => ({
+						id: 1,
+						ip: '',
+						port: 0,
+						added: false,
+						playingWith: null,
+						vacated,
+					}),
+				}),
+			)
+		const ghosts = (container: HTMLElement) =>
+			[...container.querySelectorAll('.player.ghost')].map(
+				(row) => row.textContent,
+			)
+
+		test('a player gone from the game is drawn as a ghost on their team', async () => {
+			showing(true, true)
+			const { container } = await walkedIn('Room', [
+				{ name: 'alice', allyTeam: 1 },
+				// Back in the room and seated, carol's own row stands for her.
+				{ name: 'carol', allyTeam: 1 },
+			])
+
+			expect(ghosts(container)).toEqual(['alice'])
+			const row = container.querySelector('.player.ghost')!
+			expect(row.closest('.team')?.getAttribute('data-ally')).toBe('1')
+		})
+
+		test('a team that left whole is drawn apart, with no drop or seat', async () => {
+			showing(true, true)
+			const { container } = await walkedIn('Room', [
+				{ name: 'fred', allyTeam: null },
+			])
+
+			const cards = [...container.querySelectorAll('.team')]
+			expect(
+				cards.map((card) => card.querySelector('.name')?.textContent),
+			).toEqual(['Team 1', 'Team 2', 'Left the game'])
+			const apart = cards[2]!
+			expect(apart.hasAttribute('data-ally')).toBe(false)
+			expect(apart.querySelector('.team-join')).toBeNull()
+			expect(ghosts(apart as HTMLElement)).toEqual(['fred'])
+		})
+
+		test('drawn by default in a PvE room only', async () => {
+			const left = [{ name: 'alice', allyTeam: 1 }]
+			showing(true, false)
+			expect(ghosts((await walkedIn('Coop vs AI', left)).container)).toEqual([
+				'alice',
+			])
+			cleanup()
+			expect(ghosts((await walkedIn('Room', left)).container)).toEqual([])
+		})
+	})
+
 	test('during a game, the ready offered is one for the next', async () => {
 		const { container } = await open(
 			fakeRoom({
@@ -882,6 +958,7 @@ describe('readying up', () => {
 					port: 0,
 					added: true,
 					playingWith: null,
+					vacated: [],
 				}),
 			}),
 		)

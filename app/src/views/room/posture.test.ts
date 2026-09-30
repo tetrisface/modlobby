@@ -126,6 +126,7 @@ describe('the posture control', () => {
 							port: 0,
 							added: true,
 							playingWith: null,
+							vacated: [],
 						}),
 					},
 					my,

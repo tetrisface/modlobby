@@ -213,6 +213,7 @@ impl Projector {
                     port: *port,
                     added: *just_started,
                     playing_with: None,
+                    vacated: vec![],
                 })))
             }
             Effect::BattleChat {
@@ -353,6 +354,7 @@ impl Projector {
             | Effect::Hosting { .. }
             // The runtime holds the running game this belongs to.
             | Effect::PlayingWith { .. }
+            | Effect::Vacated { .. }
             // The runtime reports the paste as it goes; nothing to say here.
             | Effect::PasteQueued { .. } => {}
             Effect::Notice(text) => out.push(notice(NoticeLevel::Info, text.clone())),

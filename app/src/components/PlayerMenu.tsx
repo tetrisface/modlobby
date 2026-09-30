@@ -3,9 +3,10 @@ import type { BotView } from '../ipc/bindings/BotView'
 import { api, describeError } from '../ipc/client'
 import { ensureRoom, privateRoom, pushNotice } from '../store/chat'
 import { lobby, mainServer, roomServer, roomSession } from '../store/lobby'
+import { hideLeavers, showsLeavers } from '../store/settings'
+import { isVsAi } from '../lib/battles'
 import { isBoss } from '../lib/roster'
 import { dismiss } from './dismiss'
-import { Flag, RankIcon } from './icons'
 
 /**
  * What you can do about a person, reachable from wherever their name appears.
@@ -239,22 +240,35 @@ export function PlayerMenu() {
 					return room.users[me]?.battleStatus?.player ?? false
 				}
 				/**
+				 * Whether they left our room's running game with nobody on their ID
+				 * since, in the room or not.
+				 */
+				const leftSeat = () =>
+					server() === roomServer() &&
+					(roomSession()?.gameRunning?.vacated.some(
+						(seat) => seat.name === name(),
+					) ??
+						false)
+				/**
 				 * Whether SPADS would put us in the running game on their ID.
 				 *
 				 * Only while it has not put us in already -- we were not here at
 				 * the start and have not connected since -- and only onto someone
-				 * playing in it. teiserver turns `!joinas <name>` into `!joinas
-				 * spec`, and a vote for it too unless the room has AIs
-				 * (`chat_lib.ex`), so it goes as a vote and only where there are.
+				 * playing in it, or a seat somebody left. teiserver turns `!joinas
+				 * <name>` into `!joinas spec`, and a vote for it too unless the room
+				 * has AIs (`chat_lib.ex`), so it goes as a vote and only where there
+				 * are.
 				 */
 				const sharesId = () => {
 					const game = roomSession()?.gameRunning
+					if (!game || game.added || bot() || isMe()) return false
+					const hasAis = (roomSession()?.battles[game.id]?.bots.length ?? 0) > 0
 					const them = user()
-					if (!game || game.added || !them) return false
-					const hasAis = (session()?.battles[game.id]?.bots.length ?? 0) > 0
-					return (
-						hasAis && them.status.inGame && (them.battleStatus?.player ?? false)
-					)
+					const inTheGame =
+						together() &&
+						(them?.status.inGame ?? false) &&
+						(them?.battleStatus?.player ?? false)
+					return hasAis && (inTheGame || leftSeat())
 				}
 
 				/**
@@ -264,7 +278,8 @@ export function PlayerMenu() {
 				type Entry = [
 					string,
 					() => Promise<void> | void,
-					{ stay?: boolean; title?: string }?,
+					/** `after`: drawn right under that entry, where the menu has it. */
+					{ stay?: boolean; title?: string; after?: string }?,
 				]
 
 				/**
@@ -330,16 +345,37 @@ export function PlayerMenu() {
 						entries.push(['Move to spectators', () => say(`!spec ${name()}`)])
 						entries.push(['Kick from the room', () => say(`!kick ${name()}`)])
 					}
-					if (alongside && sharesId()) {
+					const joinas = leftSeat()
+						? 'joinas - take their seat'
+						: 'joinas - share their ID'
+					if (sharesId()) {
+						const left = leftSeat()
 						entries.push([
-							'joinas - share their ID',
+							joinas,
 							() => say(`!cv joinas ${name()}`),
 							{
 								title:
-									'Calls a vote to put you in the running game on their ID, ' +
-									'playing their team alongside them. Launch only once SPADS ' +
-									'says it is adding you: connecting before that makes you a ' +
-									'spectator for the rest of the game.',
+									(left
+										? 'Calls a vote to put you in the running game on the ID ' +
+											'they left. '
+										: 'Calls a vote to put you in the running game on their ID, ' +
+											'playing their team alongside them. ') +
+									'Launch only once SPADS says it is adding you: connecting ' +
+									'before that makes you a spectator for the rest of the game.',
+							},
+						])
+					}
+					const running = roomSession()?.gameRunning
+					const ours = running && roomSession()?.battles[running.id]
+					if (leftSeat() && ours && showsLeavers(ours)) {
+						entries.push([
+							'Hide leavers',
+							() => hideLeavers(ours),
+							{
+								after: joinas,
+								title: `Stops drawing the players who left a running game in ${
+									isVsAi(ours) ? 'PvE rooms' : 'other rooms'
+								}. Settings brings them back.`,
 							},
 						])
 					}
@@ -396,11 +432,22 @@ export function PlayerMenu() {
 				 * One order, whoever the menu is for: a place you can learn once
 				 * rather than a list that changes shape with what is on the row.
 				 * Numeric, so `team 10` comes after `team 9` and not after `team 1`.
+				 * An entry given `after` sits under that one instead.
 				 */
-				const sorted = () =>
-					[...items()].sort(([a], [b]) =>
-						a.localeCompare(b, undefined, { numeric: true }),
-					)
+				const sorted = () => {
+					const all = items()
+					const follows = (entry: Entry) =>
+						all.some(([label]) => label === entry[2]?.after)
+					return all
+						.filter((entry) => !follows(entry))
+						.sort(([a], [b]) =>
+							a.localeCompare(b, undefined, { numeric: true }),
+						)
+						.flatMap((entry) => [
+							entry,
+							...all.filter((other) => other[2]?.after === entry[0]),
+						])
+				}
 
 				return (
 					<div
@@ -408,7 +455,10 @@ export function PlayerMenu() {
 						class='player-menu'
 						style={{ left: `${target().x}px`, top: `${target().y}px` }}
 					>
-						<div class='player-menu-name'>{name()}</div>
+						{/* A person's row already says who, where, and at what rank. */}
+						<Show when={bot() || team()}>
+							<div class='player-menu-name'>{name()}</div>
+						</Show>
 						<Show when={bot()}>
 							{(ai) => (
 								<div class='player-menu-about muted'>
@@ -421,19 +471,15 @@ export function PlayerMenu() {
 								<div class='player-menu-about muted'>{whole().holds}</div>
 							)}
 						</Show>
-						<Show when={user()}>
-							{(who) => (
-								<div class='player-menu-about'>
-									<Flag country={who().country} />
-									<RankIcon status={who().status} />
-									<Show when={who().status.inGame}>
-										<span class='chip warn'>in game</span>
-									</Show>
-									<Show when={who().status.away}>
-										<span class='chip'>away</span>
-									</Show>
-								</div>
-							)}
+						<Show when={user()?.status.inGame || user()?.status.away}>
+							<div class='player-menu-about'>
+								<Show when={user()?.status.inGame}>
+									<span class='chip warn'>in game</span>
+								</Show>
+								<Show when={user()?.status.away}>
+									<span class='chip'>away</span>
+								</Show>
+							</div>
 						</Show>
 						<Show when={theirRoom()}>
 							{(room) => (

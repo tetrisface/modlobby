@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { BattleStatusView } from './ipc/bindings/BattleStatusView'
 import type { UserView } from './ipc/bindings/UserView'
-import { breath, emit, held, inGame } from './dev'
+import { breath, emit, held, inGame, vacated } from './dev'
 import { applySnapshot } from './store/apply'
 import { lobby } from './store/lobby'
 
@@ -143,9 +143,29 @@ describe('the dev console hooks', () => {
 	test('the breath is refused while a game runs, since nothing is asked', () => {
 		emit({
 			type: 'gameRunning',
-			data: { id: 5, ip: '', port: 0, added: true, playingWith: null },
+			data: {
+				id: 5,
+				ip: '',
+				port: 0,
+				added: true,
+				playingWith: null,
+				vacated: [],
+			},
 		})
 		expect(() => breath()).toThrow(/game is running/)
+	})
+
+	test('each leaver joins the running game as a ghost on their team', () => {
+		vacated('bob', 1)
+		vacated()
+		expect(S().gameRunning).toMatchObject({
+			added: false,
+			vacated: [
+				{ name: 'bob', allyTeam: 1 },
+				{ name: 'alice', allyTeam: 0 },
+			],
+		})
+		expect(S().battles[5]?.bots).toEqual([])
 	})
 
 	test('swords go on and come off', () => {

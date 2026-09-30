@@ -38,6 +38,7 @@ describe('how much readying up asks of us', () => {
 							port: 0,
 							added: true,
 							playingWith: null,
+							vacated: [],
 						}),
 					},
 				),

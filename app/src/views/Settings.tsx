@@ -566,6 +566,34 @@ export function SettingsView() {
 								nothing.
 							</p>
 						</Row>
+						<Row>
+							<label class='row'>
+								<input
+									type='checkbox'
+									checked={draft.play.showLeaversPve}
+									onChange={(e) =>
+										setDraft('play', 'showLeaversPve', e.currentTarget.checked)
+									}
+								/>
+								Show players who left a running game, in PvE rooms
+							</label>
+							<label class='row'>
+								<input
+									type='checkbox'
+									checked={draft.play.showLeaversPvp}
+									onChange={(e) =>
+										setDraft('play', 'showLeaversPvp', e.currentTarget.checked)
+									}
+								/>
+								…and in every other room
+							</label>
+							<p class='muted'>
+								A player gone from a game you walk into is drawn faded on their
+								team, and their menu offers to take the seat with joinas. That
+								only goes through in a room with AIs, which is why other rooms
+								start off.
+							</p>
+						</Row>
 					</Section>
 
 					<Section id='interface'>
@@ -859,6 +887,8 @@ export function blankSettings(): Settings {
 			autoLaunch: true,
 			autoDownload: true,
 			pveStats: true,
+			showLeaversPve: true,
+			showLeaversPvp: false,
 		},
 		notifications: {
 			privateMessage: 'desktop',

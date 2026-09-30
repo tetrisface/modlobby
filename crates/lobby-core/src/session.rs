@@ -167,6 +167,12 @@ pub enum Effect {
 	PlayingWith {
 		names: Vec<String>,
 	},
+	/// Who left our room's running game with nobody on their ID since, as its
+	/// host last said: whom `!joinas` can still stand in for, even when they
+	/// left the room too.
+	Vacated {
+		seats: Vec<spads::Vacancy>,
+	},
 	/// How long our room's game had been going when we walked in, from SPADS's
 	/// welcome message — the only place this protocol states it.
 	GameInProgress {
@@ -1170,8 +1176,25 @@ impl Session {
 				let mut effects = vec![Effect::Joined { id }];
 				effects.extend(self.claim_room(id));
 				// Already under way before we arrived: worth saying, not worth
-				// acting on.
-				effects.extend(self.game_running(false));
+				// acting on. The host is asked who has left it, since a player
+				// who also left the room is known to nobody else.
+				// ponytail: asked once on arrival; ask again on a mid-game
+				// LEFTBATTLE if people who watch for a seat find it stale.
+				if let Some(running) = self.game_running(false) {
+					effects.push(running);
+					let founder = self
+						.state
+						.battles
+						.get(&id)
+						.map(|battle| battle.founder.as_str());
+					effects.extend(
+						founder
+							.and_then(|host| {
+								battle::say_private(host, spads::GAME_STATUS_REQUEST).ok()
+							})
+							.map(Effect::Send),
+					);
+				}
 				effects
 			}
 			E::JoinBattleFailed { reason } => {
@@ -1377,6 +1400,13 @@ impl Session {
 						.filter(|player| Some(player.as_str()) != me)
 						.collect();
 					effects.push(Effect::PlayingWith { names });
+				}
+				if self.hosts_my_battle(&name)
+					&& let Some(seats) = answer
+						.as_deref()
+						.and_then(|answer| spads::vacated(answer, |who| self.seated_on(who)))
+				{
+					effects.push(Effect::Vacated { seats });
 				}
 				if let Some(password) = private_host_password(&text) {
 					self.private_host = Some(password.clone());
@@ -1784,6 +1814,23 @@ impl Session {
 			.into_iter()
 			.max_by_key(|(engine, count)| (*count, *engine))
 			.map(|(engine, _)| engine)
+	}
+
+	/// The ally team `name` sits on in our room: a seated player's, or an AI's.
+	fn seated_on(&self, name: &str) -> Option<u32> {
+		let my = self.state.my_battle.as_ref()?;
+		let battle = self.state.battles.get(&my.id)?;
+		let status = match battle.bots.get(name) {
+			Some(bot) => bot.status,
+			None if battle.members.contains(name) => self
+				.state
+				.users
+				.get(name)?
+				.battle_status
+				.filter(|status| status.player)?,
+			None => return None,
+		};
+		Some(u32::from(status.ally_team))
 	}
 
 	fn hosts_my_battle(&self, name: &str) -> bool {
@@ -2944,6 +2991,50 @@ mod tests {
 		// The next game starts with nobody having put us in it.
 		feed(&mut s, &["CLIENTSTATUS host 64", "CLIENTSTATUS host 65"]);
 		assert_eq!(playing_with(&feed(&mut s, &[answer])), None);
+	}
+
+	#[test]
+	fn walking_into_a_running_game_asks_the_host_who_left_it() {
+		let vacated = |effects: &[Effect]| {
+			effects.iter().find_map(|effect| match effect {
+				Effect::Vacated { seats } => Some(seats.clone()),
+				_ => None,
+			})
+		};
+		let answer = r#"!#JSONRPC {"jsonrpc":"2.0","result":{"game":{"clients":[{"Name":"alice","Team":0,"Id":3,"Status":"Disconnected"},{"Name":"BARb (bot)","Team":0,"Id":0}]}},"id":1}"#;
+		let mut s = ready_with_room();
+		feed(&mut s, &["CLIENTSTATUS host 65"]);
+		s.join_battle(5, None, "4242".into());
+		assert_eq!(
+			sent_lines(&feed(&mut s, &["JOINBATTLE 5 -1"])),
+			[format!("SAYPRIVATE host {}", spads::GAME_STATUS_REQUEST)]
+		);
+		// SPADS's team 0 is the room's team 1, where alice's AI teammate sits.
+		feed(&mut s, &["ADDBOT 5 BARb host 1088 16777215 BARb"]);
+		// Only the room's own host is believed.
+		assert_eq!(
+			vacated(&feed(
+				&mut s,
+				&[format!("SAIDPRIVATE alice {answer}").as_str()]
+			)),
+			None
+		);
+		assert_eq!(
+			vacated(&feed(
+				&mut s,
+				&[format!("SAIDPRIVATE host {answer}").as_str()]
+			)),
+			// Put on the team a teammate from the game sits on in the room.
+			Some(vec![spads::Vacancy {
+				name: "alice".into(),
+				ally_team: Some(1)
+			}])
+		);
+
+		// A room with no game on is not asked.
+		let mut s = ready_with_room();
+		s.join_battle(5, None, "4242".into());
+		assert!(sent_lines(&feed(&mut s, &["JOINBATTLE 5 -1"])).is_empty());
 	}
 
 	#[test]

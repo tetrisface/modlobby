@@ -95,7 +95,14 @@ describe('whether a setting we change would be taken', () => {
 				myBattle({ boss: over.boss ?? null, preset: over.preset ?? null }),
 			running: () =>
 				over.running
-					? { id: 1, ip: '1.2.3.4', port: 8452, added: true, playingWith: null }
+					? {
+							id: 1,
+							ip: '1.2.3.4',
+							port: 8452,
+							added: true,
+							playingWith: null,
+							vacated: [],
+						}
 					: null,
 		})
 	}

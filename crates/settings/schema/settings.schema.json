@@ -99,7 +99,9 @@
         "autoLaunch": true,
         "joinAs": "remember",
         "lastWasPlayer": true,
-        "pveStats": true
+        "pveStats": true,
+        "showLeaversPve": true,
+        "showLeaversPvp": false
       }
     },
     "servers": {
@@ -628,6 +630,16 @@
           "description": "Whether to ask the pve.bar stats service what a PvE room scores.\n\nOn, because the number is the point of looking at a PvE room before\njoining it. It sends the map, the settings and the team size to a\nthird-party service — never a name or an account — so it stays\nsomething that can be turned off.",
           "type": "boolean",
           "default": true
+        },
+        "showLeaversPve": {
+          "description": "Whether a PvE room draws the players who left its running game, as\nghosts with `!joinas` on their menu.\n\nOn, because a room with AIs is the one place joinas works: teiserver\nturns it into `joinas spec` anywhere else (`chat_lib.ex`).",
+          "type": "boolean",
+          "default": true
+        },
+        "showLeaversPvp": {
+          "description": "The same in every other room, undecided ones included. Off: there the\nseat cannot be taken, and a ghost is only news of who quit.",
+          "type": "boolean",
+          "default": false
         }
       }
     },

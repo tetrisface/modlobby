@@ -479,6 +479,29 @@ pub struct GameRunningView {
 	/// Whom we play alongside once `!joinas` has put us in on their ID: empty
 	/// until the host has said who is on it, `None` while we only watch.
 	pub playing_with: Option<Vec<String>>,
+	/// Who left the game with nobody on their ID since, as the host said when
+	/// we walked in: whom `!joinas` can still stand in for.
+	pub vacated: Vec<VacancyView>,
+}
+
+/// A seat somebody left in the running game, drawn as their ghost.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct VacancyView {
+	pub name: String,
+	/// The room's team a teammate from the game sits on; `None` where the
+	/// whole team has gone.
+	pub ally_team: Option<u32>,
+}
+
+impl From<lobby_core::spads::Vacancy> for VacancyView {
+	fn from(seat: lobby_core::spads::Vacancy) -> Self {
+		Self {
+			name: seat.name,
+			ally_team: seat.ally_team,
+		}
+	}
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
