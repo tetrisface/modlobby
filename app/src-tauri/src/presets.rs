@@ -172,9 +172,10 @@ pub async fn plan_preset(
 
 /// Sends a preset to the room.
 ///
-/// Every line is queued through the ordinary command throttle rather than
-/// blasted: SPADS ignores a client for four minutes after eight commands in
-/// eight seconds, so a big preset takes the couple of minutes it takes.
+/// As one paste, the same as pasting its lines into the room's chat: that is
+/// what the paste banner counts, and what takes the burst lane for a boss.
+/// Said a line at a time, each was a paste of one, which shows nothing and
+/// always goes out paced.
 #[tauri::command]
 pub async fn apply_preset(
 	app: State<'_, App>,
@@ -184,8 +185,8 @@ pub async fn apply_preset(
 	let preset = one(&app, &name)?;
 	let plan = presets::plan(&preset, &current_room(&app).await?, sections);
 
-	for line in &plan.lines {
-		app.client.say(line.clone()).await?;
+	if !plan.lines.is_empty() {
+		app.client.say(plan.lines.join("\n")).await?;
 	}
 
 	app.presets.touch(&name, now())?;

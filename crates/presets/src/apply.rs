@@ -132,12 +132,18 @@ pub fn plan(preset: &Preset, room: &Room, sections: Sections) -> Plan {
 		lines.push(format!("!map {map}"));
 	}
 
+	// `!preset` deletes every modoption before setting its own (see
+	// `resets_settings` in lobby-core), so after one nothing is already set.
+	let wiped = lines
+		.first()
+		.is_some_and(|line| line.starts_with("!preset "));
+
 	if sections.modoptions {
 		for (key, value) in &preset.modoptions {
 			// The one optimisation that matters: at roughly a command per
 			// second, a setting the room already has costs a second for
 			// nothing.
-			if room.modoptions.get(key).map(String::as_str) == Some(value.as_str()) {
+			if !wiped && room.modoptions.get(key).map(String::as_str) == Some(value.as_str()) {
 				already_set += 1;
 				continue;
 			}
@@ -203,7 +209,7 @@ pub fn plan(preset: &Preset, room: &Room, sections: Sections) -> Plan {
 			.is_some_and(|held| !held.is_empty());
 		match startbox::encode_override(&arrangement) {
 			Ok(encoded) if sections.reset || !occupied => {
-				if room.modoptions.get(START_BOX_OVERRIDE) == Some(&encoded) {
+				if !wiped && room.modoptions.get(START_BOX_OVERRIDE) == Some(&encoded) {
 					already_set += 1;
 				} else {
 					lines.push(format!("!bSet {START_BOX_OVERRIDE} {encoded}"));
@@ -255,7 +261,11 @@ mod tests {
 	fn a_setting_the_room_already_has_is_not_sent() {
 		let mut room = Room::default();
 		room.modoptions.insert("raptor_endless".into(), "1".into());
-		let plan = plan(&preset(), &room, Sections::default());
+		let sections = Sections {
+			reset: false,
+			..Sections::default()
+		};
+		let plan = plan(&preset(), &room, sections);
 
 		assert!(
 			!plan
@@ -265,6 +275,16 @@ mod tests {
 		);
 		assert!(plan.lines.contains(&"!bSet scav_spawncountmult 2".into()));
 		assert_eq!(plan.already_set, 1);
+	}
+
+	#[test]
+	fn after_the_reset_nothing_is_already_set() {
+		let mut room = Room::default();
+		room.modoptions.insert("raptor_endless".into(), "1".into());
+		let plan = plan(&preset(), &room, Sections::default());
+		// `!preset coop` deletes it before this line lands.
+		assert!(plan.lines.contains(&"!bSet raptor_endless 1".into()));
+		assert_eq!(plan.already_set, 0);
 	}
 
 	#[test]
@@ -346,7 +366,10 @@ mod tests {
 
 		let mut room = Room::default();
 		room.modoptions.insert(START_BOX_OVERRIDE.into(), encoded);
-		let again = plan(&preset(), &room, Sections::default());
+		// No `!preset` to wipe it first.
+		let mut preset = preset();
+		preset.battle.remove("preset");
+		let again = plan(&preset, &room, Sections::default());
 		assert!(
 			!again
 				.lines
