@@ -2849,6 +2849,18 @@ impl Runtime {
 					let _ = reply.send(Err(ClientError::NotConnected));
 					return;
 				};
+				// Already there, as from a click on our own room in the list: the
+				// session sends nothing, so nothing would come back to answer this.
+				if conn
+					.session
+					.state
+					.my_battle
+					.as_ref()
+					.is_some_and(|my| my.id == id)
+				{
+					let _ = reply.send(Ok(()));
+					return;
+				}
 				let script_password = format!("{}{}", rand::random::<u16>(), rand::random::<u16>());
 				let effects = conn
 					.session
@@ -5026,6 +5038,16 @@ mod tests {
 			.await
 			.unwrap();
 		joining.await.unwrap().unwrap();
+
+		// The room we are in, asked for again, is answered at once: the server
+		// has nothing to say to a join it already granted.
+		tokio::time::timeout(
+			Duration::from_secs(2),
+			client.join_battle("a".into(), 5, None),
+		)
+		.await
+		.expect("answered without the server")
+		.unwrap();
 
 		// A join the other server refuses costs nothing: the room is kept.
 		let joining = tokio::spawn({

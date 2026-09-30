@@ -182,9 +182,15 @@ impl Projector {
 
 	fn project_effect(&mut self, effect: &Effect, state: &LobbyState, out: &mut Vec<Delta>) {
 		match effect {
-            Effect::Joined { .. } => out.push(Delta::MyBattle(
-                state.my_battle.as_ref().map(MyBattleView::from),
-            )),
+            Effect::Joined { .. } => {
+                out.push(Delta::MyBattle(
+                    state.my_battle.as_ref().map(MyBattleView::from),
+                ));
+                // A room's game is its host's to announce, right after this if
+                // it is under way. Switching rooms leaves the old one without
+                // projecting it, and its game would stay on screen here.
+                out.push(Delta::GameRunning(None));
+            }
             Effect::LeftBattle { .. } => {
                 out.push(Delta::MyBattle(None));
                 out.push(Delta::GameRunning(None));
@@ -654,6 +660,38 @@ mod tests {
 				..
 			})]
 		));
+	}
+
+	#[test]
+	fn a_new_room_does_not_inherit_the_old_rooms_game() {
+		let (mut s, mut p) = live();
+		for line in [
+			"ADDUSER ahost EU 1 SPADS",
+			"ADDUSER bhost EU 2 SPADS",
+			"BATTLEOPENED 5 0 0 ahost 1.2.3.4 8452 16 0 0 h R\tv\tm\tt\tg",
+			"BATTLEOPENED 6 0 0 bhost 1.2.3.4 8453 16 0 0 h R\tv\tm\tt\tg",
+			"CLIENTSTATUS ahost 1",
+		] {
+			step(&mut s, &mut p, line);
+		}
+		// The room's game as the view last heard it; outer None is not told.
+		let running = |deltas: Vec<Delta>| {
+			deltas.into_iter().rev().find_map(|delta| match delta {
+				Delta::GameRunning(game) => Some(game.map(|game| game.id)),
+				_ => None,
+			})
+		};
+		assert_eq!(
+			running(step(&mut s, &mut p, "JOINBATTLE 5 hash")),
+			Some(Some(5))
+		);
+		// The runtime applies a switch's leave without projecting it, so the
+		// new room's arrival is the only word the view gets.
+		s.join_battle(6, None, "pw".into());
+		assert_eq!(
+			running(step(&mut s, &mut p, "JOINBATTLE 6 hash")),
+			Some(None)
+		);
 	}
 
 	#[test]
