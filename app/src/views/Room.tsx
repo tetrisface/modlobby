@@ -48,6 +48,12 @@ import { api, describeError } from '../ipc/client'
 import { clock } from '../lib/age'
 import { layoutLabel } from '../lib/battles'
 import { boxSignature, centre, outline } from '../lib/boxes'
+import {
+	SKIRMISH_COMMANDS,
+	SPADS_COMMANDS,
+	settingKeys,
+	type Vocabulary,
+} from '../lib/compose'
 import { downloadFraction } from '../lib/download'
 import { TILES, mapFacts, mapSiteName } from '../lib/maps'
 import {
@@ -540,6 +546,19 @@ export function Room() {
 
 	/** BAR's map index, for the name its website lists the room's map under. */
 	const [mapIndexFacts] = createResource(mapFacts)
+
+	/** The game's modoptions, for the composer to finish; `Setup` reads its own. */
+	const [catalogue] = createResource(
+		() => battle()?.gameName,
+		(game) => api.gameModOptions(game).catch(() => []),
+	)
+	const settingNames = createMemo(() => settingKeys(catalogue() ?? []))
+	const vocabulary = (): Vocabulary => ({
+		names: battle()?.members ?? [],
+		commands: room.caps.spads ? SPADS_COMMANDS : SKIRMISH_COMMANDS,
+		settings: settingNames(),
+		shortcut: room.caps.spads,
+	})
 
 	/** Takes it, and fetches it: the offer is to be playing on it. */
 	async function upgradeGame(version: string) {
@@ -1100,7 +1119,7 @@ export function Room() {
 											? 'Say something, or a !command'
 											: 'A !command — !start, !bSet, !map'
 									}
-									names={() => b().members}
+									vocabulary={vocabulary}
 									onSend={(line) => void send(line)}
 								/>
 							</div>

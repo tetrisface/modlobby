@@ -5,6 +5,7 @@ import {
 	Show,
 	createEffect,
 	createMemo,
+	createResource,
 	createSignal,
 	onMount,
 } from 'solid-js'
@@ -37,6 +38,7 @@ import { Glyph } from '../components/icons'
 import { isMuted, rememberChannel, toggleMute } from '../store/channels'
 import { TabStrip, type Tab as StripTab } from '../components/TabStrip'
 import { clock } from '../lib/age'
+import { SPADS_COMMANDS, settingKeys, type Vocabulary } from '../lib/compose'
 import { ordered } from '../lib/reorder'
 import { clashes } from '../lib/servers'
 import {
@@ -427,15 +429,29 @@ export function Chat() {
 		void send(input)
 	}
 
+	/** The battle room's modoptions, for the composer to finish. */
+	const [catalogue] = createResource(
+		() => myRoom()?.gameName,
+		(game) => api.gameModOptions(game).catch(() => []),
+	)
+	const settingNames = createMemo(() => settingKeys(catalogue() ?? []))
+
 	/**
-	 * Whose names Tab may finish here: the channel's members, or the people in
-	 * the room, or — in a private conversation — the one person in it.
+	 * What Tab may finish here: the channel's members, or the people in the
+	 * room, or — in a private conversation — the one person in it. Only the
+	 * battle room takes `!` commands.
 	 */
-	const nameable = () => {
+	const vocabulary = (): Vocabulary => {
 		const where = room()
-		if (isPrivate(where)) return [partner(where)]
-		if (where === BATTLE_ROOM) return myRoom()?.members ?? []
-		return members()
+		if (where === BATTLE_ROOM)
+			return {
+				names: myRoom()?.members ?? [],
+				commands: SPADS_COMMANDS,
+				settings: settingNames(),
+				shortcut: true,
+			}
+		const names = isPrivate(where) ? [partner(where)] : members()
+		return { names, commands: [], settings: [], shortcut: false }
 	}
 
 	const title = () => {
@@ -789,7 +805,7 @@ export function Chat() {
 							? 'Say something, or a !command'
 							: 'Say something, or /join /leave /msg /ignore /channels'
 					}
-					names={nameable}
+					vocabulary={vocabulary}
 					onSend={submit}
 				/>
 			</div>

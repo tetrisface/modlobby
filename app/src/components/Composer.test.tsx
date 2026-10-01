@@ -7,12 +7,16 @@ import { Composer } from './Composer'
  * is tested here is the wiring: that a key reaches the right function and that
  * what comes back lands in the box.
  */
-function composer(names: string[] = []) {
+function composer(
+	names: string[] = [],
+	commands: string[] = [],
+	settings: string[] = [],
+) {
 	const sent: string[] = []
 	const { container } = render(() => (
 		<Composer
 			placeholder='say'
-			names={() => names}
+			vocabulary={() => ({ names, commands, settings, shortcut: true })}
 			onSend={(l) => sent.push(l)}
 		/>
 	))
@@ -20,7 +24,9 @@ function composer(names: string[] = []) {
 	const type = (value: string) => {
 		fireEvent.input(input, { target: { value } })
 	}
-	return { input, sent, type }
+	const shadow = () =>
+		container.querySelector('.composer-ghost')?.lastChild?.textContent ?? ''
+	return { input, sent, type, shadow }
 }
 
 const settled = () =>
@@ -96,6 +102,36 @@ describe('the box you type a line into', () => {
 		fireEvent.keyDown(input, { key: 'Tab' })
 		await settled()
 		expect(input.value).toBe('Skywalker: ')
+	})
+
+	test('the first completion shows as a ghost, and tab makes it real', async () => {
+		const { input, type, shadow } = composer(['tetrisface'])
+		type('!ring tet')
+		expect(shadow()).toBe('risface')
+
+		fireEvent.keyDown(input, { key: 'Tab' })
+		await settled()
+		expect(input.value).toBe('!ring tetrisface ')
+		expect(shadow()).toBe('')
+	})
+
+	test('a modoption is finished through !bSet', async () => {
+		const { input, type, shadow } = composer([], ['ring'], ['tweakdefs'])
+		type('!twea')
+		expect(shadow()).toBe('kdefs')
+
+		fireEvent.keyDown(input, { key: 'Tab' })
+		await settled()
+		expect(input.value).toBe('!bSet tweakdefs ')
+	})
+
+	test('no ghost while the caret is not at the end', () => {
+		const { input, type, shadow } = composer(['tetrisface'])
+		type('tet')
+		expect(shadow()).toBe('risface')
+		input.setSelectionRange(1, 1)
+		fireEvent.keyUp(input, { key: 'ArrowLeft' })
+		expect(shadow()).toBe('')
 	})
 
 	test('tab with nobody to complete leaves the line alone', async () => {

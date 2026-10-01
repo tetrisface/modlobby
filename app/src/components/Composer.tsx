@@ -1,11 +1,18 @@
-import { createSignal } from 'solid-js'
-import { complete, completions, recall, remember, wordAt } from '../lib/compose'
+import { Show, createMemo, createSignal } from 'solid-js'
+import {
+	complete,
+	ghost,
+	recall,
+	remember,
+	suggestions,
+	type Vocabulary,
+} from '../lib/compose'
 
 /**
  * The box you type a line into.
  *
  * Shared by the channels and the battle room because the two behaviours worth
- * having — walking back through what you sent, and finishing a name with Tab —
+ * having — walking back through what you sent, and finishing a word with Tab —
  * are worth having in both, and are the sort of thing that quietly diverges
  * when written twice.
  *
@@ -19,11 +26,12 @@ import { complete, completions, recall, remember, wordAt } from '../lib/compose'
  */
 export function Composer(props: {
 	placeholder: string
-	/** Whose names Tab may finish. Read on each press, never cached. */
-	names: () => string[]
+	/** What Tab may finish. Read on each press, never cached. */
+	vocabulary: () => Vocabulary
 	onSend: (text: string) => void
 }) {
 	const [text, setText] = createSignal('')
+	const [caret, setCaret] = createSignal(0)
 	const [history, setHistory] = createSignal<string[]>([])
 	const [at, setAt] = createSignal(-1)
 	let input: HTMLTextAreaElement | undefined
@@ -31,20 +39,31 @@ export function Composer(props: {
 	let draft = ''
 	/**
 	 * A run of Tab presses on one word. Kept whole so each press can rebuild
-	 * from the original word rather than from the name the last press inserted.
+	 * from the original word rather than from the one the last press inserted.
 	 */
 	let cycle: {
 		base: string
 		baseCaret: number
-		word: string
 		index: number
 		produced: string
 		producedCaret: number
 	} | null = null
 
+	/**
+	 * What the first Tab would add, drawn faintly after the caret. Only at the
+	 * end of the line: drawn mid-line it would sit on top of what follows.
+	 */
+	const shadow = createMemo(() => {
+		const value = text()
+		if (caret() !== value.length) return ''
+		const first = suggestions(value, value.length, props.vocabulary())[0]
+		return first ? ghost(value, value.length, first) : ''
+	})
+
 	/** Solid owns the value, so the caret has to be placed after it lands. */
 	function put(next: string, caret: number) {
 		setText(next)
+		setCaret(caret)
 		queueMicrotask(() => input?.setSelectionRange(caret, caret))
 	}
 
@@ -60,10 +79,8 @@ export function Composer(props: {
 			caret === cycle.producedCaret
 		const base = again ? cycle!.base : element.value
 		const baseCaret = again ? cycle!.baseCaret : caret
-		const word = again ? cycle!.word : wordAt(base, baseCaret).word
-		if (!word) return
 
-		const options = completions(word, props.names())
+		const options = suggestions(base, baseCaret, props.vocabulary())
 		if (options.length === 0) return
 		const index = again ? cycle!.index + 1 : 0
 		const filled = complete(base, baseCaret, options[index % options.length]!)
@@ -71,7 +88,6 @@ export function Composer(props: {
 		cycle = {
 			base,
 			baseCaret,
-			word,
 			index,
 			produced: filled.text,
 			producedCaret: filled.caret,
@@ -101,30 +117,48 @@ export function Composer(props: {
 		setAt(-1)
 		draft = ''
 		cycle = null
-		setText('')
+		put('', 0)
 		props.onSend(line)
 	}
 
+	/** Where the caret went, for the ghost: keys and clicks move it too. */
+	const track = (event: { currentTarget: HTMLTextAreaElement }) =>
+		setCaret(event.currentTarget.selectionStart)
+
 	return (
 		<form class='chat-input' onSubmit={submit}>
-			<textarea
-				ref={input}
-				rows={1}
-				value={text()}
-				placeholder={props.placeholder}
-				onInput={(event) => {
-					setText(event.currentTarget.value)
-					// Typing ends both the walk back and the run of completions.
-					setAt(-1)
-					cycle = null
-				}}
-				onKeyDown={(event) => {
-					if (event.key === 'Enter') return onEnter(event)
-					if (event.key === 'Tab' && !event.shiftKey) return onTab(event)
-					if (event.key === 'ArrowUp') return walk(1, event)
-					if (event.key === 'ArrowDown') return walk(-1, event)
-				}}
-			/>
+			<div class='composer-field'>
+				<textarea
+					ref={input}
+					rows={1}
+					value={text()}
+					placeholder={props.placeholder}
+					onInput={(event) => {
+						setText(event.currentTarget.value)
+						track(event)
+						// Typing ends both the walk back and the run of completions.
+						setAt(-1)
+						cycle = null
+					}}
+					onKeyUp={track}
+					onMouseUp={track}
+					onKeyDown={(event) => {
+						if (event.key === 'Enter') return onEnter(event)
+						if (event.key === 'Tab' && !event.shiftKey) return onTab(event)
+						if (event.key === 'ArrowUp') return walk(1, event)
+						if (event.key === 'ArrowDown') return walk(-1, event)
+					}}
+				/>
+				{/* The line again, see-through, so the ghost lands where the caret is.
+				    Past eight lines the textarea scrolls and this copy does not, so
+				    the ghost is clipped rather than drawn in the wrong place. */}
+				<Show when={shadow()}>
+					<div class='composer-ghost' aria-hidden='true'>
+						<span class='composer-typed'>{text()}</span>
+						{shadow()}
+					</div>
+				</Show>
+			</div>
 			<button type='submit'>Send</button>
 		</form>
 	)

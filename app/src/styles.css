@@ -1604,12 +1604,44 @@ body.resizing-y {
    from. One pasted unbreakable string was making that row, and so the whole
    room, as wide as the string; nothing else was left on screen. */
 .chat-input textarea {
-	flex: 1;
 	overflow-wrap: anywhere;
 	resize: none;
 	field-sizing: content;
 	max-height: 8lh;
 	line-height: 1.4;
+}
+
+/* The textarea and a see-through copy of its line share one grid cell, so
+   the copy wraps where the textarea does and a completion's ghost lands
+   right after the caret. A ghost that wraps grows the cell, and the
+   textarea with it. */
+.composer-field {
+	flex: 1;
+	min-width: 0;
+	display: grid;
+}
+
+.composer-field > * {
+	grid-area: 1 / 1;
+}
+
+/* The box of `textarea` and `.chat-input textarea` above, minus the paint. */
+.composer-ghost {
+	padding: 0.3125rem 0.5625rem;
+	border: 1px solid transparent;
+	font-family: var(--body);
+	font-size: 0.8125rem;
+	line-height: 1.4;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	max-height: 8lh;
+	overflow: hidden;
+	color: var(--faint);
+	pointer-events: none;
+}
+
+.composer-typed {
+	color: transparent;
 }
 
 /* The one view that is a document rather than a pane: every other one fills
