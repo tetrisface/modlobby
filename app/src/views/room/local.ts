@@ -85,6 +85,7 @@ export function localRoom(): RoomModel {
 		// A skirmish's engine is the only game it has; `lobby.gameRunning` is the
 		// server telling us about somebody else's, which is a different question.
 		running: () => null,
+		started: () => null,
 		// The room is always here once it is open, and while it is opening there
 		// is nowhere better to be than waiting for it.
 		exit: () => null,

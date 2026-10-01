@@ -8,6 +8,7 @@ import type { GameRunningView } from '../../ipc/bindings/GameRunningView'
 import type { MyBattleView } from '../../ipc/bindings/MyBattleView'
 import type { UserView } from '../../ipc/bindings/UserView'
 import type { api } from '../../ipc/client'
+import type { Running } from '../../lib/running'
 
 /**
  * What the room asks Rust for.
@@ -130,6 +131,8 @@ export type RoomModel = {
 	check: Accessor<ContentCheckView>
 	/** The room's game, while one is running. */
 	running: Accessor<GameRunningView | null>
+	/** When that game began, where anything knows. */
+	started: Accessor<Running | null>
 	/**
 	 * Where to go when there is no room here any more, or `null` to stay.
 	 *

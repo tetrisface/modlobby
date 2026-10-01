@@ -407,6 +407,10 @@ function applySessionDelta(delta: Delta, server: string): void {
 			// A game begun in our room is a combination of mods played.
 			if (delta.data && !session.gameRunning)
 				rememberSet(lobby.contentCheck.mutators)
+			// One that started around us (`added` is that, on arrival) we saw begin:
+			// as good as the host saying so, and the battle list is not open to time it.
+			if (delta.data?.added && !session.gameRunning)
+				noteToldStart(server, delta.data.id, 0)
 			setLobby('servers', server, 'gameRunning', delta.data)
 			return
 		case 'gameStartedAgo':

@@ -208,6 +208,7 @@ export function fakeRoom(over: Partial<RoomModel> = {}): RoomModel {
 		content: () => ({ engine: true, game: true, map: true }),
 		check: () => ({ game: null, map: null, mutators: [] }),
 		running: () => null,
+		started: () => null,
 		exit: () => null,
 		log: '#battle',
 		caps: SERVED,

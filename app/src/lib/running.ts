@@ -77,6 +77,14 @@ export function elapsed(running: Running, now: number): string {
 	return `${span(minutes)}${running.exact ? '' : '+'}`
 }
 
+/** `07:05`, `75:12`: minutes and seconds, for a clock that ticks each second. */
+export function stopwatch(since: number, now: number): string {
+	const seconds = Math.max(0, Math.floor((now - since) / 1000))
+	const mm = String(Math.floor(seconds / 60)).padStart(2, '0')
+	const ss = String(seconds % 60).padStart(2, '0')
+	return `${mm}:${ss}`
+}
+
 /** `7m`, `1h04`: how the app writes a game's length. */
 export function span(minutes: number): string {
 	if (minutes < 60) return `${minutes}m`

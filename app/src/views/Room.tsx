@@ -10,6 +10,7 @@ import {
 	createMemo,
 	createResource,
 	createSignal,
+	onCleanup,
 } from 'solid-js'
 import { Composer } from '../components/Composer'
 import { GameActions } from '../components/GameActions'
@@ -72,6 +73,7 @@ import {
 	splitBounds,
 	writeWidth,
 } from '../lib/resize'
+import { stopwatch } from '../lib/running'
 import { readSkills, teamSkill, type Skill } from '../lib/skill'
 import { chat, pushNotice } from '../store/chat'
 import { joinMilestone } from '../store/join'
@@ -478,9 +480,17 @@ export function Room() {
 
 	const lines = () => chat.rooms[room.log] ?? []
 
+	const [now, setNow] = createSignal(Date.now())
+	const tick = setInterval(() => setNow(Date.now()), 1000)
+	onCleanup(() => clearInterval(tick))
+
 	/** Watching, or playing on somebody's ID once `!joinas` has put us there. */
 	const joinLabel = () => {
 		const names = room.running()?.playingWith ?? null
+		const started = room.started()
+		// Only a start we know: a floor's `+` belongs to the battle list.
+		if (names === null && started?.exact)
+			return `Spectate the game [${stopwatch(started.since, now())}]`
 		if (names === null) return 'Spectate the game'
 		if (names.length === 0) return 'Play the game'
 		return `Play together with ${NAMES.format(names)}`

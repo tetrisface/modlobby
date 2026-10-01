@@ -919,6 +919,31 @@ describe('readying up', () => {
 		)
 	})
 
+	test('watching says how long the game has been going, when that is known', async () => {
+		const label = async (exact: boolean) => {
+			const { container } = await open(
+				fakeRoom({
+					caps: SERVED,
+					running: () => ({
+						id: 1,
+						ip: '',
+						port: 0,
+						added: false,
+						playingWith: null,
+						vacated: [],
+					}),
+					// Half a second either side of 65 s, so a slow render stays on 01:05.
+					started: () => ({ since: Date.now() - 65_500, exact }),
+				}),
+			)
+			return container.querySelector('.card-actions .primary')?.textContent
+		}
+
+		expect(await label(true)).toBe('Spectate the game [01:05]')
+		// A floor from the battle list is not a time to show here.
+		expect(await label(false)).toBe('Spectate the game')
+	})
+
 	describe('leavers', () => {
 		/** Settings' two switches: PvE rooms, and every other room. */
 		const showing = (pve: boolean, pvp: boolean) =>

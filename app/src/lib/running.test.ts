@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { elapsed, told, track, type Running } from './running'
+import { elapsed, stopwatch, told, track, type Running } from './running'
 
 const at = (minute: number) => minute * 60_000
 
@@ -91,5 +91,11 @@ describe('saying how long', () => {
 
 	test('a clock that went backwards says nothing silly', () => {
 		expect(elapsed(exact(at(10)), at(0))).toBe('0m')
+	})
+
+	test('a stopwatch counts minutes past the hour rather than rolling over', () => {
+		expect(stopwatch(0, 425_000)).toBe('07:05')
+		expect(stopwatch(0, at(75) + 12_000)).toBe('75:12')
+		expect(stopwatch(at(10), at(0))).toBe('00:00')
 	})
 })

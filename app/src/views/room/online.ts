@@ -1,4 +1,6 @@
 import { api } from '../../ipc/client'
+import { battleKey } from '../../lib/battles'
+import type { Running } from '../../lib/running'
 import { BATTLE_ROOM } from '../../store/chat'
 import { playsOnline } from '../../store/build'
 import {
@@ -9,6 +11,7 @@ import {
 	roomSession,
 	sessions,
 } from '../../store/lobby'
+import { running } from '../../store/running'
 import type { RoomCaps, RoomModel } from './model'
 
 /** A room on the server: someone else's, run by SPADS, full of people. */
@@ -46,6 +49,7 @@ export function onlineRoom(): RoomModel {
 		content: () => lobby.content,
 		check: () => lobby.contentCheck,
 		running: () => roomSession()?.gameRunning ?? null,
+		started,
 		exit,
 		log: BATTLE_ROOM,
 		caps: ONLINE,
@@ -64,6 +68,13 @@ export function onlineRoom(): RoomModel {
 		// nothing to offer -- which is what greys Save and Load on the page.
 		presets: () => (myRoom() === undefined ? null : api),
 	}
+}
+
+function started(): Running | null {
+	const server = roomServer()
+	const id = roomSession()?.gameRunning?.id
+	if (server === undefined || id === undefined) return null
+	return running()[battleKey(server, id)] ?? null
 }
 
 function exit(): string | null {
