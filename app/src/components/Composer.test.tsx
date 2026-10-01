@@ -24,9 +24,20 @@ function composer(
 	const type = (value: string) => {
 		fireEvent.input(input, { target: { value } })
 	}
+	/** What is drawn over the box: ghost letters in brackets, the caret as `|`. */
 	const shadow = () =>
-		container.querySelector('.composer-ghost')?.lastChild?.textContent ?? ''
-	return { input, sent, type, shadow }
+		[...(container.querySelector('.composer-ghost')?.children ?? [])]
+			.map((span) =>
+				span.classList.contains('composer-caret')
+					? '|'
+					: span.classList.contains('composer-typed')
+						? span.textContent
+						: `[${span.textContent}]`,
+			)
+			.join('')
+	const merged = () =>
+		container.querySelector('.composer-field')!.classList.contains('merged')
+	return { input, sent, type, shadow, merged }
 }
 
 const settled = () =>
@@ -105,9 +116,10 @@ describe('the box you type a line into', () => {
 	})
 
 	test('the first completion shows as a ghost, and tab makes it real', async () => {
-		const { input, type, shadow } = composer(['tetrisface'])
+		const { input, type, shadow, merged } = composer(['tetrisface'])
 		type('!ring tet')
-		expect(shadow()).toBe('risface')
+		expect(shadow()).toBe('!ring tet|[risface]')
+		expect(merged()).toBe(false)
 
 		fireEvent.keyDown(input, { key: 'Tab' })
 		await settled()
@@ -116,9 +128,14 @@ describe('the box you type a line into', () => {
 	})
 
 	test('a modoption is finished through !bSet', async () => {
-		const { input, type, shadow } = composer([], ['ring'], ['tweakdefs'])
+		const { input, type, shadow, merged } = composer(
+			[],
+			['ring'],
+			['tweakdefs'],
+		)
 		type('!twea')
-		expect(shadow()).toBe('kdefs')
+		expect(shadow()).toBe('![bSet ]twea|[kdefs]')
+		expect(merged()).toBe(true)
 
 		fireEvent.keyDown(input, { key: 'Tab' })
 		await settled()
@@ -128,7 +145,7 @@ describe('the box you type a line into', () => {
 	test('no ghost while the caret is not at the end', () => {
 		const { input, type, shadow } = composer(['tetrisface'])
 		type('tet')
-		expect(shadow()).toBe('risface')
+		expect(shadow()).toBe('tet|[risface]')
 		input.setSelectionRange(1, 1)
 		fireEvent.keyUp(input, { key: 'ArrowLeft' })
 		expect(shadow()).toBe('')

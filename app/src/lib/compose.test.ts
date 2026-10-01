@@ -2,12 +2,13 @@ import { describe, expect, test } from 'vitest'
 import {
 	HISTORY_MAX,
 	complete,
-	ghost,
+	preview,
 	recall,
 	remember,
 	settingKeys,
 	suggestions,
 	wordAt,
+	type Piece,
 	type Vocabulary,
 } from './compose'
 import { fixtureOptions } from './setup.fixture'
@@ -77,11 +78,17 @@ const words: Vocabulary = {
 
 /** What each offer would put in place of the word, best first. */
 const offered = (text: string, vocabulary: Vocabulary = words) =>
-	suggestions(text, text.length, vocabulary).map((c) => c.insert)
+	suggestions(text, text.length, vocabulary).map((c) => c.lead + c.key + c.tail)
 
 describe('finishing a name', () => {
 	test('a prefix match is offered before a mere containment', () => {
-		expect(offered('hi sky')).toEqual(['sky_bot ', 'Skywalker ', 'BlueSky '])
+		expect(offered('hi sky')).toEqual([
+			'sky_bot ',
+			'Skywalker ',
+			'BlueSky ',
+			// s…k…y, last: its letters are there, in order, but apart.
+			'[Crd]XxStormKittyxX ',
+		])
 	})
 
 	test('case does not matter, since nobody types a name as registered', () => {
@@ -104,8 +111,8 @@ describe('finishing a name', () => {
 	})
 
 	test('at the start of a line, a name is being addressed', () => {
-		expect(offered('tet')).toEqual(['tetrisface: '])
-		expect(offered('!preset team\ntet')).toEqual(['tetrisface: '])
+		expect(offered('tet')[0]).toBe('tetrisface: ')
+		expect(offered('!preset team\ntet')[0]).toBe('tetrisface: ')
 	})
 })
 
@@ -155,24 +162,62 @@ describe('finishing a command', () => {
 		expect(offered('!bSet twea')).toEqual(['tweakdefs ', 'tweakdefs1 '])
 		expect(offered('!bset tweakdefs')).toEqual(['tweakdefs ', 'tweakdefs1 '])
 	})
+
+	test('letters in order find a key after everything closer', () => {
+		expect(offered('!twd')).toEqual(['!bSet tweakdefs ', '!bSet tweakdefs1 '])
+		expect(offered('!stm')[0]).toBe('!startmetal ')
+		expect(offered('!dwt')).toEqual([])
+	})
 })
 
-describe('the ghost after the caret', () => {
-	const shown = (text: string) =>
-		ghost(text, text.length, suggestions(text, text.length, words)[0]!)
+describe('what is drawn over the box', () => {
+	/** Ghost letters in brackets, the caret as `|`. */
+	const drawn = (text: string) => {
+		const first = suggestions(text, text.length, words)[0]
+		const picture = first ? preview(text, text.length, first) : null
+		if (!picture) return null
+		const show = (pieces: Piece[]) =>
+			pieces.map((p) => (p.ghost ? `[${p.text}]` : p.text)).join('')
+		return {
+			drawn: `${show(picture.head)}|${show(picture.tail)}`,
+			merged: picture.merged,
+		}
+	}
 
-	test('is the rest of what the word begins', () => {
-		expect(shown('!ring tet')).toBe('risface')
-		expect(shown('!twea')).toBe('kdefs')
-		expect(shown('TET')).toBe('risface')
+	test('the rest of a word it begins, after what was typed', () => {
+		expect(drawn('!ring tet')).toEqual({
+			drawn: '!ring tet|[risface]',
+			merged: false,
+		})
+		expect(drawn('TET')).toEqual({ drawn: 'TET|[risface]', merged: false })
 	})
 
-	test('is nothing once the word is whole', () => {
-		expect(shown('!start')).toBe('')
+	test('what Tab adds in front is drawn in place', () => {
+		expect(drawn('!twea')).toEqual({
+			drawn: '![bSet ]twea|[kdefs]',
+			merged: true,
+		})
 	})
 
-	test('is nothing for a word found inside a name', () => {
-		expect(shown('hi xxstorm')).toBe('')
+	test('letters in order are drawn among the ghost ones', () => {
+		expect(drawn('!bSet twd')).toEqual({
+			drawn: '!bSet tw[eak]d|[efs]',
+			merged: true,
+		})
+		expect(drawn('!twd')).toEqual({
+			drawn: '![bSet ]tw[eak]d|[efs]',
+			merged: true,
+		})
+	})
+
+	test('nothing once the word is whole', () => {
+		expect(drawn('!start')).toBeNull()
+	})
+
+	test('a name or a bare word keeps to the plain ghost', () => {
+		expect(drawn('hi xxstorm')).toBeNull()
+		expect(drawn('rin')).toEqual({ drawn: 'rin|[g]', merged: false })
+		expect(drawn('twd')).toBeNull()
 	})
 })
 
@@ -196,13 +241,13 @@ describe('putting the completion into the line', () => {
 
 	test('the word is replaced by the whole insert', () => {
 		expect(
-			complete('!twea', 5, { key: 'tweakdefs', insert: '!bSet tweakdefs ' }),
+			complete('!twea', 5, { lead: '!bSet ', key: 'tweakdefs', tail: ' ' }),
 		).toEqual({ text: '!bSet tweakdefs ', caret: 16 })
 	})
 
 	test('whatever follows the caret is kept', () => {
 		expect(
-			complete('sky and rest', 3, { key: 'Skywalker', insert: 'Skywalker: ' }),
+			complete('sky and rest', 3, { lead: '', key: 'Skywalker', tail: ': ' }),
 		).toEqual({ text: 'Skywalker:  and rest', caret: 11 })
 	})
 })

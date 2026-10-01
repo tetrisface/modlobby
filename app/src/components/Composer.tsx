@@ -1,10 +1,11 @@
-import { Show, createMemo, createSignal } from 'solid-js'
+import { For, Show, createEffect, createMemo, createSignal } from 'solid-js'
 import {
 	complete,
-	ghost,
+	preview,
 	recall,
 	remember,
 	suggestions,
+	type Piece,
 	type Vocabulary,
 } from '../lib/compose'
 
@@ -35,6 +36,7 @@ export function Composer(props: {
 	const [history, setHistory] = createSignal<string[]>([])
 	const [at, setAt] = createSignal(-1)
 	let input: HTMLTextAreaElement | undefined
+	let mirror: HTMLDivElement | undefined
 	/** What was half-typed when the walk back started. */
 	let draft = ''
 	/**
@@ -50,14 +52,21 @@ export function Composer(props: {
 	} | null = null
 
 	/**
-	 * What the first Tab would add, drawn faintly after the caret. Only at the
-	 * end of the line: drawn mid-line it would sit on top of what follows.
+	 * What the first Tab would add, drawn faintly over the box. Only at the end
+	 * of the line: drawn mid-line it would sit on top of what follows.
 	 */
 	const shadow = createMemo(() => {
 		const value = text()
-		if (caret() !== value.length) return ''
+		if (caret() !== value.length) return null
 		const first = suggestions(value, value.length, props.vocabulary())[0]
-		return first ? ghost(value, value.length, first) : ''
+		return first ? preview(value, value.length, first) : null
+	})
+
+	// The ghost is only drawn with the caret at the end, where the textarea is
+	// scrolled to its bottom, so past eight lines the copy is pinned there too.
+	createEffect(() => {
+		shadow()
+		if (mirror) mirror.scrollTop = mirror.scrollHeight
 	})
 
 	/** Solid owns the value, so the caret has to be placed after it lands. */
@@ -127,7 +136,7 @@ export function Composer(props: {
 
 	return (
 		<form class='chat-input' onSubmit={submit}>
-			<div class='composer-field'>
+			<div class='composer-field' classList={{ merged: shadow()?.merged }}>
 				<textarea
 					ref={input}
 					rows={1}
@@ -149,17 +158,30 @@ export function Composer(props: {
 						if (event.key === 'ArrowDown') return walk(-1, event)
 					}}
 				/>
-				{/* The line again, see-through, so the ghost lands where the caret is.
-				    Past eight lines the textarea scrolls and this copy does not, so
-				    the ghost is clipped rather than drawn in the wrong place. */}
+				{/* The line again, so the ghost lands where the caret is. Merged, the
+				    copy is what shows and the caret is drawn in it; otherwise the
+				    typed part is see-through over the textarea's own. */}
 				<Show when={shadow()}>
-					<div class='composer-ghost' aria-hidden='true'>
-						<span class='composer-typed'>{text()}</span>
-						{shadow()}
-					</div>
+					{(picture) => (
+						<div class='composer-ghost' ref={mirror} aria-hidden='true'>
+							<Pieces of={picture().head} />
+							<span class='composer-caret' />
+							<Pieces of={picture().tail} />
+						</div>
+					)}
 				</Show>
 			</div>
 			<button type='submit'>Send</button>
 		</form>
+	)
+}
+
+function Pieces(props: { of: Piece[] }) {
+	return (
+		<For each={props.of}>
+			{(piece) => (
+				<span classList={{ 'composer-typed': !piece.ghost }}>{piece.text}</span>
+			)}
+		</For>
 	)
 }

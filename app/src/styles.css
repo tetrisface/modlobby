@@ -1644,6 +1644,41 @@ body.resizing-y {
 	color: transparent;
 }
 
+/* Merged, the copy draws the whole line, typed letters among ghost ones, so
+   the textarea's own text and caret step aside and the caret is drawn where
+   the typed letters end. */
+.composer-field.merged textarea {
+	color: transparent;
+	caret-color: transparent;
+}
+
+.composer-field.merged .composer-typed {
+	color: var(--text);
+}
+
+.composer-caret {
+	display: none;
+}
+
+.composer-field.merged:focus-within .composer-caret {
+	display: inline;
+	border-left: 1px solid var(--text);
+	margin-right: -1px;
+	animation: composer-blink 1s steps(1) infinite;
+}
+
+@keyframes composer-blink {
+	50% {
+		border-left-color: transparent;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.composer-caret {
+		animation: none;
+	}
+}
+
 /* The one view that is a document rather than a pane: every other one fills
    the window and scrolls something inside itself, which is why `.main` clips.
    The scroller is the full width of the window and the column is centred
