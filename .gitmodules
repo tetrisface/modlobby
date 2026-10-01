@@ -63,3 +63,7 @@
 	url = https://github.com/spring/uberserver.git
 	branch = master
 	shallow = true
+[submodule "external/coilbox"]
+	path = external/coilbox
+	url = https://github.com/tomjn/coilbox.git
+	branch = main

@@ -181,10 +181,17 @@ jobs:
 
       - name: WebKitGTK and bundler libraries
         if: runner.os == 'Linux'
+        # The runner's apt mirrors have stalled a fetch for over an hour without
+        # an error. Each try is cut short and retried instead.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
-            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+          for try in 1 2 3; do
+            sudo timeout 3m apt-get update &&
+              sudo timeout 5m apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+                libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev &&
+              exit 0
+            echo "apt try $try failed"
+          done
+          exit 1
 
       # rustup reads rust-toolchain.toml on the first cargo call; no action needed.
       - uses: Swatinem/rust-cache@v2.9.2
