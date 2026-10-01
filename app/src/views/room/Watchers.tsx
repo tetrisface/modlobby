@@ -87,6 +87,9 @@ export function WatcherStack(
 		pending: UserView[]
 		/** What the spectators' header says, which includes the queue. */
 		spectatorCount: number
+		/** Joins each card, as a team's Join takes a seat; absent where we are. */
+		joinQueue?: Join
+		joinSpectators?: Join
 	},
 ) {
 	const [queueSpread, setQueueSpread] = remembered('queue')
@@ -151,6 +154,7 @@ export function WatcherStack(
 			count={props.queue.length}
 			spread={queueSpread()}
 			onToggle={() => setQueueSpread(!queueSpread())}
+			join={props.joinQueue}
 			{...people(props)}
 		/>
 	)
@@ -162,6 +166,7 @@ export function WatcherStack(
 			count={props.spectatorCount}
 			spread={spectatorsSpread()}
 			onToggle={() => setSpectatorsSpread(!spectatorsSpread())}
+			join={props.joinSpectators}
 			{...people(props)}
 		/>
 	)
@@ -205,6 +210,9 @@ const people = (p: People): People => ({
 	boss: p.boss,
 })
 
+/** A card's Join: what it does, said on hover. */
+export type Join = { title: string; run: () => void }
+
 /** A card's form, kept across rooms and runs. */
 function remembered(kind: 'queue' | 'spectators') {
 	const key = `modlobby.room.${kind}Spread`
@@ -231,6 +239,7 @@ export function WatcherCard(
 		count: number
 		spread: boolean
 		onToggle: () => void
+		join?: Join
 	},
 ) {
 	const queue = () => props.kind === 'queue'
@@ -256,6 +265,17 @@ export function WatcherCard(
 			<header class='team-head'>
 				<span class='name'>{title()}</span>
 				<span class='count'>{props.count}</span>
+				<Show when={props.join}>
+					{(join) => (
+						<button
+							class='team-join'
+							title={join().title}
+							onClick={() => join().run()}
+						>
+							Join
+						</button>
+					)}
+				</Show>
 			</header>
 			<button
 				class='spread-toggle'

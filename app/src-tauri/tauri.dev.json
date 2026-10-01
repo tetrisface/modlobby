@@ -1,0 +1,8 @@
+{
+  "build": {
+    "runner": {
+      "cmd": "bun",
+      "args": ["../../scripts/dev-runner.ts"]
+    }
+  }
+}

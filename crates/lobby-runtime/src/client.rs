@@ -9,7 +9,6 @@ use std::future::Future;
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::process::ExitStatus;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -33,6 +32,7 @@ use crate::idle;
 use crate::latency::{self, Latency};
 use crate::launch;
 use crate::misses::{self, Misses};
+use crate::orphan;
 use crate::platform::Hardware;
 use crate::player_files;
 use crate::reconnect;
@@ -1252,7 +1252,8 @@ enum Next {
 	Command(Command),
 	Inbound(String, Inbound),
 	Opened(Opened),
-	EngineExited(std::io::Result<ExitStatus>),
+	/// The exit code, where there is one to be had.
+	EngineExited(Option<i32>),
 	Download(DownloadEvent),
 	Probe(Probe),
 	/// Whether the room's game and map here are the ones it plays, worked out.
@@ -1308,7 +1309,7 @@ struct Runtime {
 	attempts: u64,
 	/// Whose turn it is to be listened to first; see [`recv_any`].
 	turn: usize,
-	engine: Option<Child>,
+	engine: Option<Engine>,
 	/// What the running engine was started with, to look at when it exits.
 	engine_run: Option<EngineRun>,
 	engine_status: EngineStatus,
@@ -2031,7 +2032,7 @@ impl Runtime {
 	/// runs on a settings copy of ours rather than their own file.
 	fn started(&mut self, launched: launch::Launched, write: PathBuf) {
 		let pid = launched.child.id();
-		self.engine = Some(launched.child);
+		self.engine = Some(Engine::Started(Box::new(launched.child)));
 		self.engine_run = Some(EngineRun {
 			write,
 			snapshot: launched.snapshot,
@@ -2729,6 +2730,7 @@ impl Runtime {
 	}
 
 	async fn run(mut self) {
+		self.adopt_engine();
 		loop {
 			let connected = self.servers.values().any(|server| server.link.is_some());
 			let now = Instant::now();
@@ -2744,7 +2746,7 @@ impl Runtime {
 				},
 				(server, inbound) = recv_any(&mut self.servers, self.turn) => Next::Inbound(server, inbound),
 				Some(opened) = self.opened_rx.recv() => Next::Opened(opened),
-				status = wait_engine(&mut self.engine) => Next::EngineExited(status),
+				code = wait_engine(&mut self.engine) => Next::EngineExited(code),
 				Some(event) = self.download_rx.recv() => Next::Download(event),
 				Some(probe) = self.probe_rx.recv() => Next::Probe(probe),
 				Some(checked) = self.check_rx.recv() => Next::Checked(checked),
@@ -2783,7 +2785,7 @@ impl Runtime {
 					self.refresh_content().await;
 					self.greet_mutator_host().await;
 				}
-				Next::EngineExited(status) => self.engine_exited(status).await,
+				Next::EngineExited(code) => self.engine_exited(code).await,
 			}
 			self.flush();
 		}
@@ -3049,16 +3051,13 @@ impl Runtime {
 				.await;
 			}
 			Command::EnginePid { reply } => {
-				let _ = reply.send(Ok(self.engine.as_ref().and_then(Child::id)));
+				let _ = reply.send(Ok(self.engine.as_ref().and_then(Engine::id)));
 			}
 			Command::StopEngine { reply } => {
 				// The child is left in place: the exit is noticed by the same
 				// `wait_engine` arm that handles a game closing itself, so
 				// there is one path to "the game ended" rather than two.
-				let running = match self.engine.as_mut() {
-					Some(child) => child.start_kill().is_ok(),
-					None => false,
-				};
+				let running = self.engine.as_mut().is_some_and(Engine::start_kill);
 				let _ = reply.send(Ok(running));
 			}
 			Command::SetAutoLaunch { always, reply } => {
@@ -3179,6 +3178,8 @@ impl Runtime {
 					return;
 				}
 				self.data_dir = data_dir;
+				// A game left running from this directory's engines is ours.
+				self.adopt_engine();
 				// Re-check against the new directory.
 				self.checked = None;
 				self.refresh_content().await;
@@ -3799,9 +3800,8 @@ impl Runtime {
 		Ok(())
 	}
 
-	async fn engine_exited(&mut self, status: std::io::Result<ExitStatus>) {
+	async fn engine_exited(&mut self, code: Option<i32>) {
 		self.engine = None;
-		let code = status.ok().and_then(|s| s.code());
 		tracing::info!(?code, "engine exited");
 		self.set_engine(EngineStatus::Exited { code });
 		self.check_player_files();
@@ -3842,6 +3842,32 @@ impl Runtime {
 				snapshot.display()
 			),
 		});
+	}
+
+	/// Takes over an engine a lobby before this one started and left running,
+	/// so it shows as running, the overlay raises it and its end is noticed.
+	/// None of what was started with it is known: its settings snapshot is
+	/// not checked, and no server is told it has ended.
+	fn adopt_engine(&mut self) {
+		if self.engine.is_some() {
+			return;
+		}
+		let Some(dirs) = self.data_dirs() else {
+			return;
+		};
+		let roots: Vec<PathBuf> = std::iter::once(&dirs.write)
+			.chain(&dirs.read)
+			.map(|dir| dir.join("engine"))
+			.collect();
+		let Some(pid) = orphan::orphaned_engine(&orphan::processes(), &roots) else {
+			return;
+		};
+		tracing::info!(pid, "taking over an engine left running");
+		self.engine = Some(Engine::Adopted {
+			pid,
+			next_look: Instant::now(),
+		});
+		self.set_engine(EngineStatus::Running { pid: Some(pid) });
 	}
 
 	fn set_engine(&mut self, status: EngineStatus) {
@@ -4262,10 +4288,54 @@ impl Runtime {
 	}
 }
 
-/// Resolves when the launched engine exits; never, when none was launched.
-async fn wait_engine(engine: &mut Option<Child>) -> std::io::Result<ExitStatus> {
+/// The engine the runtime watches: one it started, or one a lobby before it
+/// started and left running (see [`orphan`]).
+enum Engine {
+	Started(Box<Child>),
+	/// Known by its process id alone, and looked at every [`ADOPTED_LOOK`].
+	Adopted {
+		pid: u32,
+		next_look: Instant,
+	},
+}
+
+/// How often an engine taken over is looked for; its end is noticed this late
+/// at worst.
+// ponytail: polled; a process handle to wait on if a second ever matters.
+const ADOPTED_LOOK: Duration = Duration::from_secs(1);
+
+impl Engine {
+	fn id(&self) -> Option<u32> {
+		match self {
+			Self::Started(child) => child.id(),
+			Self::Adopted { pid, .. } => Some(*pid),
+		}
+	}
+
+	/// Asks it to end; the end itself arrives through [`wait_engine`].
+	fn start_kill(&mut self) -> bool {
+		match self {
+			Self::Started(child) => child.start_kill().is_ok(),
+			Self::Adopted { pid, .. } => orphan::kill(*pid),
+		}
+	}
+}
+
+/// Resolves with the exit code when the engine exits; never, when none runs.
+///
+/// Cancelled and made again on every turn of the runtime's loop, so an
+/// adopted engine's next look is kept in the engine rather than here: a busy
+/// room would otherwise never let a whole second pass.
+async fn wait_engine(engine: &mut Option<Engine>) -> Option<i32> {
 	match engine {
-		Some(child) => child.wait().await,
+		Some(Engine::Started(child)) => child.wait().await.ok().and_then(|status| status.code()),
+		Some(Engine::Adopted { pid, next_look }) => loop {
+			tokio::time::sleep_until((*next_look).into()).await;
+			*next_look = Instant::now() + ADOPTED_LOOK;
+			if !orphan::alive(*pid) {
+				return None;
+			}
+		},
 		None => std::future::pending().await,
 	}
 }

@@ -141,6 +141,31 @@ pub(crate) fn since_start() -> u128 {
 		.unwrap_or(0)
 }
 
+/// Under `scripts/dev-runner.ts`, goes when the runner goes.
+///
+/// Tauri restarts the app on a Rust edit by stopping the runner, as it
+/// stopped `cargo run`. On Windows bun's job ends the app first and this never
+/// fires; elsewhere nothing else would, and each restart would leave another
+/// lobby behind. The engine is not the runner's to end either way: it plays
+/// on, and the lobby that comes back takes it over (`lobby_runtime::orphan`).
+#[cfg(debug_assertions)]
+fn exit_with_dev_runner(app: tauri::AppHandle) {
+	let Some(runner) = std::env::var("MODLOBBY_DEV_RUNNER")
+		.ok()
+		.and_then(|pid| pid.parse().ok())
+	else {
+		return;
+	};
+	std::thread::spawn(move || {
+		// ponytail: a second to notice, and a pid reused inside it is missed.
+		while lobby_runtime::orphan::alive(runner) {
+			std::thread::sleep(std::time::Duration::from_secs(1));
+		}
+		tracing::info!("the dev runner is gone; exiting with it");
+		app.exit(0);
+	});
+}
+
 /// Says why the app is not starting, and stops. For the moment before there
 /// is a window: a release build has no console, so this is a box as well as a
 /// log line, and the exit is a plain failure rather than a panic.
@@ -416,6 +441,8 @@ pub fn run() {
 			if check_updates {
 				tauri::async_runtime::spawn(update::daily(tauri_app.handle().clone()));
 			}
+			#[cfg(debug_assertions)]
+			exit_with_dev_runner(tauri_app.handle().clone());
 			tracing::debug!(ms = since_start(), "startup: setup done");
 			Ok(())
 		})

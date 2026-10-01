@@ -73,6 +73,12 @@ export async function sitOn(
 	await remember(true)
 }
 
+/** Gives the seat up, and remembers watching for the next room. */
+export async function standUp(room: RoomModel): Promise<void> {
+	await room.io.releaseSeat()
+	await remember(false)
+}
+
 /**
  * Playing rather than watching.
  *
@@ -279,11 +285,7 @@ export function Seat() {
 	}
 
 	/** Stands up. The one thing a seat holder does that is not about where. */
-	const spectate = () =>
-		act('spectate', async () => {
-			await room.io.releaseSeat()
-			await remember(false)
-		})
+	const spectate = () => act('spectate', () => standUp(room))
 
 	// ---- the posture control -------------------------------------------
 	// Pressing a segment says "this is the posture I want". A lower one steps

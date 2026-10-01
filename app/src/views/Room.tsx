@@ -80,7 +80,7 @@ import { useRoom, type RoomModel } from './room/model'
 import { WatcherStack } from './room/Watchers'
 import { readiness } from './room/readiness'
 import { dragging } from '../lib/drag'
-import { Seat, canAddAi, showAddAi, sitOn } from './Seat'
+import { Seat, canAddAi, showAddAi, sitOn, standUp } from './Seat'
 import { modRefusal, movable, moveTo, setBonus, type Target } from './room/move'
 import { hostsMods } from '../lib/mutators'
 import { Setup } from './Setup'
@@ -389,6 +389,37 @@ export function Room() {
 		const me = room.me()
 		const status = me === null ? undefined : room.users()[me]?.battleStatus
 		return !(status?.player && status.allyTeam === allyTeam)
+	}
+
+	/** Whether we sit, by our own newest word ahead of the server's. */
+	const seated = () => {
+		const me = room.me()
+		const status = me === null ? undefined : room.users()[me]?.battleStatus
+		return room.my()?.seatOnItsWay?.player ?? status?.player ?? false
+	}
+	const queued = () => {
+		const me = room.me()
+		return me !== null && (room.battle()?.queue ?? []).includes(me)
+	}
+
+	/** The queue's Join: in line for a seat, from watching. */
+	const joinQueue = () =>
+		room.caps.plays && !seated() && !queued()
+			? {
+					title: 'Wait in line for a seat',
+					run: () => void say(room.io.sayBattle('$joinq')),
+				}
+			: undefined
+	/** The spectators' Join: out of the queue or the seat, as Watch does. */
+	const joinSpectators = () => {
+		if (queued())
+			return {
+				title: 'Leave the queue and keep spectating',
+				run: () => void say(room.io.sayBattle('$leaveq')),
+			}
+		if (seated())
+			return { title: 'Give the seat up', run: () => void say(standUp(room)) }
+		return undefined
 	}
 
 	async function join(allyTeam: number) {
@@ -1028,6 +1059,8 @@ export function Room() {
 										spectators={occupants().spectators}
 										pending={occupants().pending}
 										spectatorCount={occupants().spectatorCount}
+										joinQueue={joinQueue()}
+										joinSpectators={joinSpectators()}
 										skillOf={skillOf}
 										me={room.me()}
 										isFriend={isFriend}

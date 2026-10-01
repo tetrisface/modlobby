@@ -148,6 +148,14 @@ pub fn acted_by(text: &str, who: &str) -> bool {
 		|| (ends_name(&body) && body[name.len()..].starts_with(" called a vote"))
 }
 
+/// The player and their words in a line the host relays from its running
+/// game: public in-game chat comes back to the room as `<name> text`
+/// (`cbAhPlayerChat`, `spads.pl:14980`).
+pub fn relayed(text: &str) -> Option<(&str, &str)> {
+	let (name, said) = text.strip_prefix('<')?.split_once("> ")?;
+	(!name.is_empty() && !name.contains(char::is_whitespace)).then_some((name, said))
+}
+
 /// Whether an announcement is the host answering a command, as opposed to
 /// chatter of its own: a setting, preset or map outcome, an invalid command,
 /// a refusal, or SPADS addressing `me` by name ("<me>, you must …"). Votes,

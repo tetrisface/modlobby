@@ -5,7 +5,8 @@
 	"license": "MIT",
 	"scripts": {
 		"predev": "bun run prune || true",
-		"dev": "tauri dev",
+		"dev": "tauri dev --config src-tauri/tauri.dev.json",
+		"dev:no-watch": "bun run dev --no-watch",
 		"prebuild": "bun run prune || true",
 		"build": "tauri build",
 		"tauri": "tauri",

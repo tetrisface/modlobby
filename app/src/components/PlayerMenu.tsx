@@ -337,10 +337,13 @@ export function PlayerMenu() {
 					// In the same room, and it is ours to run: SPADS takes these as
 					// chat, so they need nothing but the words a host would type.
 					const alongside = together() && !isMe()
+					// Through SPADS, as Chobby does: it rings as the bot, past ignore
+					// lists, and says so in the room and the game, where a bare RING
+					// is silent to us and dropped by an in-game Chobby.
 					if (alongside) {
-						entries.push(['Ring', () => api.ring(name())])
+						entries.push(['Ring', () => say(`!ring ${name()}`)])
+						entries.push(...placings(openFor()?.moves))
 					}
-					if (alongside) entries.push(...placings(openFor()?.moves))
 					if (alongside && bossing()) {
 						entries.push(['Move to spectators', () => say(`!spec ${name()}`)])
 						entries.push(['Kick from the room', () => say(`!kick ${name()}`)])

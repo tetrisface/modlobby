@@ -1,5 +1,6 @@
-dev:
-	(cd app && bun run dev)
+# `just dev --no-watch` keeps Rust edits from restarting the lobby.
+dev *args:
+	(cd app && bun run dev {{args}})
 
 fmt: format
 format:

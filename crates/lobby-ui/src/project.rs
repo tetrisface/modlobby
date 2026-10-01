@@ -426,11 +426,13 @@ impl Projector {
 		// can carry your name without addressing you — SPADS lists the room's
 		// bosses inside its `BattleStateChanged` JSON — nor the host reporting
 		// something we did ("Battle setting changed by <us>"), which names us
-		// as the actor, not the audience.
-		let talking_to_us = Some(from) != state.me.as_deref()
+		// as the actor, not the audience. A line the host relays from the game
+		// is its player's, so ours typed in-game are ours too.
+		let (speaker, said) = lobby_core::spads::relayed(text).unwrap_or((from, text));
+		let talking_to_us = Some(speaker) != state.me.as_deref()
 			&& !matches!(kind, ChatKind::Private | ChatKind::Machine)
 			&& state.me.as_deref().is_some_and(|me| {
-				mention::mentions(text, me)
+				mention::mentions(said, me)
 					&& !(matches!(kind, ChatKind::Announcement)
 						&& lobby_core::spads::acted_by(text, me))
 			});
@@ -588,6 +590,23 @@ mod tests {
 				..
 			}
 		)));
+		assert!(
+			deltas
+				.iter()
+				.any(|delta| matches!(delta, Delta::Chat(line) if line.mention))
+		);
+	}
+
+	#[test]
+	fn your_in_game_chat_relayed_by_the_host_is_not_a_mention() {
+		let (mut s, mut p) = live();
+		let deltas = step(&mut s, &mut p, "SAIDBATTLE host <me> keep the map lines");
+		let [Delta::Chat(line)] = &deltas[..] else {
+			panic!("expected one chat line, got {deltas:?}")
+		};
+		assert!(!line.mention, "our own words, relayed");
+		// Somebody else naming us in-game still is one.
+		let deltas = step(&mut s, &mut p, "SAIDBATTLE host <other> me, help");
 		assert!(
 			deltas
 				.iter()

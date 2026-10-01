@@ -272,6 +272,49 @@ describe('choosing a team', () => {
 		expect(calls).toContainEqual(['sayBattle', ['$leaveq']])
 	})
 
+	test('the queue and the spectators each take a Join, where we are not', async () => {
+		const joined = async (queue: string[], player: boolean) => {
+			const calls: Calls = []
+			const { container } = await open(
+				fakeRoom({
+					caps: SERVED,
+					battle: () => battle({ members: ['me', 'alice', 'dave'], queue }),
+					users: () => ({
+						me: user('me', { battleStatus: status({ player }) }),
+						alice: user('alice', { battleStatus: status({ allyTeam: 0 }) }),
+						dave: user('dave', { battleStatus: status({ player: false }) }),
+					}),
+					io: recordingIo(calls),
+				}),
+			)
+			const join = (card: string) =>
+				container.querySelector<HTMLButtonElement>(
+					`.watchers.${card} .team-join`,
+				)
+			const offered = {
+				queue: !!join('queue'),
+				spectators: !!join('spectators'),
+			}
+			const pressed = join('queue') ?? join('spectators')
+			if (pressed) fireEvent.click(pressed)
+			await settle()
+			cleanup()
+			return { offered, calls }
+		}
+
+		const watching = await joined(['dave'], false)
+		expect(watching.offered).toEqual({ queue: true, spectators: false })
+		expect(watching.calls).toContainEqual(['sayBattle', ['$joinq']])
+
+		const inLine = await joined(['dave', 'me'], false)
+		expect(inLine.offered).toEqual({ queue: false, spectators: true })
+		expect(inLine.calls).toContainEqual(['sayBattle', ['$leaveq']])
+
+		const playing = await joined(['dave'], true)
+		expect(playing.offered).toEqual({ queue: false, spectators: true })
+		expect(playing.calls.map(([name]) => name)).toContain('releaseSeat')
+	})
+
 	test('and, with nobody seated yet, the side the AIs are not on', async () => {
 		const calls: Calls = []
 		const { container } = await open(
