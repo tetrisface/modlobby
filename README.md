@@ -37,6 +37,25 @@ bun install
 bun run build    # installer under app/src-tauri/target/release/bundle/
 ```
 
+### NixOS
+
+A `flake.nix` is provided for development with `direnv` or `nix develop`:
+
+```sh
+git clone https://github.com/tetrisface/modlobby
+cd modlobby
+direnv allow    # or: nix develop
+just dev
+```
+
+Because modlobby downloads precompiled Linux engine binaries (`pr-downloader`, `spring`) at runtime into `~/.local/share/modlobby/data/engine/`, enable [`nix-ld`](https://github.com/nix-community/nix-ld) in your NixOS configuration so the kernel can execute them:
+
+```nix
+programs.nix-ld.enable = true;
+```
+
+The flake's dev shell automatically populates `NIX_LD_LIBRARY_PATH` with the required engine runtime libraries (SDL2, OpenAL, libGL, and X11).
+
 # Alongside other lobbies
 
 modlobby is built to sit next to Chobby and bar-lobby on the same machine rather
