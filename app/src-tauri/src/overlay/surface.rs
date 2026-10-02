@@ -51,7 +51,14 @@ impl TauriSurface {
 	}
 
 	fn enter(&self) {
-		// Unmaximized first, as `screen.rs` does. A maximized window's rectangle
+		// Out of the taskbar before anything is read or set. A minimized window
+		// reports itself unmaximized, sits at (-32000, -32000) with no size, and
+		// takes none of the geometry below: the later `show` restores it to
+		// whatever it was minimized from. From maximized that is a borderless
+		// maximized window, which the toolkit holds to the work area — the
+		// overlay stops at the taskbar's edge with raw game under it.
+		let _ = self.window.unminimize();
+		// Unmaximized next, as `screen.rs` does. A maximized window's rectangle
 		// hangs past every edge of the monitor, and given back as an ordinary
 		// window it stays there: the page clipped on the right, and saved that
 		// way by the window-state plugin for every start after. The flag puts it
