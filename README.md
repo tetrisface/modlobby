@@ -16,9 +16,9 @@ Packages are available at [releases](https://github.com/tetrisface/modlobby/rele
 
 ## macOS
 
-Apple Silicon only, and skirmish, LAN and replays only. Uses 3rd party [build](https://github.com/vandomas/RecoilEngine-AppleSilicon).
+Apple Silicon only, and skirmish, LAN and replays only. Automatically downloads a 3rd party [engine build](https://github.com/vandomas/RecoilEngine-AppleSilicon).
 
-The first launch is refused. Open **System
+The first launch of the app is refused. Open **System
 Settings → Privacy & Security**, scroll to the bottom and press **Open Anyway** (macOS 15
 removed the older Control-click shortcut). `xattr -dr com.apple.quarantine
 /Applications/modlobby.app` does the same from a terminal.
