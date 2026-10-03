@@ -50,6 +50,8 @@
 
           # Runtime libraries required by the downloaded engine (Spring/Recoil) and pr-downloader
           engineLibraries = with pkgs; [
+            glibc
+
             stdenv.cc.cc.lib
             zlib
             SDL2
@@ -61,21 +63,21 @@
             libxi
             libxinerama
             curl
-          ];
-
-          allLibraries = tauriLibraries ++ engineLibraries;
+         ];
         in
         {
           default = pkgs.mkShell {
             nativeBuildInputs = [ pkgs.pkg-config ];
             buildInputs =
               buildPackages
-              ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux allLibraries;
+              ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux (
+                tauriLibraries ++ engineLibraries
+              );
 
             shellHook = pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
-              export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath allLibraries}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-              export NIX_LD="${pkgs.glibc}/lib/ld-linux-x86-64.so.2"
-              export NIX_LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath allLibraries}''${NIX_LD_LIBRARY_PATH:+:$NIX_LD_LIBRARY_PATH}"
+              export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath tauriLibraries}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+              export NIX_LD="${pkgs.stdenv.cc.bintools.dynamicLinker}"
+              export NIX_LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath engineLibraries}''${NIX_LD_LIBRARY_PATH:+:$NIX_LD_LIBRARY_PATH}"
               export XDG_DATA_DIRS="${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}''${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
             '';
           };
