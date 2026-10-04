@@ -33,16 +33,17 @@ export function cardsAcross(card: number, gap: number, row: number): number {
  * One each while the deepest team fits. Past that, the deepest takes the
  * fewest columns that keep it from scrolling and every team flows at that
  * depth, so the sides of one game are drawn alike whatever their sizes. The
- * teams stay on one row: where it cannot hold that many columns the depth
- * grows until it can, and where nothing shallower than a column each fits,
- * a column each it is.
+ * teams stay on one row: where it cannot hold that many columns the deepest
+ * gives one up at a time, the others following, down to a column each. A
+ * depth in between would split one side and not the other.
  */
 export function teamColumns(sizes: readonly number[], space: Space): number[] {
 	const single = sizes.map(() => 1)
 	const deepest = Math.max(0, ...sizes)
 	if (deepest <= space.deep) return single
 	const fewest = Math.ceil(deepest / Math.max(1, space.deep))
-	for (let depth = Math.ceil(deepest / fewest); depth < deepest; depth++) {
+	for (let most = fewest; most > 1; most--) {
+		const depth = Math.ceil(deepest / most)
 		const columns = sizes.map((size) => Math.max(1, Math.ceil(size / depth)))
 		if (columns.reduce((sum, n) => sum + n, 0) <= space.across) return columns
 	}

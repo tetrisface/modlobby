@@ -43,12 +43,16 @@ describe('teamColumns', () => {
 		expect(teamColumns([38, 0], space(5, 19))).toEqual([2, 1])
 	})
 
-	test('a row too narrow for that depth takes the shallowest it holds', () => {
-		// Thirteen deep would be 3 + 3 columns; five across holds 3 + 2.
-		expect(teamColumns([38, 29], space(5, 13))).toEqual([3, 2])
-		expect(teamColumns([38, 29], space(3, 19))).toEqual([2, 1])
+	test('a row too narrow for those columns gives each side fewer, never one side only', () => {
+		// Thirteen deep would be 3 + 3 columns; five across holds 2 + 2.
+		expect(teamColumns([38, 29], space(5, 13))).toEqual([2, 2])
 		expect(teamColumns([80, 80], space(5, 19))).toEqual([2, 2])
 		expect(teamColumns([80, 80], space(6, 19))).toEqual([3, 3])
+		// The owner's room, 2026-10-04: 27 v 25 on three cards, a row over the
+		// border. Two columns beside one made no sense; the third card is the
+		// watchers'.
+		expect(teamColumns([27, 25], space(3, 26))).toEqual([1, 1])
+		expect(teamColumns([38, 29], space(3, 19))).toEqual([1, 1])
 	})
 
 	test('teams that share the row at nothing shallower keep a column each', () => {
