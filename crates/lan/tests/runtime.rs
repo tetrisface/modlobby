@@ -10,7 +10,7 @@ use std::net::Ipv4Addr;
 use std::time::Duration;
 
 use lan::{Config, Host, Policy};
-use lobby_runtime::{Client, Hardware};
+use lobby_runtime::{Client, DataDirs, Hardware};
 use lobby_ui::Snapshot;
 use spring_protocol::{Endpoint, LoginRequest, ThrottlePolicy};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -80,7 +80,9 @@ async fn a_guest_logs_in_joins_talks_and_hears_the_game_start() {
 		.await
 		.unwrap();
 
-	// The guest, as the app runs it.
+	// The guest, as the app runs it, but kept to a folder of its own rather
+	// than this machine's installs.
+	let content = tempfile::tempdir().unwrap();
 	let client = Client::spawn(
 		ThrottlePolicy::default(),
 		Hardware {
@@ -89,9 +91,10 @@ async fn a_guest_logs_in_joins_talks_and_hears_the_game_start() {
 			machine_hash: "m".into(),
 		},
 		None,
+		Some(DataDirs::only(content.path())),
 	);
-	// The start signal is under test, not the engine: this machine's own
-	// installs would otherwise start one, or fetch the room's content into them.
+	// The start signal is under test, not the engine or the content: nothing
+	// is to be started, or fetched from the network.
 	client.set_auto_launch(false).await.unwrap();
 	client.set_auto_download(false).await.unwrap();
 	let endpoint = Endpoint {

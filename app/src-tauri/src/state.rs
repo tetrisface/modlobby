@@ -112,6 +112,7 @@ impl App {
 				crate::lan::connector(lan.target()),
 				Arc::new(IcmpEcho),
 				Some(settings.dir().to_path_buf()),
+				None,
 			)
 		});
 		Self {

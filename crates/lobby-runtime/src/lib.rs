@@ -17,6 +17,8 @@ mod ways;
 pub use client::{
 	Ask, BarContent, Client, ClientError, Connector, FromHost, GameAsk, GameSources, RapidRun,
 };
+/// Re-exported so callers do not need `content` just to confine a runtime.
+pub use content::DataDirs;
 pub use latency::{IcmpEcho, Latency, Unmeasured};
 /// Re-exported so callers do not need `lobby-core` just to name an action.
 pub use lobby_core::{FriendAction, UnknownFriendAction};

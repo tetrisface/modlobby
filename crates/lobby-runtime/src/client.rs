@@ -649,7 +649,14 @@ impl Client {
 	/// Spawns the runtime on the current tokio runtime, connecting over TCP/TLS.
 	/// `state_dir` is where what was measured is kept between runs — host
 	/// latencies, the way into each server; `None` measures afresh each run.
-	pub fn spawn(policy: ThrottlePolicy, hardware: Hardware, state_dir: Option<PathBuf>) -> Self {
+	/// `confined_to` is the only content it may use; `None` is this machine's
+	/// installs, found where each lobby keeps them.
+	pub fn spawn(
+		policy: ThrottlePolicy,
+		hardware: Hardware,
+		state_dir: Option<PathBuf>,
+		confined_to: Option<DataDirs>,
+	) -> Self {
 		let connector: Connector = Arc::new(|endpoint, policy| {
 			Box::pin(async move { Transport::connect(&endpoint, policy).await })
 		});
@@ -659,6 +666,7 @@ impl Client {
 			connector,
 			Arc::new(latency::IcmpEcho),
 			state_dir,
+			confined_to,
 		)
 	}
 
@@ -668,9 +676,18 @@ impl Client {
 		connector: Connector,
 		latency: Arc<dyn Latency>,
 		state_dir: Option<PathBuf>,
+		confined_to: Option<DataDirs>,
 	) -> Self {
 		let (tx, rx) = mpsc::channel(64);
-		let runtime = Runtime::new(rx, policy, hardware, connector, latency, state_dir);
+		let runtime = Runtime::new(
+			rx,
+			policy,
+			hardware,
+			connector,
+			latency,
+			state_dir,
+			confined_to,
+		);
 		tokio::spawn(runtime.run());
 		Self { tx }
 	}
@@ -1334,6 +1351,9 @@ struct Runtime {
 	join_asked: Option<Instant>,
 	/// Where BAR's content lives; `None` falls back to the launcher's directory.
 	data_dir: Option<PathBuf>,
+	/// The only content directories this runtime may use, when it is not to
+	/// look at the machine's installs at all: a test's scratch folder.
+	confined_to: Option<DataDirs>,
 	/// Each server's rapid master index, by server id; see [`Self::rapid_master`].
 	rapid_masters: BTreeMap<String, String>,
 	map_searches: BTreeMap<String, String>,
@@ -1829,6 +1849,7 @@ impl Runtime {
 		connector: Connector,
 		latency: Arc<dyn Latency>,
 		state_dir: Option<PathBuf>,
+		confined_to: Option<DataDirs>,
 	) -> Self {
 		// A short queue: progress lines arrive far faster than the front end
 		// needs them, and the batcher coalesces what gets through anyway.
@@ -1870,6 +1891,7 @@ impl Runtime {
 			keep_awake: false,
 			join_asked: None,
 			data_dir: None,
+			confined_to,
 			rapid_masters: BTreeMap::new(),
 			map_searches: BTreeMap::new(),
 			bar_maps: BTreeSet::new(),
@@ -2724,8 +2746,11 @@ impl Runtime {
 	}
 
 	/// Where BAR content is: the setting or our own directory to write, every
-	/// other install on the machine to read.
+	/// other install on the machine to read -- unless the runtime is confined.
 	fn data_dirs(&self) -> Option<DataDirs> {
+		if let Some(dirs) = &self.confined_to {
+			return Some(dirs.clone());
+		}
 		launch::data_dirs(self.data_dir.clone())
 	}
 
@@ -5335,6 +5360,13 @@ mod tests {
 		client.shutdown().await;
 	}
 
+	/// A content folder nothing is put in. The runtime's tests never see this
+	/// machine's installs: a game left running from one is otherwise taken
+	/// over, and content missing from them fetched into them.
+	fn scratch() -> DataDirs {
+		DataDirs::only(std::env::temp_dir().join("modlobby-runtime-tests"))
+	}
+
 	fn spawn(connector: Connector) -> Client {
 		Client::spawn_with(
 			ThrottlePolicy::default(),
@@ -5342,6 +5374,7 @@ mod tests {
 			connector,
 			Arc::new(latency::Unmeasured),
 			None,
+			Some(scratch()),
 		)
 	}
 
@@ -5709,6 +5742,7 @@ mod tests {
 			connector,
 			Arc::new(latency::Unmeasured),
 			None,
+			Some(scratch()),
 		);
 		let ui = Collector::default();
 		client.subscribe(ui.clone()).await.unwrap();
@@ -5794,6 +5828,7 @@ mod tests {
 			connector,
 			Arc::new(latency::Unmeasured),
 			None,
+			Some(scratch()),
 		);
 		let ui = Collector::default();
 		client.subscribe(ui.clone()).await.unwrap();
@@ -5893,6 +5928,7 @@ mod tests {
 			connector,
 			Arc::new(latency::Unmeasured),
 			None,
+			Some(scratch()),
 		);
 		let endpoint = Endpoint::new("test");
 		let login = tokio::spawn({
@@ -5960,6 +5996,7 @@ mod tests {
 			connector,
 			Arc::new(latency::Unmeasured),
 			None,
+			Some(scratch()),
 		);
 		let login = log_in(&client, "test");
 		server_write

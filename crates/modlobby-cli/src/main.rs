@@ -319,7 +319,7 @@ async fn connect(conn: &Connection) -> anyhow::Result<Client> {
 	)
 	.client_name(&conn.client_name);
 
-	let client = Client::spawn(policy, hardware, None);
+	let client = Client::spawn(policy, hardware, None, None);
 	client.subscribe(Print).await?;
 	let started = Instant::now();
 	client
