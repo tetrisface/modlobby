@@ -370,6 +370,7 @@ pub fn run() {
 			let skirmish_path = commands::skirmish_path(&app);
 			let from_host_handle = handle.clone();
 			let sources_handle = handle.clone();
+			let (adopt_asked, adopted) = tokio::sync::oneshot::channel();
 			tauri::async_runtime::spawn(async move {
 				// Whoever reads another server's rapid before games come
 				// from it; without one the runtime fetches from BAR's only.
@@ -406,6 +407,10 @@ pub fn run() {
 				// Once the data directory is known: a game a lobby before this
 				// one left running from it is ours to show, and to end.
 				let _ = client.adopt_engine().await;
+				// The runtime takes its commands in order, so whoever asks it
+				// about a running game from here on is answered with that one
+				// known.
+				let _ = adopt_asked.send(());
 				let _ = client.set_skirmish_path(Some(skirmish_path)).await;
 				// BAR's maps decide who a map is asked of, so they are had
 				// before a room is, and not only once the battle list wants
@@ -435,15 +440,22 @@ pub fn run() {
 				memory.note_trouble();
 				previous(info);
 			}));
-			// Picks up a download an earlier run left waiting; the front end
-			// asks for it to be installed before it logs in.
+			// Picks up a download an earlier run left waiting.
 			tauri_app.manage(update::Staged::open(app.settings.dir()));
 			tauri_app.manage(app);
-			// One small request when it is due, and the nav says what it
-			// found -- fetching it too when `updates.download` says so.
-			if check_updates {
-				tauri::async_runtime::spawn(update::daily(tauri_app.handle().clone()));
-			}
+			// That download is installed from here, ahead of the app, so the
+			// manifest is asked while the page is still loading; the page
+			// waits on the answer before it draws the app or logs in. After
+			// it, one small request when a look is due, and the nav says what
+			// it found -- fetching it too when `updates.download` says so.
+			let updates = tauri_app.handle().clone();
+			tauri::async_runtime::spawn(async move {
+				// The install does not restart under a running game, and a game
+				// a lobby before this one left running is not known before the
+				// runtime has been asked to look for it.
+				let _ = adopted.await;
+				update::startup(updates, check_updates).await;
+			});
 			#[cfg(debug_assertions)]
 			exit_with_dev_runner(tauri_app.handle().clone());
 			tracing::debug!(ms = since_start(), "startup: setup done");
@@ -524,6 +536,7 @@ pub fn run() {
 			update::check_update,
 			update::install_update,
 			update::resume_update,
+			update::kept_update,
 			update::note_trouble,
 			commands::flash_engine,
 			commands::engine_in_front,
@@ -626,23 +639,26 @@ pub fn run() {
 			if let Some(app) = handle.try_state::<state::App>() {
 				app.update_memory.ended();
 			}
-			let Some(held) = handle.try_state::<InGameHandle>() else {
-				return;
-			};
-			let Some(mut ingame) = held.lock().expect("in-game").take() else {
-				return;
-			};
-			// Leaving a widget behind that talks to a port nobody answers is
-			// harmless — it stops consuming Escape — but tidying up is the
-			// whole promise, so it is done on the way out. Not from under a
-			// running game, though: the engine asks for the menu archive
-			// again when the player quits to it, and finding it gone is a
-			// content error in their face.
-			if game_running {
-				ingame.leave_behind();
+			let ingame = handle
+				.try_state::<InGameHandle>()
+				.and_then(|held| held.lock().expect("in-game").take());
+			if let Some(mut ingame) = ingame {
+				// Leaving a widget behind that talks to a port nobody answers is
+				// harmless — it stops consuming Escape — but tidying up is the
+				// whole promise, so it is done on the way out. Not from under a
+				// running game, though: the engine asks for the menu archive
+				// again when the player quits to it, and finding it gone is a
+				// content error in their face.
+				if game_running {
+					ingame.leave_behind();
+				}
+				// Dropping is what removes whatever is still tracked.
+				drop(ingame);
 			}
-			// Dropping is what removes whatever is still tracked.
-			drop(ingame);
+			// Last, because on Windows it does not come back: a download nobody
+			// restarted into goes in now, so the next start has nothing to
+			// install.
+			update::install_on_exit(handle, game_running);
 		});
 }
 

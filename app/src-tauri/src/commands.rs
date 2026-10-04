@@ -21,7 +21,7 @@ use crate::transport::ChannelTransport;
 
 pub(crate) const LOBBY_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiError {
 	pub code: &'static str,

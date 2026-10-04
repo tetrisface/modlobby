@@ -13,6 +13,7 @@
 import type { Diagnostic } from '../ipc/bindings/Diagnostic'
 import type { Kind } from '../ipc/bindings/Kind'
 import type { OptionChangeView } from '../ipc/bindings/OptionChangeView'
+import type { Prepared } from '../ipc/bindings/Prepared'
 import type { Slot } from '../ipc/bindings/Slot'
 import { BOX_KEYS, BOX_OVERRIDE } from './boxes'
 import { when } from './presets'
@@ -78,7 +79,7 @@ export type Doc = {
 	/** The slot key, the draft's file name, or `untitled`. */
 	title: string
 	kind: Kind
-	/** The text as loaded: the room's value formatted, or the draft file. */
+	/** The text as loaded: the room's value (see [`shownText`]), or the draft file. */
 	original: string
 	/** What the editor holds. Dirty means it differs from `original`. */
 	buffer: string
@@ -100,6 +101,30 @@ export type Doc = {
 	 * draft. A draft document is saved to its own file regardless.
 	 */
 	savedTo: string | null
+	/** The form chosen for it here, once one is; see [`formOf`]. */
+	form: Form | null
+	/** The room's value arrived compact; see [`arrivedCompact`]. */
+	compact: boolean
+}
+
+/**
+ * What of a Lua tweak is sent: the editor's text untouched, or compact --
+ * its whitespace and comments taken out, every name and value as it was.
+ * Compacting is for the room only; the editor keeps what was typed.
+ */
+export type Form = 'asIs' | 'compact'
+
+/**
+ * How a document goes out: as chosen for it, else the way it came. A tweak
+ * that arrived compact is shown laid out, and sent as shown would come back
+ * a quarter longer for an edit of a word -- so it goes back compact. Any
+ * other goes out as is: a room should get a tweak as it was written, names
+ * and comments and all, so others can read it. The override is always sent
+ * compact, whatever is chosen.
+ */
+export function formOf(doc: Doc): Form {
+	if (doc.kind === 'boxes') return 'asIs'
+	return doc.form ?? (doc.compact ? 'compact' : 'asIs')
 }
 
 export type Sort = 'name' | 'kind'
@@ -130,11 +155,6 @@ export type Workspace = {
 	filter: Filter
 	/** Where a draft or the scratch is sent; a slot document is sent to itself. */
 	target: string
-	/**
-	 * Send it minified. Off unless asked for: a room should get the tweak as it
-	 * was written, names and comments and all, so others can read it.
-	 */
-	minify: boolean
 	fullscreen: boolean
 	/** What is being compared, in place of the editor, when something is. */
 	compare: Compare | null
@@ -182,8 +202,31 @@ export function defaultTarget(kind: Kind): string {
  * Decides what a draft is, since the file carries no kind of its own.
  */
 export function guessKind(lua: string): Kind {
-	const body = lua.replace(/^(\s*--[^\n]*\n?)*\s*/, '')
-	return body.startsWith('{') ? 'units' : 'defs'
+	return bodyOf(lua).startsWith('{') ? 'units' : 'defs'
+}
+
+/** The code under a tweak's leading comments. */
+const bodyOf = (lua: string): string => lua.replace(/^(\s*--[^\n]*\n?)*\s*/, '')
+
+/**
+ * Whether a tweak arrived as a minifier leaves one: its code on a single
+ * line under its leading comments, with no comment in it. There is no layout
+ * of its author's to keep.
+ */
+export function arrivedCompact(lua: string): boolean {
+	const body = bodyOf(lua).trimEnd()
+	return body !== '' && !body.includes('\n') && !body.includes('--')
+}
+
+/**
+ * A slot's text for the editor. A tweak somebody laid out is shown as it
+ * arrived, so that sent as is it goes back in its author's layout; one that
+ * arrived compact is laid out here, or there is no reading it. The override
+ * is generated, and always laid out. Line endings are the editor's own.
+ */
+export function shownText(kind: Kind, text: string, formatted: string): string {
+	if (kind === 'boxes' || arrivedCompact(text)) return formatted
+	return text.replace(/\r\n?/g, '\n')
 }
 
 export function slotDoc(key: string): Doc {
@@ -201,6 +244,8 @@ export function slotDoc(key: string): Doc {
 		loaded: false,
 		notes: [],
 		savedTo: null,
+		form: null,
+		compact: false,
 	}
 }
 
@@ -234,6 +279,8 @@ export function draftDoc(
 		loaded: true,
 		notes: [],
 		savedTo: null,
+		form: null,
+		compact: false,
 	}
 }
 
@@ -267,7 +314,6 @@ export function emptyWorkspace(
 		desk: false,
 		filter: { query: '', sort: 'name' },
 		target: defaultTarget('defs'),
-		minify: false,
 		fullscreen: false,
 		compare: null,
 		search: { open: false, query: '' },
@@ -276,9 +322,40 @@ export function emptyWorkspace(
 
 export const isDirty = (doc: Doc): boolean => doc.buffer !== doc.original
 
+/** The room's value for a slot nobody has edited here, where it holds one. */
+export const heldBlob = (doc: Doc): string | null =>
+	doc.origin === 'slot' && !isDirty(doc) && !isCleared(doc.blob ?? '')
+		? doc.blob
+		: null
+
+/**
+ * An untouched slot, measured as the room holds it rather than as its text
+ * would go out. That text is the room's value formatted, which encodes longer
+ * than the blob that arrived -- measured as written, a tweak sitting in the
+ * room reads as too long for it.
+ */
+export function asHeld(doc: Doc, prepared: Prepared): Prepared {
+	const blob = heldBlob(doc)
+	if (blob === null) return prepared
+	const lead = prepared.command.length - prepared.blob.length
+	const command = prepared.command.slice(0, lead) + blob
+	return {
+		...prepared,
+		blob,
+		command,
+		gauge: {
+			...prepared.gauge,
+			blob: blob.length,
+			command: command.length,
+			fits: command.length <= prepared.gauge.cap,
+		},
+	}
+}
+
 export type Loaded = {
 	blob: string
 	text: string
+	compact: boolean
 	name: string | null
 	summary: string | null
 	notes: string[]
@@ -304,6 +381,7 @@ export function loaded(doc: Doc, from: Loaded): Doc {
 	const base = {
 		...doc,
 		blob: from.blob,
+		compact: from.compact,
 		name: from.name,
 		summary: from.summary,
 		notes: from.notes,

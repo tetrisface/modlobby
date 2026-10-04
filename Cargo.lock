@@ -3147,12 +3147,14 @@ dependencies = [
 name = "modlobby-app"
 version = "0.1.33"
 dependencies = [
+ "base64 0.23.1",
  "content",
  "dotenvy",
  "lan",
  "lobby-runtime",
  "lobby-ui",
  "md-5",
+ "minisign-verify",
  "modoptions",
  "news",
  "percent-encoding",

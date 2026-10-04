@@ -18,10 +18,12 @@ import {
 	compareChange,
 	defaultCompare,
 	draftId,
+	formOf,
 	isDirty,
 	isMapTable,
 	resolveSide,
 	searchSlots,
+	shownText,
 	sideOptions,
 	slotKey,
 	targetOf,
@@ -47,7 +49,7 @@ function copied(what: Copyable, kind: Kind): string {
 	const { text, blob } = KINDS[kind]
 	return {
 		lua: text,
-		minified: `Minified ${text}`,
+		compact: `Compact ${text}`,
 		blob,
 		command: '!bSet command',
 	}[what]
@@ -172,7 +174,11 @@ export function Workspace(props: { drafts: boolean; onClose?: () => void }) {
 		return {
 			label: found.label,
 			kind: found.kind,
-			text: view?.formatted ?? found.blob,
+			// As the slot itself would show it, so a version is compared and
+			// brought back in the layout it came in.
+			text: view
+				? shownText(found.kind, view.text, view.formatted)
+				: found.blob,
 		}
 	}
 
@@ -207,7 +213,7 @@ export function Workspace(props: { drafts: boolean; onClose?: () => void }) {
 			const ready = space.prepared()
 			const text = {
 				lua: doc().buffer,
-				minified: ready?.minified,
+				compact: ready?.minified,
 				blob: ready?.blob,
 				command: ready?.command,
 			}[what]
@@ -440,8 +446,8 @@ export function Workspace(props: { drafts: boolean; onClose?: () => void }) {
 					refusal={refusal()}
 					spads={room.caps.spads}
 					target={space.ws.target}
-					minify={space.ws.minify}
-					onMinify={space.setMinify}
+					form={formOf(doc())}
+					onForm={space.setForm}
 					onTarget={space.setTarget}
 					onSend={(direct) => void send(direct)}
 					onClear={() => void act('clear', () => space.clear())}

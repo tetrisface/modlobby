@@ -154,6 +154,10 @@ export function Composer(props: {
 					onKeyDown={(event) => {
 						if (event.key === 'Enter') return onEnter(event)
 						if (event.key === 'Tab' && !event.shiftKey) return onTab(event)
+						// Right takes the ghost, as in a shell; with none drawn it moves
+						// the caret, and with a modifier it selects or jumps a word.
+						if (event.key === 'ArrowRight' && shadow() && !modified(event))
+							return onTab(event)
 						if (event.key === 'ArrowUp') return walk(1, event)
 						if (event.key === 'ArrowDown') return walk(-1, event)
 					}}
@@ -175,6 +179,9 @@ export function Composer(props: {
 		</form>
 	)
 }
+
+const modified = (event: KeyboardEvent) =>
+	event.shiftKey || event.ctrlKey || event.altKey || event.metaKey
 
 function Pieces(props: { of: Piece[] }) {
 	return (

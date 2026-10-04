@@ -1,31 +1,44 @@
 //! Keeping the app current, without getting in the way of opening it.
 //!
-//! Looking and installing are two steps with a click between them. The look
-//! is one small request for the release manifest, made once a day when the
-//! app opens (if the setting allows) or whenever the version in the nav is
-//! clicked. A newer version found puts a button beside it. With
+//! The look is one small request for the release manifest, made once a day
+//! when the app opens (if the setting allows) or whenever the version in the
+//! nav is clicked. A newer version found puts a button beside it. With
 //! `updates.download` on, the look goes on to fetch the installer by itself
 //! and stops there, as [`Pending::Downloaded`], so the button only restarts.
 //! Otherwise the click downloads the installer and installs it at once,
 //! unless a room is joined or a game is running, in which case the download
 //! waits as [`Pending::Downloaded`] and the button offers the restart instead.
 //!
-//! A download that waits is also kept on disk, under `updates/` beside the
-//! settings, so closing the app does not throw it away: the next start finds
-//! it as [`Pending::Stored`], confirms with the manifest that it is still the
-//! release to install, and installs it before logging in — a fresh look, not
-//! a fresh download. The manifest is asked again because the installer's
-//! signature lives there, and `tauri-plugin-updater` verifies against it.
+//! A download nobody restarted into is installed as the app closes
+//! ([`install_on_exit`]), with nothing relaunched: the next start is the new
+//! version already, and has had nothing to wait for. Not under a game left
+//! running, which an installer's window has no business appearing over, nor
+//! beside another modlobby, which the Windows installer would close.
+//!
+//! A download is also kept on disk, under `updates/` beside the settings, for
+//! the run that ends without that chance: killed, shut down with the machine,
+//! closed over a game. The next start finds it as [`Pending::Stored`] and
+//! installs it ahead of the app ([`resume`]): the manifest is asked whether it
+//! is still the release to install, the file is held to the signature the
+//! manifest carries, and only then is it run. The page draws nothing of the
+//! app and logs in nowhere until that is settled. The manifest is asked
+//! because `Update::install` checks nothing -- `Update::download` alone
+//! verifies the signature -- and the file has been out of this process's
+//! hands since it was written.
 //!
 //! The installer does the restart: on Windows `install` hands over to NSIS
 //! and exits this process, and NSIS relaunches the app with the arguments it
-//! had. On Linux the AppImage is rewritten in place and `install` returns, so
-//! the restart is asked for here. Nothing runs after a successful install.
+//! had, unless the app was closing anyway. On Linux the AppImage is rewritten
+//! in place and `install` returns, so a restart is asked for here.
 
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
+use base64::prelude::*;
+use lobby_runtime::orphan;
+use minisign_verify::{PublicKey, Signature};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_updater::{Update, UpdaterExt};
@@ -84,7 +97,7 @@ pub enum UpdateProgress {
 		#[ts(type = "number")]
 		total: u64,
 	},
-	/// Downloaded and waiting. It installs on the next start; the corner
+	/// Downloaded and waiting. It installs as the app closes; the corner
 	/// offers the restart before then, and says what stands in its way.
 	Ready {
 		version: String,
@@ -114,6 +127,13 @@ enum Pending {
 pub struct Staged {
 	dir: PathBuf,
 	held: Mutex<Option<Pending>>,
+	/// The version a download was kept as when this run opened: what the
+	/// start installs ahead of the app.
+	kept: Option<String>,
+	/// What that install came to, worked out once. The start asks as soon as
+	/// there is a runtime to ask on, and the page waits on the same answer
+	/// before it draws the app or logs in.
+	resumed: tokio::sync::OnceCell<Result<Option<UpdateProgress>>>,
 }
 
 /// What a kept download is called: the version, so a start can tell whether
@@ -140,11 +160,13 @@ impl Staged {
 				continue;
 			}
 			tracing::info!(version, path = %path.display(), "update kept from an earlier run");
-			stored = Some(Pending::Stored { version, path });
+			stored = Some((version, path));
 		}
 		Self {
 			dir,
-			held: Mutex::new(stored),
+			kept: stored.as_ref().map(|(version, _)| version.clone()),
+			held: Mutex::new(stored.map(|(version, path)| Pending::Stored { version, path })),
+			resumed: tokio::sync::OnceCell::new(),
 		}
 	}
 
@@ -154,6 +176,12 @@ impl Staged {
 			Some(Pending::Stored { version, .. }) => Some(version.clone()),
 			_ => None,
 		}
+	}
+
+	/// The version this start installs ahead of the app: the download it
+	/// opened on, in a build that updates itself.
+	fn resuming(&self) -> Option<&str> {
+		self.kept.as_deref().filter(|_| enabled())
 	}
 
 	/// Keeps a download for a later run. Losable: a download that cannot be
@@ -399,18 +427,19 @@ pub async fn install_update(
 		return Ok(progress);
 	}
 
-	let outcome = install(&handle, &staged, &update, &bytes);
-	if let Err(err) = &outcome {
+	if let Err(err) = install(&handle, &staged, &update, &bytes) {
 		say(UpdateProgress::Failed {
 			reason: err.message.clone(),
 		});
+		return Err(err);
 	}
-	outcome
+	// Reached where the installer does not end the process itself.
+	handle.restart()
 }
 
 /// Fetches what the look found and keeps it, without installing: fetching by
-/// itself stops at `Ready`, because the restart is the user's to ask for --
-/// or the next start's, which installs a kept download before logging in.
+/// itself stops at `Ready`, because the restart is the user's to ask for.
+/// Left unasked, the download is installed as the app closes.
 async fn stage(handle: AppHandle) {
 	let app = handle.state::<App>();
 	let staged = handle.state::<Staged>();
@@ -447,21 +476,51 @@ async fn stage(handle: AppHandle) {
 	}
 }
 
-/// Installs the download an earlier run kept, before this one logs in.
-/// `None` when nothing was kept, or when this build does not update itself;
-/// otherwise what `install_update` answers when it does not install — the
-/// manifest moved on, or could not be reached — so the front end can carry
-/// on with the login.
-#[tauri::command]
-pub async fn resume_update(
-	app: State<'_, App>,
-	staged: State<'_, Staged>,
-	handle: AppHandle,
-) -> Result<Option<UpdateProgress>> {
-	if !enabled() || staged.stored_version().is_none() {
-		return Ok(None);
+/// What a start does about updates: installs a download an earlier run kept,
+/// ahead of the app, and otherwise looks when `look` says a look is wanted.
+/// In that order, so the look finds the kept download settled rather than
+/// half taken.
+pub async fn startup(handle: AppHandle, look: bool) {
+	let _ = resume(&handle).await;
+	if look {
+		daily(handle).await;
 	}
-	install_update(app, staged, handle).await.map(Some)
+}
+
+/// Installs the download an earlier run kept, ahead of the app. Does not come
+/// back when it installs. `None` when nothing was kept, or when this build
+/// does not update itself; otherwise what `install_update` answers when it
+/// does not install: the manifest moved on, or could not be reached.
+///
+/// Asked twice and worked out once: by the start, so the manifest is asked
+/// before the page has loaded, and by the page, which holds the app and the
+/// login back until this has answered.
+async fn resume(handle: &AppHandle) -> Result<Option<UpdateProgress>> {
+	let staged = handle.state::<Staged>();
+	let resumed = staged.resumed.get_or_init(|| async {
+		if staged.resuming().is_none() {
+			return Ok(None);
+		}
+		install_update(handle.state(), handle.state(), handle.clone())
+			.await
+			.map(Some)
+	});
+	resumed.await.clone()
+}
+
+/// The page's wait on [`resume`]: the app is drawn, and the login made, once
+/// this has answered. A restart into the new version after either would take
+/// the app away as it appeared and spend a second login on the server's count.
+#[tauri::command]
+pub async fn resume_update(handle: AppHandle) -> Result<Option<UpdateProgress>> {
+	resume(&handle).await
+}
+
+/// The version the start is installing ahead of the app, for the page that
+/// waits on it to say so.
+#[tauri::command]
+pub fn kept_update(staged: State<'_, Staged>) -> Option<String> {
+	staged.resuming().map(str::to_owned)
 }
 
 /// The front end raised an error: the app's own failing, so the next start
@@ -477,17 +536,30 @@ enum Reopened {
 	Otherwise(UpdateProgress),
 }
 
+/// How long the manifest may take to answer for a kept download. The start
+/// waits on this with the app undrawn and nobody logged in, so a slow answer
+/// counts as none: the file keeps waiting, and the app opens as it is.
+const KEPT_LOOK_DEADLINE: Duration = Duration::from_secs(3);
+
 /// Turns a kept download back into something installable: the manifest for
-/// the `Update` (and the signature in it), the file for the bytes. A
-/// manifest that has moved on makes the kept file worthless, and a file
-/// that cannot be read is fetched again as if never kept.
+/// the `Update` (and the signature in it), the file for the bytes, and the
+/// one held to the other. A manifest that has moved on makes the kept file
+/// worthless, and a file that cannot be read, or is not what the release
+/// signed, is fetched again as if never kept.
 async fn reopen(
 	staged: &Staged,
 	handle: &AppHandle,
 	version: String,
 	path: PathBuf,
 ) -> Result<Reopened> {
-	let found = match look(handle).await {
+	let asked = tokio::time::timeout(KEPT_LOOK_DEADLINE, look(handle)).await;
+	let late = |_| {
+		Err(ApiError::new(
+			"update",
+			"looking for a release: no answer in time",
+		))
+	};
+	let found = match asked.unwrap_or_else(late) {
 		Ok(found) => found,
 		Err(err) => {
 			// Offline, most likely: the file keeps waiting.
@@ -505,10 +577,10 @@ async fn reopen(
 		*staged.held.lock().expect("staged update") = Some(Pending::Found(update));
 		return Ok(Reopened::Otherwise(UpdateProgress::Available { version }));
 	}
-	match std::fs::read(&path) {
+	match kept_bytes(handle, &update, &path) {
 		Ok(bytes) => Ok(Reopened::Installable(Box::new(update), bytes)),
-		Err(err) => {
-			tracing::warn!(%err, path = %path.display(), "kept update unreadable; fetching again");
+		Err(reason) => {
+			tracing::warn!(reason, path = %path.display(), "kept update unusable; fetching again");
 			staged.discard();
 			let version = update.version.clone();
 			*staged.held.lock().expect("staged update") = Some(Pending::Found(update));
@@ -517,16 +589,56 @@ async fn reopen(
 	}
 }
 
+/// A kept download's bytes, once they are shown to be what the release
+/// signed. `Update::install` runs whatever it is handed, and this file has
+/// been on disk, out of this process's hands, since it was fetched.
+fn kept_bytes(
+	handle: &AppHandle,
+	update: &Update,
+	path: &Path,
+) -> std::result::Result<Vec<u8>, String> {
+	let bytes = std::fs::read(path).map_err(|err| err.to_string())?;
+	verify(&bytes, &update.signature, release_key(handle.config()))?;
+	Ok(bytes)
+}
+
+/// The key releases are signed with, as the updater is configured with it.
+fn release_key(config: &tauri::Config) -> &str {
+	config
+		.plugins
+		.0
+		.get("updater")
+		.and_then(|updater| updater["pubkey"].as_str())
+		.unwrap_or_default()
+}
+
+/// Holds `bytes` to a release signature, read the way the updater reads one.
+fn verify(bytes: &[u8], signature: &str, key: &str) -> std::result::Result<(), String> {
+	let key = PublicKey::decode(&minisign_text(key)?).map_err(|err| err.to_string())?;
+	let signature = Signature::decode(&minisign_text(signature)?).map_err(|err| err.to_string())?;
+	key.verify(bytes, &signature, true)
+		.map_err(|err| err.to_string())
+}
+
+/// Minisign's own text out of the base64 that the manifest and
+/// `tauri.conf.json` carry a signature and a key in.
+fn minisign_text(encoded: &str) -> std::result::Result<String, String> {
+	let decoded = BASE64_STANDARD
+		.decode(encoded)
+		.map_err(|err| err.to_string())?;
+	String::from_utf8(decoded).map_err(|err| err.to_string())
+}
+
 /// The look on opening, when it is due: daily, or sooner after a session
 /// that went wrong (see `UpdateMemory::interval`). Quiet about being
 /// offline: an update is not something to be told about failing to look
-/// for. Not while a download waits on disk: the start that found it is
-/// installing it.
+/// for. Not while a download still waits on disk: [`resume`] has just asked
+/// the manifest about it and had no answer.
 pub async fn daily(handle: AppHandle) {
 	let app = handle.state::<App>();
 	let staged = handle.state::<Staged>();
 	if staged.stored_version().is_some() {
-		tracing::debug!("update check: a kept download is being resumed, not looking");
+		tracing::debug!("update check: a kept download is still waiting, not looking");
 		return;
 	}
 	let every = app.update_memory.interval();
@@ -575,8 +687,9 @@ async fn download(update: &Update, say: &impl Fn(UpdateProgress)) -> Result<Vec<
 }
 
 /// What restarting now would take away: a room we are in, a game that is
-/// running, or an engine we launched that is still alive. `None` when
-/// nothing would be lost. A runtime that cannot answer has nothing to lose.
+/// running, an engine we launched that is still alive, or another modlobby.
+/// `None` when nothing would be lost. A runtime that cannot answer has
+/// nothing to lose.
 async fn busy(app: &App) -> Option<&'static str> {
 	if let Ok(snapshot) = app.client.snapshot().await {
 		if snapshot.servers.iter().any(|s| s.game_running.is_some()) {
@@ -586,18 +699,63 @@ async fn busy(app: &App) -> Option<&'static str> {
 			return Some("the room you are in");
 		}
 	}
-	matches!(app.client.engine_pid().await, Ok(Some(_)))
-		.then_some("the engine that is still running")
+	if matches!(app.client.engine_pid().await, Ok(Some(_))) {
+		return Some("the engine that is still running");
+	}
+	closes_another_lobby().then_some("another modlobby that is running")
 }
 
-/// Hands the installer its bytes. Does not return on success: the process
-/// exits and the new build comes up in its place.
-fn install(
-	handle: &AppHandle,
-	staged: &Staged,
-	update: &Update,
-	bytes: &[u8],
-) -> Result<UpdateProgress> {
+/// Whether installing now would end another modlobby. The Windows installer
+/// closes every process run from an executable named as this one is, whatever
+/// it is in the middle of; elsewhere an install ends nothing.
+fn closes_another_lobby() -> bool {
+	cfg!(windows)
+		&& std::env::current_exe().is_ok_and(|exe| {
+			exe.file_name()
+				.is_some_and(|name| another_named(&orphan::processes(), std::process::id(), name))
+		})
+}
+
+/// Whether a process other than `me` runs from an executable called `name`,
+/// in whatever directory and case: how the installer picks what to close.
+fn another_named(processes: &[orphan::Process], me: u32, name: &OsStr) -> bool {
+	processes.iter().any(|process| {
+		let named = process.exe.as_deref().and_then(Path::file_name);
+		process.pid != me && named.is_some_and(|other| other.eq_ignore_ascii_case(name))
+	})
+}
+
+/// Installs the download this run holds, as the app closes: the next start is
+/// then the new version already, with nothing to install on its way in.
+/// Nothing is relaunched, the app was closing. Not under a game left running,
+/// which an installer's window has no business appearing over, nor while
+/// another modlobby runs, which the installer would close. Left like that, or
+/// after a failure, the next start finds the download where it was kept.
+pub fn install_on_exit(handle: &AppHandle, game_running: bool) {
+	let Some(staged) = handle.try_state::<Staged>() else {
+		return;
+	};
+	let taken = staged.held.lock().expect("staged update").take();
+	let Some(Pending::Downloaded(update, bytes)) = taken else {
+		return;
+	};
+	if game_running || closes_another_lobby() {
+		tracing::info!(version = %update.version, game_running, "update: left for the next start");
+		return;
+	}
+	tracing::info!(version = %update.version, "update: installing on the way out");
+	let update = update.restart_after_install(false);
+	if let Err(err) = install(handle, &staged, &update, &bytes) {
+		tracing::warn!(reason = %err.message, "update: not installed on the way out");
+	}
+}
+
+/// Hands the installer its bytes. On Windows this does not return when it
+/// works: NSIS takes over and this process exits, the kept file left for the
+/// next start to recognise as its own version and remove. Elsewhere the app
+/// was rewritten in place and the kept file has served; what runs next is the
+/// caller's to say.
+fn install(handle: &AppHandle, staged: &Staged, update: &Update, bytes: &[u8]) -> Result<()> {
 	// The exit that follows is not Tauri's, so the exit handler that takes the
 	// in-game widget back out of the user's data directory will not run --
 	// nor the one that marks the session as ended, without which every
@@ -611,28 +769,72 @@ fn install(
 	update
 		.install(bytes)
 		.map_err(|err| ApiError::new("update", format!("installing {}: {err}", update.version)))?;
-	// NSIS has exited this process by now; the kept file is for the next
-	// start to recognise as its own version and remove. The AppImage was
-	// rewritten under our feet and nothing relaunches anything, so that is
-	// done here, and the kept file has served.
-	#[cfg(not(windows))]
-	{
-		staged.discard();
-		handle.restart();
-	}
-	#[cfg(windows)]
-	{
-		let _ = staged;
-		Ok(UpdateProgress::Ready {
-			version: update.version.clone(),
-			held_by: None,
-		})
-	}
+	staged.discard();
+	Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-	use super::{Staged, allows};
+	use std::ffi::OsStr;
+
+	use super::{
+		PublicKey, Staged, allows, another_named, minisign_text, orphan, release_key, verify,
+	};
+
+	#[test]
+	fn another_lobby_is_any_other_process_run_from_an_executable_named_as_this_one() {
+		let process = |pid, exe: &str| orphan::Process {
+			pid,
+			parent: None,
+			started: 0,
+			exe: Some(exe.into()),
+		};
+		let running = [
+			process(1, "C:/installed/modlobby-app.exe"),
+			process(2, "C:/installed/data/engine/spring.exe"),
+			process(3, "C:/built/target/debug/Modlobby-App.exe"),
+		];
+		let name = OsStr::new("modlobby-app.exe");
+
+		assert!(
+			!another_named(&running[..2], 1, name),
+			"itself and its game"
+		);
+		assert!(another_named(&running, 1, name), "the build beside it");
+	}
+
+	/// A throwaway key from `tauri signer generate` and its signature over
+	/// `SIGNED`, each in the shape `tauri.conf.json` and the manifest carry.
+	const KEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM0M0ZDNjk4NDVCRTk4MjAKUldRZ21MNUZtTVkvTkRWV05LNGRBTE91Y3BsNlU0eG1TV0FQeWREZXdPY1hvRmN1R2tCZ2xCVmgK";
+	const SIGNATURE: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRZ21MNUZtTVkvTkFYTU01dTZKOENrRGFPbHE3K0g4RUFqODU2ci84dnZFRkd6emlhc0tQcDc5TXpSUkFPb1ZzVFhSRkR1MGFiOHZYNEcrZVh0citELzNPWFFKdWJibHdZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMTE5NDUwCWZpbGU6aW5zdGFsbGVyLmJpbgpVN2dtblZJRUYrUGNGYjhNTmwrR0hyVGJ0RENZdzFZL3hpcTUrWTZ4TWlLbmtrN01TTDl6UW9DSlJ5RTdDQTRnREJnQzlVQjRjaDhwZHlxNVV4SUlBdz09Cg==";
+	const SIGNED: &[u8] = b"installer";
+
+	#[test]
+	fn what_the_release_signed_passes() {
+		assert_eq!(verify(SIGNED, SIGNATURE, KEY), Ok(()));
+	}
+
+	#[test]
+	fn a_kept_download_changed_on_disk_is_refused() {
+		assert!(verify(b"installer, and something riding along", SIGNATURE, KEY).is_err());
+	}
+
+	#[test]
+	fn a_signature_or_key_that_cannot_be_read_refuses_rather_than_panics() {
+		assert!(verify(SIGNED, "", KEY).is_err());
+		assert!(verify(SIGNED, SIGNATURE, "").is_err());
+		assert!(verify(SIGNED, "not base64", KEY).is_err());
+	}
+
+	/// A key not found, or not read, would refuse every kept download, and
+	/// nothing but a start that always fetches again would say so.
+	#[test]
+	fn the_key_the_app_is_configured_with_is_found_and_reads_as_one() {
+		let config: tauri::Config =
+			serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+		let text = minisign_text(release_key(&config)).unwrap();
+		assert!(PublicKey::decode(&text).is_ok(), "{text}");
+	}
 
 	#[test]
 	fn unset_takes_the_build_default() {
@@ -659,10 +861,13 @@ mod tests {
 		let dir = tempfile::tempdir().unwrap();
 		let staged = Staged::open_as(dir.path(), "0.1.10");
 		assert_eq!(staged.stored_version(), None, "nothing kept yet");
+		assert_eq!(staged.kept, None);
 
 		staged.keep("0.1.11", b"installer");
+		assert_eq!(staged.kept, None, "kept for the next start, not this one");
 		let restarted = Staged::open_as(dir.path(), "0.1.10");
 		assert_eq!(restarted.stored_version(), Some("0.1.11".into()));
+		assert_eq!(restarted.kept.as_deref(), Some("0.1.11"));
 		assert!(!dir.path().join("updates/modlobby-0.1.11.part").exists());
 	}
 

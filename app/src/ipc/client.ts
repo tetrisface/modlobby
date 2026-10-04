@@ -152,7 +152,9 @@ export const api = {
 	appVersion: () => invoke<VersionView>('app_version'),
 	checkUpdate: () => invoke<UpdateProgress>('check_update'),
 	installUpdate: () => invoke<UpdateProgress>('install_update'),
-	/** Installs a download an earlier run kept; `null` when there is none. */
+	/** The version the start is installing ahead of the app; `null` when none. */
+	keptUpdate: () => invoke<string | null>('kept_update'),
+	/** What that install came to; answers only when it did not install. */
 	resumeUpdate: () => invoke<UpdateProgress | null>('resume_update'),
 	/** Something went wrong this session: the next look for a fix comes sooner. */
 	noteTrouble: () => invoke<void>('note_trouble'),

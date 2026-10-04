@@ -89,7 +89,7 @@ export async function installUpdate(): Promise<void> {
 		if (outcome.phase === 'ready' && outcome.heldBy !== null) {
 			pushNotice(
 				'info',
-				`version ${outcome.version} is downloaded and installs on the next start; restarting now would lose ${outcome.heldBy}`,
+				`version ${outcome.version} is downloaded and installs after you close modlobby; restarting now would lose ${outcome.heldBy}`,
 			)
 		}
 	} catch (error) {
@@ -98,9 +98,10 @@ export async function installUpdate(): Promise<void> {
 }
 
 /**
- * Installs the download an earlier run kept, if there is one. Does not come
- * back when it installs; otherwise the start goes on — the manifest moved
- * on, or could not be reached, and either is the corner's to show.
+ * Waits on the install of a download an earlier run kept, which the start
+ * began before this page had loaded. Does not come back when it installs;
+ * otherwise the start goes on — the manifest moved on, or could not be
+ * reached, and either is the corner's to show.
  */
 export async function resumeUpdate(): Promise<void> {
 	try {

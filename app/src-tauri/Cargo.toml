@@ -14,6 +14,10 @@ crate-type = ["cdylib", "rlib"]
 tauri-build = { workspace = true }
 
 [dependencies]
+# A download kept between runs is held to the release signature again before
+# it is installed: the updater checks one only as it downloads.
+base64 = { workspace = true }
+minisign-verify = { workspace = true }
 content = { workspace = true }
 md-5 = { workspace = true }
 percent-encoding = { workspace = true }

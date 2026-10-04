@@ -6,6 +6,8 @@ import {
 	DOC_KEYS,
 	MAP_TABLES,
 	SLOT_KEYS,
+	arrivedCompact,
+	asHeld,
 	compareChange,
 	defaultCompare,
 	defaultTarget,
@@ -18,6 +20,7 @@ import {
 	emptyWorkspace,
 	fileSafe,
 	firstComment,
+	formOf,
 	freeName,
 	guessKind,
 	isDirty,
@@ -33,6 +36,7 @@ import {
 	searchSlots,
 	savedAs,
 	sent,
+	shownText,
 	sideKey,
 	sideOptions,
 	slotId,
@@ -53,9 +57,10 @@ function slot(over: Partial<Doc> = {}): Doc {
 	return { ...emptyWorkspace().docs[DEFS]!, ...over }
 }
 
-const arrived = (blob: string, text: string) => ({
+const arrived = (blob: string, text: string, compact = false) => ({
 	blob,
 	text,
+	compact,
 	name: firstComment(text),
 	summary: `${blob.length}:abcd`,
 	notes: [],
@@ -157,6 +162,77 @@ describe('loading a slot', () => {
 			stale: false,
 			name: 'Mine',
 		})
+	})
+
+	test('an untouched slot is measured as the room holds it, an edited one as typed', () => {
+		const typed = 'x'.repeat(40)
+		const measured = {
+			minified: 'a=1',
+			blob: typed,
+			command: `!bSet tweakdefs1 ${typed}`,
+			gauge: {
+				raw: 30,
+				minified: 3,
+				blob: 40,
+				command: 57,
+				cap: 50,
+				fits: false,
+			},
+		}
+		const doc = loaded(slot(), arrived('YT0x', 'a = 1\n'))
+		expect(asHeld(doc, measured)).toEqual({
+			minified: 'a=1',
+			blob: 'YT0x',
+			command: '!bSet tweakdefs1 YT0x',
+			gauge: {
+				raw: 30,
+				minified: 3,
+				blob: 4,
+				command: 21,
+				cap: 50,
+				fits: true,
+			},
+		})
+		expect(asHeld(edit(doc, 'a = 2\n'), measured)).toBe(measured)
+		// An empty slot holds nothing to measure in its place.
+		expect(asHeld(slot(), measured)).toBe(measured)
+	})
+
+	test('compact is code on one line under its leading comments, with none in it', () => {
+		expect(arrivedCompact('-- Named\n-- by me\nlocal a=1 local b=2')).toBe(true)
+		expect(arrivedCompact('{armcom={metalcost=1}}\n')).toBe(true)
+		expect(arrivedCompact('-- Named\nlocal a = 1\nlocal b = 2\n')).toBe(false)
+		expect(arrivedCompact('local a=1 -- why')).toBe(false)
+		expect(arrivedCompact('-- only a name\n')).toBe(false)
+		expect(arrivedCompact('')).toBe(false)
+	})
+
+	test('a laid-out tweak is shown as it arrived; a compact one and the override, laid out', () => {
+		const laid = '-- Named\r\nlocal a   = 1\r\nlocal b = 2'
+		expect(shownText('defs', laid, 'formatted')).toBe(
+			'-- Named\nlocal a   = 1\nlocal b = 2',
+		)
+		expect(shownText('units', '{a={b=1}}', '{ a = { b = 1 } }\n')).toBe(
+			'{ a = { b = 1 } }\n',
+		)
+		expect(shownText('boxes', '{\n"a": 1\n}', '{ "a": 1 }')).toBe('{ "a": 1 }')
+	})
+
+	test('a document goes out the way it came, until a form is chosen for it', () => {
+		const laid = loaded(slot(), arrived('YQ==', 'local a = 1\n'))
+		expect(formOf(laid)).toBe('asIs')
+		const compact = loaded(slot(), arrived('YQ==', 'local a = 1\n', true))
+		expect(formOf(compact)).toBe('compact')
+		expect(formOf(edit(compact, 'local a = 2\n'))).toBe('compact')
+		expect(formOf({ ...compact, form: 'asIs' })).toBe('asIs')
+		expect(formOf({ ...laid, form: 'compact' })).toBe('compact')
+		// The room moving under it takes the way the new value came.
+		expect(formOf(loaded(compact, arrived('Yg==', 'local b = 1\n')))).toBe(
+			'asIs',
+		)
+		// The override is compact whatever is said.
+		const boxes = emptyWorkspace().docs[slotId(BOX_OVERRIDE)]!
+		expect(formOf({ ...boxes, form: 'compact' })).toBe('asIs')
 	})
 
 	test('typing what is already there is not an edit', () => {

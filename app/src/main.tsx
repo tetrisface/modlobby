@@ -1,6 +1,7 @@
 /* @refresh reload */
 import { render } from 'solid-js/web'
 import { App } from './App'
+import { AfterUpdate } from './components/AfterUpdate'
 import { captureConsole } from './ipc/logging'
 // Bundled, not fetched: a lobby has to look right before the network is up,
 // and the webview's CSP admits no font host. Latin subset, used weights only.
@@ -20,6 +21,13 @@ if (import.meta.env.DEV) void import('./dev')
 
 const root = document.getElementById('root')
 if (!root) throw new Error('missing #root')
-render(() => <App />, root)
+render(
+	() => (
+		<AfterUpdate>
+			<App />
+		</AfterUpdate>
+	),
+	root,
+)
 // A startup milestone, to read beside Rust's `startup:` lines.
 console.debug(`startup: first render at ${Math.round(performance.now())} ms`)

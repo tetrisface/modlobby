@@ -2,6 +2,7 @@ import { Select } from '../../components/Select'
 import { For, Show, createEffect, createSignal, type JSX } from 'solid-js'
 import { dismiss } from '../../components/dismiss'
 import { Glyph } from '../../components/icons'
+import { Segmented } from '../../components/Segmented'
 import { CloseGlyph, FullscreenGlyph } from '../../components/WindowGlyphs'
 import type { Prepared } from '../../ipc/bindings/Prepared'
 import { TWEAK_SLOTS } from '../../lib/setup'
@@ -9,12 +10,14 @@ import { shortcut } from '../../lib/platform'
 import {
 	KINDS,
 	SLOT_KEYS,
+	heldBlob,
 	isDirty,
 	kindOf,
 	type Doc,
+	type Form,
 } from '../../lib/tweakspace'
 
-export type Copyable = 'lua' | 'minified' | 'blob' | 'command'
+export type Copyable = 'lua' | 'compact' | 'blob' | 'command'
 
 /** A draft as the menu lists it: its file name, and the header it goes by. */
 export type DraftEntry = { title: string; name: string | null }
@@ -163,9 +166,9 @@ export function Toolbar(props: {
 						<button
 							class='menu-item'
 							disabled={!props.prepared}
-							onClick={() => props.onCopy('minified')}
+							onClick={() => props.onCopy('compact')}
 						>
-							minified
+							compact
 						</button>
 						<button
 							class='menu-item'
@@ -250,6 +253,45 @@ export function Toolbar(props: {
 }
 
 /**
+ * How a Lua tweak goes out, each form with its length where it could be
+ * measured. There whether or not it could: the choice is the document's, and
+ * does not come and go with a typo.
+ */
+function Forms(props: {
+	form: Form
+	onForm: (form: Form) => void
+	asIs: number | null
+	compact: number | null
+	/** Whether that many bytes are more than the room would take. */
+	over: (length: number) => boolean
+}) {
+	const size = (length: number | null) => length ?? '—'
+	const over = (length: number | null) => length !== null && props.over(length)
+	return (
+		<Segmented
+			label='Sent'
+			value={props.form}
+			options={[
+				{
+					value: 'asIs',
+					label: `as is ${size(props.asIs)}`,
+					title: 'The room gets the text exactly as it stands in the editor.',
+					classList: { over: over(props.asIs) },
+				},
+				{
+					value: 'compact',
+					label: `compact ${size(props.compact)}`,
+					title:
+						'Whitespace and comments go; every name and value stays as it is, and the editor keeps its text. How a tweak that arrived compact goes back, unless you choose.',
+					classList: { over: over(props.compact) },
+				},
+			]}
+			onChange={props.onForm}
+		/>
+	)
+}
+
+/**
  * Where the text goes, and whether it fits on the way. The one place that
  * sends, under the editor where a form keeps its submit: the bar above only
  * works on the text.
@@ -270,9 +312,9 @@ export function SendBar(props: {
 	spads: boolean
 	/** The slot a draft or the scratch goes to. */
 	target: string
-	/** Sent minified rather than as written; see `Workspace.minify`. */
-	minify: boolean
-	onMinify: (on: boolean) => void
+	/** How the document goes out; see `formOf`. */
+	form: Form
+	onForm: (form: Form) => void
 	onTarget: (key: string) => void
 	onSend: (direct: boolean) => void
 	onClear: () => void
@@ -310,40 +352,42 @@ export function SendBar(props: {
 					 */
 					const max = () => gauge().cap - (gauge().command - gauge().blob)
 					const over = (length: number) => props.spads && length > max()
-					/**
-					 * The override goes out zlib-compressed, so its text's length says
-					 * nothing about the cap: only its blob can be too long.
-					 */
-					const textOver = (length: number) =>
-						props.doc.kind !== 'boxes' && over(length)
 					return (
 						<span class='gauge'>
-							<span classList={{ over: textOver(gauge().raw) }}>
-								{names().text.toLowerCase()} {gauge().raw}
-							</span>
-							<span class='gauge-dot'>·</span>
-							{/* The override is always sent compact; a Lua tweak only when asked. */}
+							{/*
+							 * A Lua tweak goes out in the form chosen here. The override is
+							 * always sent compact, and zlib-compressed: its text's length
+							 * says nothing about the cap, only its blob can be too long.
+							 */}
 							<Show
 								when={props.doc.kind !== 'boxes'}
-								fallback={<span>minified {gauge().minified}</span>}
+								fallback={
+									<>
+										<span>
+											{names().text.toLowerCase()} {gauge().raw}
+										</span>
+										<span class='gauge-dot'>·</span>
+										<span>compact {gauge().minified}</span>
+									</>
+								}
 							>
-								<label
-									class='gauge-minify'
-									classList={{ over: over(gauge().minified) }}
-									title='Send it minified: comments and layout go, names stay. Off unless you need it to fit, so the room gets what you wrote.'
-								>
-									<input
-										type='checkbox'
-										checked={props.minify}
-										onChange={(event) =>
-											props.onMinify(event.currentTarget.checked)
-										}
-									/>
-									minified {gauge().minified}
-								</label>
+								<Forms
+									form={props.form}
+									onForm={props.onForm}
+									asIs={gauge().raw}
+									compact={gauge().minified}
+									over={over}
+								/>
 							</Show>
 							<span class='gauge-dot'>·</span>
-							<span classList={{ over: over(gauge().blob) }}>
+							<span
+								classList={{ over: over(gauge().blob) }}
+								title={
+									heldBlob(props.doc) === null
+										? undefined
+										: 'What the room holds. An edit is measured as it would go out.'
+								}
+							>
 								{names().blob} {gauge().blob}
 							</span>
 							<Show when={props.spads}>
@@ -360,9 +404,22 @@ export function SendBar(props: {
 			</Show>
 			<Show when={props.problem}>
 				{(text) => (
-					<span class='gauge-badge over' title={text()}>
-						will not load
-					</span>
+					<>
+						<Show when={!props.prepared && props.doc.kind !== 'boxes'}>
+							<span class='gauge'>
+								<Forms
+									form={props.form}
+									onForm={props.onForm}
+									asIs={null}
+									compact={null}
+									over={() => false}
+								/>
+							</span>
+						</Show>
+						<span class='gauge-badge over' title={text()}>
+							will not load
+						</span>
+					</>
 				)}
 			</Show>
 			{/* One group, so the buttons stay on a line and the numbers give way. */}

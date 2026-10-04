@@ -127,6 +127,22 @@ describe('the box you type a line into', () => {
 		expect(shadow()).toBe('')
 	})
 
+	test('right takes the ghost like tab, and only when one is drawn', async () => {
+		const { input, type } = composer(['tetrisface'])
+		type('tet')
+		fireEvent.keyDown(input, { key: 'ArrowRight', shiftKey: true })
+		await settled()
+		expect(input.value).toBe('tet')
+
+		fireEvent.keyDown(input, { key: 'ArrowRight' })
+		await settled()
+		expect(input.value).toBe('tetrisface: ')
+
+		fireEvent.keyDown(input, { key: 'ArrowRight' })
+		await settled()
+		expect(input.value).toBe('tetrisface: ')
+	})
+
 	test('a modoption is finished through !bSet', async () => {
 		const { input, type, shadow, merged } = composer(
 			[],

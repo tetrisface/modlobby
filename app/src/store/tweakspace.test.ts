@@ -6,7 +6,11 @@ import { BOX_OVERRIDE } from '../lib/boxes'
 import { SCRATCH, draftId, slotId } from '../lib/tweakspace'
 import { createTweakspace, type TweakIo } from './tweakspace'
 
-/** A base64 that is its own Lua: the fake decodes by prefixing a header. */
+/**
+ * A base64 that is its own Lua: the fake decodes by prefixing a header. What
+ * it decodes to is one line, so every slot here arrives compact and is shown
+ * as the formatter lays it out.
+ */
 function fakeIo() {
 	const files = new Map<string, string>()
 	const tweakPrepare = vi.fn(async (lua: string): Promise<Prepared> => ({
@@ -109,6 +113,26 @@ describe('the workspace', () => {
 			buffer: '-- BBB\nlua of BBB\n',
 			stale: false,
 		})
+		space.dispose()
+	})
+
+	test('an untouched slot is gauged as the room holds it', async () => {
+		const { io } = fakeIo()
+		const space = createTweakspace(
+			io,
+			() => ({ tweakdefs1: 'AAA' }),
+			slotId('tweakdefs1'),
+		)
+		await vi.advanceTimersByTimeAsync(300)
+		expect(space.prepared()).toMatchObject({
+			blob: 'AAA',
+			command: '!bSet x AAA',
+			gauge: { blob: 3, command: 11 },
+		})
+		// Edited, it is what would go out.
+		space.edit(slotId('tweakdefs1'), 'mine')
+		await vi.advanceTimersByTimeAsync(300)
+		expect(space.prepared()?.blob).toBe('b')
 		space.dispose()
 	})
 
@@ -324,11 +348,11 @@ describe('the workspace', () => {
 		space.dispose()
 	})
 
-	test('minifying, once asked for, is what is measured and what is sent', async () => {
+	test('compact, once asked for, is what is measured and what is sent', async () => {
 		const { io } = fakeIo()
 		const space = createTweakspace(io, () => ({}), slotId('tweakdefs1'))
 		space.edit(slotId('tweakdefs1'), 'local a = 1')
-		space.setMinify(true)
+		space.setForm('compact')
 		await vi.advanceTimersByTimeAsync(300)
 		expect(io.tweakPrepare).toHaveBeenLastCalledWith(
 			'local a = 1',
@@ -342,6 +366,69 @@ describe('the workspace', () => {
 			{ kind: 'defs', index: 1 },
 			true,
 			true,
+		)
+		space.dispose()
+	})
+
+	test('a tweak that arrived compact goes back compact, unless told otherwise', async () => {
+		const { io } = fakeIo()
+		io.tweakDecode.mockResolvedValueOnce({
+			text: '-- Named\nlocal a=1',
+			formatted: '-- Named\nlocal a = 1\n',
+			name: 'Named',
+			summary: '3:hash',
+			diagnostics: [],
+		})
+		const id = slotId('tweakdefs1')
+		const slot = { kind: 'defs', index: 1 }
+		const space = createTweakspace(io, () => ({ tweakdefs1: 'AAA' }), id)
+		await flush()
+		// Laid out for the editor, where a word is changed.
+		expect(space.active().buffer).toBe('-- Named\nlocal a = 1\n')
+		const edited = '-- Named\nlocal a = 2\n'
+		space.edit(id, edited)
+		await vi.advanceTimersByTimeAsync(300)
+		expect(io.tweakPrepare).toHaveBeenLastCalledWith(edited, slot, true, true)
+		await space.send(true)
+		expect(io.tweakSend).toHaveBeenLastCalledWith(edited, slot, true, true)
+
+		// The choice is the document's own: the scratch is still sent as is.
+		space.setForm('asIs')
+		await space.send(true)
+		expect(io.tweakSend).toHaveBeenLastCalledWith(edited, slot, true, false)
+		space.open(SCRATCH)
+		space.setForm('compact')
+		space.open(id)
+		await space.send(true)
+		expect(io.tweakSend).toHaveBeenLastCalledWith(edited, slot, true, false)
+		space.dispose()
+	})
+
+	test('a tweak somebody laid out is shown as it arrived, and goes back as is', async () => {
+		const { io } = fakeIo()
+		const arrived = '-- Named\r\nlocal a   = 1 -- cheap\r\nlocal b = 2\r\n'
+		io.tweakDecode.mockResolvedValueOnce({
+			text: arrived,
+			formatted: '-- Named\nlocal a = 1 -- cheap\nlocal b = 2\n',
+			name: 'Named',
+			summary: '3:hash',
+			diagnostics: [],
+		})
+		const id = slotId('tweakdefs1')
+		const space = createTweakspace(io, () => ({ tweakdefs1: 'AAA' }), id)
+		await flush()
+		// The author's spacing, with the editor's line endings.
+		const shown = '-- Named\nlocal a   = 1 -- cheap\nlocal b = 2\n'
+		expect(space.active()).toMatchObject({ buffer: shown, original: shown })
+
+		const edited = shown.replace('= 2', '= 3')
+		space.edit(id, edited)
+		await space.send(true)
+		expect(io.tweakSend).toHaveBeenLastCalledWith(
+			edited,
+			{ kind: 'defs', index: 1 },
+			true,
+			false,
 		)
 		space.dispose()
 	})

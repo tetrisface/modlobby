@@ -65,7 +65,7 @@ function toolbar(doc: Doc, over: Record<string, unknown> = {}) {
 
 function sendBar(doc: Doc, over: Record<string, unknown> = {}) {
 	const on = {
-		onMinify: vi.fn(),
+		onForm: vi.fn(),
 		onTarget: vi.fn(),
 		onSend: vi.fn(),
 		onClear: vi.fn(),
@@ -80,7 +80,7 @@ function sendBar(doc: Doc, over: Record<string, unknown> = {}) {
 			refusal={null}
 			spads={true}
 			target='tweakdefs1'
-			minify={false}
+			form='asIs'
 			{...on}
 			{...over}
 		/>
@@ -118,11 +118,11 @@ describe('Toolbar', () => {
 	test('the copy menu hands out each form, the prepared ones once there are some', () => {
 		const idle = toolbar(typed)
 		fireEvent.click(idle.getByText('Copy'))
-		expect(button(idle.getByText('minified')).disabled).toBe(true)
+		expect(button(idle.getByText('compact')).disabled).toBe(true)
 		fireEvent.click(idle.getByText('Lua'))
 		expect(idle.on.onCopy).toHaveBeenCalledWith('lua')
 		// Picking one closes the menu.
-		expect(idle.queryByText('minified')).toBeNull()
+		expect(idle.queryByText('compact')).toBeNull()
 		idle.unmount()
 
 		const ready = toolbar(typed, { prepared: prepared(true) })
@@ -251,8 +251,8 @@ describe('SendBar', () => {
 
 	test('says how long each form is, and how long the base64url may be', () => {
 		const { container, getByText } = sendBar(typed)
-		expect(getByText('lua 11')).toBeTruthy()
-		expect(getByText('minified 9')).toBeTruthy()
+		expect(getByText('as is 11')).toBeTruthy()
+		expect(getByText('compact 9')).toBeTruthy()
 		expect(getByText('base64url 12')).toBeTruthy()
 		// The server's 16385, less the `!bSet tweakdefs1 ` in front.
 		expect(getByText('max 16367')).toBeTruthy()
@@ -264,8 +264,8 @@ describe('SendBar', () => {
 		long.gauge = { ...long.gauge, raw: 20000, minified: 15000 }
 		const { getByText } = sendBar(typed, { prepared: long })
 		const red = (text: string) => getByText(text).closest('.over') !== null
-		expect(red('lua 20000')).toBe(true)
-		expect(red('minified 15000'), 'minifying would fit').toBe(false)
+		expect(red('as is 20000')).toBe(true)
+		expect(red('compact 15000'), 'minifying would fit').toBe(false)
 		expect(red('base64url 19982')).toBe(true)
 		expect(button(getByText('Send !bSet')).disabled).toBe(true)
 		expect(button(getByText('Call a vote')).disabled).toBe(true)
@@ -287,23 +287,41 @@ describe('SendBar', () => {
 		})
 		const red = (text: string) => getByText(text).closest('.over') !== null
 		expect(red('json 20000')).toBe(false)
-		expect(red('minified 17000')).toBe(false)
+		expect(red('compact 17000')).toBe(false)
 		expect(red('base64url+zlib 19982')).toBe(true)
 	})
 
-	test('minifying is asked for, never assumed; the override has no say', () => {
+	test('the form is one of two, shown as it stands and changed by a press; the override has no say', () => {
 		const lua = sendBar(typed)
-		const box = lua.getByRole('checkbox') as HTMLInputElement
-		expect(box.checked, 'sent as written by default').toBe(false)
-		fireEvent.click(box)
-		expect(lua.on.onMinify).toHaveBeenCalledWith(true)
+		const pressed = (text: string) =>
+			lua.getByText(text).getAttribute('aria-pressed')
+		expect(pressed('as is 11')).toBe('true')
+		expect(pressed('compact 9')).toBe('false')
+		fireEvent.click(lua.getByText('compact 9'))
+		expect(lua.on.onForm).toHaveBeenLastCalledWith('compact')
 		lua.unmount()
+
+		// Nothing to measure in a text that does not lex, and the choice stays
+		// where it was rather than coming and going with a typo.
+		const broken = sendBar(typed, {
+			form: 'compact',
+			prepared: null,
+			problem: 'unexpected token',
+		})
+		expect(broken.getByText('will not load').title).toBe('unexpected token')
+		expect(button(broken.getByText('Send !bSet')).disabled).toBe(true)
+		expect(broken.getByText('compact —').getAttribute('aria-pressed')).toBe(
+			'true',
+		)
+		fireEvent.click(broken.getByText('as is —'))
+		expect(broken.on.onForm).toHaveBeenLastCalledWith('asIs')
+		broken.unmount()
 
 		const boxes = sendBar(emptyWorkspace().docs[slotId(BOX_OVERRIDE)]!, {
 			target: BOX_OVERRIDE,
 		})
-		expect(boxes.queryByRole('checkbox')).toBeNull()
-		expect(boxes.getByText('minified 9')).toBeTruthy()
+		expect(boxes.queryByRole('group', { name: 'Sent' })).toBeNull()
+		expect(boxes.getByText('compact 9')).toBeTruthy()
 	})
 
 	test('where the room would refuse it, the buttons stay greyed and say why', () => {

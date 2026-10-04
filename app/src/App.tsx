@@ -79,7 +79,6 @@ import {
 	failure,
 	heldBy,
 	installUpdate,
-	resumeUpdate,
 	waiting,
 	watchUpdates,
 } from './store/update'
@@ -274,8 +273,8 @@ function Layout(props: ParentProps) {
 		const next = waiting()
 		if (next !== null) {
 			return heldBy()
-				? `Version ${next} is downloaded and installs on the next start. Restarting now would lose ${heldBy()}.`
-				: `Version ${next} is downloaded. Restart into it.`
+				? `Version ${next} is downloaded and installs after you close modlobby. Restarting now would lose ${heldBy()}.`
+				: `Version ${next} is downloaded. Restart into it now, or it installs after you close modlobby.`
 		}
 		const percent = downloading()
 		if (percent !== null) return `Downloading the update — ${percent}%`
@@ -411,6 +410,10 @@ function Layout(props: ParentProps) {
 		}
 	}
 
+	// A download an earlier run kept has been installed or let go by now:
+	// `AfterUpdate`, around the app, draws none of this until it has. The
+	// restart an install ends in would otherwise spend a second login on the
+	// server's count.
 	onMount(async () => {
 		try {
 			const saved = await api.getSettings()
@@ -420,10 +423,6 @@ function Layout(props: ParentProps) {
 			const recovered = await api.settingsRecovered()
 			if (recovered) pushNotice('warning', recovered)
 			await connectChannel()
-			// A download an earlier run kept installs now, before the login: the
-			// restart it ends in would only spend another login on the server's
-			// count. Comes back only when there is nothing to install.
-			await resumeUpdate()
 			// The one place that already holds the settings, so auto-login neither
 			// reads them again nor races the signal that carries them.
 			void autoLogin(saved)

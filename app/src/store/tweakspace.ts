@@ -20,6 +20,8 @@ import { isCleared, nextTweak } from '../lib/setup'
 import {
 	DOC_KEYS,
 	SCRATCH,
+	arrivedCompact,
+	asHeld,
 	defaultTarget,
 	draftFile,
 	draftId,
@@ -27,6 +29,7 @@ import {
 	edit as editDoc,
 	emptyWorkspace,
 	fileSafe,
+	formOf,
 	freeName,
 	isDirty,
 	kindOf,
@@ -41,6 +44,7 @@ import {
 	savedAs,
 	scratchDoc,
 	sent,
+	shownText,
 	slotDoc,
 	slotId,
 	slotOf,
@@ -49,6 +53,7 @@ import {
 	type Compare,
 	type DocId,
 	type Filter,
+	type Form,
 	type Goto,
 	type Loaded,
 	type Workspace,
@@ -130,12 +135,22 @@ export function createTweakspace(
 		async function arrive(key: string, blob: string): Promise<Loaded> {
 			// SPADS empties a slot by writing `0`; that is nothing to decode.
 			if (isCleared(blob))
-				return { blob, text: '', name: null, summary: null, notes: [] }
-			try {
-				const view = await decode(blob, kindOf(key))
 				return {
 					blob,
-					text: view.formatted,
+					text: '',
+					compact: false,
+					name: null,
+					summary: null,
+					notes: [],
+				}
+			try {
+				const kind = kindOf(key)
+				const view = await decode(blob, kind)
+				const compact = arrivedCompact(view.text)
+				return {
+					blob,
+					text: shownText(kind, view.text, view.formatted),
+					compact,
 					name: view.name,
 					summary: view.summary,
 					notes: view.diagnostics.map(noteOf),
@@ -145,6 +160,7 @@ export function createTweakspace(
 				return {
 					blob,
 					text: blob,
+					compact: false,
 					name: null,
 					summary: null,
 					notes: [`This slot could not be decoded: ${message(error)}`],
@@ -196,7 +212,12 @@ export function createTweakspace(
 		createEffect(
 			on(
 				() =>
-					[active().buffer, active().kind, targetOf(ws), ws.minify] as const,
+					[
+						active().buffer,
+						active().kind,
+						targetOf(ws),
+						formOf(active()) === 'compact',
+					] as const,
 				([lua, kind, slot, minify]) => {
 					if (!slot || !lua.trim()) {
 						setPrepared(null)
@@ -222,6 +243,12 @@ export function createTweakspace(
 				},
 			),
 		)
+
+		/** As measured, save for an untouched slot: that is what the room holds. */
+		const shown = createMemo(() => {
+			const ready = prepared()
+			return ready && asHeld(active(), ready)
+		})
 
 		/** What the room's game and engine know; see `lib/assist`. */
 		const [assist, setAssist] = createSignal<Assist>(NO_ASSIST)
@@ -304,7 +331,8 @@ export function createTweakspace(
 			const doc = active()
 			const slot = targetOf(ws)
 			if (!slot) return null
-			const out = await io.tweakSend(doc.buffer, slot, direct, ws.minify)
+			const minify = formOf(doc) === 'compact'
+			const out = await io.tweakSend(doc.buffer, slot, direct, minify)
 			if (direct && doc.origin === 'slot') setWs('docs', doc.id, sent)
 			return out
 		}
@@ -407,7 +435,8 @@ export function createTweakspace(
 			if (ws.active === SCRATCH) setWs('docs', SCRATCH, 'kind', kindOf(key))
 		}
 		const setFullscreen = (on: boolean) => setWs('fullscreen', on)
-		const setMinify = (on: boolean) => setWs('minify', on)
+		/** For the document in the editor, and only it. */
+		const setForm = (form: Form) => setWs('docs', ws.active, 'form', form)
 		const setSearch = (patch: Partial<Workspace['search']>) =>
 			setWs('search', patch)
 
@@ -417,7 +446,7 @@ export function createTweakspace(
 			items,
 			slots,
 			unsent,
-			prepared,
+			prepared: shown,
 			problem,
 			check,
 			assist,
@@ -444,7 +473,7 @@ export function createTweakspace(
 			formatText,
 			setTarget,
 			setFullscreen,
-			setMinify,
+			setForm,
 			setSearch,
 			goto,
 			setGoto,
