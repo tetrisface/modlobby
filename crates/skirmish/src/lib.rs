@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use lobby_ui::{
-	BattleStatusView, BattleView, BotView, LayoutView, MyBattleView, OptionChangeView,
+	BattleStatusView, BattleView, BotView, IntentView, LayoutView, MyBattleView, OptionChangeView,
 	SkirmishView, SyncView, UserStatusView, UserView,
 };
 
@@ -696,8 +696,12 @@ impl Room {
 			// Nothing to vote on where nobody can disagree.
 			vote: None,
 			history: self.history.clone(),
-			// Nothing here unreadies anyone, so there is nothing to answer.
-			pre_ready: false,
+			// Ready means nothing where nobody waits: a seat is all there is.
+			intent: if self.seat.is_some() {
+				IntentView::Play
+			} else {
+				IntentView::Spectate
+			},
 			ready_on_its_way: None,
 			seat_on_its_way: None,
 			held_until_ms: None,

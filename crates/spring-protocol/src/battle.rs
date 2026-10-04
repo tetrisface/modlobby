@@ -160,6 +160,11 @@ pub fn join_battle(id: u32, password: Option<&str>, script_password: &str) -> St
 
 pub const LEAVE_BATTLE: &str = "LEAVEBATTLE";
 
+/// Asks teiserver for our room's join queue; answered with
+/// `s.battle.queue_status`. Not a spring-protocol command: uberserver has no
+/// queue.
+pub const QUEUE_STATUS: &str = "c.battle.queue_status";
+
 /// Chat text longer than teiserver keeps; sending it would arrive truncated.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("message is {len} characters, the server keeps {max}")]

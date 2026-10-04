@@ -259,6 +259,8 @@ describe('choosing a team', () => {
 						members: ['me', 'alice', 'bob', 'carol', 'dave'],
 						queue: ['dave', 'me'],
 					}),
+				// Queued is wanting to play.
+				my: () => myBattle({ intent: 'play' }),
 			}),
 		)
 		const buttons = [...container.querySelectorAll('.seat button')]
@@ -794,6 +796,7 @@ describe('a seat on its way', () => {
 				// Our seat is on its way, and the flood window holds it a moment.
 				my: () =>
 					myBattle({
+						intent: 'play',
 						seatOnItsWay: { player: true, allyTeam: 0 },
 						heldUntilMs: Date.now() + 5000,
 					}),
@@ -819,7 +822,7 @@ describe('readying up', () => {
 			fakeRoom({
 				caps: SERVED,
 				// The server still shows us unready; our ready is on its way.
-				my: () => myBattle({ readyOnItsWay: true }),
+				my: () => myBattle({ intent: 'ready', readyOnItsWay: true }),
 				io: recordingIo(calls),
 			}),
 		)
@@ -861,6 +864,7 @@ describe('readying up', () => {
 					me: user('me'),
 					alice: user('alice', { battleStatus: status({ ready: true }) }),
 				}),
+				my: () => myBattle({ intent: 'play' }),
 			}),
 		)
 
@@ -879,18 +883,19 @@ describe('readying up', () => {
 				users: () => ({
 					me: user('me', { battleStatus: status({ player: false }) }),
 				}),
+				my: () => myBattle({ intent: 'play' }),
 				io: recordingIo(calls),
 			}),
 		)
 
-		// The same Ready segment: pressed while queued, it arms for the seat.
+		// The same Ready segment: pressed while queued, it waits for the seat.
 		const segment = container.querySelector<HTMLButtonElement>(
 			'.seat .posture .ready',
 		)!
 		expect(segment.getAttribute('title')).toContain('the moment the queue')
 		fireEvent.click(segment)
 		await settle()
-		expect(calls).toContainEqual(['setPreReady', [true]])
+		expect(calls).toContainEqual(['setReady', [true]])
 	})
 
 	test('a joinas turns watching the game into playing it with them', async () => {
@@ -919,8 +924,11 @@ describe('readying up', () => {
 		)
 	})
 
-	test('watching says how long the game has been going, when that is known', async () => {
-		const label = async (exact: boolean) => {
+	test('joining says how long the game has been going, when that is known', async () => {
+		const label = async (
+			exact: boolean,
+			playingWith: string[] | null = null,
+		) => {
 			const { container } = await open(
 				fakeRoom({
 					caps: SERVED,
@@ -929,7 +937,7 @@ describe('readying up', () => {
 						ip: '',
 						port: 0,
 						added: false,
-						playingWith: null,
+						playingWith,
 						vacated: [],
 					}),
 					// Half a second either side of 65 s, so a slow render stays on 01:05.
@@ -940,6 +948,9 @@ describe('readying up', () => {
 		}
 
 		expect(await label(true)).toBe('Spectate the game [01:05]')
+		expect(await label(true, ['alice'])).toBe(
+			'Play together with alice [01:05]',
+		)
 		// A floor from the battle list is not a time to show here.
 		expect(await label(false)).toBe('Spectate the game')
 	})
@@ -1020,6 +1031,7 @@ describe('readying up', () => {
 		const { container } = await open(
 			fakeRoom({
 				caps: SERVED,
+				my: () => myBattle({ intent: 'play' }),
 				running: () => ({
 					id: 1,
 					ip: '',
@@ -1037,6 +1049,72 @@ describe('readying up', () => {
 		).toBe('next game')
 		expect(
 			container.querySelector('.seat .posture .ready')?.getAttribute('title'),
-		).toContain('once this game ends')
+		).toBe('Ready for the next game')
+	})
+
+	test('during a game, Ready is pressed the same seated or watching', async () => {
+		const running = () => ({
+			id: 1,
+			ip: '',
+			port: 0,
+			added: true,
+			playingWith: null,
+			vacated: [],
+		})
+		const press = async (player: boolean) => {
+			const calls: Calls = []
+			const { container } = await open(
+				fakeRoom({
+					caps: SERVED,
+					running,
+					users: () => ({
+						me: user('me', { battleStatus: status({ player }) }),
+					}),
+					my: () => myBattle({ intent: player ? 'play' : 'spectate' }),
+					io: recordingIo(calls),
+				}),
+			)
+			fireEvent.click(
+				container.querySelector('.seat .posture .ready') as HTMLElement,
+			)
+			await settle()
+			cleanup()
+			return calls.filter(
+				([name]) => name === 'takeSeat' || name.endsWith('Ready'),
+			)
+		}
+		// The session makes either a ready for the next game.
+		expect(await press(true)).toEqual([['setReady', [true]]])
+		const sat = await press(false)
+		expect(sat.map(([name]) => name)).toEqual(['takeSeat'])
+		expect(sat[0]?.[1].at(-1)).toBe(true)
+	})
+
+	test('queued mid-game, Ready says it waits on the queue', async () => {
+		const { container } = await open(
+			fakeRoom({
+				caps: SERVED,
+				running: () => ({
+					id: 1,
+					ip: '',
+					port: 0,
+					added: true,
+					playingWith: null,
+					vacated: [],
+				}),
+				battle: () => battle({ members: ['me'], queue: ['me'] }),
+				users: () => ({
+					me: user('me', { battleStatus: status({ player: false }) }),
+				}),
+				my: () => myBattle({ intent: 'readyNext' }),
+			}),
+		)
+		const ready = container.querySelector('.seat .posture .ready')
+		expect(ready?.querySelector('.posture-note')?.textContent).toBe(
+			'when seated',
+		)
+		expect(ready?.getAttribute('title')).toBe(
+			'Ready the moment the queue seats you. Press to take it back',
+		)
 	})
 })

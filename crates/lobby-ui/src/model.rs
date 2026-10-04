@@ -21,7 +21,7 @@
 use std::collections::BTreeMap;
 
 use lobby_core::{
-	Battle, Bot, LobbyState, MyBattle, OptionChange, Proposal, StartRect, User, VoteState,
+	Battle, Bot, Intent, LobbyState, MyBattle, OptionChange, Proposal, StartRect, User, VoteState,
 };
 use serde::{Deserialize, Serialize};
 use spring_protocol::{BattleStatus, Sync, UserStatus};
@@ -377,10 +377,9 @@ pub struct MyBattleView {
 	pub vote: Option<VoteView>,
 	/// Modoption changes seen this session, oldest first.
 	pub history: Vec<OptionChangeView>,
-	/// A ready given in advance, armed until the server's next automatic
-	/// unready -- being seated from the queue, or a game ending -- which it
-	/// answers once. Never remembered past this room.
-	pub pre_ready: bool,
+	/// What the player has asked for here; the seat bar draws it against the
+	/// server's word. Never remembered past this room.
+	pub intent: IntentView,
 	/// The ready our newest request asks for, while the server still shows
 	/// otherwise. Drawn at once as on its way; the server's word is still
 	/// what is true.
@@ -413,6 +412,32 @@ impl From<lobby_core::SeatOnItsWay> for SeatOnItsWayView {
 	}
 }
 
+/// What the player has asked for in a room (`lobby_core::Intent`). Readying
+/// is a way of playing: both ready intents are seats too.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum IntentView {
+	Spectate,
+	Play,
+	/// Ready on a seat; the server's own unready ends it as `Play`.
+	Ready,
+	/// Ready for the next game, kept through the server's own unreadies
+	/// until it starts.
+	ReadyNext,
+}
+
+impl From<Intent> for IntentView {
+	fn from(intent: Intent) -> Self {
+		match intent {
+			Intent::Spectate => Self::Spectate,
+			Intent::Play => Self::Play,
+			Intent::Ready => Self::Ready,
+			Intent::ReadyNext { .. } => Self::ReadyNext,
+		}
+	}
+}
+
 impl From<&MyBattle> for MyBattleView {
 	fn from(my: &MyBattle) -> Self {
 		Self {
@@ -424,7 +449,7 @@ impl From<&MyBattle> for MyBattleView {
 			script_tags: my.script_tags.clone(),
 			vote: my.vote.as_ref().map(VoteView::from),
 			history: my.history.iter().map(OptionChangeView::from).collect(),
-			pre_ready: my.pre_ready,
+			intent: my.intent.into(),
 			ready_on_its_way: my.ready_on_its_way,
 			seat_on_its_way: my.seat_on_its_way.map(Into::into),
 			held_until_ms: my.held_until_ms,

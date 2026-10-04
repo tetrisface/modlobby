@@ -93,6 +93,13 @@ export type Doc = {
 	loaded: boolean
 	/** What decoding had to say about the room's value; see [`noteOf`]. */
 	notes: string[]
+	/**
+	 * The draft this edit was last saved to or brought in from, which saving
+	 * again updates. A buffer replaced by something else -- a reset, a version
+	 * from the history, the room's new value -- is new work and gets a new
+	 * draft. A draft document is saved to its own file regardless.
+	 */
+	savedTo: string | null
 }
 
 export type Sort = 'name' | 'kind'
@@ -188,6 +195,7 @@ export function slotDoc(key: string): Doc {
 		stale: false,
 		loaded: false,
 		notes: [],
+		savedTo: null,
 	}
 }
 
@@ -202,12 +210,16 @@ export function scratchDoc(kind: Kind): Doc {
 	}
 }
 
-export function draftDoc(name: string, lua: string): Doc {
+export function draftDoc(
+	name: string,
+	lua: string,
+	kind: Kind = guessKind(lua),
+): Doc {
 	return {
 		id: draftId(name),
 		origin: 'draft',
 		title: name,
-		kind: guessKind(lua),
+		kind,
 		original: lua,
 		buffer: lua,
 		blob: null,
@@ -216,7 +228,18 @@ export function draftDoc(name: string, lua: string): Doc {
 		stale: false,
 		loaded: true,
 		notes: [],
+		savedTo: null,
 	}
+}
+
+/** A draft's file: the start boxes' JSON, or a tweak's Lua. */
+export const draftFile = (name: string, kind: Kind): string =>
+	`${name}.${kind === 'boxes' ? 'json' : 'lua'}`
+
+/** A file from the drafts directory as a draft; its Lua says which tweak it is. */
+export function draftOfFile(file: string, text: string): Doc {
+	const name = file.replace(/\.(lua|json)$/, '')
+	return draftDoc(name, text, file.endsWith('.json') ? 'boxes' : undefined)
 }
 
 /** The leading `--` line, trimmed, the way `tweaks::name` reads it. */
@@ -281,7 +304,14 @@ export function loaded(doc: Doc, from: Loaded): Doc {
 		loaded: true,
 	}
 	if (!isDirty(doc)) {
-		return { ...base, original: from.text, buffer: from.text, stale: false }
+		return {
+			...base,
+			original: from.text,
+			buffer: from.text,
+			stale: false,
+			// Somebody else's tweak is not to be saved over the draft of ours.
+			savedTo: from.text === doc.buffer ? doc.savedTo : null,
+		}
 	}
 	return {
 		...base,
@@ -295,7 +325,19 @@ export function edit(doc: Doc, text: string): Doc {
 }
 
 export function reset(doc: Doc): Doc {
-	return { ...doc, buffer: doc.original, stale: false }
+	return { ...doc, buffer: doc.original, stale: false, savedTo: null }
+}
+
+/**
+ * The buffer replaced by other text rather than edited: a version from the
+ * history, or the draft `from` brought in, which saving then updates.
+ */
+export function replaced(
+	doc: Doc,
+	text: string,
+	from: string | null = null,
+): Doc {
+	return { ...doc, buffer: text, savedTo: from }
 }
 
 /** Sent as a direct `!bSet`: the buffer is now what the room will hold. */
@@ -312,6 +354,37 @@ export function sent(doc: Doc): Doc {
 export function draftNameFor(doc: Doc): string {
 	const header = firstComment(doc.buffer) ?? doc.name
 	return (doc.origin === 'draft' ? doc.title : header) || doc.title
+}
+
+/** A name as its file can hold it; mirrors Rust's `draft_path`. */
+export const fileSafe = (name: string): string =>
+	name.replace(/[^\p{Alphabetic}\p{N} _()-]/gu, '_').trim()
+
+/**
+ * `name`, or the first of `name (2)`, `name (3)` and on that no draft has
+ * taken. Case is ignored, as Windows ignores it in a file name.
+ */
+export function freeName(name: string, taken: readonly string[]): string {
+	const used = new Set(taken.map((title) => title.toLowerCase()))
+	if (!used.has(name.toLowerCase())) return name
+	// `walls (2)` taken goes on to `walls (3)`, not `walls (2) (2)`.
+	const stem = name.replace(/ \(\d+\)$/, '')
+	for (let n = 2; ; n += 1) {
+		const next = `${stem} (${n})`
+		if (!used.has(next.toLowerCase())) return next
+	}
+}
+
+/** The one draft saving may overwrite: the open draft, or the one this edit belongs to. */
+export const ownDraft = (doc: Doc): string | null =>
+	doc.origin === 'draft' ? doc.title : doc.savedTo
+
+/**
+ * Where Save keeps a document: its own draft, else a new one named for it
+ * -- numbered, so that one draft never overwrites another.
+ */
+export function saveNameFor(doc: Doc, taken: readonly string[]): string {
+	return ownDraft(doc) ?? freeName(fileSafe(draftNameFor(doc)), taken)
 }
 
 /** Saved to a draft under this name: that draft now holds the buffer. */

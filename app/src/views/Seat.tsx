@@ -291,28 +291,28 @@ export function Seat() {
 	// Pressing a segment says "this is the posture I want". A lower one steps
 	// back to it; Ready also toggles off on a second press, as in Chobby.
 
-	const watching = () => !seated() && queued() === null
-	const armed = () => room.my()?.preReady ?? false
+	// What the player has asked for; the session decides whether a ready is
+	// for now or for the next game.
+	const intent = () => room.my()?.intent ?? 'spectate'
+	const readies = () => intent() === 'ready' || intent() === 'readyNext'
 
 	function watch() {
 		if (queued() !== null)
 			return act('leave the queue', () => room.io.sayBattle('$leaveq'))
-		if (seated()) return spectate()
+		if (intent() !== 'spectate') return spectate()
 	}
 
 	function play() {
-		if (watching()) return act('take a seat', () => sitOn(room, freeAlly()))
-		if (held(p().ready)) return act('ready', () => room.io.setReady(false))
+		if (intent() === 'spectate')
+			return act('take a seat', () => sitOn(room, freeAlly()))
+		if (readies()) return act('ready', () => room.io.setReady(false))
 	}
 
 	function ready() {
 		// One press for "I'm in": the seat, and a ready once it is answered.
-		if (watching())
+		if (intent() === 'spectate')
 			return act('take a seat', () => sitOn(room, freeAlly(), true))
-		// Nothing to ready right now, so a ready for when there is.
-		if (queued() !== null || running())
-			return act('ready in advance', () => room.io.setPreReady(!armed()))
-		return act('ready', () => room.io.setReady(!held(p().ready)))
+		return act('ready', () => room.io.setReady(!readies()))
 	}
 
 	/** A press the server has not answered: on its way, or held a moment. */
@@ -320,38 +320,48 @@ export function Seat() {
 		heldUntil() === null
 			? 'On its way to the server'
 			: 'Held a moment: the room takes five changes in eight seconds'
-	const watchTitle = () =>
-		p().watch.pending
-			? pendingTitle()
-			: queued() !== null
-				? 'Leave the queue and keep spectating'
-				: seated()
-					? 'Give the seat up'
-					: 'Spectating'
-	const playTitle = () =>
-		p().play.pending
-			? pendingTitle()
-			: queued() !== null
-				? 'Waiting for a seat'
-				: watching()
-					? 'Take a seat on the emptiest team'
-					: held(p().ready)
-						? 'Step back to not ready'
-						: 'Playing'
+	const watchTitle = () => {
+		if (p().watch.pending) return pendingTitle()
+		if (p().stance === 'queuing') return 'Leave the queue and keep spectating'
+		return p().stance === 'spectate' ? 'Spectating' : 'Give the seat up'
+	}
+	const playTitle = () => {
+		if (p().play.pending) return pendingTitle()
+		switch (p().stance) {
+			case 'spectate':
+				return 'Take a seat on the emptiest team'
+			case 'queuing':
+				return 'Waiting for a seat'
+			case 'ready':
+			case 'readyNext':
+				return 'Step back to not ready'
+			case 'playNext':
+				return 'Playing the next game'
+			case 'play':
+				return 'Playing'
+		}
+	}
 	const readyTitle = () => {
 		const segment = p().ready
 		if (segment.pending) return pendingTitle()
-		if (watching()) return 'Take a seat and ready up'
-		if (queued() !== null)
-			return armed()
-				? 'Armed: ready the moment the queue seats you, this once. Press to take it back'
-				: 'Ready the moment the queue seats you, this once'
-		if (running())
-			return armed()
-				? 'Armed: ready again once this game ends. Press to take it back'
-				: 'Ready again once this game ends'
-		if (segment.waiting) return 'Everyone else is ready'
-		return held(segment) ? 'Ready. Press to unready' : 'Not ready'
+		switch (p().stance) {
+			case 'spectate':
+				return running()
+					? 'Take a seat, ready for the next game'
+					: 'Take a seat and ready up'
+			case 'queuing':
+				return readies()
+					? 'Ready the moment the queue seats you. Press to take it back'
+					: 'Ready the moment the queue seats you'
+			case 'playNext':
+				return 'Ready for the next game'
+			case 'readyNext':
+				return 'Ready for the next game. Press to unready'
+			case 'play':
+				return segment.waiting ? 'Everyone else is ready' : 'Not ready'
+			case 'ready':
+				return 'Ready. Press to unready'
+		}
 	}
 
 	return (
@@ -370,7 +380,7 @@ export function Seat() {
 				{/* The three postures, read left to right as commitment: which you
 				    hold, and which is the step after it. Ready keeps its label and
 				    changes colour, as Chobby's does: yellow while the room asks it,
-				    green once given, dashed while armed for later. */}
+				    green once given, for now or for the next game. */}
 				<div class='choice posture' role='group' aria-label='Posture'>
 					<button
 						type='button'
@@ -417,7 +427,6 @@ export function Seat() {
 							classList={{
 								on: held(p().ready),
 								asked: p().ready.look === 'asked',
-								armed: p().ready.look === 'armed',
 								pending: p().ready.pending,
 								held: hold(p().ready) !== undefined,
 								waiting: p().ready.waiting,

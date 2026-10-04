@@ -17,6 +17,18 @@ import { lobby } from './lobby'
 export const LAUNCH_WAIT_MS = 20_000
 const POLL_MS = 250
 
+/**
+ * How long the card keeps waiting after the window is found.
+ *
+ * `IsWindowVisible` is true as soon as the engine's window has `WS_VISIBLE`,
+ * which is close to a second before it has presented a frame and is really on
+ * screen. Nothing we can ask from outside the process says when that frame
+ * lands, so the wait is padded rather than guessed at: stripes over a window
+ * already drawn cost a moment, stripes that stop over a window not drawn yet
+ * leave the lobby offering "Back to game" with nothing to go back to.
+ */
+const SETTLE_MS = 1_000
+
 /** The pid whose window has been seen, or whose wait ran out. */
 export const [windowSeen, setWindowSeen] = createSignal<number | null>(null)
 
@@ -30,13 +42,14 @@ export function launching(): boolean {
 
 /**
  * Follows the engine: each new pid is watched for its window until it has one
- * or the wait is up. Returns what stops following. `hasWindow`, `wait` and
- * `every` are parameters so a test can run it on a fake.
+ * or the wait is up. Returns what stops following. `hasWindow`, `wait`,
+ * `every` and `settle` are parameters so a test can run it on a fake.
  */
 export function watchLaunch(
 	hasWindow: () => Promise<boolean> = api.engineHasWindow,
 	wait = LAUNCH_WAIT_MS,
 	every = POLL_MS,
+	settle = SETTLE_MS,
 ): () => void {
 	return createRoot((dispose) => {
 		createEffect(
@@ -46,8 +59,16 @@ export function watchLaunch(
 					setWindowSeen(null)
 					if (pid === null) return
 					const done = () => setWindowSeen(pid)
-					// Found, timed out or unanswerable: the wait is over either way.
-					void keepTrying(hasWindow, wait, every).then(done, done)
+					void keepTrying(hasWindow, wait, every).then(
+						// A window that was found gets its settle; one that never
+						// came, or a question that could not be answered, has kept
+						// the card waiting long enough already.
+						(found) => {
+							if (found) setTimeout(done, settle)
+							else done()
+						},
+						done,
+					)
 				},
 			),
 		)

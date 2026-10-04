@@ -312,12 +312,8 @@ export const api = {
 	takeSeat: (team: number, allyTeam: number, ready = false) =>
 		invoke<void>('take_seat', { team, allyTeam, ready }),
 	releaseSeat: () => invoke<void>('release_seat'),
+	/** While a game runs, the session makes it a ready for the next one. */
 	setReady: (ready: boolean) => invoke<void>('set_ready', { ready }),
-	/**
-	 * A ready given in advance: answers the server's next automatic unready
-	 * (seated from the queue, or a game ending) once, then is spent.
-	 */
-	setPreReady: (on: boolean) => invoke<void>('set_pre_ready', { on }),
 	setSide: (side: number) => invoke<void>('set_side', { side }),
 	requestPrivateHost: (server: string) =>
 		invoke<string>('request_private_host', { server }),
@@ -343,11 +339,13 @@ export const api = {
 		invoke<string[]>('game_unit_names', { game }),
 	engineDefTags: (version: string) =>
 		invoke<DefTags>('engine_def_tags', { version }),
+	/** Draft files: `walls.lua`, `arena.json`; see `draftFile`. */
 	listDrafts: () => invoke<string[]>('list_drafts'),
-	readDraft: (name: string) => invoke<string>('read_draft', { name }),
-	saveDraft: (name: string, lua: string) =>
-		invoke<void>('save_draft', { name, lua }),
-	deleteDraft: (name: string) => invoke<void>('delete_draft', { name }),
+	readDraft: (file: string) => invoke<string>('read_draft', { file }),
+	/** Overwrites the file only on `replace`; otherwise refuses. */
+	saveDraft: (file: string, text: string, replace: boolean) =>
+		invoke<void>('save_draft', { file, text, replace }),
+	deleteDraft: (file: string) => invoke<void>('delete_draft', { file }),
 }
 
 /** The twenty slots, in the order the game applies them. */

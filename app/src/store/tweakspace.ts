@@ -21,16 +21,22 @@ import {
 	DOC_KEYS,
 	SCRATCH,
 	defaultTarget,
-	draftDoc,
+	draftFile,
 	draftId,
+	draftOfFile,
 	edit as editDoc,
 	emptyWorkspace,
+	fileSafe,
+	freeName,
 	isDirty,
 	kindOf,
 	listItems,
 	loaded,
 	noteOf,
+	ownDraft,
+	replaced,
 	reset as resetDoc,
+	saveNameFor,
 	savedAs,
 	scratchDoc,
 	sent,
@@ -292,54 +298,78 @@ export function createTweakspace(
 		}
 
 		async function refreshDrafts() {
-			const names = await io.listDrafts()
-			const texts = await Promise.all(names.map((name) => io.readDraft(name)))
+			const files = await io.listDrafts()
+			const texts = await Promise.all(files.map((file) => io.readDraft(file)))
+			const found = files.map((file, at) => draftOfFile(file, texts[at]!))
 			setWs(
 				'docs',
 				produce((docs) => {
 					for (const [id, doc] of Object.entries(docs)) {
 						if (doc.origin !== 'draft') continue
 						// A file that is gone is forgotten, unless it holds unsaved work.
-						if (!names.includes(doc.title) && !isDirty(doc)) delete docs[id]
+						if (!found.some((draft) => draft.id === id) && !isDirty(doc))
+							delete docs[id]
 					}
-					names.forEach((name, at) => {
-						const id = draftId(name)
-						const known = docs[id]
+					for (const draft of found) {
+						const known = docs[draft.id]
 						// Unsaved work is never overwritten by what is on disk.
-						if (known && isDirty(known)) return
-						docs[id] = draftDoc(name, texts[at]!)
-					})
+						if (known && isDirty(known)) continue
+						docs[draft.id] = draft
+					}
 				}),
 			)
 		}
 
+		const draftTitles = createMemo(() =>
+			Object.values(ws.docs)
+				.filter((doc) => doc.origin === 'draft')
+				.map((doc) => doc.title),
+		)
+		/** Where Save keeps the active document; see `saveNameFor`. */
+		const saveName = createMemo(() => saveNameFor(active(), draftTitles()))
+
 		/**
-		 * Saves the active buffer as a draft, which becomes clean at that name.
-		 *
-		 * Not for the start boxes: drafts are Lua files, and an arrangement worth
-		 * keeping is kept as a preset, which already carries the override.
+		 * Saves the active buffer as a draft, which becomes clean at that name,
+		 * and returns the name. Only the document's own draft is overwritten; a
+		 * name another draft has gets a number.
 		 */
-		async function saveDraft(name: string) {
+		async function saveDraft(name: string): Promise<string> {
 			const doc = active()
-			if (doc.kind === 'boxes')
-				throw new Error('start boxes are kept as presets, not drafts')
-			await io.saveDraft(name, doc.buffer)
-			setWs('docs', draftId(name), savedAs(doc, name))
+			const own = ownDraft(doc)
+			const target =
+				name === own ? name : freeName(fileSafe(name), draftTitles())
+			await io.saveDraft(
+				draftFile(target, doc.kind),
+				doc.buffer,
+				target === own,
+			)
+			setWs('docs', draftId(target), savedAs(doc, target))
+			if (doc.origin === 'slot') setWs('docs', doc.id, 'savedTo', target)
 			// The scratch has become that draft, and is free for the next one.
-			if (doc.origin !== 'scratch') return
-			setWs('docs', SCRATCH, scratchDoc(doc.kind))
-			open(draftId(name))
+			if (doc.origin === 'scratch') {
+				setWs('docs', SCRATCH, scratchDoc(doc.kind))
+				open(draftId(target))
+			}
+			return target
 		}
 
-		/** A draft's text into the open document, as an edit of it. */
+		/** A draft's text into the open document; saving it then updates that draft. */
 		function loadDraft(name: string) {
 			const draft = ws.docs[draftId(name)]
-			if (draft) edit(ws.active, draft.buffer)
+			if (draft)
+				setWs('docs', ws.active, (doc) => replaced(doc, draft.buffer, name))
+		}
+
+		/** Other text into a document, as new work: saved, it is a new draft. */
+		function checkout(id: DocId, text: string) {
+			setWs('docs', id, (doc) => replaced(doc, text))
 		}
 
 		async function deleteDraft(name: string) {
-			await io.deleteDraft(name)
 			const id = draftId(name)
+			const draft = ws.docs[id]
+			if (!draft) return
+			await io.deleteDraft(draftFile(name, draft.kind))
 			if (ws.active === id) open(SCRATCH)
 			setWs(
 				'docs',
@@ -383,8 +413,10 @@ export function createTweakspace(
 			send,
 			clear,
 			refreshDrafts,
+			saveName,
 			saveDraft,
 			loadDraft,
+			checkout,
 			deleteDraft,
 			setFilter,
 			setCompare,

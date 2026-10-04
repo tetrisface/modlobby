@@ -574,10 +574,6 @@ enum Command {
 		ready: bool,
 		reply: Reply<()>,
 	},
-	SetPreReady {
-		on: bool,
-		reply: Reply<()>,
-	},
 	SetSide {
 		side: u8,
 		reply: Reply<()>,
@@ -1101,15 +1097,10 @@ impl Client {
 		.await
 	}
 
-	/// Says whether we are ready to start. Only a player can be.
+	/// Says whether we are ready. Only someone playing, or queued to, can be;
+	/// while a game runs the ready is for the next one.
 	pub async fn set_ready(&self, ready: bool) -> Result<(), ClientError> {
 		self.ask(|reply| Command::SetReady { ready, reply }).await
-	}
-
-	/// Arms a ready given in advance, or takes it back: it answers the
-	/// server's next automatic unready once, then is spent.
-	pub async fn set_pre_ready(&self, on: bool) -> Result<(), ClientError> {
-		self.ask(|reply| Command::SetPreReady { on, reply }).await
 	}
 
 	/// Picks a faction: 0 Armada, 1 Cortex, 2 Random, 3 Legion.
@@ -3144,10 +3135,6 @@ impl Runtime {
 				self.run_room(reply, |session| session.set_ready(ready))
 					.await;
 			}
-			Command::SetPreReady { on, reply } => {
-				self.run_room(reply, |session| session.set_pre_ready(on))
-					.await;
-			}
 			Command::SetSide { side, reply } => {
 				self.run_room(reply, |session| session.set_side(side)).await;
 			}
@@ -3354,6 +3341,10 @@ impl Runtime {
 		match call(&mut conn.session) {
 			Ok(effects) => {
 				let _ = reply.send(Ok(()));
+				// A command changes what the view shows as surely as a line from
+				// the server does: a ready given for later sends nothing, so no
+				// echo would ever carry it.
+				self.project_effects(server, &effects);
 				self.apply_effects(server, effects).await;
 			}
 			Err(err) => {
@@ -4342,7 +4333,7 @@ async fn wait_engine(engine: &mut Option<Engine>) -> Option<i32> {
 
 #[cfg(test)]
 mod tests {
-	use lobby_ui::Collector;
+	use lobby_ui::{Collector, IntentView};
 	use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream};
 
 	use super::*;
@@ -5055,6 +5046,57 @@ mod tests {
 	/// Room 5, hosted by `host`, as a login flood lists it.
 	const ROOM: &[u8] =
 		b"ADDUSER host DE 2 SPADS\nBATTLEOPENED 5 0 0 host 1.2.3.4 8452 16 0 0 h R\tv\tm\tt\tg\n";
+
+	#[tokio::test]
+	async fn a_rooms_command_reaches_the_view_without_a_word_from_the_server() {
+		// A ready given while queued sends nothing, so no echo would carry it.
+		let (connector, mut servers) = in_memory_hosts(&["a"]);
+		let client = spawn(connector);
+		let ui = Collector::default();
+		client.subscribe(ui.clone()).await.unwrap();
+		let a = log_in(&client, "a");
+		let (mut lines, mut write) = accept_login_with(servers.remove("a").unwrap(), ROOM).await;
+		a.await.unwrap().unwrap();
+		let joining = tokio::spawn({
+			let client = client.clone();
+			async move { client.join_battle("a".into(), 5, None).await }
+		});
+		line_starting_with(&mut lines, "JOINBATTLE 5").await;
+		write
+			.write_all(b"JOINBATTLE 5 h\nJOINEDBATTLE 5 me\ns.battle.queue_status 5\tme\n")
+			.await
+			.unwrap();
+		joining.await.unwrap().unwrap();
+		let intent_shown = |intent: IntentView| {
+			let ui = ui.clone();
+			tokio::time::timeout(Duration::from_secs(2), async move {
+				loop {
+					let shown = ui
+						.take()
+						.into_iter()
+						.filter_map(|m| match m {
+							UiMessage::Deltas { deltas, .. } => Some(deltas),
+							_ => None,
+						})
+						.flatten()
+						.any(|d| matches!(d, Delta::MyBattle(Some(ref my)) if my.intent == intent));
+					if shown {
+						return;
+					}
+					tokio::time::sleep(Duration::from_millis(20)).await;
+				}
+			})
+		};
+		// Queued, which is wanting to play.
+		assert!(intent_shown(IntentView::Play).await.is_ok());
+
+		client.set_ready(true).await.unwrap();
+		assert!(
+			intent_shown(IntentView::Ready).await.is_ok(),
+			"the view was never told"
+		);
+		client.shutdown().await;
+	}
 
 	#[tokio::test]
 	async fn two_servers_are_logged_in_side_by_side() {

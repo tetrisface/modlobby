@@ -9,7 +9,6 @@ import { shortcut } from '../../lib/platform'
 import {
 	KINDS,
 	SLOT_KEYS,
-	draftNameFor,
 	isDirty,
 	kindOf,
 	type Doc,
@@ -39,6 +38,8 @@ export function Toolbar(props: {
 	/** The drafts editor names what is open; under a settings row the row does. */
 	heading: boolean
 	drafts: DraftEntry[]
+	/** Where Save keeps it; see `saveNameFor`. */
+	saveName: string
 	/** Back to the settings, from the drafts editor. */
 	onClose?: () => void
 	onFormat: () => void
@@ -59,13 +60,7 @@ export function Toolbar(props: {
 	onDone: () => void
 	closeTitle: string
 }) {
-	const [draftName, setDraftName] = createSignal('')
 	const dirty = () => isDirty(props.doc)
-
-	function save() {
-		props.onSave(draftName().trim() || draftNameFor(props.doc))
-		setDraftName('')
-	}
 
 	return (
 		<header class='tweak-bar'>
@@ -112,63 +107,50 @@ export function Toolbar(props: {
 					>
 						Reset
 					</button>
-					{/* Drafts are Lua files; an arrangement is kept as a preset instead. */}
-					<Show when={props.doc.kind !== 'boxes'}>
-						{/* What Ctrl+S does, for whoever does not reach for it. */}
-						<button
-							class='tweak-tool'
-							disabled={props.busy}
-							title={`Keep it as the draft "${draftNameFor(props.doc)}" on this machine (${shortcut('S')}); the room is sent nothing`}
-							onClick={() => props.onSave(draftNameFor(props.doc))}
+					{/* What Ctrl+S does, for whoever does not reach for it. */}
+					<button
+						class='tweak-tool'
+						disabled={props.busy}
+						title={`Keep it as the draft "${props.saveName}" on this machine (${shortcut('S')}); the room is sent nothing`}
+						onClick={() => props.onSave(props.saveName)}
+					>
+						Save
+					</button>
+					<Menu label='Drafts' title='Keep this as a draft, or bring one in'>
+						<SaveAs
+							name={props.saveName}
+							busy={props.busy}
+							onSave={props.onSave}
+						/>
+						<Show
+							when={props.drafts.length > 0}
+							fallback={<p class='menu-note'>No {props.doc.kind} drafts yet</p>}
 						>
-							Save
-						</button>
-						<Menu label='Drafts' title='Keep this as a draft, or bring one in'>
-							<div class='menu-save'>
-								<input
-									class='draft-name'
-									placeholder={draftNameFor(props.doc)}
-									aria-label='Draft name'
-									value={draftName()}
-									onInput={(event) => setDraftName(event.currentTarget.value)}
-									onKeyDown={(event) => event.key === 'Enter' && save()}
-								/>
-								<button class='tweak-tool' onClick={save} disabled={props.busy}>
-									Save draft
-								</button>
-							</div>
-							<Show
-								when={props.drafts.length > 0}
-								fallback={
-									<p class='menu-note'>No {props.doc.kind} drafts yet</p>
-								}
-							>
-								<p class='menu-note'>Load into {props.doc.title}</p>
-								<For each={props.drafts}>
-									{(draft) => (
-										<div class='menu-row'>
-											<button
-												class='menu-item'
-												title={`Replace what ${props.doc.title} holds here with ${draft.title}`}
-												onClick={() => props.onLoad(draft.title)}
-											>
-												<span>{draft.title}</span>
-												<span class='menu-sub'>{draft.name ?? ''}</span>
-											</button>
-											<button
-												class='menu-drop'
-												title={`Delete the draft ${draft.title}`}
-												aria-label={`Delete the draft ${draft.title}`}
-												onClick={() => props.onDelete(draft.title)}
-											>
-												<Glyph id='act-trash' />
-											</button>
-										</div>
-									)}
-								</For>
-							</Show>
-						</Menu>
-					</Show>
+							<p class='menu-note'>Load into {props.doc.title}</p>
+							<For each={props.drafts}>
+								{(draft) => (
+									<div class='menu-row'>
+										<button
+											class='menu-item'
+											title={`Replace what ${props.doc.title} holds here with ${draft.title}`}
+											onClick={() => props.onLoad(draft.title)}
+										>
+											<span>{draft.title}</span>
+											<span class='menu-sub'>{draft.name ?? ''}</span>
+										</button>
+										<button
+											class='menu-drop'
+											title={`Delete the draft ${draft.title}`}
+											aria-label={`Delete the draft ${draft.title}`}
+											onClick={() => props.onDelete(draft.title)}
+										>
+											<Glyph id='act-trash' />
+										</button>
+									</div>
+								)}
+							</For>
+						</Show>
+					</Menu>
 					<Menu
 						label='Copy'
 						title='Copy what is typed here, in any of its forms'
@@ -425,6 +407,38 @@ export function SendBar(props: {
 				</button>
 			</span>
 		</footer>
+	)
+}
+
+/**
+ * The drafts menu's name field, filled with where Save would keep it: kept,
+ * or changed to keep it somewhere else. Made again each time the menu opens.
+ */
+function SaveAs(props: {
+	name: string
+	busy: boolean
+	onSave: (name: string) => void
+}) {
+	const [typed, setTyped] = createSignal<string | null>(null)
+	function save() {
+		props.onSave(typed()?.trim() || props.name)
+		setTyped(null)
+	}
+	return (
+		<div class='menu-save'>
+			<input
+				class='draft-name'
+				placeholder={props.name}
+				aria-label='Draft name'
+				value={typed() ?? props.name}
+				onFocus={(event) => event.currentTarget.select()}
+				onInput={(event) => setTyped(event.currentTarget.value)}
+				onKeyDown={(event) => event.key === 'Enter' && save()}
+			/>
+			<button class='tweak-tool' onClick={save} disabled={props.busy}>
+				Save draft
+			</button>
+		</div>
 	)
 }
 

@@ -55,6 +55,7 @@ function toolbar(doc: Doc, over: Record<string, unknown> = {}) {
 			closeTitle='Fold the editor away'
 			heading={false}
 			drafts={[]}
+			saveName='tweakdefs1'
 			{...on}
 			{...over}
 		/>
@@ -133,25 +134,34 @@ describe('Toolbar', () => {
 		expect(ready.on.onCopy).toHaveBeenLastCalledWith('blob')
 	})
 
-	test('the drafts menu saves under the typed name or the header, loads, and deletes', () => {
+	test('the drafts menu saves where Save would or under a typed name, loads, and deletes', () => {
 		const drafts = [
 			{ title: 'walls', name: 'T3 walls' },
 			{ title: 'nukes', name: null },
 		]
-		const { on, getByText, getByLabelText } = toolbar(
-			{ ...typed, name: 'Nutty B' },
-			{ drafts },
-		)
+		const { on, getByText, getByLabelText } = toolbar(typed, {
+			drafts,
+			saveName: 'Nutty B (2)',
+		})
+		const field = () => getByLabelText('Draft name') as HTMLInputElement
 		fireEvent.click(getByText('Drafts'))
+		expect(field().value, 'filled in, to keep or change').toBe('Nutty B (2)')
 		fireEvent.click(getByText('Save draft'))
-		expect(on.onSave).toHaveBeenLastCalledWith('Nutty B')
+		expect(on.onSave).toHaveBeenLastCalledWith('Nutty B (2)')
 
 		fireEvent.click(getByText('Drafts'))
-		fireEvent.input(getByLabelText('Draft name'), {
-			target: { value: 'walls-2' },
-		})
+		fireEvent.input(field(), { target: { value: 'walls-2' } })
 		fireEvent.click(getByText('Save draft'))
 		expect(on.onSave).toHaveBeenLastCalledWith('walls-2')
+
+		// Emptied, it saves where Save would.
+		fireEvent.click(getByText('Drafts'))
+		expect(field().value, 'what was typed went with the menu').toBe(
+			'Nutty B (2)',
+		)
+		fireEvent.input(field(), { target: { value: ' ' } })
+		fireEvent.click(getByText('Save draft'))
+		expect(on.onSave).toHaveBeenLastCalledWith('Nutty B (2)')
 
 		fireEvent.click(getByText('Drafts'))
 		expect(getByText('Load into tweakdefs1')).toBeTruthy()
@@ -163,17 +173,10 @@ describe('Toolbar', () => {
 		expect(on.onDelete).toHaveBeenCalledWith('nukes')
 	})
 
-	test('Save keeps it as a draft under its name, as Ctrl+S does', () => {
-		const { on, getByText } = toolbar({ ...typed, name: 'Nutty B' })
+	test('Save keeps it as a draft where it is told, as Ctrl+S does', () => {
+		const { on, getByText } = toolbar(typed, { saveName: 'Nutty B' })
 		fireEvent.click(getByText('Save'))
 		expect(on.onSave).toHaveBeenCalledWith('Nutty B')
-	})
-
-	test('a draft is saved under its own name', () => {
-		const { on, getByText } = toolbar(draftDoc('walls', '-- T3 walls\n{}'))
-		fireEvent.click(getByText('Drafts'))
-		fireEvent.click(getByText('Save draft'))
-		expect(on.onSave).toHaveBeenLastCalledWith('walls')
 	})
 
 	test('compare, search, the palette and the corner buttons go to the caller', () => {
@@ -196,11 +199,11 @@ describe('Toolbar', () => {
 		expect(on.onFullscreen).toHaveBeenCalledWith(false)
 	})
 
-	test('the start-box override copies as JSON and offers no draft', () => {
+	test('the start-box override copies as JSON and keeps drafts like a tweak', () => {
 		const boxes = emptyWorkspace().docs[slotId(BOX_OVERRIDE)]!
 		const { on, getByText, queryByText } = toolbar(boxes)
-		expect(queryByText('Drafts')).toBeNull()
-		expect(queryByText('Save'), 'no drafts, so nothing to save to').toBeNull()
+		expect(getByText('Drafts')).toBeTruthy()
+		expect(getByText('Save')).toBeTruthy()
 		fireEvent.click(getByText('Copy'))
 		expect(queryByText('Lua')).toBeNull()
 		// The wire form is zlib inside the base64url, and the button says so.

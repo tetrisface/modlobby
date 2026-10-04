@@ -485,15 +485,17 @@ export function Room() {
 	onCleanup(() => clearInterval(tick))
 
 	/** Watching, or playing on somebody's ID once `!joinas` has put us there. */
-	const joinLabel = () => {
+	const joinWhat = () => {
 		const names = room.running()?.playingWith ?? null
-		const started = room.started()
-		// Only a start we know: a floor's `+` belongs to the battle list.
-		if (names === null && started?.exact)
-			return `Spectate the game [${stopwatch(started.since, now())}]`
 		if (names === null) return 'Spectate the game'
 		if (names.length === 0) return 'Play the game'
 		return `Play together with ${NAMES.format(names)}`
+	}
+	const joinLabel = () => {
+		const started = room.started()
+		// Only a start we know: a floor's `+` belongs to the battle list.
+		if (!started?.exact) return joinWhat()
+		return `${joinWhat()} [${stopwatch(started.since, now())}]`
 	}
 
 	createEffect(() => {

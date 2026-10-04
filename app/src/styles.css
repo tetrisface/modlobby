@@ -4653,7 +4653,7 @@ input[type='checkbox'].v-edit {
 }
 
 /* Ready keeps its label and changes colour, Chobby's grammar: yellow while
-   the room asks it of you, green once given, dashed while armed for later.
+   the room asks it of you, green once given, for now or for the next game.
    Shared by the segment and the card's copy of the toggle. */
 .posture-ready.asked,
 .choice.posture button.ready.asked {
@@ -4665,12 +4665,6 @@ input[type='checkbox'].v-edit {
 .choice.posture button.ready.on {
 	color: var(--ok);
 	background: color-mix(in srgb, var(--ok) 18%, var(--sunken));
-}
-
-.posture-ready.armed {
-	color: var(--ok);
-	outline: 1px dashed var(--ok);
-	outline-offset: -2px;
 }
 
 .choice.posture button.pending {

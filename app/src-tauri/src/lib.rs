@@ -577,7 +577,6 @@ pub fn run() {
 			commands::newest_commit,
 			commands::take_seat,
 			commands::set_ready,
-			commands::set_pre_ready,
 			commands::set_side,
 			commands::release_seat,
 			commands::request_private_host,

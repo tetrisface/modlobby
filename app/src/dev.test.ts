@@ -72,7 +72,7 @@ function inARoom() {
 					scriptTags: {},
 					vote: null,
 					history: [],
-					preReady: false,
+					intent: 'spectate',
 					readyOnItsWay: null,
 					seatOnItsWay: null,
 					heldUntilMs: null,

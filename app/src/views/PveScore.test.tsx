@@ -136,7 +136,7 @@ function enter(bots: BotView[], others: UserView[] = []) {
 		scriptTags: { 'game/modoptions/raptor_endless': '0' },
 		vote: null,
 		history: [],
-		preReady: false,
+		intent: 'spectate',
 		readyOnItsWay: null,
 		seatOnItsWay: null,
 		heldUntilMs: null,

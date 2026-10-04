@@ -43,7 +43,9 @@ function fakeIo() {
 		tweakClear: vi.fn(async () => {}),
 		listDrafts: vi.fn(async () => [...files.keys()].sort()),
 		readDraft: vi.fn(async (name: string) => files.get(name) ?? ''),
-		saveDraft: vi.fn(async (name: string, lua: string) => {
+		// Refuses to overwrite unless asked to, as Rust does.
+		saveDraft: vi.fn(async (name: string, lua: string, replace: boolean) => {
+			if (!replace && files.has(name)) throw new Error(`${name} exists`)
 			files.set(name, lua)
 		}),
 		deleteDraft: vi.fn(async (name: string) => {
@@ -140,7 +142,7 @@ describe('the workspace', () => {
 
 	test('drafts come off disk, are saved from any document, and go again', async () => {
 		const { io, files } = fakeIo()
-		files.set('walls', '{ armwall = {} }')
+		files.set('walls.lua', '{ armwall = {} }')
 		const space = createTweakspace(io, () => ({}), slotId('tweakunits2'))
 		await space.refreshDrafts()
 		expect(space.ws.docs[draftId('walls')]).toMatchObject({
@@ -150,7 +152,7 @@ describe('the workspace', () => {
 
 		space.edit(slotId('tweakunits2'), '{ armcom = {} }')
 		await space.saveDraft('com')
-		expect(files.get('com')).toBe('{ armcom = {} }')
+		expect(files.get('com.lua')).toBe('{ armcom = {} }')
 		expect(space.ws.docs[draftId('com')]).toMatchObject({
 			kind: 'units',
 			original: '{ armcom = {} }',
@@ -167,9 +169,45 @@ describe('the workspace', () => {
 		space.dispose()
 	})
 
+	test('an edit saves over its own draft; new work and taken names get a number', async () => {
+		const { io, files } = fakeIo()
+		files.set('AAA.lua', 'theirs')
+		const space = createTweakspace(
+			io,
+			() => ({ tweakdefs1: 'AAA' }),
+			slotId('tweakdefs1'),
+		)
+		await space.refreshDrafts()
+		await flush()
+		const slot = slotId('tweakdefs1')
+
+		space.edit(slot, 'mine')
+		expect(space.saveName()).toBe('AAA (2)')
+		expect(await space.saveDraft(space.saveName())).toBe('AAA (2)')
+		space.edit(slot, 'mine, more')
+		await space.saveDraft(space.saveName())
+		expect(files.get('AAA (2).lua')).toBe('mine, more')
+		expect(files.get('AAA.lua'), 'never saved over').toBe('theirs')
+
+		// Typed, a name another draft has is numbered too.
+		expect(await space.saveDraft('aaa')).toBe('aaa (3)')
+
+		space.reset(slot)
+		expect(space.saveName()).toBe('AAA (4)')
+		space.checkout(slot, 'a version')
+		expect(space.saveName()).toBe('AAA (4)')
+
+		// A draft brought in is the one saving updates.
+		space.loadDraft('AAA')
+		expect(space.saveName()).toBe('AAA')
+		await space.saveDraft(space.saveName())
+		expect(io.saveDraft).toHaveBeenLastCalledWith('AAA.lua', 'theirs', true)
+		space.dispose()
+	})
+
 	test('a draft is aimed past the tweaks the room already holds', async () => {
 		const { io, files } = fakeIo()
-		files.set('walls', '{ armwall = {} }')
+		files.set('walls.lua', '{ armwall = {} }')
 		const space = createTweakspace(io, () => ({
 			tweakunits: 'AAA',
 			tweakunits1: 'BBB',
@@ -220,7 +258,7 @@ describe('the workspace', () => {
 
 	test('a draft loads into the open slot as an edit of it', async () => {
 		const { io, files } = fakeIo()
-		files.set('walls', '{ armwall = {} }')
+		files.set('walls.lua', '{ armwall = {} }')
 		const space = createTweakspace(io, () => ({}), slotId('tweakunits3'))
 		await space.refreshDrafts()
 		space.loadDraft('walls')
@@ -241,7 +279,7 @@ describe('the workspace', () => {
 		expect(space.active().kind).toBe('units')
 		space.edit(SCRATCH, '-- Golem\n{}')
 		await space.saveDraft('golem')
-		expect(files.get('golem')).toBe('-- Golem\n{}')
+		expect(files.get('golem.lua')).toBe('-- Golem\n{}')
 		expect(space.ws.active).toBe(draftId('golem'))
 		expect(space.ws.docs[draftId('golem')]!.kind).toBe('units')
 		// Free for the next one, still aimed as it was.
@@ -288,8 +326,8 @@ describe('the workspace', () => {
 		space.dispose()
 	})
 
-	test('the override is decoded as boxes, empties on a cleared 0, and keeps no drafts', async () => {
-		const { io } = fakeIo()
+	test('the override is decoded as boxes, empties on a cleared 0, and drafts as JSON', async () => {
+		const { io, files } = fakeIo()
 		const [room, setRoom] = createSignal<Record<string, string>>({
 			[BOX_OVERRIDE]: 'eJyr',
 		})
@@ -312,8 +350,10 @@ describe('the workspace', () => {
 			true,
 			false,
 		)
-		await expect(space.saveDraft('boxes')).rejects.toThrow('presets')
-		expect(io.saveDraft).not.toHaveBeenCalled()
+		await space.saveDraft('arena')
+		expect(files.get('arena.json')).toBe('{"startboxes":[]}')
+		await space.refreshDrafts()
+		expect(space.ws.docs[draftId('arena')]!.kind).toBe('boxes')
 		space.dispose()
 	})
 
@@ -361,8 +401,8 @@ describe('the workspace', () => {
 
 	test('the list is searched and sorted through the filter', async () => {
 		const { io, files } = fakeIo()
-		files.set('walls', '-- XYZ\n{}')
-		files.set('nukes', 'x')
+		files.set('walls.lua', '-- XYZ\n{}')
+		files.set('nukes.lua', 'x')
 		const space = createTweakspace(io, () => ({}))
 		await space.refreshDrafts()
 		space.setFilter({ query: 'xyz' })

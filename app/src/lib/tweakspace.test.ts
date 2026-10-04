@@ -10,19 +10,25 @@ import {
 	defaultCompare,
 	defaultTarget,
 	draftDoc,
+	draftFile,
 	draftId,
 	draftNameFor,
+	draftOfFile,
 	edit,
 	emptyWorkspace,
+	fileSafe,
 	firstComment,
+	freeName,
 	guessKind,
 	isDirty,
 	kindOf,
 	listItems,
 	loaded,
 	parseSide,
+	replaced,
 	reset,
 	resolveSide,
+	saveNameFor,
 	searchSlots,
 	savedAs,
 	sent,
@@ -177,6 +183,58 @@ describe('drafts', () => {
 		expect(draftNameFor(slot({ name: 'Room', buffer: 'x' }))).toBe('Room')
 		expect(draftNameFor(slot({ buffer: 'x' }))).toBe('tweakdefs1')
 		expect(draftNameFor(draftDoc('walls', '-- T3\n{}'))).toBe('walls')
+	})
+
+	test('a draft file is JSON for the start boxes and Lua for a tweak', () => {
+		expect(draftFile('arena', 'boxes')).toBe('arena.json')
+		expect(draftFile('walls', 'units')).toBe('walls.lua')
+		expect(draftOfFile('arena.json', '{}')).toMatchObject({
+			title: 'arena',
+			kind: 'boxes',
+		})
+		expect(draftOfFile('walls.lua', '{}')).toMatchObject({
+			title: 'walls',
+			kind: 'units',
+		})
+	})
+
+	test('a taken name is numbered, case ignored, counting on from a number', () => {
+		expect(freeName('walls', [])).toBe('walls')
+		expect(freeName('walls', ['Walls'])).toBe('walls (2)')
+		expect(freeName('walls', ['walls', 'walls (2)'])).toBe('walls (3)')
+		expect(freeName('walls (2)', ['walls', 'walls (2)'])).toBe('walls (3)')
+	})
+
+	test('a name is kept to what a file name holds, as Rust keeps it', () => {
+		expect(fileSafe(' T3: walls v1.2 ')).toBe('T3_ walls v1_2')
+		expect(fileSafe('Åsa (2)')).toBe('Åsa (2)')
+		expect(fileSafe('../x')).toBe('___x')
+	})
+
+	test('Save keeps a draft in its file, an edit in its draft, and new work anew', () => {
+		const walls = draftDoc('walls', '-- T3\n{}')
+		expect(saveNameFor(walls, ['walls'])).toBe('walls')
+		const typed = slot({ name: 'Nutty: B', buffer: 'x' })
+		expect(saveNameFor(typed, ['Nutty_ B'])).toBe('Nutty_ B (2)')
+		expect(saveNameFor({ ...typed, savedTo: 'mine' }, ['mine'])).toBe('mine')
+	})
+
+	test('replacing the buffer is new work unless a draft came in; a reset is too', () => {
+		const saved = slot({ savedTo: 'mine' })
+		expect(replaced(saved, 'v2').savedTo).toBeNull()
+		expect(replaced(saved, 'v2', 'walls')).toMatchObject({
+			buffer: 'v2',
+			savedTo: 'walls',
+		})
+		expect(reset(saved).savedTo).toBeNull()
+	})
+
+	test('the room moving a clean slot to other text lets go of its draft', () => {
+		const clean = loaded(slot(), arrived('YQ==', 'local a = 1\n'))
+		const saved = { ...clean, savedTo: 'mine' }
+		// What was sent, coming back.
+		expect(loaded(saved, arrived('Yg==', 'local a = 1\n')).savedTo).toBe('mine')
+		expect(loaded(saved, arrived('Yw==', 'local c = 1\n')).savedTo).toBeNull()
 	})
 
 	test('saving a slot as a draft keeps the slot kind even for an empty buffer', () => {

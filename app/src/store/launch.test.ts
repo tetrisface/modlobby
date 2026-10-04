@@ -20,7 +20,7 @@ describe('waiting for the engine window', () => {
 	test('running without a window is launching; seen once, it is not', async () => {
 		const answers = [false, false, true]
 		const hasWindow = vi.fn(async () => answers.shift() ?? true)
-		const stop = watchLaunch(hasWindow, 1000, 0)
+		const stop = watchLaunch(hasWindow, 1000, 0, 0)
 		try {
 			expect(launching()).toBe(false)
 			setLobby('engine', { state: 'running', pid: 7 })
@@ -41,9 +41,29 @@ describe('waiting for the engine window', () => {
 	})
 
 	test('the wait ends when the window never comes', async () => {
-		const stop = watchLaunch(async () => false, 0, 0)
+		// No settle on this path: the card has waited the whole deadline out.
+		const stop = watchLaunch(async () => false, 0, 0, 10_000)
 		try {
 			setLobby('engine', { state: 'running', pid: 9 })
+			await vi.waitFor(() => expect(launching()).toBe(false))
+		} finally {
+			stop()
+			setLobby('engine', { state: 'idle' })
+		}
+	})
+
+	/**
+	 * The window handle beats the first frame on screen, so a found window
+	 * holds the card a moment longer rather than ending it on the spot.
+	 */
+	test('a found window still settles before the card stops waiting', async () => {
+		const stop = watchLaunch(async () => true, 1000, 0, 50)
+		try {
+			setLobby('engine', { state: 'running', pid: 11 })
+			expect(launching()).toBe(true)
+			// Long enough for the poll to answer, short of the settle.
+			await new Promise((resolve) => setTimeout(resolve, 20))
+			expect(launching()).toBe(true)
 			await vi.waitFor(() => expect(launching()).toBe(false))
 		} finally {
 			stop()

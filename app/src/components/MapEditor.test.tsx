@@ -96,7 +96,7 @@ function room(me: string, player: boolean) {
 		scriptTags: { [OVERRIDE]: 'blob' },
 		vote: null,
 		history: [],
-		preReady: false,
+		intent: 'spectate',
 		readyOnItsWay: null,
 		seatOnItsWay: null,
 		heldUntilMs: null,

@@ -11,13 +11,13 @@ import type { Kind } from '../../ipc/bindings/Kind'
 import { unknownUnits } from '../../lib/assist'
 import { describeError } from '../../ipc/client'
 import { when } from '../../lib/presets'
+import { isCleared } from '../../lib/setup'
 import {
 	KINDS,
 	MAP_TABLE_REFUSAL,
 	compareChange,
 	defaultCompare,
 	draftId,
-	draftNameFor,
 	isDirty,
 	isMapTable,
 	resolveSide,
@@ -166,6 +166,8 @@ export function Workspace(props: { drafts: boolean; onClose?: () => void }) {
 		if (!found) return null
 		if ('lua' in found)
 			return { label: found.label, kind: found.kind, text: found.lua }
+		if (isCleared(found.blob))
+			return { label: found.label, kind: found.kind, text: '' }
 		const view = await space.decode(found.blob, found.kind).catch(() => null)
 		return {
 			label: found.label,
@@ -178,6 +180,16 @@ export function Workspace(props: { drafts: boolean; onClose?: () => void }) {
 		space.setCompare(
 			space.ws.compare ? null : defaultCompare(space.ws, history()),
 		)
+
+	/** The version a change made, into the open document as an edit of it; back to the editor to show it. */
+	const use = (seq: number) =>
+		act('use version', async () => {
+			const id = doc().id
+			const version = await resolve({ history: seq, which: 'to' })
+			if (!version) return
+			space.checkout(id, version.text)
+			space.setCompare(null)
+		})
 
 	async function act(what: string, run: () => Promise<void>) {
 		setBusy(true)
@@ -206,8 +218,8 @@ export function Workspace(props: { drafts: boolean; onClose?: () => void }) {
 
 	const save = (name: string) =>
 		act('save draft', async () => {
-			await space.saveDraft(name)
-			pushNotice('info', `saved draft "${name}"`)
+			const saved = await space.saveDraft(name)
+			pushNotice('info', `saved draft "${saved}"`)
 		})
 
 	const send = (direct: boolean) =>
@@ -285,6 +297,7 @@ export function Workspace(props: { drafts: boolean; onClose?: () => void }) {
 					searching={space.ws.search.open}
 					heading={props.drafts}
 					drafts={drafts()}
+					saveName={space.saveName()}
 					onClose={props.onClose}
 					onFormat={() => void act('format', () => space.format(doc().id))}
 					onReset={() => space.reset(doc().id)}
@@ -332,7 +345,7 @@ export function Workspace(props: { drafts: boolean; onClose?: () => void }) {
 								outline={space.check()?.outline ?? []}
 								format={(text) => space.formatText(text, doc().kind)}
 								onEdit={space.edit}
-								onSave={() => void save(draftNameFor(doc()))}
+								onSave={() => void save(space.saveName())}
 								onSend={sendNow}
 							/>
 						}
@@ -396,12 +409,20 @@ export function Workspace(props: { drafts: boolean; onClose?: () => void }) {
 										{change.seq}
 									</span>
 									<button
-										class='link'
+										class='tweak-tool'
 										onClick={() =>
 											space.setCompare(compareChange(history(), change.seq))
 										}
 									>
 										Compare
+									</button>
+									<button
+										class='tweak-tool'
+										disabled={busy()}
+										title='Load the version this change made into the editor; nothing is sent until you send it'
+										onClick={() => void use(change.seq)}
+									>
+										Use this
 									</button>
 								</div>
 							)}

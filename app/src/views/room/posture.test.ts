@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { BattleStatusView } from '../../ipc/bindings/BattleStatusView'
+import type { IntentView } from '../../ipc/bindings/IntentView'
 import type { MyBattleView } from '../../ipc/bindings/MyBattleView'
 import { battle, fakeRoom, myBattle, status, user } from './fixture'
 import { posture } from './posture'
@@ -25,118 +26,150 @@ function room(
 	})
 }
 
-const looks = (room: ReturnType<typeof fakeRoom>) => {
-	const p = posture(room)
-	return [p.watch.look, p.play.look, p.ready.look]
-}
+const running = () => ({
+	id: 1,
+	ip: '',
+	port: 0,
+	added: true,
+	playingWith: null,
+	vacated: [],
+})
+
+const queued = () =>
+	battle({ members: ['me', 'alice'], queue: ['alice', 'me'] })
+
+/** The posture of `me` asking for `intent`, with the server's word in `mine`. */
+const at = (
+	intent: IntentView,
+	mine: Partial<BattleStatusView> = {},
+	over: Parameters<typeof fakeRoom>[0] = {},
+	my: Partial<MyBattleView> = {},
+) => posture(room(mine, {}, over, { intent, ...my }))
+
+const looks = (p: ReturnType<typeof posture>) => [
+	p.watch.look,
+	p.play.look,
+	p.ready.look,
+]
 
 describe('the posture control', () => {
 	test('watching holds Spectate and offers Play as the next step', () => {
-		expect(looks(room({ player: false }))).toEqual(['held', 'next', 'plain'])
+		const p = at('spectate', { player: false })
+		expect(p.stance).toBe('spectate')
+		expect(looks(p)).toEqual(['held', 'next', 'plain'])
+		expect(p.ready.note).toBeNull()
 	})
 
-	test('a Ready pressed while watching is on its way before the seat is', () => {
-		const p = posture(room({ player: false }, {}, {}, { readyOnItsWay: true }))
-		expect(p.ready.pending).toBe(true)
+	test('watching a running game, Ready is offered for the next one', () => {
+		const p = at('spectate', { player: false }, { running })
+		expect(p.ready).toMatchObject({ look: 'plain', note: 'next game' })
 	})
 
-	test('queued holds Play with the place, and Ready arms for the seat', () => {
-		const queued = (my: Partial<MyBattleView>) =>
-			posture(
-				room(
-					{ player: false },
-					{},
-					{
-						battle: () =>
-							battle({ members: ['me', 'alice'], queue: ['alice', 'me'] }),
-					},
-					my,
-				),
-			)
-		expect(queued({}).play).toMatchObject({
-			look: 'held',
-			note: 'queued 2 of 2',
-		})
-		expect(queued({}).ready.look).toBe('plain')
-		expect(queued({ preReady: true }).ready).toMatchObject({
-			look: 'armed',
-			note: 'when seated',
-		})
+	test('queued holds Play with the place; a ready given waits for the seat', () => {
+		const p = at('play', { player: false }, { battle: queued })
+		expect(p.stance).toBe('queuing')
+		expect(p.play).toMatchObject({ look: 'held', note: 'queued 2 of 2' })
+		expect(p.ready.look).toBe('plain')
+		for (const intent of ['ready', 'readyNext'] as const)
+			expect(
+				at(intent, { player: false }, { battle: queued }).ready,
+			).toMatchObject({ look: 'held', note: 'when seated' })
 	})
 
-	test('seated and not ready, Ready is the one thing asked', () => {
-		expect(looks(room({}))).toEqual(['plain', 'held', 'asked'])
+	test('seated between games and not ready, Ready is the one thing asked', () => {
+		const p = at('play')
+		expect(p.stance).toBe('play')
+		expect(looks(p)).toEqual(['plain', 'held', 'asked'])
 	})
 
 	test('and it is waited on once everyone else is ready', () => {
-		const p = posture(room({}, { alice: { ready: true } }))
+		const p = posture(
+			room({}, { alice: { ready: true } }, {}, { intent: 'play' }),
+		)
 		expect(p.ready.look).toBe('asked')
 		expect(p.ready.waiting).toBe(true)
 	})
 
 	test('ready holds Play and Ready', () => {
-		expect(looks(room({ ready: true }))).toEqual(['plain', 'held', 'held'])
+		const p = at('ready', { ready: true })
+		expect(p.stance).toBe('ready')
+		expect(looks(p)).toEqual(['plain', 'held', 'held'])
 	})
 
 	test('a ready asked for shows held at once, as pending', () => {
-		const p = posture(room({}, {}, {}, { readyOnItsWay: true }))
+		const p = at('ready', {}, {}, { readyOnItsWay: true })
 		expect(p.ready).toMatchObject({ look: 'held', pending: true })
 	})
 
 	test('a seat asked for while watching shows Play at once, on its way', () => {
-		const p = posture(
-			room(
-				{ player: false },
-				{},
-				{},
-				{
-					seatOnItsWay: { player: true, allyTeam: 0 },
-				},
-			),
+		const p = at(
+			'play',
+			{ player: false },
+			{},
+			{ seatOnItsWay: { player: true, allyTeam: 0 } },
 		)
 		expect(p.watch.look).toBe('plain')
 		expect(p.play).toMatchObject({ look: 'held', pending: true })
 	})
 
+	test('a seat wanted that the room has not shown yet stays Play, pending', () => {
+		// The room still to say whether its queue took us.
+		const p = at('ready', { player: false })
+		expect(p.play).toMatchObject({ look: 'held', pending: true })
+		expect(p.ready.look).toBe('held')
+	})
+
 	test('a stand-up asked for shows Spectate at once, on its way', () => {
-		const p = posture(
-			room({}, {}, {}, { seatOnItsWay: { player: false, allyTeam: 0 } }),
+		const p = at(
+			'spectate',
+			{},
+			{},
+			{
+				seatOnItsWay: { player: false, allyTeam: 0 },
+			},
 		)
 		expect(p.watch).toMatchObject({ look: 'held', pending: true })
 		expect(p.play.look).toBe('next')
 	})
 
 	test('the hold by the flood window rides along', () => {
-		expect(posture(room({})).heldUntil).toBeNull()
-		expect(posture(room({}, {}, {}, { heldUntilMs: 1234 })).heldUntil).toBe(
-			1234,
-		)
+		expect(at('play').heldUntil).toBeNull()
+		expect(at('play', {}, {}, { heldUntilMs: 1234 }).heldUntil).toBe(1234)
 	})
 
-	test('during a game the ready offered is one for the next', () => {
-		const running = (my: Partial<MyBattleView>) =>
-			posture(
-				room(
-					{ ready: true },
-					{},
-					{
-						running: () => ({
-							id: 1,
-							ip: '',
-							port: 0,
-							added: true,
-							playingWith: null,
-							vacated: [],
-						}),
-					},
-					my,
-				),
-			)
-		expect(running({}).play).toMatchObject({ look: 'held', note: 'next game' })
-		expect(running({}).ready).toMatchObject({
-			look: 'plain',
-			note: 'next game',
-		})
-		expect(running({ preReady: true }).ready.look).toBe('armed')
+	test('during a game the seat is for the next one, and so is a ready for it', () => {
+		const playing = at('play', {}, { running })
+		expect(playing.stance).toBe('playNext')
+		expect(playing.play).toMatchObject({ look: 'held', note: 'next game' })
+		expect(playing.ready).toMatchObject({ look: 'plain', note: 'next game' })
+
+		// A plain ready ends with the game it was given in.
+		expect(at('ready', { ready: true }, { running }).stance).toBe('playNext')
+
+		const ready = at('readyNext', { ready: true }, { running })
+		expect(ready.stance).toBe('readyNext')
+		expect(ready.ready).toMatchObject({ look: 'held', note: 'next game' })
+	})
+
+	test('ready implies playing: Ready is never held without Play', () => {
+		const intents = ['spectate', 'play', 'ready', 'readyNext'] as const
+		for (const intent of intents)
+			for (const player of [true, false])
+				for (const inQueue of [true, false])
+					for (const game of [true, false]) {
+						const p = at(
+							intent,
+							{ player },
+							{
+								...(inQueue ? { battle: queued } : {}),
+								...(game ? { running } : {}),
+							},
+						)
+						if (p.ready.look === 'held')
+							expect(
+								p.play.look,
+								`${intent} player=${player} queued=${inQueue} game=${game}`,
+							).toBe('held')
+					}
 	})
 })

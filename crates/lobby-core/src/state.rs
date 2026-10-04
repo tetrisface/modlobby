@@ -150,10 +150,8 @@ pub struct MyBattle {
 	/// (`spring_out.ex` `do_join_battle`). Until then a tag arriving is the
 	/// room describing itself, not somebody changing it.
 	pub settled: bool,
-	/// A ready given in advance, armed until the server's next automatic
-	/// unready -- being seated from the queue, or a game ending -- which it
-	/// answers once. Never remembered past this room.
-	pub pre_ready: bool,
+	/// What the player has asked for here. Never remembered past this room.
+	pub intent: Intent,
 	/// The ready our newest request asks for, while the server still shows
 	/// otherwise: on its way, and drawn as such.
 	pub ready_on_its_way: Option<bool>,
@@ -167,6 +165,42 @@ pub struct MyBattle {
 	/// the next game starts.
 	pub joined_id: Option<u32>,
 	next_seq: u64,
+}
+
+/// What the player has asked for in the room.
+///
+/// The server's word decides what is true: our seat, the queue, the game.
+/// This is what we keep asking for until it agrees, and what its own changes
+/// are measured against. Readying is a way of playing, so the two ready
+/// intents are seats too.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Intent {
+	#[default]
+	Spectate,
+	/// A seat: held, queued for, or on its way.
+	Play,
+	/// A seat, and ready on it. The server's own unready is taken, and leaves
+	/// `Play`.
+	Ready,
+	/// A seat, and ready for the next game: kept through the server's own
+	/// unreadies -- the reset at a game's end, the unready that comes with a
+	/// seat from the queue -- until the next game starts, when it is `Ready`.
+	ReadyNext {
+		/// The one ready sent in answer to a ready of ours refused has gone.
+		/// Given back when a ready of ours lands or a game ends, so a server
+		/// that refuses ready is argued with once each time, never in a loop.
+		retried: bool,
+	},
+}
+
+impl Intent {
+	pub fn plays(self) -> bool {
+		self != Self::Spectate
+	}
+
+	pub fn readies(self) -> bool {
+		matches!(self, Self::Ready | Self::ReadyNext { .. })
+	}
 }
 
 /// The posture a request of ours asks for: a seat on an ally team, or none.
@@ -190,7 +224,7 @@ impl MyBattle {
 			vote: None,
 			history: Vec::new(),
 			settled: false,
-			pre_ready: false,
+			intent: Intent::Spectate,
 			ready_on_its_way: None,
 			seat_on_its_way: None,
 			held_until_ms: None,

@@ -9,7 +9,7 @@ use spring_protocol::{
 
 use crate::hosting::{self, Rtts, SpareRoom};
 use crate::spads::{self, Announcement, VoteState};
-use crate::state::{Bot, Channel, LobbyState, MyBattle, Phase, SeatOnItsWay, StartRect};
+use crate::state::{Bot, Channel, Intent, LobbyState, MyBattle, Phase, SeatOnItsWay, StartRect};
 use spring_protocol::policy::PasteBurst;
 
 /// What the application must do in response to an event.
@@ -187,7 +187,7 @@ pub enum Effect {
 /// it without opening a session, so the two differ only in what is sent when
 /// the server says hello.
 #[derive(Debug, Clone)]
-enum Intent {
+enum Purpose {
 	Login,
 	Register { email: String, password: String },
 }
@@ -195,7 +195,7 @@ enum Intent {
 /// One logical connection: credentials, machine identity and the state they produce.
 #[derive(Debug)]
 pub struct Session {
-	intent: Intent,
+	purpose: Purpose,
 	login: LoginRequest,
 	hardware: Vec<(String, String)>,
 	machine_hash: String,
@@ -229,13 +229,9 @@ pub struct Session {
 	/// the oldest, which the server kept its own way -- a seat refused in a
 	/// full room, say.
 	in_flight: VecDeque<Option<Seat>>,
-	/// A Ready pressed while watching: the seat first, and a ready once the
-	/// server has answered with it. Sent as two requests because the server
-	/// clears a ready that arrives with the seat (`consul_server.ex`
-	/// `request_user_change_status`). Dropped with a refused seat, by a
-	/// Spectate press, and by an explicit ready press either way: the newest
-	/// word from the player wins.
-	ready_after_seat: bool,
+	/// We asked teiserver for the queue because it did not seat us, so its
+	/// answer says whether the join queue took us instead.
+	asked_queue: bool,
 	/// A `!privatehost` we asked for and the password it came back with.
 	private_host: Option<String>,
 	/// Hosts' JSON-RPC answers still arriving in pieces.
@@ -342,7 +338,7 @@ impl Session {
 	/// `hardware` are the `hardware:*` telemetry properties uploaded after login (see [`telemetry`]).
 	pub fn new(login: LoginRequest, hardware: Vec<(String, String)>, machine_hash: String) -> Self {
 		Self {
-			intent: Intent::Login,
+			purpose: Purpose::Login,
 			login,
 			hardware,
 			machine_hash,
@@ -354,7 +350,7 @@ impl Session {
 			collecting_ignored: None,
 			seat: None,
 			in_flight: VecDeque::new(),
-			ready_after_seat: false,
+			asked_queue: false,
 			private_host: None,
 			rpc_chunks: spads::RpcChunks::default(),
 			hosting: None,
@@ -376,7 +372,7 @@ impl Session {
 	/// downstream needs to know.
 	#[must_use]
 	pub fn registering(mut self, email: impl Into<String>, password: impl Into<String>) -> Self {
-		self.intent = Intent::Register {
+		self.purpose = Purpose::Register {
 			email: email.into(),
 			password: password.into(),
 		};
@@ -522,33 +518,52 @@ impl Session {
 			side: self.seat.map_or(0, |seat| seat.side),
 			handicap: self.seat.map_or(0, |seat| seat.handicap),
 		});
-		// Assigned, not set: the newest press decides.
-		self.ready_after_seat = ready;
+		// A seat asked for is playing. A ready asked for with it follows the
+		// seat's answer: the server clears one that arrives with a sit-down.
+		let intent = match self.intent() {
+			_ if ready => self.ready_intent(),
+			Intent::Spectate => Intent::Play,
+			intent => intent,
+		};
+		let shown = self.set_intent(intent);
 		let mut effects = vec![self.battle_status()];
 		effects.extend(self.wish());
-		Ok(effects)
+		Ok(self.room_changed(effects, shown))
 	}
 
-	/// Says we are ready, or not. Only a player can be either.
+	/// Says we are ready, or not. Only someone playing, or queued to, can be
+	/// either; while a game runs the ready is for the next one.
 	pub fn set_ready(&mut self, ready: bool) -> Result<Vec<Effect>, SeatError> {
-		// An explicit word on ready, either way, supersedes one that was to
-		// follow the seat.
-		self.ready_after_seat = false;
-		let seat = self.seat.ok_or(SeatError::Spectating)?;
-		// The seat itself is still on its way and lands as a sit-down. The
-		// server clears a ready that arrives with one, and the flood window
-		// would merge this into it; so it follows the seat instead.
+		if !self.intent().plays() {
+			return Err(SeatError::Spectating);
+		}
+		let intent = if ready {
+			self.ready_intent()
+		} else {
+			Intent::Play
+		};
+		let shown = self.set_intent(intent);
+		let effects = self.ready_now(ready);
+		Ok(self.room_changed(effects, shown))
+	}
+
+	/// Puts the seat we hold at `ready`. Nothing without one, and no ready
+	/// while it is still landing as a sit-down: the server clears a ready that
+	/// arrives with one, so the intent's ready follows the seat's answer.
+	fn ready_now(&mut self, ready: bool) -> Vec<Effect> {
+		let Some(seat) = self.seat else {
+			return vec![];
+		};
 		if ready && self.sitting_down() {
-			self.ready_after_seat = true;
-			return Ok(self.wish().into_iter().collect());
+			return self.wish().into_iter().collect();
 		}
 		if seat.ready == ready {
-			return Ok(vec![]);
+			return vec![];
 		}
 		self.seat = Some(Seat { ready, ..seat });
 		let mut effects = vec![self.battle_status()];
 		effects.extend(self.wish());
-		Ok(effects)
+		effects
 	}
 
 	/// Whether the seat we hold has yet to land as a sit-down: the server has
@@ -574,36 +589,76 @@ impl Session {
 		Ok(vec![self.battle_status()])
 	}
 
-	/// Goes back to spectating; always allowed. A pre-ready goes with the
-	/// seat: whoever stands up has stopped planning to play.
+	/// Goes back to spectating; always allowed. Whatever was asked for goes
+	/// with the seat: whoever stands up has stopped planning to play.
 	pub fn release_seat(&mut self) -> Vec<Effect> {
 		self.seat = None;
-		self.ready_after_seat = false;
-		let Some(my) = self.state.my_battle.as_mut() else {
+		self.asked_queue = false;
+		if self.state.my_battle.is_none() {
 			return vec![];
-		};
-		let disarmed = std::mem::take(&mut my.pre_ready);
+		}
+		let shown = self.set_intent(Intent::Spectate);
 		let mut effects = vec![self.battle_status()];
 		effects.extend(self.wish());
-		if disarmed && !effects.contains(&Effect::RoomChanged) {
-			effects.push(Effect::RoomChanged);
+		self.room_changed(effects, shown)
+	}
+
+	/// What the player has asked for here; `Spectate` outside a room.
+	pub fn intent(&self) -> Intent {
+		self.state
+			.my_battle
+			.as_ref()
+			.map_or(Intent::Spectate, |my| my.intent)
+	}
+
+	/// Records what the player asked for, or what the server's word leaves of
+	/// it. True when the room view draws it differently.
+	fn set_intent(&mut self, intent: Intent) -> bool {
+		let Some(my) = self.state.my_battle.as_mut() else {
+			return false;
+		};
+		let shown = std::mem::discriminant(&my.intent) != std::mem::discriminant(&intent);
+		my.intent = intent;
+		shown
+	}
+
+	/// A ready asked for now: for the next game while one runs, since the
+	/// reset at its end would otherwise take it.
+	fn ready_intent(&self) -> Intent {
+		match self.intent() {
+			Intent::ReadyNext { retried } => Intent::ReadyNext { retried },
+			_ if self.game_running(false).is_some() => Intent::ReadyNext { retried: false },
+			_ => Intent::Ready,
 		}
+	}
+
+	/// Sends the ready the intent asks for, when there is an unready seat to
+	/// put it on and nothing of ours is outstanding.
+	fn reconcile(&mut self) -> Vec<Effect> {
+		if !self.in_flight.is_empty() || !self.intent().readies() {
+			return vec![];
+		}
+		let Some(seat) = self.seat.filter(|seat| !seat.ready) else {
+			return vec![];
+		};
+		self.seat = Some(Seat {
+			ready: true,
+			..seat
+		});
+		let mut effects = vec![self.battle_status()];
+		effects.extend(self.wish());
 		effects
 	}
 
-	/// Arms a ready given in advance, or takes it back.
-	///
-	/// The next time the server unreadies us of its own accord -- seating us
-	/// from the join queue, or ending a game -- it is answered with one ready,
-	/// and then it is spent. The server's unready is taken either way; this
-	/// only answers it. Never remembered past the room.
-	pub fn set_pre_ready(&mut self, on: bool) -> Result<Vec<Effect>, SeatError> {
-		let my = self.state.my_battle.as_mut().ok_or(SeatError::NotInARoom)?;
-		if my.pre_ready == on {
-			return Ok(vec![]);
+	/// Gives a ready for the next game its retry back: a ready of ours
+	/// landed, or a game ended, either a new occasion rather than the same
+	/// refusal.
+	fn rearm(&mut self) {
+		if let Some(my) = self.state.my_battle.as_mut()
+			&& let Intent::ReadyNext { retried } = &mut my.intent
+		{
+			*retried = false;
 		}
-		my.pre_ready = on;
-		Ok(vec![Effect::RoomChanged])
 	}
 
 	/// The server's word on our own status, taken as it stands.
@@ -611,52 +666,118 @@ impl Session {
 	/// It answers a request of ours still in flight, when there is one (see
 	/// `in_flight`). While a newer one is still on its way, that request stays
 	/// what we build from, since the server will apply it after this. Once
-	/// none is, this is our seat.
+	/// none is, this is our seat, and the intent is measured against it.
 	fn our_status(&mut self, status: &spring_protocol::BattleStatus) -> Vec<Effect> {
 		let said = Seat::from_status(status);
-		let answer = !self.in_flight.is_empty();
-		if answer {
+		// The request of ours this answers, when one is still in flight.
+		let mut asked = None;
+		if !self.in_flight.is_empty() {
 			let upto = self
 				.in_flight
 				.iter()
 				.rposition(|&asked| Seat::answers(asked, said))
 				.unwrap_or(0);
+			asked = Some(self.in_flight[upto]);
 			self.in_flight.drain(..=upto);
 		}
 		let mut effects: Vec<Effect> = self.wish().into_iter().collect();
 		if !self.in_flight.is_empty() {
 			return effects;
 		}
-		self.seat = said;
-		if answer {
-			// Our own request answered is nothing to answer back -- unless a
-			// Ready pressed while watching is still owed its second half.
-			if std::mem::take(&mut self.ready_after_seat)
-				&& let Some(seat) = self.seat.filter(|seat| !seat.ready)
-			{
-				self.seat = Some(Seat {
-					ready: true,
-					..seat
-				});
-				effects.push(self.battle_status());
-				effects.extend(self.wish());
-			}
-			return effects;
-		}
-		let Some(seat) = self.seat.filter(|seat| !seat.ready) else {
-			return effects;
-		};
-		let Some(my) = self.state.my_battle.as_mut().filter(|my| my.pre_ready) else {
-			return effects;
-		};
-		my.pre_ready = false;
-		self.seat = Some(Seat {
-			ready: true,
-			..seat
+		let had = std::mem::replace(&mut self.seat, said);
+		let before = std::mem::discriminant(&self.intent());
+		effects.extend(match asked {
+			Some(asked) => self.answered(asked, said),
+			None => self.followed(had, said),
 		});
-		effects.push(self.battle_status());
-		effects.extend(self.wish());
-		if !effects.contains(&Effect::RoomChanged) {
+		let shown = before != std::mem::discriminant(&self.intent());
+		self.room_changed(effects, shown)
+	}
+
+	/// The server changed our seat of its own accord: followed, and the
+	/// intent measured against it.
+	fn followed(&mut self, had: Option<Seat>, now: Option<Seat>) -> Vec<Effect> {
+		let intent = self.intent();
+		match (had, now) {
+			(None, None) => vec![],
+			// A host took the seat: they stopped us playing.
+			(Some(_), None) => {
+				self.set_intent(Intent::Spectate);
+				vec![]
+			}
+			// Readied, by an answer of ours read earlier or by the host: a
+			// ready that landed, and playing ready.
+			(_, Some(seat)) if seat.ready => {
+				self.rearm();
+				if !intent.readies() {
+					self.set_intent(Intent::Ready);
+				}
+				vec![]
+			}
+			// Unreadied: the reset at a game's end, or the host's. A plain
+			// ready is over; one for the next game answers it.
+			(Some(had), Some(_)) if had.ready && intent == Intent::Ready => {
+				self.set_intent(Intent::Play);
+				vec![]
+			}
+			// Seated -- from the queue, or by a host -- is playing, and a ready
+			// asked for follows.
+			_ => {
+				if !intent.plays() {
+					self.set_intent(Intent::Play);
+				}
+				self.reconcile()
+			}
+		}
+	}
+
+	/// The server's answer to a request of ours.
+	fn answered(&mut self, asked: Option<Seat>, now: Option<Seat>) -> Vec<Effect> {
+		let Some(seat) = now else {
+			if asked.is_none() {
+				return vec![];
+			}
+			// A seat asked for and not given. On teiserver that is usually the
+			// join queue taking us instead (`consul_server.ex`, the player-limit
+			// branch), and its word on the queue decides. Elsewhere it is a
+			// refusal.
+			if self.teiserver {
+				self.asked_queue = true;
+				return vec![Effect::Send(Envelope::queue(
+					Area::Other,
+					battle::QUEUE_STATUS,
+				))];
+			}
+			self.set_intent(Intent::Spectate);
+			return vec![];
+		};
+		if seat.ready {
+			self.rearm();
+			return vec![];
+		}
+		let asked_ready = asked.is_some_and(|asked| asked.ready);
+		match self.intent() {
+			// The ready to follow a seat, or a request that did not carry it.
+			intent if intent.readies() && !asked_ready => self.reconcile(),
+			// A ready refused, or the server's own unready read as the answer
+			// to it. A plain ready is over; one for the next game tries once
+			// more.
+			Intent::Ready => {
+				self.set_intent(Intent::Play);
+				vec![]
+			}
+			Intent::ReadyNext { retried: false } => {
+				self.set_intent(Intent::ReadyNext { retried: true });
+				self.reconcile()
+			}
+			_ => vec![],
+		}
+	}
+
+	/// Adds the room view's own effect when something only it shows changed,
+	/// and nothing else has already said so.
+	fn room_changed(&self, mut effects: Vec<Effect>, changed: bool) -> Vec<Effect> {
+		if changed && !effects.contains(&Effect::RoomChanged) {
 			effects.push(Effect::RoomChanged);
 		}
 		effects
@@ -668,9 +789,8 @@ impl Session {
 	/// stays what is true.
 	fn wish(&mut self) -> Option<Effect> {
 		let newest = self.in_flight.back().copied();
-		let asked_ready = newest
-			.flatten()
-			.map(|seat| seat.ready || self.ready_after_seat);
+		let readies = self.intent().readies();
+		let asked_ready = newest.flatten().map(|seat| seat.ready || readies);
 		let asked_seat = newest.map(|seat| SeatOnItsWay {
 			player: seat.is_some(),
 			ally_team: seat.map_or(0, |seat| seat.ally_team),
@@ -989,9 +1109,9 @@ impl Session {
 				tracing::info!(server_version, "connected");
 				state.phase = Some(Phase::AwaitingLogin);
 				self.teiserver = server_version == login::TEISERVER_VERSION;
-				let line = match &self.intent {
-					Intent::Login => self.login.line_for(&server_version),
-					Intent::Register { email, password } => {
+				let line = match &self.purpose {
+					Purpose::Login => self.login.line_for(&server_version),
+					Purpose::Register { email, password } => {
 						login::register(&self.login.username, password, email)
 					}
 				};
@@ -1091,12 +1211,30 @@ impl Session {
 					if let Some(my) = self.state.my_battle.as_mut() {
 						my.joined_id = None;
 					}
-					return self.game_running(true).into_iter().collect();
+					let effects = self.game_running(true).into_iter().collect();
+					// The game a ready for the next game was given for has
+					// started with us on a seat: a plain ready now. One given
+					// from the join queue waits on a seat instead, and a game is
+					// no answer to that.
+					let started = self.seat.is_some()
+						&& matches!(self.intent(), Intent::ReadyNext { .. })
+						&& self.set_intent(Intent::Ready);
+					return self.room_changed(effects, started);
 				}
 				// The bit going the other way is the only sign a game ended.
 				// Without this the room goes on offering to connect you to one
 				// that finished, for as long as you stay in it.
-				vec![Effect::GameStopped]
+				let mut effects = vec![Effect::GameStopped];
+				// It is also what a ready for the next game waits on. The
+				// server's own unready may be on its way, may cross ours, or may
+				// never come at all -- only a coordinator sends one -- so the end
+				// of the game is what drives the ready, and the intent stands
+				// until the next game starts.
+				if matches!(self.intent(), Intent::ReadyNext { .. }) {
+					self.rearm();
+					effects.extend(self.reconcile());
+				}
+				effects
 			}
 			E::BattleOpened(opened) => {
 				// The private room a cluster manager spun up for us carries our
@@ -1172,7 +1310,7 @@ impl Session {
 				let script_password = self.pending_join.take().unwrap_or_default();
 				state.my_battle = Some(MyBattle::new(id, game_hash, script_password));
 				self.in_flight.clear();
-				self.ready_after_seat = false;
+				self.asked_queue = false;
 				let mut effects = vec![Effect::Joined { id }];
 				effects.extend(self.claim_room(id));
 				// Already under way before we arrived: worth saying, not worth
@@ -1521,23 +1659,33 @@ impl Session {
 				vec![]
 			}
 			E::BattleQueue { id, names } => {
-				// No longer queued and still without a seat: we left the queue,
-				// by button or by `$leaveq` typed, and a ready given for it goes
-				// with it. The status seating us arrives before this update
-				// (`consul_server.ex` `player_count_changed`), so a seating has
-				// already found it.
 				let me = state.me.as_deref().unwrap_or_default();
-				let left = self.seat.is_none() && !names.iter().any(|name| name == me);
+				let listed = |queue: &[String]| queue.iter().any(|name| name == me);
+				let queued = listed(&names);
+				let was = state.battles.get(&id).is_some_and(|b| listed(&b.queue));
 				if let Some(battle) = state.battles.get_mut(&id) {
 					battle.queue = names;
 				}
-				match state.my_battle.as_mut() {
-					Some(my) if my.id == id && left && my.pre_ready => {
-						my.pre_ready = false;
-						vec![Effect::RoomChanged]
-					}
-					_ => vec![],
+				if state.my_battle.as_ref().is_none_or(|my| my.id != id) {
+					return vec![];
 				}
+				let asked = std::mem::take(&mut self.asked_queue);
+				let intent = self.intent();
+				let next = if queued && !intent.plays() {
+					// Queued is wanting to play, however it came about: a seat
+					// taken as a queue place, or `$joinq` typed.
+					Intent::Play
+				} else if !queued && (was || asked) && self.seat.is_none() && intent.plays() {
+					// Out of the queue without a seat: we left it, by button or
+					// `$leaveq`, or the room would not seat us at all. A seating
+					// arrives before this update (`consul_server.ex`
+					// `player_count_changed`), so it has found us seated already.
+					Intent::Spectate
+				} else {
+					return vec![];
+				};
+				let shown = self.set_intent(next);
+				self.room_changed(vec![], shown)
 			}
 			E::Redirect { host, port } => vec![Effect::Redirect { host, port }],
 			E::Disconnect { reason } => {
@@ -3505,8 +3653,8 @@ mod tests {
 			.collect()
 	}
 
-	fn pre_ready(s: &Session) -> bool {
-		s.state.my_battle.as_ref().is_some_and(|my| my.pre_ready)
+	fn ready_next(s: &Session) -> bool {
+		matches!(s.intent(), Intent::ReadyNext { .. })
 	}
 
 	#[test]
@@ -3568,19 +3716,23 @@ mod tests {
 	}
 
 	#[test]
-	fn a_ready_given_in_the_queue_answers_the_seat_once() {
+	fn a_ready_given_in_the_queue_answers_the_seat() {
 		let mut s = in_a_public_room();
-		feed(&mut s, &["s.battle.queue_status 3\tme"]);
-		assert_eq!(s.set_pre_ready(true).unwrap(), [Effect::RoomChanged]);
+		// Queued is wanting to play.
+		assert_eq!(
+			feed(&mut s, &["s.battle.queue_status 3\tme"]),
+			[Effect::RoomChanged]
+		);
+		assert_eq!(s.intent(), Intent::Play);
+		// No seat yet, so nothing to ready now.
+		assert_eq!(s.set_ready(true).unwrap(), [Effect::RoomChanged]);
 
-		// The consul seats us, unready. That is taken, and answered once.
+		// The consul seats us, unready. That is taken, and answered.
 		let effects = feed(&mut s, &[&told(seated(1, false))]);
 		let sent = statuses(&effects);
 		assert_eq!(sent.len(), 1, "{effects:?}");
 		assert!(sent[0].player && sent[0].ready);
 		assert_eq!(sent[0].ally_team, 1);
-		assert!(effects.contains(&Effect::RoomChanged));
-		assert!(!pre_ready(&s));
 
 		// Its answer, then the queue update that follows: nothing more to send.
 		assert!(
@@ -3590,6 +3742,7 @@ mod tests {
 			))
 			.is_empty()
 		);
+		assert_eq!(s.intent(), Intent::Ready);
 	}
 
 	#[test]
@@ -3598,48 +3751,466 @@ mod tests {
 		feed(&mut s, &["s.battle.queue_status 3\tme"]);
 		assert!(statuses(&feed(&mut s, &[&told(seated(1, false))])).is_empty());
 		assert_eq!(s.seat().map(|seat| seat.ready), Some(false));
+		assert_eq!(s.intent(), Intent::Play);
 	}
 
 	#[test]
-	fn a_ready_for_the_next_game_answers_its_end_once() {
+	fn a_ready_given_in_the_queue_follows_a_seat_taken_by_hand() {
+		// A ready is taken back by pressing Ready, not by picking a team.
 		let mut s = in_a_public_room();
-		// Seated and ready while the game runs.
-		feed(&mut s, &[&told(seated(0, true))]);
-		s.set_pre_ready(true).unwrap();
+		feed(&mut s, &["s.battle.queue_status 3\tme"]);
+		s.set_ready(true).unwrap();
+		s.take_seat(0, 0, false).unwrap();
+		let sent = statuses(&feed(&mut s, &[&told(seated(0, false))]));
+		assert_eq!(sent.len(), 1, "{sent:?}");
+		assert!(sent[0].ready);
+	}
 
-		let reset = statuses(&feed(&mut s, &[&told(seated(0, false))]));
-		assert!(reset.first().is_some_and(|status| status.ready));
+	#[test]
+	fn a_seat_refused_on_teiserver_asks_whether_the_queue_took_us() {
+		let mut s = in_a_public_room();
+		s.teiserver = true;
+		s.take_seat(0, 0, true).unwrap();
+		assert_eq!(s.intent(), Intent::Ready);
 
-		// Its answer, then the next game's end: spent, so taken as it stands.
+		// Answered "still a spectator": the queue's word decides.
+		let effects = feed(&mut s, &[&told(watching())]);
+		assert_eq!(sent_lines(&effects), [battle::QUEUE_STATUS]);
+		assert_eq!(s.intent(), Intent::Ready, "still wanted while it is asked");
+
+		// Queued: the ready waits on the seat the queue gives.
+		feed(&mut s, &["s.battle.queue_status 3\tme"]);
+		assert_eq!(s.intent(), Intent::Ready);
+
+		// Not queued either: the room would not have us.
+		let mut s = in_a_public_room();
+		s.teiserver = true;
+		s.take_seat(0, 0, false).unwrap();
+		feed(&mut s, &[&told(watching())]);
+		assert!(feed(&mut s, &["s.battle.queue_status 3"]).contains(&Effect::RoomChanged));
+		assert_eq!(s.intent(), Intent::Spectate);
+	}
+
+	#[test]
+	fn a_seat_refused_elsewhere_is_spectating() {
+		let mut s = in_a_public_room();
+		s.take_seat(0, 0, true).unwrap();
+		assert!(feed(&mut s, &[&told(watching())]).contains(&Effect::RoomChanged));
+		assert_eq!(s.intent(), Intent::Spectate);
+		assert!(matches!(s.set_ready(true), Err(SeatError::Spectating)));
+	}
+
+	#[test]
+	fn joining_the_queue_by_hand_is_wanting_to_play() {
+		let mut s = in_a_public_room();
+		feed(&mut s, &["s.battle.queue_status 3\tsomeone\tme"]);
+		assert_eq!(s.intent(), Intent::Play);
+		// Someone else leaving leaves us queued.
+		feed(&mut s, &["s.battle.queue_status 3\tme"]);
+		assert_eq!(s.intent(), Intent::Play);
+	}
+
+	#[test]
+	fn a_ready_for_the_next_game_is_a_ready_now() {
+		let mut s = in_a_public_room();
+		feed(&mut s, &["CLIENTSTATUS host 65", &told(seated(0, false))]);
+		let effects = s.set_ready(true).unwrap();
+		let sent = statuses(&effects);
+		assert_eq!(sent.len(), 1, "{effects:?}");
+		assert!(sent[0].player && sent[0].ready);
+		assert!(effects.contains(&Effect::RoomChanged));
+		assert!(ready_next(&s));
+
+		// Taken back, it is an unready now as well.
 		feed(&mut s, &[&told(seated(0, true))]);
+		let sent = statuses(&s.set_ready(false).unwrap());
+		assert_eq!(sent.len(), 1, "{sent:?}");
+		assert!(!sent[0].ready);
+		assert_eq!(s.intent(), Intent::Play);
+	}
+
+	#[test]
+	fn a_ready_for_the_next_game_outlasts_the_reset_at_its_end() {
+		// Ready while the game runs, and given for the next one.
+		let mut s = in_a_public_room();
+		feed(&mut s, &["CLIENTSTATUS host 65", &told(seated(0, true))]);
+		assert!(statuses(&s.set_ready(true).unwrap()).is_empty());
+		assert!(ready_next(&s));
+
+		// The game ends with us still ready: nothing to do until the reset.
+		let effects = feed(&mut s, &["CLIENTSTATUS host 64"]);
+		assert!(effects.contains(&Effect::GameStopped));
+		assert!(statuses(&effects).is_empty());
+
+		let sent = statuses(&feed(&mut s, &[&told(seated(0, false))]));
+		assert_eq!(sent.len(), 1, "{sent:?}");
+		assert!(sent[0].ready);
+
+		// Held through the pre-game: a later unready is answered as well.
+		feed(&mut s, &[&told(seated(0, true))]);
+		assert_eq!(statuses(&feed(&mut s, &[&told(seated(0, false))])).len(), 1);
+		feed(&mut s, &[&told(seated(0, true))]);
+
+		// A plain ready once the game it was given for starts, so that game's
+		// end is taken as it stands.
+		assert!(feed(&mut s, &["CLIENTSTATUS host 65"]).contains(&Effect::RoomChanged));
+		assert_eq!(s.intent(), Intent::Ready);
+		feed(&mut s, &["CLIENTSTATUS host 64"]);
 		assert!(statuses(&feed(&mut s, &[&told(seated(0, false))])).is_empty());
+		assert_eq!(s.intent(), Intent::Play);
+	}
+
+	#[test]
+	fn a_refused_ready_is_argued_with_once_each_time() {
+		let mut s = in_a_public_room();
+		feed(&mut s, &["CLIENTSTATUS host 65", &told(seated(0, false))]);
+		s.set_ready(true).unwrap();
+
+		// Refused: tried once more, then left as the server has it.
+		assert_eq!(statuses(&feed(&mut s, &[&told(seated(0, false))])).len(), 1);
+		assert!(statuses(&feed(&mut s, &[&told(seated(0, false))])).is_empty());
+
+		// The game's end is a new occasion, whether or not the server says
+		// anything at that point.
+		let sent = statuses(&feed(&mut s, &["CLIENTSTATUS host 64"]));
+		assert_eq!(sent.len(), 1, "{sent:?}");
+		assert!(sent[0].ready);
+	}
+
+	#[test]
+	fn a_plain_ready_refused_is_play() {
+		let mut s = in_a_public_room();
+		feed(&mut s, &[&told(seated(0, false))]);
+		s.set_ready(true).unwrap();
+		assert!(statuses(&feed(&mut s, &[&told(seated(0, false))])).is_empty());
+		assert_eq!(s.intent(), Intent::Play);
+	}
+
+	#[test]
+	fn a_ready_pressed_either_way_drops_one_given_in_advance() {
+		let mut s = in_a_public_room();
+		feed(&mut s, &["CLIENTSTATUS host 65", &told(seated(0, false))]);
+		s.set_ready(true).unwrap();
+		assert!(s.set_ready(false).unwrap().contains(&Effect::RoomChanged));
+		assert_eq!(s.intent(), Intent::Play);
+	}
+
+	/// The end of a game, against a server that applies what we send in order
+	/// and answers each with the status it kept, in every order the pieces can
+	/// reach us: a ready given for the next game has to come out ready, and
+	/// without arguing.
+	///
+	/// An honest server needs little of us, because its answers keep its order:
+	/// a ready of ours it applied after its reset wins, and one it applied
+	/// before has its answer reach us first. What the session is for is a
+	/// server that refuses a ready once, and an unready of its own after the
+	/// reset, so both are in the world.
+	mod game_end_orders {
+		use super::*;
+
+		const READY: u32 = 1 << 1;
+		const PLAYER: u32 = 1 << 10;
+
+		/// Where we are when Ready is pressed during the game.
+		#[derive(Clone, Copy, Debug)]
+		enum Start {
+			Ready,
+			Unready,
+			/// Watching: the press takes a seat first, as the seat bar does, and
+			/// the seat has been answered before the game ends.
+			///
+			/// ponytail: a seat still on the wire when the game ends is left
+			/// out. teiserver's end-of-game word on a spectator is the same line
+			/// as its refusal of a seat, so the session takes the seat for
+			/// refused; a status of ours sent before the seat's real answer
+			/// then says spectator and gives the seat up. Answers carry no
+			/// request id to tell the two apart, so the fix is in `in_flight`'s
+			/// matching, not here.
+			Watching,
+		}
+
+		impl Start {
+			/// The statuses the press itself asks for.
+			fn asks(self) -> usize {
+				match self {
+					Start::Ready => 0,
+					Start::Unready => 1,
+					Start::Watching => 2,
+				}
+			}
+		}
+		/// Past what the press asks for: one answering each unready of the
+		/// server's (`Resets`, `Unreadies`), one retry for the refusal, and the
+		/// rotation's own. More is the session and the server pushing against
+		/// each other.
+		const PAST_THE_PRESS: usize = 4;
+
+		#[derive(Clone, Copy, Debug, PartialEq)]
+		enum Step {
+			/// The server takes the oldest status we sent, and answers it.
+			Applies,
+			/// The same, keeping the ready it had: a ready refused. Only a status
+			/// asking for ready can be.
+			Refuses,
+			/// The oldest line the server sent reaches us.
+			Arrives,
+			/// The host's in-game bit drops.
+			HostStops,
+			/// The coordinator unreadies everyone (`consul_server.ex`
+			/// `:match_stop`).
+			Resets,
+			/// The server unreadies us again before the next game.
+			Unreadies,
+			/// A map rotation at the game's end: our content check sends a
+			/// status of its own.
+			Rotates,
+		}
+
+		struct World {
+			s: Session,
+			/// What the server holds for us.
+			held: u32,
+			to_server: VecDeque<u32>,
+			to_us: VecDeque<String>,
+			done: Vec<Step>,
+			sent: usize,
+			coordinator: bool,
+		}
+
+		impl World {
+			fn new(start: Start, coordinator: bool) -> Self {
+				let mut s = in_a_public_room();
+				s.synced = true;
+				let status = match start {
+					Start::Ready => seated(0, true),
+					Start::Unready => seated(0, false),
+					Start::Watching => watching(),
+				};
+				feed(&mut s, &["CLIENTSTATUS host 65", &told(status)]);
+				let mut world = Self {
+					s,
+					held: status.bits(),
+					to_server: VecDeque::new(),
+					to_us: VecDeque::new(),
+					done: Vec::new(),
+					sent: 0,
+					coordinator,
+				};
+				let pressed = match start {
+					Start::Watching => world.s.take_seat(0, 0, true),
+					_ => world.s.set_ready(true),
+				};
+				world.send(pressed.unwrap());
+				if let Start::Watching = start {
+					world.step(Step::Applies);
+					world.step(Step::Arrives);
+				}
+				world
+			}
+
+			fn replay(start: Start, coordinator: bool, path: &[Step]) -> Self {
+				let mut world = Self::new(start, coordinator);
+				for &step in path {
+					world.step(step);
+				}
+				world
+			}
+
+			fn send(&mut self, effects: Vec<Effect>) {
+				for effect in effects {
+					let Effect::Send(env) = effect else { continue };
+					let Some(rest) = env.line.strip_prefix("MYBATTLESTATUS ") else {
+						continue;
+					};
+					self.to_server
+						.push_back(rest.split(' ').next().unwrap().parse().unwrap());
+					self.sent += 1;
+				}
+			}
+
+			fn tell(&mut self) {
+				self.to_us
+					.push_back(format!("CLIENTBATTLESTATUS me {} 0", self.held));
+			}
+
+			fn step(&mut self, step: Step) {
+				if !matches!(step, Step::Applies | Step::Arrives) {
+					self.done.push(step);
+				}
+				match step {
+					Step::Applies => {
+						let asked = self.to_server.pop_front().unwrap();
+						// A spectator made a player is made unready with it
+						// (`consul_server.ex` `request_user_change_status`).
+						let sits = self.held & PLAYER == 0 && asked & PLAYER != 0;
+						self.held = if sits { asked & !READY } else { asked };
+						self.tell();
+					}
+					Step::Refuses => {
+						let asked = self.to_server.pop_front().unwrap();
+						self.held = (asked & !READY) | (self.held & READY);
+						self.tell();
+					}
+					Step::Arrives => {
+						let line = self.to_us.pop_front().unwrap();
+						let effects = feed(&mut self.s, &[&line]);
+						self.send(effects);
+					}
+					Step::HostStops => {
+						let effects = feed(&mut self.s, &["CLIENTSTATUS host 64"]);
+						self.send(effects);
+					}
+					Step::Resets | Step::Unreadies => {
+						self.held &= !READY;
+						self.tell();
+					}
+					Step::Rotates => {
+						let effects = self.s.set_synced(false);
+						self.send(effects);
+					}
+				}
+			}
+
+			fn choices(&self) -> Vec<Step> {
+				let once = |step| !self.done.contains(&step);
+				let mut choices = Vec::new();
+				if let Some(&asked) = self.to_server.front() {
+					choices.push(Step::Applies);
+					if asked & READY != 0 && once(Step::Refuses) {
+						choices.push(Step::Refuses);
+					}
+				}
+				if !self.to_us.is_empty() {
+					choices.push(Step::Arrives);
+				}
+				if once(Step::HostStops) {
+					choices.push(Step::HostStops);
+				} else {
+					if once(Step::Unreadies) {
+						choices.push(Step::Unreadies);
+					}
+					if once(Step::Rotates) {
+						choices.push(Step::Rotates);
+					}
+				}
+				if self.coordinator && once(Step::Resets) {
+					choices.push(Step::Resets);
+				}
+				choices
+			}
+		}
+
+		impl World {
+			/// Everything a step here reads, so two orders that arrive at the
+			/// same one have the same future. The users map is a `HashMap`,
+			/// whose `Debug` order differs between sessions, so only our own
+			/// entry and the host's are taken from it.
+			fn key(&self) -> String {
+				let status = |name: &str| {
+					self.s
+						.state
+						.users
+						.get(name)
+						.map(|u| (u.battle_status, u.status))
+				};
+				format!(
+					"{} {:?} {:?} {:?} {} | {:?} {:?} {} {} {:?} {:?} {:?}",
+					self.held,
+					self.to_server,
+					self.to_us,
+					self.done,
+					self.sent,
+					self.s.seat,
+					self.s.in_flight,
+					self.s.asked_queue,
+					self.s.synced,
+					self.s.state.my_battle,
+					status("me"),
+					status("host"),
+				)
+			}
+		}
+
+		/// Walks every order to its end, checking each, and visiting a state
+		/// that another order already reached only once. How many states there
+		/// were.
+		fn every_order(
+			start: Start,
+			coordinator: bool,
+			path: &mut Vec<Step>,
+			seen: &mut std::collections::HashSet<String>,
+		) -> usize {
+			let world = World::replay(start, coordinator, path);
+			if !seen.insert(world.key()) {
+				return 0;
+			}
+			assert!(
+				world.sent <= start.asks() + PAST_THE_PRESS,
+				"{} sent along {path:?}",
+				world.sent
+			);
+			let choices = world.choices();
+			if choices.is_empty() {
+				assert!(
+					world.held & READY != 0,
+					"the server holds us unready after {path:?}"
+				);
+				assert_eq!(
+					world.s.seat().map(|seat| seat.ready),
+					Some(true),
+					"we think otherwise than the server after {path:?}"
+				);
+				assert!(world.s.in_flight.is_empty(), "{path:?}");
+				return 1;
+			}
+			1 + choices
+				.into_iter()
+				.map(|step| {
+					path.push(step);
+					let n = every_order(start, coordinator, path, seen);
+					path.pop();
+					n
+				})
+				.sum::<usize>()
+		}
+
+		#[test]
+		fn a_ready_for_the_next_game_is_ready_after_it_whatever_the_order() {
+			for start in [Start::Ready, Start::Unready, Start::Watching] {
+				for coordinator in [true, false] {
+					let mut seen = std::collections::HashSet::new();
+					let states = every_order(start, coordinator, &mut Vec::new(), &mut seen);
+					assert!(states > 10, "{states}");
+				}
+			}
+		}
+	}
+
+	#[test]
+	fn a_host_speccing_us_takes_a_ready_given_back() {
+		let mut s = in_a_public_room();
+		feed(&mut s, &["CLIENTSTATUS host 65", &told(seated(0, false))]);
+		s.set_ready(true).unwrap();
+		feed(&mut s, &[&told(seated(0, true))]);
+		assert!(feed(&mut s, &[&told(watching())]).contains(&Effect::RoomChanged));
+		assert_eq!(s.intent(), Intent::Spectate);
 	}
 
 	#[test]
 	fn leaving_the_queue_or_the_seat_takes_a_ready_given_back() {
 		let mut s = in_a_public_room();
 		feed(&mut s, &["s.battle.queue_status 3\tme"]);
-		s.set_pre_ready(true).unwrap();
+		s.set_ready(true).unwrap();
 		assert_eq!(
 			feed(&mut s, &["s.battle.queue_status 3"]),
 			[Effect::RoomChanged]
 		);
-		assert!(!pre_ready(&s));
+		assert_eq!(s.intent(), Intent::Spectate);
 
 		feed(&mut s, &[&told(seated(0, false))]);
-		s.set_pre_ready(true).unwrap();
+		s.set_ready(true).unwrap();
 		assert!(s.release_seat().contains(&Effect::RoomChanged));
-		assert!(!pre_ready(&s));
-	}
-
-	#[test]
-	fn our_own_seat_answered_is_no_reason_to_ready() {
-		let mut s = in_a_public_room();
-		feed(&mut s, &["s.battle.queue_status 3\tme"]);
-		s.set_pre_ready(true).unwrap();
-		s.take_seat(0, 0, false).unwrap();
-		assert!(statuses(&feed(&mut s, &[&told(seated(0, false))])).is_empty());
-		assert!(pre_ready(&s));
+		assert_eq!(s.intent(), Intent::Spectate);
 	}
 
 	#[test]
@@ -3719,15 +4290,17 @@ mod tests {
 	}
 
 	#[test]
-	fn a_ready_pressed_from_watching_is_dropped_with_a_refused_seat() {
+	fn a_ready_pressed_from_watching_waits_on_the_queue() {
 		let mut s = in_a_public_room();
+		s.teiserver = true;
 		s.take_seat(0, 1, true).unwrap();
 		// A full room keeps us watching and queues us.
 		assert!(statuses(&feed(&mut s, &[&told(watching())])).is_empty());
 		feed(&mut s, &["s.battle.queue_status 3\tme"]);
-		// The queue seats us later: nothing was armed for it.
-		assert!(statuses(&feed(&mut s, &[&told(seated(1, false))])).is_empty());
-		assert!(!pre_ready(&s));
+		// The queue seats us later, and the ready asked for follows.
+		let sent = statuses(&feed(&mut s, &[&told(seated(1, false))]));
+		assert_eq!(sent.len(), 1, "{sent:?}");
+		assert!(sent[0].ready);
 	}
 
 	#[test]

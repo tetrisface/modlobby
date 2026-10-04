@@ -50,6 +50,10 @@ impl Screen {
 /// again. Called once the plugin has had its turn, on `RunEvent::Ready`. A
 /// stale fullscreen from a previous run (monitor-sized, never marked) gets
 /// the same treatment, which is also the right one.
+///
+/// The opposite poison, a minimized window's 160×28 sliver saved as a real
+/// shape, is given the default windowed shape instead: nothing says what it
+/// was meant to be.
 pub fn heal_restored(window: &tauri::WebviewWindow) {
 	if window.is_maximized().unwrap_or(false) {
 		return;
@@ -60,6 +64,17 @@ pub fn heal_restored(window: &tauri::WebviewWindow) {
 	let Ok(size) = window.inner_size() else {
 		return;
 	};
+	if below_minimum(&size, monitor.scale_factor()) {
+		tracing::info!(
+			width = size.width,
+			height = size.height,
+			"window restored below its minimum size; reopening at the default"
+		);
+		let shape = windowed_shape(monitor.size(), monitor.scale_factor());
+		let _ = window.set_size(Size::Physical(shape));
+		let _ = window.center();
+		return;
+	}
 	let area = monitor.work_area().size;
 	if size.width < area.width || size.height < area.height {
 		return;
@@ -182,6 +197,17 @@ fn unfill(window: &tauri::Window, restore: Restore) {
 /// The default window size, matching `tauri.conf.json`'s `width`/`height`.
 const WINDOWED: (f64, f64) = (1280.0, 800.0);
 
+/// The smallest window, matching `tauri.conf.json`'s `minWidth`/`minHeight`.
+const MINIMUM: (f64, f64) = (900.0, 600.0);
+
+/// Whether `size` is smaller than the window can be dragged to. Windows holds
+/// a drag to the minimum but not a `set_size`, so only a shape put back from
+/// a saved file gets below it.
+fn below_minimum(size: &PhysicalSize<u32>, scale: f64) -> bool {
+	let min = LogicalSize::new(MINIMUM.0, MINIMUM.1).to_physical::<u32>(scale);
+	size.width < min.width || size.height < min.height
+}
+
 /// A windowed shape that fits, for a window that has no remembered one.
 ///
 /// The default is the size the app opens at, but a monitor can be smaller than
@@ -222,6 +248,14 @@ mod tests {
 		let panel = PhysicalSize::new(1920, 1080);
 		assert_eq!(windowed_shape(&panel, 2.0), PhysicalSize::new(1920, 1080));
 		assert_eq!(windowed_shape(&panel, 1.0), PhysicalSize::new(1280, 800));
+	}
+
+	#[test]
+	fn a_minimized_sliver_is_below_the_minimum_and_a_real_window_is_not() {
+		assert!(below_minimum(&PhysicalSize::new(144, 19), 1.0));
+		assert!(!below_minimum(&PhysicalSize::new(900, 600), 1.0));
+		// The minimum is logical: 900 physical pixels is only 600 at 150%.
+		assert!(below_minimum(&PhysicalSize::new(900, 600), 1.5));
 	}
 
 	#[test]

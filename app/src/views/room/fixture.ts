@@ -97,7 +97,7 @@ export function myBattle(over: Partial<MyBattleView> = {}): MyBattleView {
 		scriptTags: {},
 		vote: null,
 		history: [],
-		preReady: false,
+		intent: 'spectate',
 		readyOnItsWay: null,
 		seatOnItsWay: null,
 		heldUntilMs: null,
@@ -139,7 +139,6 @@ export function recordingIo(calls: Calls): RoomIo {
 			note('takeSeat', team, allyTeam, ready),
 		releaseSeat: async () => note('releaseSeat'),
 		setReady: async (ready) => note('setReady', ready),
-		setPreReady: async (on) => note('setPreReady', on),
 		setSide: async (side) => note('setSide', side),
 		addBot: async (name, ai, team, allyTeam, colour) =>
 			note('addBot', name, ai, team, allyTeam, colour),

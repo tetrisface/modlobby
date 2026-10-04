@@ -2,6 +2,7 @@
 //! runtime client or the settings store; errors cross as `{ code, message }`.
 
 use std::future::Future;
+use std::io::Write;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
@@ -785,18 +786,11 @@ pub async fn skirmish_tweak_clear(app: State<'_, App>, slot: Slot) -> Result<()>
 	Ok(())
 }
 
-/// Says whether we are ready to start. Only a player can be.
+/// Says whether we are ready. Only someone playing, or queued to, can be;
+/// while a game runs the ready is for the next one.
 #[tauri::command]
 pub async fn set_ready(app: State<'_, App>, ready: bool) -> Result<()> {
 	app.client.set_ready(ready).await?;
-	Ok(())
-}
-
-/// Arms a ready given in advance, or takes it back: it answers the server's
-/// next automatic unready (seated from the queue, or a game ending) once.
-#[tauri::command]
-pub async fn set_pre_ready(app: State<'_, App>, on: bool) -> Result<()> {
-	app.client.set_pre_ready(on).await?;
 	Ok(())
 }
 
@@ -1815,45 +1809,59 @@ pub async fn tweak_diff_text(
 	.await
 }
 
+/// What a draft is kept as: a tweak's Lua, or the start boxes' JSON.
+const DRAFT_EXTENSIONS: [&str; 2] = ["lua", "json"];
+
+/// The drafts on disk, as file names: `walls.lua`, `arena.json`.
 #[tauri::command]
 pub fn list_drafts(app: State<'_, App>) -> Result<Vec<String>> {
 	let dir = drafts_dir(&app);
 	let Ok(entries) = std::fs::read_dir(&dir) else {
 		return Ok(Vec::new());
 	};
-	let mut names: Vec<String> = entries
+	let mut files: Vec<String> = entries
 		.filter_map(std::result::Result::ok)
-		.filter_map(|entry| {
-			let path = entry.path();
-			(path.extension()? == "lua")
-				.then(|| path.file_stem()?.to_str().map(str::to_owned))
-				.flatten()
-		})
+		.filter_map(|entry| entry.file_name().into_string().ok())
+		.filter(|file| draft_file(file).as_deref() == Some(file.as_str()))
 		.collect();
-	names.sort();
-	Ok(names)
+	files.sort();
+	Ok(files)
 }
 
 #[tauri::command]
-pub fn read_draft(app: State<'_, App>, name: String) -> Result<String> {
-	let path = draft_path(&app, &name)?;
+pub fn read_draft(app: State<'_, App>, file: String) -> Result<String> {
+	let path = draft_path(&app, &file)?;
 	std::fs::read_to_string(&path).map_err(|err| ApiError::new("draft", err.to_string()))
 }
 
-/// Drafts are plain `.lua` files beside the settings, so they can be edited,
-/// backed up and version-controlled like anything else.
+/// Drafts are plain files beside the settings, so they can be edited, backed
+/// up and version-controlled like anything else.
+///
+/// An existing file is overwritten only on `replace`: the webview numbers a
+/// new draft past the names it knows, and one written beside it meanwhile is
+/// refused rather than lost.
 #[tauri::command]
-pub fn save_draft(app: State<'_, App>, name: String, lua: String) -> Result<()> {
-	let path = draft_path(&app, &name)?;
+pub fn save_draft(app: State<'_, App>, file: String, text: String, replace: bool) -> Result<()> {
+	let path = draft_path(&app, &file)?;
 	if let Some(parent) = path.parent() {
 		std::fs::create_dir_all(parent).map_err(|err| ApiError::new("draft", err.to_string()))?;
 	}
-	std::fs::write(&path, lua).map_err(|err| ApiError::new("draft", err.to_string()))
+	let written = if replace {
+		std::fs::write(&path, text)
+	} else {
+		std::fs::File::create_new(&path).and_then(|mut out| out.write_all(text.as_bytes()))
+	};
+	written.map_err(|err| match err.kind() {
+		std::io::ErrorKind::AlreadyExists => {
+			ApiError::new("input", format!("a draft \"{file}\" already exists"))
+		}
+		_ => ApiError::new("draft", err.to_string()),
+	})
 }
 
 #[tauri::command]
-pub fn delete_draft(app: State<'_, App>, name: String) -> Result<()> {
-	let path = draft_path(&app, &name)?;
+pub fn delete_draft(app: State<'_, App>, file: String) -> Result<()> {
+	let path = draft_path(&app, &file)?;
 	match std::fs::remove_file(&path) {
 		Ok(()) => Ok(()),
 		Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -1870,12 +1878,19 @@ fn drafts_dir(app: &App) -> PathBuf {
 	app.settings.dir().join("drafts")
 }
 
-/// Keeps a draft name to one path segment; it comes from the webview.
-fn draft_path(app: &App, name: &str) -> Result<PathBuf> {
+/// A draft file as it may be written: one path segment, a draft's extension,
+/// and a name of letters, digits, `-_ ()` and spaces, anything else made `_`.
+/// `None` when there is no name or no draft's extension. The name comes from
+/// the webview; `fileSafe` in `lib/tweakspace.ts` mirrors its rule.
+fn draft_file(file: &str) -> Option<String> {
+	let (name, extension) = file.rsplit_once('.')?;
+	if !DRAFT_EXTENSIONS.contains(&extension) {
+		return None;
+	}
 	let safe: String = name
 		.chars()
 		.map(|c| {
-			if c.is_alphanumeric() || "-_ ".contains(c) {
+			if c.is_alphanumeric() || "-_ ()".contains(c) {
 				c
 			} else {
 				'_'
@@ -1883,10 +1898,13 @@ fn draft_path(app: &App, name: &str) -> Result<PathBuf> {
 		})
 		.collect();
 	let safe = safe.trim();
-	if safe.is_empty() {
-		return Err(ApiError::new("input", "a draft needs a name"));
-	}
-	Ok(drafts_dir(app).join(format!("{safe}.lua")))
+	(!safe.is_empty()).then(|| format!("{safe}.{extension}"))
+}
+
+fn draft_path(app: &App, file: &str) -> Result<PathBuf> {
+	let safe = draft_file(file)
+		.ok_or_else(|| ApiError::new("input", "a draft needs a name and a .lua or .json file"))?;
+	Ok(drafts_dir(app).join(safe))
 }
 
 /// Where BAR content is: the directory we write, chosen or our own, and every
@@ -1973,5 +1991,23 @@ mod tests {
 			names,
 			["BARb", "RaptorsAI", "ScavengersAI", "NullAI", "CircuitAI"]
 		);
+	}
+
+	use super::draft_file;
+
+	#[test]
+	fn a_draft_file_is_one_safe_segment_of_lua_or_json() {
+		assert_eq!(
+			draft_file("walls (2).lua").as_deref(),
+			Some("walls (2).lua")
+		);
+		assert_eq!(
+			draft_file(" T3: v1.2.json").as_deref(),
+			Some("T3_ v1_2.json")
+		);
+		assert_eq!(draft_file("../../x.lua").as_deref(), Some("______x.lua"));
+		assert_eq!(draft_file("walls.txt"), None);
+		assert_eq!(draft_file("walls"), None);
+		assert_eq!(draft_file(" .lua"), None);
 	}
 }
