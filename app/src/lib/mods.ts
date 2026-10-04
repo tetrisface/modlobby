@@ -119,7 +119,7 @@ export function addPick(
 	if (!offer && !github)
 		return {
 			problem:
-				'Not a name the host offers, nor a GitHub repository (owner/repo or its page)',
+				'Not a GitHub repository (owner/repo or a link to it), nor a mod used recently on this host',
 		}
 	const pick: Pick = offer
 		? {
@@ -142,7 +142,7 @@ export function addPick(
 	)
 	if (twice) return { problem: `${twice.label} is already in the list` }
 	if (picks.length >= MOST)
-		return { problem: `A room loads at most ${MOST} mods` }
+		return { problem: `A lobby loads at most ${MOST} mods` }
 	return { picks: [...picks, pick] }
 }
 
@@ -238,7 +238,7 @@ export function sourceLinks(
 		? {
 				text: commit.slice(0, 7),
 				url: `${GITHUB}/${repo}/tree/${commit}`,
-				tip: `${sourceWords(pick.source!)}: the files the room loads\ncommit ${commit}`,
+				tip: `${sourceWords(pick.source!)}: the files the lobby loads\ncommit ${commit}`,
 			}
 		: null
 	const asked = parseGithub(pick.ref)

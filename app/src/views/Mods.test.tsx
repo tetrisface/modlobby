@@ -135,8 +135,10 @@ describe('the mods pane', () => {
 		const { container } = intro()
 
 		expect(container.querySelector('.mods-intro')?.textContent).toContain(
-			"This room's host runs none",
+			"This lobby's host loads none",
 		)
+		// How a mod is made waits for whoever can load one.
+		expect(container.querySelector('.mod-tree')).toBeNull()
 		// No account there yet: the way in is to make one, right here.
 		expect(
 			container.querySelector('input[autocomplete="username"]'),
@@ -163,7 +165,18 @@ describe('the mods pane', () => {
 		expect(container.textContent).toContain('as tetrisface2')
 		expect(container.querySelector('input[type="email"]')).toBeNull()
 
-		fireEvent.click(way('Host a battle'))
+		// Set up, so shown how a mod is made: one to read, and the way to it.
+		expect(container.querySelector('.mod-tree')?.textContent).toContain(
+			'modinfo.lua',
+		)
+		fireEvent.click(container.querySelector('.mod-tree .mod-link')!)
+		await waitFor(() =>
+			expect(asked).toHaveBeenCalledWith('open_url', {
+				url: 'https://github.com/tetrisface/sphere-spawner',
+			}),
+		)
+
+		fireEvent.click(way('Host a lobby'))
 		await waitFor(() =>
 			expect(asked).toHaveBeenCalledWith('host_public', {
 				server: 'server.pve.bar',
@@ -172,7 +185,7 @@ describe('the mods pane', () => {
 		// Still here: the room view follows the room, this tab does not navigate.
 		expect(history.get()).toBe('/')
 
-		fireEvent.click(way('Browse mod battles'))
+		fireEvent.click(way('Find a lobby'))
 		await waitFor(() => expect(history.get()).toBe('/battles'))
 		const saved = asked.mock.calls.find(
 			([c]) => c === 'update_settings',
@@ -223,7 +236,7 @@ describe('the mods pane', () => {
 		const { paste, container, footer } = pane({ loaded: [sphere] })
 		paste('rogue archive')
 		expect(container.querySelector('.mod-problem')?.textContent).toContain(
-			'Not a name',
+			'Not a GitHub repository',
 		)
 		expect(footer()).toBeNull()
 	})
@@ -445,7 +458,7 @@ describe('the mods pane', () => {
 		expect(set.querySelector('.mod-name')?.textContent).toBe(
 			'sphere spawner mod v1.0.0 + tiny maps v1',
 		)
-		fireEvent.click(set.querySelector('[aria-label^="Load"]')!)
+		fireEvent.click(set.querySelector('[aria-label^="Use"]')!)
 		expect(rows().map((row) => row.name)).toEqual([
 			'sphere spawner mod v1.0.0',
 			'tiny maps v1',

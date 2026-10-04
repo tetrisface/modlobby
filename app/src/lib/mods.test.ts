@@ -135,7 +135,7 @@ describe('editing a draft', () => {
 
 	test('refuses what is neither, a repeat, and an eleventh', () => {
 		expect(addPick([], 'rogue archive', offered)).toEqual({
-			problem: expect.stringContaining('Not a name'),
+			problem: expect.stringContaining('Not a GitHub repository'),
 		})
 		expect(addPick(room(), 'dev/sphere@main', offered)).toEqual({
 			problem: 'sphere spawner mod v1.0.0 is already in the list',
@@ -150,7 +150,7 @@ describe('editing a draft', () => {
 			return 'picks' in next ? next.picks : picks
 		}, [])
 		expect(addPick(full, 'dev/more', offered)).toEqual({
-			problem: 'A room loads at most 10 mods',
+			problem: 'A lobby loads at most 10 mods',
 		})
 	})
 

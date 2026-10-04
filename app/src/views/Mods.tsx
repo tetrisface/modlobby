@@ -62,9 +62,66 @@ export function Mods() {
 }
 
 /**
- * A room whose host runs no mods: what mods are, an account on the mods
- * server -- made right here -- and, once logged in, the two ways on: a room
- * of your own there, or the list with the modded rooms first.
+ * A small mod to read before writing one: the files the game reads, as
+ * `tree` draws them under the repository's name, and what each is there for.
+ */
+// ponytail: copied by hand from the repository; ask GitHub's tree API if it starts moving
+const EXAMPLE: readonly (readonly [tree: string, note?: string])[] = [
+	['├── luarules'],
+	['│   └── gadgets'],
+	['│       └── spawner.lua', 'a game rule: spawns the spheres'],
+	['├── luaui'],
+	['│   └── widgets'],
+	['│       └── dark_epic_effect.lua', 'an interface widget'],
+	['├── modinfo.lua', 'its name and version'],
+	['└── units'],
+	['    └── legohelios.lua', 'a new unit: the sphere'],
+]
+
+const EXAMPLE_LINK: SourceLink = {
+	text: 'tetrisface/sphere-spawner',
+	url: 'https://github.com/tetrisface/sphere-spawner',
+	tip: 'The example on GitHub, to read or to fork',
+}
+
+/**
+ * How a mod is made, for whoever is ready to load one: what it is, one to
+ * read, and how it gets into a room.
+ */
+function MakeYourOwn() {
+	return (
+		<>
+			<div class='setup-section'>
+				<span>Make your own</span>
+			</div>
+			<p class='muted mod-howto'>
+				A mod is a public GitHub repository with its files where the game keeps
+				its own. A file the game also has replaces the game's; any other is
+				added. This one adds a unit, a rule that spawns it, and a widget:
+			</p>
+			<div class='mod-tree'>
+				<SourceButton link={EXAMPLE_LINK} />
+				<For each={EXAMPLE}>
+					{([tree, note]) => (
+						<>
+							<span>{tree}</span>
+							<span class='mod-tree-note'>{note}</span>
+						</>
+					)}
+				</For>
+			</div>
+			<p class='muted mod-howto'>
+				Push yours to GitHub, then add it to a lobby's mods as owner/repo.
+			</p>
+		</>
+	)
+}
+
+/**
+ * A room whose host loads no mods: what mods are, an account on the mods
+ * server -- made right here -- and, once logged in, the two ways on -- a room
+ * of your own there, or the list with the modded rooms first -- and how a mod
+ * is made.
  */
 function Intro() {
 	const navigate = useNavigate()
@@ -90,7 +147,7 @@ function Intro() {
 		try {
 			await api.hostPublic(id)
 		} catch (error) {
-			pushNotice('warning', `host a room: ${describeError(error)}`)
+			pushNotice('warning', `host a lobby: ${describeError(error)}`)
 		} finally {
 			setHosting(false)
 		}
@@ -124,45 +181,55 @@ function Intro() {
 	return (
 		<div class='mods mods-intro'>
 			<p class='muted'>
-				Mods go on top of a game: new units, rules or whole modes, loaded by the
-				room's host straight from GitHub. This room's host runs none. modlobby's
-				own server does, and its rooms list in Battles beside these once you
-				have an account there.
+				Mods go on top of a game: new units, new rules, whole new modes. A
+				lobby's host loads them straight from GitHub.
 			</p>
 			<Show
 				when={server()}
 				fallback={
-					<p class='muted'>The mods server is not among your servers.</p>
+					<p class='muted'>
+						This lobby's host loads none, and the mods server is not among your
+						servers.
+					</p>
 				}
 			>
 				{(id) => (
 					<Switch>
 						<Match when={session()?.phase === 'ready'}>
 							<p class='muted'>
-								Logged in to {serverName(entry()!)} as {session()?.me}. Host a
-								room there and pick its mods on this tab, or find one.
+								This lobby's host loads none. Lobbies on {serverName(entry()!)}{' '}
+								do, and you are logged in there as {session()?.me}.
 							</p>
 							<div class='mods-ways'>
 								<button
 									class='primary'
 									disabled={hosting()}
-									title='An empty autohost on the mods server becomes your room; you leave this one'
+									title={`An empty lobby on ${serverName(entry()!)} becomes yours; you leave this one`}
 									onClick={() => void host(id())}
 								>
-									{hosting() ? 'Hosting…' : 'Host a battle'}
+									{hosting() ? 'Hosting…' : 'Host a lobby'}
 								</button>
 								<button
-									title='The battle list with the modded rooms first'
+									title='The battle list with the lobbies that load mods first'
 									onClick={() => void browse()}
 								>
-									Browse mod battles
+									Find a lobby
 								</button>
 							</div>
+							<MakeYourOwn />
 						</Match>
 						<Match when={entry()?.username.trim()}>
+							<p class='muted'>
+								This lobby's host loads none. Lobbies on {serverName(entry()!)}{' '}
+								do: log in to host or join one.
+							</p>
 							<LoginForm server={id()} mode='login' />
 						</Match>
 						<Match when={true}>
+							<p class='muted'>
+								This lobby's host loads none. Lobbies on {serverName(entry()!)}{' '}
+								do: make an account to host or join one.
+							</p>
 							<LoginForm server={id()} mode='register' />
 						</Match>
 					</Switch>
@@ -283,7 +350,8 @@ function Editor() {
 		<div class='mods'>
 			<div class='toolbar'>
 				<span class='note'>
-					{refusal() ?? 'Loaded in this order, each on top of the last'}
+					{refusal() ??
+						'Loaded in this order; a later mod overrides an earlier one'}
 				</span>
 				<span class='spacer' />
 				<Show when={shown().some((pick) => pick.repo)}>
@@ -307,7 +375,7 @@ function Editor() {
 					<For
 						each={listed()}
 						fallback={
-							<p class='muted setup-empty'>Nothing on top of the game.</p>
+							<p class='muted setup-empty'>No mods loaded. Add one below.</p>
 						}
 					>
 						{(pick, index) => (
@@ -389,7 +457,7 @@ function Editor() {
 						class='setup-section'
 						title='The combinations of mods your games were played with, newest first, in the order and at the commits last played'
 					>
-						<span>Played recently</span>
+						<span>Your recent sets</span>
 						<span class='count'>{modSets().length}</span>
 					</div>
 					<div class='mod-rows sets'>
@@ -407,6 +475,8 @@ function Editor() {
 						</For>
 					</div>
 				</Show>
+
+				<MakeYourOwn />
 			</div>
 
 			<Show when={draft()}>
@@ -582,7 +652,7 @@ function Row(props: {
 						class='mod-source-edit'
 						classList={{ refused: refused() }}
 						value={props.pick.ref}
-						placeholder='owner/repo, owner/repo@branch, or the page on GitHub'
+						placeholder='owner/repo, owner/repo@branch, or a GitHub link'
 						ref={(field) => queueMicrotask(() => field.select())}
 						onKeyDown={(event) => {
 							if (event.key === 'Enter') commit(event.currentTarget.value)
@@ -647,12 +717,12 @@ function AddRow(props: {
 		<div class='mod-add'>
 			<input
 				value={text()}
-				placeholder='owner/repo, owner/repo@branch or @commit, or a GitHub link'
+				placeholder='Add from GitHub: owner/repo, or a link to it'
 				title={
 					'A GitHub repository at the newest commit of its default branch (owner/repo),\n' +
 					'at a branch or commit (owner/repo@main, owner/repo@9108a17),\n' +
-					'or a link to its page, a branch or a commit.\n' +
-					'A name used recently on this host works too.'
+					'or a link to it, a branch or a commit.\n' +
+					'The name of a mod used recently on this host works too.'
 				}
 				onInput={(event) => {
 					setText(event.currentTarget.value)
@@ -692,8 +762,8 @@ function SetRow(props: {
 			<ActionCell>
 				<CellButton
 					icon='act-reconnect'
-					title='Load this set again'
-					label={`Load ${names()} again`}
+					title='Make this set the draft'
+					label={`Use ${names()}`}
 					onClick={props.onUse}
 				>
 					Use
