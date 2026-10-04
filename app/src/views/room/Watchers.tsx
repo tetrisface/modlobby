@@ -21,54 +21,34 @@ type People = {
 }
 
 /**
- * Whether a card-wide stack fits on the teams' row beside every team, at
- * the cards' natural width. A tall team takes the whole row, so nothing
- * fits beside it; a row with no width yet fits nothing.
- */
-export function fitsBeside(
-	teams: number,
-	tall: boolean,
-	card: number,
-	gap: number,
-	row: number,
-): boolean {
-	if (tall || card <= 0 || row <= 0) return false
-	return (teams + 1) * card + teams * gap <= row
-}
-
-/**
  * Whether the stack's two cards stand abreast on the teams' row rather than
- * one over the other: when a second card's width fits there too, and one
+ * one over the other: when the teams leave two cards' room there, and one
  * over the other they would stand taller than the tallest team. The stack
  * would then be what sets the roster's height, and two columns halve it.
  */
 export function standsAbreast(
-	teams: number,
-	tall: boolean,
-	card: number,
-	gap: number,
-	row: number,
+	spare: number,
 	stacked: number,
 	tallestTeam: number,
 ): boolean {
-	return stacked > tallestTeam && fitsBeside(teams + 1, tall, card, gap, row)
+	return spare >= 2 && stacked > tallestTeam
 }
 
 /**
  * The people watching: the join queue over the spectators.
  *
- * Three placements, by one measurement. When a card's width fits on the
- * teams' row beside every team, the two are one stack hugging the right of
- * the people area -- abreast rather than one over the other when a second
- * card fits there too and stacking them would outgrow the teams
- * (`standsAbreast`). When no card fits, the stack dissolves (`display:
- * contents`) and the two are ordinary cards flowing after the last team,
- * filling the row's remaining slots exactly as another team would. The
- * teams always come first either way.
+ * Three placements, by what the teams leave of their row (`spare`). With a
+ * card's room there, the two are one stack hugging the right of the people
+ * area -- abreast rather than one over the other when there is room for a
+ * second card too and stacking them would outgrow the teams
+ * (`standsAbreast`). With none, the stack dissolves (`display: contents`)
+ * and the two are ordinary cards flowing after the last team, filling the
+ * row's remaining slots exactly as another team would. The teams always
+ * come first either way.
  *
- * The measurement is the row's width against the cards' natural width and
- * the team count, and the cards' own heights against the teams' -- never
- * where the stack itself landed -- so the answer cannot depend on itself.
+ * `spare` is counted from the row's width, and the cards' own heights are
+ * held against the teams' -- never where the stack itself landed -- so the
+ * answer cannot depend on itself.
  *
  * A card spread across the width leaves the stack for a full-width row of
  * its own below the teams; whatever is not spread keeps its place. Each
@@ -76,9 +56,8 @@ export function standsAbreast(
  */
 export function WatcherStack(
 	props: People & {
-		/** How many team cards share the row, and whether any spans it. */
-		teams: number
-		tall: boolean
+		/** Cards' room the teams leave on their row; none where they wrap. */
+		spare: number
 		/** In line, as the server gave it. Drawn only when somebody is. */
 		queue: UserView[]
 		/** As sorted: the host first, then by name. */
@@ -96,39 +75,25 @@ export function WatcherStack(
 	const [spectatorsSpread, setSpectatorsSpread] = remembered('spectators')
 
 	let root: HTMLDivElement | undefined
-	const [beside, setBeside] = createSignal(false)
+	const beside = () => props.spare >= 1
 	const [abreast, setAbreast] = createSignal(false)
-	/** Asks the row what a card measures, so the stylesheet stays the truth. */
+	/** Asks the cards what they measure, so the stylesheet stays the truth. */
 	function measure() {
 		const row = root?.parentElement
 		if (!root || !row) return
 		const teams = [...row.querySelectorAll<HTMLElement>(':scope > .team')]
-		const card = teams[0] ? parseFloat(getComputedStyle(teams[0]).flexBasis) : 0
-		const gaps = getComputedStyle(row)
-		const gap = parseFloat(gaps.columnGap) || 0
-		setBeside(fitsBeside(props.teams, props.tall, card, gap, row.clientWidth))
 		// Only the cards still in the stack; the stack's row gap is the teams'.
 		const cards = [...root.querySelectorAll<HTMLElement>(':scope > .watchers')]
 		const stacked =
 			cards.reduce((sum, card) => sum + contentHeight(card), 0) +
-			(cards.length - 1) * (parseFloat(gaps.rowGap) || 0)
+			(cards.length - 1) * (parseFloat(getComputedStyle(row).rowGap) || 0)
 		const tallest = Math.max(0, ...teams.map(contentHeight))
 		setAbreast(
-			cards.length === 2 &&
-				standsAbreast(
-					props.teams,
-					props.tall,
-					card,
-					gap,
-					row.clientWidth,
-					stacked,
-					tallest,
-				),
+			cards.length === 2 && standsAbreast(props.spare, stacked, tallest),
 		)
 	}
 	createEffect(() => {
-		props.teams
-		props.tall
+		props.spare
 		// A card's height is its rows: a watcher arriving, or a card spread
 		// out of the stack, changes what stacking would cost.
 		props.queue.length

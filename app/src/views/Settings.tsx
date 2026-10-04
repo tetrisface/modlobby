@@ -673,8 +673,7 @@ export function SettingsView() {
 								downloading on it is fetched in the background and kept, nothing
 								is installed, and the button restarts into it; the next start
 								installs it if you do not. Off, nothing is fetched until you
-								click, and the click fetches first. In a room or a game the
-								install waits for a second click. After a session that ended
+								click, and the click fetches first. After a session that ended
 								badly the look comes round more often for a while — hourly at
 								first, easing back to daily — so a fix reaches you sooner;
 								nothing about the failure is sent anywhere.{' '}

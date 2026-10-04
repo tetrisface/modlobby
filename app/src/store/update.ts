@@ -33,12 +33,6 @@ export function waiting(): string | null {
 	return at?.phase === 'ready' ? at.version : null
 }
 
-/** What restarting into the waiting version now would lose, while something. */
-export function heldBy(): string | null {
-	const at = update()
-	return at?.phase === 'ready' ? at.heldBy : null
-}
-
 /** Percent downloaded, while downloading; `null` otherwise or when unknown. */
 export function downloading(): number | null {
 	const at = update()
@@ -77,21 +71,14 @@ export async function checkUpdate(): Promise<void> {
 }
 
 /**
- * Downloads and installs what the look found. Does not come back on a
- * successful install; comes back `ready` when a room or a game made
- * restarting now the wrong thing to do — said out loud, because a click
- * that changes nothing on screen looks like a click that did nothing.
+ * Downloads and installs what the look found, whatever else is going on: a
+ * click is never refused. Does not come back on a successful install; comes
+ * back with what there is instead when a kept download turned out not to be
+ * the release any more.
  */
 export async function installUpdate(): Promise<void> {
 	try {
-		const outcome = await api.installUpdate()
-		setUpdate(outcome)
-		if (outcome.phase === 'ready' && outcome.heldBy !== null) {
-			pushNotice(
-				'info',
-				`version ${outcome.version} is downloaded and installs on the next start; restarting now would lose ${outcome.heldBy}`,
-			)
-		}
+		setUpdate(await api.installUpdate())
 	} catch (error) {
 		pushNotice('error', describeError(error))
 	}

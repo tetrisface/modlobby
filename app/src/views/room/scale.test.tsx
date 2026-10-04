@@ -41,6 +41,8 @@ beforeEach(() => {
 afterEach(() => {
 	cleanup()
 	vi.clearAllMocks()
+	vi.restoreAllMocks()
+	vi.unstubAllGlobals()
 })
 
 /**
@@ -213,19 +215,50 @@ describe('the room at event size', () => {
 })
 
 describe('how the room gives way', () => {
-	test('a side of eighty widens and flows its rows into columns; a side of 25 does not', async () => {
-		const tall = await open(
-			crowd({ teams: 2, teamSize: 80, spectators: 100, queued: 20 }),
+	test('sides too deep for the roster flow their rows into columns; sides of 8 do not', async () => {
+		// happy-dom lays nothing out and calls no observer back, so the page is
+		// given its sizes: a row five cards wide under a cap twenty rows deep.
+		const box = (width: number, height: number, top = 0) =>
+			({ width, height, top, bottom: top + height }) as DOMRect
+		vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(
+			function (this: Element) {
+				if (this.matches('.roster-ruler')) return box(268, 520)
+				if (this.matches('.teams')) return box(1456, 0)
+				if (this.matches('.rows, .player')) return box(268, 24, 40)
+				return box(0, 0)
+			},
 		)
-		expect(tall.container.querySelectorAll('.team.tall')).toHaveLength(2)
-		expect(
-			tall.container.querySelectorAll('.team.tall .rows .player'),
-		).toHaveLength(160)
+		vi.stubGlobal(
+			'ResizeObserver',
+			class {
+				constructor(private read: () => void) {}
+				observe() {
+					this.read()
+				}
+				disconnect() {}
+			},
+		)
+		const columns = (container: HTMLElement) =>
+			[...container.querySelectorAll<HTMLElement>('.team')].map((team) =>
+				team.style.getPropertyValue('--columns'),
+			)
+
+		const deep = await open(
+			crowd({ teams: 2, teamSize: 40, spectators: 10, queued: 0 }),
+		)
+		expect(columns(deep.container)).toEqual(['2', '2'])
+		expect(deep.container.querySelectorAll('.team .rows .player')).toHaveLength(
+			80,
+		)
+		// Four of the row's five cards are the teams'; the watchers get the fifth.
+		const stack = deep.container.querySelector('.watchers-stack')!
+		expect(stack.classList.contains('beside')).toBe(true)
 		cleanup()
-		const wide = await open(
-			crowd({ teams: 4, teamSize: 25, spectators: 100, queued: 20 }),
+
+		const shallow = await open(
+			crowd({ teams: 2, teamSize: 8, spectators: 10, queued: 0 }),
 		)
-		expect(wide.container.querySelectorAll('.team.tall')).toHaveLength(0)
+		expect(columns(shallow.container)).toEqual(['', ''])
 	})
 
 	test('the watchers follow the last team as one stack, queue over spectators', async () => {

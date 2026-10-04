@@ -64,6 +64,7 @@ import {
 	freeTeam,
 	isBoss,
 	unusedBotName,
+	teamRows,
 	type Team,
 } from '../lib/roster'
 import {
@@ -85,6 +86,7 @@ import { HostBar } from './HostBar'
 import { PveScore } from './PveScore'
 import { RoomTitle } from './RoomTitle'
 import { useRoom, type RoomModel } from './room/model'
+import { RosterRuler, UNMEASURED, teamColumns } from './room/Columns'
 import { WatcherStack } from './room/Watchers'
 import { readiness } from './room/readiness'
 import { dragging } from '../lib/drag'
@@ -105,8 +107,6 @@ const START_POS = [
 const CAP_KEY = 'modlobby.rosterHeight'
 /** The least a dragged roster keeps: its headers and a row or two. */
 const ROSTER_MIN = 64
-/** Rows past which a team card widens and flows its rows into columns. */
-const TALL = 32
 
 /** `alice, bob, and carol`. */
 const NAMES = new Intl.ListFormat('en', { type: 'conjunction' })
@@ -470,6 +470,7 @@ export function Room() {
 	const [cap, setCap] = createSignal(readWidth(localStore(), CAP_KEY))
 	let main: HTMLDivElement | undefined
 	let rosters: HTMLDivElement | undefined
+	let teamsRow: HTMLDivElement | undefined
 	let chatPane: HTMLDivElement | undefined
 	const capBounds = () =>
 		splitBounds(
@@ -477,6 +478,25 @@ export function Room() {
 			chatPane ? parseFloat(getComputedStyle(chatPane).minHeight) || 0 : 0,
 			ROSTER_MIN,
 		)
+
+	/**
+	 * The room the teams' row has, as the ruler last read it, and the columns
+	 * each team's rows flow into for it. The card of a team that left whole is
+	 * one more team on that row.
+	 */
+	const [space, setSpace] = createSignal(UNMEASURED, {
+		equals: (a, b) => a.across === b.across && a.deep === b.deep,
+	})
+	const columns = createMemo(() => {
+		const { teams, leavers } = occupants()
+		const gone = leavers.length > 0 ? [leavers.length] : []
+		return teamColumns([...teams.map(teamRows), ...gone], space())
+	})
+	/** A card's columns for the stylesheet; nothing for the one it has anyway. */
+	const flowed = (card: number) => {
+		const count = columns()[card] ?? 1
+		return count > 1 ? count : undefined
+	}
 
 	const lines = () => chat.rooms[room.log] ?? []
 
@@ -901,24 +921,29 @@ export function Room() {
 					<Seat />
 
 					<div class='room-body'>
-						<div class='room-main' ref={main}>
-							<div
-								class='rosters'
-								ref={rosters}
-								style={{
-									'--rosters-cap': cap() === null ? undefined : `${cap()}px`,
-								}}
-							>
-								<div class='teams' classList={{ dropping: dragging() }}>
+						<div
+							class='room-main'
+							ref={main}
+							style={{
+								'--rosters-cap': cap() === null ? undefined : `${cap()}px`,
+							}}
+						>
+							<RosterRuler row={() => teamsRow} onChange={setSpace} />
+							<div class='rosters' ref={rosters}>
+								<div
+									class='teams'
+									ref={teamsRow}
+									classList={{ dropping: dragging() }}
+								>
 									{/* By position, not by object: the memo builds new team
                       objects on every status line, and a `For` keyed on
                       them rebuilt every row each time. The users inside are
                       the store's own objects, so their rows do survive. */}
 									<Index each={occupants().teams}>
-										{(team) => (
+										{(team, index) => (
 											<section
 												class='team'
-												classList={{ tall: team().expected > TALL }}
+												style={{ '--columns': flowed(index) }}
 												data-ally={team().allyTeam}
 											>
 												<header
@@ -1064,7 +1089,10 @@ export function Room() {
 									{/* A team that left the room whole: not the room's to
                       seat, move or drop on, so no count or data-ally. */}
 									<Show when={occupants().leavers.length > 0}>
-										<section class='team'>
+										<section
+											class='team'
+											style={{ '--columns': flowed(occupants().teams.length) }}
+										>
 											<header class='team-head'>
 												<span class='name'>Left the game</span>
 											</header>
@@ -1081,11 +1109,10 @@ export function Room() {
                       names at once, dimmed because most are about to take
                       a seat above. */}
 									<WatcherStack
-										teams={
-											occupants().teams.length +
-											(occupants().leavers.length > 0 ? 1 : 0)
+										spare={
+											space().across -
+											columns().reduce((sum, count) => sum + count, 0)
 										}
-										tall={occupants().teams.some((t) => t.expected > TALL)}
 										queue={occupants().queue}
 										spectators={occupants().spectators}
 										pending={occupants().pending}

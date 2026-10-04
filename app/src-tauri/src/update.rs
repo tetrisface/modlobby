@@ -5,9 +5,9 @@
 //! nav is clicked. A newer version found puts a button beside it. With
 //! `updates.download` on, the look goes on to fetch the installer by itself
 //! and stops there, as [`Pending::Downloaded`], so the button only restarts.
-//! Otherwise the click downloads the installer and installs it at once,
-//! unless a room is joined or a game is running, in which case the download
-//! waits as [`Pending::Downloaded`] and the button offers the restart instead.
+//! Otherwise the click downloads the installer and installs it at once. A
+//! click is never refused: the restart leaves the room and lets a game play
+//! on without the lobby, and that is the clicker's to weigh.
 //!
 //! A download that waits is also kept on disk, under `updates/` beside the
 //! settings, so closing the app does not throw it away. The next start finds
@@ -18,6 +18,10 @@
 //! settled. The manifest is asked because `Update::install` checks nothing --
 //! `Update::download` alone verifies the signature -- and the file has been
 //! out of this process's hands since it was written.
+//!
+//! Nobody asked for the start's restart, so that one holds back: under a
+//! game, or where the installer would close another modlobby, the download
+//! waits for a click instead, as [`Pending::Downloaded`].
 //!
 //! The installer does the restart: on Windows `install` hands over to NSIS
 //! and exits this process, and NSIS relaunches the app with the arguments it
@@ -91,12 +95,9 @@ pub enum UpdateProgress {
 		total: u64,
 	},
 	/// Downloaded and waiting. It installs on the next start; the corner
-	/// offers the restart before then, and says what stands in its way.
+	/// offers the restart before then.
 	Ready {
 		version: String,
-		/// What restarting now would take away — a room, a running game —
-		/// while there is something; `None` once a click would install.
-		held_by: Option<String>,
 	},
 	Failed {
 		reason: String,
@@ -292,8 +293,7 @@ pub async fn check_update(
 	let outcome = match look(&handle).await {
 		Ok(found) => {
 			app.update_memory.record(SystemTime::now());
-			let held_by = busy(&app).await;
-			Ok(settle(&staged, found, held_by))
+			Ok(settle(&staged, found))
 		}
 		Err(err) => Err(err),
 	};
@@ -320,7 +320,7 @@ pub async fn check_update(
 /// Reconciles what the manifest says with what is held: the same version
 /// already downloaded stays downloaded and is `Ready`; anything else the
 /// look found replaces it as `Available`; nothing found clears it.
-fn settle(staged: &Staged, found: Option<Update>, held_by: Option<&str>) -> UpdateProgress {
+fn settle(staged: &Staged, found: Option<Update>) -> UpdateProgress {
 	let mut held = staged.held.lock().expect("staged update");
 	match (found, held.take()) {
 		(None, _) => {
@@ -332,14 +332,14 @@ fn settle(staged: &Staged, found: Option<Update>, held_by: Option<&str>) -> Upda
 		{
 			let version = done.version.clone();
 			*held = Some(Pending::Downloaded(done, bytes));
-			ready(version, held_by)
+			UpdateProgress::Ready { version }
 		}
 		(Some(update), Some(Pending::Stored { version, path })) if version == update.version => {
 			*held = Some(Pending::Stored {
 				version: version.clone(),
 				path,
 			});
-			ready(version, held_by)
+			UpdateProgress::Ready { version }
 		}
 		(Some(update), _) => {
 			// Whatever was kept is not this release.
@@ -351,23 +351,25 @@ fn settle(staged: &Staged, found: Option<Update>, held_by: Option<&str>) -> Upda
 	}
 }
 
-fn ready(version: String, held_by: Option<&str>) -> UpdateProgress {
-	UpdateProgress::Ready {
-		version,
-		held_by: held_by.map(str::to_owned),
-	}
-}
-
-/// Takes the corner's offer: downloads what the look found and installs it,
-/// or stages it as `Ready` when a room or a game would be lost. Installs at
-/// once what an earlier click — or an earlier run — already downloaded.
-/// Returns only when there is nothing to install: a successful install ends
-/// the process.
+/// Takes the corner's offer: downloads what the look found and installs it.
+/// Installs at once what an earlier click — or an earlier run — already
+/// downloaded. A click is never refused, whatever the restart leaves behind:
+/// that is the clicker's to weigh. Returns only when there is nothing to
+/// install: a successful install ends the process.
 #[tauri::command]
 pub async fn install_update(
-	app: State<'_, App>,
 	staged: State<'_, Staged>,
 	handle: AppHandle,
+) -> Result<UpdateProgress> {
+	install_pending(&staged, &handle, false).await
+}
+
+/// Makes what is held installable and installs it -- or, with `hold`, leaves
+/// it downloaded and answers `Ready`.
+async fn install_pending(
+	staged: &Staged,
+	handle: &AppHandle,
+	hold: bool,
 ) -> Result<UpdateProgress> {
 	let taken = staged.held.lock().expect("staged update").take();
 	let Some(pending) = taken else {
@@ -397,7 +399,7 @@ pub async fn install_update(
 				return Err(err);
 			}
 		},
-		Pending::Stored { version, path } => match reopen(&staged, &handle, version, path).await {
+		Pending::Stored { version, path } => match reopen(staged, handle, version, path).await {
 			Ok(Reopened::Installable(update, bytes)) => (*update, bytes),
 			Ok(Reopened::Otherwise(progress)) => {
 				say(progress.clone());
@@ -412,15 +414,15 @@ pub async fn install_update(
 		},
 	};
 
-	if let Some(held_by) = busy(&app).await {
+	if hold {
 		let version = update.version.clone();
 		*staged.held.lock().expect("staged update") = Some(Pending::Downloaded(update, bytes));
-		let progress = ready(version, Some(held_by));
+		let progress = UpdateProgress::Ready { version };
 		say(progress.clone());
 		return Ok(progress);
 	}
 
-	let outcome = install(&handle, &staged, &update, &bytes);
+	let outcome = install(handle, staged, &update, &bytes);
 	if let Err(err) = &outcome {
 		say(UpdateProgress::Failed {
 			reason: err.message.clone(),
@@ -433,7 +435,6 @@ pub async fn install_update(
 /// itself stops at `Ready`, because the restart is the user's to ask for --
 /// or the next start's, which installs a kept download ahead of the app.
 async fn stage(handle: AppHandle) {
-	let app = handle.state::<App>();
 	let staged = handle.state::<Staged>();
 	let say = |progress: UpdateProgress| {
 		let _ = handle.emit("app-update", progress);
@@ -456,7 +457,7 @@ async fn stage(handle: AppHandle) {
 			staged.keep(&update.version, &bytes);
 			let version = update.version.clone();
 			*staged.held.lock().expect("staged update") = Some(Pending::Downloaded(update, bytes));
-			say(ready(version, busy(&app).await));
+			say(UpdateProgress::Ready { version });
 		}
 		Err(err) => {
 			// Still found, still on offer: the button fetches it on a click.
@@ -471,7 +472,8 @@ async fn stage(handle: AppHandle) {
 /// Installs the download an earlier run kept, ahead of the app. Does not come
 /// back when it installs. `None` when nothing was kept, or when this build
 /// does not update itself; otherwise what `install_update` answers when it
-/// does not install: the manifest moved on, or could not be reached.
+/// does not install: the manifest moved on, or could not be reached -- or
+/// `Ready`, where this restart would end something.
 ///
 /// Asked twice and worked out once: by the start, so the manifest is asked
 /// before the page has loaded, and by the page, which holds the app back
@@ -482,9 +484,13 @@ pub(crate) async fn resume(handle: &AppHandle) -> Result<Option<UpdateProgress>>
 		if staged.resuming().is_none() {
 			return Ok(None);
 		}
-		install_update(handle.state(), handle.state(), handle.clone())
-			.await
-			.map(Some)
+		// Nobody asked for this restart, so it is not made under a game a
+		// lobby before this one left running, nor where the installer would
+		// close another modlobby: the download waits for a click. A runtime
+		// that cannot answer has no game.
+		let app = handle.state::<App>();
+		let hold = matches!(app.client.engine_pid().await, Ok(Some(_))) || closes_another_lobby();
+		install_pending(&staged, handle, hold).await.map(Some)
 	});
 	resumed.await.clone()
 }
@@ -667,25 +673,6 @@ async fn download(update: &Update, say: &impl Fn(UpdateProgress)) -> Result<Vec<
 		.map_err(|err| ApiError::new("update", format!("fetching {}: {err}", update.version)))
 }
 
-/// What restarting now would take away: a room we are in, a game that is
-/// running, an engine we launched that is still alive, or another modlobby.
-/// `None` when nothing would be lost. A runtime that cannot answer has
-/// nothing to lose.
-async fn busy(app: &App) -> Option<&'static str> {
-	if let Ok(snapshot) = app.client.snapshot().await {
-		if snapshot.servers.iter().any(|s| s.game_running.is_some()) {
-			return Some("the game that is running");
-		}
-		if snapshot.room().is_some() {
-			return Some("the room you are in");
-		}
-	}
-	if matches!(app.client.engine_pid().await, Ok(Some(_))) {
-		return Some("the engine that is still running");
-	}
-	closes_another_lobby().then_some("another modlobby that is running")
-}
-
 /// Whether installing now would end another modlobby. The Windows installer
 /// closes every process run from an executable named as this one is, whatever
 /// it is in the middle of; elsewhere an install ends nothing.
@@ -741,7 +728,6 @@ fn install(
 		let _ = staged;
 		Ok(UpdateProgress::Ready {
 			version: update.version.clone(),
-			held_by: None,
 		})
 	}
 }

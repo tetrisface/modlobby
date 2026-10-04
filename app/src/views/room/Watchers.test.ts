@@ -1,42 +1,18 @@
 import { describe, expect, test } from 'vitest'
-import { fitsBeside, standsAbreast } from './Watchers'
-
-/** A card is 268 px and the gap 28 px, as the stylesheet has them at 16 px. */
-const CARD = 268
-const GAP = 28
-
-describe('fitsBeside', () => {
-	test('a stack fits when the teams and one more card share the row', () => {
-		// Two teams and the stack: 3 × 268 + 2 × 28 = 860.
-		expect(fitsBeside(2, false, CARD, GAP, 860)).toBe(true)
-		expect(fitsBeside(2, false, CARD, GAP, 859)).toBe(false)
-		// Six teams need 7 × 268 + 6 × 28 = 2044.
-		expect(fitsBeside(6, false, CARD, GAP, 2044)).toBe(true)
-		expect(fitsBeside(6, false, CARD, GAP, 1140)).toBe(false)
-	})
-
-	test('nothing fits beside a team that spans the row', () => {
-		expect(fitsBeside(2, true, CARD, GAP, 5000)).toBe(false)
-	})
-
-	test('a row with no width yet, or no card to measure, fits nothing', () => {
-		expect(fitsBeside(2, false, CARD, GAP, 0)).toBe(false)
-		expect(fitsBeside(2, false, 0, GAP, 860)).toBe(false)
-	})
-})
+import { standsAbreast } from './Watchers'
 
 describe('standsAbreast', () => {
-	test('two cards stand abreast when both fit beside the teams and, stacked, would outgrow them', () => {
-		// Two teams and two cards: 4 × 268 + 3 × 28 = 1156.
-		expect(standsAbreast(2, false, CARD, GAP, 1156, 400, 300)).toBe(true)
-		expect(standsAbreast(2, false, CARD, GAP, 1155, 400, 300)).toBe(false)
+	test('two cards stand abreast when the teams leave room for both and, stacked, they would outgrow them', () => {
+		expect(standsAbreast(2, 400, 300)).toBe(true)
+		expect(standsAbreast(1, 400, 300)).toBe(false)
 	})
 
 	test('a stack no taller than the tallest team stays one over the other', () => {
-		expect(standsAbreast(2, false, CARD, GAP, 2000, 300, 300)).toBe(false)
+		expect(standsAbreast(3, 300, 300)).toBe(false)
 	})
 
-	test('nothing stands beside a team that spans the row', () => {
-		expect(standsAbreast(2, true, CARD, GAP, 5000, 400, 300)).toBe(false)
+	test('nothing stands abreast where the teams leave no room', () => {
+		expect(standsAbreast(0, 400, 300)).toBe(false)
+		expect(standsAbreast(-1, 400, 300)).toBe(false)
 	})
 })

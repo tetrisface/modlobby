@@ -79,7 +79,6 @@ import {
 	checking,
 	downloading,
 	failure,
-	heldBy,
 	installUpdate,
 	waiting,
 	watchUpdates,
@@ -275,11 +274,7 @@ function Layout(props: ParentProps) {
 		available() !== null || downloading() !== null || waiting() !== null
 	const updateTitle = () => {
 		const next = waiting()
-		if (next !== null) {
-			return heldBy()
-				? `Version ${next} is downloaded and installs on the next start. Restarting now would lose ${heldBy()}.`
-				: `Version ${next} is downloaded. Restart into it.`
-		}
+		if (next !== null) return `Version ${next} is downloaded. Restart into it.`
 		const percent = downloading()
 		if (percent !== null) return `Downloading the update — ${percent}%`
 		return `Version ${available()} is out. Fetch it and restart into it.`

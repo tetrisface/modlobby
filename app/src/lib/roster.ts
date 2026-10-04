@@ -295,3 +295,14 @@ export function emptySeats(team: Team): number {
 		team.expected - team.users.length - team.bots.length - team.guessed.length,
 	)
 }
+
+/** Rows a team draws: everyone on it, its ghosts and its empty seats. */
+export function teamRows(team: Team): number {
+	return (
+		team.users.length +
+		team.bots.length +
+		team.guessed.length +
+		team.ghosts.length +
+		emptySeats(team)
+	)
+}
