@@ -714,7 +714,12 @@ describe('the setup pane', () => {
 		)!
 	const pressed = (container: HTMLElement, label: string) =>
 		choice(container, 'Show', label).getAttribute('aria-pressed') === 'true'
-	const openGroup = (container: HTMLElement) =>
+	/** The overview beside the list: every heading in it, and the one marked. */
+	const overview = (container: HTMLElement) =>
+		[...container.querySelectorAll('.groups .group')].map(
+			(button) => button.textContent,
+		)
+	const marked = (container: HTMLElement) =>
 		container.querySelector('.groups .group.on')?.textContent ?? ''
 	const sections = (container: HTMLElement) =>
 		[
@@ -725,18 +730,17 @@ describe('the setup pane', () => {
 	const rows = (container: HTMLElement) =>
 		container.querySelectorAll('.setup-detail .opt').length
 
-	test('showing all inside a tab stays on Changed, and holds in every tab', async () => {
+	test('showing all reveals rows in place, and holds in every tab', async () => {
 		const { container } = await open(alone([]))
 		fireEvent.click(setupTab(container, 'Options'))
 		await settle()
-		expect(openGroup(container)).toMatch(/^Changed/)
 		expect(sections(container)).toEqual(['General'])
 		expect(rows(container)).toBe(1)
 
 		fireEvent.click(choice(container, 'Show', 'All'))
 		await settle()
 		expect(pressed(container, 'All')).toBe(true)
-		expect(openGroup(container)).toMatch(/^Changed/)
+		expect(sections(container)).toEqual(['General'])
 		expect(rows(container)).toBe(2)
 		expect(container.querySelector('.slot-grid')).toBeNull()
 
@@ -764,6 +768,8 @@ describe('the setup pane', () => {
 		await settle()
 		expect(sections(container)).toEqual([])
 		expect(rows(container)).toBe(2)
+		// Nothing headed, so nothing for an overview to name.
+		expect(container.querySelector('.groups')).toBeNull()
 
 		fireEvent.click(choice(container, 'Group', 'Section'))
 		await settle()
@@ -787,25 +793,29 @@ describe('the setup pane', () => {
 		fireEvent.click(choice(container, 'Show', 'All'))
 		await settle()
 		expect(sections(container)).toEqual(['Tweak slots'])
-		expect(rows(container)).toBe(20)
-
-		const group = [
-			...container.querySelectorAll<HTMLButtonElement>('.groups .group'),
-		].find((button) => button.textContent?.startsWith('Tweak slots'))!
-		fireEvent.click(group)
-		await settle()
 		expect(slotKeys()).toHaveLength(20)
 		expect(container.querySelector('.setup-drafts')?.textContent).toBe('Editor')
-		// Neither choice applies to the slots, and each says why rather than going.
-		expect(bar(container, 'Show').title).toBe(
-			'A group shows every setting in it',
-		)
-		expect(bar(container, 'Sort').title).toBe(
-			'Tweak slots stay in the order BAR runs them',
-		)
-		fireEvent.click(choice(container, 'Show', 'Changed'))
+	})
+
+	test('the overview names the headings in the list, no counts, and goes to one', async () => {
+		const { container } = await open(alone([]))
+		fireEvent.click(setupTab(container, 'Modding'))
 		await settle()
-		expect(pressed(container, 'All'), 'greyed, it takes no press').toBe(true)
+		expect(overview(container)).toEqual(['Tweak slots'])
+		expect(marked(container)).toBe('Tweak slots')
+
+		fireEvent.click(setupTab(container, 'Options'))
+		fireEvent.click(choice(container, 'Show', 'All'))
+		await settle()
+		expect(overview(container)).toEqual(sections(container))
+		const last = overview(container).at(-1)!
+		fireEvent.click(
+			[...container.querySelectorAll<HTMLButtonElement>('.groups .group')].at(
+				-1,
+			)!,
+		)
+		await settle()
+		expect(marked(container)).toBe(last)
 	})
 })
 

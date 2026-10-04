@@ -179,6 +179,17 @@ describe('Toolbar', () => {
 		expect(on.onSave).toHaveBeenCalledWith('Nutty B')
 	})
 
+	test('under a row it offers the full editor; in the full editor it does not', () => {
+		const onDesk = vi.fn()
+		const row = toolbar(typed, { onDesk })
+		fireEvent.click(row.getByText('Open in editor'))
+		expect(onDesk).toHaveBeenCalled()
+		row.unmount()
+
+		const desk = toolbar(typed, { heading: true })
+		expect(desk.queryByText('Open in editor')).toBeNull()
+	})
+
 	test('compare, search, the palette and the corner buttons go to the caller', () => {
 		const { on, getByText, getByLabelText } = toolbar(typed)
 		fireEvent.click(getByLabelText('Fill the window'))

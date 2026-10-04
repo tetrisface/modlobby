@@ -28,6 +28,7 @@ import {
 	replaced,
 	reset,
 	resolveSide,
+	roomItems,
 	saveNameFor,
 	searchSlots,
 	savedAs,
@@ -41,6 +42,7 @@ import {
 	titleOf,
 	unsentCount,
 	type Doc,
+	type DocId,
 	type Filter,
 	type Side,
 } from './tweakspace'
@@ -280,6 +282,17 @@ describe('the list', () => {
 		])
 		expect(items[0]).toMatchObject({ id: SCRATCH, empty: true, size: 0 })
 		expect(items[1]).toMatchObject({ kind: 'units', size: 9, dirty: false })
+	})
+
+	test('the room lists the slots holding something or an edit, in run order, searched alike', () => {
+		const away = { ...ws, active: SCRATCH as DocId }
+		const slots = (query = '') =>
+			roomItems(away, { query, sort: 'name' }).map((item) => item.title)
+		// tweakunits2 holds a tweak, tweakdefs1 an edit; the cleared override is nothing.
+		expect(slots()).toEqual(['tweakunits2', 'tweakdefs1'])
+		expect(slots('golem')).toEqual(['tweakunits2'])
+		// The open slot is listed though it holds nothing, so it is never lost.
+		expect(roomItems(ws).map((item) => item.title)).toContain('tweakunits')
 	})
 
 	test('search matches the file name or the header, and never hides the scratch', () => {

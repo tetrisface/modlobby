@@ -16,6 +16,7 @@ import type { Settings } from '../ipc/bindings/Settings'
 import { api, describeError } from '../ipc/client'
 import { build } from '../store/build'
 import { pushNotice } from '../store/chat'
+import { createOverview } from '../lib/overview'
 import { bounds } from '../lib/scale'
 import { MOD, shortcut } from '../lib/platform'
 import {
@@ -67,9 +68,6 @@ const SECTIONS = {
 type SectionId = keyof typeof SECTIONS
 
 const SECTION_IDS = Object.keys(SECTIONS) as SectionId[]
-
-/** Where the page opens, and what the overview marks until you scroll. */
-const TOP: SectionId = 'account'
 
 /** A section's element id, which is also what `?section=` names. */
 const anchor = (id: SectionId) => `settings-${id}`
@@ -145,7 +143,6 @@ export function SettingsView() {
 	const [params] = useSearchParams()
 	const [query, setQuery] = createSignal('')
 	const searching = () => query().trim() !== ''
-	const [reading, setReading] = createSignal<SectionId>(TOP)
 	let page: HTMLFormElement | undefined
 	/**
 	 * The notification rows while Do not disturb is on: shown as off, since
@@ -155,57 +152,18 @@ export function SettingsView() {
 	const silenced = () =>
 		draft.notifications.doNotDisturb ? 'silenced' : undefined
 
-	const sectionOf = (id: SectionId) =>
-		page?.querySelector<HTMLElement>(`#${anchor(id)}`)
+	/** The overview's mark; the page opens on the first section. */
+	const overview = createOverview({
+		page: () => page,
+		ids: () => SECTION_IDS,
+		start: (id) => page?.querySelector<HTMLElement>(`#${anchor(id)}`),
+		sectionOf: (target) => {
+			const id = target.closest('.set-section')?.id.replace(/^settings-/, '')
+			return id !== undefined && id in SECTIONS ? (id as SectionId) : null
+		},
+		line: READ_LINE,
+	})
 
-	/**
-	 * The section being read: the last one whose heading has scrolled past the
-	 * read line, or the last of all once the page will not scroll further — a
-	 * short final section never reaches the line.
-	 */
-	function spy() {
-		if (!page) return
-		const atEnd = page.scrollTop + page.clientHeight >= page.scrollHeight - 1
-		const line = page.getBoundingClientRect().top + READ_LINE
-		const passed = SECTION_IDS.filter((id) => {
-			const top = sectionOf(id)?.getBoundingClientRect().top
-			return top !== undefined && (atEnd || top <= line)
-		})
-		setReading(passed.at(-1) ?? TOP)
-	}
-
-	/**
-	 * Set while the page scrolls to where the overview sent it. That scroll is
-	 * not the reader's, and near the foot of the page it stops short of putting
-	 * the section at the top, so it would otherwise mark a neighbour instead of
-	 * the entry that was clicked. The reader's own wheel takes over at once.
-	 */
-	let jumping = false
-
-	/**
-	 * The section under the pointer while it is over the page. What a hand is
-	 * resting on is what is being read, and it says so before any scroll does;
-	 * off the page, the scroll position answers instead.
-	 */
-	const [pointed, setPointed] = createSignal<SectionId | null>(null)
-	const marked = () => pointed() ?? reading()
-
-	function point(event: MouseEvent) {
-		const id = (event.target as Element)
-			.closest('.set-section')
-			?.id.replace(/^settings-/, '')
-		// Between two sections, or over the page's own title: still where it
-		// was. Letting go there would flash the scrolled-to section on every
-		// move from one section to the next.
-		if (id === undefined || !(id in SECTIONS)) return
-		setPointed(id as SectionId)
-	}
-
-	function jump(id: SectionId, behavior: ScrollBehavior) {
-		jumping = true
-		sectionOf(id)?.scrollIntoView({ block: 'start', behavior })
-		setReading(id)
-	}
 	/** How far the slider goes here: a bigger screen earns a bigger range. */
 	const limits = () => bounds(window.screen.width, window.screen.height)
 
@@ -217,7 +175,8 @@ export function SettingsView() {
 		const wanted = Array.isArray(params.section)
 			? params.section[0]
 			: params.section
-		if (wanted && wanted in SECTIONS) jump(wanted as SectionId, 'instant')
+		if (wanted && wanted in SECTIONS)
+			overview.jump(wanted as SectionId, 'instant')
 	})
 
 	/**
@@ -290,9 +249,9 @@ export function SettingsView() {
 			ref={page}
 			class='settings'
 			onSubmit={(event) => event.preventDefault()}
-			onScroll={() => jumping || spy()}
-			onScrollEnd={() => (jumping = false)}
-			onWheel={() => (jumping = false)}
+			onScroll={overview.spy}
+			onScrollEnd={overview.settle}
+			onWheel={overview.settle}
 		>
 			{/* The whole page at a glance, out in the margin: every section, the
           one being read marked, and so how far there is still to go. While
@@ -303,9 +262,9 @@ export function SettingsView() {
 						{(id) => (
 							<button
 								type='button'
-								classList={{ on: marked() === id }}
-								aria-current={marked() === id ? 'location' : undefined}
-								onClick={() => jump(id, 'smooth')}
+								classList={{ on: overview.marked() === id }}
+								aria-current={overview.marked() === id ? 'location' : undefined}
+								onClick={() => overview.jump(id, 'smooth')}
 							>
 								{SECTIONS[id]}
 							</button>
@@ -316,8 +275,8 @@ export function SettingsView() {
 			<Query.Provider value={query}>
 				<div
 					class='settings-body'
-					onMouseOver={point}
-					onMouseLeave={() => setPointed(null)}
+					onMouseOver={overview.point}
+					onMouseLeave={overview.leave}
 				>
 					<header class='settings-head'>
 						<div>

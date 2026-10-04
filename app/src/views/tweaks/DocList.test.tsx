@@ -44,6 +44,7 @@ describe('DocList', () => {
 	test('the untitled tweak comes first; a draft says what it is, how long, and whether it is edited', () => {
 		const { getAllByRole } = render(() => (
 			<DocList
+				slots={[]}
 				items={items}
 				active='draft:walls'
 				filter={filter}
@@ -65,6 +66,7 @@ describe('DocList', () => {
 		const onFilter = vi.fn()
 		const { getByText, getByLabelText } = render(() => (
 			<DocList
+				slots={[]}
 				items={items}
 				active={SCRATCH}
 				filter={filter}
@@ -85,6 +87,7 @@ describe('DocList', () => {
 	test('says how to make a draft when there is none', () => {
 		const { queryByText, unmount } = render(() => (
 			<DocList
+				slots={[]}
 				items={[scratch]}
 				active={SCRATCH}
 				filter={filter}
@@ -96,6 +99,7 @@ describe('DocList', () => {
 		unmount()
 		const some = render(() => (
 			<DocList
+				slots={[]}
 				items={items}
 				active={SCRATCH}
 				filter={filter}
@@ -104,5 +108,39 @@ describe('DocList', () => {
 			/>
 		))
 		expect(some.queryByText(/No drafts yet/)).toBeNull()
+	})
+
+	test('the room comes first, searched with the drafts, its edits unsent', () => {
+		const slot: Item = {
+			id: 'slot:mapmetadata_startbox_override',
+			title: 'mapmetadata_startbox_override',
+			kind: 'boxes',
+			name: null,
+			dirty: true,
+			empty: false,
+			size: 473,
+		}
+		const { container, getByText } = render(() => (
+			<DocList
+				slots={[slot]}
+				items={items}
+				active={SCRATCH}
+				filter={filter}
+				onSelect={() => {}}
+				onFilter={() => {}}
+			/>
+		))
+		const heads = [...container.querySelectorAll('.doc-head')].map(
+			(head) => head.textContent,
+		)
+		expect(heads).toEqual(['In this room', 'Drafts'])
+		const first = rows([
+			...container.querySelectorAll<HTMLElement>('button'),
+		])[0]!
+		expect(first.textContent).toContain('mapmetadata_startbox_override')
+		// The start boxes are JSON, and an edit to a slot is one not yet sent.
+		expect(first.textContent).toContain('473 json')
+		expect(first.textContent).toContain('unsent')
+		expect(getByText('6996 lua')).toBeTruthy()
 	})
 })

@@ -279,6 +279,7 @@ export function Workspace(props: { drafts: boolean; onClose?: () => void }) {
 		<section class='tweaks' classList={{ desk: props.drafts }}>
 			<Show when={props.drafts}>
 				<DocList
+					slots={space.slots()}
 					items={space.items()}
 					active={space.ws.active}
 					filter={space.ws.filter}
@@ -299,6 +300,7 @@ export function Workspace(props: { drafts: boolean; onClose?: () => void }) {
 					drafts={drafts()}
 					saveName={space.saveName()}
 					onClose={props.onClose}
+					onDesk={props.drafts ? undefined : () => space.openDesk(doc().id)}
 					onFormat={() => void act('format', () => space.format(doc().id))}
 					onReset={() => space.reset(doc().id)}
 					onSave={(name) => void save(name)}

@@ -32,6 +32,7 @@ import {
 	kindOf,
 	listItems,
 	loaded,
+	roomItems,
 	noteOf,
 	ownDraft,
 	replaced,
@@ -109,6 +110,7 @@ export function createTweakspace(
 
 		const active = createMemo(() => ws.docs[ws.active]!)
 		const items = createMemo(() => listItems(ws))
+		const slots = createMemo(() => roomItems(ws))
 		const unsent = createMemo(() => unsentCount(ws))
 
 		// ---- the room's slots ----
@@ -260,6 +262,21 @@ export function createTweakspace(
 		}
 
 		/**
+		 * The drafts editor, opened on `id`: from its own button with the
+		 * unslotted tweak, or from a row's editor with that row's slot, which
+		 * folds the row away -- one editor on a document at a time.
+		 */
+		function openDesk(id: DocId) {
+			open(id)
+			setWs({ expanded: null, desk: true })
+		}
+
+		/** Back to the settings; the window is the pane's again too. */
+		function closeDesk() {
+			setWs({ desk: false, fullscreen: false })
+		}
+
+		/**
 		 * Where the editor goes next. Kept here rather than in the editor: a
 		 * search result in another slot opens that slot's row, and it is that
 		 * row's editor, mounted after, that has to go there. `null` once it has.
@@ -398,6 +415,7 @@ export function createTweakspace(
 			ws,
 			active,
 			items,
+			slots,
 			unsent,
 			prepared,
 			problem,
@@ -407,6 +425,8 @@ export function createTweakspace(
 			decode,
 			open,
 			expand,
+			openDesk,
+			closeDesk,
 			edit,
 			reset,
 			format,

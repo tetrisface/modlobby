@@ -238,6 +238,26 @@ describe('the workspace', () => {
 		space.dispose()
 	})
 
+	test("a row's editor opens the drafts editor on its slot, folding the row away", async () => {
+		const { io } = fakeIo()
+		const space = createTweakspace(io, () => ({ tweakdefs2: 'AAA' }))
+		await flush()
+		space.expand(slotId('tweakdefs2'))
+		space.edit(slotId('tweakdefs2'), 'mine')
+		space.openDesk(slotId('tweakdefs2'))
+		expect(space.ws).toMatchObject({
+			desk: true,
+			expanded: null,
+			active: slotId('tweakdefs2'),
+		})
+		expect(space.active().buffer).toBe('mine')
+
+		space.setFullscreen(true)
+		space.closeDesk()
+		expect(space.ws).toMatchObject({ desk: false, fullscreen: false })
+		space.dispose()
+	})
+
 	test('a row opens and closes over its edit, which survives the closing', async () => {
 		const { io } = fakeIo()
 		const space = createTweakspace(io, () => ({ tweakdefs2: 'AAA' }))

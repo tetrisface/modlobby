@@ -24,7 +24,6 @@ import {
 import {
 	ALL_TAB,
 	EVERY_ROW,
-	GENERAL_GROUP,
 	MAP_TAB,
 	MODDING_TAB,
 	byRunOrder,
@@ -38,10 +37,8 @@ import {
 	label,
 	rowsByGroup,
 	rowsByTab,
-	rowsOf,
 	searchRows,
 	arrange,
-	sortRows,
 	tabs,
 	DOCUMENTS,
 	type Changed,
@@ -51,6 +48,7 @@ import {
 	type Section,
 	type Tab,
 } from '../lib/setup'
+import { createOverview } from '../lib/overview'
 import { sticky } from '../lib/sticky'
 import {
 	DOC_KEYS,
@@ -91,6 +89,8 @@ const WIDTH_KEY = 'modlobby.setupWidth'
 const SHOW_KEY = 'modlobby.setupShow'
 const ORDER_KEY = 'modlobby.setupOrder'
 const GROUP_KEY = 'modlobby.setupGroup'
+/** How far below the list's top a heading has to have scrolled to be the one being read. */
+const READ_LINE = 32
 
 type ShowRows = 'changed' | 'all'
 
@@ -199,23 +199,14 @@ export function Setup() {
 			TABS().find((entry) => entry.key === tabKey()) ?? TABS()[0] ?? NO_TABS
 		)
 	}
-	const [group, setGroup] = createSignal<string | null>(null)
 
 	/**
 	 * The drafts editor fills the pane while it is open. Anything that picks
-	 * something else to look at -- a tab, a group, its own back button --
-	 * closes it.
+	 * something else to look at -- a tab, its own back button -- closes it.
 	 */
-	const [drafting, setDrafting] = createSignal(false)
-	function openDrafts() {
-		space.expand(null)
-		space.open(SCRATCH)
-		setDrafting(true)
-	}
-	function closeDrafts() {
-		space.setFullscreen(false)
-		setDrafting(false)
-	}
+	const drafting = () => space.ws.desk
+	const openDrafts = () => space.openDesk(SCRATCH)
+	const closeDrafts = () => space.closeDesk()
 
 	const values = createMemo(() => readModOptions(room.my()?.scriptTags))
 
@@ -249,16 +240,10 @@ export function Setup() {
 	)
 	const changedRows = () => changedView(values(), held())
 
-	const shown = createMemo(() => {
-		const name = group()
-		const found = tab().groups.find((entry) => entry.name === name)
-		return found ? rowsOf(found, values()) : []
-	})
-
 	/**
 	 * A search across every tab. While it holds something the body is the
-	 * matches, under the tab each lives in; the tab and group that were open
-	 * are untouched, so clearing it lands where you were.
+	 * matches, under the tab each lives in; the tab that was open is
+	 * untouched, so clearing it lands where you were.
 	 */
 	const [needle, setNeedle] = createSignal('')
 	const searching = () => needle().trim() !== ''
@@ -283,15 +268,44 @@ export function Setup() {
 	const arranged = (sections: Section[]) =>
 		arrange(sections, grouping(), rowOrder())
 
+	/** The list: the All tab's tabs or a tab's groups, as Show, Group and Sort have them. */
+	const listed = createMemo(() =>
+		arranged(
+			tab().key === ALL_TAB
+				? byTabName(rowsByTab(TABS(), values(), filter()))
+				: rowsByGroup(tab(), values(), filter()),
+		),
+	)
+	/** The list's headings, which the overview beside it names. */
+	const headings = createMemo(
+		() =>
+			listed()
+				.map((section) => section.name)
+				.filter((name) => name !== ''),
+		undefined,
+		{ equals: (a, b) => a.join('\n') === b.join('\n') },
+	)
+
+	/** The list's own scrolling page, which the overview reads and moves. */
+	let list: HTMLDivElement | undefined
+	const sectionNamed = (name: string) =>
+		[...(list?.querySelectorAll<HTMLElement>('[data-section]') ?? [])].find(
+			(section) => section.dataset.section === name,
+		)
+	const overview = createOverview({
+		page: () => list,
+		ids: headings,
+		start: sectionNamed,
+		sectionOf: (target) =>
+			target.closest<HTMLElement>('[data-section]')?.dataset.section || null,
+		line: READ_LINE,
+	})
+
 	/**
 	 * The foot of the list. A choice that does not apply to what is open is
 	 * greyed with the reason, never taken away.
 	 */
-	const viewBar = (
-		showFixed: string | null,
-		orderFixed: string | null,
-		groupFixed: string | null,
-	) => (
+	const viewBar = (showFixed: string | null) => (
 		<div class='setup-bar'>
 			<span class='setup-bar-pair'>
 				<span class='setup-bar-label'>Show</span>
@@ -311,8 +325,6 @@ export function Setup() {
 					value={rowOrder()}
 					options={ORDER}
 					onChange={setOrder}
-					disabled={orderFixed !== null}
-					title={orderFixed ?? undefined}
 				/>
 			</span>
 			<span class='setup-bar-pair'>
@@ -322,18 +334,13 @@ export function Setup() {
 					value={grouping()}
 					options={GROUPS}
 					onChange={setGrouped}
-					disabled={groupFixed !== null}
-					title={groupFixed ?? undefined}
 				/>
 			</span>
 		</div>
 	)
-	const inTweakSlots = () =>
-		tab().key === MODDING_TAB && group() === TWEAK_GROUP
-
 	function open(next: Tab) {
 		setTabKey(next.key)
-		setGroup(null)
+		list?.scrollTo?.({ top: 0 })
 		closeDrafts()
 	}
 
@@ -507,97 +514,59 @@ export function Setup() {
 										onDrafts={openDrafts}
 									/>
 								</div>
-								{viewBar('A search looks through every setting', null, null)}
+								{viewBar('A search looks through every setting')}
 							</div>
 						}
 					>
-						<div class='setup-body'>
-							<nav class='groups'>
-								<Show
-									when={tab().key !== ALL_TAB}
-									fallback={
-										<For each={everywhere()}>
-											{(entry) => (
-												<button class='group' onClick={() => open(entry.tab)}>
-													{entry.tab.name}
-													<span class='c'>{entry.rows.length}</span>
-												</button>
-											)}
-										</For>
-									}
-								>
-									<button
-										class='group'
-										classList={{ on: group() === null }}
-										onClick={() => setGroup(null)}
-									>
-										Changed
-										<span class='c'>{changedCount(tab(), values())}</span>
-									</button>
-									<For each={tab().groups}>
-										{(entry) => (
+						<div
+							class='setup-body'
+							classList={{ bare: headings().length === 0 }}
+						>
+							{/* The list at a glance, as Settings has its page: every
+								    heading in it, the one being read marked, and a press
+								    to go there. Nothing to name when nothing is headed. */}
+							<Show when={headings().length > 0}>
+								<nav class='groups' aria-label='Sections'>
+									<For each={headings()}>
+										{(name) => (
 											<button
+												type='button'
 												class='group'
-												classList={{ on: group() === entry.name }}
-												onClick={() => setGroup(entry.name)}
+												classList={{ on: overview.marked() === name }}
+												aria-current={
+													overview.marked() === name ? 'location' : undefined
+												}
+												onClick={() => overview.jump(name, 'smooth')}
 											>
-												{entry.name || GENERAL_GROUP}
-												<span class='c'>{entry.options.length}</span>
+												{name}
 											</button>
 										)}
 									</For>
-								</Show>
-							</nav>
+								</nav>
+							</Show>
 
 							<div class='setup-list'>
-								<div class='setup-detail'>
-									<Switch>
-										<Match when={tab().key === ALL_TAB}>
-											<Sections
-												sections={arranged(
-													byTabName(rowsByTab(TABS(), values(), filter())),
-												)}
-												empty="Every setting is on BAR's default."
-												editable={editable()}
-												onDrafts={openDrafts}
-											/>
-										</Match>
-										<Match when={group() === null}>
-											<Sections
-												sections={arranged(
-													rowsByGroup(tab(), values(), filter()),
-												)}
-												empty="Every setting in this tab is on BAR's default."
-												editable={editable()}
-												onDrafts={openDrafts}
-											/>
-										</Match>
-										<Match
-											when={
-												tab().key === MODDING_TAB && group() === TWEAK_GROUP
-											}
-										>
-											<TweakSlots
-												rows={shown()}
-												editable={editable()}
-												onDrafts={openDrafts}
-											/>
-										</Match>
-										<Match when={true}>
-											<Rows
-												rows={sortRows(shown(), rowOrder())}
-												editable={editable()}
-											/>
-										</Match>
-									</Switch>
+								<div
+									class='setup-detail'
+									ref={list}
+									onScroll={overview.spy}
+									onScrollEnd={overview.settle}
+									onWheel={overview.settle}
+									onMouseOver={overview.point}
+									onMouseLeave={overview.leave}
+								>
+									<Sections
+										sections={listed()}
+										empty={
+											tab().key === ALL_TAB
+												? "Every setting is on BAR's default."
+												: "Every setting in this tab is on BAR's default."
+										}
+										editable={editable()}
+										onDrafts={openDrafts}
+									/>
 								</div>
-								{viewBar(
-									group() === null ? null : 'A group shows every setting in it',
-									inTweakSlots()
-										? 'Tweak slots stay in the order BAR runs them'
-										: null,
-									group() === null ? null : 'A group is one list already',
-								)}
+								{viewBar(null)}
 							</div>
 						</div>
 					</Show>
@@ -650,12 +619,12 @@ function Sections(props: {
 				{(name) => (
 					<Show when={byName().get(name)}>
 						{(entry) => (
-							<>
+							<div class='setup-group' data-section={name || undefined}>
 								<Show when={name !== ''}>
 									<SectionHead name={name} onDrafts={props.onDrafts} />
 								</Show>
 								<Rows rows={entry().rows} editable={props.editable} />
-							</>
+							</div>
 						)}
 					</Show>
 				)}
@@ -821,36 +790,5 @@ function Control(props: {
 				/>
 			</Match>
 		</Switch>
-	)
-}
-
-/** The twenty slots as rows, every one of them, filled or not. */
-function TweakSlots(props: {
-	rows: Row[]
-	editable: boolean
-	onDrafts: () => void
-}) {
-	const room = useRoom()
-	return (
-		<>
-			<SectionHead name={TWEAK_GROUP} onDrafts={props.onDrafts} />
-			<Rows rows={props.rows} editable={props.editable} />
-			<Show
-				when={room.caps.spads}
-				fallback={
-					<div class='setup-note'>
-						The editor formats and diffs a tweak before it goes in. Nothing
-						leaves this machine.
-					</div>
-				}
-			>
-				<Show when={!props.editable}>
-					<div class='setup-note'>
-						The editor still formats and compares a tweak, and copies the
-						command for somebody who can set it.
-					</div>
-				</Show>
-			</Show>
-		</>
 	)
 }

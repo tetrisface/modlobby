@@ -42,6 +42,8 @@ export function Toolbar(props: {
 	saveName: string
 	/** Back to the settings, from the drafts editor. */
 	onClose?: () => void
+	/** Into the drafts editor with this document, from under a settings row. */
+	onDesk?: () => void
 	onFormat: () => void
 	onReset: () => void
 	onSave: (name: string) => void
@@ -187,6 +189,17 @@ export function Toolbar(props: {
 					>
 						Command palette
 					</button>
+					<Show when={props.onDesk}>
+						{(desk) => (
+							<button
+								class='tweak-tool'
+								title="The full editor: this one, with the room's slots and your drafts beside it"
+								onClick={() => desk()()}
+							>
+								Open in editor
+							</button>
+						)}
+					</Show>
 					{/* Other ways to look, kept together at the right when the row wraps. */}
 					<span class='tweak-tools-end'>
 						<button

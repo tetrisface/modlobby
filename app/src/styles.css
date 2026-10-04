@@ -2029,7 +2029,6 @@ body.resizing-y {
 	font-size: 0.75rem;
 }
 
-.doc-find select,
 .doc-rows {
 	display: flex;
 	flex-direction: column;
@@ -2038,6 +2037,28 @@ body.resizing-y {
 	min-height: 0;
 	padding: 0 0.375rem 0.5rem;
 	overflow-y: auto;
+}
+
+/* The two lists in it, the room's slots and the drafts, headed as the
+   settings' sections are. */
+.doc-head {
+	margin: 0.5rem 0.375rem 0.125rem;
+	font-family: var(--display);
+	font-size: 0.625rem;
+	font-weight: 600;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+	color: var(--faint);
+}
+
+.doc-head:first-child {
+	margin-top: 0;
+}
+
+.doc-none {
+	margin: 0;
+	padding: 0.125rem 0.375rem;
+	font-size: 0.75rem;
 }
 
 /* Two lines a document: what it is and how big; what it is called and what
@@ -3222,13 +3243,6 @@ body.resizing {
 	border-left-color: var(--accent);
 }
 
-.group .c {
-	font-family: var(--mono);
-	font-size: 0.625rem;
-	color: var(--faint);
-	font-variant-numeric: tabular-nums;
-}
-
 /* The list and its view choices under it: the list scrolls, the choices stay. */
 .setup-list {
 	display: flex;
@@ -3240,6 +3254,19 @@ body.resizing {
 
 .setup-list > .setup-detail {
 	flex: 1;
+}
+
+/* No headings, so no overview beside the list. */
+.setup-body.bare {
+	grid-template-columns: minmax(0, 1fr);
+}
+
+/* One heading and its rows: where the overview jumps to, and what the pointer
+   rests on. */
+.setup-group {
+	display: flex;
+	flex-direction: column;
+	gap: 0.625rem;
 }
 
 .setup-bar {

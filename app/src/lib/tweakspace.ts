@@ -122,6 +122,11 @@ export type Workspace = {
 	active: DocId
 	/** The slot whose row is open in the settings, if one is. */
 	expanded: DocId | null
+	/**
+	 * The drafts editor fills the pane: one editor, with the room's slots and
+	 * the drafts listed beside it.
+	 */
+	desk: boolean
 	filter: Filter
 	/** Where a draft or the scratch is sent; a slot document is sent to itself. */
 	target: string
@@ -259,6 +264,7 @@ export function emptyWorkspace(
 		docs,
 		active,
 		expanded: null,
+		desk: false,
 		filter: { query: '', sort: 'name' },
 		target: defaultTarget('defs'),
 		minify: false,
@@ -423,20 +429,48 @@ const BY: Record<Sort, (a: Item, b: Item) => number> = {
 		a.title.localeCompare(b.title),
 }
 
+/** Whether an item is what the drafts editor's search asks for: its file or slot, or its name. */
+function matches(item: Item, query: string): boolean {
+	const needle = query.trim().toLowerCase()
+	return (
+		needle === '' ||
+		item.title.toLowerCase().includes(needle) ||
+		(item.name ?? '').toLowerCase().includes(needle)
+	)
+}
+
 /** The drafts editor's list: the scratch first, then the drafts, searched and sorted. */
 export function listItems(ws: Workspace, filter: Filter = ws.filter): Item[] {
-	const needle = filter.query.trim().toLowerCase()
 	const drafts = Object.values(ws.docs)
 		.filter((doc) => doc.origin === 'draft')
 		.map(itemOf)
-		.filter(
-			(item) =>
-				needle === '' ||
-				item.title.toLowerCase().includes(needle) ||
-				(item.name ?? '').toLowerCase().includes(needle),
-		)
+		.filter((item) => matches(item, filter.query))
 		.sort(BY[filter.sort])
 	return [itemOf(ws.docs[SCRATCH]!), ...drafts]
+}
+
+/**
+ * The room's slots in the drafts editor, above the drafts: those holding
+ * something, an unsent edit, or open, searched as the drafts are. In the
+ * order BAR runs them, the start boxes last -- an order that means something,
+ * so not the drafts' sort. The map's tables are read and never written, so
+ * they are not among them.
+ */
+export function roomItems(ws: Workspace, filter: Filter = ws.filter): Item[] {
+	return Object.values(ws.docs)
+		.filter(
+			(doc) =>
+				doc.origin === 'slot' &&
+				!isMapTable(doc.title) &&
+				(!isCleared(doc.blob ?? '') || isDirty(doc) || doc.id === ws.active),
+		)
+		.sort(
+			(a, b) =>
+				Number(a.kind === 'boxes') - Number(b.kind === 'boxes') ||
+				byRunOrder(a.title, b.title),
+		)
+		.map(itemOf)
+		.filter((item) => matches(item, filter.query))
 }
 
 /** Slots holding an edit the room has not been sent; a map table has nowhere to go. */
