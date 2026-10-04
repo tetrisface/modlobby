@@ -126,38 +126,37 @@ export function audiences(): string[] {
 /**
  * Widgets ranked for one audience and window, most used first.
  *
- * A widget missing from a window is absent, not zero: the k-anonymity floor is
- * applied inside each window, so a widget with six players this year and two
- * this week is withheld from the week rather than shown with a two. The same
- * holds across the audience split, which is why it cannot be derived here from
- * a combined total.
+ * Both floors apply inside each window. A widget too few people run there is
+ * absent, not zero. Between the listing and publishing floors it is present
+ * with its numbers `withheld`, ranked after every counted widget -- by name, so
+ * the order says nothing about how many. The same holds across the audience
+ * split, which is why it cannot be derived here from a combined total.
  */
 export function ranked(audience: string, window: string): WidgetUsage[] {
 	const document = usage()
 	if (!document) return []
 	const withRank = document.widgets.flatMap((widget) => {
-		const stats = widget.windows[audience]?.[window]
+		const stats = statsFor(widget, audience, window)
 		return stats ? [{ widget, rank: stats.rank }] : []
 	})
 	return withRank.sort((a, b) => a.rank - b.rank).map((entry) => entry.widget)
 }
 
-/** The stats to show for a widget, falling back when the window withheld it. */
+/**
+ * A widget's or a fork's numbers in exactly this audience and window.
+ *
+ * No fallback to a wider window or the combined audience: absent here means
+ * too few here, and another slice's numbers would answer a question nobody
+ * asked -- an expanded row would show a version's year beside its name's week.
+ * The page already falls back when the document lacks a whole window or the
+ * audience split.
+ */
 export function statsFor(
-	widget: WidgetUsage,
+	counted: Pick<WidgetUsage, 'windows'>,
 	audience: string,
 	window: string,
-): { window: string; stats: WindowStats } | null {
-	const inAudience =
-		widget.windows[audience] ?? widget.windows[DEFAULT_AUDIENCE]
-	if (!inAudience) return null
-	const wanted = inAudience[window]
-	if (wanted) return { window, stats: wanted }
-	for (const name of [...WINDOW_ORDER].reverse()) {
-		const stats = inAudience[name]
-		if (stats) return { window: name, stats }
-	}
-	return null
+): WindowStats | undefined {
+	return counted.windows[audience]?.[window]
 }
 
 /**
@@ -271,19 +270,27 @@ export function mainFork(widget: WidgetUsage): Fork {
 	return forks.find((fork) => fork.main) ?? forks[0]
 }
 
-/** A fork's own numbers in one slice, falling back like a row's do. */
-export function forkStatsFor(
-	fork: Fork,
-	audience: string,
-	window: string,
-): WindowStats | null {
-	const inAudience = fork.windows[audience] ?? fork.windows[DEFAULT_AUDIENCE]
-	if (!inAudience) return null
-	if (inAudience[window]) return inAudience[window]
-	for (const name of [...WINDOW_ORDER].reverse()) {
-		if (inAudience[name]) return inAudience[name]
-	}
-	return null
+/** Whether the row says where its widget lives, rather than "no known source". */
+export function hasSource(widget: WidgetUsage): boolean {
+	return mainFork(widget).install.kind !== 'none'
+}
+
+/**
+ * The version published before every other one, by the dates its sources give.
+ *
+ * A date, not a claim of authorship: which version copied which is not
+ * something dates prove, and the most used version is often not the first.
+ * Null with fewer than two dated versions, or a tie.
+ */
+export function firstPublished(widget: WidgetUsage): string | null {
+	const dated = forksOf(widget)
+		.filter((fork) => fork.kind === 'lineage')
+		.map((fork) => ({ key: fork.key, at: Date.parse(fork.first_published) }))
+		.filter((fork) => !Number.isNaN(fork.at))
+		.sort((a, b) => a.at - b.at)
+	const [first, second] = dated
+	if (!first || !second || first.at === second.at) return null
+	return first.key
 }
 
 /** What can be done about one widget: to the name, or to one version of it. */
@@ -526,8 +533,7 @@ export function sortWidgets(
 	window: string,
 	mode: UsingMode = DEFAULT_USING_MODE,
 ): WidgetUsage[] {
-	const stats = (widget: WidgetUsage) =>
-		statsFor(widget, audience, window)?.stats
+	const stats = (widget: WidgetUsage) => statsFor(widget, audience, window)
 	const value = (widget: WidgetUsage): number | string => {
 		const found = stats(widget)
 		switch (key) {

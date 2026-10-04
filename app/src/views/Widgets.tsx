@@ -35,8 +35,9 @@ import {
 	audiences,
 	configuredState,
 	forkActions,
-	forkStatsFor,
+	firstPublished,
 	forksOf,
+	hasSource,
 	installedEntry,
 	isEnabled,
 	isInstalled,
@@ -217,6 +218,7 @@ export function Widgets() {
 	// of the page, and unlike a filter button nothing on screen says why.
 	const [query, setQuery] = createSignal('')
 	const [installedOnly, setInstalledOnly] = sticky('widgets.installed', false)
+	const [sourcedOnly, setSourcedOnly] = sticky('widgets.sourced', false)
 	const [includeUsedOnce, setIncludeUsedOnce] = sticky('widgets.once', false)
 	const mode = (): UsingMode =>
 		includeUsedOnce() ? 'once' : DEFAULT_USING_MODE
@@ -244,7 +246,9 @@ export function Widgets() {
 		sortWidgets(
 			inWindow().filter(
 				(widget) =>
-					matches(widget, query()) && (!installedOnly() || isInstalled(widget)),
+					matches(widget, query()) &&
+					(!installedOnly() || isInstalled(widget)) &&
+					(!sourcedOnly() || hasSource(widget)),
 			),
 			sort(),
 			descending(),
@@ -262,7 +266,16 @@ export function Widgets() {
 	// not throw away how far down they had scrolled.
 	createEffect(
 		on(
-			[query, sort, descending, shownAudience, shown, installedOnly, mode],
+			[
+				query,
+				sort,
+				descending,
+				shownAudience,
+				shown,
+				installedOnly,
+				sourcedOnly,
+				mode,
+			],
 			() => {
 				setDrawnCount(ROWS_PER_DRAW)
 				page.scrollTop = 0
@@ -412,6 +425,19 @@ export function Widgets() {
 					/>
 				</div>
 
+				<div class='filter-group' role='group' aria-label='Source'>
+					<Choice
+						label='Any source'
+						on={!sourcedOnly()}
+						onClick={() => setSourcedOnly(false)}
+					/>
+					<Choice
+						label='Source known'
+						on={sourcedOnly()}
+						onClick={() => setSourcedOnly(true)}
+					/>
+				</div>
+
 				<Show when={splits().length > 1}>
 					<div class='filter-group' role='group' aria-label='Mode'>
 						<For each={splits()}>
@@ -493,7 +519,7 @@ export function Widgets() {
 				fallback={
 					<Empty
 						loading={fetched.loading && !usage()}
-						searching={!!query()}
+						searching={!!query() || sourcedOnly()}
 						installedOnly={installedOnly()}
 					/>
 				}
@@ -502,9 +528,10 @@ export function Widgets() {
 					What players actually run, from pve.bar's weekly read of public
 					replays. Counted in distinct players
 					<Show when={built()}>{(day) => <>, built {day()}</>}</Show>. A widget
-					too few people run to be counted anonymously is left out. Installs go
-					to modlobby's own widget folder, so they apply to games launched from
-					here and not to Chobby's.
+					fewer than 3 people run is left out, and one with a public source that
+					3 or 4 run shows — instead of numbers, so nobody can be picked out.
+					Installs go to modlobby's own widget folder, so they apply to games
+					launched from here and not to Chobby's.
 				</p>
 				<table class='widget-table'>
 					<thead>
@@ -628,7 +655,7 @@ function Empty(props: {
 				>
 					<Show
 						when={props.installedOnly}
-						fallback='No widget matches that search in this window.'
+						fallback='No widget matches that search or filter in this window.'
 					>
 						None of the widgets in this window are installed here.
 					</Show>
@@ -659,9 +686,7 @@ function Row(props: {
 	onEnlarge: (key: string, index: number | null, count: number) => void
 	onAct: (widget: WidgetUsage, fork: Fork, action: Action) => void
 }) {
-	const found = () => statsFor(props.widget, props.audience, props.window)
-	const stats = () => found()?.stats
-	const shownWindow = () => found()?.window ?? props.window
+	const stats = () => statsFor(props.widget, props.audience, props.window)
 	const configured = () => configuredState(props.widget)
 	const main = () => mainFork(props.widget)
 	const versions = () => versionCount(props.widget)
@@ -736,7 +761,7 @@ function Row(props: {
 			</td>
 			<Numbers stats={stats()} mode={props.mode} dated={props.widget} />
 			<td>
-				{label(shownWindow())}
+				{label(props.window)}
 				<Show when={stats() && !isRepresentative(stats()!)}>
 					<span class='muted'> ({stats()!.days_covered}d)</span>
 				</Show>
@@ -775,12 +800,12 @@ function ForkRow(props: {
 	onEnlarge: (key: string, index: number | null, count: number) => void
 	onAct: (widget: WidgetUsage, fork: Fork, action: Action) => void
 }) {
-	const stats = () =>
-		forkStatsFor(props.fork, props.audience, props.window) ?? undefined
+	const stats = () => statsFor(props.fork, props.audience, props.window)
 	const here = () =>
 		localForFork(props.widget, props.fork).length > 0 ||
 		installedEntry(props.fork.key) !== null
 	const other = () => props.fork.kind === 'other'
+	const first = () => firstPublished(props.widget) === props.fork.key
 
 	return (
 		<tr
@@ -816,7 +841,7 @@ function ForkRow(props: {
 								? 'Other versions'
 								: props.fork.main
 									? 'Main version'
-									: 'Fork'}
+									: 'Version'}
 						</span>
 						<Show when={!other() && props.fork.author}>
 							<span class='widget-by'> by {props.fork.author}</span>
@@ -826,19 +851,26 @@ function ForkRow(props: {
 								Players whose file matches no version anyone has published.
 							</p>
 						</Show>
-						<Show when={!other() && props.fork.install.license}>
-							{(licence) => (
-								<div class='chips'>
-									<span class='chip'>{licence()}</span>
-									<Show when={here()}>
-										<span class='chip ok'>On this machine</span>
-									</Show>
-								</div>
-							)}
-						</Show>
-						<Show when={!props.fork.install.license && here()}>
+						<Show
+							when={
+								(!other() && (first() || props.fork.install.license)) || here()
+							}
+						>
 							<div class='chips'>
-								<span class='chip ok'>On this machine</span>
+								<Show when={!other() && first()}>
+									<span
+										class='chip'
+										title='The earliest publish date among these versions. A date, not a claim of who wrote it.'
+									>
+										First published
+									</span>
+								</Show>
+								<Show when={!other() && props.fork.install.license}>
+									{(licence) => <span class='chip'>{licence()}</span>}
+								</Show>
+								<Show when={here()}>
+									<span class='chip ok'>On this machine</span>
+								</Show>
 							</div>
 						</Show>
 					</div>
@@ -909,12 +941,6 @@ function YourVersionRow(props: { file: LocalWidget }) {
 }
 
 /**
- * The five number cells, counted the way the page is counting.
- *
- * A fork the anonymity floor withheld has its numbers zeroed in the document;
- * it reads "few" here rather than a zero, which would be a false statement.
- */
-/**
  * A published date as "1y 1m ago", with the exact moment on hover. Not
  * withheld like the counts beside it: when a widget was published is its
  * author's public fact, not something about the players who run it.
@@ -927,24 +953,27 @@ function When(props: { iso: string }) {
 	)
 }
 
+// ponytail: mirrors DEFAULT_MIN_PLAYERS in pve-stats' resolution.py; publish
+// the floor in the document if it ever changes.
+const BELOW_FLOOR =
+	'Fewer than 5 players here, so not shown: a count that small could point at who they are'
+
+/**
+ * The five number cells, counted the way the page is counting.
+ *
+ * Below the anonymity floor -- a fork withheld with its numbers zeroed, or a
+ * widget absent from this window -- each reads as a dash that says why on
+ * hover, rather than a zero, which would be a false statement.
+ */
 function Numbers(props: {
 	stats: WindowStats | undefined
 	mode: UsingMode
 	dated: { first_published: string; last_updated: string }
 }) {
-	const withheld = () => props.stats?.withheld ?? false
+	const hidden = () => !props.stats || props.stats.withheld
 	const cell = (value: () => string) => (
-		<td class='num' classList={{ muted: withheld() }}>
-			<Show
-				when={props.stats && !withheld()}
-				fallback={
-					<Show when={withheld()} fallback='—'>
-						<span title='Too few players to show without identifying them'>
-							few
-						</span>
-					</Show>
-				}
-			>
+		<td class='num' classList={{ muted: hidden() }}>
+			<Show when={!hidden()} fallback={<span title={BELOW_FLOOR}>—</span>}>
 				{value()}
 			</Show>
 		</td>
@@ -1131,7 +1160,7 @@ function OnThisMachine(props: { widget: WidgetUsage }) {
 			? 'Main version'
 			: fork.author
 				? `${fork.author}'s version`
-				: 'A fork'
+				: 'A version'
 	return (
 		<Show when={found().length > 0}>
 			<ul class='widget-local'>

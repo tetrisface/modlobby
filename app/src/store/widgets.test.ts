@@ -101,33 +101,20 @@ describe('widget usage store', () => {
 			'all',
 			'30d',
 		)
-		expect(found?.window).toBe('30d')
-		expect(found?.stats.players).toBe(42)
+		expect(found?.players).toBe(42)
 	})
 
-	test('a withheld window falls back to the widest available', () => {
+	test('a window below the floor has no numbers, not a wider one', () => {
 		// The k-anonymity floor applies inside each window, so a widget can be
-		// absent from the week and present in the year. Blanking the card would
-		// read as "unused" rather than "withheld here".
-		const found = statsFor(
-			widget({ '90d': stats(), all: stats({ players: 9 }) }),
-			'all',
-			'7d',
-		)
-		expect(found?.window).toBe('all')
-		expect(found?.stats.players).toBe(9)
-	})
-
-	test('the fallback does not depend on key order', () => {
-		const insertedNarrowLast = widget({
-			all: stats({ players: 1 }),
-			'7d': stats({ players: 2 }),
-		})
-		expect(statsFor(insertedNarrowLast, 'all', '365d')?.window).toBe('all')
+		// absent from the week and present in the year. The week's row says
+		// "fewer than five"; the year's numbers would answer another question.
+		expect(
+			statsFor(widget({ all: stats({ players: 9 }) }), 'all', '7d'),
+		).toBeUndefined()
 	})
 
 	test('a widget with no windows at all has nothing to show', () => {
-		expect(statsFor(widget({}), 'all', '30d')).toBeNull()
+		expect(statsFor(widget({}), 'all', '30d')).toBeUndefined()
 	})
 
 	test('a partly harvested window is not presented as representative', () => {
@@ -149,15 +136,13 @@ describe('widget usage store', () => {
 		expect(DEFAULT_AUDIENCE).toBe('all')
 	})
 
-	test('an audience the document withheld falls back to the combined view', () => {
-		// The split is absent while the pipeline re-reads history under new rules.
-		// Blanking every row would read as "nobody plays PvE".
-		const found = statsFor(
-			widget({ '30d': stats({ players: 7 }) }),
-			'pve',
-			'30d',
-		)
-		expect(found?.stats.players).toBe(7)
+	test('an audience below the floor has no numbers, not the combined ones', () => {
+		// A document without the split is handled by the page, which then shows
+		// the combined view; a widget missing from PvE in one that has it is
+		// below the floor there.
+		expect(
+			statsFor(widget({ '30d': stats({ players: 7 }) }), 'pve', '30d'),
+		).toBeUndefined()
 	})
 
 	test('search matches any field and any order of words', () => {

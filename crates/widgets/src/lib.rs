@@ -131,8 +131,8 @@ pub struct WindowStats {
 	/// `players_still_using / players`: the still-using share.
 	#[serde(default)]
 	pub still_using: f64,
-	/// A fork below the anonymity floor: listed, with every number zeroed.
-	/// Always false for a row's own numbers.
+	/// Below the anonymity floor: listed, with every number zeroed. A fork, or
+	/// a row with a public source between the listing and publishing floors.
 	#[serde(default)]
 	pub withheld: bool,
 	pub sightings: u32,

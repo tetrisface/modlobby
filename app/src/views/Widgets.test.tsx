@@ -237,9 +237,9 @@ describe('the widgets page', () => {
 	})
 
 	test('a widget the window withheld is not listed in it', async () => {
-		// The anonymity floor is applied inside each window, so a widget with
-		// numbers for the year and none for the week is absent from the week
-		// rather than shown there with a small number.
+		// Both floors apply inside each window, so a widget with numbers for the
+		// year and too few players this month is absent from the month rather
+		// than shown there with a small number -- or with the year's.
 		serve(
 			published([
 				widget({
@@ -261,6 +261,39 @@ describe('the widgets page', () => {
 		expect(names(container)).toEqual(['Everyday'])
 		fireEvent.click(getByText('All time'))
 		expect(names(container)).toEqual(['Everyday', 'Rare'])
+	})
+
+	test('a widget between the floors shows dashes that say why', async () => {
+		serve(
+			published([
+				widget({ key: 'a', name: 'Everyday' }),
+				widget({
+					key: 'b',
+					name: 'Few',
+					windows: combined({
+						'30d': stats({
+							rank: 2,
+							withheld: true,
+							players: 0,
+							players_active: 0,
+							players_still_using: 0,
+						}),
+					}),
+				}),
+			]),
+		)
+		const Widgets = await fresh()
+		const { container } = render(() => <Widgets />)
+
+		await drawn(container)
+		expect(names(container)).toEqual(['Everyday', 'Few'])
+		const players = container
+			.querySelectorAll('tbody tr.widget-row')[1]!
+			.querySelector('td.num:nth-child(3)')!
+		expect(players.textContent).toBe('—')
+		expect(players.querySelector('span')?.title).toMatch(
+			/^Fewer than 5 players/,
+		)
 	})
 
 	test('a window that has only been partly harvested says so', async () => {
@@ -441,6 +474,29 @@ describe('the widgets page', () => {
 		await drawn(container)
 		// A lone "All" button is a control that does nothing.
 		expect(queryByText('PvE')).toBeNull()
+	})
+
+	test('source known hides the widgets nobody can say where to get', async () => {
+		serve(
+			published([
+				widget({ key: 'a', name: 'Untraced' }),
+				widget({
+					key: 'b',
+					name: 'Traced',
+					install: fromGithub(),
+					windows: combined({ '30d': stats({ rank: 2 }) }),
+				}),
+			]),
+		)
+		const Widgets = await fresh()
+		const { container, getByText } = render(() => <Widgets />)
+
+		await drawn(container)
+		expect(names(container)).toEqual(['Untraced', 'Traced'])
+		fireEvent.click(getByText('Source known'))
+		expect(names(container)).toEqual(['Traced'])
+		fireEvent.click(getByText('Any source'))
+		expect(names(container)).toEqual(['Untraced', 'Traced'])
 	})
 
 	test('picking pve shows only what was seen against ai', async () => {
@@ -1044,7 +1100,7 @@ describe('versions under a name', () => {
 		const kinds = forkRows(container).map(
 			(row) => row.querySelector('.widget-fork-kind')?.textContent,
 		)
-		expect(kinds).toEqual(['Main version', 'Fork', 'Other versions'])
+		expect(kinds).toEqual(['Main version', 'Version', 'Other versions'])
 		// Nothing inside a version opens further.
 		expect(
 			container.querySelectorAll('tr.widget-fork .widget-expand'),
@@ -1077,14 +1133,40 @@ describe('versions under a name', () => {
 		expect(container.querySelector('.widget-expand')).toBeNull()
 	})
 
-	test('a withheld version reads "few", not zero', async () => {
+	test('the earliest dated version says it was published first', async () => {
+		// The most used version is often not the first: here Bob's predates the
+		// main one. A date, so it is stated as one -- never as "original".
+		const dated = family()
+		dated.forks[0] = {
+			...dated.forks[0]!,
+			first_published: '2026-09-10T00:00:00Z',
+		}
+		dated.forks[1] = {
+			...dated.forks[1]!,
+			first_published: '2026-08-17T00:00:00Z',
+		}
+		serve(published([dated]))
+		const Widgets = await fresh()
+		const { container, getByLabelText } = render(() => <Widgets />)
+		await drawn(container)
+		fireEvent.click(getByLabelText(/Show the 3 versions/))
+		const chipped = forkRows(container).map((row) =>
+			row.textContent?.includes('First published'),
+		)
+		expect(chipped).toEqual([false, true, false])
+	})
+
+	test('a withheld version reads a dash that says why, not zero', async () => {
 		serve(published([family()]))
 		const Widgets = await fresh()
 		const { container, getByLabelText } = render(() => <Widgets />)
 		await drawn(container)
 		fireEvent.click(getByLabelText(/Show the 3 versions/))
 		const other = forkRows(container)[2]!
-		expect(other.querySelector('td.num')?.textContent).toBe('few')
+		expect(other.querySelector('td.num')?.textContent).toBe('—')
+		expect(other.querySelector<HTMLElement>('td.num span')?.title).toMatch(
+			/^Fewer than 5/,
+		)
 	})
 
 	test('switching on and off lives on the name, never on a version', async () => {

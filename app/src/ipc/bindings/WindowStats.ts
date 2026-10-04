@@ -31,8 +31,8 @@ export type WindowStats = {
 	 */
 	still_using: number
 	/**
-	 * A fork below the anonymity floor: listed, with every number zeroed.
-	 * Always false for a row's own numbers.
+	 * Below the anonymity floor: listed, with every number zeroed. A fork, or
+	 * a row with a public source between the listing and publishing floors.
 	 */
 	withheld: boolean
 	sightings: number
