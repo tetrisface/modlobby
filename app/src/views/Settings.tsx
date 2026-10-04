@@ -10,6 +10,7 @@ import {
 import { createStore, reconcile, unwrap } from 'solid-js/store'
 import { PlayerFiles } from '../components/PlayerFiles'
 import { SearchBox } from '../components/SearchBox'
+import { Segmented } from '../components/Segmented'
 import { Heading, Query, Row } from '../components/SettingRow'
 import type { Settings } from '../ipc/bindings/Settings'
 import { api, describeError } from '../ipc/client'
@@ -30,6 +31,19 @@ import { ServerRows } from './Servers'
 
 /** Long enough that typing a hostname is one write rather than twelve. */
 const SAVE_AFTER = 600
+
+/** Where an alert is raised, if anywhere. */
+const ALERT_WHERE = [
+	{ value: 'off', label: 'Off' },
+	{ value: 'lobby', label: 'In lobby' },
+	{ value: 'desktop', label: 'Desktop' },
+] as const
+
+const JOIN_AS = [
+	{ value: 'remember', label: 'Remember last' },
+	{ value: 'spectator', label: 'Always spectator' },
+	{ value: 'player', label: 'Always player' },
+] as const
 
 /**
  * Every section, in the order the page shows them, by the name its heading,
@@ -448,31 +462,14 @@ export function SettingsView() {
 								<Row class={silenced()}>
 									<div class='choice-row'>
 										<span>{label}</span>
-										<div class='choice'>
-											<For
-												each={
-													[
-														['off', 'Off'],
-														['lobby', 'In lobby'],
-														['desktop', 'Desktop'],
-													] as const
-												}
-											>
-												{([where, name]) => (
-													<button
-														type='button'
-														classList={{
-															on: draft.notifications[key] === where,
-														}}
-														onClick={() =>
-															setDraft('notifications', key, where)
-														}
-													>
-														{name}
-													</button>
-												)}
-											</For>
-										</div>
+										<Segmented
+											label={label}
+											value={draft.notifications[key]}
+											options={ALERT_WHERE}
+											onChange={(where) =>
+												setDraft('notifications', key, where)
+											}
+										/>
 									</div>
 									<p class='muted'>{hint}</p>
 								</Row>
@@ -484,27 +481,12 @@ export function SettingsView() {
 						<Row>
 							<div class='choice-row'>
 								<span>Join rooms as</span>
-								<div class='choice'>
-									<For
-										each={
-											[
-												['remember', 'Remember last'],
-												['spectator', 'Always spectator'],
-												['player', 'Always player'],
-											] as const
-										}
-									>
-										{([how, label]) => (
-											<button
-												type='button'
-												classList={{ on: draft.play.joinAs === how }}
-												onClick={() => setDraft('play', 'joinAs', how)}
-											>
-												{label}
-											</button>
-										)}
-									</For>
-								</div>
+								<Segmented
+									label='Join rooms as'
+									value={draft.play.joinAs}
+									options={JOIN_AS}
+									onChange={(how) => setDraft('play', 'joinAs', how)}
+								/>
 							</div>
 							<p class='muted'>
 								Clicking a room in the list joins it, and this is what that

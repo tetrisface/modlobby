@@ -3229,6 +3229,40 @@ body.resizing {
 	font-variant-numeric: tabular-nums;
 }
 
+/* The list and its view choices under it: the list scrolls, the choices stay. */
+.setup-list {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+}
+
+.setup-list > .setup-detail {
+	flex: 1;
+}
+
+.setup-bar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.375rem 1rem;
+	padding: 0.375rem 0.875rem;
+	border-top: 1px solid var(--line);
+	background: var(--raised);
+}
+
+.setup-bar-pair {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.setup-bar-label {
+	font-size: 0.6875rem;
+	color: var(--faint);
+}
+
 .setup-detail {
 	display: flex;
 	flex-direction: column;
@@ -3246,7 +3280,6 @@ body.resizing {
 .opt,
 .setup-empty,
 .setup-note,
-.setup-reveal,
 .v-edit {
 	font-size: 1rem;
 }
@@ -3261,15 +3294,6 @@ body.resizing {
 	letter-spacing: 0.14em;
 	text-transform: uppercase;
 	color: var(--faint);
-}
-
-.setup-section .count {
-	margin-left: auto;
-	font-family: var(--mono);
-	font-size: 0.7rem;
-	letter-spacing: 0;
-	text-transform: none;
-	font-variant-numeric: tabular-nums;
 }
 
 .setup-rows {
@@ -3308,6 +3332,11 @@ body.resizing {
 	color: var(--text);
 }
 
+.opt .opt-hidden {
+	margin-left: 0.5rem;
+	color: var(--faint);
+}
+
 .opt .v {
 	font-family: var(--mono);
 	font-size: 0.83rem;
@@ -3326,18 +3355,6 @@ body.resizing {
 .setup-empty {
 	font-size: 0.9375rem;
 	margin: 0;
-}
-
-.setup-reveal {
-	align-self: flex-start;
-	padding: 0.25rem 0;
-	font-family: var(--body);
-	font-size: 0.875rem;
-	font-weight: 400;
-	letter-spacing: 0;
-	color: var(--accent);
-	background: transparent;
-	border: none;
 }
 
 .setup-note {

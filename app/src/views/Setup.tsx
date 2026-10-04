@@ -1,7 +1,6 @@
 import { Select } from '../components/Select'
 import {
 	For,
-	Index,
 	Match,
 	createEffect,
 	Show,
@@ -10,10 +9,10 @@ import {
 	createResource,
 	createSignal,
 	on,
-	type Accessor,
 } from 'solid-js'
 import { ResizeHandle } from '../components/ResizeHandle'
 import { SearchBox } from '../components/SearchBox'
+import { Segmented } from '../components/Segmented'
 import { api, describeError } from '../ipc/client'
 import {
 	clamp,
@@ -41,12 +40,18 @@ import {
 	rowsByTab,
 	rowsOf,
 	searchRows,
+	arrange,
+	sortRows,
 	tabs,
+	DOCUMENTS,
 	type Changed,
+	type Grouping,
 	type Row,
+	type RowOrder,
 	type Section,
 	type Tab,
 } from '../lib/setup'
+import { sticky } from '../lib/sticky'
 import {
 	DOC_KEYS,
 	SCRATCH,
@@ -83,6 +88,39 @@ const byTabName = (entries: Changed[]): Section[] =>
 	entries.map(({ tab, rows }) => ({ name: tab.name, rows }))
 
 const WIDTH_KEY = 'modlobby.setupWidth'
+const SHOW_KEY = 'modlobby.setupShow'
+const ORDER_KEY = 'modlobby.setupOrder'
+const GROUP_KEY = 'modlobby.setupGroup'
+
+type ShowRows = 'changed' | 'all'
+
+const SHOW = [
+	{
+		value: 'changed',
+		label: 'Changed',
+		title: "What differs from BAR's default",
+	},
+	{ value: 'all', label: 'All', title: 'Every setting' },
+] as const
+
+const ORDER = [
+	{
+		value: 'changed',
+		label: 'Changed first',
+		title: "What differs from BAR's default on top, the rest in BAR's order",
+	},
+	{ value: 'name', label: 'A–Z', title: 'By name' },
+] as const
+
+const GROUPS = [
+	{ value: 'none', label: 'None', title: 'One list, no headings' },
+	{ value: 'section', label: 'Section', title: "Under BAR's own headings" },
+	{
+		value: 'type',
+		label: 'Type',
+		title: 'Switches, choices, numbers, text and documents apart',
+	},
+] as const
 const NARROWEST = 420
 /** What the rosters and the chat keep, however wide the pane is dragged. */
 const ROOM_KEEPS = 480
@@ -227,15 +265,75 @@ export function Setup() {
 	const found = createMemo(() => searchRows(TABS(), values(), needle()))
 
 	/**
-	 * Whether the Changed view is showing everything else as well. Reset with
-	 * the tab: opening one means landing on what is changed in it.
+	 * What the rows show and in what order: one choice each for every tab,
+	 * kept between sessions. A stored value this build does not know reads as
+	 * the default.
 	 */
-	const [unchanged, setUnchanged] = createSignal(false)
+	const [show, setShow] = sticky<ShowRows>(SHOW_KEY, 'changed')
+	const [order, setOrder] = sticky<RowOrder>(ORDER_KEY, 'changed')
+	const [grouped, setGrouped] = sticky<Grouping>(GROUP_KEY, 'section')
+	const shownRows = (): ShowRows => (show() === 'all' ? 'all' : 'changed')
+	const rowOrder = (): RowOrder => (order() === 'name' ? 'name' : 'changed')
+	const grouping = (): Grouping =>
+		grouped() === 'none' || grouped() === 'type' ? grouped() : 'section'
+
+	/** The rows Show lets through. */
+	const filter = () => (shownRows() === 'all' ? EVERY_ROW : changedRows())
+	/** Sections as Group and Sort have them. */
+	const arranged = (sections: Section[]) =>
+		arrange(sections, grouping(), rowOrder())
+
+	/**
+	 * The foot of the list. A choice that does not apply to what is open is
+	 * greyed with the reason, never taken away.
+	 */
+	const viewBar = (
+		showFixed: string | null,
+		orderFixed: string | null,
+		groupFixed: string | null,
+	) => (
+		<div class='setup-bar'>
+			<span class='setup-bar-pair'>
+				<span class='setup-bar-label'>Show</span>
+				<Segmented
+					label='Show'
+					value={shownRows()}
+					options={SHOW}
+					onChange={setShow}
+					disabled={showFixed !== null}
+					title={showFixed ?? undefined}
+				/>
+			</span>
+			<span class='setup-bar-pair'>
+				<span class='setup-bar-label'>Sort</span>
+				<Segmented
+					label='Sort'
+					value={rowOrder()}
+					options={ORDER}
+					onChange={setOrder}
+					disabled={orderFixed !== null}
+					title={orderFixed ?? undefined}
+				/>
+			</span>
+			<span class='setup-bar-pair'>
+				<span class='setup-bar-label'>Group</span>
+				<Segmented
+					label='Group'
+					value={grouping()}
+					options={GROUPS}
+					onChange={setGrouped}
+					disabled={groupFixed !== null}
+					title={groupFixed ?? undefined}
+				/>
+			</span>
+		</div>
+	)
+	const inTweakSlots = () =>
+		tab().key === MODDING_TAB && group() === TWEAK_GROUP
 
 	function open(next: Tab) {
 		setTabKey(next.key)
 		setGroup(null)
-		setUnchanged(false)
 		closeDrafts()
 	}
 
@@ -400,8 +498,16 @@ export function Setup() {
 					<Show
 						when={!searching()}
 						fallback={
-							<div class='setup-detail setup-found'>
-								<Found found={found} needle={needle()} editable={editable()} />
+							<div class='setup-list'>
+								<div class='setup-detail setup-found'>
+									<Sections
+										sections={arranged(byTabName(found()))}
+										empty={`Nothing matches "${needle().trim()}".`}
+										editable={editable()}
+										onDrafts={openDrafts}
+									/>
+								</div>
+								{viewBar('A search looks through every setting', null, null)}
 							</div>
 						}
 					>
@@ -443,49 +549,55 @@ export function Setup() {
 								</Show>
 							</nav>
 
-							<div class='setup-detail'>
-								<Switch>
-									<Match when={tab().key === ALL_TAB}>
-										<Changes
-											changed={() =>
-												byTabName(rowsByTab(TABS(), values(), changedRows()))
+							<div class='setup-list'>
+								<div class='setup-detail'>
+									<Switch>
+										<Match when={tab().key === ALL_TAB}>
+											<Sections
+												sections={arranged(
+													byTabName(rowsByTab(TABS(), values(), filter())),
+												)}
+												empty="Every setting is on BAR's default."
+												editable={editable()}
+												onDrafts={openDrafts}
+											/>
+										</Match>
+										<Match when={group() === null}>
+											<Sections
+												sections={arranged(
+													rowsByGroup(tab(), values(), filter()),
+												)}
+												empty="Every setting in this tab is on BAR's default."
+												editable={editable()}
+												onDrafts={openDrafts}
+											/>
+										</Match>
+										<Match
+											when={
+												tab().key === MODDING_TAB && group() === TWEAK_GROUP
 											}
-											all={() =>
-												byTabName(rowsByTab(TABS(), values(), EVERY_ROW))
-											}
-											empty="Every setting is on BAR's default."
-											unchanged={unchanged()}
-											onToggle={() => setUnchanged(!unchanged())}
-											editable={editable()}
-											onDrafts={openDrafts}
-										/>
-									</Match>
-									<Match when={group() === null}>
-										<Changes
-											changed={() =>
-												rowsByGroup(tab(), values(), changedRows())
-											}
-											all={() => rowsByGroup(tab(), values(), EVERY_ROW)}
-											empty="Every setting in this tab is on BAR's default."
-											unchanged={unchanged()}
-											onToggle={() => setUnchanged(!unchanged())}
-											editable={editable()}
-											onDrafts={openDrafts}
-										/>
-									</Match>
-									<Match
-										when={tab().key === MODDING_TAB && group() === TWEAK_GROUP}
-									>
-										<TweakSlots
-											rows={shown()}
-											editable={editable()}
-											onDrafts={openDrafts}
-										/>
-									</Match>
-									<Match when={true}>
-										<Rows rows={shown()} editable={editable()} />
-									</Match>
-								</Switch>
+										>
+											<TweakSlots
+												rows={shown()}
+												editable={editable()}
+												onDrafts={openDrafts}
+											/>
+										</Match>
+										<Match when={true}>
+											<Rows
+												rows={sortRows(shown(), rowOrder())}
+												editable={editable()}
+											/>
+										</Match>
+									</Switch>
+								</div>
+								{viewBar(
+									group() === null ? null : 'A group shows every setting in it',
+									inTweakSlots()
+										? 'Tweak slots stay in the order BAR runs them'
+										: null,
+									group() === null ? null : 'A group is one list already',
+								)}
 							</div>
 						</div>
 					</Show>
@@ -508,71 +620,60 @@ function noteOfPane(room: RoomModel): string {
 }
 
 /**
- * What is changed, under the heading it belongs to -- and, on request,
- * everything else beside it. On the All tab the headings are tabs; inside a
- * tab they are its groups.
+ * Rows under their headings: on the All tab and in a search the tabs, inside a
+ * tab its groups -- or by type, or no headings at all, as Group has them. A
+ * section with no name is drawn without a heading.
  *
- * The toggle reveals rows in place. It used to open the tab's first group
+ * Showing all reveals rows in place. It used to open the tab's first group
  * instead, which lost the changed rows it had been showing and, on Modding,
  * landed on the slot grid rather than the rows it had promised.
  *
- * `Index`, not `For`: the rows are made again whenever the room says
- * anything, and a row keyed by identity would be a new row each time --
- * which, for one with the editor open under it, is a new editor.
+ * Headings are kept by name, as `Rows` keeps rows by key: the sections are
+ * made again whenever the room says anything, and sorting moves them.
  */
-function Changes(props: {
-	changed: Accessor<Section[]>
-	all: Accessor<Section[]>
-	/** What to say when nothing here is changed. */
+function Sections(props: {
+	sections: Section[]
+	/** What to say when there is nothing to draw. */
 	empty: string
-	unchanged: boolean
-	onToggle: () => void
 	editable: boolean
 	onDrafts: () => void
 }) {
-	const shown = () => (props.unchanged ? props.all() : props.changed())
-	/** Changed rows, or every row once the unchanged are shown too. */
-	const count = (rows: Row[]) =>
-		props.unchanged ? rows.length : rows.filter((row) => row.changed).length
+	const byName = createMemo(
+		() => new Map(props.sections.map((section) => [section.name, section])),
+	)
 	return (
-		<>
-			<Show
-				when={shown().length > 0}
-				fallback={<p class='muted setup-empty'>{props.empty}</p>}
-			>
-				<Index each={shown()}>
-					{(entry) => (
-						<>
-							<SectionHead
-								name={entry().name}
-								count={count(entry().rows)}
-								onDrafts={props.onDrafts}
-							/>
-							<Rows rows={entry().rows} editable={props.editable} />
-						</>
-					)}
-				</Index>
-			</Show>
-			<button class='setup-reveal' onClick={props.onToggle}>
-				{props.unchanged ? 'Hide unchanged' : 'Show unchanged'}
-			</button>
-		</>
+		<Show
+			when={props.sections.length > 0}
+			fallback={<p class='muted setup-empty'>{props.empty}</p>}
+		>
+			<For each={props.sections.map((section) => section.name)}>
+				{(name) => (
+					<Show when={byName().get(name)}>
+						{(entry) => (
+							<>
+								<Show when={name !== ''}>
+									<SectionHead name={name} onDrafts={props.onDrafts} />
+								</Show>
+								<Rows rows={entry().rows} editable={props.editable} />
+							</>
+						)}
+					</Show>
+				)}
+			</For>
+		</Show>
 	)
 }
 
 /**
- * A heading over rows, with what it counts. The tweak slots' heading also
- * opens the drafts editor: an unslotted tweak, and the drafts beside it.
+ * A heading over rows. The tweak slots' heading -- the documents', when rows
+ * go by type -- also opens the drafts editor: an unslotted tweak, and the
+ * drafts beside it.
  */
-function SectionHead(props: {
-	name: string
-	count: number
-	onDrafts: () => void
-}) {
+function SectionHead(props: { name: string; onDrafts: () => void }) {
 	return (
 		<div class='setup-section'>
 			<span>{props.name}</span>
-			<Show when={props.name === TWEAK_GROUP}>
+			<Show when={props.name === TWEAK_GROUP || props.name === DOCUMENTS}>
 				<button
 					class='setup-drafts'
 					title='Write a tweak for no slot yet, next to your drafts'
@@ -581,38 +682,7 @@ function SectionHead(props: {
 					Editor
 				</button>
 			</Show>
-			<span class='count'>{props.count}</span>
 		</div>
-	)
-}
-
-/** What the search turned up, under the tab each row lives in. */
-function Found(props: {
-	found: Accessor<Changed[]>
-	needle: string
-	editable: boolean
-}) {
-	return (
-		<Show
-			when={props.found().length > 0}
-			fallback={
-				<p class='muted setup-empty'>
-					Nothing matches "{props.needle.trim()}".
-				</p>
-			}
-		>
-			<For each={props.found()}>
-				{(entry) => (
-					<>
-						<div class='setup-section'>
-							<span>{entry.tab.name}</span>
-							<span class='count'>{entry.rows.length}</span>
-						</div>
-						<Rows rows={entry.rows} editable={props.editable} />
-					</>
-				)}
-			</For>
-		</Show>
 	)
 }
 
@@ -625,41 +695,61 @@ function Found(props: {
  * `modoptions.lua` and an engine AI's `AIOptions.lua` are one format -- and
  * drawing them the same way is the whole reason they can be. `set` is where
  * a changed value goes; the room's own settings are the default.
+ *
+ * Kept by option key, never by place or by identity. The rows are made again
+ * whenever the room says anything, so one kept by identity would be a new row
+ * each time -- under an open tweak, a new editor. And sorting moves them, so
+ * one kept by place would hand its input to whichever setting lands there,
+ * with what was being typed sent as that setting's value.
  */
 export function Rows(props: {
 	rows: Row[]
 	editable: boolean
 	set?: (key: string, value: string) => Promise<void>
 }) {
+	const byKey = createMemo(
+		() => new Map(props.rows.map((row) => [row.option.key, row])),
+	)
 	return (
 		<div class='setup-rows'>
 			<Show
 				when={props.rows.length > 0}
 				fallback={<p class='muted setup-empty'>Nothing here.</p>}
 			>
-				<Index each={props.rows}>
-					{(row) => (
-						<Show
-							when={
-								slotOf(row().option.key) === null &&
-								!isMapTable(row().option.key)
-							}
-							fallback={<TweakRow row={row()} />}
-						>
-							<div class='opt' classList={{ changed: row().changed }}>
-								<span class='mark' />
-								<span class='k' title={row().option.desc ?? ''}>
-									{label(row().option)}
-								</span>
-								<Switch fallback={<span class='v'>{displayText(row())}</span>}>
-									<Match when={props.editable}>
-										<Control row={row()} set={props.set} />
-									</Match>
-								</Switch>
-							</div>
+				<For each={props.rows.map((row) => row.option.key)}>
+					{(key) => (
+						<Show when={byKey().get(key)}>
+							{(row) => (
+								<Show
+									when={slotOf(key) === null && !isMapTable(key)}
+									fallback={<TweakRow row={row()} />}
+								>
+									<div class='opt' classList={{ changed: row().changed }}>
+										<span class='mark' />
+										<span class='k' title={row().option.desc ?? ''}>
+											{label(row().option)}
+											<Show when={row().option.hidden}>
+												<span
+													class='doc-tag opt-hidden'
+													title="BAR keeps this out of its own lobby's settings"
+												>
+													hidden
+												</span>
+											</Show>
+										</span>
+										<Switch
+											fallback={<span class='v'>{displayText(row())}</span>}
+										>
+											<Match when={props.editable}>
+												<Control row={row()} set={props.set} />
+											</Match>
+										</Switch>
+									</div>
+								</Show>
+							)}
 						</Show>
 					)}
-				</Index>
+				</For>
 			</Show>
 		</div>
 	)
@@ -743,11 +833,7 @@ function TweakSlots(props: {
 	const room = useRoom()
 	return (
 		<>
-			<SectionHead
-				name={TWEAK_GROUP}
-				count={props.rows.filter((row) => row.changed).length}
-				onDrafts={props.onDrafts}
-			/>
+			<SectionHead name={TWEAK_GROUP} onDrafts={props.onDrafts} />
 			<Rows rows={props.rows} editable={props.editable} />
 			<Show
 				when={room.caps.spads}

@@ -51,8 +51,8 @@ const SECTIONS: Array<[string, string, number]> = [
 	['experimental', 'Experimental', 60],
 	['other', 'Other', 0],
 	['options_cheats', 'Cheats', -10],
-	// Chobby drops this one outright, and so do we.
-	['dev', 'Dev', -20],
+	// Chobby drops this one outright; we show it, named without the underscore.
+	['dev', '_DEV', -20],
 ]
 
 /** Cheats' own subheaders, and enough options under each to be realistic. */
@@ -147,8 +147,8 @@ export function fixtureOptions(): ModOption[] {
 		}
 	}
 
-	// BAR's trailing group under Cheats holds only options that are hidden or
-	// that move to Modding, so it empties out and stops being drawn.
+	// BAR's trailing group under Cheats holds options that are hidden and four
+	// that move to Modding; the hidden two stay, as rows marked hidden.
 	options.push(
 		option({
 			key: 'sub_other',

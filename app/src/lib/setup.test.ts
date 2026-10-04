@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import {
 	EVERY_ROW,
+	arrange,
 	GENERAL_GROUP,
 	MAP_TAB,
 	MODDING_TAB,
@@ -16,10 +17,16 @@ import {
 	defaultText,
 	displayText,
 	readModOptions,
+	regroup,
 	rowsOf,
 	searchRows,
+	sortRows,
+	sortSections,
 	tabs,
 	tweakKey,
+	type Grouping,
+	type Row,
+	type RowOrder,
 	type Shown,
 	type Tab,
 } from './setup'
@@ -45,6 +52,8 @@ describe('tabs', () => {
 			'Experimental',
 			'Other',
 			'Cheats',
+			// Chobby drops `_DEV`; a modding lobby shows it.
+			'DEV',
 			'Modding',
 			'Map',
 		])
@@ -83,19 +92,17 @@ describe('tabs', () => {
 		expect(keys).toContain('multiplier_buildpower')
 		expect(keys).toContain('dynamiccheats')
 		expect(keys.length).toBeGreaterThan(20)
-		// `experimentalshields` and `holiday_events` are declared hidden in BAR,
-		// so Chobby draws neither and neither do we.
-		expect(keys).not.toContain('experimentalshields')
 	})
 
 	test('groups inside Cheats are BAR own subheaders', () => {
-		// BAR's trailing `-- Other` group held only the two hidden options and the
-		// four that move to Modding, so it empties out and stops being drawn.
+		// BAR's trailing `-- Other` keeps its two hidden options once the four
+		// that move to Modding have gone.
 		expect(byKey('options_cheats').groups.map((group) => group.name)).toEqual([
 			'AI Cheats',
 			'Starting Resources',
 			'Resource Multipliers',
 			'Unit Parameter Multipliers',
+			'Other',
 		])
 	})
 
@@ -153,9 +160,21 @@ describe('tabs', () => {
 		).toEqual(['tweakunits', 'tweakunits12', 'tweakdefs', 'tweakdefs2'])
 	})
 
-	test('hidden options never become a row', () => {
-		// `holiday_events` is declared hidden in the Cheats section.
-		expect(optionKeys(byKey('options_cheats'))).not.toContain('holiday_events')
+	test('a hidden option is a row in the group BAR declares it in, still marked', () => {
+		// `holiday_events` is declared hidden in the Cheats section; Chobby drops it.
+		const other = byKey('options_cheats').groups.at(-1)!
+		const holiday = other.options.find(
+			(option) => option.key === 'holiday_events',
+		)
+		expect(holiday?.hidden).toBe(true)
+	})
+
+	test('a section with nothing in it is no tab', () => {
+		const empty = [
+			...fixtureOptions(),
+			{ key: 'modes', name: 'GameModes', type: 'section', hidden: true },
+		] as ReturnType<typeof fixtureOptions>
+		expect(tabs(empty).map((tab) => tab.key)).not.toContain('modes')
 	})
 })
 
@@ -479,5 +498,116 @@ describe('display', () => {
 	test('an unset row falls back to the default it sits on', () => {
 		expect(displayText(row('startmetal', {}))).toBe('1000')
 		expect(defaultText(row('dynamiccheats', {}).option)).toBe('1')
+	})
+})
+
+describe('order', () => {
+	const row = (key: string, name: string, changed = false) =>
+		({ option: { key, name, type: 'bool' }, current: null, changed }) as Row
+
+	test('changed first keeps BAR order among equals; by name reads A to Z', () => {
+		const rows = [row('b', 'Beta'), row('c', 'Gamma', true), row('a', 'Alpha')]
+		const keys = (order: RowOrder) =>
+			sortRows(rows, order).map((r) => r.option.key)
+		expect(keys('changed')).toEqual(['c', 'b', 'a'])
+		expect(keys('name')).toEqual(['a', 'b', 'c'])
+	})
+
+	test('changed first leads with the headings holding a change; by name keeps BAR order', () => {
+		const sections = [
+			{ name: 'Main', rows: [row('a', 'Alpha')] },
+			{ name: 'Cheats', rows: [row('b', 'Beta'), row('c', 'Gamma', true)] },
+			{ name: 'Extras', rows: [row('d', 'Delta')] },
+		]
+		const names = (order: RowOrder) =>
+			sortSections(sections, order).map((section) => section.name)
+		expect(names('changed')).toEqual(['Cheats', 'Main', 'Extras'])
+		expect(names('name')).toEqual(['Main', 'Cheats', 'Extras'])
+	})
+
+	test('rows regroup by type, or into one list with no heading', () => {
+		const typed = (key: string, type: string, section?: string) =>
+			({
+				option: { key, name: key, type, section },
+				current: null,
+				changed: false,
+			}) as Row
+		const sections = [
+			{
+				name: 'Main',
+				rows: [typed('ranked', 'bool'), typed('start', 'number')],
+			},
+			{
+				name: 'Modding',
+				rows: [typed('tweakdefs', 'string'), typed('lava', 'string')],
+			},
+			{
+				name: 'Map',
+				rows: [typed('override', 'string', 'mapmetadata'), typed('x', 'link')],
+			},
+		]
+		const keys = (grouping: Grouping) =>
+			regroup(sections, grouping).map((section) => [
+				section.name,
+				section.rows.map((r) => r.option.key),
+			])
+		expect(regroup(sections, 'section')).toBe(sections)
+		expect(keys('none')).toEqual([
+			['', ['ranked', 'start', 'tweakdefs', 'lava', 'override', 'x']],
+		])
+		expect(keys('type')).toEqual([
+			['Documents', ['tweakdefs', 'override']],
+			['Switches', ['ranked']],
+			['Numbers', ['start']],
+			['Text', ['lava']],
+			['Other', ['x']],
+		])
+		expect(regroup([], 'none')).toEqual([])
+	})
+
+	test('ungrouped, Sort is about the options alone, tweak slots among them', () => {
+		const sections = [
+			{
+				name: 'Main',
+				rows: [row('ranked', 'Ranked'), row('metal', 'Metal', true)],
+			},
+			{
+				name: 'Modding',
+				rows: [
+					row('tweakunits', 'tweakunits'),
+					row('tweakdefs', 'tweakdefs', true),
+				],
+			},
+		]
+		const keys = (grouping: Grouping, order: RowOrder) =>
+			arrange(sections, grouping, order).map((section) =>
+				section.rows.map((r) => r.option.key),
+			)
+		expect(keys('none', 'name')).toEqual([
+			['metal', 'ranked', 'tweakdefs', 'tweakunits'],
+		])
+		expect(keys('none', 'changed')).toEqual([
+			['metal', 'tweakdefs', 'ranked', 'tweakunits'],
+		])
+		// Under a heading the slots keep BAR's run order, and headings sort too.
+		expect(keys('section', 'name')).toEqual([
+			['metal', 'ranked'],
+			['tweakunits', 'tweakdefs'],
+		])
+	})
+
+	test('tweak slots stay first, in the order BAR runs them', () => {
+		const rows = [
+			row('tweakunits', 'tweakunits'),
+			row('tweakdefs', 'tweakdefs', true),
+			row('forceallunits', 'Load every unit'),
+			row('experimentallegionfaction', 'Legion', true),
+		]
+		expect(sortRows(rows, 'name').map((r) => r.option.key)).toEqual([
+			'tweakunits',
+			'tweakdefs',
+			'experimentallegionfaction',
+			'forceallunits',
+		])
 	})
 })

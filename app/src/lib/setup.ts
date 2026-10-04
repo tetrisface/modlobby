@@ -29,9 +29,6 @@ export type Row = {
 	changed: boolean
 }
 
-/** Chobby nulls this section outright (`gui_modoptions_panel.lua:1242`). */
-const DROPPED_SECTION = 'dev'
-
 /**
  * The six options we lift into a Modding tab, with the groups they land in.
  *
@@ -128,6 +125,10 @@ export const ALL_TAB = 'all'
  * Groups come from BAR's own `-- Name` subheaders. Plain subheaders are prose
  * for the tab, separators are spacing, and both are layout rather than
  * settings, so neither becomes a row.
+ *
+ * An option BAR declares hidden is a row like any other, in the group it is
+ * declared in: Chobby leaves it out, but a host takes it, a room can hold it,
+ * and a modding lobby shows what a room holds. The row says it is hidden.
  */
 function groupsOf(options: ModOption[]): Group[] {
 	const groups: Group[] = []
@@ -142,7 +143,6 @@ function groupsOf(options: ModOption[]): Group[] {
 			current = { name: label.replace(/^--\s*/, '').trim(), options: [] }
 			continue
 		}
-		if (option.hidden) continue
 		current.options.push(option)
 	}
 
@@ -211,6 +211,9 @@ function mapTab(options: ModOption[]): Tab | null {
  * treated as zero so it lands between Experimental and Cheats. Modding goes
  * next to Cheats, where the tweak slots used to live, and Map last.
  *
+ * Every section with something in it is a tab, the ones Chobby hides or drops
+ * (`dev`) too; BAR's `_DEV` reads as `DEV`. The map's section is the Map tab.
+ *
  * `extra` is tweak slots past the twenty that the room has used.
  */
 export function tabs(
@@ -218,24 +221,21 @@ export function tabs(
 	extra: readonly string[] = [],
 ): Tab[] {
 	const sections = options
-		.filter(
-			(option) =>
-				option.type === 'section' &&
-				!option.hidden &&
-				option.key !== DROPPED_SECTION,
-		)
+		.filter((option) => option.type === 'section' && option.key !== MAP_SECTION)
 		.sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0))
 
-	const declared = sections.map((section) => ({
-		key: section.key,
-		name: section.name ?? section.key,
-		desc: section.desc ?? '',
-		groups: groupsOf(
-			options.filter(
-				(option) => option.section === section.key && !MOVED.has(option.key),
+	const declared = sections
+		.map((section) => ({
+			key: section.key,
+			name: (section.name || section.key).replace(/^_+/, ''),
+			desc: section.desc ?? '',
+			groups: groupsOf(
+				options.filter(
+					(option) => option.section === section.key && !MOVED.has(option.key),
+				),
 			),
-		),
-	}))
+		}))
+		.filter((tab) => tab.groups.length > 0)
 
 	const map = mapTab(options)
 	return [
@@ -422,6 +422,100 @@ export function changedByTab(
 }
 
 /** Whether a row is a tweak slot, whatever its index. */
+/** How rows under a heading are ordered: what differs from the default first, or by name. */
+export type RowOrder = 'changed' | 'name'
+
+/**
+ * Rows in `order`, stably, so ties keep BAR's order. Under a heading, tweak
+ * slots keep the order BAR runs them in, ahead of the rest; `slotsFirst`
+ * false sorts them like any other row, for a list with no headings.
+ */
+export function sortRows(
+	rows: Row[],
+	order: RowOrder,
+	slotsFirst = true,
+): Row[] {
+	const by =
+		order === 'name'
+			? (a: Row, b: Row) =>
+					label(a.option).localeCompare(label(b.option), undefined, {
+						numeric: true,
+					})
+			: (a: Row, b: Row) => Number(b.changed) - Number(a.changed)
+	if (!slotsFirst) return [...rows].sort(by)
+	const slots = rows.filter(isTweakSlot)
+	const rest = rows.filter((row) => !isTweakSlot(row))
+	return [...slots, ...rest.sort(by)]
+}
+
+/**
+ * Headings in `order`: changed first puts those holding a change ahead,
+ * stably, so ties keep BAR's order; by name leaves the headings in BAR's
+ * order and sorts only the rows under them.
+ */
+export function sortSections<S extends { rows: Row[] }>(
+	sections: S[],
+	order: RowOrder,
+): S[] {
+	if (order === 'name') return sections
+	const changed = (section: S) => section.rows.some((row) => row.changed)
+	return [...sections].sort((a, b) => Number(changed(b)) - Number(changed(a)))
+}
+
+/** How rows are put under headings: as BAR sections them, by what kind of control they are, or in one list. */
+export type Grouping = 'section' | 'type' | 'none'
+
+/** The heading of the documents -- tweak slots, the map's tables -- when rows go by type. */
+export const DOCUMENTS = 'Documents'
+
+/** Type headings in the order they are drawn. */
+const TYPES = [DOCUMENTS, 'Switches', 'Choices', 'Numbers', 'Text', 'Other']
+
+/** What kind of control a row is, as its heading when rows go by type. */
+export function typeOf(row: Row): string {
+	if (isTweakSlot(row) || isMapOption(row.option)) return DOCUMENTS
+	const named: Partial<Record<string, string>> = {
+		bool: 'Switches',
+		list: 'Choices',
+		number: 'Numbers',
+		string: 'Text',
+	}
+	// A control type BAR added after this build arrives as `{ other }`.
+	const type = row.option.type
+	return (typeof type === 'string' ? named[type] : undefined) ?? 'Other'
+}
+
+/**
+ * Sections as `grouping` has them: as they come, by type, or every row in one
+ * section with no name, which is drawn without a heading.
+ */
+export function regroup(sections: Section[], grouping: Grouping): Section[] {
+	if (grouping === 'section') return sections
+	const rows = sections.flatMap((section) => section.rows)
+	if (grouping === 'none') return rows.length > 0 ? [{ name: '', rows }] : []
+	return TYPES.map((name) => ({
+		name,
+		rows: rows.filter((row) => typeOf(row) === name),
+	})).filter((section) => section.rows.length > 0)
+}
+
+/**
+ * The list as Group and Sort have it: regrouped, the rows under each heading
+ * sorted, then the headings. With no headings Sort is about the options
+ * alone, tweak slots among them.
+ */
+export function arrange(
+	sections: Section[],
+	grouping: Grouping,
+	order: RowOrder,
+): Section[] {
+	const sorted = regroup(sections, grouping).map((section) => ({
+		...section,
+		rows: sortRows(section.rows, order, grouping !== 'none'),
+	}))
+	return sortSections(sorted, order)
+}
+
 export function isTweakSlot(row: Row): boolean {
 	return tweakKey(row.option.key) !== null
 }

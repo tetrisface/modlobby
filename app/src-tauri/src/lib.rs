@@ -403,6 +403,9 @@ pub fn run() {
 					.await;
 				let _ = client.set_bar_content(bar).await;
 				push_settings(&client, &controller, &at_start).await;
+				// Once the data directory is known: a game a lobby before this
+				// one left running from it is ours to show, and to end.
+				let _ = client.adopt_engine().await;
 				let _ = client.set_skirmish_path(Some(skirmish_path)).await;
 				// BAR's maps decide who a map is asked of, so they are had
 				// before a room is, and not only once the battle list wants

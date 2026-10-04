@@ -704,8 +704,16 @@ describe('the setup pane', () => {
 		if (!found) throw new Error(`no tab ${name}`)
 		return found
 	}
-	const reveal = (container: HTMLElement) =>
-		container.querySelector<HTMLButtonElement>('.setup-reveal')!
+	/** The list's foot: its Show or Sort control, and one choice in it. */
+	type BarName = 'Show' | 'Sort' | 'Group'
+	const bar = (container: HTMLElement, name: BarName) =>
+		container.querySelector<HTMLElement>(`.setup-bar [aria-label='${name}']`)!
+	const choice = (container: HTMLElement, name: BarName, label: string) =>
+		[...bar(container, name).querySelectorAll('button')].find(
+			(button) => button.textContent === label,
+		)!
+	const pressed = (container: HTMLElement, label: string) =>
+		choice(container, 'Show', label).getAttribute('aria-pressed') === 'true'
 	const openGroup = (container: HTMLElement) =>
 		container.querySelector('.groups .group.on')?.textContent ?? ''
 	const sections = (container: HTMLElement) =>
@@ -717,7 +725,7 @@ describe('the setup pane', () => {
 	const rows = (container: HTMLElement) =>
 		container.querySelectorAll('.setup-detail .opt').length
 
-	test('showing the unchanged inside a tab stays on Changed', async () => {
+	test('showing all inside a tab stays on Changed, and holds in every tab', async () => {
 		const { container } = await open(alone([]))
 		fireEvent.click(setupTab(container, 'Options'))
 		await settle()
@@ -725,17 +733,41 @@ describe('the setup pane', () => {
 		expect(sections(container)).toEqual(['General'])
 		expect(rows(container)).toBe(1)
 
-		fireEvent.click(reveal(container))
+		fireEvent.click(choice(container, 'Show', 'All'))
 		await settle()
-		expect(reveal(container).textContent).toBe('Hide unchanged')
+		expect(pressed(container, 'All')).toBe(true)
 		expect(openGroup(container)).toMatch(/^Changed/)
 		expect(rows(container)).toBe(2)
 		expect(container.querySelector('.slot-grid')).toBeNull()
 
-		fireEvent.click(reveal(container))
+		// One choice for every tab: another one opens on it too.
+		fireEvent.click(setupTab(container, 'Modding'))
 		await settle()
-		expect(reveal(container).textContent).toBe('Show unchanged')
+		expect(pressed(container, 'All')).toBe(true)
+		fireEvent.click(setupTab(container, 'Options'))
+		await settle()
+
+		fireEvent.click(choice(container, 'Show', 'Changed'))
+		await settle()
+		expect(pressed(container, 'Changed')).toBe(true)
 		expect(rows(container)).toBe(1)
+	})
+
+	test('grouped by nothing, the rows are one list with no headings', async () => {
+		const { container } = await open(alone([]))
+		fireEvent.click(setupTab(container, 'Options'))
+		fireEvent.click(choice(container, 'Show', 'All'))
+		await settle()
+		expect(sections(container)).toEqual(['General'])
+
+		fireEvent.click(choice(container, 'Group', 'None'))
+		await settle()
+		expect(sections(container)).toEqual([])
+		expect(rows(container)).toBe(2)
+
+		fireEvent.click(choice(container, 'Group', 'Section'))
+		await settle()
+		expect(sections(container)).toEqual(['General'])
 	})
 
 	test('Modding shows its slots as the same rows everywhere, with room for a new tweak', async () => {
@@ -752,7 +784,7 @@ describe('the setup pane', () => {
 		expect(slotKeys()).toEqual(['tweakunits', 'tweakdefs'])
 		expect(setupTab(container, 'Modding').querySelector('.badge')).toBeNull()
 
-		fireEvent.click(reveal(container))
+		fireEvent.click(choice(container, 'Show', 'All'))
 		await settle()
 		expect(sections(container)).toEqual(['Tweak slots'])
 		expect(rows(container)).toBe(20)
@@ -764,6 +796,16 @@ describe('the setup pane', () => {
 		await settle()
 		expect(slotKeys()).toHaveLength(20)
 		expect(container.querySelector('.setup-drafts')?.textContent).toBe('Editor')
+		// Neither choice applies to the slots, and each says why rather than going.
+		expect(bar(container, 'Show').title).toBe(
+			'A group shows every setting in it',
+		)
+		expect(bar(container, 'Sort').title).toBe(
+			'Tweak slots stay in the order BAR runs them',
+		)
+		fireEvent.click(choice(container, 'Show', 'Changed'))
+		await settle()
+		expect(pressed(container, 'All'), 'greyed, it takes no press').toBe(true)
 	})
 })
 

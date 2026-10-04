@@ -580,6 +580,7 @@ enum Command {
 	},
 	ReleaseSeat,
 	SetDataDir(Option<PathBuf>),
+	AdoptEngine,
 	/// Each server's rapid master index, by server id; one without is BAR's.
 	SetRapidMasters(BTreeMap<String, String>),
 	/// Each server's own map search (`find`), by server id.
@@ -1172,6 +1173,14 @@ impl Client {
 	/// Points the content check at a data directory; `None` uses the launcher's.
 	pub async fn set_data_dir(&self, data_dir: Option<PathBuf>) -> Result<(), ClientError> {
 		self.send(Command::SetDataDir(data_dir)).await
+	}
+
+	/// Takes over an engine a lobby before this one left running from the
+	/// data directories, once they are known. Asked for, never done on start:
+	/// a runtime that looked at the machine by itself took over whatever game
+	/// was running there, a test's runtime included.
+	pub async fn adopt_engine(&self) -> Result<(), ClientError> {
+		self.send(Command::AdoptEngine).await
 	}
 
 	/// Checks the room's content again after something was installed outside
@@ -2721,7 +2730,6 @@ impl Runtime {
 	}
 
 	async fn run(mut self) {
-		self.adopt_engine();
 		loop {
 			let connected = self.servers.values().any(|server| server.link.is_some());
 			let now = Instant::now();
@@ -3171,6 +3179,7 @@ impl Runtime {
 				self.checked = None;
 				self.refresh_content().await;
 			}
+			Command::AdoptEngine => self.adopt_engine(),
 			Command::RecheckContent => self.look_again().await,
 			Command::ReleaseSeat => {
 				let Some(server) = self.room() else {
