@@ -89,7 +89,7 @@ export async function installUpdate(): Promise<void> {
 		if (outcome.phase === 'ready' && outcome.heldBy !== null) {
 			pushNotice(
 				'info',
-				`version ${outcome.version} is downloaded and installs after you close modlobby; restarting now would lose ${outcome.heldBy}`,
+				`version ${outcome.version} is downloaded and installs on the next start; restarting now would lose ${outcome.heldBy}`,
 			)
 		}
 	} catch (error) {

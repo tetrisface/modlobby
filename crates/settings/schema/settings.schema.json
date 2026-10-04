@@ -782,7 +782,7 @@
           "default": true
         },
         "download": {
-          "description": "Whether to fetch a newer release as soon as a look finds one.\n\nOn. The download is kept beside the settings and the app goes on\nrunning the version it started with, so the offer in the nav is one\nrestart rather than a restart and a wait on a link that may be slow.\nLeft unclicked, it is installed as the app closes, so the next start\nis the new version with nothing to wait for; a run that ended some\nother way leaves it for the next start to install before anything is\ndrawn. Off, nothing is fetched until the button is clicked, and that\nclick fetches before it restarts.",
+          "description": "Whether to fetch a newer release as soon as a look finds one.\n\nOn. The download is kept beside the settings and the app goes on\nrunning the version it started with, so the offer in the nav is one\nrestart rather than a restart and a wait on a link that may be slow.\nLeft unclicked, it is installed by the next start, before anything is\ndrawn. Off, nothing is fetched until the button is clicked, and that\nclick fetches before it restarts.",
           "type": "boolean",
           "default": true
         }

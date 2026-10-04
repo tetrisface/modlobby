@@ -3150,6 +3150,7 @@ dependencies = [
  "base64 0.23.1",
  "content",
  "dotenvy",
+ "futures-util",
  "lan",
  "lobby-runtime",
  "lobby-ui",

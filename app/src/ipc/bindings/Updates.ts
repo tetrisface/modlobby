@@ -24,9 +24,7 @@ export type Updates = {
 	 * On. The download is kept beside the settings and the app goes on
 	 * running the version it started with, so the offer in the nav is one
 	 * restart rather than a restart and a wait on a link that may be slow.
-	 * Left unclicked, it is installed as the app closes, so the next start
-	 * is the new version with nothing to wait for; a run that ended some
-	 * other way leaves it for the next start to install before anything is
+	 * Left unclicked, it is installed by the next start, before anything is
 	 * drawn. Off, nothing is fetched until the button is clicked, and that
 	 * click fetches before it restarts.
 	 */

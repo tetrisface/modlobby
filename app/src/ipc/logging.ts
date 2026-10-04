@@ -14,6 +14,26 @@ function describe(value: unknown): string {
 	}
 }
 
+const milestones: string[] = []
+
+/**
+ * One milestone of the page's start: what has happened, and how many
+ * milliseconds after the page began to load. Held until `reportStart`, since
+ * every line logged is a call into Rust and the start has enough of those
+ * waiting in line.
+ */
+export function milestone(what: string): void {
+	milestones.push(`${what} ${Math.round(performance.now())}`)
+}
+
+/**
+ * Logs the milestones so far as one line, to read beside Rust's `startup:`
+ * lines. The last of them is the moment of sending.
+ */
+export function reportStart(): void {
+	console.debug(`startup: page ${milestones.splice(0).join(', ')}`)
+}
+
 /**
  * Sends the webview's console into the same file the Rust side writes, so a UI
  * error and the protocol traffic around it sit on one timeline. The original

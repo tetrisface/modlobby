@@ -19,6 +19,8 @@ tauri-build = { workspace = true }
 base64 = { workspace = true }
 minisign-verify = { workspace = true }
 content = { workspace = true }
+# The start's logins, side by side: `join_all`.
+futures-util = { workspace = true }
 md-5 = { workspace = true }
 percent-encoding = { workspace = true }
 recoil = { workspace = true }

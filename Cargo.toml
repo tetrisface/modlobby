@@ -86,6 +86,7 @@ flate2 = "=1.1.10"
 # Only the formats the map index publishes, decoded and resized for the battle list tiles.
 image = { version = "=0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 full_moon = "=2.2.0"
+futures-util = "=0.3.34"
 # Reads the RSS date format the news feed publishes; already in the tree.
 httpdate = "=1.0.3"
 jsonc-parser = { version = "=0.33.1", features = ["cst", "serde"] }

@@ -118,13 +118,26 @@ pub async fn login(
 	remember: bool,
 	auto_login: bool,
 ) -> Result<Settings> {
+	log_in(&app, &server, username, password, remember, auto_login).await
+}
+
+/// What [`login`] does, for a caller that holds the app rather than a
+/// command's view of it: the logins the start makes by itself.
+pub(crate) async fn log_in(
+	app: &App,
+	server: &str,
+	username: String,
+	password: Option<String>,
+	remember: bool,
+	auto_login: bool,
+) -> Result<Settings> {
 	if username.trim().is_empty() {
 		return Err(ApiError::new("input", "a username is required"));
 	}
-	let entry = entry(&app, &server)?;
+	let entry = entry(app, server)?;
 	let password = match password.filter(|p| !p.is_empty()) {
 		Some(password) => password,
-		None => credentials::password(&*app.credentials, &server, &username)?
+		None => credentials::password(&*app.credentials, server, &username)?
 			.ok_or_else(|| ApiError::new("input", "no password given or remembered"))?,
 	};
 	let request = LoginRequest::new(
@@ -134,9 +147,9 @@ pub async fn login(
 		app.hardware.lobby_hash.clone(),
 	);
 
-	guarded_login(&app, &server, app.client.login(endpoint(&entry), request)).await?;
+	guarded_login(app, server, app.client.login(endpoint(&entry), request)).await?;
 
-	remember_account(&app, &server, username, &password, remember, auto_login)
+	remember_account(app, server, username, &password, remember, auto_login)
 }
 
 /// The server the settings list under `server`, by its id.

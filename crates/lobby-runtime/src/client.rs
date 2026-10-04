@@ -1418,6 +1418,11 @@ struct Runtime {
 	probing: bool,
 	projector: Projector,
 	batcher: Batcher,
+	/// What was said while nobody was listening, kept for whoever listens
+	/// next. A snapshot says nothing about what anyone said, and a login made
+	/// before the window exists ends before there is anyone to tell: its
+	/// message of the day would otherwise go nowhere.
+	unheard: Vec<UiMessage>,
 	/// The room with no server behind it. Not part of the session: it is still
 	/// here after a logout, a dropped connection or a reconnect, which is why
 	/// it lives beside `servers` rather than inside one.
@@ -1930,6 +1935,7 @@ impl Runtime {
 			skirmish_path: None,
 			projector: Projector::new(),
 			batcher: Batcher::default(),
+			unheard: Vec::new(),
 		}
 	}
 
@@ -4248,12 +4254,14 @@ impl Runtime {
 	/// Chat is the exception: a snapshot says nothing about what anyone said,
 	/// so discarding batched chat would silently swallow whatever arrived in
 	/// the moment before it — which is exactly when the message of the day and
-	/// the first channel traffic land.
+	/// the first channel traffic land. What was said with nobody listening
+	/// goes first, being older.
 	fn send_snapshot(&mut self) {
 		let kept = self.pending_beside_snapshot(None);
+		let unheard = std::mem::take(&mut self.unheard);
 		let snapshot = self.snapshot();
 		self.send_ui(UiMessage::Snapshot(Box::new(snapshot)));
-		for message in kept {
+		for message in unheard.into_iter().chain(kept) {
 			self.send_ui(message);
 		}
 	}
@@ -4284,14 +4292,7 @@ impl Runtime {
 				if of.is_some() && of != server.as_deref() {
 					return Some(UiMessage::Deltas { server, deltas });
 				}
-				let chat: Vec<Delta> = deltas
-					.into_iter()
-					.filter(|delta| matches!(delta, Delta::Chat(_)))
-					.collect();
-				(!chat.is_empty()).then_some(UiMessage::Deltas {
-					server,
-					deltas: chat,
-				})
+				chat_lines(server, deltas)
 			})
 			.collect()
 	}
@@ -4302,8 +4303,21 @@ impl Runtime {
 		}
 	}
 
+	/// With nobody listening, the chat lines in `message` are kept for the
+	/// next to listen and the rest is let go: a snapshot will say it.
 	fn send_ui(&mut self, message: UiMessage) {
 		let Some(ui) = self.ui.as_ref() else {
+			if let UiMessage::Deltas { server, deltas } = message
+				&& let Some(chat) = chat_lines(server, deltas)
+			{
+				// ponytail: counted in batches, not lines, and the oldest go
+				// first; a runtime nobody ever listens to (the CLI) holds
+				// this many and no more.
+				if self.unheard.len() == UNHEARD_MAX {
+					self.unheard.remove(0);
+				}
+				self.unheard.push(chat);
+			}
 			return;
 		};
 		if ui.send(message).is_err() {
@@ -4311,6 +4325,22 @@ impl Runtime {
 			self.ui = None;
 		}
 	}
+}
+
+/// How many batches of chat are kept for a listener that has yet to come.
+const UNHEARD_MAX: usize = 200;
+
+/// The chat lines among `deltas`, as a message of their own: the one thing a
+/// snapshot does not carry. `None` when nothing was said.
+fn chat_lines(server: Option<String>, deltas: Vec<Delta>) -> Option<UiMessage> {
+	let chat: Vec<Delta> = deltas
+		.into_iter()
+		.filter(|delta| matches!(delta, Delta::Chat(_)))
+		.collect();
+	(!chat.is_empty()).then_some(UiMessage::Deltas {
+		server,
+		deltas: chat,
+	})
 }
 
 /// The engine the runtime watches: one it started, or one a lobby before it
@@ -5813,6 +5843,55 @@ mod tests {
 				.len(),
 			3
 		);
+		client.shutdown().await;
+	}
+
+	/// The app logs in before its window exists, and a quick server has said
+	/// all it has to say by the time anyone asks.
+	#[tokio::test]
+	async fn what_was_said_with_nobody_listening_reaches_the_first_to_listen() {
+		let (connector, server) = in_memory();
+		let (server_read, mut server_write) = tokio::io::split(server);
+		let mut server_lines = BufReader::new(server_read).lines();
+		let client = spawn(connector);
+
+		let login = log_in(&client, "test");
+		server_write
+			.write_all(b"TASSERVER 0.38 * 8201 0\n")
+			.await
+			.unwrap();
+		let sent = server_lines.next_line().await.unwrap().unwrap();
+		assert!(sent.starts_with("LOGIN me "), "{sent}");
+		server_write
+			.write_all(
+				b"ACCEPTED me\nMOTD read the rules\nADDUSER me SE 1 LuaLobby Chobby\nLOGININFOEND\n",
+			)
+			.await
+			.unwrap();
+		login.await.unwrap().unwrap();
+
+		let ui = Collector::default();
+		client.subscribe(ui.clone()).await.unwrap();
+		tokio::time::sleep(Duration::from_millis(100)).await;
+
+		let messages = ui.take();
+		assert!(
+			matches!(messages.first(), Some(UiMessage::Snapshot(_))),
+			"the state first, then what was said"
+		);
+		let said: Vec<&str> = messages
+			.iter()
+			.filter_map(|message| match message {
+				UiMessage::Deltas { deltas, .. } => Some(deltas.iter()),
+				_ => None,
+			})
+			.flatten()
+			.filter_map(|delta| match delta {
+				Delta::Chat(line) => Some(line.text.as_str()),
+				_ => None,
+			})
+			.collect();
+		assert_eq!(said, ["read the rules"]);
 		client.shutdown().await;
 	}
 

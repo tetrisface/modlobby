@@ -9,27 +9,20 @@
 //! unless a room is joined or a game is running, in which case the download
 //! waits as [`Pending::Downloaded`] and the button offers the restart instead.
 //!
-//! A download nobody restarted into is installed as the app closes
-//! ([`install_on_exit`]), with nothing relaunched: the next start is the new
-//! version already, and has had nothing to wait for. Not under a game left
-//! running, which an installer's window has no business appearing over, nor
-//! beside another modlobby, which the Windows installer would close.
-//!
-//! A download is also kept on disk, under `updates/` beside the settings, for
-//! the run that ends without that chance: killed, shut down with the machine,
-//! closed over a game. The next start finds it as [`Pending::Stored`] and
-//! installs it ahead of the app ([`resume`]): the manifest is asked whether it
-//! is still the release to install, the file is held to the signature the
-//! manifest carries, and only then is it run. The page draws nothing of the
-//! app and logs in nowhere until that is settled. The manifest is asked
-//! because `Update::install` checks nothing -- `Update::download` alone
-//! verifies the signature -- and the file has been out of this process's
-//! hands since it was written.
+//! A download that waits is also kept on disk, under `updates/` beside the
+//! settings, so closing the app does not throw it away. The next start finds
+//! it as [`Pending::Stored`] and installs it ahead of the app ([`resume`]):
+//! the manifest is asked whether it is still the release to install, the file
+//! is held to the signature the manifest carries, and only then is it run.
+//! The page draws nothing of the app and logs in nowhere until that is
+//! settled. The manifest is asked because `Update::install` checks nothing --
+//! `Update::download` alone verifies the signature -- and the file has been
+//! out of this process's hands since it was written.
 //!
 //! The installer does the restart: on Windows `install` hands over to NSIS
 //! and exits this process, and NSIS relaunches the app with the arguments it
-//! had, unless the app was closing anyway. On Linux the AppImage is rewritten
-//! in place and `install` returns, so a restart is asked for here.
+//! had. On Linux the AppImage is rewritten in place and `install` returns, so
+//! the restart is asked for here. Nothing runs after a successful install.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -97,7 +90,7 @@ pub enum UpdateProgress {
 		#[ts(type = "number")]
 		total: u64,
 	},
-	/// Downloaded and waiting. It installs as the app closes; the corner
+	/// Downloaded and waiting. It installs on the next start; the corner
 	/// offers the restart before then, and says what stands in its way.
 	Ready {
 		version: String,
@@ -180,7 +173,7 @@ impl Staged {
 
 	/// The version this start installs ahead of the app: the download it
 	/// opened on, in a build that updates itself.
-	fn resuming(&self) -> Option<&str> {
+	pub(crate) fn resuming(&self) -> Option<&str> {
 		self.kept.as_deref().filter(|_| enabled())
 	}
 
@@ -427,19 +420,18 @@ pub async fn install_update(
 		return Ok(progress);
 	}
 
-	if let Err(err) = install(&handle, &staged, &update, &bytes) {
+	let outcome = install(&handle, &staged, &update, &bytes);
+	if let Err(err) = &outcome {
 		say(UpdateProgress::Failed {
 			reason: err.message.clone(),
 		});
-		return Err(err);
 	}
-	// Reached where the installer does not end the process itself.
-	handle.restart()
+	outcome
 }
 
 /// Fetches what the look found and keeps it, without installing: fetching by
-/// itself stops at `Ready`, because the restart is the user's to ask for.
-/// Left unasked, the download is installed as the app closes.
+/// itself stops at `Ready`, because the restart is the user's to ask for --
+/// or the next start's, which installs a kept download ahead of the app.
 async fn stage(handle: AppHandle) {
 	let app = handle.state::<App>();
 	let staged = handle.state::<Staged>();
@@ -476,26 +468,15 @@ async fn stage(handle: AppHandle) {
 	}
 }
 
-/// What a start does about updates: installs a download an earlier run kept,
-/// ahead of the app, and otherwise looks when `look` says a look is wanted.
-/// In that order, so the look finds the kept download settled rather than
-/// half taken.
-pub async fn startup(handle: AppHandle, look: bool) {
-	let _ = resume(&handle).await;
-	if look {
-		daily(handle).await;
-	}
-}
-
 /// Installs the download an earlier run kept, ahead of the app. Does not come
 /// back when it installs. `None` when nothing was kept, or when this build
 /// does not update itself; otherwise what `install_update` answers when it
 /// does not install: the manifest moved on, or could not be reached.
 ///
 /// Asked twice and worked out once: by the start, so the manifest is asked
-/// before the page has loaded, and by the page, which holds the app and the
-/// login back until this has answered.
-async fn resume(handle: &AppHandle) -> Result<Option<UpdateProgress>> {
+/// before the page has loaded, and by the page, which holds the app back
+/// until this has answered.
+pub(crate) async fn resume(handle: &AppHandle) -> Result<Option<UpdateProgress>> {
 	let staged = handle.state::<Staged>();
 	let resumed = staged.resumed.get_or_init(|| async {
 		if staged.resuming().is_none() {
@@ -508,9 +489,9 @@ async fn resume(handle: &AppHandle) -> Result<Option<UpdateProgress>> {
 	resumed.await.clone()
 }
 
-/// The page's wait on [`resume`]: the app is drawn, and the login made, once
-/// this has answered. A restart into the new version after either would take
-/// the app away as it appeared and spend a second login on the server's count.
+/// The page's wait on [`resume`]: the app is drawn once this has answered. A
+/// restart into the new version after that would take the app away as it
+/// appeared.
 #[tauri::command]
 pub async fn resume_update(handle: AppHandle) -> Result<Option<UpdateProgress>> {
 	resume(&handle).await
@@ -725,37 +706,14 @@ fn another_named(processes: &[orphan::Process], me: u32, name: &OsStr) -> bool {
 	})
 }
 
-/// Installs the download this run holds, as the app closes: the next start is
-/// then the new version already, with nothing to install on its way in.
-/// Nothing is relaunched, the app was closing. Not under a game left running,
-/// which an installer's window has no business appearing over, nor while
-/// another modlobby runs, which the installer would close. Left like that, or
-/// after a failure, the next start finds the download where it was kept.
-pub fn install_on_exit(handle: &AppHandle, game_running: bool) {
-	let Some(staged) = handle.try_state::<Staged>() else {
-		return;
-	};
-	let taken = staged.held.lock().expect("staged update").take();
-	let Some(Pending::Downloaded(update, bytes)) = taken else {
-		return;
-	};
-	if game_running || closes_another_lobby() {
-		tracing::info!(version = %update.version, game_running, "update: left for the next start");
-		return;
-	}
-	tracing::info!(version = %update.version, "update: installing on the way out");
-	let update = update.restart_after_install(false);
-	if let Err(err) = install(handle, &staged, &update, &bytes) {
-		tracing::warn!(reason = %err.message, "update: not installed on the way out");
-	}
-}
-
-/// Hands the installer its bytes. On Windows this does not return when it
-/// works: NSIS takes over and this process exits, the kept file left for the
-/// next start to recognise as its own version and remove. Elsewhere the app
-/// was rewritten in place and the kept file has served; what runs next is the
-/// caller's to say.
-fn install(handle: &AppHandle, staged: &Staged, update: &Update, bytes: &[u8]) -> Result<()> {
+/// Hands the installer its bytes. Does not return on success: the process
+/// exits and the new build comes up in its place.
+fn install(
+	handle: &AppHandle,
+	staged: &Staged,
+	update: &Update,
+	bytes: &[u8],
+) -> Result<UpdateProgress> {
 	// The exit that follows is not Tauri's, so the exit handler that takes the
 	// in-game widget back out of the user's data directory will not run --
 	// nor the one that marks the session as ended, without which every
@@ -769,8 +727,23 @@ fn install(handle: &AppHandle, staged: &Staged, update: &Update, bytes: &[u8]) -
 	update
 		.install(bytes)
 		.map_err(|err| ApiError::new("update", format!("installing {}: {err}", update.version)))?;
-	staged.discard();
-	Ok(())
+	// NSIS has exited this process by now; the kept file is for the next
+	// start to recognise as its own version and remove. The AppImage was
+	// rewritten under our feet and nothing relaunches anything, so that is
+	// done here, and the kept file has served.
+	#[cfg(not(windows))]
+	{
+		staged.discard();
+		handle.restart();
+	}
+	#[cfg(windows)]
+	{
+		let _ = staged;
+		Ok(UpdateProgress::Ready {
+			version: update.version.clone(),
+			held_by: None,
+		})
+	}
 }
 
 #[cfg(test)]

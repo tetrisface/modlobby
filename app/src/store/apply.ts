@@ -5,6 +5,7 @@ import type { Delta } from '../ipc/bindings/Delta'
 import type { ServerSnapshot } from '../ipc/bindings/ServerSnapshot'
 import type { Snapshot } from '../ipc/bindings/Snapshot'
 import type { UiMessage } from '../ipc/bindings/UiMessage'
+import { milestone } from '../ipc/logging'
 import { rememberSet } from './mods'
 import { noteToldStart } from './running'
 import {
@@ -66,9 +67,7 @@ function serverState(snapshot: ServerSnapshot): ServerState {
 export function applySnapshot(snapshot: Snapshot): void {
 	if (!snapshotSeen) {
 		snapshotSeen = true
-		console.debug(
-			`startup: first snapshot at ${Math.round(performance.now())} ms`,
-		)
+		milestone('first snapshot')
 	}
 	const next: LobbyState = {
 		...emptyLobby(),

@@ -2,6 +2,7 @@
 //! Nothing in here knows the protocol; commands translate calls, the channel
 //! transport forwards `UiMessage`s, settings changes are emitted as events.
 
+mod autologin;
 mod boxes;
 mod commands;
 mod engine;
@@ -49,6 +50,33 @@ fn overlay_config_dir(settings: &settings::Settings) -> Option<std::path::PathBu
 		.overlay
 		.enabled
 		.then(|| settings::config_dir().join("engine"))
+}
+
+/// What the page would otherwise open by asking for, one call behind another
+/// while the first screen is drawn without the answers. Handed over with the
+/// page instead, as a script that runs ahead of the page's own.
+#[derive(serde::Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+struct Boot {
+	settings: settings::Settings,
+	/// What was done at this start about a settings file that did not parse.
+	recovered: Option<String>,
+	/// The version the start is installing ahead of the app, if one was kept.
+	kept_update: Option<String>,
+	version: update::VersionView,
+}
+
+fn boot_script(app: &state::App, staged: &update::Staged) -> String {
+	let boot = Boot {
+		settings: app.settings.get(),
+		recovered: app.settings.recovered().map(str::to_owned),
+		kept_update: staged.resuming().map(str::to_owned),
+		version: update::app_version(),
+	};
+	// JSON is a JavaScript expression as it stands.
+	let boot = serde_json::to_string(&boot).expect("boot serialises");
+	format!("window.__MODLOBBY_BOOT__ = {boot};")
 }
 
 /// Tells the runtime and the overlay what the settings now say. The one way
@@ -218,6 +246,7 @@ pub fn run() {
 	let settings = settings::Store::open(config_dir)
 		.unwrap_or_else(|err| fatal(&format!("modlobby cannot start.\n\n{err}")));
 	logging.set_filter(&settings.get().logging.filter);
+	tracing::debug!(ms = since_start(), "startup: settings read");
 	let app = state::App::open(settings);
 	tracing::debug!(ms = since_start(), "startup: app opened");
 	match dotenv {
@@ -225,6 +254,10 @@ pub fn run() {
 		Err(err) if err.not_found() => {}
 		Err(err) => tracing::warn!(%err, "ignoring .env"),
 	}
+
+	// Picks up a download an earlier run left waiting.
+	let staged = update::Staged::open(app.settings.dir());
+	let boot = boot_script(&app, &staged);
 
 	let builder = tauri::Builder::default();
 	// Lets an agent drive this window through the Tauri MCP server. Debug
@@ -240,7 +273,13 @@ pub fn run() {
 	} else {
 		builder
 	};
-	builder
+	let built = builder
+		// Held from here rather than from `setup`, so the logins the start
+		// makes by itself need not wait for a window to begin.
+		.manage(staged)
+		.manage(app)
+		.manage(autologin::StartLogins::default())
+		.append_invoke_initialization_script(boot)
 		.plugin(tauri_plugin_opener::init())
 		.plugin(tauri_plugin_notification::init())
 		.plugin(tauri_plugin_updater::Builder::new().build())
@@ -279,6 +318,9 @@ pub fn run() {
 				.build(),
 		)
 		.setup(move |tauri_app| {
+			// Tauri is built, and the window and its webview exist, by now.
+			tracing::debug!(ms = since_start(), "startup: window up");
+			let app = tauri_app.state::<state::App>();
 			// The overlay needs a window, so it is built here rather than in
 			// `App::open`, and Tauri holds it beside the app state.
 			let controller = std::sync::Arc::new(overlay::Controller::new(
@@ -440,21 +482,30 @@ pub fn run() {
 				memory.note_trouble();
 				previous(info);
 			}));
-			// Picks up a download an earlier run left waiting.
-			tauri_app.manage(update::Staged::open(app.settings.dir()));
-			tauri_app.manage(app);
-			// That download is installed from here, ahead of the app, so the
-			// manifest is asked while the page is still loading; the page
-			// waits on the answer before it draws the app or logs in. After
-			// it, one small request when a look is due, and the nav says what
-			// it found -- fetching it too when `updates.download` says so.
+			// A download an earlier run kept is installed from here, ahead of
+			// the app, so the manifest is asked while the page is still
+			// loading; the page waits on the answer before it draws the app.
 			let updates = tauri_app.handle().clone();
 			tauri::async_runtime::spawn(async move {
 				// The install does not restart under a running game, and a game
 				// a lobby before this one left running is not known before the
 				// runtime has been asked to look for it.
 				let _ = adopted.await;
-				update::startup(updates, check_updates).await;
+				let _ = update::resume(&updates).await;
+				// The start's logins, which wait behind that install where
+				// there is one to make. With nothing kept they are under way
+				// already (see below `build`) and this only joins them.
+				let logins = updates.clone();
+				tauri::async_runtime::spawn(async move {
+					autologin::run(&logins).await;
+				});
+				// One small request when a look is due, and the nav says what
+				// it found -- fetching it too when `updates.download` says so.
+				// After the install, so it finds the kept download settled
+				// rather than half taken.
+				if check_updates {
+					update::daily(updates).await;
+				}
 			});
 			#[cfg(debug_assertions)]
 			exit_with_dev_runner(tauri_app.handle().clone());
@@ -537,6 +588,8 @@ pub fn run() {
 			update::install_update,
 			update::resume_update,
 			update::kept_update,
+			autologin::auto_login,
+			autologin::login_holds,
 			update::note_trouble,
 			commands::flash_engine,
 			commands::engine_in_front,
@@ -613,53 +666,60 @@ pub fn run() {
 			commands::delete_draft,
 		])
 		.build(tauri::generate_context!())
-		.expect("building modlobby")
-		.run(|handle, event| {
-			// After the window-state plugin has put the window back: a shape it
-			// cannot tell from a maximized one is made one, or it is saved and
-			// restored as it is on every run after.
-			if matches!(event, tauri::RunEvent::Ready)
-				&& let Some(window) = handle.get_webview_window("main")
-			{
-				screen::heal_restored(&window);
-			}
-			// Before the window-state plugin looks at the window, which it
-			// does on `Exit`: closed over a game, the window is in the
-			// overlay's shape, and that is not the shape to open in next time.
-			if matches!(event, tauri::RunEvent::ExitRequested { .. })
-				&& let Some(overlay) = handle.try_state::<std::sync::Arc<overlay::Controller>>()
-			{
-				overlay.shut_down();
-			}
-			if !matches!(event, tauri::RunEvent::Exit) {
-				return;
-			}
-			let game_running = engine_running(handle);
-			tracing::info!(game_running, "exiting");
-			if let Some(app) = handle.try_state::<state::App>() {
-				app.update_memory.ended();
-			}
-			let ingame = handle
-				.try_state::<InGameHandle>()
-				.and_then(|held| held.lock().expect("in-game").take());
-			if let Some(mut ingame) = ingame {
-				// Leaving a widget behind that talks to a port nobody answers is
-				// harmless — it stops consuming Escape — but tidying up is the
-				// whole promise, so it is done on the way out. Not from under a
-				// running game, though: the engine asks for the menu archive
-				// again when the player quits to it, and finding it gone is a
-				// content error in their face.
-				if game_running {
-					ingame.leave_behind();
-				}
-				// Dropping is what removes whatever is still tracked.
-				drop(ingame);
-			}
-			// Last, because on Windows it does not come back: a download nobody
-			// restarted into goes in now, so the next start has nothing to
-			// install.
-			update::install_on_exit(handle, game_running);
+		.expect("building modlobby");
+	tracing::debug!(ms = since_start(), "startup: tauri built");
+	// The logins the start makes by itself begin here, with the window still
+	// to come: it takes about as long to appear as a connection does to open.
+	// Not ahead of a kept update, though, whose install `setup` begins.
+	if built.state::<update::Staged>().resuming().is_none() {
+		let handle = built.handle().clone();
+		tauri::async_runtime::spawn(async move {
+			autologin::run(&handle).await;
 		});
+	}
+	built.run(|handle, event| {
+		// After the window-state plugin has put the window back: a shape it
+		// cannot tell from a maximized one is made one, or it is saved and
+		// restored as it is on every run after.
+		if matches!(event, tauri::RunEvent::Ready)
+			&& let Some(window) = handle.get_webview_window("main")
+		{
+			screen::heal_restored(&window);
+		}
+		// Before the window-state plugin looks at the window, which it
+		// does on `Exit`: closed over a game, the window is in the
+		// overlay's shape, and that is not the shape to open in next time.
+		if matches!(event, tauri::RunEvent::ExitRequested { .. })
+			&& let Some(overlay) = handle.try_state::<std::sync::Arc<overlay::Controller>>()
+		{
+			overlay.shut_down();
+		}
+		if !matches!(event, tauri::RunEvent::Exit) {
+			return;
+		}
+		let game_running = engine_running(handle);
+		tracing::info!(game_running, "exiting");
+		if let Some(app) = handle.try_state::<state::App>() {
+			app.update_memory.ended();
+		}
+		let Some(held) = handle.try_state::<InGameHandle>() else {
+			return;
+		};
+		let Some(mut ingame) = held.lock().expect("in-game").take() else {
+			return;
+		};
+		// Leaving a widget behind that talks to a port nobody answers is
+		// harmless — it stops consuming Escape — but tidying up is the
+		// whole promise, so it is done on the way out. Not from under a
+		// running game, though: the engine asks for the menu archive
+		// again when the player quits to it, and finding it gone is a
+		// content error in their face.
+		if game_running {
+			ingame.leave_behind();
+		}
+		// Dropping is what removes whatever is still tracked.
+		drop(ingame);
+	});
 }
 
 /// Whether a game we launched is still running, asked of the runtime on the

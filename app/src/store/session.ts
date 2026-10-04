@@ -20,22 +20,38 @@ export function loginHold(): number | null {
 }
 
 /**
- * Logging back in with the password the keyring remembers.
+ * The start's logins, waited for.
  *
- * This lives here rather than in the login form because the form is no longer
- * on the way in: the app opens on Skirmish, and an auto-login that only
- * happens when somebody visits the login page is not an auto-login.
+ * Rust begins them before there is a page, with the passwords the keyring
+ * remembers, so the lobby is on its way while the window is still coming up.
+ * What is left for the page is to say what went wrong with any of them, and
+ * to count down to one that is being held back.
  *
- * Attempted once per run rather than once per mount. The flag is module-level
- * so that a reload during development, or a component that comes and goes,
- * never logs someone back in immediately after they logged out.
+ * Once per run, whoever asks and however often: a page reloaded after a
+ * logout is told how the start went, and nobody is logged back in.
  */
-let attempted = false
-
-export async function autoLogin(settings: Settings): Promise<void> {
-	if (attempted || unattended(settings).length === 0) return
-	attempted = true
-	await loginUnattended(settings)
+export async function autoLogin(): Promise<void> {
+	let held: Record<string, number> = {}
+	try {
+		held = await api.loginHolds()
+		setHolds((all) => ({ ...all, ...held }))
+		const went = await api.autoLogin()
+		// A login writes the account back, and our own write raises no change
+		// event: this is how the page learns of it.
+		applySettings(went.settings)
+		for (const { server, message } of went.failures)
+			pushNotice(
+				'warning',
+				`could not log in to ${serverLabel(server)}: ${message}`,
+			)
+	} catch (error) {
+		pushNotice('warning', describeError(error))
+	}
+	setHolds((all) =>
+		Object.fromEntries(
+			Object.entries(all).filter(([server]) => !(server in held)),
+		),
+	)
 }
 
 /**
@@ -53,9 +69,9 @@ export function unattended(settings: Settings): ServerEntry[] {
 
 /**
  * Logs in to every server that logs in without being asked, each with the
- * password the keyring remembers for it: what a startup does, and what the
- * battle list's Log in does. `false` at once when none has a password to go
- * in with, so a press can open the login page instead.
+ * password the keyring remembers for it: what the battle list's Log in does,
+ * and what Rust does by itself as the app opens. `false` at once when none
+ * has a password to go in with, so a press can open the login page instead.
  */
 export async function loginUnattended(settings: Settings): Promise<boolean> {
 	const kept = await Promise.all(

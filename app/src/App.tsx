@@ -23,7 +23,9 @@ import {
 	FullscreenGlyph,
 	MinimizeGlyph,
 } from './components/WindowGlyphs'
+import { boot } from './ipc/boot'
 import { connectChannel } from './ipc/channel'
+import { milestone, reportStart } from './ipc/logging'
 import { ACTIVITY_EVENTS, activityReporter } from './lib/activity'
 import { localStore } from './lib/resize'
 import { headCount, rememberSeen } from './lib/seen'
@@ -244,10 +246,12 @@ function Layout(props: ParentProps) {
 	 * for a newer one; found, a button beside it offers the restart into it.
 	 */
 	onMount(() => {
-		void api
-			.appVersion()
-			.then(setBuild)
-			.catch(() => {})
+		// Handed over with the page on an ordinary start (`main.tsx`).
+		if (build() === null)
+			void api
+				.appVersion()
+				.then(setBuild)
+				.catch(() => {})
 		onCleanup(watchUpdates())
 		onCleanup(watchLaunch())
 	})
@@ -273,8 +277,8 @@ function Layout(props: ParentProps) {
 		const next = waiting()
 		if (next !== null) {
 			return heldBy()
-				? `Version ${next} is downloaded and installs after you close modlobby. Restarting now would lose ${heldBy()}.`
-				: `Version ${next} is downloaded. Restart into it now, or it installs after you close modlobby.`
+				? `Version ${next} is downloaded and installs on the next start. Restarting now would lose ${heldBy()}.`
+				: `Version ${next} is downloaded. Restart into it.`
 		}
 		const percent = downloading()
 		if (percent !== null) return `Downloading the update — ${percent}%`
@@ -411,21 +415,22 @@ function Layout(props: ParentProps) {
 	}
 
 	// A download an earlier run kept has been installed or let go by now:
-	// `AfterUpdate`, around the app, draws none of this until it has. The
-	// restart an install ends in would otherwise spend a second login on the
-	// server's count.
+	// `AfterUpdate`, around the app, draws none of this until it has.
 	onMount(async () => {
+		milestone('shell mounted')
 		try {
-			const saved = await api.getSettings()
-			applySettings(saved)
+			// On an ordinary start the settings came with the page and are in
+			// place already (`main.tsx`); a reloaded page asks for them.
+			const start = boot()
+			if (!start) applySettings(await api.getSettings())
 			// A settings file this build could not parse was kept and started
 			// past; the user hears it once, here.
-			const recovered = await api.settingsRecovered()
+			const recovered = start ? start.recovered : await api.settingsRecovered()
 			if (recovered) pushNotice('warning', recovered)
 			await connectChannel()
-			// The one place that already holds the settings, so auto-login neither
-			// reads them again nor races the signal that carries them.
-			void autoLogin(saved)
+			milestone('channel connected')
+			reportStart()
+			void autoLogin()
 			// The count belongs to the nav, which is here whether or not the News
 			// tab ever is, so the feed is asked for from the shell. Rust answers
 			// from its own cache for the hour it trusts one, so most launches make

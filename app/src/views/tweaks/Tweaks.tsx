@@ -1,10 +1,18 @@
-import { Show, onMount } from 'solid-js'
+import { Show, lazy, onMount } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import { describeError } from '../../ipc/client'
 import { pushNotice } from '../../store/chat'
 import { tweakspaceFor } from '../../store/tweakspaceInstance'
 import { useRoom } from '../room/model'
-import { Workspace } from './Workspace'
+
+/**
+ * The workspace brings Monaco with it: most of the app's script, and no part
+ * of its first screen. So it is a chunk of its own, fetched in idle time once
+ * the app is up (`main.tsx`) and here at the latest.
+ */
+const Workspace = lazy(async () => ({
+	default: (await import('./Workspace')).Workspace,
+}))
 
 /**
  * The tweak editor, where it was opened -- under a settings row, or as the

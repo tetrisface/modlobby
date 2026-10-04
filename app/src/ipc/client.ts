@@ -3,6 +3,7 @@ import { invoke } from './invoke'
 import type { Act } from './bindings/Act'
 import type { AiChoice } from './bindings/AiChoice'
 import type { Arrangement } from './bindings/Arrangement'
+import type { AutoLogin } from './bindings/AutoLogin'
 import type { BarConfig } from './bindings/BarConfig'
 import type { BattleOn } from './bindings/BattleOn'
 import type { ArrangementView } from './bindings/ArrangementView'
@@ -114,6 +115,16 @@ export const api = {
 	nameProblem: (username: string) =>
 		invoke<string | null>('name_problem', { username }),
 	loginWait: (server: string) => invoke<number>('login_wait', { server }),
+	/**
+	 * How the start's logins went, once they are over. Rust begins them before
+	 * the page exists; this waits on them.
+	 */
+	autoLogin: () => invoke<AutoLogin>('auto_login'),
+	/**
+	 * When each of the start's logins that is being held back goes out, as
+	 * `Date.now()` moments by server.
+	 */
+	loginHolds: () => invoke<Record<string, number>>('login_holds'),
 	joinBattle: (server: string, id: number, password: string | null) =>
 		invoke<void>('join_battle', { server, id, password }),
 	leaveBattle: () => invoke<void>('leave_battle'),

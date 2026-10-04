@@ -670,16 +670,14 @@ export function SettingsView() {
 							<p class='muted'>
 								One small request when the app opens, at most once a day. A
 								newer version puts a button beside the version in the nav. With
-								downloading on it is fetched in the background and kept, and the
-								button restarts into it. If you do not click, it is installed as
-								modlobby closes, so the next start is already the new version;
-								closed over a running game, the next start installs it before
-								anything else. Off, nothing is fetched until you click, and the
-								click fetches first. In a room or a game the install waits for a
-								second click. After a session that ended badly the look comes
-								round more often for a while — hourly at first, easing back to
-								daily — so a fix reaches you sooner; nothing about the failure
-								is sent anywhere.{' '}
+								downloading on it is fetched in the background and kept, nothing
+								is installed, and the button restarts into it; the next start
+								installs it if you do not. Off, nothing is fetched until you
+								click, and the click fetches first. In a room or a game the
+								install waits for a second click. After a session that ended
+								badly the look comes round more often for a while — hourly at
+								first, easing back to daily — so a fix reaches you sooner;
+								nothing about the failure is sent anywhere.{' '}
 								<button
 									type='button'
 									disabled={updating()}
