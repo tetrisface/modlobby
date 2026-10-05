@@ -1,0 +1,32 @@
+{
+	"$schema": "./app/node_modules/@biomejs/biome/configuration_schema.json",
+	"vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+	// `!!` keeps the scanner out: a submodule's own biome.json would be a
+	// second root config, which Biome refuses.
+	"files": { "includes": ["app/**", "!app/src-tauri", "!!external"] },
+	"formatter": { "indentStyle": "tab" },
+	"javascript": {
+		"formatter": {
+			"quoteStyle": "single",
+			"jsxQuoteStyle": "single",
+			"semicolons": "asNeeded"
+		}
+	},
+	"css": { "formatter": { "quoteStyle": "single" } },
+	"assist": { "enabled": false },
+	"linter": {
+		"rules": {
+			"preset": "recommended",
+			// ~190 findings, mostly clickable elements without key handlers.
+			"a11y": "off",
+			"style": {
+				// 70 findings in styles.css, unaudited.
+				"noDescendingSpecificity": "off",
+				// `noUncheckedIndexedAccess` makes `!` the idiom.
+				"noNonNullAssertion": "off"
+			},
+			// ts-rs names a binding `Symbol` after its Rust type.
+			"suspicious": { "noShadowRestrictedNames": "off" }
+		}
+	}
+}

@@ -1,5 +1,5 @@
 # bun runs the scripts under `app/`; Node is only needed by the JS tooling they
-# call (Vite, TypeScript, Prettier, the Tauri CLI). Both versions are repeated in
+# call (Vite, TypeScript, Biome, the Tauri CLI). Both versions are repeated in
 # `.github/workflows/`. The Rust toolchain is pinned by `rust-toolchain.toml`,
 # which mise reads when `rust` is listed in `idiomatic_version_file_enable_tools`.
 [tools]

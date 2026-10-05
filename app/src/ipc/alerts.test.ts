@@ -13,8 +13,9 @@ vi.mock('@tauri-apps/api/window', () => ({
 	getCurrentWindow: () => ({ requestUserAttention: vi.fn(async () => {}) }),
 }))
 
-const { plan, flashTarget, keepTrying, onScreen, wanted } =
-	await import('./alerts')
+const { plan, flashTarget, keepTrying, onScreen, wanted } = await import(
+	'./alerts'
+)
 const { applySettings } = await import('../store/settings')
 const { blankSettings } = await import('../views/Settings')
 

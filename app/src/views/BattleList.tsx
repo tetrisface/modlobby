@@ -14,7 +14,6 @@ import {
 import type { BattleList as Filters } from '../ipc/bindings/BattleList'
 import type { BattleSort } from '../ipc/bindings/BattleSort'
 import type { BattleOn } from '../ipc/bindings/BattleOn'
-import type { BattleView } from '../ipc/bindings/BattleView'
 import type { UserView } from '../ipc/bindings/UserView'
 import type { ModeFilter } from '../ipc/bindings/ModeFilter'
 import { dismiss } from '../components/dismiss'
@@ -258,18 +257,6 @@ export function BattleList() {
 	async function join(row: Row) {
 		if (row.battle.passworded) return setAsking(row)
 		await enter(row, null)
-	}
-
-	/**
-	 * What clicking a room does, as Chobby asks it: remember what you did last
-	 * time, or always one or the other (`gui_settings_window.lua:906`).
-	 */
-	const posture = (): 'player' | 'spectator' => {
-		const play = settings()?.play
-		if (!play) return 'spectator'
-		if (play.joinAs === 'remember')
-			return play.lastWasPlayer ? 'player' : 'spectator'
-		return play.joinAs
 	}
 
 	async function enter(row: Row, password: string | null) {

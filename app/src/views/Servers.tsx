@@ -30,7 +30,6 @@ import {
 	newServer,
 	parsePorts,
 	serverId,
-	serverName,
 	sessionStatus,
 	splitHost,
 } from '../lib/servers'

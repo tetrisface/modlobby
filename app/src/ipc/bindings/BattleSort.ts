@@ -5,4 +5,9 @@
  * the columns.
  */
 export type BattleSort =
-	'relevance' | 'modded' | 'players' | 'title' | 'map' | 'rank'
+	| 'relevance'
+	| 'modded'
+	| 'players'
+	| 'title'
+	| 'map'
+	| 'rank'

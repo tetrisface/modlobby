@@ -37,7 +37,12 @@ export type Segment = {
  * - `play`, `ready`: a seat between games.
  */
 export type Stance =
-	'spectate' | 'queuing' | 'playNext' | 'readyNext' | 'play' | 'ready'
+	| 'spectate'
+	| 'queuing'
+	| 'playNext'
+	| 'readyNext'
+	| 'play'
+	| 'ready'
 
 export type Posture = {
 	stance: Stance

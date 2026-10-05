@@ -52,7 +52,7 @@ export function remember(history: string[], line: string): string[] {
  * people type as commands (`allowSettingsShortcut`). Aliases are left out;
  * they are what you type when you already know the name.
  */
-// prettier-ignore
+// biome-ignore format: packed rows read as a list, one name a line would not
 export const SPADS_COMMANDS: readonly string[] = [
 	'addBot', 'addBox', 'advert', 'aiProfile', 'auth', 'autoBalance', 'balance',
 	'balanceAlgorithm', 'ban', 'banIp', 'banIps', 'bKick', 'boss', 'bPreset',
@@ -75,7 +75,7 @@ export const SPADS_COMMANDS: readonly string[] = [
 ]
 
 /** What a room of your own answers to (`skirmish/src/command.rs`). */
-// prettier-ignore
+// biome-ignore format: packed rows read as a list, one name a line would not
 export const SKIRMISH_COMMANDS: readonly string[] = [
 	'addBot', 'bSet', 'engine', 'fixColors', 'game', 'help', 'map', 'nbTeams',
 	'removeBot', 'rename', 'set', 'start',

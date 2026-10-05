@@ -233,7 +233,7 @@ describe('the servers section', () => {
 			([command]) => command === 'update_settings',
 		)
 		expect(
-			(saved?.[1] as { settings: Settings }).settings.servers.map(
+			(saved![1] as { settings: Settings }).settings.servers.map(
 				(entry) => entry.host,
 			),
 		).toEqual([BAR, 'rapid.example'])

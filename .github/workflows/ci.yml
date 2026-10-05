@@ -102,7 +102,7 @@ jobs:
       - name: Generated bindings are committed
         # `cargo test` above wrote these to a throwaway, which is what keeps a
         # working tree clean after an ordinary test run (`.cargo/config.toml`).
-        # Regenerating them means naming the real directory; prettier then puts
+        # Regenerating them means naming the real directory; biome then puts
         # them in the house style, which is what is committed. A diff means a
         # type changed and its TypeScript was not.
         if: runner.os == 'Linux'
@@ -111,5 +111,5 @@ jobs:
           TS_RS_EXPORT_DIR: ${{ github.workspace }}/app/src/ipc/bindings
         run: |
           cargo test --workspace export_bindings
-          cd app && bunx prettier --log-level warn --write src/ipc/bindings
+          cd app && bunx biome format --write src/ipc/bindings
           git diff --exit-code src/ipc/bindings

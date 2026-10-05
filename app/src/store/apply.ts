@@ -1,5 +1,5 @@
 import { batch } from 'solid-js'
-import { produce, reconcile, unwrap } from 'solid-js/store'
+import { produce, reconcile } from 'solid-js/store'
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { Delta } from '../ipc/bindings/Delta'
 import type { ServerSnapshot } from '../ipc/bindings/ServerSnapshot'

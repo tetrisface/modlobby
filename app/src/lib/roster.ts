@@ -185,7 +185,7 @@ function seat(
 	const dealt = new Set<string>()
 	const unplaced = pending.filter((user) => user.name !== me)
 	const round = sorted(teams)
-	for (let i = 0; toSeat > 0 && i < unplaced.length;) {
+	for (let i = 0; toSeat > 0 && i < unplaced.length; ) {
 		let seated = false
 		for (const t of round) {
 			if (toSeat === 0 || i >= unplaced.length) break

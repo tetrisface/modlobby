@@ -1,6 +1,6 @@
 import { Select } from '../../components/Select'
 import { For, Show, createEffect, createSignal, onCleanup } from 'solid-js'
-import { createDiffEditor, disposeDiff, monaco } from '../../editor/monaco'
+import { createDiffEditor, disposeDiff, type monaco } from '../../editor/monaco'
 import type { DiffView } from '../../ipc/bindings/DiffView'
 import type { Kind } from '../../ipc/bindings/Kind'
 import {

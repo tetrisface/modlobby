@@ -2,8 +2,6 @@ import type { BattleStatusView } from '../../ipc/bindings/BattleStatusView'
 import type { BattleView } from '../../ipc/bindings/BattleView'
 import type { BotView } from '../../ipc/bindings/BotView'
 import type { MyBattleView } from '../../ipc/bindings/MyBattleView'
-import type { Book } from '../../ipc/bindings/Book'
-import type { Plan } from '../../ipc/bindings/Plan'
 import type { Prepared } from '../../ipc/bindings/Prepared'
 import type { UserView } from '../../ipc/bindings/UserView'
 import type { RoomCaps, RoomIo, RoomModel } from './model'
@@ -108,13 +106,6 @@ export function myBattle(over: Partial<MyBattleView> = {}): MyBattleView {
 /** What the room asked for, in order: the name and the arguments. */
 export type Calls = Array<[string, unknown[]]>
 
-const NO_BOOK: Book = { version: 1, presets: [] }
-const NO_PLAN: Plan = {
-	lines: [],
-	startBoxes: [],
-	startBoxesUnsent: false,
-	alreadySet: 0,
-}
 const NOTHING_PREPARED: Prepared = {
 	minified: '',
 	blob: '',

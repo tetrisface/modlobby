@@ -229,7 +229,9 @@ export function Seat() {
 		allyTeams().find((ally) => !usedAllies().has(ally)) ?? 0
 
 	/**
-	 * Sits down on arrival when that is the posture, once per room.
+	 * Sits down on arrival when that is the posture, once per room. The posture
+	 * is Chobby's: remember what you did last time, or always one or the other
+	 * (`gui_settings_window.lua:906`).
 	 *
 	 * Once, decided on arrival whichever way: leaving your seat is not to be
 	 * undone, and a seat you took yourself is not to be taken again behind

@@ -8,6 +8,7 @@
 		"jsxImportSource": "solid-js",
 		"strict": true,
 		"noUncheckedIndexedAccess": true,
+		"noUnusedLocals": true,
 		"noEmit": true,
 		"isolatedModules": true,
 		"skipLibCheck": true,

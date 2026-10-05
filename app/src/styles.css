@@ -1102,6 +1102,7 @@ body.resizing-y {
 .team {
 	flex: 0 1
 		calc(var(--columns, 1) * 16.75rem + (var(--columns, 1) - 1) * 1.75rem);
+	/* biome-ignore format: split at every operator, the products would come apart */
 	min-width: calc(
 		var(--columns, 1) * 13.75rem + (var(--columns, 1) - 1) * 1.75rem
 	);

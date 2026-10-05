@@ -33,4 +33,4 @@ build:
 # Regenerates the TypeScript bindings into the repo, in the house style.
 bindings:
 	TS_RS_EXPORT_DIR="{{justfile_directory()}}/app/src/ipc/bindings" cargo test --workspace export_bindings
-	(cd app && bunx prettier --log-level warn --write src/ipc/bindings)
+	(cd app && bunx biome format --write src/ipc/bindings)

@@ -8,7 +8,7 @@ import {
 } from 'solid-js'
 import { Thinking } from '../components/Thinking'
 import type { Score } from '../ipc/bindings/Score'
-import { api, describeError } from '../ipc/client'
+import { describeError } from '../ipc/client'
 import { asker } from '../lib/asking'
 import { askDelay } from '../lib/stagger'
 import { settings } from '../store/settings'

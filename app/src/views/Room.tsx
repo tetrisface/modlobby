@@ -44,7 +44,6 @@ import type { BotView } from '../ipc/bindings/BotView'
 import type { ChatLine } from '../ipc/bindings/ChatLine'
 import type { DownloadStatus } from '../ipc/bindings/DownloadStatus'
 import type { StartRectView } from '../ipc/bindings/StartRectView'
-import type { UserView } from '../ipc/bindings/UserView'
 import { api, describeError } from '../ipc/client'
 import { clock } from '../lib/age'
 import { layoutLabel } from '../lib/battles'
@@ -281,19 +280,22 @@ export function Room() {
 	 */
 	const teamTargets = (team: Team): Target[] =>
 		[
-			...team.users.map((user): Target =>
-				user.name === room.me()
-					? { kind: 'me' }
-					: { kind: 'player', name: user.name },
+			...team.users.map(
+				(user): Target =>
+					user.name === room.me()
+						? { kind: 'me' }
+						: { kind: 'player', name: user.name },
 			),
-			...team.bots.map((bot): Target => ({
-				kind: 'bot',
-				name: bot.name,
-				mine: bot.owner === room.me(),
-				team: bot.status.team,
-				handicap: bot.status.handicap,
-				colour: bot.teamColour,
-			})),
+			...team.bots.map(
+				(bot): Target => ({
+					kind: 'bot',
+					name: bot.name,
+					mine: bot.owner === room.me(),
+					team: bot.status.team,
+					handicap: bot.status.handicap,
+					colour: bot.teamColour,
+				}),
+			),
 		].filter((target) => movable(room, target))
 
 	/** The row menu's own actions, over everybody on the team in turn. */

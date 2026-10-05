@@ -360,7 +360,7 @@ export function Setup() {
 	 * border. Summed from the tabs themselves, so the answer is the same
 	 * whether they are currently on one row or wrapped onto two.
 	 */
-	function fit() {
+	function fitTabs() {
 		if (chosen || !strip) return
 		const tabs = [...strip.children] as HTMLElement[]
 		if (tabs.length === 0) return
@@ -378,8 +378,8 @@ export function Setup() {
 		TABS()
 		total()
 		if (chosen) return
-		fit()
-		void document.fonts?.ready.then(fit)
+		fitTabs()
+		void document.fonts?.ready.then(fitTabs)
 	})
 
 	return (

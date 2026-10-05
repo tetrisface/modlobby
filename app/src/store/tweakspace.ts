@@ -26,7 +26,6 @@ import {
 	draftFile,
 	draftId,
 	draftOfFile,
-	edit as editDoc,
 	emptyWorkspace,
 	fileSafe,
 	formOf,

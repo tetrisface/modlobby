@@ -13,27 +13,31 @@ import { createTweakspace, type TweakIo } from './tweakspace'
  */
 function fakeIo() {
 	const files = new Map<string, string>()
-	const tweakPrepare = vi.fn(async (lua: string): Promise<Prepared> => ({
-		minified: lua,
-		blob: 'b',
-		command: '!bSet x b',
-		gauge: {
-			raw: lua.length,
-			minified: lua.length,
-			blob: 1,
-			command: 9,
-			cap: 16385,
-			fits: true,
-		},
-	}))
+	const tweakPrepare = vi.fn(
+		async (lua: string): Promise<Prepared> => ({
+			minified: lua,
+			blob: 'b',
+			command: '!bSet x b',
+			gauge: {
+				raw: lua.length,
+				minified: lua.length,
+				blob: 1,
+				command: 9,
+				cap: 16385,
+				fits: true,
+			},
+		}),
+	)
 	const io = {
-		tweakDecode: vi.fn(async (blob: string): Promise<TweakView> => ({
-			text: `lua of ${blob}`,
-			formatted: `-- ${blob}\nlua of ${blob}\n`,
-			name: blob,
-			summary: `${blob.length}:hash`,
-			diagnostics: [],
-		})),
+		tweakDecode: vi.fn(
+			async (blob: string): Promise<TweakView> => ({
+				text: `lua of ${blob}`,
+				formatted: `-- ${blob}\nlua of ${blob}\n`,
+				name: blob,
+				summary: `${blob.length}:hash`,
+				diagnostics: [],
+			}),
+		),
 		tweakFormat: vi.fn(async (lua: string) => `${lua.trim()}\n`),
 		tweakPrepare,
 		tweakCheck: vi.fn(async () => ({ problems: [], outline: [] })),

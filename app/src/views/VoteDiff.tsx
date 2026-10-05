@@ -2,7 +2,7 @@ import { Show, createEffect, createSignal, onCleanup } from 'solid-js'
 import type { DiffView } from '../ipc/bindings/DiffView'
 import type { Kind } from '../ipc/bindings/Kind'
 import { api, describeError } from '../ipc/client'
-import { createDiffEditor, disposeDiff, monaco } from '../editor/monaco'
+import { createDiffEditor, disposeDiff, type monaco } from '../editor/monaco'
 import { KINDS } from '../lib/tweakspace'
 
 /**

@@ -739,7 +739,8 @@ export function sideOptions(
 
 /** A side, found: either Lua ready to show, or a blob still to decode. */
 export type Resolved = { label: string; kind: Kind } & (
-	{ lua: string } | { blob: string }
+	| { lua: string }
+	| { blob: string }
 )
 
 export function resolveSide(
