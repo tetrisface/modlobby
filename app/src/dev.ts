@@ -7,6 +7,8 @@
  *                        (seated, between games; seats a stand-in if alone)
  *   dev.inGame('name')   a player's crossed swords; `false` takes them off
  *   dev.standIn(ally)    a made-up player joins, seated on that ally team
+ *   dev.ranks()          eight of them, one at each rank, four a side: in the
+ *                        skirmish on its page, else in the server room
  *   dev.vacated('a', 1)  a player gone from the running game: a ghost on team 2
  *                        (`null`: their whole team gone)
  *   dev.emit(delta)      any delta, to the room's server
@@ -16,8 +18,10 @@
  */
 import type { BattleStatusView } from './ipc/bindings/BattleStatusView'
 import type { Delta } from './ipc/bindings/Delta'
+import type { UserView } from './ipc/bindings/UserView'
+import { freeTeam } from './lib/roster'
 import { applyDelta } from './store/apply'
-import { myRoom, roomServer, roomSession } from './store/lobby'
+import { lobby, myRoom, roomServer, roomSession } from './store/lobby'
 
 /** Applies `deltas` as the runtime's own, filed under the room's server. */
 export function emit(...deltas: Delta[]): void {
@@ -104,38 +108,81 @@ const STAND_IN = 'dev-stand-in'
  * A made-up player who joins the room seated on `allyTeam`, for states that
  * need somebody else. Their row stays until the page is reloaded.
  */
-export function standIn(allyTeam = 0): void {
-	const id = mine().my.id
+export function standIn(allyTeam = 0, name = STAND_IN, rank = 0): void {
+	const { my } = mine()
+	const room = myRoom()
+	if (!room) throw new Error('not in a room')
 	emit(
-		{
-			type: 'userAdded',
-			data: {
-				name: STAND_IN,
-				country: 'SE',
-				userId: null,
-				lobbyClient: 'modlobby',
-				status: {
-					inGame: false,
-					away: false,
-					rank: 0,
-					moderator: false,
-					bot: false,
-				},
-				battleStatus: null,
-				battleId: id,
+		{ type: 'userAdded', data: fake(name, rank, my.id) },
+		{ type: 'member', data: { id: my.id, name, joined: true } },
+		// Nobody is moving: our own seat is taken too.
+		seatOf(
+			name,
+			seated(freeTeam(room, roomSession()?.users ?? {}, null), allyTeam),
+		),
+	)
+}
+
+/** A made-up person, not yet seated. */
+const fake = (name: string, rank: number, battleId: number): UserView => ({
+	name,
+	country: 'SE',
+	userId: null,
+	lobbyClient: 'modlobby',
+	status: { inGame: false, away: false, rank, moderator: false, bot: false },
+	battleStatus: null,
+	battleId,
+})
+
+const seated = (team: number, allyTeam: number): BattleStatusView => ({
+	ready: false,
+	team,
+	allyTeam,
+	player: true,
+	handicap: 0,
+	sync: 'synced',
+	side: 0,
+})
+
+const RANKS = [0, 1, 2, 3, 4, 5, 6, 7]
+
+/**
+ * A stand-in at each of the eight ranks, four a side: every chevron at once.
+ * On the Skirmish page they join the skirmish, which is carried whole, so it
+ * is resent with them in it; anywhere else they join the server room.
+ */
+export function ranks(): void {
+	const skirmish = lobby.skirmish
+	if (location.hash !== '#/skirmish' || !skirmish) {
+		for (const rank of RANKS) standIn(rank % 2, `dev-rank-${rank + 1}`, rank)
+		return
+	}
+	// A team id nobody in the skirmish holds, one each.
+	const taken = new Set([
+		...skirmish.users.map((user) => user.battleStatus?.team),
+		...skirmish.battle.bots.map((bot) => bot.status.team),
+	])
+	const freshTeam = () => {
+		let team = 0
+		while (taken.has(team)) team += 1
+		taken.add(team)
+		return team
+	}
+	const extras = RANKS.map((rank) => ({
+		...fake(`dev-rank-${rank + 1}`, rank, skirmish.battle.id),
+		battleStatus: seated(freshTeam(), rank % 2),
+	}))
+	applyDelta({
+		type: 'skirmish',
+		data: {
+			...skirmish,
+			users: [...skirmish.users, ...extras],
+			battle: {
+				...skirmish.battle,
+				members: [...skirmish.battle.members, ...extras.map((u) => u.name)],
 			},
 		},
-		{ type: 'member', data: { id, name: STAND_IN, joined: true } },
-		seatOf(STAND_IN, {
-			ready: false,
-			team: 15,
-			allyTeam,
-			player: true,
-			handicap: 0,
-			sync: 'synced',
-			side: 0,
-		}),
-	)
+	})
 }
 
 /** `name`'s in-game bit, ourselves by default. */
@@ -173,5 +220,5 @@ export function vacated(name = 'alice', allyTeam: number | null = 0): void {
 }
 
 Object.assign(window, {
-	dev: { emit, held, breath, inGame, standIn, vacated },
+	dev: { emit, held, breath, inGame, standIn, ranks, vacated },
 })

@@ -129,12 +129,12 @@ describe('a player row', () => {
 		)
 	})
 
-	test('ranks 1-4 are outlined silver, 5-8 solid gold', () => {
-		for (const [rank, id, lower] of [
-			[0, '#chev1', true],
-			[3, '#chev4', true],
-			[4, '#chev1-solid', false],
-			[7, '#chev4-solid', false],
+	test('the rank icon is numbered as Chobby numbers ranks, 1-8', () => {
+		for (const [rank, id] of [
+			[0, '#chev1'],
+			[3, '#chev4'],
+			[4, '#chev5'],
+			[7, '#chev8'],
 		] as const) {
 			const { container, unmount } = render(() => (
 				<PlayerRow
@@ -144,7 +144,6 @@ describe('a player row', () => {
 				/>
 			))
 			expect(icons(container)[1]).toBe(id)
-			expect(container.querySelector('.rank.lower') !== null).toBe(lower)
 			unmount()
 		}
 	})
@@ -159,7 +158,7 @@ describe('a player row', () => {
 		))
 		expect(icons(container)).toEqual([
 			'#st-ready',
-			'#chev3-solid',
+			'#chev7',
 			'#rank-shield',
 			'#side-armada',
 		])

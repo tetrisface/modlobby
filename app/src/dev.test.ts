@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { BattleStatusView } from './ipc/bindings/BattleStatusView'
 import type { UserView } from './ipc/bindings/UserView'
-import { breath, emit, held, inGame, vacated } from './dev'
-import { applySnapshot } from './store/apply'
+import { breath, emit, held, inGame, ranks, vacated } from './dev'
+import { applyDelta, applySnapshot } from './store/apply'
 import { lobby } from './store/lobby'
+import * as fixture from './views/room/fixture'
 
 const seat = (over: Partial<BattleStatusView> = {}): BattleStatusView => ({
 	ready: false,
@@ -173,5 +174,45 @@ describe('the dev console hooks', () => {
 		expect(S().users.alice?.status.inGame).toBe(true)
 		inGame('alice', false)
 		expect(S().users.alice?.status.inGame).toBe(false)
+	})
+
+	test('ranks seats a stand-in at each rank, each on a team of their own', () => {
+		ranks()
+		const seated = [1, 2, 3, 4, 5, 6, 7, 8].map(
+			(n) => S().users[`dev-rank-${n}`],
+		)
+		expect(seated.map((u) => u?.status.rank)).toEqual([0, 1, 2, 3, 4, 5, 6, 7])
+		expect(new Set(seated.map((u) => u?.battleStatus?.team)).size).toBe(8)
+	})
+
+	test('on the Skirmish page, ranks joins the skirmish and leaves the room alone', () => {
+		applyDelta({
+			type: 'skirmish',
+			data: {
+				battle: { ...fixture.battle({ bots: [fixture.bot('BARb')] }), id: 0 },
+				my: fixture.myBattle({ id: 0 }),
+				users: [fixture.user('me')],
+				me: 'me',
+				content: { engine: true, game: true, map: true },
+			},
+		})
+		location.hash = '#/skirmish'
+		ranks()
+		location.hash = ''
+		const skirmish = lobby.skirmish!
+		const extras = skirmish.users.slice(1)
+		expect(extras.map((u) => u.status.rank)).toEqual([0, 1, 2, 3, 4, 5, 6, 7])
+		expect(skirmish.battle.members).toEqual([
+			'me',
+			...extras.map((u) => u.name),
+		])
+		const held = [
+			skirmish.users[0]?.battleStatus?.team,
+			...skirmish.battle.bots.map((b) => b.status.team),
+		]
+		const given = extras.map((u) => u.battleStatus?.team)
+		expect(new Set(given).size).toBe(8)
+		expect(given.some((team) => held.includes(team))).toBe(false)
+		expect(S().users['dev-rank-1']).toBeUndefined()
 	})
 })
