@@ -595,6 +595,13 @@ export function SettingsView() {
 								of them this one.
 							</p>
 							<p class='muted'>
+								A lobby on a monitor of its own covers no game, so there the key
+								only passes the keyboard between the two windows and the lobby
+								keeps its shape. Over a game it can be dragged by its nav: the
+								next press fits it back over the game, or, dragged onto another
+								monitor, leaves it there as an ordinary window.
+							</p>
+							<p class='muted'>
 								Nothing can be drawn over an exclusive full-screen game, so if
 								your engine is set that way, modlobby launches it against its
 								own copy of your settings with borderless full screen instead.

@@ -94,6 +94,17 @@ pub fn boss(json: &str) -> Option<String> {
 	state_field(json, "boss")
 }
 
+/// Whether a BarManager payload is the room's state at all. The plugin sends
+/// its votes down the same channel (`onVoteStart`, `onVoteStop`,
+/// `currentVote`), and those say nothing about who bosses the room or what
+/// preset it runs: read as state they would unboss it until the next real
+/// state line, which is what a vote mid-game used to do.
+pub fn is_battle_state(json: &str) -> bool {
+	serde_json::from_str::<serde_json::Value>(json)
+		.ok()
+		.is_some_and(|value| value.get("BattleStateChanged").is_some())
+}
+
 /// One string out of a `BattleStateChanged` payload, trimmed. `None` where
 /// the payload is not one, lacks the key, or has it empty.
 fn state_field(json: &str, key: &str) -> Option<String> {
@@ -721,6 +732,18 @@ mod tests {
 		// Anything else is not a claim about who is in charge.
 		assert_eq!(boss(r#"{"onVoteStart": {}}"#), None);
 		assert_eq!(boss("not json"), None);
+	}
+
+	#[test]
+	fn only_a_state_payload_is_the_rooms_state() {
+		use super::is_battle_state;
+		assert!(is_battle_state(r#"{"BattleStateChanged": {"boss": ""}}"#));
+		// A vote on the same channel is not; nor is a line that is not JSON.
+		assert!(!is_battle_state(
+			r#"{"onVoteStart": {"command": "forceStart"}}"#
+		));
+		assert!(!is_battle_state(r#"{"onVoteStop": {}}"#));
+		assert!(!is_battle_state("not json"));
 	}
 
 	#[test]

@@ -1778,8 +1778,14 @@ impl Session {
 			}
 			// The BAR plugin's JSON duplicates what the text already told us.
 			Announcement::BarManager { json } => {
-				// The room's own statement of who is in charge of it, and of
-				// whether it arranges its own teams.
+				// Only the room's own statement of who is in charge of it, and
+				// of whether it arranges its own teams. The plugin's votes come
+				// down the same channel and say nothing about either; read as
+				// if they did, a vote would unboss the room until the next
+				// state line.
+				if !spads::is_battle_state(&json) {
+					return vec![];
+				}
 				let boss = spads::boss(&json);
 				let auto_balance = spads::auto_balance(&json);
 				let preset = spads::preset(&json);
@@ -2757,6 +2763,30 @@ mod tests {
 				skipped: 1
 			})
 		);
+	}
+
+	#[test]
+	fn a_vote_on_the_plugins_channel_does_not_unboss_the_room() {
+		let mut s = in_a_public_room();
+		feed(
+			&mut s,
+			&[
+				r#"SAIDBATTLEEX host * BarManager|{"BattleStateChanged": {"boss": "me", "preset": "team"}}"#,
+			],
+		);
+		assert!(s.is_boss());
+
+		// The plugin sends votes down the same channel, saying nothing about
+		// who bosses the room. A vote mid-game used to unboss it here until
+		// the next state line, which could be minutes away.
+		feed(
+			&mut s,
+			&[
+				r#"SAIDBATTLEEX host * BarManager|{"onVoteStart": {"command": "forceStart", "user": "alice"}}"#,
+				r#"SAIDBATTLEEX host * BarManager|{"onVoteStop": {"result": "passed"}}"#,
+			],
+		);
+		assert!(s.is_boss(), "a vote is not a change of boss");
 	}
 
 	#[test]

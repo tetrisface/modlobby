@@ -61,9 +61,11 @@ tracing-subscriber = { workspace = true }
 ts-rs = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
-# Only to flash the engine's taskbar entry, which is a window we do not own.
+# Only for the engine's window, which we do not own: flashing its taskbar
+# entry, putting it in front, and asking which monitor it is on.
 windows-sys = { workspace = true, features = [
   "Win32_Foundation",
+  "Win32_Graphics_Gdi",
   "Win32_UI_WindowsAndMessaging",
 ] }
 

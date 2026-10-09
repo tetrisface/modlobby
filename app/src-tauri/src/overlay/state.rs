@@ -31,6 +31,20 @@ impl Default for OverlaySettings {
 	}
 }
 
+/// Where the lobby's window stands against the game's, read as the key is
+/// pressed: it is the one fact the reducer cannot carry, since either window
+/// can be dragged to another monitor at any time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Placement {
+	/// On the game's monitor, or nowhere that can be told apart from it.
+	Over,
+	/// On a monitor of its own, where it covers nothing of the game.
+	Beside {
+		/// Whether the lobby has the keyboard at the moment of the press.
+		focused: bool,
+	},
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Input {
 	/// A game of ours started. The pid is what a window can be found by.
@@ -38,8 +52,11 @@ pub enum Input {
 		pid: Option<u32>,
 	},
 	EngineExited,
-	/// The registered accelerator fired.
-	Hotkey,
+	/// The registered accelerator fired: the lobby up, or back to the game.
+	Hotkey(Placement),
+	/// The in-game Escape, or the page's own button: the lobby up, never
+	/// down. Already up, it is fitted over the game again.
+	Raise(Placement),
 	Settings(OverlaySettings),
 	/// The page has drawn itself in its overlay dress, so the window can be
 	/// seen. Until then it is shown but see-through: the first frames of a
@@ -129,30 +146,28 @@ impl Overlay {
 		self.armed()
 	}
 
+	/// The running game's process id, where one is known.
+	pub fn engine_pid(&self) -> Option<u32> {
+		self.engine.flatten()
+	}
+
 	pub fn step(&mut self, input: Input) -> Vec<Effect> {
 		let mut out = Vec::new();
 		match input {
 			Input::EngineRunning { pid } => self.engine = Some(pid),
 			Input::EngineExited => self.engine = None,
 			Input::Settings(settings) => self.settings = settings,
-			Input::Hotkey => {
+			Input::Hotkey(placement) => {
 				// A key that fired after the game ended, or while the feature
 				// is off, is not an instruction — it is a race with
 				// unregistering.
 				if !self.armed() {
 					return out;
 				}
-				if !self.is_over() {
-					// Once: a window hidden behind the game is still in the
-					// overlay's shape, and entering it again would record that
-					// shape as the one to restore to.
-					if !self.entered {
-						self.entered = true;
-						out.push(Effect::EnterOverlay);
-					}
-					self.visible = true;
-					out.push(Effect::ShowVeiled);
-					out.push(Effect::FocusSelf);
+				if let Placement::Beside { focused } = placement {
+					self.beside(focused, &mut out);
+				} else if !self.is_over() {
+					self.over(&mut out);
 				} else {
 					self.visible = false;
 					out.push(Effect::Hide);
@@ -164,6 +179,17 @@ impl Overlay {
 					{
 						out.push(Effect::FocusEngine(pid));
 					}
+				}
+				return out;
+			}
+			Input::Raise(placement) => {
+				if !self.armed() {
+					return out;
+				}
+				match placement {
+					// Raising asks for the lobby, whoever had the keyboard.
+					Placement::Beside { .. } => self.beside(false, &mut out),
+					Placement::Over => self.over(&mut out),
 				}
 				return out;
 			}
@@ -188,6 +214,43 @@ impl Overlay {
 
 	fn armed(&self) -> bool {
 		self.settings.enabled && self.engine.is_some()
+	}
+
+	/// Beside the game the lobby covers nothing: there is no game to get out
+	/// of the way of and no screen to take, so it is an ordinary window.
+	/// Given its shape back if it is in the overlay's -- fitted over the
+	/// game and moved off that monitor since, by hand or by the game moving
+	/// -- and then the keyboard is passed: to the game from a lobby that has
+	/// it, else to the lobby.
+	fn beside(&mut self, focused: bool, out: &mut Vec<Effect>) {
+		if self.entered {
+			self.entered = false;
+			out.push(Effect::LeaveOverlay);
+		}
+		let hidden = !self.visible;
+		self.visible = true;
+		if hidden || !focused {
+			out.push(Effect::Show);
+			out.push(Effect::FocusSelf);
+		} else if let Some(Some(pid)) = self.engine {
+			out.push(Effect::FocusEngine(pid));
+		}
+	}
+
+	/// Over the game the lobby is fitted to the game's monitor on every
+	/// showing, not only the first: dragged partly off it, or hidden while
+	/// the game moved, it goes back over the game. The surface keeps the
+	/// first shape it was given to go back to. A window not on screen is
+	/// shown through a veil, so the dress is on before anyone sees it.
+	fn over(&mut self, out: &mut Vec<Effect>) {
+		let seen = self.is_over();
+		self.entered = true;
+		self.visible = true;
+		out.push(Effect::EnterOverlay);
+		if !seen {
+			out.push(Effect::ShowVeiled);
+		}
+		out.push(Effect::FocusSelf);
 	}
 
 	/// Applies the consequences of whatever just changed.
@@ -264,22 +327,39 @@ mod tests {
 		let mut overlay = armed();
 
 		assert_eq!(
-			step(&mut overlay, Input::Hotkey),
+			step(&mut overlay, Input::Hotkey(Placement::Over)),
 			vec![Effect::EnterOverlay, Effect::ShowVeiled, Effect::FocusSelf]
 		);
 		assert!(overlay.is_over());
 		assert_eq!(step(&mut overlay, Input::Painted), vec![Effect::Reveal]);
 
 		assert_eq!(
-			step(&mut overlay, Input::Hotkey),
+			step(&mut overlay, Input::Hotkey(Placement::Over)),
 			vec![Effect::Hide, Effect::FocusEngine(42)]
 		);
 		assert!(!overlay.is_over());
 
-		// Hidden, not left: the shape is still on, so it is only shown again.
+		// Hidden, not left: fitted over the game again, since the game may
+		// have moved meanwhile, and shown through the veil.
 		assert_eq!(
-			step(&mut overlay, Input::Hotkey),
-			vec![Effect::ShowVeiled, Effect::FocusSelf]
+			step(&mut overlay, Input::Hotkey(Placement::Over)),
+			vec![Effect::EnterOverlay, Effect::ShowVeiled, Effect::FocusSelf]
+		);
+		assert!(overlay.is_over());
+	}
+
+	#[test]
+	fn raising_never_lowers_and_fits_a_window_already_up_over_the_game_again() {
+		let mut overlay = armed();
+		assert_eq!(
+			step(&mut overlay, Input::Raise(Placement::Over)),
+			vec![Effect::EnterOverlay, Effect::ShowVeiled, Effect::FocusSelf]
+		);
+		// Up already, and dragged partly off the game by hand: back over it,
+		// with no veil over a window already on screen.
+		assert_eq!(
+			step(&mut overlay, Input::Raise(Placement::Over)),
+			vec![Effect::EnterOverlay, Effect::FocusSelf]
 		);
 		assert!(overlay.is_over());
 	}
@@ -290,8 +370,8 @@ mod tests {
 		// Never raised: nothing to reveal.
 		assert_eq!(step(&mut overlay, Input::Painted), vec![]);
 
-		step(&mut overlay, Input::Hotkey);
-		step(&mut overlay, Input::Hotkey);
+		step(&mut overlay, Input::Hotkey(Placement::Over));
+		step(&mut overlay, Input::Hotkey(Placement::Over));
 		// Raised and hidden again before the page got two frames in: the
 		// report is about a window nobody can see, and revealing it would
 		// undo nothing but must not be mistaken for a show either.
@@ -301,8 +381,8 @@ mod tests {
 	#[test]
 	fn shutting_down_gives_the_shape_back_without_showing_the_window() {
 		let mut overlay = armed();
-		step(&mut overlay, Input::Hotkey);
-		step(&mut overlay, Input::Hotkey);
+		step(&mut overlay, Input::Hotkey(Placement::Over));
+		step(&mut overlay, Input::Hotkey(Placement::Over));
 		assert!(!overlay.is_over());
 
 		// What the window looks like at exit is what gets remembered for the
@@ -317,7 +397,7 @@ mod tests {
 	#[test]
 	fn a_game_ending_while_the_overlay_is_up_gives_an_ordinary_window_back() {
 		let mut overlay = armed();
-		step(&mut overlay, Input::Hotkey);
+		step(&mut overlay, Input::Hotkey(Placement::Over));
 
 		assert_eq!(
 			step(&mut overlay, Input::EngineExited),
@@ -329,8 +409,8 @@ mod tests {
 	#[test]
 	fn a_game_ending_while_the_lobby_is_hidden_brings_it_back() {
 		let mut overlay = armed();
-		step(&mut overlay, Input::Hotkey);
-		step(&mut overlay, Input::Hotkey);
+		step(&mut overlay, Input::Hotkey(Placement::Over));
+		step(&mut overlay, Input::Hotkey(Placement::Over));
 		assert!(!overlay.is_over());
 
 		// Hidden behind the game when the game dies: without the Show there is
@@ -348,7 +428,7 @@ mod tests {
 			vec![Effect::UnregisterHotkey]
 		);
 		// A lobby sitting idle should not own a system-wide key.
-		assert_eq!(step(&mut overlay, Input::Hotkey), vec![]);
+		assert_eq!(step(&mut overlay, Input::Hotkey(Placement::Over)), vec![]);
 	}
 
 	#[test]
@@ -397,7 +477,7 @@ mod tests {
 	#[test]
 	fn turning_it_off_mid_overlay_hands_the_window_back() {
 		let mut overlay = armed();
-		step(&mut overlay, Input::Hotkey);
+		step(&mut overlay, Input::Hotkey(Placement::Over));
 
 		let effects = step(
 			&mut overlay,
@@ -433,11 +513,111 @@ mod tests {
 	fn a_game_whose_pid_we_lost_still_hides_rather_than_refusing_to() {
 		let mut overlay = Overlay::new(OverlaySettings::default());
 		step(&mut overlay, Input::EngineRunning { pid: None });
-		step(&mut overlay, Input::Hotkey);
+		step(&mut overlay, Input::Hotkey(Placement::Over));
 
 		// No pid means nothing to focus, but getting out of the way is still
 		// the more useful half of the answer.
-		assert_eq!(step(&mut overlay, Input::Hotkey), vec![Effect::Hide]);
+		assert_eq!(
+			step(&mut overlay, Input::Hotkey(Placement::Over)),
+			vec![Effect::Hide]
+		);
+	}
+
+	#[test]
+	fn a_lobby_on_its_own_monitor_keeps_its_shape_and_only_passes_the_keyboard() {
+		let mut overlay = armed();
+		let beside = |focused| Input::Hotkey(Placement::Beside { focused });
+
+		// From the game: the lobby comes forward as the window it already is.
+		assert_eq!(
+			step(&mut overlay, beside(false)),
+			vec![Effect::Show, Effect::FocusSelf]
+		);
+		assert!(!overlay.is_over());
+		// And nothing is waiting to be revealed.
+		assert_eq!(step(&mut overlay, Input::Painted), vec![]);
+
+		// From the lobby: back to the game, with the lobby left where it is.
+		assert_eq!(
+			step(&mut overlay, beside(true)),
+			vec![Effect::FocusEngine(42)]
+		);
+		assert!(!overlay.is_over());
+
+		// The game ending finds nothing to give back.
+		assert_eq!(
+			step(&mut overlay, Input::EngineExited),
+			vec![Effect::UnregisterHotkey]
+		);
+	}
+
+	#[test]
+	fn moved_onto_another_monitor_the_overlay_becomes_an_ordinary_window_there() {
+		let mut overlay = armed();
+		step(&mut overlay, Input::Hotkey(Placement::Over));
+		assert!(overlay.is_over());
+
+		// Win+Shift+Arrow took the overlay to a monitor with no game under
+		// it. The press gives the window its shape back where it is, and as
+		// the lobby had the keyboard, hands it to the game.
+		assert_eq!(
+			step(
+				&mut overlay,
+				Input::Hotkey(Placement::Beside { focused: true })
+			),
+			vec![Effect::LeaveOverlay, Effect::FocusEngine(42)]
+		);
+		assert!(!overlay.is_over());
+		// An ordinary window from here on: the next press only raises it.
+		assert_eq!(
+			step(
+				&mut overlay,
+				Input::Hotkey(Placement::Beside { focused: false })
+			),
+			vec![Effect::Show, Effect::FocusSelf]
+		);
+		// And raising from the game never hands the keyboard back.
+		assert_eq!(
+			step(
+				&mut overlay,
+				Input::Raise(Placement::Beside { focused: true })
+			),
+			vec![Effect::Show, Effect::FocusSelf]
+		);
+	}
+
+	#[test]
+	fn hidden_behind_a_game_that_moved_away_the_lobby_comes_back_as_an_ordinary_window() {
+		let mut overlay = armed();
+		step(&mut overlay, Input::Hotkey(Placement::Over));
+		step(&mut overlay, Input::Hotkey(Placement::Over));
+		assert!(!overlay.is_over());
+
+		assert_eq!(
+			step(
+				&mut overlay,
+				Input::Hotkey(Placement::Beside { focused: false })
+			),
+			vec![Effect::LeaveOverlay, Effect::Show, Effect::FocusSelf]
+		);
+		// Nothing left to give back when the game ends.
+		assert_eq!(
+			step(&mut overlay, Input::EngineExited),
+			vec![Effect::UnregisterHotkey]
+		);
+	}
+
+	#[test]
+	fn a_game_without_a_pid_cannot_be_handed_the_keyboard_from_beside_it() {
+		let mut overlay = Overlay::new(OverlaySettings::default());
+		step(&mut overlay, Input::EngineRunning { pid: None });
+		assert_eq!(
+			step(
+				&mut overlay,
+				Input::Hotkey(Placement::Beside { focused: true })
+			),
+			vec![]
+		);
 	}
 
 	#[test]
@@ -447,7 +627,10 @@ mod tests {
 			..OverlaySettings::default()
 		});
 		step(&mut overlay, Input::EngineRunning { pid: Some(42) });
-		step(&mut overlay, Input::Hotkey);
-		assert_eq!(step(&mut overlay, Input::Hotkey), vec![Effect::Hide]);
+		step(&mut overlay, Input::Hotkey(Placement::Over));
+		assert_eq!(
+			step(&mut overlay, Input::Hotkey(Placement::Over)),
+			vec![Effect::Hide]
+		);
 	}
 }

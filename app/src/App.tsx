@@ -458,11 +458,14 @@ function Layout(props: ParentProps) {
 			<IconSprite />
 			{/* The nav doubles as the title bar, because the transparent window
           has none: empty nav space drags the window, double-click maximizes.
-          Only in an ordinary window — a fullscreen or overlaid one is not a
-          thing to drag around. */}
+          Not in fullscreen, which is not a thing to drag around. Over a game
+          it is: dragged partly off the game's monitor, the next Escape or
+          hotkey fits it back over the game; dragged onto another monitor,
+          it is an ordinary window there from the next press on. Rust makes
+          the overlay unmaximizable, so the double-click does nothing then. */}
 			<nav
 				class='nav'
-				data-tauri-drag-region={!fullscreen() && !over() ? true : undefined}
+				data-tauri-drag-region={!fullscreen() ? true : undefined}
 			>
 				<span class='brand'>
 					modlobby

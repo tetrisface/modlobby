@@ -516,6 +516,50 @@ export function arrange(
 	return sortSections(sorted, order)
 }
 
+/** The order a list was drawn in: each heading, and the keys of the rows under it. */
+export type Drawn = ReadonlyArray<{
+	name: string
+	keys: readonly string[]
+}>
+
+export function drawnOrder(sections: Section[]): Drawn {
+	return sections.map((section) => ({
+		name: section.name,
+		keys: section.rows.map((row) => row.option.key),
+	}))
+}
+
+/**
+ * `sections` in the order `drawn` had them, headings and rows alike, with
+ * whatever is new after the rest in its own order and whatever is gone left
+ * out. The rows are the fresh ones; only their places are kept. For the
+ * row under the pointer: a change made to it sorts it away otherwise, and a
+ * setting that moves the moment it is set has nothing to settle on.
+ */
+export function keepOrder(sections: Section[], drawn: Drawn): Section[] {
+	const fresh = new Map(sections.map((section) => [section.name, section]))
+	const kept: Section[] = []
+	for (const was of drawn) {
+		const now = fresh.get(was.name)
+		if (!now) continue
+		fresh.delete(was.name)
+		kept.push({ ...now, rows: keepRows(now.rows, was.keys) })
+	}
+	return [...kept, ...fresh.values()]
+}
+
+function keepRows(rows: Row[], keys: readonly string[]): Row[] {
+	const fresh = new Map(rows.map((row) => [row.option.key, row]))
+	const kept: Row[] = []
+	for (const key of keys) {
+		const row = fresh.get(key)
+		if (!row) continue
+		fresh.delete(key)
+		kept.push(row)
+	}
+	return [...kept, ...fresh.values()]
+}
+
 export function isTweakSlot(row: Row): boolean {
 	return tweakKey(row.option.key) !== null
 }

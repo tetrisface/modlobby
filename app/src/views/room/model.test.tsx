@@ -564,6 +564,32 @@ describe('a room behind the seam', () => {
 		fireEvent.click(cardButton(container, 'Vote to start'))
 		await settle()
 		expect(calls).toContainEqual(['sayBattle', ['!cv start']])
+
+		// The boss's bar is the player's too, each command put to a vote.
+		expect(
+			container.querySelector('.host-bar .filter-label')?.textContent,
+		).toBe('Call vote')
+		expect(buttons(container, '.host-bar')).toContain('Balance')
+		fireEvent.click(
+			[...container.querySelectorAll('.host-bar button')].find(
+				(button) => button.textContent === 'Balance',
+			)!,
+		)
+		await settle()
+		expect(calls).toContainEqual(['sayBattle', ['!cv balance']])
+	})
+
+	test('a spectator is offered no vote bar, since SPADS gives a spectator no vote', async () => {
+		const { container } = await open(
+			fakeRoom({
+				caps: SERVED,
+				my: () => myBattle({ boss: 'someone' }),
+				users: () => ({
+					me: user('me', { battleStatus: status({ player: false }) }),
+				}),
+			}),
+		)
+		expect(container.querySelector('.host-bar')).toBeNull()
 	})
 
 	test('a player who is not ready is asked to ready up before the vote is offered', async () => {

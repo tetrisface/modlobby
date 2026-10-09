@@ -62,6 +62,7 @@ import {
 	emptySeats,
 	freeTeam,
 	isBoss,
+	filled,
 	unusedBotName,
 	teamRows,
 	type Team,
@@ -156,6 +157,24 @@ export function Room() {
 		const seated = room.users()[me]?.battleStatus?.player ?? false
 		return seated ? 'player' : null
 	})
+
+	/**
+	 * `3 / 8`: the seats a team has filled, over the size the room gives a
+	 * team where it has given one. The size is the room's cap, not its roll
+	 * call -- an event host sets it to 100 to mean "no limit".
+	 */
+	const seats = (team: Team): string => {
+		const size = battle()?.layout?.teamSize
+		return size === undefined
+			? String(filled(team))
+			: `${filled(team)} / ${size}`
+	}
+	const seatsTitle = (team: Team): string | undefined => {
+		const size = battle()?.layout?.teamSize
+		return size === undefined
+			? undefined
+			: `${filled(team)} of ${size} seats taken`
+	}
 
 	// A room has a name because it is listed for other people to read. Where
 	// it is not listed there is nobody to name it for, so the pen stays away
@@ -954,7 +973,9 @@ export function Room() {
 													onContextMenu={(event) => teamMenu(team(), event)}
 												>
 													<span class='name'>Team {team().allyTeam + 1}</span>
-													<span class='count'>{team().expected}</span>
+													<span class='count' title={seatsTitle(team())}>
+														{seats(team())}
+													</span>
 													{/* Nothing to say where nobody is rated, which is
                               every skirmish and any room whose skills have
                               not arrived yet. A sum of zero is not a fact

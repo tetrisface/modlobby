@@ -16,6 +16,8 @@ import {
 	rowsByTab,
 	defaultText,
 	displayText,
+	drawnOrder,
+	keepOrder,
 	readModOptions,
 	regroup,
 	rowsOf,
@@ -523,6 +525,41 @@ describe('order', () => {
 			sortSections(sections, order).map((section) => section.name)
 		expect(names('changed')).toEqual(['Cheats', 'Main', 'Extras'])
 		expect(names('name')).toEqual(['Main', 'Cheats', 'Extras'])
+	})
+
+	test('a kept order holds headings and rows in place, with fresh rows', () => {
+		const drawn = drawnOrder([
+			{ name: 'Main', rows: [row('a', 'Alpha'), row('b', 'Beta')] },
+			{ name: 'Extras', rows: [row('d', 'Delta')] },
+		])
+		// Beta was changed: on its own, that sorts it first and its heading too.
+		const fresh = [
+			{ name: 'Extras', rows: [row('d', 'Delta'), row('e', 'Epsilon', true)] },
+			{ name: 'Main', rows: [row('b', 'Beta', true), row('a', 'Alpha')] },
+			{ name: 'New', rows: [row('n', 'Nu')] },
+		]
+		const kept = keepOrder(fresh, drawn)
+		expect(
+			kept.map((section) => [
+				section.name,
+				section.rows.map((r) => r.option.key),
+			]),
+		).toEqual([
+			['Main', ['a', 'b']],
+			['Extras', ['d', 'e']],
+			['New', ['n']],
+		])
+		// The row is the fresh one, so it shows the change it is being held for.
+		expect(kept[0]!.rows[1]!.changed).toBe(true)
+	})
+
+	test('a kept order leaves out what is gone', () => {
+		const drawn = drawnOrder([
+			{ name: 'Main', rows: [row('a', 'Alpha'), row('b', 'Beta')] },
+			{ name: 'Gone', rows: [row('g', 'Gamma')] },
+		])
+		const kept = keepOrder([{ name: 'Main', rows: [row('b', 'Beta')] }], drawn)
+		expect(kept).toEqual([{ name: 'Main', rows: [row('b', 'Beta')] }])
 	})
 
 	test('rows regroup by type, or into one list with no heading', () => {

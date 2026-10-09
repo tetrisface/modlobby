@@ -3,7 +3,7 @@ import type { BattleStatusView } from '../ipc/bindings/BattleStatusView'
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { UserView } from '../ipc/bindings/UserView'
 import type { BotView } from '../ipc/bindings/BotView'
-import { arrange, emptySeats, freeTeam } from './roster'
+import { arrange, emptySeats, freeTeam, filled } from './roster'
 import type { Skill } from './skill'
 
 const seat = (allyTeam: number, player = true): BattleStatusView => ({
@@ -113,6 +113,8 @@ describe('arrange', () => {
 			['dave'],
 		])
 		expect(roster.teams.map(emptySeats)).toEqual([1, 0])
+		// A guess fills a seat as a status does; the empty one is not filled.
+		expect(roster.teams.map(filled)).toEqual([1, 2])
 		expect(names(roster.spectators)).toEqual(['Host', 'carol', 'me'])
 		expect(roster.pending).toEqual([])
 	})

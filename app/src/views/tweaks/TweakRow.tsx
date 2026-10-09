@@ -93,6 +93,7 @@ export function TweakRow(props: { row: Row }) {
 				ref={line}
 				class='opt tweak'
 				classList={{ changed: props.row.changed, open: open() }}
+				data-key={key()}
 			>
 				<span class='mark' />
 				<span class='k' title={props.row.option.desc ?? ''}>
@@ -150,7 +151,9 @@ export function TweakRow(props: { row: Row }) {
 				</ActionCell>
 			</div>
 			<Show when={open()}>
-				<div class='tweak-inline'>
+				{/* The row's own for the list's purposes: a hand on the editor
+				    is a hand on its row. */}
+				<div class='tweak-inline' data-key={key()}>
 					<Tweaks />
 				</div>
 			</Show>

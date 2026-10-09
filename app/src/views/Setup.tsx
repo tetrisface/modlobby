@@ -32,7 +32,9 @@ import {
 	changedView,
 	defaultText,
 	displayText,
+	drawnOrder,
 	isOn,
+	keepOrder,
 	readModOptions,
 	label,
 	rowsByGroup,
@@ -42,6 +44,7 @@ import {
 	tabs,
 	DOCUMENTS,
 	type Changed,
+	type Drawn,
 	type Grouping,
 	type Row,
 	type RowOrder,
@@ -91,6 +94,9 @@ const ORDER_KEY = 'modlobby.setupOrder'
 const GROUP_KEY = 'modlobby.setupGroup'
 /** How far below the list's top a heading has to have scrolled to be the one being read. */
 const READ_LINE = 32
+
+const sameKeys = (a: ReadonlySet<string>, b: ReadonlySet<string>) =>
+	a.size === b.size && [...a].every((key) => b.has(key))
 
 type ShowRows = 'changed' | 'all'
 
@@ -234,11 +240,37 @@ export function Setup() {
 					.map((doc) => titleOf(doc.id)),
 			),
 		undefined,
-		{
-			equals: (a, b) => a.size === b.size && [...a].every((key) => b.has(key)),
-		},
+		{ equals: sameKeys },
 	)
-	const changedRows = () => changedView(values(), held())
+	/**
+	 * The row the pointer rests on, and the list as it was drawn when it came
+	 * to rest there. While it rests the order holds and the row stays shown:
+	 * a change made to the row would otherwise sort it away from under the
+	 * hand, or drop it from a Changed view it no longer belongs in. Moving
+	 * off the row lets the list settle.
+	 */
+	const [resting, setResting] = createSignal<{
+		key: string
+		drawn: Drawn
+	} | null>(null)
+	function rest(event: MouseEvent) {
+		const key =
+			(event.target as Element).closest<HTMLElement>('[data-key]')?.dataset
+				.key ?? null
+		if (key === (resting()?.key ?? null)) return
+		setResting(key === null ? null : { key, drawn: drawnOrder(listed()) })
+	}
+	const kept = createMemo(
+		() => {
+			const keys = new Set(held())
+			const rest = resting()
+			if (rest !== null) keys.add(rest.key)
+			return keys
+		},
+		undefined,
+		{ equals: sameKeys },
+	)
+	const changedRows = () => changedView(values(), kept())
 
 	/**
 	 * A search across every tab. While it holds something the body is the
@@ -276,10 +308,15 @@ export function Setup() {
 				: rowsByGroup(tab(), values(), filter()),
 		),
 	)
+	/** The list as drawn: `listed`, in the order it had while the pointer rests on a row. */
+	const shown = createMemo(() => {
+		const rest = resting()
+		return rest === null ? listed() : keepOrder(listed(), rest.drawn)
+	})
 	/** The list's headings, which the overview beside it names. */
 	const headings = createMemo(
 		() =>
-			listed()
+			shown()
 				.map((section) => section.name)
 				.filter((name) => name !== ''),
 		undefined,
@@ -552,11 +589,17 @@ export function Setup() {
 									onScroll={overview.spy}
 									onScrollEnd={overview.settle}
 									onWheel={overview.settle}
-									onMouseOver={overview.point}
-									onMouseLeave={overview.leave}
+									onMouseOver={(event) => {
+										overview.point(event)
+										rest(event)
+									}}
+									onMouseLeave={() => {
+										overview.leave()
+										setResting(null)
+									}}
 								>
 									<Sections
-										sections={listed()}
+										sections={shown()}
 										empty={
 											tab().key === ALL_TAB
 												? "Every setting is on BAR's default."
@@ -693,7 +736,11 @@ export function Rows(props: {
 									when={slotOf(key) === null && !isMapTable(key)}
 									fallback={<TweakRow row={row()} />}
 								>
-									<div class='opt' classList={{ changed: row().changed }}>
+									<div
+										class='opt'
+										classList={{ changed: row().changed }}
+										data-key={key}
+									>
 										<span class='mark' />
 										<span class='k' title={row().option.desc ?? ''}>
 											{label(row().option)}

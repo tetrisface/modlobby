@@ -3283,6 +3283,10 @@ body.resizing {
 	gap: 0.625rem;
 	padding: 0.75rem 0.875rem;
 	overflow-y: auto;
+	/* Rows sort as they change. Left to itself the browser keeps whichever
+	   row it anchored on in view, which follows a changed row to its new
+	   place: the page stays where it was read instead. */
+	overflow-anchor: none;
 	background: var(--raised);
 	min-width: 0;
 	font-size: 1.2rem;

@@ -56,6 +56,51 @@ pub fn visible_windows_of(pid: u32) -> Vec<HWND> {
 	hunt.found
 }
 
+/// The monitor `window` is on, as a handle two windows on the same one share.
+///
+/// `None` for a window on no monitor: one minimized, which sits at
+/// (-32000, -32000), or one dragged off every screen.
+pub fn monitor_of(window: HWND) -> Option<isize> {
+	use windows_sys::Win32::Graphics::Gdi::{MONITOR_DEFAULTTONULL, MonitorFromWindow};
+
+	// SAFETY: any handle is accepted; a dead one answers null like an
+	// off-screen one.
+	let monitor = unsafe { MonitorFromWindow(window, MONITOR_DEFAULTTONULL) };
+	(!monitor.is_null()).then_some(monitor as isize)
+}
+
+/// A monitor's rectangle, in physical pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Rect {
+	pub left: i32,
+	pub top: i32,
+	pub width: u32,
+	pub height: u32,
+}
+
+/// The rectangle of a monitor named by [`monitor_of`]. `None` for a handle
+/// the OS no longer knows, which is a monitor unplugged since.
+pub fn monitor_rect(monitor: isize) -> Option<Rect> {
+	use windows_sys::Win32::Graphics::Gdi::{GetMonitorInfoW, MONITORINFO};
+
+	let mut info = MONITORINFO {
+		cbSize: size_of::<MONITORINFO>() as u32,
+		..Default::default()
+	};
+	// SAFETY: `info` is sized as the call requires and outlives it; a dead
+	// handle answers zero rather than writing anything.
+	if unsafe { GetMonitorInfoW(monitor as _, &mut info) } == 0 {
+		return None;
+	}
+	let area = info.rcMonitor;
+	Some(Rect {
+		left: area.left,
+		top: area.top,
+		width: (area.right - area.left).max(0) as u32,
+		height: (area.bottom - area.top).max(0) as u32,
+	})
+}
+
 /// Whether the window in front belongs to `pid`.
 pub fn owns_foreground(pid: u32) -> bool {
 	let mut owner = 0_u32;

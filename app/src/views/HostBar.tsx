@@ -6,16 +6,18 @@ import { pushNotice } from '../store/chat'
 import { useRoom } from './room/model'
 
 /**
- * Running a room you boss.
+ * Running a room you boss, or putting its running to a vote.
  *
  * These are SPADS commands, sent as chat exactly as anyone would type them —
  * `!balance`, `!forceStart`, `!lock`. There is no protocol behind them beyond
  * `SAYBATTLE`, which is why this needs nothing in the runtime: the throttle
  * policy already routes a `!` line through the command bucket.
  *
- * Shown only to the room's boss. Everyone else would just be collecting
- * refusals, and SPADS answers a refused command with a private message that
- * lands in the server room anyway.
+ * The boss says them. A seated player proposes each as a vote, `!cv` ahead
+ * of it, and the room reads what was asked rather than an auto-callvote's
+ * rewording of it; which votes a room takes is its host's to say, and SPADS
+ * answers a refused one in chat. A spectator is shown nothing: SPADS gives a
+ * spectator no vote at all (`commands.conf` `[callVote]`).
  */
 /** BAR's SPADS presets, as Chobby lists them (`gui_battle_room_window.lua:3490`). */
 const PRESETS = ['team', 'ffa', 'coop', 'duel', 'tourney', 'custom']
@@ -37,13 +39,21 @@ export function HostBar() {
 	})
 
 	const boss = createMemo(() => isBoss(room.my()?.boss, room.me()))
+	const seated = createMemo(() => {
+		const me = room.me()
+		return me !== null && (room.users()[me]?.battleStatus?.player ?? false)
+	})
 
-	async function run(command: string) {
+	/** The line as the boss says it, or as a player puts it to the room. */
+	const command = (line: string) => (boss() ? line : `!cv ${line.slice(1)}`)
+
+	async function run(line: string) {
+		const said = command(line)
 		setBusy(true)
 		try {
-			await room.io.sayBattle(command)
+			await room.io.sayBattle(said)
 		} catch (error) {
-			pushNotice('warning', `${command}: ${describeError(error)}`)
+			pushNotice('warning', `${said}: ${describeError(error)}`)
 		} finally {
 			setBusy(false)
 		}
@@ -78,16 +88,16 @@ export function HostBar() {
 	})
 
 	return (
-		<Show when={boss()}>
+		<Show when={boss() || seated()}>
 			<div class='host-bar'>
-				<span class='filter-label'>Your room</span>
+				<span class='filter-label'>{boss() ? 'Your room' : 'Call vote'}</span>
 
 				<For each={actions()}>
-					{([label, command, hint]) => (
+					{([label, line, hint]) => (
 						<button
 							disabled={busy()}
-							title={`${command} — ${hint}`}
-							onClick={() => void run(command)}
+							title={`${command(line)} — ${hint}`}
+							onClick={() => void run(line)}
 						>
 							{label}
 						</button>
@@ -98,7 +108,7 @@ export function HostBar() {
 					Preset
 					<Select
 						disabled={busy()}
-						title='!preset — the settings the room starts from'
+						title={`${command('!preset')} — the settings the room starts from`}
 						value={room.my()?.preset ?? ''}
 						onChange={(e) => void run(`!preset ${e.currentTarget.value}`)}
 					>
@@ -127,7 +137,8 @@ export function HostBar() {
 
 				<span class='spacer' />
 				<span class='muted'>
-					Anything else still works by typing it, like <code>!map</code>.
+					Anything else still works by typing it, like{' '}
+					<code>{command('!map')}</code>.
 				</span>
 			</div>
 		</Show>

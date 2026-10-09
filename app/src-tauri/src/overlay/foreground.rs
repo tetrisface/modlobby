@@ -1,4 +1,4 @@
-//! Putting the game's window back in front.
+//! Putting the game's window back in front, and saying where it is.
 //!
 //! Hiding our own window is not the same as handing the keyboard back: the
 //! next window in the z-order gets it, and that is not reliably the game. This
@@ -8,7 +8,7 @@
 //! honours `SetForegroundWindow` from one, which is exactly what we are at the
 //! moment the overlay is being dismissed.
 
-use super::seams::ForegroundControl;
+use super::seams::{ForegroundControl, ScreenId};
 
 pub struct Windows;
 
@@ -36,6 +36,11 @@ impl ForegroundControl for Windows {
 			unsafe { ShowWindow(window, SW_RESTORE) };
 		}
 	}
+
+	fn screen_of(&self, pid: u32) -> Option<ScreenId> {
+		let window = crate::win::visible_windows_of(pid).into_iter().next()?;
+		crate::win::monitor_of(window).map(ScreenId)
+	}
 }
 
 #[cfg(not(windows))]
@@ -45,5 +50,9 @@ impl ForegroundControl for Windows {
 			pid,
 			"raising another process's window is not available here"
 		);
+	}
+
+	fn screen_of(&self, _pid: u32) -> Option<ScreenId> {
+		None
 	}
 }
