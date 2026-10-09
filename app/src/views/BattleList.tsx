@@ -42,7 +42,7 @@ import {
 	stabilize,
 	type Row,
 } from '../lib/battles'
-import { TILES, shownMapNames, warmMapPictures } from '../lib/maps'
+import { LIST_TILE, shownMapNames, warmMapPictures } from '../lib/maps'
 import { remPx } from '../lib/rem'
 import { pushNotice } from '../store/chat'
 import { joinMilestone, markJoinAsked } from '../store/join'
@@ -614,8 +614,9 @@ export function BattleList() {
 												<MapPicture
 													class='col-thumb'
 													mapName={r().battle.mapName}
-													width={TILES.list.width}
-													height={TILES.list.height}
+													width={LIST_TILE.width}
+													height={LIST_TILE.height}
+													whole
 													lazy
 												/>
 												<span class='col-players'>

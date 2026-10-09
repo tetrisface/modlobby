@@ -898,7 +898,8 @@ pub async fn mark_news_read(app: State<'_, App>) -> Result<()> {
 	Ok(())
 }
 
-/// Makes the pictures of `maps` at `tiles` ahead of time, in the order given,
+/// Makes the pictures of `maps` at `tiles`, and whole at `whole`, ahead of
+/// time, in the order given,
 /// so a room joined from the list shows its map at once rather than after a
 /// download and a decode. One worker, so it never takes more than a core; a
 /// map the index has no picture for is left out. See `content::map_thumb`.
@@ -907,6 +908,7 @@ pub async fn warm_map_pictures(
 	app: State<'_, App>,
 	maps: Vec<String>,
 	tiles: Vec<content::map_thumb::Tile>,
+	whole: Vec<content::map_thumb::Tile>,
 ) -> Result<()> {
 	let index = app.map_index().await;
 	let mut seen = std::collections::HashSet::new();
@@ -917,6 +919,7 @@ pub async fn warm_map_pictures(
 		.map(|url| content::map_thumb::Job {
 			url: url.clone(),
 			tiles: tiles.clone(),
+			whole: whole.clone(),
 		})
 		.collect();
 	app.thumbs.warm(jobs);

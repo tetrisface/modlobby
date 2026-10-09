@@ -1,5 +1,7 @@
 //! `thumb://localhost/<width>x<height>/<spring name>`: a map's picture at the
 //! size a tile shows it, made and kept by `content::map_thumb`;
+//! `thumb://localhost/whole/<width>x<height>/<spring name>`, the same fitted
+//! inside the tile rather than cut to fill it;
 //! `thumb://localhost/full/<spring name>`, the picture as published, for a
 //! box to show while its size is cut; and
 //! `thumb://localhost/news/<width>x<height>/<guid>`, the banner a news item
@@ -30,11 +32,15 @@ use crate::state::App;
 
 pub const SCHEME: &str = "thumb";
 
-/// Which store the rest of the path names a picture in.
+/// Which store the rest of the path names a picture in, and for a map, how
+/// its tile is cut.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Source {
-	/// A map, by its spring name.
+	/// A map, by its spring name, cut to fill its tile.
 	Map,
+	/// A map, fitted whole inside its tile: what the battle list asks for, so
+	/// the map's shape shows too.
+	MapWhole,
 	/// A news item, by the permalink that identifies it.
 	News,
 	/// Picture `n` of a widget or one of its forks, by its key in the usage
@@ -66,7 +72,7 @@ async fn respond<R: Runtime>(app: &tauri::AppHandle<R>, path: &str) -> Response<
 	};
 	let state = app.state::<App>();
 	let url = match source {
-		Source::Map => state.map_index().await.images.get(&key).cloned(),
+		Source::Map | Source::MapWhole => state.map_index().await.images.get(&key).cloned(),
 		Source::News => state
 			.news()
 			.await
@@ -82,12 +88,11 @@ async fn respond<R: Runtime>(app: &tauri::AppHandle<R>, path: &str) -> Response<
 		return status(StatusCode::NOT_FOUND);
 	};
 	let made = match tile {
-		// A map's tile is cut to fill it — a bigger row shows more of the
-		// middle of the terrain. A widget's picture is a screenshot, and what
-		// it is a screenshot of is often at an edge, so it comes whole and the
-		// tile pads it.
+		// A map's tile is cut to fill it unless asked for whole. A widget's
+		// picture is a screenshot, and what it is a screenshot of is often at
+		// an edge, so it always comes whole and the tile pads it.
 		Some(tile) => match source {
-			Source::Widget(_) => state.thumbs.get_whole(&url, tile).await,
+			Source::MapWhole | Source::Widget(_) => state.thumbs.get_whole(&url, tile).await,
 			_ => state.thumbs.get(&url, tile).await,
 		}
 		.map(|png| ("image/png", png)),
@@ -120,9 +125,10 @@ fn status(code: StatusCode) -> Response<Vec<u8>> {
 		.expect("a response from a status")
 }
 
-/// `/<width>x<height>/<spring name>` — or `/full/<spring name>` for the
-/// picture as published, `None` here — and `/news/<width>x<height>/<guid>` for
-/// a story's banner. Percent-encoded as the webview sends it: the JS side
+/// `/<width>x<height>/<spring name>` — or `/whole/<width>x<height>/<spring
+/// name>` for the same fitted inside the tile, or `/full/<spring name>` for
+/// the picture as published, `None` here — and `/news/<width>x<height>/<guid>`
+/// for a story's banner. Percent-encoded as the webview sends it: the JS side
 /// encodes the whole path, slash included, so the split comes after decoding.
 /// A map name may itself contain a slash and a guid is a whole URL, so only
 /// the first slash of each segment counts.
@@ -149,11 +155,15 @@ fn parse(path: &str) -> Option<(Source, Option<Tile>, String)> {
 		};
 		return (!id.is_empty()).then(|| (source, Some(tile), id.to_owned()));
 	}
-	let tile = match head {
-		"full" => None,
-		_ => Some(tile(head)?),
+	let (source, tile, name) = match head {
+		"full" => (Source::Map, None, rest),
+		"whole" => {
+			let (size, name) = rest.split_once('/')?;
+			(Source::MapWhole, Some(tile(size)?), name)
+		}
+		_ => (Source::Map, Some(tile(head)?), rest),
 	};
-	(!rest.is_empty()).then(|| (Source::Map, tile, rest.to_owned()))
+	(!name.is_empty()).then(|| (source, tile, name.to_owned()))
 }
 
 fn tile(size: &str) -> Option<Tile> {
@@ -179,6 +189,14 @@ mod tests {
 		let (source, tile, name) = parse("/full/AcidicQuarry%205.17").unwrap();
 		assert_eq!(source, Source::Map);
 		assert!(tile.is_none());
+		assert_eq!(name, "AcidicQuarry 5.17");
+	}
+
+	#[test]
+	fn whole_is_the_tile_with_nothing_cut_off() {
+		let (source, tile, name) = parse("/whole/50x41/AcidicQuarry%205.17").unwrap();
+		assert_eq!(source, Source::MapWhole);
+		assert_eq!(tile, Tile::new(50, 41));
 		assert_eq!(name, "AcidicQuarry 5.17");
 	}
 
@@ -259,6 +277,8 @@ mod tests {
 			"/AcidicQuarry%205.17",
 			"/50x32/",
 			"/full/",
+			"/whole/50x32/",
+			"/whole/AcidicQuarry%205.17",
 			"/0x32/Map",
 			"/50x9999/Map",
 			"/50/Map",

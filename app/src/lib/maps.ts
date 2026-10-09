@@ -27,19 +27,23 @@ import { devicePixels, thumbSrc } from './thumb'
 /**
  * The boxes map pictures are drawn in, in CSS pixels, where the box is fixed
  * by the stylesheet. Named here so that warming ahead asks for exactly what
- * drawing will. Change these with the CSS they mirror.
+ * drawing will. Change these with the CSS they mirror. Each is cut to fill
+ * its box; `LIST_TILE` is the one drawn whole.
  */
 export const TILES = {
-	/** Inside `.col-thumb` in the battle list: 50 wide, and as tall as a 3rem
-	 *  row leaves it, both less the 1px border. Cut a hair taller than the box
-	 *  rather than shorter — `object-fit: cover` trims the surplus, where a
-	 *  short tile would be stretched. */
-	list: { width: 50, height: 41 },
 	/** `.minimap` in the room card's 132px column, less a 1px border. */
 	minimap: { width: 130, height: 130 },
 	/** `.nav-room-pic`, at the left of the room card in the nav. */
 	nav: { width: 40, height: 28 },
 } as const satisfies Record<string, Tile>
+
+/**
+ * Inside `.col-thumb` in the battle list: 50 wide, and as tall as a 3rem row
+ * leaves it, both less the 1px border. Fitted whole inside the box rather
+ * than cut to fill it — the map's shape is part of what the list says
+ * about it — so a map that is not this shape is padded, never cropped.
+ */
+export const LIST_TILE = { width: 50, height: 41 } as const satisfies Tile
 
 /**
  * `.map-card .map-pic` in the map picker's grid, which stretches from its
@@ -173,15 +177,19 @@ export function mapSiteName(
  *
  * `width` and `height` are CSS pixels. The picture is asked for in device
  * pixels, so that it is drawn one to one and nothing is scaled again.
+ * `whole` asks for it fitted inside the box with nothing cut off, for a
+ * box that pads it (`object-fit: contain`).
  */
 export function mapThumb(
 	springName: string,
 	width: number,
 	height: number,
+	whole = false,
 ): string | null {
 	if (!springName) return null
 	const tile = devicePixels({ width, height })
-	return thumbSrc(`${tile.width}x${tile.height}/${springName}`)
+	const size = `${tile.width}x${tile.height}/${springName}`
+	return thumbSrc(whole ? `whole/${size}` : size)
 }
 
 /**
@@ -204,7 +212,7 @@ export async function warmMapPictures(springNames: string[]): Promise<void> {
 	if (springNames.length === 0) return
 	const tiles = Object.values(TILES).map(devicePixels)
 	try {
-		await api.warmMapPictures(springNames, tiles)
+		await api.warmMapPictures(springNames, tiles, [devicePixels(LIST_TILE)])
 	} catch {
 		// Rust could not be reached; the pictures are made on demand instead.
 	}

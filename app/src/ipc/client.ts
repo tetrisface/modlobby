@@ -148,8 +148,8 @@ export const api = {
 	/** Looks at what is installed again, for an engine that arrived by hand. */
 	recheckContent: () => invoke<void>('recheck_content'),
 	mapIndex: () => invoke<MapIndex>('map_index'),
-	warmMapPictures: (maps: string[], tiles: Tile[]) =>
-		invoke<void>('warm_map_pictures', { maps, tiles }),
+	warmMapPictures: (maps: string[], tiles: Tile[], whole: Tile[]) =>
+		invoke<void>('warm_map_pictures', { maps, tiles, whole }),
 
 	// ---- news ----
 	/** The feed and how much of it is new, in one answer so the two agree. */

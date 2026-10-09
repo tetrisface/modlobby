@@ -8,7 +8,8 @@ const { mapIndex, warm } = vi.hoisted(() => ({
 vi.mock('../ipc/client', () => ({
 	api: {
 		mapIndex: () => mapIndex(),
-		warmMapPictures: (maps: string[], tiles: unknown[]) => warm(maps, tiles),
+		warmMapPictures: (maps: string[], tiles: unknown[], whole: unknown[]) =>
+			warm(maps, tiles, whole),
 	},
 }))
 // What Tauri's own helper does on Windows; the other platforms spell the
@@ -73,6 +74,9 @@ describe('a picture at the size drawn', () => {
 		expect(maps.mapThumb('AcidicQuarry 5.17', 50, 32)).toBe(
 			'http://thumb.localhost/75x48%2FAcidicQuarry%205.17',
 		)
+		expect(maps.mapThumb('AcidicQuarry 5.17', 50, 32, true)).toBe(
+			'http://thumb.localhost/whole%2F75x48%2FAcidicQuarry%205.17',
+		)
 		expect(maps.mapThumb('', 50, 32)).toBeNull()
 		expect(mapIndex).not.toHaveBeenCalled()
 		vi.unstubAllGlobals()
@@ -80,7 +84,7 @@ describe('a picture at the size drawn', () => {
 })
 
 describe('warming the list ahead', () => {
-	it('asks for every fixed size, in device pixels, in the order shown', async () => {
+	it('asks for every fixed size, the list whole, in device pixels, in the order shown', async () => {
 		vi.stubGlobal('devicePixelRatio', 2)
 		warm.mockResolvedValue(undefined)
 		const maps = await fresh()
@@ -88,10 +92,10 @@ describe('warming the list ahead', () => {
 		expect(warm).toHaveBeenCalledWith(
 			['AcidicQuarry 5.17', 'Nowhere 1'],
 			[
-				{ width: 100, height: 82 },
 				{ width: 260, height: 260 },
 				{ width: 80, height: 56 },
 			],
+			[{ width: 100, height: 82 }],
 		)
 		vi.unstubAllGlobals()
 	})

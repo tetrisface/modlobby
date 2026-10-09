@@ -3630,6 +3630,15 @@ input[type='checkbox'].v-edit {
 	object-fit: cover;
 }
 
+/* The whole picture, padded by the box, rather than cut to fill it. */
+.map-pic.whole {
+	background-size: contain;
+}
+
+.map-pic.whole img {
+	object-fit: contain;
+}
+
 /* The picture under a box's SVG, which comes later in the DOM and so paints
    on top. */
 .map-under {
@@ -4356,10 +4365,8 @@ input[type='checkbox'].v-edit {
 .col-thumb {
 	width: 3.25rem;
 	height: stretch;
-	border: 1px solid var(--line-soft);
 	border-radius: 2px;
 	overflow: hidden;
-	background-color: #0d1218;
 }
 
 .host-bar {

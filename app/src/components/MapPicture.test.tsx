@@ -25,6 +25,16 @@ describe('MapPicture', () => {
 		expect(img.loading).toBe('lazy')
 	})
 
+	test('whole: the fitted tile, and the class the stylesheet pads it by', () => {
+		const { container } = render(() => (
+			<MapPicture mapName='Comet Catcher' width={50} height={41} whole />
+		))
+		const box = container.querySelector('.map-pic.whole') as HTMLElement
+		expect(box.querySelector('img')?.getAttribute('src')).toBe(
+			'thumb://whole%2F50x41%2FComet%20Catcher',
+		)
+	})
+
 	test('a tile that fails is dropped; the next map gets its own chance', () => {
 		const [name, setName] = createSignal('Gone')
 		const { container } = render(() => (

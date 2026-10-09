@@ -2,7 +2,8 @@ import { Show, createEffect, createSignal } from 'solid-js'
 import { mapPicture, mapThumb } from '../lib/maps'
 
 /**
- * A map's picture in a box the stylesheet sizes, cut to that size by Rust.
+ * A map's picture in a box the stylesheet sizes, cut to that size by Rust —
+ * or, `whole`, fitted inside it with nothing cut off, and the box pads it.
  *
  * Until the cut is made, the picture as published shows in its place, scaled
  * by the webview — soft, but there — and the finished tile covers it. A map
@@ -14,10 +15,13 @@ export function MapPicture(props: {
 	width: number
 	height: number
 	class?: string
+	/** Whole and padded rather than cut to fill the box. */
+	whole?: boolean
 	/** For a long list: asked for as the box scrolls into view. */
 	lazy?: boolean
 }) {
-	const tile = () => mapThumb(props.mapName, props.width, props.height)
+	const tile = () =>
+		mapThumb(props.mapName, props.width, props.height, props.whole)
 	const [broken, setBroken] = createSignal(false)
 
 	// A box outlives the map it shows — the list's rows are virtualised, and a
@@ -34,7 +38,9 @@ export function MapPicture(props: {
 
 	return (
 		<span
-			class={props.class ? `map-pic ${props.class}` : 'map-pic'}
+			class={['map-pic', props.whole && 'whole', props.class]
+				.filter(Boolean)
+				.join(' ')}
 			style={{ 'background-image': under() }}
 		>
 			<Show when={broken() ? undefined : tile()}>

@@ -68,7 +68,10 @@ impl Tile {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Job {
 	pub url: String,
+	/// Cut to fill each box, as [`Service::get`] does.
 	pub tiles: Vec<Tile>,
+	/// Fitted whole inside each box, as [`Service::get_whole`] does.
+	pub whole: Vec<Tile>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -248,6 +251,11 @@ impl Service {
 			for tile in next.tiles {
 				if let Err(err) = self.get(&next.url, tile).await {
 					tracing::debug!(url = next.url, ?tile, %err, "not warmed");
+				}
+			}
+			for tile in next.whole {
+				if let Err(err) = self.get_whole(&next.url, tile).await {
+					tracing::debug!(url = next.url, ?tile, %err, "not warmed whole");
 				}
 			}
 		}
@@ -607,6 +615,7 @@ mod tests {
 		thumbs.warm(vec![Job {
 			url: url.clone(),
 			tiles: vec![tile(50, 32)],
+			whole: vec![],
 		}]);
 		thumbs.settled().await;
 
@@ -689,13 +698,18 @@ mod tests {
 		thumbs.warm(vec![Job {
 			url: url.clone(),
 			tiles: vec![tile(50, 32), tile(130, 130)],
+			whole: vec![tile(50, 41)],
 		}]);
 		thumbs.settled().await;
-		assert_eq!(kept(dir.path()).len(), 3);
+		assert_eq!(kept(dir.path()).len(), 4);
 
 		let room = thumbs.get(&url, tile(130, 130)).await.unwrap();
 		let small = image::load_from_memory(&room).unwrap();
 		assert_eq!((small.width(), small.height()), (130, 130));
+		// The whole one is made ahead too, at the picture's own shape.
+		let list = thumbs.get_whole(&url, tile(50, 41)).await.unwrap();
+		let small = image::load_from_memory(&list).unwrap();
+		assert_eq!((small.width(), small.height()), (50, 25));
 	}
 
 	#[tokio::test]
@@ -708,10 +722,12 @@ mod tests {
 			Job {
 				url: format!("{}/gone.png", server.uri()),
 				tiles: vec![tile(50, 32)],
+				whole: vec![],
 			},
 			Job {
 				url,
 				tiles: vec![tile(50, 32)],
+				whole: vec![],
 			},
 		]);
 		thumbs.settled().await;
