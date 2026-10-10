@@ -1,7 +1,7 @@
 import { Select } from '../components/Select'
 import { For, Show, createMemo, createSignal } from 'solid-js'
 import { describeError } from '../ipc/client'
-import { isBoss } from '../lib/roster'
+import { bossesOf, isBoss } from '../lib/roster'
 import { pushNotice } from '../store/chat'
 import { useRoom } from './room/model'
 
@@ -47,6 +47,21 @@ export function HostBar() {
 	/** The line as the boss says it, or as a player puts it to the room. */
 	const command = (line: string) => (boss() ? line : `!cv ${line.slice(1)}`)
 
+	/**
+	 * Nobody else here and nobody running the room: a vote is ours alone and
+	 * passes as it is called, so "Call vote" would mislead; taking the room
+	 * is the offer instead.
+	 */
+	const unclaimed = createMemo(() => {
+		const battle = room.battle()
+		const me = room.me()
+		if (!battle || me === null || bossesOf(room.my()?.boss).length > 0)
+			return false
+		return battle.members.every(
+			(name) => name === battle.founder || name === me,
+		)
+	})
+
 	async function run(line: string) {
 		const said = command(line)
 		setBusy(true)
@@ -90,7 +105,23 @@ export function HostBar() {
 	return (
 		<Show when={boss() || seated()}>
 			<div class='host-bar'>
-				<span class='filter-label'>{boss() ? 'Your room' : 'Call vote'}</span>
+				<Show
+					when={unclaimed()}
+					fallback={
+						<span class='filter-label'>
+							{boss() ? 'Your room' : 'Call vote'}
+						</span>
+					}
+				>
+					<button
+						class='primary'
+						disabled={busy()}
+						title={`${command(`!boss ${room.me()}`)} — nobody else is here, so the vote passes at once`}
+						onClick={() => void run(`!boss ${room.me()}`)}
+					>
+						Boss me
+					</button>
+				</Show>
 
 				<For each={actions()}>
 					{([label, line, hint]) => (

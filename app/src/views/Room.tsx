@@ -79,7 +79,7 @@ import { readSkills, teamSkill, type Skill } from '../lib/skill'
 import { chat, pushNotice } from '../store/chat'
 import { joinMilestone } from '../store/join'
 import { lobby, roomServer, roomSession, severalServers } from '../store/lobby'
-import { launching } from '../store/launch'
+import { LAUNCH_WAIT_MS, launching } from '../store/launch'
 import { over } from '../store/overlay'
 import { serverLabel, settings, showsLeavers } from '../store/settings'
 import { HostBar } from './HostBar'
@@ -108,6 +108,13 @@ const CAP_KEY = 'modlobby.rosterHeight'
 /** The least a dragged roster keeps: its headers and a row or two. */
 const ROSTER_MIN = 64
 
+/**
+ * SPADS refusing a start, with why, and the bypass it names when `!forceStart`
+ * would make it anyway: uneven teams, an unbalanced room, unfixed colours, no
+ * start boxes (`spads.pl:5540-5628`).
+ */
+const REFUSED = /Unable to start game, (.+?)( - use !forceStart to bypass)?$/
+
 /** `alice, bob, and carol`. */
 const NAMES = new Intl.ListFormat('en', { type: 'conjunction' })
 
@@ -117,6 +124,7 @@ export function Room() {
 	let log: HTMLDivElement | undefined
 
 	const battle = createMemo(room.battle)
+	const lines = () => chat.rooms[room.log] ?? []
 
 	const friends = createMemo(() => new Set(roomSession()?.friends.friends))
 	const isFriend = (name: string) => friends().has(name)
@@ -185,6 +193,44 @@ export function Room() {
 	/** How much readying up asks of us here; see `readiness`. */
 	const tier = createMemo(() => readiness(room))
 
+	/** The last room line before we asked the host to start; null when we have not. */
+	const [startAsked, setStartAsked] = createSignal<number | null>(null)
+	/**
+	 * A start we said ourselves, drawn as pressed -- its label, striped -- until
+	 * the game has a window, so the button does not change under the click.
+	 */
+	const [pressed, setPressed] = createSignal<{
+		label: string
+		at: number
+	} | null>(null)
+	const askToStart = (line: string, label: string | null) => {
+		setStartAsked(lines().at(-1)?.seq ?? -1)
+		if (label !== null) setPressed({ label, at: Date.now() })
+		return send(line)
+	}
+	/**
+	 * The host's last refusal of the start we asked for, and whether
+	 * `!forceStart` gets past it. A game starting is the end of that start.
+	 */
+	const refusal = createMemo(() => {
+		const after = startAsked()
+		if (after === null) return null
+		const founder = battle()?.founder
+		const found = lines()
+			.filter((line) => line.seq > after && line.from === founder)
+			.map((line) => REFUSED.exec(line.text))
+			.filter((match) => match !== null)
+			.at(-1)
+		return found ? { why: found[1], forceable: found[2] !== undefined } : null
+	})
+	const forceable = () => {
+		const refused = refusal()
+		return refused?.forceable ? refused.why : null
+	}
+	createEffect(() => {
+		if (room.running() !== null) setStartAsked(null)
+	})
+
 	/**
 	 * The start button, by standing. The boss says `!start`; a player calls
 	 * the vote by name, as Chobby does (`Interface:StartBattle`), so the room
@@ -221,20 +267,38 @@ export function Room() {
 			}
 		}
 		const step = { toggle: false, on: false, pending: false, waiting: false }
+		const refused = forceable()
+		const forced = (label: string, line: string, run: () => Promise<void>) => ({
+			label,
+			title: `${refused}: ${line} starts it anyway`,
+			run,
+			disabled: false,
+			...step,
+		})
 		switch (standing()) {
 			case 'boss':
+				if (refused !== null)
+					return forced('Force start the game', '!forceStart', () =>
+						askToStart('!forceStart', 'Force start the game'),
+					)
 				return {
 					label: 'Start the game',
 					title: '!start',
-					run: () => send('!start'),
+					run: () => askToStart('!start', 'Start the game'),
 					disabled: false,
 					...step,
 				}
 			case 'player':
+				// A vote is the vote bar's to show; the button keeps its offer until
+				// the host says something new about starting.
+				if (refused !== null)
+					return forced('Vote to force start', '!cv forceStart', () =>
+						send('!cv forceStart'),
+					)
 				return {
 					label: 'Vote to start',
 					title: '!cv start',
-					run: () => send('!cv start'),
+					run: () => askToStart('!cv start', null),
 					disabled: false,
 					...step,
 				}
@@ -519,8 +583,6 @@ export function Room() {
 		return count > 1 ? count : undefined
 	}
 
-	const lines = () => chat.rooms[room.log] ?? []
-
 	const [now, setNow] = createSignal(Date.now())
 	const tick = setInterval(() => setNow(Date.now()), 1000)
 	onCleanup(() => clearInterval(tick))
@@ -669,7 +731,19 @@ export function Room() {
 	 * From the click until the engine has a window. The column is locked for
 	 * it: there is nothing to go back to yet, and a second click is an error.
 	 */
-	const loading = () => asked() || launching()
+	const loading = () => asked() || launching() || pressed() !== null
+
+	/**
+	 * A pressed start ends when the host refuses it, when the game it made has
+	 * a window, or when nothing has launched in the time a launch is given.
+	 */
+	createEffect(() => {
+		const start = pressed()
+		if (start === null) return
+		const up = lobby.engine.state === 'running' && !launching()
+		const late = !launching() && now() - start.at >= LAUNCH_WAIT_MS
+		if (up || late || refusal() !== null) setPressed(null)
+	})
 
 	return (
 		<Show when={battle()}>
@@ -874,7 +948,7 @@ export function Room() {
 							<Switch>
 								<Match when={loading()}>
 									<button class='primary launching' disabled>
-										Loading the game
+										{pressed()?.label ?? 'Loading the game'}
 									</button>
 								</Match>
 								<Match when={lobby.engine.state === 'running'}>

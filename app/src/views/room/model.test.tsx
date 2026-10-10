@@ -7,6 +7,7 @@ import type { BotView } from '../../ipc/bindings/BotView'
 import type { ModOption } from '../../ipc/bindings/ModOption'
 import type { Settings } from '../../ipc/bindings/Settings'
 import type { VacancyView } from '../../ipc/bindings/VacancyView'
+import { clearRoom, pushLine } from '../../store/chat'
 import { setWindowSeen } from '../../store/launch'
 import { setSettingsSignal } from '../../store/settings'
 import { emptyLobby, setLobby } from '../../store/lobby'
@@ -544,6 +545,60 @@ describe('a room behind the seam', () => {
 		expect(container.querySelector('.room-title button')).toBeTruthy()
 	})
 
+	test('a start the host refuses but would force becomes a force start', async () => {
+		const calls: Calls = []
+		const { container } = await open(
+			fakeRoom({
+				caps: SERVED,
+				battle: () => battle({ founder: 'Host', members: ['Host', 'me'] }),
+				my: () => myBattle({ boss: 'me' }),
+				users: () => ({
+					me: user('me', { battleStatus: status({ ready: true }) }),
+				}),
+				io: recordingIo(calls),
+			}),
+		)
+		const line = (seq: number, from: string, text: string) =>
+			pushLine({
+				seq,
+				room: '#battle',
+				from,
+				text,
+				kind: 'announcement',
+				mention: false,
+				at: 0,
+			})
+		const refusal =
+			'* Unable to start game, teams are uneven - use !forceStart to bypass'
+		// Said before we asked: somebody else's start, not ours.
+		line(1, 'Host', refusal)
+
+		// The pressed button stays as pressed, striped, while the host answers.
+		const pressedAs = (label: string) => {
+			const button = cardButton(container, label)
+			expect(button.disabled).toBe(true)
+			expect(button.classList.contains('launching')).toBe(true)
+		}
+		fireEvent.click(cardButton(container, 'Start the game'))
+		await settle()
+		pressedAs('Start the game')
+		line(2, 'someone', refusal)
+		pressedAs('Start the game')
+		line(3, 'Host', refusal)
+		const force = cardButton(container, 'Force start the game')
+		expect(force.disabled).toBe(false)
+		expect(force.title).toBe('teams are uneven: !forceStart starts it anyway')
+
+		fireEvent.click(force)
+		await settle()
+		expect(calls).toContainEqual(['sayBattle', ['!forceStart']])
+		pressedAs('Force start the game')
+		// Refused for what forcing cannot get past: back to a plain start.
+		line(4, 'Host', '* Unable to start game, bob is unsynced')
+		expect(cardButton(container, 'Start the game').disabled).toBe(false)
+		clearRoom('#battle')
+	})
+
 	test('a player who is not the boss proposes the start as a vote', async () => {
 		const calls: Calls = []
 		const { container } = await open(
@@ -577,6 +632,26 @@ describe('a room behind the seam', () => {
 		)
 		await settle()
 		expect(calls).toContainEqual(['sayBattle', ['!cv balance']])
+	})
+
+	test('a player alone in a room nobody runs is offered the room, not a vote', async () => {
+		const calls: Calls = []
+		const { container } = await open(
+			fakeRoom({
+				caps: SERVED,
+				battle: () => battle({ founder: 'Host', members: ['Host', 'me'] }),
+				io: recordingIo(calls),
+			}),
+		)
+
+		expect(container.querySelector('.host-bar .filter-label')).toBeNull()
+		fireEvent.click(
+			[...container.querySelectorAll('.host-bar button')].find(
+				(button) => button.textContent === 'Boss me',
+			)!,
+		)
+		await settle()
+		expect(calls).toContainEqual(['sayBattle', ['!cv boss me']])
 	})
 
 	test('a spectator is offered no vote bar, since SPADS gives a spectator no vote', async () => {
