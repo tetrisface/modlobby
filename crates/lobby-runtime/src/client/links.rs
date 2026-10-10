@@ -239,11 +239,12 @@ impl Runtime {
 		tracing::info!(host, %way, "connected");
 		self.ways.remember(&host, way);
 		self.ways_changed();
-		let session = Session::new(
+		let mut session = Session::new(
 			request,
 			self.hardware.properties.clone(),
 			self.hardware.machine_hash.clone(),
 		);
+		session.prefer_side(self.preferred_side);
 		let slot = self.servers.entry(server.clone()).or_default();
 		let session = match purpose {
 			Purpose::Login(reply) => {

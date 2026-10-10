@@ -57,6 +57,15 @@ async function remember(played: boolean) {
 	}
 }
 
+/** Makes `side` the faction every seat starts on, in rooms to come too. */
+async function rememberSide(side: number) {
+	try {
+		applySettings(await api.rememberSide(side))
+	} catch {
+		// As with `remember`: a preference, not worth interrupting a game for.
+	}
+}
+
 /**
  * Sits on ally team `ally` — joining it, or moving there from another — and
  * makes playing what `remember` remembers. Sitting down from watching starts
@@ -481,9 +490,11 @@ export function Seat() {
 							value={String(seat()?.side ?? 0)}
 							disabled={busy()}
 							onChange={(e) =>
-								act('faction', () =>
-									room.io.setSide(Number(e.currentTarget.value)),
-								)
+								act('faction', async () => {
+									const side = Number(e.currentTarget.value)
+									await room.io.setSide(side)
+									await rememberSide(side)
+								})
 							}
 						>
 							<For each={SIDES}>

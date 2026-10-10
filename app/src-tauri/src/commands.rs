@@ -722,7 +722,7 @@ pub async fn skirmish_open(
 			.or_else(|| from.into_iter().next())
 			.unwrap_or_default()
 	};
-	let room = skirmish::Room::new(
+	let mut room = skirmish::Room::new(
 		player_name(&app),
 		newest(game, library.installed_games()),
 		// Maps have no newest; the list is alphabetical and the first of it is
@@ -730,6 +730,7 @@ pub async fn skirmish_open(
 		spring_name(&app, newest(map, library.installed_map_files())).await,
 		newest(engine, library.installed_engines()),
 	);
+	room.set_side(app.settings.get().play.last_side);
 	app.client.open_skirmish(room).await?;
 	Ok(())
 }
@@ -1059,6 +1060,17 @@ pub fn remember_played(app: State<'_, App>, played: bool) -> Result<Settings> {
 	Ok(app
 		.settings
 		.update(|current| current.play.last_was_player = played)?)
+}
+
+/// Records the faction last picked, which every seat starts on from then on,
+/// in this run and the next.
+#[tauri::command]
+pub async fn remember_side(app: State<'_, App>, side: u8) -> Result<Settings> {
+	let written = app
+		.settings
+		.update(|current| current.play.last_side = side)?;
+	app.client.prefer_side(side).await?;
+	Ok(written)
 }
 
 /// Flashes the taskbar entry of the running engine, if it has a window yet.

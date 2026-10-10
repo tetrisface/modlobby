@@ -209,6 +209,9 @@ pub struct Session {
 	/// on it, unless a request of ours it has not answered yet is still on its
 	/// way, in which case it is that request (see `in_flight`).
 	seat: Option<Seat>,
+	/// The faction a seat starts on: the last one picked, here or remembered
+	/// from before.
+	side: u8,
 	/// The statuses we sent that the server has not answered yet, oldest
 	/// first.
 	///
@@ -349,6 +352,7 @@ impl Session {
 			collecting_requests: None,
 			collecting_ignored: None,
 			seat: None,
+			side: 0,
 			in_flight: VecDeque::new(),
 			asked_queue: false,
 			private_host: None,
@@ -450,7 +454,7 @@ impl Session {
 			team: 0,
 			ally_team: 0,
 			ready: false,
-			side: self.seat.map_or(0, |seat| seat.side),
+			side: self.seat.map_or(self.side, |seat| seat.side),
 			handicap: 0,
 		});
 		effects.push(self.battle_status());
@@ -515,7 +519,7 @@ impl Session {
 			team,
 			ally_team,
 			ready: self.seat.is_some_and(|seat| seat.ready),
-			side: self.seat.map_or(0, |seat| seat.side),
+			side: self.seat.map_or(self.side, |seat| seat.side),
 			handicap: self.seat.map_or(0, |seat| seat.handicap),
 		});
 		// A seat asked for is playing. A ready asked for with it follows the
@@ -582,11 +586,17 @@ impl Session {
 	/// Picks a faction: 0 Armada, 1 Cortex, 2 Random, 3 Legion.
 	pub fn set_side(&mut self, side: u8) -> Result<Vec<Effect>, SeatError> {
 		let seat = self.seat.as_mut().ok_or(SeatError::Spectating)?;
+		self.side = side;
 		if seat.side == side {
 			return Ok(vec![]);
 		}
 		seat.side = side;
 		Ok(vec![self.battle_status()])
+	}
+
+	/// The faction the next seat starts on, without sitting down.
+	pub fn prefer_side(&mut self, side: u8) {
+		self.side = side;
 	}
 
 	/// Goes back to spectating; always allowed. Whatever was asked for goes
@@ -2866,9 +2876,18 @@ mod tests {
 		assert_eq!(moved.side, 3);
 
 		// Standing up and sitting down again is a new seat, not a game agreed to.
+		// The faction is still a preference.
 		s.release_seat();
 		let sat = sent_status(&s.take_seat(0, 0, false).unwrap());
 		assert!(!sat.ready);
+		assert_eq!(sat.side, 3);
+	}
+
+	#[test]
+	fn a_preferred_faction_is_what_the_first_seat_starts_on() {
+		let mut s = in_a_public_room();
+		s.prefer_side(1);
+		assert_eq!(sent_status(&s.take_seat(0, 0, false).unwrap()).side, 1);
 	}
 
 	fn sent_lines(effects: &[Effect]) -> Vec<&str> {

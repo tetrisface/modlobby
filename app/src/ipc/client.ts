@@ -256,6 +256,7 @@ export const api = {
 		invoke<number>('export_presets', { path, names }),
 	rememberPlayed: (played: boolean) =>
 		invoke<Settings>('remember_played', { played }),
+	rememberSide: (side: number) => invoke<Settings>('remember_side', { side }),
 	rememberChannels: (server: string, channels: string[]) =>
 		invoke<Settings>('remember_channels', { server, channels }),
 	skirmishOptions: () => invoke<SkirmishOptions>('skirmish_options'),

@@ -706,6 +706,9 @@ pub struct Play {
 	/// What [`JoinAs::Remember`] remembers: whether you played last time.
 	/// Written when you take or leave a seat, never chosen directly.
 	pub last_was_player: bool,
+	/// The faction you last picked: 0 Armada, 1 Cortex, 2 Random, 3 Legion.
+	/// Every seat starts on it. Written when you pick one, never chosen here.
+	pub last_side: u8,
 }
 
 impl Default for Play {
@@ -719,6 +722,7 @@ impl Default for Play {
 			show_leavers_pvp: false,
 			// Nothing remembered yet, and this is a lobby.
 			last_was_player: true,
+			last_side: 0,
 		}
 	}
 }

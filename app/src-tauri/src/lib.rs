@@ -93,6 +93,7 @@ pub(crate) async fn push_settings(
 	let _ = client.set_data_dir(settings.paths.data_dir.clone()).await;
 	let _ = client.set_auto_launch(settings.play.auto_launch).await;
 	let _ = client.set_auto_download(settings.play.auto_download).await;
+	let _ = client.prefer_side(settings.play.last_side).await;
 	let _ = client
 		.set_overlay_config_dir(overlay_config_dir(settings))
 		.await;
@@ -595,6 +596,7 @@ pub fn run() {
 			commands::engine_in_front,
 			commands::engine_has_window,
 			commands::remember_played,
+			commands::remember_side,
 			commands::game_modoptions,
 			presets::pve_score,
 			presets::list_presets,

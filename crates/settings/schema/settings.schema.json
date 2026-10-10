@@ -98,6 +98,7 @@
         "autoDownload": true,
         "autoLaunch": true,
         "joinAs": "remember",
+        "lastSide": 0,
         "lastWasPlayer": true,
         "pveStats": true,
         "showLeaversPve": true,
@@ -620,6 +621,14 @@
           "description": "Whether joining a room seats you.",
           "$ref": "#/$defs/JoinAs",
           "default": "remember"
+        },
+        "lastSide": {
+          "description": "The faction you last picked: 0 Armada, 1 Cortex, 2 Random, 3 Legion.\nEvery seat starts on it. Written when you pick one, never chosen here.",
+          "type": "integer",
+          "format": "uint8",
+          "default": 0,
+          "maximum": 255,
+          "minimum": 0
         },
         "lastWasPlayer": {
           "description": "What [`JoinAs::Remember`] remembers: whether you played last time.\nWritten when you take or leave a seat, never chosen directly.",

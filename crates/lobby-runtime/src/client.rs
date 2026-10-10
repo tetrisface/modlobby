@@ -578,6 +578,10 @@ enum Command {
 		side: u8,
 		reply: Reply<()>,
 	},
+	PreferSide {
+		side: u8,
+		reply: Reply<()>,
+	},
 	ReleaseSeat,
 	SetDataDir(Option<PathBuf>),
 	AdoptEngine,
@@ -964,6 +968,11 @@ impl Client {
 			.await
 	}
 
+	/// The faction every seat starts on, on every server.
+	pub async fn prefer_side(&self, side: u8) -> Result<(), ClientError> {
+		self.ask(|reply| Command::PreferSide { side, reply }).await
+	}
+
 	/// Whether joining a room fetches the game and map it needs by itself.
 	pub async fn set_auto_download(&self, on: bool) -> Result<(), ClientError> {
 		self.ask(|reply| Command::SetAutoDownload { on, reply })
@@ -1335,6 +1344,8 @@ struct Runtime {
 	/// Whether to start the engine ourselves when the room's game starts.
 	/// Pushed from settings, like the data directory.
 	auto_launch_always: bool,
+	/// The faction a new session's seats start on. Pushed from settings.
+	preferred_side: u8,
 	/// Whether joining a room fetches its missing game and map unasked.
 	auto_download: bool,
 	/// Whether this machine has everything the room needs. Launching without
@@ -1889,6 +1900,7 @@ impl Runtime {
 			game: None,
 			auto_launch: None,
 			auto_launch_always: true,
+			preferred_side: 0,
 			auto_download: true,
 			content_ready: false,
 			join_reply: None,
@@ -3092,6 +3104,17 @@ impl Runtime {
 			}
 			Command::SetAutoLaunch { always, reply } => {
 				self.auto_launch_always = always;
+				let _ = reply.send(Ok(()));
+			}
+			Command::PreferSide { side, reply } => {
+				self.preferred_side = side;
+				for link in self
+					.servers
+					.values_mut()
+					.filter_map(|slot| slot.link.as_mut())
+				{
+					link.session.prefer_side(side);
+				}
 				let _ = reply.send(Ok(()));
 			}
 			Command::SetAutoDownload { on, reply } => {

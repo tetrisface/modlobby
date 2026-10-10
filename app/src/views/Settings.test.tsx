@@ -39,6 +39,7 @@ function loaded(): Settings {
 		play: {
 			joinAs: 'remember',
 			lastWasPlayer: true,
+			lastSide: 0,
 			autoLaunch: true,
 			autoDownload: true,
 			pveStats: true,

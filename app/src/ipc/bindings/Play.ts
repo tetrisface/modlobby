@@ -53,4 +53,9 @@ export type Play = {
 	 * Written when you take or leave a seat, never chosen directly.
 	 */
 	lastWasPlayer: boolean
+	/**
+	 * The faction you last picked: 0 Armada, 1 Cortex, 2 Random, 3 Legion.
+	 * Every seat starts on it. Written when you pick one, never chosen here.
+	 */
+	lastSide: number
 }
