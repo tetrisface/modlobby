@@ -1,7 +1,8 @@
 import { Show, createEffect, createResource } from 'solid-js'
 import { ActionCell, CellButton } from '../../components/ActionCell'
+import { OptionName } from '../../components/OptionName'
 import { api, describeError } from '../../ipc/client'
-import { isCleared, label, type Row } from '../../lib/setup'
+import { isCleared, type Row } from '../../lib/setup'
 import {
 	MAP_TABLE_REFUSAL,
 	isDirty,
@@ -96,9 +97,7 @@ export function TweakRow(props: { row: Row }) {
 				data-key={key()}
 			>
 				<span class='mark' />
-				<span class='k' title={props.row.option.desc ?? ''}>
-					{label(props.row.option)}
-				</span>
+				<OptionName option={props.row.option} />
 				<span class='tweak-note'>
 					<span class='tweak-name' title={name()}>
 						{name()}

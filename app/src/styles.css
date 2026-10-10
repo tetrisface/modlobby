@@ -3350,6 +3350,37 @@ body.resizing {
 	color: var(--text);
 }
 
+/* Held back a moment like a native tooltip, so a pointer crossing the list
+   does not flicker one up per row. */
+.key-tip {
+	position: fixed;
+	z-index: 40;
+	width: max-content;
+	padding: 0.375rem 0.5625rem;
+	font-family: var(--body);
+	font-size: 0.75rem;
+	line-height: 1.4;
+	white-space: normal;
+	color: var(--text);
+	background: var(--raised);
+	border: 1px solid var(--line);
+	border-radius: 4px;
+	box-shadow: 0 12px 28px rgb(0 0 0 / 45%);
+	pointer-events: none;
+	animation: key-tip-wait 0s 0.4s backwards;
+}
+
+.key-tip code {
+	font-family: var(--mono);
+	color: var(--muted);
+}
+
+@keyframes key-tip-wait {
+	from {
+		visibility: hidden;
+	}
+}
+
 .opt .opt-hidden {
 	margin-left: 0.5rem;
 	color: var(--faint);

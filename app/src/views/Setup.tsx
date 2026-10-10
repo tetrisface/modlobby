@@ -10,6 +10,7 @@ import {
 	createSignal,
 	on,
 } from 'solid-js'
+import { OptionName } from '../components/OptionName'
 import { ResizeHandle } from '../components/ResizeHandle'
 import { SearchBox } from '../components/SearchBox'
 import { Segmented } from '../components/Segmented'
@@ -36,7 +37,6 @@ import {
 	isOn,
 	keepOrder,
 	readModOptions,
-	label,
 	rowsByGroup,
 	rowsByTab,
 	searchRows,
@@ -742,8 +742,7 @@ export function Rows(props: {
 										data-key={key}
 									>
 										<span class='mark' />
-										<span class='k' title={row().option.desc ?? ''}>
-											{label(row().option)}
+										<OptionName option={row().option}>
 											<Show when={row().option.hidden}>
 												<span
 													class='doc-tag opt-hidden'
@@ -752,7 +751,7 @@ export function Rows(props: {
 													hidden
 												</span>
 											</Show>
-										</span>
+										</OptionName>
 										<Switch
 											fallback={<span class='v'>{displayText(row())}</span>}
 										>

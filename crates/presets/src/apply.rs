@@ -86,22 +86,23 @@ pub struct Room {
 /// The modoption BAR reads a custom startbox arrangement from.
 pub const START_BOX_OVERRIDE: &str = "mapmetadata_startbox_override";
 
+/// The map's per-team-count arrangements, sent after every override line.
+const START_BOXES_SET: &str = "mapmetadata_startboxes_set";
+
 /// The SPADS command for one room setting, where there is one.
 ///
 /// These are not `!bSet` keys: SPADS keeps the room's own settings behind
 /// their own commands, which is how Chobby sets them too.
 fn battle_command(key: &str, value: &str) -> Option<String> {
 	Some(match key {
-		"locked" => match value {
-			"1" | "true" | "locked" => "!lock".into(),
-			_ => "!unlock".into(),
-		},
 		"autoBalance" => format!("!autoBalance {value}"),
 		"balanceMode" => format!("!balanceMode {value}"),
 		"teamSize" => format!("!set teamSize {value}"),
 		"nbTeams" => format!("!nbTeams {value}"),
 		// `preset` is the reset itself and is handled first, or not at all.
-		"preset" => return None,
+		// `locked` is the saver's room state, not a setting: a preset never
+		// locks or unlocks the room it is loaded into.
+		"preset" | "locked" => return None,
 		_ => return None,
 	})
 }
@@ -220,6 +221,11 @@ pub fn plan(preset: &Preset, room: &Room, sections: Sections) -> Plan {
 		}
 	}
 
+	// Stable, so only the set moves: behind the modoption's override and the
+	// one built from the rectangles alike.
+	let set = format!("!bSet {START_BOXES_SET} ");
+	lines.sort_by_key(|line| line.starts_with(&set));
+
 	Plan {
 		start_boxes,
 		start_boxes_unsent,
@@ -322,7 +328,6 @@ mod tests {
 	fn room_settings_use_their_own_commands_rather_than_bset() {
 		let plan = plan(&preset(), &Room::default(), Sections::default());
 		assert!(plan.lines.contains(&"!set teamSize 8".into()));
-		assert!(plan.lines.contains(&"!lock".into()));
 		assert!(
 			!plan
 				.lines
@@ -332,11 +337,39 @@ mod tests {
 	}
 
 	#[test]
-	fn unlocking_is_what_a_preset_that_is_not_locked_asks_for() {
+	fn a_preset_never_locks_or_unlocks_the_room() {
+		for locked in ["1", "0"] {
+			let mut preset = preset();
+			preset.battle.insert("locked".into(), locked.into());
+			let plan = plan(&preset, &Room::default(), Sections::default());
+			assert!(
+				!plan
+					.lines
+					.iter()
+					.any(|line| line == "!lock" || line == "!unlock")
+			);
+		}
+	}
+
+	#[test]
+	fn the_map_set_goes_after_every_override() {
 		let mut preset = preset();
-		preset.battle.insert("locked".into(), "0".into());
+		preset
+			.modoptions
+			.insert(START_BOX_OVERRIDE.into(), "theirs".into());
+		preset
+			.modoptions
+			.insert(START_BOXES_SET.into(), "set".into());
 		let plan = plan(&preset, &Room::default(), Sections::default());
-		assert!(plan.lines.contains(&"!unlock".into()));
+		let at = |prefix: String| {
+			plan.lines
+				.iter()
+				.rposition(|line| line.starts_with(&prefix))
+				.expect("a line")
+		};
+		let set = at(format!("!bSet {START_BOXES_SET} "));
+		assert_eq!(set, plan.lines.len() - 1);
+		assert!(at(format!("!bSet {START_BOX_OVERRIDE} ")) < set);
 	}
 
 	#[test]

@@ -290,6 +290,11 @@ export function label(option: ModOption): string {
 	return option.name || option.key
 }
 
+/** Key first, the one `!bSet` and presets speak. */
+export function hint(option: ModOption): string {
+	return option.desc ? `${option.key}: ${option.desc}` : option.key
+}
+
 export function rowsOf(group: Group, values: Record<string, string>): Row[] {
 	return group.options.map((option) => {
 		const current = values[option.key] ?? null
