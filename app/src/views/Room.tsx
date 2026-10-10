@@ -91,7 +91,7 @@ import { WatcherStack } from './room/Watchers'
 import { readiness } from './room/readiness'
 import { dragging } from '../lib/drag'
 import { Seat, canAddAi, showAddAi, sitOn, standUp } from './Seat'
-import { modRefusal, movable, moveTo, setBonus, type Target } from './room/move'
+import { movable, moveTo, setBonus, type Target } from './room/move'
 import { hostsMods } from '../lib/mutators'
 import { Setup } from './Setup'
 import { VoteBar } from './VoteBar'
@@ -551,13 +551,11 @@ export function Room() {
 			: room.battle()?.bots.find((bot) => bot.name === name)
 
 	/**
-	 * Whether we may ask this room's host for another game: one that runs mods
-	 * runs BAR's `!gameVersion` beside them, fetching from its server's rapid.
+	 * Whether this room's host takes another game: one that runs mods runs
+	 * `!gameVersion` beside them, fetching from its server's rapid. Whether it
+	 * applies it, votes on it or refuses it is the host's call.
 	 */
-	const switchesGame = () =>
-		room.caps.spads &&
-		hostsMods(room.my()?.scriptTags) &&
-		modRefusal(room) === null
+	const switchesGame = () => room.caps.spads && hostsMods(room.my()?.scriptTags)
 
 	/** Where players start, out of the room's script tags. */
 	const startPos = () => Number(room.my()?.scriptTags['game/startpostype'] ?? 2)
@@ -587,15 +585,20 @@ export function Room() {
 	)
 
 	/**
-	 * A newer version of the room's game than it is set to, where the room is
-	 * ours to set. A room on the server is kept current by its host; a
-	 * skirmish is the one room nobody updates, and it goes stale between the
-	 * games where somebody else chose.
+	 * A newer version of the room's game than it is set to, where the room's
+	 * game can be changed from here. A skirmish keeps the game it was last
+	 * played with, and goes stale between games. A mods host follows BAR's
+	 * newest by itself, but only once its room is empty.
 	 */
 	const [newerGame] = createResource(
-		() => (room.caps.picksContent ? (battle()?.gameName ?? '') : ''),
+		() =>
+			room.caps.picksContent || switchesGame()
+				? (battle()?.gameName ?? '')
+				: '',
 		(game) => (game === '' ? null : api.newerGame(game).catch(() => null)),
 	)
+	/** Armed by a first click on an update that rehosts the lobby; see `upgradeGame`. */
+	const [rehostArmed, setRehostArmed] = createSignal(false)
 
 	/** BAR's map index, for the name its website lists the room's map under. */
 	const [mapIndexFacts] = createResource(mapFacts)
@@ -613,8 +616,23 @@ export function Room() {
 		shortcut: room.caps.spads,
 	})
 
-	/** Takes it, and fetches it: the offer is to be playing on it. */
+	/**
+	 * Takes it, and fetches it: the offer is to be playing on it. On a mods
+	 * host it is the host's update, which rehosts the lobby and drops everyone
+	 * in it, so the first click says so and the second asks.
+	 */
 	async function upgradeGame(version: string) {
+		if (!room.caps.picksContent) {
+			if (!rehostArmed()) {
+				setRehostArmed(true)
+				return
+			}
+			setRehostArmed(false)
+			// The tag a mods host follows: BAR's newest test build, the line
+			// `newer_game` reads.
+			await send('!gameVersion byar:test')
+			return
+		}
 		await picked((name) => room.io.sayBattle(`!game ${name}`), 'game', version)
 		try {
 			await room.io.downloadMissing()
@@ -806,11 +824,17 @@ export function Room() {
 										{(version) => (
 											<button
 												class='card-act up'
-												title={`Update to ${version()}`}
+												classList={{ armed: rehostArmed() }}
+												title={
+													room.caps.picksContent
+														? `Update to ${version()}`
+														: `Update to ${version()}. The host rehosts the lobby: everyone in it is dropped and has to rejoin.`
+												}
 												aria-label={`Update the game to ${version()}`}
 												onClick={() => void upgradeGame(version())}
 											>
 												<Glyph id='act-upgrade' />
+												<Show when={rehostArmed()}>Rehost the lobby?</Show>
 											</button>
 										)}
 									</Show>

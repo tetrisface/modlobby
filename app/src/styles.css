@@ -810,6 +810,14 @@ textarea {
 	color: var(--accent);
 }
 
+/* Armed for its second click: what that click does, beside the icon. */
+.card-act.armed {
+	width: auto;
+	gap: 0.25rem;
+	padding: 0 0.375rem;
+	font-size: 0.75rem;
+}
+
 .card-act:hover,
 .card-act:focus-visible {
 	background: color-mix(in srgb, var(--accent) 22%, transparent);
