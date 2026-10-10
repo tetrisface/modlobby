@@ -3,11 +3,10 @@ import { type Offer, sameMutator, sourceWords } from './mutators'
 import { move } from './reorder'
 
 /**
- * A mod in a list of what a room should load -- the room's own list, or a
- * draft of the next one: how the host is asked for it, and what to show.
+ * A mod in a list of what a room should load -- the room's own list, or one
+ * sent and not yet loaded: how the host is asked for it, and what to show.
  *
- * The host takes the whole list in one command (`!mutator set a, b, c`), so
- * a draft is edited freely here and costs one vote when it goes.
+ * The host takes the whole list in one command (`!mutator set a, b, c`).
  */
 export type Pick = {
 	/**
@@ -24,7 +23,7 @@ export type Pick = {
 	source: string | null
 	date: string | null
 	/**
-	 * When the draft moves it to the newest commit: that commit's date, as
+	 * When it is moved to the newest commit: that commit's date, as
 	 * GitHub gave it when asked.
 	 */
 	newest?: string | null
@@ -222,10 +221,9 @@ export type SourceLink = {
 const GITHUB = 'https://github.com'
 
 /**
- * Where a GitHub pick stands and where the draft would move it, as links:
- * the repository; the commit the room loads -- the files a vote is about --
- * as its short hash; and, when the draft moves it, the commits it would
- * move to.
+ * Where a GitHub pick stands and where it is being moved, as links: the
+ * repository; the commit the room loads -- the files a vote is about -- as
+ * its short hash; and, while it is being moved, the commits it goes to.
  */
 export function sourceLinks(
 	pick: Pick,
@@ -248,7 +246,7 @@ export function sourceLinks(
 			? {
 					text: 'newest',
 					url: `${GITHUB}/${repo}/commits`,
-					tip: 'The newest commit of the branch it follows, taken when the draft is applied',
+					tip: 'The newest commit of the branch it follows, taken when the host loads it',
 					date: pick.newest ?? null,
 				}
 			: COMMIT.test(asked.ref)
@@ -260,12 +258,12 @@ export function sourceLinks(
 				: {
 						text: `newest of ${asked.ref}`,
 						url: `${GITHUB}/${repo}/commits/${asked.ref}`,
-						tip: `The newest commit of ${asked.ref}, taken when the draft is applied`,
+						tip: `The newest commit of ${asked.ref}, taken when the host loads it`,
 					}
 	return { at, pin, to }
 }
 
-/** How a pick in a draft differs from the room: not at all, new, or moved to another commit. */
+/** How a pick sent to the host differs from the room: not at all, new, or moved to another commit. */
 export type Change = 'same' | 'added' | 'moving'
 
 export function changeOf(pick: Pick, room: readonly Pick[]): Change {
@@ -283,44 +281,6 @@ export function sameList(a: readonly Pick[], b: readonly Pick[]): boolean {
 export function command(picks: readonly Pick[]): string {
 	if (picks.length === 0) return '!mutator clear'
 	return `!mutator set ${picks.map((pick) => pick.ref).join(', ')}`
-}
-
-/** One thing a draft changes, in a few words, and which kind it is. */
-export type SummaryPart = {
-	change: 'added' | 'removed' | 'moving' | 'reordered'
-	words: string
-}
-
-/**
- * What a draft changes: `1 added`, `2 removed`, `1 to another commit`, or
- * only `reordered`. Nothing, when it asks for what the room has.
- */
-export function summary(
-	draft: readonly Pick[],
-	room: readonly Pick[],
-): SummaryPart[] {
-	const changes = draft.map((pick) => changeOf(pick, room))
-	const count = (change: Change) => changes.filter((c) => c === change).length
-	const removed = room.filter(
-		(held) =>
-			!draft.some(
-				(pick) =>
-					key(pick.ref) === key(held.ref) ||
-					(held.repo && pick.repo === held.repo),
-			),
-	).length
-	const parts = (
-		[
-			['added', count('added'), 'added'],
-			['removed', removed, 'removed'],
-			['moving', count('moving'), 'to another commit'],
-		] as const
-	)
-		.filter(([, n]) => n > 0)
-		.map(([change, n, words]) => ({ change, words: `${n} ${words}` }))
-	if (parts.length === 0 && !sameList(draft, room))
-		return [{ change: 'reordered', words: 'reordered' }]
-	return parts
 }
 
 /** A combination of mods a game was played with, and when it last was. */

@@ -256,21 +256,21 @@ export function IconSprite() {
 				{/* A gear, on every corner notice: the way to the settings that
             decide which of them appear and where. */}
 				<symbol id='act-gear' viewBox='0 0 20 20'>
-					<circle
-						cx='10'
-						cy='10'
-						r='2.6'
+					{/* Six teeth: eight close up at the 13px it is drawn. */}
+					<path
+						d='M8.25 4.26 L8.44 1.95 L11.56 1.95 L11.75 4.26 A6 6 0 0 1 14.09 5.61 L16.19 4.62 L17.75 7.33 L15.85 8.65 A6 6 0 0 1 15.85 11.35 L17.75 12.67 L16.19 15.38 L14.09 14.39 A6 6 0 0 1 11.75 15.74 L11.56 18.05 L8.44 18.05 L8.25 15.74 A6 6 0 0 1 5.91 14.39 L3.81 15.38 L2.25 12.67 L4.15 11.35 A6 6 0 0 1 4.15 8.65 L2.25 7.33 L3.81 4.62 L5.91 5.61 A6 6 0 0 1 8.25 4.26 Z'
 						fill='none'
 						stroke='currentColor'
 						stroke-width='1.6'
+						stroke-linejoin='round'
 					/>
-					<path
-						d='M10 2.6 v2 M10 15.4 v2 M17.4 10 h-2 M4.6 10 h-2
-               M15.2 4.8 l-1.4 1.4 M6.2 13.8 l-1.4 1.4
-               M15.2 15.2 l-1.4 -1.4 M6.2 6.2 l-1.4 -1.4'
+					<circle
+						cx='10'
+						cy='10'
+						r='2.5'
+						fill='none'
 						stroke='currentColor'
 						stroke-width='1.6'
-						stroke-linecap='round'
 					/>
 				</symbol>
 				<symbol id='act-pen' viewBox='0 0 20 20'>

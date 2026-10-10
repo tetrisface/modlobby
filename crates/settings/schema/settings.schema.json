@@ -164,9 +164,14 @@
           "const": "lobby"
         },
         {
-          "description": "A desktop notification and a flashing taskbar entry, and only while\nthe window is in the background: a toast for something already on\nscreen is noise, which is the line Chobby draws too. Never the\nlobby's corner — that is what `Lobby` is for, and a choice that did\nboth would not be a choice.",
+          "description": "A desktop notification and a flashing taskbar entry, and only while\nthe window is in the background: a toast for something already on\nscreen is noise, which is the line Chobby draws too. Never the\nlobby's corner — that is what `Lobby` is for.",
           "type": "string",
           "const": "desktop"
+        },
+        {
+          "description": "`Lobby` while the window is looked at, `Desktop` while it is not. The\ntwo never both happen for one event.\n\nA build before this one reads it as `Desktop`.",
+          "type": "string",
+          "const": "both"
         }
       ]
     },

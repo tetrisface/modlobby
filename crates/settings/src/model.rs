@@ -777,9 +777,13 @@ pub enum Alert {
 	/// A desktop notification and a flashing taskbar entry, and only while
 	/// the window is in the background: a toast for something already on
 	/// screen is noise, which is the line Chobby draws too. Never the
-	/// lobby's corner — that is what `Lobby` is for, and a choice that did
-	/// both would not be a choice.
+	/// lobby's corner — that is what `Lobby` is for.
 	Desktop,
+	/// `Lobby` while the window is looked at, `Desktop` while it is not. The
+	/// two never both happen for one event.
+	///
+	/// A build before this one reads it as `Desktop`.
+	Both,
 }
 
 /// Accepts the `true`/`false` this used to be.
@@ -803,6 +807,7 @@ impl<'de> Deserialize<'de> for Alert {
 			Written::Named(name) => match name.to_ascii_lowercase().as_str() {
 				"off" | "none" | "false" => Alert::Off,
 				"lobby" => Alert::Lobby,
+				"both" => Alert::Both,
 				_ => Alert::Desktop,
 			},
 		})
@@ -1080,12 +1085,13 @@ mod tests {
 	#[test]
 	fn a_place_is_read_by_name_however_it_is_written() {
 		let s: Settings = serde_json::from_str(
-			r#"{"notifications":{"mention":"lobby","ring":"OFF","vote":"desktop"}}"#,
+			r#"{"notifications":{"mention":"lobby","ring":"OFF","vote":"desktop","gameEnded":"Both"}}"#,
 		)
 		.unwrap();
 		assert_eq!(s.notifications.mention, Alert::Lobby);
 		assert_eq!(s.notifications.ring, Alert::Off);
 		assert_eq!(s.notifications.vote, Alert::Desktop);
+		assert_eq!(s.notifications.game_ended, Alert::Both);
 	}
 
 	/// A newer build writes values this one has no name for. Each reads as

@@ -269,18 +269,23 @@ describe('choosing where a notification goes', () => {
 		expect(section.querySelector('.silenced button:disabled')).toBeNull()
 	})
 
-	test('exactly one of the three is ever chosen', () => {
+	test('in lobby and desktop toggle on their own, and off clears both', () => {
 		const { container } = openNotifications()
 		const mention = choiceFor(container, 'Someone says my name')
 
 		expect(mention.lit()).toEqual(['Desktop'])
 
 		mention.click('In lobby')
-		expect(mention.lit()).toEqual(['In lobby'])
+		expect(mention.lit()).toEqual(['In lobby', 'Desktop'])
 
 		mention.click('Desktop')
-		expect(mention.lit()).toEqual(['Desktop'])
+		expect(mention.lit()).toEqual(['In lobby'])
 
+		mention.click('In lobby')
+		expect(mention.lit()).toEqual(['Off'])
+
+		mention.click('Desktop')
+		mention.click('In lobby')
 		mention.click('Off')
 		expect(mention.lit()).toEqual(['Off'])
 	})

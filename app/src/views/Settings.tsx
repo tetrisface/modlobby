@@ -12,6 +12,7 @@ import { PlayerFiles } from '../components/PlayerFiles'
 import { SearchBox } from '../components/SearchBox'
 import { Segmented } from '../components/Segmented'
 import { Heading, Query, Row } from '../components/SettingRow'
+import type { Alert } from '../ipc/bindings/Alert'
 import type { Settings } from '../ipc/bindings/Settings'
 import { api, describeError } from '../ipc/client'
 import { build } from '../store/build'
@@ -39,6 +40,20 @@ const ALERT_WHERE = [
 	{ value: 'lobby', label: 'In lobby' },
 	{ value: 'desktop', label: 'Desktop' },
 ] as const
+
+/** Whether `where` lights `place`'s segment; Off only when neither is. */
+const lights = (where: Alert, place: Alert) =>
+	where === place || (where === 'both' && place !== 'off')
+
+/** `where` after a press on `place`: Off clears both, the others flip alone. */
+function pressed(where: Alert, place: Alert): Alert {
+	if (place === 'off') return 'off'
+	const lobby = lights(where, 'lobby') !== (place === 'lobby')
+	const desktop = lights(where, 'desktop') !== (place === 'desktop')
+	if (lobby && desktop) return 'both'
+	if (lobby) return 'lobby'
+	return desktop ? 'desktop' : 'off'
+}
 
 const JOIN_AS = [
 	{ value: 'remember', label: 'Remember last' },
@@ -373,7 +388,9 @@ export function SettingsView() {
 								<b>Desktop</b> raises a notification from your operating system
 								and flashes modlobby in the taskbar, while it is in the
 								background — and nothing at all while you are looking at it,
-								since you are already here. The two never both happen.
+								since you are already here. With both on, it is the corner while
+								you look and the desktop while you do not. The two never both
+								happen.
 							</p>
 						</Row>
 						<For
@@ -425,8 +442,11 @@ export function SettingsView() {
 											label={label}
 											value={draft.notifications[key]}
 											options={ALERT_WHERE}
-											onChange={(where) =>
-												setDraft('notifications', key, where)
+											on={(place) => lights(draft.notifications[key], place)}
+											onChange={(place) =>
+												setDraft('notifications', key, (where) =>
+													pressed(where, place),
+												)
 											}
 										/>
 									</div>

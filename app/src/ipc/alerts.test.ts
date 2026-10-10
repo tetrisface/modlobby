@@ -37,6 +37,11 @@ describe('where an alert goes', () => {
 		expect(plan('desktop', true)).toBe('nothing')
 	})
 
+	test('both is the corner while looking and the desktop while not, never the two', () => {
+		expect(plan('both', true)).toBe('lobby')
+		expect(plan('both', false)).toBe('desktop')
+	})
+
 	test('no two choices ever do the same thing at the same moment', () => {
 		for (const focused of [true, false]) {
 			const done = (['off', 'lobby', 'desktop'] as const).map((where) =>

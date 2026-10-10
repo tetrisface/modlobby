@@ -116,16 +116,14 @@ function pane(options: {
 			row,
 		}))
 	const offers = () => [...container.querySelectorAll('.mod-offers button')]
-	const footer = () => container.querySelector('.mod-footer')
-	const command = () => footer()?.querySelector('.mod-command')?.textContent
-	const apply = () =>
-		footer()?.querySelector<HTMLButtonElement>('button.primary') ?? null
+	/** What was said to the host, in order. */
+	const said = () => calls.map(([, [line]]) => line)
 	function paste(text: string) {
 		const field = container.querySelector<HTMLInputElement>('.mod-add input')!
 		fireEvent.input(field, { target: { value: text } })
 		fireEvent.keyDown(field, { key: 'Enter' })
 	}
-	return { container, calls, rows, offers, footer, command, apply, paste }
+	return { container, calls, rows, offers, said, paste }
 }
 
 describe('the mods pane', () => {
@@ -199,7 +197,7 @@ describe('the mods pane', () => {
 	})
 
 	test('shows what is loaded, where it comes from, and what the host offers', () => {
-		const { rows, offers, footer } = pane({ loaded: [sphere] })
+		const { rows, offers, said } = pane({ loaded: [sphere] })
 		expect(rows().map((row) => [row.name, row.source])).toEqual([
 			['sphere spawner mod v1.0.0', 'dev/sphere9108a17'],
 		])
@@ -207,38 +205,46 @@ describe('the mods pane', () => {
 			'sphere-spawner',
 			'tiny maps v1',
 		])
-		expect(offers()[0]?.hasAttribute('disabled')).toBe(true)
-		expect(footer()).toBeNull()
+		expect(offers()[0]?.getAttribute('aria-pressed')).toBe('true')
+		expect(said()).toEqual([])
 	})
 
-	test('an offer clicked, a page pasted, and a row removed make one command', () => {
-		const { rows, offers, command, paste, container } = pane({
+	test('a used-recently chip toggles: clicked while in the list, it comes out', () => {
+		const { rows, offers, said } = pane({ boss: 'me', loaded: [sphere] })
+		fireEvent.click(offers()[0]!)
+		expect(said()).toEqual(['!mutator clear'])
+		expect(rows()).toHaveLength(0)
+		expect(offers()[0]?.getAttribute('aria-pressed')).toBe('false')
+	})
+
+	test('an offer clicked, a page pasted, and a row removed each go to the host', () => {
+		const { rows, offers, said, paste } = pane({
+			boss: 'me',
 			loaded: [sphere],
 		})
 		fireEvent.click(offers()[1]!)
 		paste('https://github.com/dev/tanks/tree/wip')
+		// Each builds on what was sent before, though the host has loaded none.
 		expect(rows().map((row) => row.name)).toEqual([
 			'sphere spawner mod v1.0.0',
 			'tiny maps v1',
 			'tanks',
 		])
-		expect(command()).toBe(
-			'!mutator set sphere-spawner, tiny maps v1, dev/tanks@wip',
-		)
-		expect(
-			container.querySelector('.mod-footer .mod-summary')?.textContent,
-		).toBe('2 added')
 		fireEvent.click(rows()[0]!.row.querySelector('button.danger')!)
-		expect(command()).toBe('!mutator set tiny maps v1, dev/tanks@wip')
+		expect(said()).toEqual([
+			'!mutator set sphere-spawner, tiny maps v1',
+			'!mutator set sphere-spawner, tiny maps v1, dev/tanks@wip',
+			'!mutator set tiny maps v1, dev/tanks@wip',
+		])
 	})
 
 	test('what is neither an offer nor a repository is refused in place', () => {
-		const { paste, container, footer } = pane({ loaded: [sphere] })
+		const { paste, container, said } = pane({ loaded: [sphere] })
 		paste('rogue archive')
 		expect(container.querySelector('.mod-problem')?.textContent).toContain(
 			'Not a GitHub repository',
 		)
-		expect(footer()).toBeNull()
+		expect(said()).toEqual([])
 	})
 
 	/** Lays the loaded rows out 40px apart, top to bottom, as jsdom will not. */
@@ -250,7 +256,10 @@ describe('the mods pane', () => {
 	}
 
 	test('a row is dragged into load order, the others making room', () => {
-		const { rows, offers, command, container } = pane({ loaded: [sphere] })
+		const { rows, offers, said, container } = pane({
+			boss: 'me',
+			loaded: [sphere],
+		})
 		fireEvent.click(offers()[1]!)
 		laidOut(container)
 		fireEvent.pointerDown(rows()[1]!.row, { clientX: 10, clientY: 60 })
@@ -260,14 +269,17 @@ describe('the mods pane', () => {
 			'sphere spawner mod v1.0.0',
 		])
 		expect(document.querySelector('.drag-ghost')).not.toBeNull()
-		expect(command()).toBe('!mutator set sphere-spawner, tiny maps v1')
+		expect(said()).toEqual(['!mutator set sphere-spawner, tiny maps v1'])
 		fireEvent.pointerUp(window, { clientX: 10, clientY: 10 })
 		expect(document.querySelector('.drag-ghost')).toBeNull()
-		expect(command()).toBe('!mutator set tiny maps v1, sphere-spawner')
+		expect(said().at(-1)).toBe('!mutator set tiny maps v1, sphere-spawner')
 	})
 
 	test('a drag let go of, or a press on a control, moves nothing', () => {
-		const { rows, offers, command, container } = pane({ loaded: [sphere] })
+		const { rows, offers, said, container } = pane({
+			boss: 'me',
+			loaded: [sphere],
+		})
 		fireEvent.click(offers()[1]!)
 		laidOut(container)
 		fireEvent.pointerDown(rows()[1]!.row, { clientX: 10, clientY: 60 })
@@ -283,7 +295,7 @@ describe('the mods pane', () => {
 		})
 		fireEvent.pointerMove(window, { clientX: 10, clientY: 10 })
 		fireEvent.pointerUp(window, { clientX: 10, clientY: 10 })
-		expect(command()).toBe('!mutator set sphere-spawner, tiny maps v1')
+		expect(said()).toEqual(['!mutator set sphere-spawner, tiny maps v1'])
 	})
 
 	test('a mod from GitHub links to the commit the room loads, and a press there is no drag', async () => {
@@ -291,7 +303,10 @@ describe('the mods pane', () => {
 		vi.mocked(invoke).mockImplementation(async (command, args) => {
 			if (command === 'open_url') opened.push((args as { url: string }).url)
 		})
-		const { rows, offers, command, container } = pane({ loaded: [sphere] })
+		const { rows, offers, said, container } = pane({
+			boss: 'me',
+			loaded: [sphere],
+		})
 		fireEvent.click(offers()[1]!)
 		laidOut(container)
 		const links =
@@ -301,7 +316,7 @@ describe('the mods pane', () => {
 		fireEvent.pointerDown(link, { clientX: 10, clientY: 20 })
 		fireEvent.pointerMove(window, { clientX: 10, clientY: 70 })
 		fireEvent.pointerUp(window, { clientX: 10, clientY: 70 })
-		expect(command()).toBe('!mutator set sphere-spawner, tiny maps v1')
+		expect(said()).toEqual(['!mutator set sphere-spawner, tiny maps v1'])
 		fireEvent.click(link)
 		fireEvent.click(links[0]!)
 		await waitFor(() =>
@@ -348,30 +363,26 @@ describe('the mods pane', () => {
 		expect(quiet?.row.querySelector('.mod-expand')).toBeNull()
 	})
 
-	test('the summary is the legend of the row markers', async () => {
+	test('a row the host has not loaded yet says how it changes', async () => {
 		newestIs(NEWER)
-		const { rows, offers, container } = pane({ loaded: [sphere] })
+		const { rows, offers } = pane({ boss: 'me', loaded: [sphere] })
 		fireEvent.click(offers()[1]!)
 		fireEvent.click(rows()[0]!.row.querySelector('[aria-label^="Update"]')!)
 		await waitFor(() =>
 			expect(rows()[0]?.row.classList.contains('moving')).toBe(true),
 		)
-		const parts = [...container.querySelectorAll('.mod-summary .mod-change')]
-		expect(parts.map((part) => [part.className, part.textContent])).toEqual([
-			['mod-change added', '1 added'],
-			['mod-change moving', '1 to another commit'],
-		])
+		expect(rows()[1]?.row.classList.contains('added')).toBe(true)
 		expect(rows()[0]?.row.getAttribute('title')).toContain(
-			'Goes to another commit when the draft is applied',
+			'Goes to another commit once the host loads it',
 		)
 		expect(rows()[1]?.row.getAttribute('title')).toContain(
-			'Added by this draft',
+			'Added; waiting for the host to load it',
 		)
 	})
 
 	test('an update that GitHub says changes nothing leaves the room as it is', async () => {
 		newestIs(SHA)
-		const { rows, footer } = pane({ loaded: [sphere] })
+		const { rows, said } = pane({ boss: 'me', loaded: [sphere] })
 		const update = rows()[0]!.row.querySelector<HTMLButtonElement>(
 			'[aria-label^="Update"]',
 		)!
@@ -383,15 +394,15 @@ describe('the mods pane', () => {
 		// Nothing to move: the row says so, and the button stays off.
 		expect(update.disabled).toBe(true)
 		expect(update.title).toBe('At the newest commit already')
-		expect(footer()).toBeNull()
+		expect(said()).toEqual([])
 		expect(rows()[0]?.row.classList.contains('moving')).toBe(false)
 	})
 
 	test('a mod from GitHub is moved to the newest commit, or pointed elsewhere', async () => {
 		newestIs(NEWER)
-		const { rows, command, container } = pane({ loaded: [sphere] })
+		const { rows, said, container } = pane({ boss: 'me', loaded: [sphere] })
 		fireEvent.click(rows()[0]!.row.querySelector('[aria-label^="Update"]')!)
-		await waitFor(() => expect(command()).toBe('!mutator set dev/sphere'))
+		await waitFor(() => expect(said()).toEqual(['!mutator set dev/sphere']))
 		expect(rows()[0]?.source).toMatch(/^dev\/sphere9108a17→newest · .+ ago$/)
 		expect(rows()[0]?.row.classList.contains('moving')).toBe(true)
 		fireEvent.click(rows()[0]!.row.querySelector('[aria-label^="Edit"]')!)
@@ -399,39 +410,36 @@ describe('the mods pane', () => {
 		fireEvent.input(field, { target: { value: 'dev/sphere@main' } })
 		fireEvent.keyDown(field, { key: 'Enter' })
 		expect(rows()[0]?.source).toBe('dev/sphere9108a17→newest of main')
-		expect(command()).toBe('!mutator set dev/sphere@main')
+		expect(said().at(-1)).toBe('!mutator set dev/sphere@main')
 	})
 
-	test('a boss applies, a seated player votes, a spectator only drafts', () => {
+	test('a boss is taken at their word, and anyone else is the host’s to answer', () => {
+		const ADDED = '!mutator set sphere-spawner, tiny maps v1'
 		const boss = pane({ boss: 'me', loaded: [sphere] })
 		fireEvent.click(boss.offers()[1]!)
-		expect(boss.apply()?.textContent).toBe('Apply')
-		fireEvent.click(boss.apply()!)
-		expect(boss.calls).toEqual([
-			['sayBattle', ['!mutator set sphere-spawner, tiny maps v1']],
-		])
+		expect(boss.said()).toEqual([ADDED])
+		expect(boss.rows()).toHaveLength(2)
 		cleanup()
 		setDraft(1, null)
 		const player = pane({ boss: 'someone', loaded: [sphere] })
 		fireEvent.click(player.offers()[1]!)
-		expect(player.apply()?.textContent).toBe('Vote to apply')
-		expect(player.apply()?.disabled).toBe(false)
+		expect(player.said()).toEqual([ADDED])
+		// A vote may fail: the list stays the room's until the host says otherwise.
+		expect(player.rows()).toHaveLength(1)
 		cleanup()
-		setDraft(1, null)
+		// Likely refused, but a host may know a spectator by name: it is asked.
 		const watcher = pane({ player: false, loaded: [sphere] })
-		fireEvent.click(watcher.offers()[1]!)
-		expect(watcher.apply()?.disabled).toBe(true)
-		expect(watcher.apply()?.title).toBe('Join as a player to change mods')
-		expect(watcher.command()).toBe('!mutator set sphere-spawner, tiny maps v1')
+		expect(watcher.container.querySelector('.toolbar .note')?.textContent).toBe(
+			'Join as a player to change mods',
+		)
+		fireEvent.click(watcher.rows()[0]!.row.querySelector('button.danger')!)
+		expect(watcher.said()).toEqual(['!mutator clear'])
 	})
 
-	test('a draft the host has taken clears itself; discarded, it is gone', () => {
-		const first = pane({ loaded: [sphere] })
+	test('what was sent shows until the host has loaded it', () => {
+		const first = pane({ boss: 'me', loaded: [sphere] })
 		fireEvent.click(first.offers()[1]!)
-		expect(first.footer()).not.toBeNull()
-		fireEvent.click(first.footer()!.querySelector('button')!)
-		expect(first.footer()).toBeNull()
-		fireEvent.click(first.offers()[1]!)
+		expect(first.rows()[1]?.row.classList.contains('added')).toBe(true)
 		cleanup()
 		const tiny: MutatorView = {
 			...sphere,
@@ -440,20 +448,20 @@ describe('the mods pane', () => {
 			description: null,
 			source: null,
 		}
-		const after = pane({ loaded: [sphere, tiny] })
-		expect(after.footer()).toBeNull()
+		const after = pane({ boss: 'me', loaded: [sphere, tiny] })
 		expect(after.rows().map((row) => row.name)).toEqual([
 			'sphere spawner mod v1.0.0',
 			'tiny maps v1',
 		])
+		expect(after.rows()[1]?.row.classList.contains('added')).toBe(false)
 	})
 
-	test('a set a room loaded before comes back as the draft', () => {
+	test('a set a room loaded before is loaded again', () => {
 		rememberSet([
 			sphere,
 			{ ...sphere, name: 'tiny maps v1', title: 'tiny maps v1', source: null },
 		])
-		const { container, command, rows } = pane({ loaded: [] })
+		const { container, said, rows } = pane({ boss: 'me', loaded: [] })
 		const set = container.querySelector('.mod-row.set')!
 		expect(set.querySelector('.mod-name')?.textContent).toBe(
 			'sphere spawner mod v1.0.0 + tiny maps v1',
@@ -463,7 +471,7 @@ describe('the mods pane', () => {
 			'sphere spawner mod v1.0.0',
 			'tiny maps v1',
 		])
-		expect(command()).toBe('!mutator set sphere-spawner, tiny maps v1')
+		expect(said()).toEqual(['!mutator set sphere-spawner, tiny maps v1'])
 		fireEvent.click(set.querySelector('button.danger')!)
 		expect(container.querySelector('.mod-row.set')).toBeNull()
 	})

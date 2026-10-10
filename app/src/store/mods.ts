@@ -10,12 +10,13 @@ import {
 import { localStore } from '../lib/resize'
 
 /**
- * The draft of what a room should load, and the sets games were played with.
+ * What a room was asked to load and has not announced yet, and the sets
+ * games were played with.
  *
  * The draft lives here rather than in the pane because the pane is one face
- * of three: switching to Setup and back should not lose what was being put
- * together. It belongs to one room, by id, so a draft never follows you into
- * the next room.
+ * of three: switching to Setup and back should not lose what is on its way.
+ * It belongs to one room, by id, so a draft never follows you into the next
+ * room.
  */
 
 const [draft, setDraftHeld] = createSignal<{

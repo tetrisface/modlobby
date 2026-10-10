@@ -32,7 +32,6 @@ import {
 	removePick,
 	sameList,
 	sourceLinks,
-	summary,
 	updatedTo,
 } from '../lib/mods'
 import { hostsMods, offers } from '../lib/mutators'
@@ -242,15 +241,15 @@ function Intro() {
 /**
  * What the room loads on top of its game.
  *
- * The list is edited as a draft -- dragged into order, added to from what the
- * host offers or from a pasted GitHub page, trimmed, moved to a newer commit
- * -- and goes to the host as one command, so one vote covers the lot. A boss
- * is taken at their word; a seated player puts it to the room; anyone else
- * can still draft, and reads why it will not go.
+ * Every change -- a drag into order, an add from what the host offers or from
+ * a pasted GitHub page, a removal, a move to a newer commit -- goes to the
+ * host as it is made, as the whole list in one command. Whether that applies
+ * it, calls a vote or is refused is the host's call: the toolbar's refusal
+ * is a guess, since a host may know somebody by name.
  *
- * Nothing here is local state the room does not know: the draft is only ever
- * a difference from what the host announces, and clears itself once the host
- * announces it.
+ * Nothing here is local state the room does not know: what a boss sent shows
+ * until the host announces it, and a vote shows nothing until it passes,
+ * since it may not.
  */
 function Editor() {
 	const room = useRoom()
@@ -260,9 +259,8 @@ function Editor() {
 	const draft = () => draftFor(roomId())
 	const shown = () => draft() ?? current()
 	const drafting = () => draft() !== null
-	const edit = (next: Pick[]) => setDraft(roomId(), next)
 
-	// The host announced what the draft asked for: it is the room's now.
+	// The host announced what was sent: it is the room's now.
 	createEffect(() => {
 		const held = draft()
 		if (held && sameList(held, current())) setDraft(roomId(), null)
@@ -271,6 +269,18 @@ function Editor() {
 	const refusal = () => modRefusal(room)
 	const [problem, setProblem] = createSignal<string | null>(null)
 
+	// Never held back here: the host applies it, calls the vote, or says why not.
+	async function edit(next: Pick[]) {
+		if (sameList(next, shown())) return
+		if (bossing(room)) setDraft(roomId(), next)
+		try {
+			await room.io.sayBattle(command(next))
+		} catch (error) {
+			setDraft(roomId(), null)
+			pushNotice('warning', describeError(error))
+		}
+	}
+
 	function add(text: string): boolean {
 		const next = addPick(shown(), text, offered())
 		if ('problem' in next) {
@@ -278,16 +288,8 @@ function Editor() {
 			return false
 		}
 		setProblem(null)
-		edit(next.picks)
+		void edit(next.picks)
 		return true
-	}
-
-	function apply() {
-		const held = draft()
-		if (!held) return
-		void room.io
-			.sayBattle(command(held))
-			.catch((error) => pushNotice('warning', describeError(error)))
 	}
 
 	/**
@@ -315,10 +317,9 @@ function Editor() {
 			}
 		}
 		setChecking(false)
-		const next = shown().map(
-			(pick) => (pick.repo && moved.get(pick.repo)) || pick,
+		await edit(
+			shown().map((pick) => (pick.repo && moved.get(pick.repo)) || pick),
 		)
-		if (drafting() || !sameList(next, current())) edit(next)
 	}
 
 	/**
@@ -369,7 +370,6 @@ function Editor() {
 			<div class='mods-body'>
 				<div class='setup-section'>
 					<span>Loaded</span>
-					<span class='count'>{shown().length}</span>
 				</div>
 				<div class='mod-rows loaded'>
 					<For
@@ -387,7 +387,7 @@ function Editor() {
 								onPress={reorderGesture({
 									from: index,
 									onOver: setFlying,
-									onDrop: (from, to) => edit(movePick(shown(), from, to)),
+									onDrop: (from, to) => void edit(movePick(shown(), from, to)),
 									onTap: () => pick.description && toggle(pick),
 								})}
 								checking={checking()}
@@ -399,12 +399,12 @@ function Editor() {
 								onEdit={(text) => {
 									const next = editPick(pick, text)
 									if (next === null) return false
-									edit(
+									void edit(
 										shown().map((held, at) => (at === index() ? next : held)),
 									)
 									return true
 								}}
-								onRemove={() => edit(removePick(shown(), index()))}
+								onRemove={() => void edit(removePick(shown(), index()))}
 							/>
 						)}
 					</For>
@@ -431,15 +431,20 @@ function Editor() {
 									<button
 										class='chip-choice'
 										classList={{ on: held() !== undefined }}
-										disabled={held() !== undefined}
+										aria-pressed={held() !== undefined}
 										title={
 											held()
-												? `${held()?.label} is in the list`
+												? `Remove ${held()?.label}`
 												: offer.source
 													? `Add ${offer.name}, at the commit it was played at\n${offer.source.replace(/^github:/, '')}`
 													: `Add ${offer.name}`
 										}
-										onClick={() => add(offer.name)}
+										onClick={() => {
+											const pick = held()
+											if (pick)
+												void edit(shown().filter((each) => each !== pick))
+											else add(offer.name)
+										}}
 									>
 										{offer.name}
 										<Show when={offer.date}>
@@ -458,7 +463,6 @@ function Editor() {
 						title='The combinations of mods your games were played with, newest first, in the order and at the commits last played'
 					>
 						<span>Your recent sets</span>
-						<span class='count'>{modSets().length}</span>
 					</div>
 					<div class='mod-rows sets'>
 						<For each={modSets()}>
@@ -467,7 +471,7 @@ function Editor() {
 									set={set}
 									onUse={() => {
 										setProblem(null)
-										edit(adopt(set.mods, current(), offered()))
+										void edit(adopt(set.mods, current(), offered()))
 									}}
 									onForget={() => forgetSet(set.at)}
 								/>
@@ -478,45 +482,15 @@ function Editor() {
 
 				<MakeYourOwn />
 			</div>
-
-			<Show when={draft()}>
-				{(held) => (
-					<footer class='mod-footer'>
-						<span class='mod-summary'>
-							<For each={summary(held(), current())} fallback='no change'>
-								{(part) => (
-									<span class={`mod-change ${part.change}`}>{part.words}</span>
-								)}
-							</For>
-						</span>
-						<code class='mod-command' title='What is said to the host'>
-							{command(held())}
-						</code>
-						<span class='spacer' />
-						<button onClick={() => setDraft(roomId(), null)}>Discard</button>
-						<button
-							class='primary'
-							disabled={refusal() !== null}
-							title={refusal() ?? command(held())}
-							onClick={apply}
-						>
-							{bossing(room) ? 'Apply' : 'Vote to apply'}
-						</button>
-					</footer>
-				)}
-			</Show>
 		</div>
 	)
 }
 
-/**
- * What a draft's marker says about a row, in its tooltip and, beside the same
- * colour, in the footer's summary.
- */
+/** What a row's marker says while the host has not loaded what was sent. */
 const CHANGE_WORDS: Record<Change, string | null> = {
 	same: null,
-	added: 'Added by this draft',
-	moving: 'Goes to another commit when the draft is applied',
+	added: 'Added; waiting for the host to load it',
+	moving: 'Goes to another commit once the host loads it',
 }
 
 /**
@@ -742,7 +716,7 @@ function AddRow(props: {
 	)
 }
 
-/** A set a room loaded before, ready to become the draft. */
+/** A set a room loaded before, ready to be loaded again. */
 function SetRow(props: {
 	set: ModSet
 	onUse: () => void
@@ -762,7 +736,7 @@ function SetRow(props: {
 			<ActionCell>
 				<CellButton
 					icon='act-reconnect'
-					title='Make this set the draft'
+					title='Load this set'
 					label={`Use ${names()}`}
 					onClick={props.onUse}
 				>

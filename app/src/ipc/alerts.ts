@@ -13,17 +13,18 @@ import { settings } from '../store/settings'
 /**
  * Saying that something happened, as loudly as the settings ask for.
  *
- * Three choices that do three different things, and never each other's. `off`
- * says nothing. `lobby` puts a line in this window's corner. `desktop` raises
- * a notification from the operating system, and only while the news is not
- * already on screen — a desktop toast for something you are looking at is
+ * `off` says nothing. `lobby` puts a line in this window's corner. `desktop`
+ * raises a notification from the operating system, and only while the news is
+ * not already on screen — a desktop toast for something you are looking at is
  * noise, which is the line Chobby draws too (`api_notification_handler.lua`).
- * See [`onScreen`] for what counts as looking.
+ * `both` is the corner while you look and the desktop while you do not; never
+ * the two for one event. See [`onScreen`] for what counts as looking.
  *
- * `desktop` deliberately does not fall back to the lobby's corner. It did, and
- * that made the choices overlap: picking `desktop` also got you what `lobby`
- * does. Nothing is lost by the silence — every one of these events leaves its
- * own mark in the window as well, an unread badge, a marked line, a vote bar.
+ * `desktop` alone deliberately does not fall back to the lobby's corner. It
+ * did, and that made the choices overlap: picking `desktop` also got you what
+ * `lobby` does. Nothing is lost by the silence — every one of these events
+ * leaves its own mark in the window as well, an unread badge, a marked line, a
+ * vote bar.
  *
  * A desktop alert also flashes the taskbar entry, which is the half of this
  * that always works: a toast can be refused, missed, or swallowed by a focus
@@ -123,7 +124,8 @@ export function plan(
 ): 'nothing' | 'lobby' | 'desktop' {
 	if (where === 'off') return 'nothing'
 	if (where === 'lobby') return 'lobby'
-	return focused ? 'nothing' : 'desktop'
+	if (!focused) return 'desktop'
+	return where === 'both' ? 'lobby' : 'nothing'
 }
 
 /** Said once, not once per alert, when the desktop will not play along. */

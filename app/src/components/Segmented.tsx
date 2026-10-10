@@ -10,8 +10,8 @@ export type Segment<T extends string> = {
 
 /**
  * One of a few, side by side with a hairline between them: the app's enum
- * toggle. Exactly one is on. Greyed as a whole when the choice does not apply
- * where it is shown, with `title` saying why.
+ * toggle. Exactly one is on, unless `on` lights more. Greyed as a whole when
+ * the choice does not apply where it is shown, with `title` saying why.
  *
  * Drawn by position, so a label that changes -- a count in it -- keeps its
  * button, and the focus on it.
@@ -21,10 +21,14 @@ export function Segmented<T extends string>(props: {
 	label: string
 	value: T
 	options: readonly Segment<T>[]
+	/** Which segments are lit, for a value that stands for several of them. */
+	on?: (option: T) => boolean
 	onChange: (value: T) => void
 	disabled?: boolean
 	title?: string
 }) {
+	const lit = (option: T) =>
+		props.on ? props.on(option) : option === props.value
 	return (
 		<div
 			class='choice'
@@ -38,9 +42,9 @@ export function Segmented<T extends string>(props: {
 						type='button'
 						classList={{
 							...option().classList,
-							on: option().value === props.value,
+							on: lit(option().value),
 						}}
-						aria-pressed={option().value === props.value}
+						aria-pressed={lit(option().value)}
 						disabled={props.disabled}
 						title={option().title}
 						onClick={() => props.onChange(option().value)}

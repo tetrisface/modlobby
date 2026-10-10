@@ -15,7 +15,6 @@ import {
 	remember,
 	sameList,
 	sourceLinks,
-	summary,
 	updatePick,
 	updatedTo,
 	writeSets,
@@ -264,22 +263,11 @@ describe('what a draft says', () => {
 		expect(changeOf(editPick(first!, 'dev/tanks')!, room())).toBe('added')
 	})
 
-	test('the command, and a summary', () => {
+	test('the command, and whether two lists ask for the same', () => {
 		expect(command(room())).toBe('!mutator set sphere-spawner, tiny maps v1')
 		expect(command([])).toBe('!mutator clear')
 		const [first, second] = room()
-		expect(summary([second!, first!], room())).toEqual([
-			{ change: 'reordered', words: 'reordered' },
-		])
-		expect(summary([updatePick(first!)], room())).toEqual([
-			{ change: 'removed', words: '1 removed' },
-			{ change: 'moving', words: '1 to another commit' },
-		])
-		const added = addPick(room(), 'dev/tanks', offered)
-		expect('picks' in added && summary(added.picks, room())).toEqual([
-			{ change: 'added', words: '1 added' },
-		])
-		expect(summary(room(), room())).toEqual([])
+		expect(sameList([second!, first!], room())).toBe(false)
 		expect(sameList(room(), room())).toBe(true)
 		expect(sameList([first!], room())).toBe(false)
 	})
