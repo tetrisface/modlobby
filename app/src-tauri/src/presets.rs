@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use presets::{Book, Preset, Sections, Stamp};
 use tauri::State;
 
-use crate::commands::{ApiError, Result};
+use crate::commands::{ApiError, Result, open};
 use crate::state::App;
 
 impl From<presets::Error> for ApiError {
@@ -61,6 +61,12 @@ pub fn list_presets(app: State<'_, App>) -> Result<Book> {
 #[tauri::command]
 pub fn chobby_presets_path(app: State<'_, App>) -> Option<String> {
 	chobby_file(&app).map(|path| path.display().to_string())
+}
+
+/// Our own preset file, in whatever opens `.json` here.
+#[tauri::command]
+pub fn open_presets_file(app: State<'_, App>) -> Result<()> {
+	open(app.presets.path().to_path_buf())
 }
 
 /// The current room, as a preset.

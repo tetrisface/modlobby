@@ -601,6 +601,7 @@ pub fn run() {
 			presets::pve_score,
 			presets::list_presets,
 			presets::chobby_presets_path,
+			presets::open_presets_file,
 			presets::save_preset,
 			presets::preset_from_replay,
 			presets::delete_preset,

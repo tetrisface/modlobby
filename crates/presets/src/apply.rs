@@ -141,6 +141,10 @@ pub fn plan(preset: &Preset, room: &Room, sections: Sections) -> Plan {
 
 	if sections.modoptions {
 		for (key, value) in &preset.modoptions {
+			// Goes out with the start boxes, below, as the one arrangement.
+			if key == START_BOX_OVERRIDE {
+				continue;
+			}
 			// The one optimisation that matters: at roughly a command per
 			// second, a setting the room already has costs a second for
 			// nothing.
@@ -154,7 +158,13 @@ pub fn plan(preset: &Preset, room: &Room, sections: Sections) -> Plan {
 
 	let mut start_boxes = Vec::new();
 	let mut start_boxes_unsent = false;
-	if sections.start_boxes && !preset.start_boxes.is_empty() {
+	// The preset's own arrangement, polygons and all. Its rectangles are
+	// Chobby's copy of the room's rectangles, which are not what BAR plays.
+	let own = preset
+		.modoptions
+		.get(START_BOX_OVERRIDE)
+		.filter(|blob| !blob.is_empty());
+	if sections.start_boxes && (own.is_some() || !preset.start_boxes.is_empty()) {
 		start_boxes = preset
 			.start_boxes
 			.iter()
@@ -208,7 +218,11 @@ pub fn plan(preset: &Preset, room: &Room, sections: Sections) -> Plan {
 			.modoptions
 			.get(START_BOX_OVERRIDE)
 			.is_some_and(|held| !held.is_empty());
-		match startbox::encode_override(&arrangement) {
+		let encoded = match own {
+			Some(blob) => Ok(blob.clone()),
+			None => startbox::encode_override(&arrangement),
+		};
+		match encoded {
 			Ok(encoded) if sections.reset || !occupied => {
 				if !wiped && room.modoptions.get(START_BOX_OVERRIDE) == Some(&encoded) {
 					already_set += 1;
@@ -221,8 +235,7 @@ pub fn plan(preset: &Preset, room: &Room, sections: Sections) -> Plan {
 		}
 	}
 
-	// Stable, so only the set moves: behind the modoption's override and the
-	// one built from the rectangles alike.
+	// Stable, so only the set moves: behind the override.
 	let set = format!("!bSet {START_BOXES_SET} ");
 	lines.sort_by_key(|line| line.starts_with(&set));
 
@@ -349,6 +362,21 @@ mod tests {
 					.any(|line| line == "!lock" || line == "!unlock")
 			);
 		}
+	}
+
+	#[test]
+	fn the_presets_own_arrangement_wins_over_its_rectangles() {
+		let mut preset = preset();
+		preset
+			.modoptions
+			.insert(START_BOX_OVERRIDE.into(), "theirs".into());
+		let plan = plan(&preset, &Room::default(), Sections::default());
+		let sent: Vec<_> = plan
+			.lines
+			.iter()
+			.filter(|line| line.contains(START_BOX_OVERRIDE))
+			.collect();
+		assert_eq!(sent, [&format!("!bSet {START_BOX_OVERRIDE} theirs")]);
 	}
 
 	#[test]

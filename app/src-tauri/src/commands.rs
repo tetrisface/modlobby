@@ -1947,7 +1947,7 @@ pub(crate) fn data_dirs(app: &App) -> Result<content::DataDirs> {
 	})
 }
 
-fn open(path: PathBuf) -> Result<()> {
+pub(crate) fn open(path: PathBuf) -> Result<()> {
 	tauri_plugin_opener::open_path(path, None::<&str>)
 		.map_err(|err| ApiError::new("opener", err.to_string()))
 }

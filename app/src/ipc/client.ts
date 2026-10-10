@@ -240,6 +240,7 @@ export const api = {
 		invoke<ModOption[]>('ai_options', { engine, ai }),
 	listPresets: () => invoke<Book>('list_presets'),
 	chobbyPresetsPath: () => invoke<string | null>('chobby_presets_path'),
+	openPresetsFile: () => invoke<void>('open_presets_file'),
 	savePreset: (name: string) => invoke<Book>('save_preset', { name }),
 	presetFromReplay: (path: string, name: string) =>
 		invoke<Book>('preset_from_replay', { path, name }),

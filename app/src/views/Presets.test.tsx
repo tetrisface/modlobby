@@ -152,7 +152,7 @@ describe('Presets', () => {
 		).toBe(false)
 	})
 
-	test('the toolbar reads Save, Load, Import from Chobby, Export to Chobby', async () => {
+	test('the toolbar reads Save, Load, Import, Export, Open file', async () => {
 		const { container } = render(pane)
 		await settle()
 		const labels = [...container.querySelectorAll('.toolbar button')].map(
@@ -163,6 +163,7 @@ describe('Presets', () => {
 			'Load',
 			'Import from Chobby',
 			'Export to Chobby',
+			'Open file',
 		])
 	})
 

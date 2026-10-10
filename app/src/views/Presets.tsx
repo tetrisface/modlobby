@@ -243,6 +243,13 @@ export function Presets() {
 				>
 					Export to Chobby
 				</button>
+				<button
+					disabled={!book()?.presets.length}
+					title='Open our presets.json'
+					onClick={() => void act('open', api.openPresetsFile)}
+				>
+					Open file
+				</button>
 				<span class='spacer' />
 				<span class='muted'>{rows().length} presets</span>
 			</header>
