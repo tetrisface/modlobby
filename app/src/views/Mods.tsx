@@ -85,8 +85,8 @@ const EXAMPLE_LINK: SourceLink = {
 }
 
 /**
- * How a mod is made, for whoever is ready to load one: what it is, one to
- * read, and how it gets into a room.
+ * How a mod is made: what it is, one to read, and how it gets into a room.
+ * Shown in every state of the pane, logged in or not.
  */
 function MakeYourOwn() {
 	return (
@@ -120,8 +120,8 @@ function MakeYourOwn() {
 /**
  * A room whose host loads no mods: what mods are, an account on the mods
  * server -- made right here -- and, once logged in, the two ways on -- a room
- * of your own there, or the list with the modded rooms first -- and how a mod
- * is made.
+ * of your own there, or the list with the modded rooms first. How a mod is
+ * made closes it either way.
  */
 function Intro() {
 	const navigate = useNavigate()
@@ -181,8 +181,8 @@ function Intro() {
 	return (
 		<div class='mods mods-intro'>
 			<p class='muted'>
-				Mods go on top of a game: new units, new rules, whole new modes. A
-				lobby's host loads them straight from GitHub.
+				Mods, also called mutators, go on top of a game: new units, new rules,
+				whole new modes. A lobby's host loads them straight from GitHub.
 			</p>
 			<Show
 				when={server()}
@@ -216,7 +216,6 @@ function Intro() {
 									Find a lobby
 								</button>
 							</div>
-							<MakeYourOwn />
 						</Match>
 						<Match when={entry()?.username.trim()}>
 							<p class='muted'>
@@ -235,6 +234,7 @@ function Intro() {
 					</Switch>
 				)}
 			</Show>
+			<MakeYourOwn />
 		</div>
 	)
 }

@@ -137,8 +137,8 @@ describe('the mods pane', () => {
 		expect(container.querySelector('.mods-intro')?.textContent).toContain(
 			"This lobby's host loads none",
 		)
-		// How a mod is made waits for whoever can load one.
-		expect(container.querySelector('.mod-tree')).toBeNull()
+		// How a mod is made shows before any login.
+		expect(container.querySelector('.mod-tree')).not.toBeNull()
 		// No account there yet: the way in is to make one, right here.
 		expect(
 			container.querySelector('input[autocomplete="username"]'),
@@ -165,7 +165,7 @@ describe('the mods pane', () => {
 		expect(container.textContent).toContain('as tetrisface2')
 		expect(container.querySelector('input[type="email"]')).toBeNull()
 
-		// Set up, so shown how a mod is made: one to read, and the way to it.
+		// How a mod is made: one to read, and the way to it.
 		expect(container.querySelector('.mod-tree')?.textContent).toContain(
 			'modinfo.lua',
 		)
