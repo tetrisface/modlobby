@@ -3,8 +3,14 @@ import { invoke } from '@tauri-apps/api/core'
 import { createSignal } from 'solid-js'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { VoteView } from '../ipc/bindings/VoteView'
-import { fakeRoom, myBattle } from './room/fixture'
-import { RoomProvider } from './room/model'
+import {
+	type Calls,
+	fakeRoom,
+	myBattle,
+	recordingIo,
+	user,
+} from './room/fixture'
+import { RoomProvider, type RoomModel } from './room/model'
 import { VoteBar } from './VoteBar'
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -25,9 +31,20 @@ const vote = (over: Partial<VoteView> = {}): VoteView => ({
 })
 
 /** The bar over a room whose vote the test can change under it. */
-function open(first: VoteView | null) {
+function open(
+	first: VoteView | null,
+	over: { boss?: string; moderator?: boolean; io?: RoomModel['io'] } = {},
+) {
 	const [current, setVote] = createSignal(first)
-	const model = fakeRoom({ my: () => myBattle({ vote: current() }) })
+	const model = fakeRoom({
+		my: () => myBattle({ vote: current(), boss: over.boss ?? null }),
+		users: () => ({
+			me: user('me', {
+				status: { ...user('me').status, moderator: over.moderator ?? false },
+			}),
+		}),
+		io: over.io ?? recordingIo([]),
+	})
 	const rendered = render(() => (
 		<RoomProvider value={model}>
 			<VoteBar teams={2} />
@@ -104,6 +121,41 @@ describe('VoteBar', () => {
 		expect(container.querySelector('.vote-left')?.textContent).toBe('24s')
 		const bar = container.querySelector<HTMLElement>('.vote-bar')
 		expect(bar?.style.getPropertyValue('--left')).toBe('1')
+	})
+})
+
+describe('End vote', () => {
+	const endButton = (container: HTMLElement) =>
+		container.querySelector<HTMLButtonElement>('.vote-end')
+
+	test('is offered to whoever SPADS takes !endVote from', () => {
+		expect(endButton(open(vote({ by: 'me' })).container)).not.toBeNull()
+		cleanup()
+		expect(
+			endButton(open(vote({ by: 'x', command: 'joinAs me' })).container),
+		).not.toBeNull()
+		cleanup()
+		expect(endButton(open(vote(), { boss: 'x,me' }).container)).not.toBeNull()
+		cleanup()
+		expect(
+			endButton(open(vote(), { moderator: true }).container),
+		).not.toBeNull()
+	})
+
+	test('is not offered to anyone else', () => {
+		expect(endButton(open(vote(), { boss: 'x' }).container)).toBeNull()
+		cleanup()
+		expect(
+			endButton(open(vote({ command: 'joinAs someone' })).container),
+		).toBeNull()
+	})
+
+	test('says !endVote in the room', async () => {
+		const calls: Calls = []
+		const { container } = open(vote({ by: 'me' }), { io: recordingIo(calls) })
+		fireEvent.click(endButton(container)!)
+		await settle()
+		expect(calls).toEqual([['sayBattle', ['!endVote']]])
 	})
 })
 

@@ -2900,6 +2900,10 @@ body.resizing-y {
 	font-variant-numeric: tabular-nums;
 }
 
+.vote-end {
+	padding: 0.25rem 0.625rem;
+}
+
 .vote-left {
 	font-family: var(--mono);
 	font-size: 0.75rem;

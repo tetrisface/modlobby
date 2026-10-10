@@ -1,6 +1,7 @@
 import { Show, createEffect, createMemo, createSignal, on } from 'solid-js'
 import { BoxDiff } from '../components/BoxDiff'
 import { isBoxKey } from '../lib/boxes'
+import { isBoss } from '../lib/roster'
 import { createCountdown, createSpan, share, tally, voteKey } from '../lib/vote'
 import { api, describeError, type VoteChoice } from '../ipc/client'
 import { pushNotice } from '../store/chat'
@@ -55,6 +56,34 @@ export function VoteBar(props: { teams: number }) {
 		return { current, proposed: proposal.value }
 	})
 
+	/**
+	 * Who SPADS takes `!endVote` from: whoever called the vote, whoever a
+	 * `joinAs` vote would seat (`spads.pl` commandRightsOverride), and level
+	 * 100 (`commands.conf` `[endVote]`) -- a boss, raised there by BarManager,
+	 * or a moderator at 110. Anyone raised by name in `users.conf` is out of
+	 * sight here and still types it.
+	 */
+	const mayEnd = createMemo(() => {
+		const v = vote()
+		const me = room.me()
+		if (v === null || me === null) return false
+		const [verb, subject] = v.command.split(' ')
+		return (
+			v.by === me ||
+			(verb?.toLowerCase() === 'joinas' && subject === me) ||
+			isBoss(room.my()?.boss, me) ||
+			(room.users()[me]?.status.moderator ?? false)
+		)
+	})
+
+	async function end() {
+		try {
+			await room.io.sayBattle('!endVote')
+		} catch (error) {
+			pushNotice('warning', `!endVote: ${describeError(error)}`)
+		}
+	}
+
 	async function cast(choice: VoteChoice) {
 		try {
 			await api.vote(choice)
@@ -94,6 +123,16 @@ export function VoteBar(props: { teams: number }) {
 						/>
 						<Ballot choice='b' label='Blank' mine={mine()} cast={cast} />
 					</div>
+					<Show when={mayEnd()}>
+						<button
+							type='button'
+							class='vote-end'
+							title='!endVote — cancel the vote for everyone'
+							onClick={() => void end()}
+						>
+							End vote
+						</button>
+					</Show>
 					<Show when={left() > 0}>
 						<span class='vote-left' title='Seconds until the vote closes'>
 							{left()}s
