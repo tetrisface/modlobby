@@ -7,6 +7,7 @@ import type { BotView } from '../ipc/bindings/BotView'
 import type { Score } from '../ipc/bindings/Score'
 import type { UserView } from '../ipc/bindings/UserView'
 import type { Settings } from '../ipc/bindings/Settings'
+import { age } from '../lib/age'
 import { STAGGER_STEP } from '../lib/stagger'
 import { emptyLobby, emptyServer, setLobby } from '../store/lobby'
 import { TEST_SERVER, onlySession } from '../store/testing'
@@ -150,6 +151,7 @@ const scored: Score = {
 	winChance: 0.31,
 	evidenceGames: 4200,
 	bestEffort: false,
+	dataUntil: '2026-06-20T22:46:17Z',
 }
 
 const asked = vi.mocked(invoke)
@@ -220,6 +222,12 @@ describe('PveScore', () => {
 		)
 		expect(slots).toEqual(['21.5/34', '31%', '88%'])
 		expect(container.querySelector('.thinking')).toBeNull()
+		// How fresh the service's data is rides along as each tooltip's last line.
+		const ago = age('2026-06-20T22:46:17Z')
+		for (const stat of container.querySelectorAll('.pve-stat'))
+			expect(
+				stat.getAttribute('title')?.endsWith(`\nData updated ${ago}`),
+			).toBe(true)
 	})
 
 	test('the PvE row keeps a compact label/value layout', async () => {
@@ -237,7 +245,12 @@ describe('PveScore', () => {
 	})
 
 	test('a setup the service cannot place gets the same blank as any other missing figure', async () => {
-		asked.mockResolvedValue({ ...scored, challenge: null, percentile: null })
+		asked.mockResolvedValue({
+			...scored,
+			challenge: null,
+			percentile: null,
+			dataUntil: null,
+		})
 		enter([bot('BARb')])
 		const { container } = render(panel)
 		vi.advanceTimersByTime(0)
@@ -247,6 +260,9 @@ describe('PveScore', () => {
 			(slot) => slot.textContent,
 		)
 		expect(slots).toEqual(['—', '31%', '—'])
+		// No date from the service, no second line.
+		for (const stat of container.querySelectorAll('.pve-stat'))
+			expect(stat.getAttribute('title')).not.toContain('\n')
 		expect(container.textContent).not.toContain('unplaced')
 	})
 

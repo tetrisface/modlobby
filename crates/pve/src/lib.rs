@@ -184,6 +184,9 @@ pub struct Score {
 	/// Set when the room uses settings the service has not catalogued, so the
 	/// numbers are best-effort rather than an exact match.
 	pub best_effort: bool,
+	/// When the newest game behind these numbers was played, as the service's
+	/// ISO timestamp: how fresh its data is, which the widget shows as "Data".
+	pub data_until: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -324,6 +327,11 @@ pub fn read(body: &serde_json::Value) -> Score {
 			.and_then(|held| held.get("reason"))
 			.and_then(serde_json::Value::as_str)
 			== Some("unknown_modoptions"),
+		data_until: body
+			.get("source_window")
+			.and_then(|window| window.get("latest_replay_time"))
+			.and_then(serde_json::Value::as_str)
+			.map(str::to_owned),
 	}
 }
 
@@ -522,6 +530,7 @@ mod tests {
 		let body = serde_json::json!({
 			"difficulty_histogram": {"current_difficulty": 21.5, "current_percentile": 88},
 			"difficulty_estimate": {"player_win_probability": 0.31, "evidence_games": 4200},
+			"source_window": {"earliest_replay_time": "2025-01-02T03:04:05Z", "latest_replay_time": "2026-06-20T22:46:17Z"},
 		});
 		let score = read(&body);
 		assert_eq!(score.challenge, Some(21.5));
@@ -529,6 +538,7 @@ mod tests {
 		assert_eq!(score.win_chance, Some(0.31));
 		assert_eq!(score.evidence_games, Some(4200.0));
 		assert!(!score.best_effort);
+		assert_eq!(score.data_until.as_deref(), Some("2026-06-20T22:46:17Z"));
 	}
 
 	#[test]
@@ -536,6 +546,7 @@ mod tests {
 		let score = read(&serde_json::json!({"difficulty_estimate": {}}));
 		assert_eq!(score.challenge, None);
 		assert_eq!(score.win_chance, None);
+		assert_eq!(score.data_until, None);
 	}
 
 	#[test]

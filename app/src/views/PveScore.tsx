@@ -9,6 +9,7 @@ import {
 import { Thinking } from '../components/Thinking'
 import type { Score } from '../ipc/bindings/Score'
 import { describeError } from '../ipc/client'
+import { age } from '../lib/age'
 import { asker } from '../lib/asking'
 import { askDelay } from '../lib/stagger'
 import { settings } from '../store/settings'
@@ -178,6 +179,12 @@ export function PveScore() {
 		return held == null ? '—' : `${held.toFixed(1)}/34`
 	}
 
+	/** A tooltip with how old the newest game behind the numbers is under it. */
+	const dated = (text: string) => {
+		const ago = age(score()?.dataUntil ?? '')
+		return ago ? `${text}\nData updated ${ago}` : text
+	}
+
 	/**
 	 * A number's place in the row, kept while the number is being asked for.
 	 *
@@ -214,7 +221,9 @@ export function PveScore() {
 				>
 					<span
 						class='pve-stat'
-						title='Absolute difficulty on a 0-34 scale. 17 is an estimated even game for a representative human team; higher is harder. A dash means the service has not placed this setup among played games yet.'
+						title={dated(
+							'Absolute difficulty on a 0-34 scale. 17 is an estimated even game for a representative human team; higher is harder. A dash means the service has not placed this setup among played games yet.',
+						)}
 					>
 						<span class='pve-label'>Challenge</span>
 						<span class='pve-figure'>
@@ -224,7 +233,9 @@ export function PveScore() {
 
 					<span
 						class='pve-stat'
-						title='Estimated chance a representative current BAR human team wins this map and setup. The people in this room are not part of that estimate.'
+						title={dated(
+							'Estimated chance a representative current BAR human team wins this map and setup. The people in this room are not part of that estimate.',
+						)}
 					>
 						<span class='pve-label'>Win</span>
 						<span class='pve-figure'>
@@ -234,7 +245,9 @@ export function PveScore() {
 
 					<span
 						class='pve-stat muted'
-						title='Where this setup sits among eligible played games for this opponent.'
+						title={dated(
+							'Share of eligible played games against this opponent whose setup had a lower Challenge than this one. Counted per game, so a setup played often weighs more than one played once.',
+						)}
 					>
 						<span class='pve-label'>Harder than</span>
 						<span class='pve-figure'>

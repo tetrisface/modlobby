@@ -27,4 +27,9 @@ export type Score = {
 	 * numbers are best-effort rather than an exact match.
 	 */
 	bestEffort: boolean
+	/**
+	 * When the newest game behind these numbers was played, as the service's
+	 * ISO timestamp: how fresh its data is, which the widget shows as "Data".
+	 */
+	dataUntil: string | null
 }

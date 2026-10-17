@@ -10,5 +10,6 @@
   "[css]": {
     "editor.defaultFormatter": "biomejs.biome"
 	},
-  "editor.formatOnSave": false
+	"editor.formatOnSave": false,
+	"stylua.disableVersionCheck": true
 }
