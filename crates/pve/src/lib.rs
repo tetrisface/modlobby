@@ -9,11 +9,10 @@
 //! useful: this is the number that answers "is this room going to be a
 //! massacre" while there is still time to change it.
 //!
-//! Two things are deliberately not sent. Player names and account ids, which
-//! the widget may send and this does not — the service's own README says the
-//! estimate represents a generic team and does not use the identities or
-//! ratings of the people present, so there is nothing to gain by naming them.
-//! And nothing at all is sent for a room that is not PvE.
+//! The room's player names go along, as the widget sends them, so the service
+//! can answer with each person's own PvE record; the estimate itself is for a
+//! generic team and does not use who is present. Nothing at all is sent for a
+//! room that is not PvE.
 //!
 //! The widget reaches the service over plain HTTP because the engine's Lua has
 //! no TLS. The same CloudFront distribution answers over TLS, and this is Rust
@@ -102,6 +101,9 @@ pub struct Ask {
 	pub map: String,
 	pub game_settings: BTreeMap<String, String>,
 	pub encounter_context: Encounter,
+	/// Everyone in the room, players and watchers alike, so each gets their
+	/// own row; the service answers only for names it knows.
+	pub player_names: Vec<String>,
 	/// Always `true` from a lobby. The service's own words: "Lobby clients set
 	/// this so transient empty player lists do not expand to every historical
 	/// player for the setting." Without it, every ask has the service compute
@@ -187,6 +189,227 @@ pub struct Score {
 	/// When the newest game behind these numbers was played, as the service's
 	/// ISO timestamp: how fresh its data is, which the widget shows as "Data".
 	pub data_until: Option<String>,
+	/// When the oldest game behind these numbers was played.
+	pub data_since: Option<String>,
+	/// The opponent the room was scored against, as the service names it.
+	pub ai_type: String,
+	/// Eligible played games by challenge score, lowest bar first.
+	pub histogram: Vec<Bin>,
+	pub total_games: u32,
+	pub matched: Matched,
+	pub degradation: Option<Degradation>,
+	pub completeness: Option<Completeness>,
+	/// One per name the service knows, in the service's order.
+	pub players: Vec<Player>,
+	/// Names the service has never seen play.
+	pub unresolved_players: Vec<String>,
+	pub setup: Option<SetupContext>,
+	pub setting_hash: Option<String>,
+	/// Which model release produced the numbers.
+	pub contract_hash: Option<String>,
+}
+
+/// One bar of the service's difficulty histogram.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, TS)]
+#[serde(
+	default,
+	rename_all(serialize = "camelCase", deserialize = "snake_case")
+)]
+#[ts(export, rename_all = "camelCase")]
+pub struct Bin {
+	pub lower_bound: f64,
+	pub upper_bound: f64,
+	pub games: u32,
+	pub wins: u32,
+}
+
+/// Which recorded setting the setting-specific figures describe.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct Matched {
+	/// `exact`, `closest` or `not_found`; empty when the service did not say.
+	pub status: String,
+	/// `similar` or `raw_fallback` for a closest match; empty otherwise.
+	pub method: String,
+	pub similarity: Option<f64>,
+	pub difference_count: u32,
+	/// Differences the service keeps out of `diffs`: tweak payloads and such.
+	pub hidden_differences: u32,
+	pub diffs: Vec<Diff>,
+}
+
+/// One lobby field where the room and the matched setting disagree.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct Diff {
+	pub column: String,
+	pub current: String,
+	pub closest: String,
+}
+
+/// Why the answer is weaker than a fully governed one.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, TS)]
+#[serde(
+	default,
+	rename_all(serialize = "camelCase", deserialize = "snake_case")
+)]
+#[ts(export, rename_all = "camelCase")]
+pub struct Degradation {
+	/// `unknown_modoptions` or `unsupported_modoptions`.
+	pub reason: String,
+	pub unknown_setting_count: u32,
+	pub unknown_setting_names: Vec<String>,
+	pub unsupported_setting_names: Vec<String>,
+}
+
+/// How much of the service's setting catalogue the request covered.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, TS)]
+#[serde(
+	default,
+	rename_all(serialize = "camelCase", deserialize = "snake_case")
+)]
+#[ts(export, rename_all = "camelCase")]
+pub struct Completeness {
+	pub provided_hash_columns: u32,
+	pub defaulted_hash_columns: u32,
+	pub missing_hash_columns: u32,
+	pub total_hash_columns: u32,
+	pub unknown_setting_count: u32,
+	pub derived_hash_column_names: Vec<String>,
+}
+
+/// One person's PvE record, as the service keeps it.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, TS)]
+#[serde(
+	default,
+	rename_all(serialize = "camelCase", deserialize = "snake_case")
+)]
+#[ts(export, rename_all = "camelCase")]
+pub struct Player {
+	pub player_id: u32,
+	pub player_name: String,
+	pub setup_experience: SetupExperience,
+	pub accomplishments: Accomplishments,
+	pub awards: Awards,
+}
+
+/// A player's record on the setting the service actually served.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, TS)]
+#[serde(
+	default,
+	rename_all(serialize = "camelCase", deserialize = "snake_case")
+)]
+#[ts(export, rename_all = "camelCase")]
+pub struct SetupExperience {
+	pub clears: u32,
+	/// The highest per-game enemy count cleared among the setting's variants;
+	/// absent when none, which must not read as zero.
+	pub max_defeated: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, TS)]
+#[serde(
+	default,
+	rename_all(serialize = "camelCase", deserialize = "snake_case")
+)]
+#[ts(export, rename_all = "camelCase")]
+pub struct Accomplishments {
+	pub participation: Participation,
+	pub encounters: Encounters,
+	pub personal_bests: PersonalBests,
+	pub challenges: Challenges,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, TS)]
+#[serde(
+	default,
+	rename_all(serialize = "camelCase", deserialize = "snake_case")
+)]
+#[ts(export, rename_all = "camelCase")]
+pub struct Participation {
+	pub games_played: u32,
+	pub victories: u32,
+	pub distinct_maps_played: u32,
+}
+
+/// Enemies credited on wins: the lobby's configured count, not kills.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, TS)]
+#[serde(
+	default,
+	rename_all(serialize = "camelCase", deserialize = "snake_case")
+)]
+#[ts(export, rename_all = "camelCase")]
+pub struct Encounters {
+	// The service counts in u64; as a TS number, which is what the figure is.
+	#[ts(type = "number")]
+	pub raptor_queens_defeated: u64,
+	#[ts(type = "number")]
+	pub scavenger_bosses_defeated: u64,
+	#[ts(type = "number")]
+	pub barbarian_ais_defeated: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, TS)]
+#[serde(
+	default,
+	rename_all(serialize = "camelCase", deserialize = "snake_case")
+)]
+#[ts(export, rename_all = "camelCase")]
+pub struct PersonalBests {
+	pub max_queens_one_victory: u32,
+	pub max_bosses_one_victory: u32,
+	pub max_barbarian_ais_one_victory: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, TS)]
+#[serde(
+	default,
+	rename_all(serialize = "camelCase", deserialize = "snake_case")
+)]
+#[ts(export, rename_all = "camelCase")]
+pub struct Challenges {
+	pub challenge_20_clears: u32,
+	pub challenge_25_clears: u32,
+	pub challenge_30_clears: u32,
+	pub highest_challenge_cleared: Option<f64>,
+	/// The player's clears per histogram bar, aligned with [`Score::histogram`].
+	pub clear_histogram: Vec<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, TS)]
+#[serde(
+	default,
+	rename_all(serialize = "camelCase", deserialize = "snake_case")
+)]
+#[ts(export, rename_all = "camelCase")]
+pub struct Awards {
+	pub most_killed: MostKilled,
+}
+
+/// Times the player ranked first in fighting-unit value destroyed.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, TS)]
+#[serde(default)]
+#[ts(export)]
+pub struct MostKilled {
+	pub raptors: u32,
+	pub scavengers: u32,
+	pub barbarians: u32,
+}
+
+/// Which setting every player's `setup_experience` describes.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, TS)]
+#[serde(
+	default,
+	rename_all(serialize = "camelCase", deserialize = "snake_case")
+)]
+#[ts(export, rename_all = "camelCase")]
+pub struct SetupContext {
+	/// `exact`, `similar` or `raw_fallback`.
+	pub source: String,
+	/// The served setting's own per-game enemy count.
+	pub encounter_count: u32,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -317,22 +540,111 @@ pub fn retry_after(value: Option<&str>) -> Option<Duration> {
 /// panel rather than turn the whole answer into an error.
 pub fn read(body: &serde_json::Value) -> Score {
 	let number = |parent: &str, key: &str| -> Option<f64> { body.get(parent)?.get(key)?.as_f64() };
+	let text = |parent: &str, key: &str| -> Option<String> {
+		Some(body.get(parent)?.get(key)?.as_str()?.to_owned())
+	};
+	let closest = body
+		.get("closest_matches")
+		.and_then(|held| held.get(0))
+		.cloned()
+		.unwrap_or_default();
+	let degradation: Option<Degradation> = typed(body.get("degradation"));
 	Score {
 		challenge: number("difficulty_histogram", "current_difficulty"),
 		percentile: number("difficulty_histogram", "current_percentile"),
 		win_chance: number("difficulty_estimate", "player_win_probability"),
 		evidence_games: number("difficulty_estimate", "evidence_games"),
-		best_effort: body
-			.get("degradation")
-			.and_then(|held| held.get("reason"))
-			.and_then(serde_json::Value::as_str)
-			== Some("unknown_modoptions"),
-		data_until: body
-			.get("source_window")
-			.and_then(|window| window.get("latest_replay_time"))
+		best_effort: degradation
+			.as_ref()
+			.is_some_and(|held| held.reason == "unknown_modoptions"),
+		data_until: text("source_window", "latest_replay_time"),
+		data_since: text("source_window", "earliest_replay_time"),
+		// Known to whoever asked, not to the answer: `Service` fills it in.
+		ai_type: String::new(),
+		histogram: typed(
+			body.get("difficulty_histogram")
+				.and_then(|held| held.get("bins")),
+		)
+		.unwrap_or_default(),
+		total_games: number("difficulty_histogram", "total_games").unwrap_or(0.0) as u32,
+		matched: Matched {
+			status: body
+				.get("match_status")
+				.and_then(serde_json::Value::as_str)
+				.unwrap_or_default()
+				.to_owned(),
+			method: closest
+				.get("match_method")
+				.and_then(serde_json::Value::as_str)
+				.unwrap_or_default()
+				.to_owned(),
+			similarity: closest
+				.get("similarity")
+				.and_then(serde_json::Value::as_f64),
+			difference_count: closest
+				.get("difference_count")
+				.and_then(serde_json::Value::as_u64)
+				.unwrap_or(0) as u32,
+			hidden_differences: closest
+				.get("hidden_diff_summary")
+				.and_then(|held| held.get("total"))
+				.and_then(serde_json::Value::as_u64)
+				.unwrap_or(0) as u32,
+			diffs: closest
+				.get("display_diffs")
+				.and_then(serde_json::Value::as_array)
+				.map(|diffs| diffs.iter().filter_map(diff).collect())
+				.unwrap_or_default(),
+		},
+		degradation,
+		completeness: typed(body.get("request_completeness")),
+		players: typed(body.get("players")).unwrap_or_default(),
+		unresolved_players: typed(body.get("unresolved_player_names")).unwrap_or_default(),
+		setup: typed(body.get("setup_experience_context")),
+		setting_hash: body
+			.get("setting_hash")
 			.and_then(serde_json::Value::as_str)
 			.map(str::to_owned),
+		contract_hash: text("difficulty_estimate", "difficulty_target_sha256"),
 	}
+}
+
+/// A piece of the answer as a type, or nothing when it is absent or not the
+/// shape expected -- a blank in the panel, never an error.
+fn typed<T: serde::de::DeserializeOwned>(value: Option<&serde_json::Value>) -> Option<T> {
+	serde_json::from_value(value?.clone()).ok()
+}
+
+/// One of the service's `display_diffs`, its two values as the widget shows
+/// them: a missing value is a dash, a nested one is not spelled out.
+fn diff(held: &serde_json::Value) -> Option<Diff> {
+	fn shown(value: Option<&serde_json::Value>) -> String {
+		match value {
+			None | Some(serde_json::Value::Null) => "-".to_owned(),
+			Some(serde_json::Value::String(text)) if text.is_empty() => "-".to_owned(),
+			Some(serde_json::Value::String(text)) => text.clone(),
+			Some(serde_json::Value::Bool(flag)) => flag.to_string(),
+			Some(serde_json::Value::Number(number)) => number.to_string(),
+			Some(_) => "<complex>".to_owned(),
+		}
+	}
+	let column = held.get("column")?.as_str()?;
+	// Tweak payloads and the AI type are differences in name only; the widget
+	// keeps them out of the table too.
+	let folded = column.to_ascii_lowercase();
+	if folded == "ai_type" || folded.starts_with("tweakdefs") || folded.starts_with("tweakunits") {
+		return None;
+	}
+	let current = shown(held.get("incoming"));
+	let closest = shown(held.get("expected"));
+	if current == closest {
+		return None;
+	}
+	Some(Diff {
+		column: column.to_owned(),
+		current,
+		closest,
+	})
 }
 
 /// The service as one client sees it: the transport it was handed, where the
@@ -386,7 +698,8 @@ impl Service {
 			let asked =
 				ask_once(&self.client, &self.endpoint, body.clone(), patience.attempt).await;
 			let failed = match asked {
-				Ok(score) => {
+				Ok(mut score) => {
+					score.ai_type = ask.ai_type.to_owned();
 					self.memo.lock().expect("pve memo").put(key, score.clone());
 					return Ok(score);
 				}
@@ -528,9 +841,44 @@ mod tests {
 	#[test]
 	fn the_numbers_are_read_from_where_the_widget_reads_them() {
 		let body = serde_json::json!({
-			"difficulty_histogram": {"current_difficulty": 21.5, "current_percentile": 88},
-			"difficulty_estimate": {"player_win_probability": 0.31, "evidence_games": 4200},
+			"setting_hash": "abc123",
+			"match_status": "closest",
+			"difficulty_histogram": {
+				"current_difficulty": 21.5, "current_percentile": 88, "total_games": 300,
+				"bins": [
+					{"lower_bound": 0, "upper_bound": 17, "games": 100, "wins": 90},
+					{"lower_bound": 17, "upper_bound": 34, "games": 200, "wins": 20}
+				]
+			},
+			"difficulty_estimate": {
+				"player_win_probability": 0.31, "evidence_games": 4200,
+				"difficulty_target_sha256": "feedface"
+			},
 			"source_window": {"earliest_replay_time": "2025-01-02T03:04:05Z", "latest_replay_time": "2026-06-20T22:46:17Z"},
+			"closest_matches": [{
+				"match_method": "raw_fallback", "difference_count": 3, "similarity": 0.9,
+				"hidden_diff_summary": {"total": 1},
+				"display_diffs": [
+					{"column": "raptor_endless", "incoming": "1", "expected": "0"},
+					{"column": "tweakdefs1", "incoming": "x", "expected": "y"},
+					{"column": "same", "incoming": 5, "expected": 5},
+					{"column": "gone", "incoming": null, "expected": true}
+				]
+			}],
+			"request_completeness": {"provided_hash_columns": 7, "total_hash_columns": 9, "derived_hash_column_names": ["a"]},
+			"setup_experience_context": {"source": "raw_fallback", "setting_hash": "def", "encounter_count": 20},
+			"players": [{
+				"player_id": 1, "player_name": "me",
+				"setup_experience": {"clears": 2, "defeated": 40, "max_defeated": 50},
+				"accomplishments": {
+					"participation": {"games_played": 10, "victories": 4, "distinct_maps_played": 3},
+					"encounters": {"raptor_queens_defeated": 8},
+					"personal_bests": {"max_queens_one_victory": 5},
+					"challenges": {"challenge_20_clears": 1, "highest_challenge_cleared": 24.8, "clear_histogram": [1, 1]}
+				},
+				"awards": {"most_killed": {"raptors": 2}}
+			}],
+			"unresolved_player_names": ["nobody"],
 		});
 		let score = read(&body);
 		assert_eq!(score.challenge, Some(21.5));
@@ -539,6 +887,47 @@ mod tests {
 		assert_eq!(score.evidence_games, Some(4200.0));
 		assert!(!score.best_effort);
 		assert_eq!(score.data_until.as_deref(), Some("2026-06-20T22:46:17Z"));
+		assert_eq!(score.data_since.as_deref(), Some("2025-01-02T03:04:05Z"));
+		assert_eq!(score.histogram.len(), 2);
+		assert_eq!(score.histogram[1].games, 200);
+		assert_eq!(score.total_games, 300);
+		assert_eq!(score.matched.status, "closest");
+		assert_eq!(score.matched.method, "raw_fallback");
+		assert_eq!(score.matched.hidden_differences, 1);
+		// Tweaks are hidden, equal values are not differences, nulls are dashes.
+		assert_eq!(
+			score.matched.diffs,
+			vec![
+				Diff {
+					column: "raptor_endless".into(),
+					current: "1".into(),
+					closest: "0".into()
+				},
+				Diff {
+					column: "gone".into(),
+					current: "-".into(),
+					closest: "true".into()
+				},
+			]
+		);
+		assert_eq!(
+			score.completeness.as_ref().unwrap().provided_hash_columns,
+			7
+		);
+		assert_eq!(score.setup.as_ref().unwrap().encounter_count, 20);
+		let me = &score.players[0];
+		assert_eq!(me.player_name, "me");
+		assert_eq!(me.setup_experience.max_defeated, Some(50));
+		assert_eq!(
+			me.accomplishments.challenges.highest_challenge_cleared,
+			Some(24.8)
+		);
+		assert_eq!(me.accomplishments.challenges.clear_histogram, vec![1, 1]);
+		assert_eq!(me.accomplishments.encounters.scavenger_bosses_defeated, 0);
+		assert_eq!(me.awards.most_killed.raptors, 2);
+		assert_eq!(score.unresolved_players, vec!["nobody".to_owned()]);
+		assert_eq!(score.setting_hash.as_deref(), Some("abc123"));
+		assert_eq!(score.contract_hash.as_deref(), Some("feedface"));
 	}
 
 	#[test]
@@ -547,6 +936,10 @@ mod tests {
 		assert_eq!(score.challenge, None);
 		assert_eq!(score.win_chance, None);
 		assert_eq!(score.data_until, None);
+		assert!(score.histogram.is_empty());
+		assert!(score.players.is_empty());
+		assert_eq!(score.matched, Matched::default());
+		assert_eq!(score.degradation, None);
 	}
 
 	#[test]
@@ -570,6 +963,7 @@ mod tests {
 		}
 		let ask = Ask {
 			game_id: None,
+			player_names: vec![],
 			player_filter_requested: true,
 			ai_type: AiType::Raptors.as_str(),
 			map: "Full Metal Plate 1.7".into(),
@@ -597,6 +991,7 @@ mod tests {
 		// room where nobody is handicapped is a list of 1.0, not an empty list.
 		let ask = Ask {
 			game_id: None,
+			player_names: vec![],
 			player_filter_requested: true,
 			ai_type: AiType::Raptors.as_str(),
 			map: "Comet Catcher Remake 1.8".into(),
@@ -614,9 +1009,10 @@ mod tests {
 	}
 
 	#[test]
-	fn nothing_about_a_person_is_in_what_we_send() {
+	fn names_go_and_nothing_else_about_a_person_does() {
 		let ask = Ask {
 			game_id: None,
+			player_names: vec!["me".to_owned()],
 			player_filter_requested: true,
 			ai_type: AiType::Raptors.as_str(),
 			map: "Comet Catcher Remake 1.8".into(),
@@ -629,10 +1025,9 @@ mod tests {
 			},
 		};
 		let json = serde_json::to_string(&ask).unwrap();
-		// Named for what it guards, not for the word: the encounter context
-		// legitimately talks about players in the aggregate. What must never
-		// appear is anything identifying one.
-		assert!(!json.contains("player_names"));
+		// The lobby name is what the service keys a person's record on, and
+		// the one thing about them that goes; account ids never do.
+		assert!(json.contains(r#""player_names":["me"]"#));
 		assert!(!json.contains("player_ids"));
 		assert!(!json.contains("account"));
 		assert!(!json.contains("game_id"));
@@ -646,6 +1041,7 @@ mod tests {
 		// Handicap` column from these and declines to place a room without it.
 		let ask = Ask {
 			game_id: None,
+			player_names: vec![],
 			player_filter_requested: true,
 			ai_type: AiType::Barbarian.as_str(),
 			map: "Comet Catcher Remake 1.8".into(),
@@ -737,6 +1133,7 @@ mod tests {
 	fn ask() -> Ask {
 		Ask {
 			game_id: Some(lobby_game_id("server4.beyondallreason.info", 7, "host")),
+			player_names: vec!["host".to_owned(), "me".to_owned()],
 			player_filter_requested: true,
 			ai_type: AiType::Raptors.as_str(),
 			map: "Comet Catcher Remake 1.8".into(),

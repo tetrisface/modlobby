@@ -1,4 +1,5 @@
 import {
+	For,
 	Show,
 	createEffect,
 	createMemo,
@@ -11,8 +12,10 @@ import type { Score } from '../ipc/bindings/Score'
 import { describeError } from '../ipc/client'
 import { age } from '../lib/age'
 import { asker } from '../lib/asking'
+import { NOTHING_YET, TOP, miniature } from '../lib/pve'
 import { askDelay } from '../lib/stagger'
 import { settings } from '../store/settings'
+import { PveStats } from './PveStats'
 import { useRoom, type RoomModel } from './room/model'
 
 /**
@@ -22,9 +25,9 @@ import { useRoom, type RoomModel } from './room/model'
  * time to change the answer — which is when "this is going to be a massacre"
  * is worth knowing.
  *
- * Nothing is asked for a room that is not PvE, and nothing about a person is
- * ever sent: the service's own note is that the estimate represents a generic
- * team and does not use the identities or ratings of whoever is present.
+ * Nothing is asked for a room that is not PvE. The room's names go along so
+ * the full panel can show each person's own record; the estimate itself is
+ * for a generic team and does not use who is present.
  */
 /** How long the room has to stop changing before it is worth asking again. */
 export const QUIET_FOR = 3000
@@ -102,12 +105,58 @@ function myStagger(room: RoomModel): number {
 	})
 }
 
+/**
+ * The histogram the button opens, at icon size: games bars, and a yellow tick
+ * where this setup sits. The tick is a fixed two screen pixels however the
+ * icon stretches, which keeps it crisp and keeps it visible over the bars.
+ *
+ * With no answer to draw (the service failed), the same bars at zero.
+ */
+function Miniature(props: { score: Score | undefined }) {
+	const drawn = createMemo(() =>
+		props.score?.histogram.length ? miniature(props.score) : NOTHING_YET,
+	)
+	return (
+		<svg
+			class='pve-miniature'
+			viewBox={`0 0 ${TOP} 1`}
+			preserveAspectRatio='none'
+			aria-hidden='true'
+		>
+			<For each={drawn().bars}>
+				{(bar) => (
+					<rect
+						x={bar.lo + 0.25}
+						y={1 - Math.max(0.05, bar.height)}
+						width={Math.max(0, bar.hi - bar.lo - 0.5)}
+						height={Math.max(0.05, bar.height)}
+					/>
+				)}
+			</For>
+			<Show when={drawn().at}>
+				{(at) => (
+					<line
+						class='at'
+						x1={at()}
+						x2={at()}
+						y1={0}
+						y2={1}
+						vector-effect='non-scaling-stroke'
+					/>
+				)}
+			</Show>
+		</svg>
+	)
+}
+
 export function PveScore() {
 	const room = useRoom()
 	/** `undefined` before any answer; `null` when Rust declined to ask. */
 	const [score, setScore] = createSignal<Score | null | undefined>(undefined)
 	const [asking, setAsking] = createSignal(false)
 	const [failure, setFailure] = createSignal<string | null>(null)
+	/** Whether the full panel is open over the room. */
+	const [open, setOpen] = createSignal(false)
 
 	/**
 	 * Paced, because the service is a Lambda with a concurrency of one and a
@@ -208,8 +257,29 @@ export function PveScore() {
 
 	return (
 		<Show when={enabled() && isPve(room) && score() !== null}>
-			<div class='pve-score'>
-				<span class='filter-label'>PvE</span>
+			{/* The whole row opens the panel: the figures are a summary of it.
+			    The button stays the way in from the keyboard. */}
+			<div class='pve-score' onClick={() => setOpen(true)}>
+				<button
+					type='button'
+					class='pve-open'
+					title='PvE stats: the histogram, the match evidence and each person’s record'
+					aria-label='Open PvE stats'
+				>
+					<span class='filter-label'>PvE Stats</span>
+					{/* Waits the way the figures beside it do: still dots, in a box
+					    the size of the icon so nothing shifts when it lands. */}
+					<Show
+						when={!waiting() || failure()}
+						fallback={
+							<span class='pve-miniature'>
+								<Thinking still title='asking how hard this setup is' />
+							</span>
+						}
+					>
+						<Miniature score={score() ?? undefined} />
+					</Show>
+				</button>
 
 				<Show
 					when={!failure()}
@@ -271,6 +341,16 @@ export function PveScore() {
 					</Show>
 				</Show>
 			</div>
+			{/* Outside the row, which opens it on any click: a click inside the
+			    panel, Close included, must not travel up and open it again. */}
+			<Show when={open()}>
+				<PveStats
+					score={score()}
+					waiting={waiting()}
+					failure={failure()}
+					onClose={() => setOpen(false)}
+				/>
+			</Show>
 		</Show>
 	)
 }

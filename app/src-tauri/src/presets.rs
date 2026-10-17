@@ -346,6 +346,23 @@ fn pve_ask(
 				.map(|status| pve::income_multiplier(status.handicap))
 				.collect(),
 		},
+		// Everyone present, bar the autohost: the service has a record for
+		// people, not for SPADS. Sorted so the same room is the same body.
+		player_names: {
+			let mut names: Vec<String> = room
+				.members
+				.iter()
+				.filter(|name| {
+					users
+						.iter()
+						.find(|user| &user.name == *name)
+						.is_none_or(|user| !user.status.bot)
+				})
+				.cloned()
+				.collect();
+			names.sort();
+			names
+		},
 		player_filter_requested: true,
 	})
 }

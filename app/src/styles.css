@@ -4801,28 +4801,6 @@ input[type='checkbox'].v-edit {
 	border-color: var(--ok);
 }
 
-/* ---- tabs (the chat's `TabStrip` builds on these) ---- */
-
-.tab {
-	background: none;
-	border: 0;
-	border-bottom: 2px solid transparent;
-	border-radius: 0;
-	padding: 0.3125rem 0.75rem 0.375rem;
-	font-size: 0.75rem;
-	letter-spacing: 0.03em;
-	color: var(--faint);
-}
-
-.tab:hover {
-	color: var(--text);
-}
-
-.tab.on {
-	color: var(--text);
-	border-bottom-color: var(--accent);
-}
-
 .running-for {
 	margin-right: 0.375rem;
 	font-family: var(--mono);
@@ -5259,7 +5237,6 @@ input[type='checkbox'].v-edit {
 	gap: 0.25rem;
 	padding-right: 0.125rem;
 	color: var(--muted);
-	cursor: help;
 	white-space: nowrap;
 	flex: 0 0 auto;
 }
@@ -5282,6 +5259,466 @@ input[type='checkbox'].v-edit {
 	font-variant-numeric: tabular-nums;
 	color: var(--text);
 	font-weight: 600;
+}
+
+/* The way into the full panel: the row's label and a chart glyph, one
+   button, quiet until approached like the notice corner's gear. */
+.pve-open {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	gap: 0.375rem;
+	padding: 0.125rem;
+	border: 0;
+	background: none;
+	color: var(--faint);
+}
+
+/* The label lights with the glyph rather than keeping its own grey. */
+.pve-open .filter-label {
+	margin-right: 0;
+	color: inherit;
+}
+
+/* The histogram at icon size, in the button's colour so it lights with it. */
+.pve-miniature {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 2.2rem;
+	height: 0.7rem;
+}
+
+.pve-miniature rect {
+	fill: currentColor;
+	opacity: 0.7;
+}
+
+/* Where this setup sits: two screen pixels, whatever the icon's stretch. */
+.pve-miniature .at {
+	stroke: var(--warn);
+	stroke-width: 2px;
+}
+
+/* Any of the row opens the panel, so any of it says so: the pointer, and the
+   button lighting as if it were the one under it. */
+.pve-score {
+	cursor: pointer;
+}
+
+.pve-score:hover .pve-open,
+.pve-open:focus-visible {
+	color: var(--accent);
+}
+
+/* ---- the widget's whole panel ---- */
+
+.sheet-card.pve-stats {
+	width: min(52rem, calc(100vw - 40px));
+	max-height: calc(100vh - 80px);
+	overflow-y: auto;
+	font-size: 0.75rem;
+	/* Centred, which only holds still because nothing in it changes height:
+	   the table area below is a fixed box and scrolls inside itself. */
+	/* Its prose wraps whatever the room around it says; a sheet that inherits
+	   `nowrap` runs off the card and scrolls sideways. */
+	white-space: normal;
+}
+
+.pve-stats .ed-head button.on {
+	color: var(--accent);
+	border-color: var(--accent);
+}
+
+.pve-summary {
+	display: grid;
+	grid-template-columns: repeat(5, minmax(0, 1fr));
+	gap: 0.5rem 1rem;
+}
+
+.pve-metric {
+	display: flex;
+	flex-direction: column;
+	gap: 0.125rem;
+	min-width: 0;
+	cursor: help;
+}
+
+.pve-metric .pve-figure {
+	font-size: 1rem;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.pve-metric .pve-figure.exact {
+	color: var(--good, #7bd88f);
+}
+
+.pve-metric .pve-figure.best-effort {
+	color: var(--warn);
+}
+
+/* Bars rise from a shared baseline; the current bin is lit behind its bar so
+   the yellow line reads as a marker and not a fourth series. */
+.pve-hist {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+	padding: 0.5rem 0.5rem 0.375rem;
+	background: var(--sunken);
+	border: 1px solid var(--line);
+	border-radius: 4px;
+}
+
+.pve-bars {
+	position: relative;
+	height: 6rem;
+}
+
+/* Both series share one slot per bin, the widget's way: everyone's games as
+   the wide bar, your clears as a narrower one laid over it, so the two read
+   against the same x without a glance sideways. The slot is placed by the
+   bin's bounds (inline), so the axis below lines up with it. */
+.pve-bar {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+}
+
+/* The bars are paint, not targets: the tooltip is the slot's, and a pointer
+   crossing from the slot onto a bar must not restart it. */
+.pve-bar i {
+	position: absolute;
+	bottom: 0;
+	border-radius: 2px 2px 0 0;
+	pointer-events: none;
+}
+
+.pve-bar .pop {
+	left: 1px;
+	right: 1px;
+}
+
+.pve-bar .own {
+	left: 30%;
+	right: 30%;
+	opacity: 0.85;
+}
+
+.pve-bar .pop,
+.pve-swatch.pop {
+	background: var(--faint);
+	opacity: 0.55;
+}
+
+/* A win rate is drawn as strongly as the games behind it allow (`--sure`,
+   set per bar); a count always rests on what it counts. */
+.pve-bars.rate .pve-bar .pop {
+	opacity: calc(0.75 * var(--sure, 1));
+}
+
+/* Reading lines for the hovered bar: dotted, from its top to one edge, the
+   value at that edge on the chart's own background so a bar behind it does
+   not muddy the figure. Positioned from data, so drawn in the markup. */
+.pve-guide {
+	position: absolute;
+	z-index: 3;
+	height: 0;
+	border-top: 1px dotted var(--muted);
+	pointer-events: none;
+}
+
+.pve-guide.own {
+	border-top-color: var(--accent);
+}
+
+.pve-guide > span {
+	position: absolute;
+	bottom: 1px;
+	left: 0;
+	padding: 0 0.1875rem;
+	font-family: var(--mono);
+	font-size: 0.625rem;
+	line-height: 0.875rem;
+	color: var(--muted);
+	background: var(--sunken);
+	white-space: nowrap;
+}
+
+.pve-guide.own > span {
+	color: var(--accent);
+}
+
+.pve-guide.right > span {
+	left: auto;
+	right: 0;
+}
+
+.pve-guide.below > span {
+	top: 1px;
+	bottom: auto;
+}
+
+/* The even game, as a reference across the win-rate view. */
+.pve-half {
+	position: absolute;
+	inset: auto 0 50% 0;
+	border-top: 1px dashed var(--line);
+	pointer-events: none;
+}
+
+/* The model's win chance for this setup, where the setup sits: set against
+   the bars, predicted over observed. */
+.pve-predicted,
+.pve-swatch.predicted {
+	width: 0.5rem;
+	height: 0.5rem;
+	background: var(--text);
+	border: 1px solid var(--sunken);
+	transform: rotate(45deg);
+}
+
+.pve-predicted {
+	position: absolute;
+	z-index: 2;
+	margin: 0 0 -0.25rem -0.25rem;
+	pointer-events: none;
+}
+
+.pve-swatch.predicted {
+	width: 0.4375rem;
+	height: 0.4375rem;
+	margin-right: 0.3125rem;
+	vertical-align: 0;
+}
+
+.pve-bar .own,
+.pve-swatch.own {
+	background: var(--accent);
+}
+
+.pve-bar.current {
+	background: rgb(242 184 75 / 10%);
+}
+
+/* The bin under the pointer, washed like the widget's: which column the
+   panel below is talking about. */
+.pve-bar:hover {
+	background: rgb(88 196 255 / 7%);
+}
+
+/* The hovered bin's middle, written on the axis over the fixed ticks; the
+   chart's own background masks whichever tick it lands on. */
+.pve-at {
+	display: none;
+	position: absolute;
+	/* The axis row: the chart's 0.25rem gap below the bars. */
+	top: calc(100% + 0.25rem);
+	left: 50%;
+	z-index: 41;
+	transform: translateX(-50%);
+	padding: 0 0.25rem;
+	line-height: 1rem;
+	font-family: var(--mono);
+	font-size: 0.6875rem;
+	color: var(--accent);
+	background: var(--sunken);
+	pointer-events: none;
+}
+
+.pve-bar:hover .pve-at {
+	display: block;
+}
+
+.pve-tip {
+	display: none;
+	position: absolute;
+	/* Clear of the axis row, so its numbers stay readable under the panel. */
+	top: calc(100% + 1.5rem);
+	left: 50%;
+	z-index: 40;
+	width: 18rem;
+	transform: translateX(-50%);
+	padding: 0.5rem 0.625rem;
+	color: var(--text);
+	background: var(--raised);
+	border: 1px solid var(--line);
+	border-radius: 4px;
+	box-shadow: 0 12px 28px rgb(0 0 0 / 45%);
+	line-height: 1.4;
+	/* One fact a line, as the text is written. */
+	white-space: pre-line;
+	/* It reads over the legend, never takes the pointer from it. */
+	pointer-events: none;
+}
+
+.pve-bar:hover .pve-tip {
+	display: block;
+}
+
+.pve-bar.start .pve-tip {
+	left: 0;
+	transform: none;
+}
+
+.pve-bar.end .pve-tip {
+	left: auto;
+	right: 0;
+	transform: none;
+}
+
+.pve-legend {
+	cursor: help;
+}
+
+.pve-bar.current::after {
+	content: '';
+	position: absolute;
+	inset: 0 auto 0 50%;
+	width: 2px;
+	background: var(--warn);
+}
+
+.pve-swatch {
+	display: inline-block;
+	width: 0.625rem;
+	height: 0.625rem;
+	margin-right: 0.25rem;
+	border-radius: 2px;
+	vertical-align: -1px;
+}
+
+.pve-swatch.current {
+	width: 2px;
+	height: 0.75rem;
+	background: var(--warn);
+}
+
+.pve-scale {
+	position: relative;
+	height: 1rem;
+	color: var(--faint);
+	font-family: var(--mono);
+	font-size: 0.6875rem;
+}
+
+/* Centred under its value; the two ends sit inside the chart instead. */
+.pve-tick {
+	position: absolute;
+	transform: translateX(-50%);
+}
+
+.pve-tick:first-child {
+	transform: none;
+}
+
+.pve-tick:last-child {
+	transform: translateX(-100%);
+}
+
+.pve-legend {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.25rem 1rem;
+	color: var(--muted);
+}
+
+/* The legend, and at its right what the bars measure. */
+.pve-legend-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem 1rem;
+}
+
+.pve-caption {
+	margin: 0;
+	color: var(--text);
+}
+
+.pve-line {
+	display: flex;
+	gap: 0.5rem;
+	margin: 0;
+	cursor: default;
+}
+
+.pve-line.warn {
+	color: var(--warn);
+}
+
+/* The Diagnostics view: support rows, then the field differences. */
+.pve-diag {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+	padding: 0.5rem 0.5rem 0;
+}
+
+.pve-diag-row {
+	display: grid;
+	grid-template-columns: 7rem 1fr;
+	gap: 0.5rem;
+	user-select: text;
+}
+
+.pve-diffs {
+	margin-top: 0.5rem;
+}
+
+.pve-diffs td {
+	font-family: var(--mono);
+	user-select: text;
+}
+
+.pve-players {
+	display: flex;
+	flex-direction: column;
+	gap: 0.375rem;
+	min-height: 0;
+}
+
+/* Four fixed tabs: exact quarters of the card, whatever the labels' lengths. */
+.pve-players .tab-strip .tab {
+	flex: 1 1 0;
+	max-width: none;
+}
+
+/* A fixed height, not a maximum: rows appearing (spectators) or a tab with
+   taller content scroll here rather than resizing the card around them. */
+.pve-scroll {
+	height: 18rem;
+	overflow-y: auto;
+}
+
+.pve-table thead th {
+	background: var(--panel);
+}
+
+/* Columns scoped to the served setting, which may not be this room's. */
+.pve-table th.pve-setup,
+.pve-table td.pve-setup {
+	color: var(--warn);
+}
+
+.pve-table tr.own td {
+	color: var(--accent);
+	font-weight: 600;
+}
+
+.pve-table .pve-group td {
+	padding-top: 0.5rem;
+	font-family: var(--display);
+	font-size: 0.625rem;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--faint);
+	border-bottom: 0;
+}
+
+.pve-table .pve-empty td {
+	color: var(--muted);
+	border-bottom: 0;
 }
 
 /* The corner: your name while logged in, a way back in while not. Quiet like
@@ -5743,14 +6180,16 @@ button.link:hover {
 	}
 }
 
-/* ---- the open conversations, as tabs ---- */
+/* ---- tabs: `TabStrip`, in the chat and the PvE sheet ----
+
+   Text on the surface, an accent line along the whole bottom edge of the open
+   tab. Tabs share the row equally up to a width, so a few are even cells and
+   many shrink together; the lit edge is always the tab's full width, so what
+   is open reads the same whatever the label's length. */
 
 .tab-strip {
 	display: flex;
 	align-items: stretch;
-	gap: 0.0625rem;
-	padding: 0 0.5rem;
-	background: var(--bg);
 	border-bottom: 1px solid var(--line);
 	overflow-x: auto;
 	scrollbar-width: none;
@@ -5763,15 +6202,19 @@ button.link:hover {
 .tab-strip .tab {
 	display: flex;
 	align-items: center;
-	background: var(--raised);
-	border-top: 2px solid transparent;
+	/* Label, badge and × travel as one centred group. */
+	justify-content: center;
+	/* Sized from the label and never squeezed: with many open the strip
+	   scrolls, rather than crushing names down to their badges. */
+	flex: 0 0 auto;
 	max-width: 12.5rem;
-	flex-shrink: 0;
+	/* The accent lies on the strip's hairline rather than above it. */
+	margin-bottom: -1px;
+	border-bottom: 2px solid transparent;
 }
 
 .tab-strip .tab.on {
-	background: var(--bg);
-	border-top-color: var(--accent);
+	border-bottom-color: var(--accent);
 }
 
 /* The gap the dragged tab would land in, shown on the side it came from so the
@@ -5784,18 +6227,32 @@ button.link:hover {
 	opacity: 0.4;
 }
 
+/* The button is the click target, so it fills whatever width the tab has and
+   centres the label inside itself; a tab wider than its label (the sheet's
+   equal cells) is clickable edge to edge. */
 .tab-strip .tab > button {
+	flex: 1 1 auto;
+	min-width: 0;
+	justify-content: center;
 	background: none;
 	border: none;
 	border-radius: 0;
-	padding: 0.4375rem 0.25rem 0.4375rem 0.6875rem;
-	color: var(--muted);
+	padding: 0.4375rem 0.6875rem;
+	font-size: 0.75rem;
+	letter-spacing: 0.03em;
+	color: var(--faint);
 	display: flex;
 	align-items: center;
 	gap: 0.375rem;
-	min-width: 0;
 }
 
+/* A closable tab's label gives up its right padding to the × beside it, so
+   the pair reads as one tab rather than a label and a stray button. */
+.tab-strip .tab:has(.tab-close) > button {
+	padding-right: 0.25rem;
+}
+
+.tab-strip .tab:hover > button,
 .tab-strip .tab.on > button {
 	color: var(--text);
 }

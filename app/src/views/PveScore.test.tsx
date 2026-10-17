@@ -152,6 +152,55 @@ const scored: Score = {
 	evidenceGames: 4200,
 	bestEffort: false,
 	dataUntil: '2026-06-20T22:46:17Z',
+	dataSince: '2025-01-02T03:04:05Z',
+	aiType: 'Raptors',
+	histogram: [
+		{ lowerBound: 0, upperBound: 17, games: 100, wins: 90 },
+		{ lowerBound: 17, upperBound: 34, games: 300, wins: 30 },
+	],
+	totalGames: 400,
+	matched: {
+		status: 'exact',
+		method: '',
+		similarity: null,
+		differenceCount: 0,
+		hiddenDifferences: 0,
+		diffs: [],
+	},
+	degradation: null,
+	completeness: null,
+	players: [
+		{
+			playerId: 1,
+			playerName: 'me',
+			setupExperience: { clears: 2, maxDefeated: 50 },
+			accomplishments: {
+				participation: { gamesPlayed: 10, victories: 4, distinctMapsPlayed: 3 },
+				encounters: {
+					raptorQueensDefeated: 8,
+					scavengerBossesDefeated: 0,
+					barbarianAisDefeated: 0,
+				},
+				personalBests: {
+					maxQueensOneVictory: 5,
+					maxBossesOneVictory: 0,
+					maxBarbarianAisOneVictory: 0,
+				},
+				challenges: {
+					challenge20Clears: 1,
+					challenge25Clears: 0,
+					challenge30Clears: 0,
+					highestChallengeCleared: 24.8,
+					clearHistogram: [1, 1],
+				},
+			},
+			awards: { mostKilled: { raptors: 2, scavengers: 0, barbarians: 0 } },
+		},
+	],
+	unresolvedPlayers: ['newbie'],
+	setup: { source: 'exact', encounterCount: 20 },
+	settingHash: 'abc',
+	contractHash: 'def',
 }
 
 const asked = vi.mocked(invoke)
@@ -193,6 +242,34 @@ describe('PveScore', () => {
 		expect(container.textContent).toContain('Win')
 		expect(container.textContent).not.toContain('unplaced')
 		expect(container.textContent).not.toContain('—')
+	})
+
+	test('while asking the icon waits with still dots, like the figures', () => {
+		asked.mockReturnValue(deferred<Score>().promise)
+		enter([bot('RaptorsAI')])
+		const { getByLabelText } = render(panel)
+		vi.advanceTimersByTime(0)
+		const button = getByLabelText('Open PvE stats')
+		expect(
+			button.querySelector('.pve-miniature .thinking.still'),
+		).not.toBeNull()
+		expect(button.querySelector('.pve-miniature rect')).toBeNull()
+	})
+
+	test('a failed ask leaves the icon as bars at zero, with no tick', async () => {
+		asked.mockRejectedValue({ code: 'pve', message: 'pve stats answered 504' })
+		const quiet = vi.spyOn(console, 'warn').mockImplementation(() => {})
+		enter([bot('RaptorsAI')])
+		const { getByLabelText } = render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+		const button = getByLabelText('Open PvE stats')
+		const bars = button.querySelectorAll('.pve-miniature rect')
+		expect(bars).toHaveLength(9)
+		const heights = new Set([...bars].map((bar) => bar.getAttribute('height')))
+		expect(heights.size).toBe(1)
+		expect(button.querySelector('.pve-miniature .at')).toBeNull()
+		quiet.mockRestore()
 	})
 
 	test('the dots are there before the ask goes out, not a verdict', () => {
@@ -242,6 +319,70 @@ describe('PveScore', () => {
 		expect(container.textContent).toContain('Challenge')
 		expect(container.textContent).toContain('Win')
 		expect(container.textContent).toContain('Harder than')
+	})
+
+	test('the chart button opens the full panel with the histogram and each record', async () => {
+		asked.mockResolvedValue(scored)
+		enter([bot('RaptorsAI')])
+		const { container, getByLabelText } = render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+
+		// The row's label is the way in; the panel is not drawn until asked for.
+		expect(container.textContent).not.toContain('Training games')
+		const button = getByLabelText('Open PvE stats') as HTMLButtonElement
+		// Its icon is the histogram in little: the two bins merge into one bar,
+		// with the tick where the setup sits.
+		expect(button.querySelectorAll('.pve-miniature rect')).toHaveLength(1)
+		expect(button.querySelector('.pve-miniature .at')).not.toBeNull()
+		button.click()
+
+		const sheet = container.querySelector('.pve-stats')!
+		expect(sheet.textContent).toContain('Training games')
+		expect(sheet.querySelectorAll('.pve-bar')).toHaveLength(2)
+		expect(sheet.querySelector('.pve-bar.current')).not.toBeNull()
+		expect(sheet.textContent).toContain('your best 24.8')
+		expect(sheet.textContent).toContain('2025-01-02 –')
+		// Known players first, then the name the service did not know, and the
+		// own row marked.
+		const names = [...sheet.querySelectorAll('tbody .pve-name')].map(
+			(td) => td.textContent,
+		)
+		expect(names).toEqual(['me', 'newbie'])
+		expect(sheet.querySelector('tr.own .pve-name')?.textContent).toBe('me')
+		// The default tab sorts by Max here; the figure lands in that column.
+		expect(
+			sheet.querySelector('th[aria-sort="descending"]')?.textContent,
+		).toContain('Max here')
+		expect(sheet.querySelector('tr.own')?.textContent).toContain('50')
+		// The widget's Diagnostics is a fifth view in the same box.
+		const diagnostics = [...sheet.querySelectorAll('[role=tab]')].find((held) =>
+			held.textContent?.includes('Diagnostics'),
+		) as HTMLButtonElement
+		diagnostics.click()
+		expect(sheet.querySelector('.pve-diag')?.textContent).toContain(
+			'exact setting',
+		)
+		expect(sheet.querySelector('tbody .pve-name')).toBeNull()
+
+		;(
+			sheet.querySelector('header button:last-child') as HTMLButtonElement
+		).click()
+		expect(container.querySelector('.pve-stats')).toBeNull()
+	})
+
+	test('a figure in the row opens the panel too', async () => {
+		asked.mockResolvedValue(scored)
+		enter([bot('RaptorsAI')])
+		const { container } = render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+
+		const win = [...container.querySelectorAll('.pve-stat')].find((stat) =>
+			stat.textContent?.includes('Win'),
+		) as HTMLElement
+		win.click()
+		expect(container.querySelector('.pve-stats')).not.toBeNull()
 	})
 
 	test('a setup the service cannot place gets the same blank as any other missing figure', async () => {
