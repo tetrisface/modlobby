@@ -2,6 +2,7 @@ import { MemoryRouter, Route, createMemoryHistory } from '@solidjs/router'
 import { fireEvent, render } from '@solidjs/testing-library'
 import { beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { Settings } from '../ipc/bindings/Settings'
+import { setBuild } from '../store/build'
 import { applySettings } from '../store/settings'
 import { SettingsView } from './Settings'
 
@@ -297,5 +298,40 @@ describe('choosing where a notification goes', () => {
 
 		mention.click('In lobby')
 		expect(ring.lit()).toEqual(['Desktop'])
+	})
+})
+
+describe('about', () => {
+	beforeEach(() => {
+		applySettings(loaded())
+		setBuild({ version: '0.1.43', commit: 'a29589c', playsOnline: true })
+	})
+
+	test('the page ends in About, which carries the build once', () => {
+		const { container } = openAt('/')
+		const last = [...container.querySelectorAll('.set-section')].at(-1)
+		expect(last?.id).toBe('settings-about')
+		expect(last?.querySelector(':scope > h2')?.textContent).toBe('About')
+		expect(last?.textContent).toContain('modlobby 0.1.43+a29589c')
+		expect(
+			container.textContent?.split('modlobby 0.1.43+a29589c'),
+		).toHaveLength(2)
+	})
+
+	test('the overview lists About last', () => {
+		const { container } = openAt('/')
+		const names = [
+			...container.querySelectorAll('.settings-overview button'),
+		].map((button) => button.textContent)
+		expect(names.at(-1)).toBe('About')
+	})
+
+	test('About offers the support page', () => {
+		const { container } = openAt('/')
+		const about = container.querySelector('#settings-about')
+		const labels = [...(about?.querySelectorAll('button') ?? [])].map(
+			(button) => button.textContent?.trim(),
+		)
+		expect(labels).toContain('Support modlobby')
 	})
 })

@@ -244,6 +244,11 @@ that decide which unit definitions exist (`forceallunits`, the Legion faction, a
 unit packs). `section` is a lobby display hint by BAR's own description, so regrouping changes
 nothing on the wire, and Cheats keeps its name and every balance setting.
 
+## Support
+
+modlobby is free software. If it is useful to you, a donation at
+[ko-fi.com/tetrisface](https://ko-fi.com/tetrisface) is welcome.
+
 ## Extras
 
 Beyond All Reason publishes no engine for macOS. The Apple Silicon build that exists —

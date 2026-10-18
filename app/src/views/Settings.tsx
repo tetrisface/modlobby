@@ -8,6 +8,7 @@ import {
 	type ParentProps,
 } from 'solid-js'
 import { createStore, reconcile, unwrap } from 'solid-js/store'
+import { AboutRows } from '../components/AboutRows'
 import { PlayerFiles } from '../components/PlayerFiles'
 import { SearchBox } from '../components/SearchBox'
 import { Segmented } from '../components/Segmented'
@@ -15,8 +16,8 @@ import { Heading, Query, Row } from '../components/SettingRow'
 import type { Alert } from '../ipc/bindings/Alert'
 import type { Settings } from '../ipc/bindings/Settings'
 import { api, describeError } from '../ipc/client'
-import { build } from '../store/build'
 import { pushNotice } from '../store/chat'
+import { REPO, SUPPORT } from '../lib/links'
 import { createOverview } from '../lib/overview'
 import { bounds } from '../lib/scale'
 import { MOD, shortcut } from '../lib/platform'
@@ -78,6 +79,7 @@ const SECTIONS = {
 	connection: 'Connection',
 	files: 'Files and logs',
 	chat: 'Chat',
+	about: 'About',
 } as const
 
 type SectionId = keyof typeof SECTIONS
@@ -818,14 +820,9 @@ export function SettingsView() {
 						</Row>
 					</Section>
 
-					{/* The build, at the foot of the page: the one fact a bug report needs. */}
-					<Show when={build()}>
-						{(found) => (
-							<p class='build-stamp'>
-								modlobby {found().version}+{found().commit}
-							</p>
-						)}
-					</Show>
+					<Section id='about'>
+						<AboutRows repo={REPO} support={SUPPORT} />
+					</Section>
 				</div>
 			</Query.Provider>
 		</form>

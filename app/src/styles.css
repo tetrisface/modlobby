@@ -2009,12 +2009,9 @@ body.resizing-y {
 	width: min(22rem, calc(100vw - 40px));
 }
 
-/* At the foot of the page, quiet: the build is what a bug report is missing,
-   not something to read on the way past. Pushed to the bottom of a short page. */
+/* The first row of About, quiet: the build is what a bug report is missing,
+   not something to read on the way past. Selectable, so it can be pasted. */
 .build-stamp {
-	margin-top: auto;
-	padding-top: 0.75rem;
-	border-top: 1px solid var(--line);
 	font-family: var(--mono, monospace);
 	font-size: 0.75rem;
 	color: var(--faint, var(--muted));
