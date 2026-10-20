@@ -12,6 +12,7 @@ clap = { workspace = true }
 content = { workspace = true }
 dotenvy = { workspace = true }
 lobby-runtime = { workspace = true }
+sandbox = { workspace = true }
 lobby-ui = { workspace = true }
 recoil = { workspace = true }
 spring-protocol = { workspace = true }

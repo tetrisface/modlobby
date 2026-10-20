@@ -819,7 +819,9 @@ pub async fn set_side(app: State<'_, App>, side: u8) -> Result<()> {
 /// read for its length, which is disk work for hundreds of files.
 #[tauri::command]
 pub async fn list_replays(app: State<'_, App>) -> Result<Vec<ReplayView>> {
-	let library = content::Library::new(data_dirs(&app)?);
+	// A modded game records into the mods directory; its replay is listed
+	// with the rest, and played confined by where it is.
+	let library = content::Library::new(with_mods_demos(data_dirs(&app)?));
 	disk_work(move || {
 		library
 			.replays()
@@ -830,6 +832,14 @@ pub async fn list_replays(app: State<'_, App>) -> Result<Vec<ReplayView>> {
 	.await
 }
 
+/// `dirs` with the mods write directory among the read directories, for
+/// listing replays only: never for a launch.
+fn with_mods_demos(mut dirs: content::DataDirs) -> content::DataDirs {
+	dirs.read
+		.push(lobby_runtime::mods::layout(&dirs.write).write);
+	dirs
+}
+
 /// Plays a replay. The engine takes a demo file where it would take a
 /// `spring://` URL, so this is the launch path with a different target.
 #[tauri::command]
@@ -838,7 +848,7 @@ pub async fn play_replay(app: State<'_, App>, path: String) -> Result<()> {
 	let replay = std::path::PathBuf::from(&path);
 	// Only from a directory we listed: a path from the front end is not a
 	// reason to hand the engine anything on the disk.
-	let listed = dirs
+	let listed = with_mods_demos(dirs.clone())
 		.all()
 		.any(|dir| replay.parent() == Some(dir.join("demos").as_path()));
 	if !listed || !replay.is_file() {

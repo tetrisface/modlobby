@@ -186,6 +186,10 @@ pub struct GameAsk {
 	/// For a mutator, the commit its host pinned it to: built from GitHub as
 	/// it stands there, before anything else is asked.
 	pub pin: Option<lobby_core::GitPin>,
+	/// Whether this is one of the room's mutators rather than its game: a
+	/// mutator is fetched into the builds root, which only a confined launch
+	/// reads.
+	pub mutator: bool,
 }
 
 /// Nowhere but rapid, until something better is handed in.
@@ -243,6 +247,7 @@ async fn fetch_game(
 		room_hash,
 		checksum: mutator.and_then(|mutator| mutator.checksum.clone()),
 		pin: mutator.and_then(|mutator| mutator.source.clone()),
+		mutator: want == recoil::Want::Mutator,
 	};
 	let elsewhere = rapid_elsewhere(run, vet, progress);
 	if let Some(got) = ask_sources(sources, ask(false), progress, elsewhere.clone()).await {
@@ -605,6 +610,9 @@ enum Command {
 	/// overlay is switched off, which is also when nothing is written.
 	SetOverlayConfigDir(Option<PathBuf>),
 	SetMenuArchive(Option<recoil::MenuArchive>),
+	/// Files a confined launch writes into the mods write directory after
+	/// its reset, by path relative to it.
+	SetModsFiles(Vec<(PathBuf, String)>),
 	/// Where to keep the skirmish room between runs.
 	SetSkirmishPath(Option<PathBuf>),
 	/// Asks a cluster manager for a room of our own; the runtime joins it
@@ -660,6 +668,7 @@ impl Client {
 		hardware: Hardware,
 		state_dir: Option<PathBuf>,
 		confined_to: Option<DataDirs>,
+		confinement: Arc<dyn sandbox::Confinement>,
 	) -> Self {
 		let connector: Connector = Arc::new(|endpoint, policy| {
 			Box::pin(async move { Transport::connect(&endpoint, policy).await })
@@ -671,6 +680,7 @@ impl Client {
 			Arc::new(latency::IcmpEcho),
 			state_dir,
 			confined_to,
+			confinement,
 		)
 	}
 
@@ -681,6 +691,7 @@ impl Client {
 		latency: Arc<dyn Latency>,
 		state_dir: Option<PathBuf>,
 		confined_to: Option<DataDirs>,
+		confinement: Arc<dyn sandbox::Confinement>,
 	) -> Self {
 		let (tx, rx) = mpsc::channel(64);
 		let runtime = Runtime::new(
@@ -691,6 +702,7 @@ impl Client {
 			latency,
 			state_dir,
 			confined_to,
+			confinement,
 		);
 		tokio::spawn(runtime.run());
 		Self { tx }
@@ -1227,6 +1239,12 @@ impl Client {
 	/// What it buys is BAR's in-game "Lobby" button, which raises the overlay
 	/// instead of quitting. Cleared when the overlay is off, since raising a
 	/// lobby that will not come up is worse than the plain Quit button.
+	/// What a confined launch writes into the mods write directory after
+	/// its reset: the in-game escape widget, by path relative to it.
+	pub async fn set_mods_files(&self, files: Vec<(PathBuf, String)>) -> Result<(), ClientError> {
+		self.send(Command::SetModsFiles(files)).await
+	}
+
 	pub async fn set_menu_archive(
 		&self,
 		menu: Option<recoil::MenuArchive>,
@@ -1365,6 +1383,12 @@ struct Runtime {
 	/// The only content directories this runtime may use, when it is not to
 	/// look at the machine's installs at all: a test's scratch folder.
 	confined_to: Option<DataDirs>,
+	/// The boundary a modded game runs inside; a refusal where this
+	/// platform has none.
+	confinement: Arc<dyn sandbox::Confinement>,
+	/// Files a confined launch writes into the mods write directory after
+	/// its reset, by path relative to it: the in-game escape widget.
+	mods_files: Vec<(PathBuf, String)>,
 	/// Each server's rapid master index, by server id; see [`Self::rapid_master`].
 	rapid_masters: BTreeMap<String, String>,
 	map_searches: BTreeMap<String, String>,
@@ -1532,7 +1556,7 @@ fn mutator_view(
 fn check_content(dirs: DataDirs, key: &CheckKey) -> lobby_ui::ContentCheckView {
 	use content::checksum::Verdict;
 	use lobby_ui::CheckView;
-	let library = content::Library::new(dirs);
+	let library = content::Library::new(crate::mods::with_builds(&dirs));
 	let find = |name: &str| library.archive_named(&key.engine, name);
 	let view = |verdict, hash| match verdict {
 		Verdict::Matches => CheckView::Same { hash },
@@ -1866,6 +1890,7 @@ impl Runtime {
 		latency: Arc<dyn Latency>,
 		state_dir: Option<PathBuf>,
 		confined_to: Option<DataDirs>,
+		confinement: Arc<dyn sandbox::Confinement>,
 	) -> Self {
 		// A short queue: progress lines arrive far faster than the front end
 		// needs them, and the batcher coalesces what gets through anyway.
@@ -1909,6 +1934,8 @@ impl Runtime {
 			join_asked: None,
 			data_dir: None,
 			confined_to,
+			confinement,
+			mods_files: Vec::new(),
 			rapid_masters: BTreeMap::new(),
 			map_searches: BTreeMap::new(),
 			bar_maps: BTreeSet::new(),
@@ -1970,7 +1997,7 @@ impl Runtime {
 			.and_then(|()| std::fs::write(&path, skirmish.script()))
 			.map_err(|err| ClientError::Engine(format!("writing the start script: {err}")))?;
 
-		let launched = launch::spawn(
+		let launched = launch::spawn_open(
 			&dirs,
 			engine_version,
 			path.to_string_lossy().into_owned(),
@@ -1997,6 +2024,11 @@ impl Runtime {
 		if self.engine.is_some() {
 			return Err(ClientError::Engine("the engine is already running".into()));
 		}
+		if crate::mods::loads_mutators(script) {
+			return Err(ClientError::Engine(
+				"hosting a game with mods is not supported yet".into(),
+			));
+		}
 		let Some(server) = self.room() else {
 			return Err(ClientError::NotConnected);
 		};
@@ -2016,7 +2048,7 @@ impl Runtime {
 		std::fs::create_dir_all(&dirs.write)
 			.and_then(|()| std::fs::write(&path, script))
 			.map_err(|err| ClientError::Engine(format!("writing the start script: {err}")))?;
-		match launch::spawn(
+		match launch::spawn_open(
 			&dirs,
 			engine_version,
 			path.to_string_lossy().into_owned(),
@@ -2046,7 +2078,7 @@ impl Runtime {
 	/// The engine reads the demo's own header for the engine version it needs,
 	/// so the replay's name is the only hint we have about which one to use;
 	/// falling back to any installed engine beats refusing to play it.
-	fn play_replay(&mut self, dirs: DataDirs, path: String) -> Result<(), ClientError> {
+	async fn play_replay(&mut self, dirs: DataDirs, path: String) -> Result<(), ClientError> {
 		if self.engine.is_some() {
 			return Err(ClientError::Engine("the engine is already running".into()));
 		}
@@ -2056,13 +2088,25 @@ impl Runtime {
 			.and_then(|stem| stem.rsplit_once('_').map(|(_, engine)| engine.to_owned()))
 			.unwrap_or_default();
 
+		// A replay of a modded game replays its mods, which is their code
+		// running: the same boundary as the game had.
+		let mods = crate::mods::layout(&dirs.write);
+		// One recorded by a confined game lives in the mods directory and is
+		// modded by where it is; any other is modded unless its script can be
+		// read and says otherwise.
+		let modded = std::path::Path::new(&path).starts_with(mods.write.join("demos"))
+			|| content::demo::script(&path)
+				.map(|script| crate::mods::loads_mutators(&script))
+				.unwrap_or(true);
 		let launched = launch::spawn(
 			&dirs,
 			&version,
 			path,
 			self.overlay_config_dir.as_deref(),
 			self.menu_archive.clone(),
+			self.launch_mode(modded.then_some(sandbox::Network::None), &mods),
 		)
+		.await
 		.map_err(ClientError::Engine)?;
 		self.started(launched, dirs.write);
 		Ok(())
@@ -2072,7 +2116,10 @@ impl Runtime {
 	/// runs on a settings copy of ours rather than their own file.
 	fn started(&mut self, launched: launch::Launched, write: PathBuf) {
 		let pid = launched.child.id();
-		self.engine = Some(Engine::Started(Box::new(launched.child)));
+		self.engine = Some(match launched.child {
+			launch::Started::Child(child) => Engine::Started(Box::new(child)),
+			launch::Started::Confined(confined) => Engine::confined(confined),
+		});
 		self.engine_run = Some(EngineRun {
 			write,
 			snapshot: launched.snapshot,
@@ -2207,7 +2254,7 @@ impl Runtime {
 		let Some(dirs) = self.data_dirs() else {
 			return Err(ClientError::Refused("no BAR data directory".into()));
 		};
-		let library = content::Library::new(dirs.clone());
+		let library = content::Library::new(crate::mods::with_builds(&dirs));
 		let rapid_master = self.rapid_master(server.as_deref());
 		let mut wants = Vec::new();
 		// Why what is missing is not asked for.
@@ -2572,7 +2619,7 @@ impl Runtime {
 		let Some(dirs) = self.data_dirs() else {
 			return;
 		};
-		let library = content::Library::new(dirs.clone());
+		let library = content::Library::new(crate::mods::with_builds(&dirs));
 		let available = library.check(&key.0, &key.1, &key.2);
 		let mutators: Vec<(lobby_core::Mutator, bool)> = key
 			.3
@@ -3061,7 +3108,7 @@ impl Runtime {
 				let _ = reply.send(result);
 			}
 			Command::PlayReplay { dirs, path, reply } => {
-				let result = self.play_replay(dirs, path);
+				let result = self.play_replay(dirs, path).await;
 				let _ = reply.send(result);
 			}
 			Command::DownloadMissing { reply } => {
@@ -3211,6 +3258,7 @@ impl Runtime {
 			}
 			Command::SetOverlayConfigDir(dir) => self.overlay_config_dir = dir,
 			Command::SetMenuArchive(menu) => self.menu_archive = menu,
+			Command::SetModsFiles(files) => self.mods_files = files,
 			Command::SetSkirmishPath(path) => self.skirmish_path = path,
 			Command::SetRapidMasters(masters) => self.rapid_masters = masters,
 			Command::SetMapSearches(searches) => self.map_searches = searches,
@@ -3779,7 +3827,7 @@ impl Runtime {
 		let Some(server) = self.room() else {
 			return Err(ClientError::NotConnected);
 		};
-		let (engine_version, url, in_game) = {
+		let (engine_version, url, modded, in_game) = {
 			let Some(conn) = self
 				.servers
 				.get_mut(&server)
@@ -3799,7 +3847,7 @@ impl Runtime {
 			// Better a message naming what is missing than an engine that
 			// starts and cannot join -- or one that stops at a mutator it
 			// cannot find.
-			let library = content::Library::new(dirs.clone());
+			let library = content::Library::new(crate::mods::with_builds(&dirs));
 			let available = library.check(&room.engine_version, &room.game_name, &room.map_name);
 			let mut missing: Vec<String> =
 				available.missing().into_iter().map(str::to_owned).collect();
@@ -3827,7 +3875,16 @@ impl Runtime {
 			}
 			let engine_version = room.engine_version.clone();
 			let url = recoil::spring_url(&me, &game.script_password, &game.view.ip, game.view.port);
-			(engine_version, url, conn.session.set_in_game(true))
+			let modded = state
+				.my_battle
+				.as_ref()
+				.is_some_and(|my| !my.mutators().is_empty());
+			// Where no sandbox can hold it, refuse before the server is told
+			// we are in game.
+			if modded && let Some(reason) = self.confinement.unavailable() {
+				return Err(ClientError::Engine(reason));
+			}
+			(engine_version, url, modded, conn.session.set_in_game(true))
 		};
 		// SPADS /adduser's us to the running game only once the lobby shows us in
 		// game; the engine needs a few seconds to reach the host.
@@ -3842,16 +3899,61 @@ impl Runtime {
 				.push_for(&server, Delta::GameRunning(Some(game.view.clone())));
 		}
 		self.in_game_on = Some(server);
+		let mods = crate::mods::layout(&dirs.write);
 		let launched = launch::spawn(
 			&dirs,
 			&engine_version,
 			url,
 			self.overlay_config_dir.as_deref(),
 			self.menu_archive.clone(),
+			self.launch_mode(modded.then_some(sandbox::Network::Outbound), &mods),
 		)
-		.map_err(ClientError::Engine)?;
+		.await;
+		let launched = match launched {
+			Ok(launched) => launched,
+			Err(reason) => {
+				// The bit went up for a game that never started; take it
+				// back down, or the room would show us in a game forever.
+				if let Some(server) = self.in_game_on.take()
+					&& let Some(conn) = self.link_mut(&server)
+				{
+					for effect in conn.session.set_in_game(false) {
+						if let Effect::Send(envelope) = effect {
+							let _ = self.send_line(&server, envelope).await;
+						}
+					}
+				}
+				return Err(ClientError::Engine(reason));
+			}
+		};
 		self.started(launched, dirs.write);
 		Ok(())
+	}
+
+	/// How to start the engine: confined with `network` for a game that loads
+	/// mods, open otherwise. The probe's verdict and the grants record live in
+	/// the state directory, or the temp directory when there is none.
+	fn launch_mode<'a>(
+		&'a self,
+		confined: Option<sandbox::Network>,
+		mods: &'a crate::mods::ModsLayout,
+	) -> launch::Mode<'a> {
+		let Some(network) = confined else {
+			return launch::Mode::Open;
+		};
+		let state = self
+			.state_dir
+			.clone()
+			.unwrap_or_else(|| std::env::temp_dir().join("modlobby"));
+		launch::Mode::Confined {
+			confinement: Arc::clone(&self.confinement),
+			mods,
+			network,
+			self_exe: std::env::current_exe().unwrap_or_default(),
+			probe_cache: state.join("sandbox-probe.json"),
+			grants_file: state.join("sandbox-grants.json"),
+			after_reset: self.mods_files.clone(),
+		}
 	}
 
 	async fn engine_exited(&mut self, code: Option<i32>) {
@@ -4043,8 +4145,11 @@ impl Runtime {
 		// The same refusal the multiplayer path gives, for the same reason: an
 		// engine that starts without the content quits with a sync error, and
 		// a message naming what is missing is worth more than that.
-		let available =
-			content::Library::new(dirs.clone()).check(&room.engine, &room.game, &room.map);
+		let available = content::Library::new(crate::mods::with_builds(&dirs)).check(
+			&room.engine,
+			&room.game,
+			&room.map,
+		);
 		if !available.complete() {
 			return Err(ClientError::Engine(format!(
 				"this game needs content you do not have: {}",
@@ -4370,6 +4475,10 @@ fn chat_lines(server: Option<String>, deltas: Vec<Delta>) -> Option<UiMessage> {
 /// started and left running (see [`orphan`]).
 enum Engine {
 	Started(Box<Child>),
+	/// Inside a confinement, which holds it by its pid and job. Waited on by
+	/// one task from the start, since the runtime's own wait is rebuilt on
+	/// every turn of its loop; the exit code arrives through the receiver.
+	Confined(Arc<sandbox::Confined>, oneshot::Receiver<Option<i32>>),
 	/// Known by its process id alone, and looked at every [`ADOPTED_LOOK`].
 	Adopted {
 		pid: u32,
@@ -4383,9 +4492,20 @@ enum Engine {
 const ADOPTED_LOOK: Duration = Duration::from_secs(1);
 
 impl Engine {
+	/// A confined engine with its waiter started.
+	fn confined(confined: Arc<sandbox::Confined>) -> Self {
+		let (tx, rx) = oneshot::channel();
+		let held = Arc::clone(&confined);
+		tokio::spawn(async move {
+			let _ = tx.send(held.wait().await);
+		});
+		Self::Confined(confined, rx)
+	}
+
 	fn id(&self) -> Option<u32> {
 		match self {
 			Self::Started(child) => child.id(),
+			Self::Confined(confined, _) => Some(confined.pid),
 			Self::Adopted { pid, .. } => Some(*pid),
 		}
 	}
@@ -4394,6 +4514,7 @@ impl Engine {
 	fn start_kill(&mut self) -> bool {
 		match self {
 			Self::Started(child) => child.start_kill().is_ok(),
+			Self::Confined(confined, _) => confined.kill(),
 			Self::Adopted { pid, .. } => orphan::kill(*pid),
 		}
 	}
@@ -4407,6 +4528,7 @@ impl Engine {
 async fn wait_engine(engine: &mut Option<Engine>) -> Option<i32> {
 	match engine {
 		Some(Engine::Started(child)) => child.wait().await.ok().and_then(|status| status.code()),
+		Some(Engine::Confined(_, exited)) => exited.await.ok().flatten(),
 		Some(Engine::Adopted { pid, next_look }) => loop {
 			tokio::time::sleep_until((*next_look).into()).await;
 			*next_look = Instant::now() + ADOPTED_LOOK;
@@ -5428,6 +5550,9 @@ mod tests {
 			Arc::new(latency::Unmeasured),
 			None,
 			Some(scratch()),
+			Arc::new(sandbox::Refuse {
+				reason: "no sandbox in tests".into(),
+			}),
 		)
 	}
 
@@ -5796,6 +5921,9 @@ mod tests {
 			Arc::new(latency::Unmeasured),
 			None,
 			Some(scratch()),
+			Arc::new(sandbox::Refuse {
+				reason: "no sandbox in tests".into(),
+			}),
 		);
 		let ui = Collector::default();
 		client.subscribe(ui.clone()).await.unwrap();
@@ -5931,6 +6059,9 @@ mod tests {
 			Arc::new(latency::Unmeasured),
 			None,
 			Some(scratch()),
+			Arc::new(sandbox::Refuse {
+				reason: "no sandbox in tests".into(),
+			}),
 		);
 		let ui = Collector::default();
 		client.subscribe(ui.clone()).await.unwrap();
@@ -6031,6 +6162,9 @@ mod tests {
 			Arc::new(latency::Unmeasured),
 			None,
 			Some(scratch()),
+			Arc::new(sandbox::Refuse {
+				reason: "no sandbox in tests".into(),
+			}),
 		);
 		let endpoint = Endpoint::new("test");
 		let login = tokio::spawn({
@@ -6099,6 +6233,9 @@ mod tests {
 			Arc::new(latency::Unmeasured),
 			None,
 			Some(scratch()),
+			Arc::new(sandbox::Refuse {
+				reason: "no sandbox in tests".into(),
+			}),
 		);
 		let login = log_in(&client, "test");
 		server_write
@@ -6148,5 +6285,249 @@ mod tests {
 			"[game] {}\n"
 		);
 		client.shutdown().await;
+	}
+
+	/// A demo file as the engine writes one: the header up to `scriptSize`,
+	/// padded to the header size it declares, then the start script.
+	fn demo_with(script: &str) -> Vec<u8> {
+		let header_size: i32 = 320;
+		let mut bytes = Vec::new();
+		bytes.extend_from_slice(b"spring demofile\0");
+		bytes.extend_from_slice(&5i32.to_le_bytes());
+		bytes.extend_from_slice(&header_size.to_le_bytes());
+		bytes.resize(304, 0);
+		bytes.extend_from_slice(&(script.len() as i32).to_le_bytes());
+		bytes.resize(header_size as usize, 0);
+		bytes.extend_from_slice(script.as_bytes());
+		bytes
+	}
+
+	/// A replay whose script loads a mutator takes the confinement, and a
+	/// platform with none says so rather than starting the engine unconfined.
+	#[tokio::test]
+	async fn a_replay_of_a_modded_game_launches_confined() {
+		let (connector, _server) = in_memory();
+		let client = Client::spawn_with(
+			ThrottlePolicy::default(),
+			Hardware::stub(),
+			connector,
+			Arc::new(latency::Unmeasured),
+			None,
+			Some(scratch()),
+			Arc::new(sandbox::Refuse {
+				reason: "no sandbox in this test".into(),
+			}),
+		);
+		let dir = tempfile::tempdir().unwrap();
+		let demos = dir.path().join("demos");
+		std::fs::create_dir_all(&demos).unwrap();
+		let replay = demos.join("2026-10-18_modded_0.0.0.sdf");
+		std::fs::write(
+			&replay,
+			demo_with("[game]\n{\n\tmutator0 = github-x-y-abc.sdd;\n\tgametype = g;\n}\n"),
+		)
+		.unwrap();
+		let result = client
+			.play_replay(
+				DataDirs::only(dir.path()),
+				replay.to_string_lossy().into_owned(),
+			)
+			.await;
+		match result {
+			Err(ClientError::Engine(reason)) => {
+				assert!(reason.contains("no sandbox in this test"), "{reason}")
+			}
+			other => panic!("{other:?}"),
+		}
+		client.shutdown().await;
+	}
+
+	#[tokio::test]
+	async fn hosting_a_modded_game_is_refused_in_this_version() {
+		let (connector, server) = in_memory();
+		let (server_read, mut server_write) = tokio::io::split(server);
+		let mut server_lines = BufReader::new(server_read).lines();
+		let client = Client::spawn_with(
+			ThrottlePolicy::default(),
+			Hardware::stub(),
+			connector,
+			Arc::new(latency::Unmeasured),
+			None,
+			Some(scratch()),
+			Arc::new(sandbox::Refuse {
+				reason: "no sandbox in this test".into(),
+			}),
+		);
+		let login = log_in(&client, "test");
+		server_write
+			.write_all(b"TASSERVER 0.38 * 8201 0\n")
+			.await
+			.unwrap();
+		line_starting_with(&mut server_lines, "LOGIN ").await;
+		server_write
+			.write_all(b"ACCEPTED me\nADDUSER me SE 1 LuaLobby Chobby\n")
+			.await
+			.unwrap();
+		server_write.write_all(ROOM).await.unwrap();
+		server_write.write_all(b"LOGININFOEND\n").await.unwrap();
+		login.await.unwrap().unwrap();
+
+		let join = tokio::spawn({
+			let client = client.clone();
+			async move { client.join_battle("test".into(), 5, None).await }
+		});
+		line_starting_with(&mut server_lines, "JOINBATTLE ").await;
+		server_write
+			.write_all(b"JOINBATTLE 5 h\nJOINEDBATTLE 5 me\nREQUESTBATTLESTATUS\n")
+			.await
+			.unwrap();
+		join.await.unwrap().unwrap();
+		line_starting_with(&mut server_lines, "MYBATTLESTATUS ").await;
+
+		let dir = tempfile::tempdir().unwrap();
+		let result = client
+			.launch_hosted(
+				DataDirs::only(dir.path()),
+				"0.0.0".into(),
+				"[game] {\n\tmutator0 = x.sdd;\n}\n".into(),
+			)
+			.await;
+		match result {
+			Err(ClientError::Engine(reason)) => assert!(reason.contains("mods"), "{reason}"),
+			other => panic!("{other:?}"),
+		}
+		assert!(
+			!dir.path().join("modlobby-hosted.txt").exists(),
+			"refused before anything was written"
+		);
+		client.shutdown().await;
+	}
+
+	/// A guard that only remembers whether it was asked to end the engine.
+	struct Remembering(Arc<std::sync::atomic::AtomicBool>);
+
+	impl sandbox::Guard for Remembering {
+		fn kill(&self) -> bool {
+			self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+			true
+		}
+
+		fn wait(&self) -> Option<i32> {
+			Some(0)
+		}
+	}
+
+	#[test]
+	fn stopping_a_confined_engine_kills_its_job() {
+		let killed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+		let (_never, exited) = oneshot::channel();
+		let mut engine = Engine::Confined(
+			Arc::new(sandbox::Confined::new(
+				4242,
+				Box::new(Remembering(killed.clone())),
+			)),
+			exited,
+		);
+		assert_eq!(engine.id(), Some(4242));
+		assert!(engine.start_kill());
+		assert!(killed.load(std::sync::atomic::Ordering::SeqCst));
+	}
+
+	/// A guard that counts how many waits are in flight at once; `kill`
+	/// ends them.
+	struct Counting {
+		waiting: Arc<std::sync::atomic::AtomicUsize>,
+		ended: Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>,
+	}
+
+	impl sandbox::Guard for Counting {
+		fn kill(&self) -> bool {
+			let (ended, wake) = &*self.ended;
+			*ended.lock().unwrap() = true;
+			wake.notify_all();
+			true
+		}
+
+		fn wait(&self) -> Option<i32> {
+			self.waiting
+				.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+			let (ended, wake) = &*self.ended;
+			let mut done = ended.lock().unwrap();
+			while !*done {
+				done = wake.wait(done).unwrap();
+			}
+			Some(7)
+		}
+	}
+
+	/// The runtime rebuilds its engine wait on every turn of its loop; a
+	/// confined engine is waited on once, however many turns go by, and the
+	/// exit code still arrives.
+	#[tokio::test]
+	async fn a_confined_engine_is_waited_on_once_however_often_the_loop_turns() {
+		let waiting = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+		let ended = Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
+		let confined = Arc::new(sandbox::Confined::new(
+			99,
+			Box::new(Counting {
+				waiting: waiting.clone(),
+				ended: ended.clone(),
+			}),
+		));
+		let mut engine = Some(Engine::confined(confined.clone()));
+		for _ in 0..20 {
+			let _ = tokio::time::timeout(Duration::from_millis(5), wait_engine(&mut engine)).await;
+		}
+		tokio::time::sleep(Duration::from_millis(50)).await;
+		assert_eq!(
+			waiting.load(std::sync::atomic::Ordering::SeqCst),
+			1,
+			"one waiter, not one per turn"
+		);
+		confined.kill();
+		let code = tokio::time::timeout(Duration::from_secs(2), wait_engine(&mut engine))
+			.await
+			.expect("the exit arrives");
+		assert_eq!(code, Some(7));
+	}
+
+	/// What is asked for a room's mutator says so: the sources fetch it
+	/// into the builds root, which only a confined launch reads.
+	#[tokio::test]
+	async fn a_mutators_ask_says_it_is_one() {
+		let (tx, _events) = mpsc::channel(8);
+		let asked = Arc::default();
+		let found = sources(
+			Some(Ok("github dev/sphere".into())),
+			None,
+			Arc::clone(&asked),
+		);
+		let mut room = room();
+		room.mutators.push(lobby_core::Mutator {
+			name: "Sphere v1".into(),
+			checksum: None,
+			source: None,
+			date: None,
+		});
+		let run = recoil::Download {
+			wants: vec![(recoil::Want::Mutator, "Sphere v1".into())],
+			..game_run()
+		};
+		fetch_game(&run, &room, &refused_rapid(Arc::default()), &found, &tx).await;
+		fetch_game(
+			&game_run(),
+			&room,
+			&refused_rapid(Arc::default()),
+			&found,
+			&tx,
+		)
+		.await;
+		let asked: Vec<bool> = asked
+			.lock()
+			.unwrap()
+			.iter()
+			.map(|ask| ask.mutator)
+			.collect();
+		assert_eq!(asked, [true, false]);
 	}
 }

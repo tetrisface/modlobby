@@ -2809,6 +2809,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "junction"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cde48f36530cbd91b65f050101e6c056d6eb743cea2a8f0f19beef69c6742ff8"
+dependencies = [
+ "scopeguard",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "keyboard-types"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2869,6 +2879,7 @@ dependencies = [
  "lobby-ui",
  "mdns-sd",
  "recoil",
+ "sandbox",
  "serde",
  "serde_json",
  "socket2",
@@ -2976,11 +2987,13 @@ name = "lobby-runtime"
 version = "0.1.46"
 dependencies = [
  "content",
+ "junction",
  "lobby-core",
  "lobby-ui",
  "presets",
  "rand 0.10.2",
  "recoil",
+ "sandbox",
  "serde",
  "serde_json",
  "skirmish",
@@ -3164,6 +3177,7 @@ dependencies = [
  "rand 0.10.2",
  "recoil",
  "reqwest",
+ "sandbox",
  "serde",
  "serde_json",
  "settings",
@@ -3204,6 +3218,7 @@ dependencies = [
  "lobby-runtime",
  "lobby-ui",
  "recoil",
+ "sandbox",
  "spring-protocol",
  "tokio",
  "toml 1.1.4+spec-1.1.0",
@@ -4647,6 +4662,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "sandbox"
+version = "0.1.44"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "windows 0.62.2",
 ]
 
 [[package]]

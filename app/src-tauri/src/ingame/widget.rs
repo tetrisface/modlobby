@@ -162,6 +162,82 @@ end
 	)
 }
 
+/// The file the sandboxed widget appends to, in the mods write directory.
+pub const FILE: &str = "modlobby-ingame.txt";
+
+/// The widget for a game inside the sandbox, which has no sockets: what it
+/// asks goes as one line into a file beside the game that modlobby watches.
+/// There is no answer to wait for, and no other lobby's game ever loads this
+/// file, so a press with nothing selected is always ours to take.
+pub fn source_file(token: &str) -> String {
+	format!(
+		r#"-- modlobby: Escape opens the lobby, from inside the sandbox.
+--
+-- Written by modlobby into the mods write directory when it launches a game
+-- that loads mods, and wiped with that directory before the next one. The
+-- game cannot open a connection, so this appends one line to a file beside it,
+-- guarded by a token generated for this run, and modlobby watches the file.
+
+function widget:GetInfo()
+	return {{
+		name = "modlobby Escape",
+		desc = "Escape with nothing selected opens the modlobby window",
+		author = "modlobby",
+		date = "2026",
+		license = "GNU GPL, v2 or later",
+		layer = 0,
+		enabled = true,
+	}}
+end
+
+local TOKEN = "{token}"
+
+local GetSelectedUnitsCount = Spring.GetSelectedUnitsCount
+
+local KEY_ESCAPE = 27
+
+-- Appends one line; the write directory is the game's working directory.
+local function ask(verb)
+	local file = io.open({file:?}, "a")
+	if not file then
+		return false
+	end
+	file:write(TOKEN .. " " .. verb .. "\n")
+	file:close()
+	return true
+end
+
+-- The menu says the Lobby button found nobody home: the engine's own quit
+-- box is always available.
+function widget:RecvLuaMsg(msg)
+	if msg ~= "modlobbyGone" then
+		return false
+	end
+	Spring.Echo("modlobby is not running; opening the engine quit menu")
+	Spring.SendCommands("QuitMenu")
+	return true
+end
+
+function widget:KeyPress(key, mods, isRepeat)
+	if key ~= KEY_ESCAPE or isRepeat then
+		return false
+	end
+	-- Escape already means "drop what I am holding". Only when it would
+	-- otherwise do nothing does it mean "show me the lobby".
+	if GetSelectedUnitsCount() > 0 then
+		return false
+	end
+	if mods and (mods.alt or mods.ctrl or mods.shift or mods.meta) then
+		return false
+	end
+	return ask("raise")
+end
+"#,
+		file = FILE,
+		token = token,
+	)
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -204,6 +280,22 @@ mod tests {
 		let source = source(1, "x");
 		assert!(source.contains("function widget:RecvLuaMsg"));
 		assert!(source.contains(r#"msg ~= "modlobbyGone""#));
+		assert!(source.contains(r#"Spring.SendCommands("QuitMenu")"#));
+	}
+
+	/// A confined game has no socket: the file widget appends what it asks to
+	/// a file in the write directory, and never touches LuaSocket.
+	#[test]
+	fn the_file_widget_appends_the_token_and_verb_and_never_opens_a_socket() {
+		let source = source_file("cafebabe");
+		assert!(source.contains(r#"local TOKEN = "cafebabe""#));
+		assert!(
+			source.contains(&format!("io.open({FILE:?}, \"a\")")),
+			"{source}"
+		);
+		assert!(!source.contains("socket"), "no socket anywhere: {source}");
+		assert!(source.contains("return {\n\t\tname = \"modlobby Escape\""));
+		assert!(source.contains("GetSelectedUnitsCount() > 0"));
 		assert!(source.contains(r#"Spring.SendCommands("QuitMenu")"#));
 	}
 }

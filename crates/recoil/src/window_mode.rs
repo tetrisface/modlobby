@@ -209,6 +209,21 @@ fn pinned(theirs: &str) -> Vec<(&'static str, &'static str)> {
 	keys
 }
 
+/// The player's settings flattened into one file's worth of text, with the
+/// borderless keys pinned and `extra` pinned on top: a config to launch an
+/// engine with that carries everything else of theirs.
+pub fn config_text(data_dirs: &[&Path], engine_version: &str, extra: &[(&str, &str)]) -> String {
+	let theirs = flattened(data_dirs, engine_version);
+	let mut keys = pinned(&theirs);
+	let more: Vec<(&str, &str)> = extra
+		.iter()
+		.filter(|(key, _)| !keys.iter().any(|(held, _)| held.eq_ignore_ascii_case(key)))
+		.copied()
+		.collect();
+	keys.extend(more);
+	set_keys(&theirs, &keys)
+}
+
 /// Where modlobby keeps the config it launches with, and what seeded it.
 fn ours(config_dir: &Path) -> (PathBuf, PathBuf) {
 	(

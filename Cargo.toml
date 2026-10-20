@@ -17,6 +17,7 @@ members = [
     "crates/news",
     "crates/recoil",
     "crates/lan",
+    "crates/sandbox",
     "crates/modlobby-cli",
     "app/src-tauri",
 ]
@@ -75,6 +76,7 @@ tweaks = { path = "crates/tweaks" }
 modoptions = { path = "crates/modoptions" }
 recoil = { path = "crates/recoil" }
 lan = { path = "crates/lan" }
+sandbox = { path = "crates/sandbox" }
 
 anyhow = "=1.0.104"
 base64 = "=0.23.1"
@@ -151,6 +153,12 @@ reqwest = { version = "=0.13.4", default-features = false, features = [
   "rustls-no-provider",
 ] }
 windows-sys = "=0.61.2"
+# The AppContainer around a modded game: profiles, ACLs, job objects, the
+# window station. `windows-sys` has no safe wrappers for the handle-returning
+# calls these need.
+windows = "=0.62.2"
+# The content views a confined engine reads: one junction per content subdirectory.
+junction = "=2.1.0"
 tempfile = "=3.27.0"
 thiserror = "=2.0.20"
 tokio = { version = "=1.53.1", features = ["rt-multi-thread", "net", "macros", "sync", "time", "io-util", "fs", "signal", "process"] }

@@ -344,6 +344,7 @@ pub fn run() {
 				overlay: controller.clone(),
 				client: app.client.clone(),
 			});
+			let file_actions: std::sync::Arc<dyn ingame::Actions> = actions.clone();
 			// The widget goes in the directory we write; the engine reads
 			// `LuaUI/Widgets` from every data directory it is given.
 			let widget_dir = lobby_runtime::launch::data_dirs(app.settings.get().paths.data_dir)
@@ -373,6 +374,25 @@ pub fn run() {
 								),
 								Err(err) => tracing::warn!(%err, "could not install the widget"),
 							}
+							// A game inside the sandbox has no socket: its widget
+							// writes a file in the mods directory, watched here.
+							// Its own token: the socket's is readable inside the
+							// sandbox through the menu archive, this one is not.
+							let mods = lobby_runtime::mods::layout(dir);
+							let file_token = ingame::token();
+							let _ = menu_client
+								.set_mods_files(vec![(
+									ingame::widget::path(std::path::Path::new(""))
+										.components()
+										.collect(),
+									ingame::widget::source_file(&file_token),
+								)])
+								.await;
+							ingame::watch_file(
+								mods.write.join(ingame::FILE),
+								file_token,
+								file_actions.clone(),
+							);
 						}
 						if let (true, Some(dir)) = (want_menu, widget_dir.as_deref()) {
 							match ingame.install_menu(dir) {

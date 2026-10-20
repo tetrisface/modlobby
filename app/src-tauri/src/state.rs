@@ -113,6 +113,7 @@ impl App {
 				Arc::new(IcmpEcho),
 				Some(settings.dir().to_path_buf()),
 				None,
+				sandbox::platform(),
 			)
 		});
 		Self {
@@ -317,7 +318,15 @@ impl App {
 		if found.is_empty() && !springfiles_too && pin.is_none() {
 			return None;
 		}
-		let games = ask.dirs.write.join("games");
+		// A mutator fetched by name goes where only a confined launch reads;
+		// a game where it always went.
+		let games = if ask.mutator {
+			lobby_runtime::mods::layout(&ask.dirs.write)
+				.builds
+				.join("games")
+		} else {
+			ask.dirs.write.join("games")
+		};
 		let cache = self
 			.settings
 			.dir()
@@ -331,7 +340,7 @@ impl App {
 			let (engine, name) = (ask.engine.clone(), ask.name.clone());
 			Box::pin(async move {
 				rapid(master).await?;
-				content::Library::new(dirs)
+				content::Library::new(lobby_runtime::mods::with_builds(&dirs))
 					.archive_named(&engine, &name)
 					.ok_or_else(|| format!("{name} is not where rapid puts it"))
 			})
@@ -340,13 +349,18 @@ impl App {
 			let _ = progress.try_send(recoil::Progress { current, total });
 		};
 		if let Some(pin) = pin {
+			// A pinned mod's build goes where only modlobby writes and a
+			// confined engine only reads, never into the write directory.
+			let builds = lobby_runtime::mods::layout(&ask.dirs.write)
+				.builds
+				.join("games");
 			let built = content::git::build_commit(
 				&self.http,
 				&api,
 				&pin.repo,
 				&pin.commit,
 				None,
-				&games,
+				&builds,
 				report,
 			)
 			.await

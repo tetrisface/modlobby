@@ -133,6 +133,74 @@ impl InGame {
 	}
 }
 
+pub use widget::FILE;
+
+/// Watches the file the sandboxed widget appends to, acting on each line that
+/// carries this run's token and taking the lines out once read. Polled: the
+/// file is written a few times a game, and a watcher's machinery would be
+/// more than the job.
+pub fn watch_file(
+	path: PathBuf,
+	token: String,
+	actions: Arc<dyn Actions>,
+) -> tokio::task::JoinHandle<()> {
+	tokio::spawn(async move {
+		let mut tick = tokio::time::interval(std::time::Duration::from_millis(250));
+		let mut last_act = std::time::Instant::now() - FILE_PACE;
+		loop {
+			tick.tick().await;
+			let Some(text) = take_file(&path) else {
+				continue;
+			};
+			for line in text.lines() {
+				let Some(command) = parse(line, &token) else {
+					continue;
+				};
+				// A mod inside the game can write this file too; it gets to
+				// ask this often and no more.
+				if last_act.elapsed() < FILE_PACE {
+					break;
+				}
+				last_act = std::time::Instant::now();
+				match command {
+					Command::Raise => {
+						actions.raise();
+					}
+					Command::QuitGame => {
+						actions.quit_game();
+					}
+				}
+				break;
+			}
+		}
+	})
+}
+
+/// How often the file may ask for anything.
+const FILE_PACE: std::time::Duration = std::time::Duration::from_secs(1);
+/// The most of the file that is read: a line is a few dozen bytes, and the
+/// game may write the file.
+const FILE_MOST: u64 = 4 * 1024;
+
+/// The front of the file, decoded lossily, and the file emptied whatever
+/// it held; `None` when there was nothing.
+fn take_file(path: &Path) -> Option<String> {
+	use std::io::Read;
+	let mut head = Vec::new();
+	std::fs::File::open(path)
+		.ok()?
+		.take(FILE_MOST)
+		.read_to_end(&mut head)
+		.ok()?;
+	if head.is_empty() {
+		return None;
+	}
+	if let Err(err) = std::fs::File::create(path) {
+		tracing::warn!(%err, path = %path.display(), "the in-game file could not be emptied");
+	}
+	Some(String::from_utf8_lossy(&head).into_owned())
+}
+
 /// Takes out what an earlier run left and this one will not rewrite: a killed
 /// run never reaches its exit handler, and the menu is kept for as long as any
 /// engine runs.
@@ -214,7 +282,7 @@ async fn serve(stream: TcpStream, token: String, actions: Arc<dyn Actions>) {
 }
 
 /// A per-run secret, baked into the widget we write and required on the wire.
-fn token() -> String {
+pub fn token() -> String {
 	// Four 32-bit draws rather than 32 nibbles: the same 128 bits, and it uses
 	// the one `rand` entry point the rest of this workspace already uses.
 	(0..4).fold(String::new(), |mut token, _| {
@@ -391,5 +459,98 @@ mod tests {
 		assert!(widget.is_file());
 		assert!(menu.join("modinfo.lua").is_file());
 		assert!(menu.join("LuaMenu").join("main.lua").is_file());
+	}
+
+	#[tokio::test]
+	async fn a_line_appended_to_the_file_raises_the_lobby_once() {
+		let dir = tempfile::tempdir().unwrap();
+		let path = dir.path().join(FILE);
+		let spy = spy(true);
+		let watcher = watch_file(path.clone(), "8f3c1d9e".into(), spy.clone());
+		std::fs::write(&path, "8f3c1d9e raise\n").unwrap();
+		let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+		while spy.raised.load(Ordering::SeqCst) == 0 && std::time::Instant::now() < deadline {
+			tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+		}
+		assert_eq!(spy.raised.load(Ordering::SeqCst), 1);
+		tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+		assert_eq!(
+			spy.raised.load(Ordering::SeqCst),
+			1,
+			"a line is acted on once"
+		);
+		assert_eq!(
+			std::fs::read_to_string(&path).unwrap(),
+			"",
+			"read lines are taken out"
+		);
+		watcher.abort();
+	}
+
+	#[tokio::test]
+	async fn a_line_with_the_wrong_token_in_the_file_does_nothing() {
+		let dir = tempfile::tempdir().unwrap();
+		let path = dir.path().join(FILE);
+		let spy = spy(true);
+		let watcher = watch_file(path.clone(), "8f3c1d9e".into(), spy.clone());
+		std::fs::write(&path, "deadbeef raise\n").unwrap();
+		tokio::time::sleep(std::time::Duration::from_millis(700)).await;
+		assert_eq!(spy.raised.load(Ordering::SeqCst), 0);
+		watcher.abort();
+	}
+
+	#[tokio::test]
+	async fn a_huge_escape_file_is_read_in_part_and_emptied() {
+		let dir = tempfile::tempdir().unwrap();
+		let path = dir.path().join(FILE);
+		let spy = spy(true);
+		let watcher = watch_file(path.clone(), "8f3c1d9e".into(), spy.clone());
+		let mut huge = b"8f3c1d9e raise\n".to_vec();
+		huge.extend(std::iter::repeat_n(b'x', 2 * 1024 * 1024));
+		std::fs::write(&path, &huge).unwrap();
+		let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+		while spy.raised.load(Ordering::SeqCst) == 0 && std::time::Instant::now() < deadline {
+			tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+		}
+		assert_eq!(spy.raised.load(Ordering::SeqCst), 1);
+		assert_eq!(
+			std::fs::metadata(&path).unwrap().len(),
+			0,
+			"emptied whatever its size"
+		);
+		watcher.abort();
+	}
+
+	#[tokio::test]
+	async fn bytes_that_are_not_utf8_do_not_stall_the_watcher() {
+		let dir = tempfile::tempdir().unwrap();
+		let path = dir.path().join(FILE);
+		let spy = spy(true);
+		let watcher = watch_file(path.clone(), "8f3c1d9e".into(), spy.clone());
+		std::fs::write(&path, b"\xff\xfe junk\n8f3c1d9e raise\n").unwrap();
+		let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+		while spy.raised.load(Ordering::SeqCst) == 0 && std::time::Instant::now() < deadline {
+			tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+		}
+		assert_eq!(spy.raised.load(Ordering::SeqCst), 1);
+		assert_eq!(std::fs::metadata(&path).unwrap().len(), 0);
+		watcher.abort();
+	}
+
+	/// A mod that writes the file can only ask so often.
+	#[tokio::test]
+	async fn raise_lines_are_rate_limited() {
+		let dir = tempfile::tempdir().unwrap();
+		let path = dir.path().join(FILE);
+		let spy = spy(true);
+		let watcher = watch_file(path.clone(), "8f3c1d9e".into(), spy.clone());
+		std::fs::write(&path, "8f3c1d9e raise\n".repeat(50)).unwrap();
+		tokio::time::sleep(std::time::Duration::from_millis(700)).await;
+		assert_eq!(
+			spy.raised.load(Ordering::SeqCst),
+			1,
+			"fifty lines in one read raise once"
+		);
+		watcher.abort();
 	}
 }

@@ -27,6 +27,7 @@ recoil = { workspace = true }
 lan = { workspace = true }
 skirmish = { workspace = true }
 lobby-runtime = { workspace = true }
+sandbox = { workspace = true }
 news = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }

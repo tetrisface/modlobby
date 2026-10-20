@@ -92,6 +92,9 @@ async fn a_guest_logs_in_joins_talks_and_hears_the_game_start() {
 		},
 		None,
 		Some(DataDirs::only(content.path())),
+		std::sync::Arc::new(sandbox::Refuse {
+			reason: "no sandbox in tests".into(),
+		}),
 	);
 	// The start signal is under test, not the engine or the content: nothing
 	// is to be started, or fetched from the network.
