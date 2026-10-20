@@ -105,6 +105,20 @@ describe('TweakRow', () => {
 		expect(view.getByTitle('Write into tweakdefs1')).toBeTruthy()
 	})
 
+	test('the field’s tip counts the blob rather than holding it', async () => {
+		// A tip is a native window on Linux; a full slot on one unbroken line
+		// is wider than GTK can draw, and the app crashes.
+		const view = mount('A'.repeat(16000))
+		await settle()
+		expect(input(view).title).toBe('16000 characters of base64url')
+	})
+
+	test('an empty field has no tip', async () => {
+		const view = mount(null)
+		await settle()
+		expect(input(view).title).toBe('')
+	})
+
 	test('a pasted blob is decoded, then sent the way the editor sends', async () => {
 		const view = mount('TmV3')
 		await settle()

@@ -4,6 +4,7 @@ import { OptionName } from '../../components/OptionName'
 import { api, describeError } from '../../ipc/client'
 import { isCleared, type Row } from '../../lib/setup'
 import {
+	KINDS,
 	MAP_TABLE_REFUSAL,
 	isDirty,
 	isMapTable,
@@ -39,6 +40,18 @@ export function TweakRow(props: { row: Row }) {
 	const blob = () => {
 		const now = props.row.current ?? ''
 		return isCleared(now) ? '' : now
+	}
+	/**
+	 * The field's tip: why it is read-only, else how long the blob is. Never
+	 * the blob -- a tip is a native window on Linux, and a full slot on one
+	 * unbroken line is wider than GTK can draw.
+	 */
+	const tip = () => {
+		const refused = refusal()
+		if (refused !== null) return refused
+		const length = blob().length
+		if (length === 0) return undefined
+		return `${length} characters of ${KINDS[kindOf(key())].blob}`
 	}
 
 	// The JSON documents carry no name; Rust says what each holds instead.
@@ -122,7 +135,7 @@ export function TweakRow(props: { row: Row }) {
 					readOnly={refusal() !== null}
 					placeholder={refusal() === null ? 'paste base64url' : '—'}
 					aria-label={`${key()} as base64url`}
-					title={refusal() ?? blob()}
+					title={tip()}
 					spellcheck={false}
 					autocomplete='off'
 					onFocus={(event) => event.currentTarget.select()}
