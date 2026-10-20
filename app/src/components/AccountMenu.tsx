@@ -4,6 +4,7 @@ import { api, describeError, errorCode } from '../ipc/client'
 import { serverId, serverName, sessionStatus } from '../lib/servers'
 import { pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
+import { noticeLoginFailure } from '../store/session'
 import { settings } from '../store/settings'
 import { dismiss } from './dismiss'
 import { LoginSheet } from './LoginForm'
@@ -57,7 +58,13 @@ export function AccountMenu(props: { name: string }) {
 			await api.reconnect(server)
 		} catch (error) {
 			if (errorCode(error) === 'noCredentials') logIn(server)
-			else pushNotice('warning', `reconnect: ${describeError(error)}`)
+			else
+				noticeLoginFailure(
+					server,
+					errorCode(error),
+					describeError(error),
+					'could not reconnect to',
+				)
 		}
 	}
 

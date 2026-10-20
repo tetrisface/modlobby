@@ -13,6 +13,18 @@ export type Notice = {
 	server: string | null
 	/** When this one leaves, pushed back while the pointer is in the corner. */
 	expiresAt: number
+	/** The one thing to do about it, offered beside the text. */
+	action?: NoticeAction
+}
+
+/**
+ * A button on a notice. One that has it stays until it is pressed or put
+ * away: a way out that leaves on a timer is gone before some can reach it.
+ * Pressed, the notice goes, and `run` is what it was for.
+ */
+export type NoticeAction = {
+	label: string
+	run: () => void
 }
 
 /**
@@ -274,28 +286,40 @@ function sweep(): void {
 	}
 }
 
+/** Counts notices alone: the chat's counter runs both ways and repeats. */
+let noticeCount = 0
+
 export function pushNotice(
 	level: NoticeLevel,
 	text: string,
 	server: string | null = null,
+	action?: NoticeAction,
 ): void {
-	noticeSeq += 1
+	noticeCount += 1
 	// They leave on their own: these are alerts as much as errors now, and a
 	// corner that only ever fills up is a log nobody asked for. One sweeper for
 	// all of them rather than a timer each, so that holding them all back while
 	// the pointer is in the corner is a single decision.
 	const notice = {
-		seq: noticeSeq,
+		seq: noticeCount,
 		level,
 		text,
 		server,
-		expiresAt: Date.now() + NOTICE_LIFE,
+		expiresAt: action ? Number.POSITIVE_INFINITY : Date.now() + NOTICE_LIFE,
+		action,
 	}
 	setChat('notices', (notices) => [...notices.slice(-19), notice])
 	sweeping ??= setInterval(sweep, SWEEP_EVERY)
 	// An error is the app's own failing, so the next look for a fix comes
 	// sooner. Losable bookkeeping, like the rest of the update memory.
 	if (level === 'error') api.noteTrouble().catch(() => {})
+}
+
+/** Takes one notice out of the corner: its action ran, or it was put away. */
+export function dropNotice(seq: number): void {
+	setChat('notices', (notices) =>
+		notices.filter((notice) => notice.seq !== seq),
+	)
 }
 
 /**

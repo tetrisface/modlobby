@@ -44,6 +44,7 @@ import type { Settings } from './ipc/bindings/Settings'
 import { build, setBuild } from './store/build'
 import {
 	chat,
+	dropNotice,
 	holdNotices,
 	pushNotice,
 	roomKey,
@@ -64,7 +65,7 @@ import {
 import { loadNews, unreadNews } from './store/news'
 import { watchLaunch } from './store/launch'
 import { over, setOver } from './store/overlay'
-import { autoLogin, loginHold } from './store/session'
+import { autoLogin, loginHold, noticeLoginFailure } from './store/session'
 import {
 	applySettings,
 	nudgeScale,
@@ -132,24 +133,33 @@ function Reconnect() {
 		const idle = (settings()?.servers ?? [])
 			.map((entry) => serverId(entry.host))
 			.filter((server) => (lobby.servers[server]?.phase ?? null) === null)
-		const failed = await Promise.all(
+		const tried = await Promise.all(
 			idle.map((server) =>
 				api.reconnect(server).then(
 					() => null,
-					(error: unknown) => error,
+					(error: unknown) => ({ server, error }),
 				),
 			),
 		)
-		const errors = failed.filter((error) => error !== null)
+		const failed = tried.filter((failure) => failure !== null)
 		// Nothing to try again with anywhere: this run never logged in, or
 		// logged out of everything.
-		if (errors.length === idle.length && errors.every(noCredentials)) {
+		if (
+			failed.length === idle.length &&
+			failed.every(({ error }) => noCredentials(error))
+		) {
 			setNeedsLogin(true)
 			navigate('/login')
 			return
 		}
-		for (const error of errors)
-			if (!noCredentials(error)) pushNotice('warning', describeError(error))
+		for (const { server, error } of failed)
+			if (!noCredentials(error))
+				noticeLoginFailure(
+					server,
+					errorCode(error),
+					describeError(error),
+					'could not reconnect to',
+				)
 	}
 
 	const label = () => {
@@ -641,6 +651,28 @@ function Notices() {
 								{(server) => <b>{serverLabel(server())}: </b>}
 							</Show>
 							{notice.text}
+							<Show when={notice.action}>
+								{(action) => (
+									<span class='notice-actions'>
+										<button
+											type='button'
+											onClick={() => {
+												dropNotice(notice.seq)
+												action().run()
+											}}
+										>
+											{action().label}
+										</button>
+										<button
+											type='button'
+											class='link'
+											onClick={() => dropNotice(notice.seq)}
+										>
+											Not now
+										</button>
+									</span>
+								)}
+							</Show>
 						</span>
 						{/* The way out of the corner: which of these appear, and where. */}
 						<button

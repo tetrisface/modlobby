@@ -2,15 +2,28 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { Settings } from '../ipc/bindings/Settings'
 import { newServer } from '../lib/servers'
 
-const { login, loginWait, hasPassword, autoLogin, loginHolds, applySettings } =
-	vi.hoisted(() => ({
-		login: vi.fn(),
-		loginWait: vi.fn(),
-		hasPassword: vi.fn(),
-		autoLogin: vi.fn(),
-		loginHolds: vi.fn(),
-		applySettings: vi.fn(),
-	}))
+const {
+	login,
+	loginWait,
+	hasPassword,
+	autoLogin,
+	loginHolds,
+	reconnect,
+	applySettings,
+	allowUnencrypted,
+	held,
+} = vi.hoisted(() => ({
+	login: vi.fn(),
+	loginWait: vi.fn(),
+	hasPassword: vi.fn(),
+	autoLogin: vi.fn(),
+	loginHolds: vi.fn(),
+	reconnect: vi.fn(),
+	applySettings: vi.fn(),
+	allowUnencrypted: vi.fn(),
+	/** What `settings()` answers: which servers are BAR's is read from it. */
+	held: { settings: null as unknown },
+}))
 vi.mock('../ipc/client', () => ({
 	api: {
 		login: (...args: unknown[]) => login(...args),
@@ -18,15 +31,19 @@ vi.mock('../ipc/client', () => ({
 		hasPassword: (...args: unknown[]) => hasPassword(...args),
 		autoLogin: () => autoLogin(),
 		loginHolds: () => loginHolds(),
+		reconnect: (...args: unknown[]) => reconnect(...args),
 	},
 	describeError: (error: unknown) => String(error),
+	errorCode: (error: unknown) =>
+		(error as { code?: string } | null)?.code ?? null,
 }))
 // What a login writes back is applied; nothing here reads it again. The
 // lobby store, imported for which servers are up, reads `settings` lazily.
 vi.mock('./settings', () => ({
 	applySettings: (...args: unknown[]) => applySettings(...args),
+	allowUnencrypted: (...args: unknown[]) => allowUnencrypted(...args),
 	serverLabel: (id: string) => id,
-	settings: () => null,
+	settings: () => held.settings,
 }))
 
 /** Module state is per run; each test wants a run of its own. */
@@ -69,6 +86,11 @@ beforeEach(() => {
 	loginHolds.mockReset()
 	loginHolds.mockResolvedValue({})
 	applySettings.mockReset()
+	reconnect.mockReset()
+	reconnect.mockResolvedValue(undefined)
+	allowUnencrypted.mockReset()
+	allowUnencrypted.mockResolvedValue(undefined)
+	held.settings = null
 })
 
 afterEach(() => vi.useRealTimers())
@@ -89,7 +111,7 @@ describe("the start's logins, which Rust makes", () => {
 	test('say what went wrong with any of them', async () => {
 		autoLogin.mockResolvedValue({
 			settings: {},
-			failures: [{ server: BAR, message: 'wrong password' }],
+			failures: [{ server: BAR, code: 'refused', message: 'wrong password' }],
 		})
 		const session = await fresh()
 		const { chat } = await import('./chat')
@@ -203,5 +225,49 @@ describe('logging in without being asked, from the battle list', () => {
 		expect(await session.loginUnattended(remembered())).toBe(true)
 		expect(login).toHaveBeenCalledTimes(1)
 		expect(login).toHaveBeenCalledWith(BAR, 'me', null, true, true)
+	})
+})
+
+describe('a login refused for want of encryption', () => {
+	const builtin = () =>
+		({
+			servers: [{ ...newServer(BAR), builtin: 'bar' }, newServer(RAPID)],
+		}) as unknown as Settings
+
+	test("on BAR's server offers to allow it, and stays until answered", async () => {
+		held.settings = builtin()
+		autoLogin.mockResolvedValue({
+			settings: {},
+			failures: [
+				{ server: BAR, code: 'noEncryption', message: 'no encrypted way in' },
+			],
+		})
+		const session = await fresh()
+		const { chat } = await import('./chat')
+
+		await session.autoLogin()
+
+		const notice = chat.notices.at(-1)!
+		expect(notice.text).toContain(session.BAR_UNENCRYPTED)
+		expect(notice.action?.label).toBe('Allow unencrypted traffic')
+		expect(notice.expiresAt).toBe(Number.POSITIVE_INFINITY)
+
+		notice.action!.run()
+		await settle()
+		expect(allowUnencrypted).toHaveBeenCalledWith(BAR)
+		expect(reconnect).toHaveBeenCalledWith(BAR)
+	})
+
+	test('on another server says so, with nothing to press', async () => {
+		held.settings = builtin()
+		const session = await fresh()
+		const { chat } = await import('./chat')
+
+		session.noticeLoginFailure(RAPID, 'noEncryption', 'no encrypted way in')
+
+		expect(chat.notices.at(-1)?.action).toBeUndefined()
+		expect(chat.notices.at(-1)?.text).toBe(
+			`could not log in to ${RAPID}: no encrypted way in`,
+		)
 	})
 })

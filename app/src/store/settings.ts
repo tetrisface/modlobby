@@ -4,7 +4,7 @@ import type { Settings } from '../ipc/bindings/Settings'
 import { api } from '../ipc/client'
 import { isVsAi } from '../lib/battles'
 import { bucket, clamp, derived, scaleFor, step } from '../lib/scale'
-import { labelOf } from '../lib/servers'
+import { labelOf, serverId } from '../lib/servers'
 import { pushNotice, setChat } from './chat'
 
 /** Mirror of the settings file; the runtime pushes changes as `settings` events. */
@@ -98,6 +98,26 @@ export async function hideLeavers(battle: BattleView): Promise<void> {
 		await api.updateSettings({
 			...current,
 			play: { ...current.play, [leaversKey(battle)]: false },
+		}),
+	)
+}
+
+/**
+ * Lets `server` be reached unencrypted once every encrypted way has failed,
+ * and writes it down: the Settings → Servers box, ticked from where a login
+ * was refused for want of it.
+ */
+export async function allowUnencrypted(server: string): Promise<void> {
+	const current = settings()
+	if (current === null) return
+	applySettings(
+		await api.updateSettings({
+			...current,
+			servers: current.servers.map((entry) =>
+				serverId(entry.host) === server
+					? { ...entry, allowUnencrypted: true }
+					: entry,
+			),
 		}),
 	)
 }

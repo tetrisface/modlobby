@@ -7434,3 +7434,11 @@ button.link:hover {
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
+
+/* A notice's one thing to do, under its text: it stays until done or put away. */
+.notice-actions {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	margin-top: 0.5rem;
+}

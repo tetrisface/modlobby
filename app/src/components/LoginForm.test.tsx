@@ -312,6 +312,75 @@ describe('the login form', () => {
 		)
 	})
 
+	test("BAR's server refusing encryption offers to allow unencrypted, then logs in", async () => {
+		const noEncryption = Object.assign(new Error('noEncryption'), {
+			code: 'noEncryption',
+			message: 'transport: no encrypted way in (STLS on 8200: …)',
+		})
+		let logins = 0
+		const written: Settings[] = []
+		asked.mockImplementation(async (command: string, args?: unknown) => {
+			if (command === 'login') {
+				logins += 1
+				if (logins === 1) throw noEncryption
+				return settingsWith()
+			}
+			if (command === 'update_settings') {
+				const { settings } = args as { settings: Settings }
+				written.push(settings)
+				return settings
+			}
+			if (command === 'login_wait') return 0
+			if (command === 'has_password') return false
+			if (command === 'kept_usernames') return []
+			throw new Error(`unexpected ${command}`)
+		})
+		const { container } = render(() => <Login />)
+		fill(container, 'input[autocomplete="username"]', 'me')
+		fill(container, 'input[autocomplete="current-password"]', 'pw')
+		send(container)
+
+		await waitFor(() =>
+			expect(container.querySelector('.error')?.textContent).toBe(
+				'The BAR server no longer supports encrypted traffic.',
+			),
+		)
+		const allow = [...container.querySelectorAll('button')].find(
+			(button) => button.textContent === 'Allow unencrypted traffic',
+		)
+		expect(allow).toBeDefined()
+		fireEvent.click(allow!)
+
+		await waitFor(() => expect(logins).toBe(2))
+		expect(written).toHaveLength(1)
+		expect(written[0]!.servers[0]!.allowUnencrypted).toBe(true)
+		await waitFor(() => expect(container.querySelector('.error')).toBeNull())
+	})
+
+	test('another server refusing encryption points at Settings, with no button', async () => {
+		setSettingsSignal({
+			...settingsWith(),
+			servers: [newServer('rapid.example')],
+		} as Settings)
+		serve({
+			login: Object.assign(new Error('noEncryption'), {
+				code: 'noEncryption',
+				message: 'transport: no encrypted way in',
+			}),
+		})
+		const { container } = render(() => <LoginForm server='rapid.example' />)
+		fill(container, 'input[autocomplete="username"]', 'me')
+		fill(container, 'input[autocomplete="current-password"]', 'pw')
+		send(container)
+
+		await waitFor(() =>
+			expect(container.querySelector('.error')?.textContent).toContain(
+				'Settings → Servers',
+			),
+		)
+		expect(container.textContent).not.toContain('Allow unencrypted traffic')
+	})
+
 	test('registering a name that is already this account, unconfirmed, asks for its code', async () => {
 		const taken = Object.assign(new Error('taken'), {
 			code: 'nameTaken',

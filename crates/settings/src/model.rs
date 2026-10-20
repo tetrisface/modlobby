@@ -401,14 +401,18 @@ impl ServerEntry {
 		account.remember_password && self.auto_login.unwrap_or(account.auto_login)
 	}
 
-	/// BAR's own, as modlobby was built knowing it: STLS on 8200, the one
-	/// port BAR's launcher config names.
+	/// BAR's own, as modlobby was built knowing it: 8200, the one port BAR's
+	/// launcher config names, unencrypted. Since 2026-10-17 its teiserver
+	/// answers `STLS` by hanging up and listens on no TLS port, as Chobby
+	/// never asked for either; Tachyon is where BAR's encryption is. A file
+	/// from before keeps the `false` it says, and the login form asks.
 	pub fn bar() -> Self {
 		Self {
 			builtin: Some(Builtin::Bar),
 			host: DEFAULT_HOST.into(),
 			name: "BAR".into(),
 			ports: vec![8200],
+			allow_unencrypted: true,
 			..Self::default()
 		}
 	}

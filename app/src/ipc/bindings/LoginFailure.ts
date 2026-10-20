@@ -3,4 +3,12 @@
 /**
  * A server the start could not log in to, and why.
  */
-export type LoginFailure = { server: string; message: string }
+export type LoginFailure = {
+	server: string
+	/**
+	 * What kind of failure, as a failed command's `code` says it, so the
+	 * page can offer what answers it.
+	 */
+	code: string
+	message: string
+}

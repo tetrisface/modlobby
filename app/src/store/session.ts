@@ -1,11 +1,73 @@
 import { createSignal } from 'solid-js'
 import type { ServerEntry } from '../ipc/bindings/ServerEntry'
 import type { Settings } from '../ipc/bindings/Settings'
-import { api, describeError } from '../ipc/client'
+import { api, describeError, errorCode } from '../ipc/client'
 import { logsInAtStart, serverId } from '../lib/servers'
 import { pushNotice } from './chat'
 import { lobby } from './lobby'
-import { applySettings, serverLabel } from './settings'
+import {
+	allowUnencrypted,
+	applySettings,
+	serverLabel,
+	settings,
+} from './settings'
+
+/**
+ * BAR's server since 2026-10-17: it hangs up on `STLS` and listens on no TLS
+ * port. Known, so the one setting that gets in is offered where the login
+ * failed. For any other server a refused encryption could be somebody in
+ * between, and the setting is left to Settings → Servers.
+ */
+export const BAR_UNENCRYPTED =
+	'The BAR server no longer supports encrypted traffic.'
+
+/** Whether `error` is BAR's own server refusing every encrypted way in. */
+export function barRefusesEncryption(
+	code: string | null,
+	server: string,
+): boolean {
+	if (code !== 'noEncryption') return false
+	const entry = settings()?.servers.find(
+		(held) => serverId(held.host) === server,
+	)
+	return entry?.builtin === 'bar'
+}
+
+/**
+ * Says in the corner that a login to `server` failed, as `doing` (a login, a
+ * reconnect). BAR's refused encryption comes with the button that allows it
+ * and tries again.
+ */
+export function noticeLoginFailure(
+	server: string,
+	code: string | null,
+	message: string,
+	doing = 'could not log in to',
+): void {
+	if (!barRefusesEncryption(code, server)) {
+		pushNotice('warning', `${doing} ${serverLabel(server)}: ${message}`)
+		return
+	}
+	pushNotice(
+		'warning',
+		`${BAR_UNENCRYPTED} Allowing it sends your login and chat readable across the network, as Chobby always has.`,
+		null,
+		{
+			label: 'Allow unencrypted traffic',
+			run: () => void allowAndReconnect(server),
+		},
+	)
+}
+
+/** Ticks the server's box in Settings → Servers, then logs in again with what is kept. */
+async function allowAndReconnect(server: string): Promise<void> {
+	try {
+		await allowUnencrypted(server)
+		await api.reconnect(server)
+	} catch (error) {
+		noticeLoginFailure(server, errorCode(error), describeError(error))
+	}
+}
 
 /**
  * When each held auto-login goes out, as a `Date.now()` moment, by server,
@@ -39,11 +101,8 @@ export async function autoLogin(): Promise<void> {
 		// A login writes the account back, and our own write raises no change
 		// event: this is how the page learns of it.
 		applySettings(went.settings)
-		for (const { server, message } of went.failures)
-			pushNotice(
-				'warning',
-				`could not log in to ${serverLabel(server)}: ${message}`,
-			)
+		for (const { server, code, message } of went.failures)
+			noticeLoginFailure(server, code, message)
 	} catch (error) {
 		pushNotice('warning', describeError(error))
 	}
@@ -129,10 +188,7 @@ export async function loginTo(
 		// No password given: Rust falls back to the one in the keyring.
 		applySettings(await api.login(server, username, null, remember, autoLogin))
 	} catch (error) {
-		pushNotice(
-			'warning',
-			`could not log in to ${serverLabel(server)}: ${describeError(error)}`,
-		)
+		noticeLoginFailure(server, errorCode(error), describeError(error))
 	}
 }
 

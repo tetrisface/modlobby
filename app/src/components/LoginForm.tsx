@@ -6,8 +6,12 @@ import type { ServerEntry } from '../ipc/bindings/ServerEntry'
 import { api, describeError, errorCode } from '../ipc/client'
 import { forgotPasswordUrl, serverId, serverName } from '../lib/servers'
 import { lobby } from '../store/lobby'
-import { loginTo } from '../store/session'
-import { applySettings, settings } from '../store/settings'
+import {
+	BAR_UNENCRYPTED,
+	barRefusesEncryption,
+	loginTo,
+} from '../store/session'
+import { allowUnencrypted, applySettings, settings } from '../store/settings'
 
 const phaseText: Record<string, string> = {
 	connecting: 'connecting…',
@@ -26,11 +30,11 @@ const CONDUCT = 'https://www.beyondallreason.info/code-of-conduct'
  * What went wrong, and for a server with no encrypted way in, the setting
  * that would let modlobby in anyway.
  */
-function explained(err: unknown): string {
+function explained(err: unknown, server: string): string {
 	const text = describeError(err)
-	return errorCode(err) === 'noEncryption'
-		? `${text}. If you trust this server, allow unencrypted connections to it in Settings → Servers.`
-		: text
+	if (errorCode(err) !== 'noEncryption') return text
+	if (barRefusesEncryption(errorCode(err), server)) return BAR_UNENCRYPTED
+	return `${text}. If you trust this server, allow unencrypted connections to it in Settings → Servers.`
 }
 
 /**
@@ -221,7 +225,7 @@ export function LoginForm(props: {
 			)
 		} catch (err) {
 			if (askedForCode(err)) return
-			setError(explained(err))
+			setError(explained(err, props.server))
 			void api
 				.loginWait(props.server)
 				.then(setWait)
@@ -249,7 +253,7 @@ export function LoginForm(props: {
 			setAwaitingCode(true)
 		} catch (err) {
 			if (errorCode(err) === 'nameTaken' && (await ownAccount())) return
-			setError(explained(err))
+			setError(explained(err, props.server))
 		} finally {
 			setBusy(false)
 		}
@@ -330,17 +334,36 @@ export function LoginForm(props: {
 				),
 			)
 		} catch (err) {
-			setError(explained(err))
+			setError(explained(err, props.server))
 		} finally {
 			setBusy(false)
 		}
 	}
 
-	function submit(event: Event) {
-		event.preventDefault()
+	/** Whichever of the three jobs the form is on. */
+	function go() {
 		if (awaitingCode()) void confirm()
 		else if (mode() === 'register') void register()
 		else void login()
+	}
+
+	function submit(event: Event) {
+		event.preventDefault()
+		go()
+	}
+
+	/** Ticks the server's box in Settings → Servers, then tries again. */
+	async function allowPlain() {
+		setBusy(true)
+		try {
+			await allowUnencrypted(props.server)
+		} catch (err) {
+			setError(describeError(err))
+			return
+		} finally {
+			setBusy(false)
+		}
+		go()
 	}
 
 	/**
@@ -510,6 +533,19 @@ export function LoginForm(props: {
           nothing and reading it after pressing again is too late. */}
 			<Show when={error()}>
 				{(message) => <p class='error'>{message()}</p>}
+			</Show>
+			<Show when={error() === BAR_UNENCRYPTED}>
+				<p class='muted'>
+					Your login and chat then cross the network readable, as they always
+					have in Chobby.
+				</p>
+				<button
+					type='button'
+					disabled={busy()}
+					onClick={() => void allowPlain()}
+				>
+					Allow unencrypted traffic
+				</button>
 			</Show>
 			<button
 				type='submit'

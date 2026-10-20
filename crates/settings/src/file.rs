@@ -423,6 +423,8 @@ mod tests {
 				crate::model::ServerEntry {
 					username: "tetrisface".into(),
 					channels: vec!["main".into(), "newbies".into()],
+					// What `"encryption": "stls"` said; the login form asks.
+					allow_unencrypted: false,
 					..crate::model::ServerEntry::bar()
 				},
 				crate::model::ServerEntry::mods(),
@@ -534,6 +536,27 @@ mod tests {
 		assert_eq!(ports(&entry("[8200]")), [8200]);
 	}
 
+	/// BAR's server answers `STLS` by hanging up and has closed 8201, so a
+	/// fresh install allows it unencrypted. A file from before keeps what it
+	/// says: that is the user's to change, when the login form asks.
+	#[test]
+	fn bars_server_is_allowed_unencrypted_on_a_fresh_install_only() {
+		let dir = tempfile::tempdir().unwrap();
+		let store = Store::open(dir.path()).unwrap();
+		assert!(store.get().servers[0].allow_unencrypted, "a fresh install");
+
+		std::fs::write(
+			store.path(),
+			r#"{ "servers": [ { "builtin": "bar", "host": "server4.beyondallreason.info", "ports": [8200], "allowUnencrypted": false } ] }"#,
+		)
+		.unwrap();
+		let reloaded = store.reload().unwrap().unwrap();
+		assert!(
+			!reloaded.servers[0].allow_unencrypted,
+			"an earlier build's file"
+		);
+	}
+
 	#[test]
 	fn the_old_port_and_tls_keys_fall_back_to_the_defaults() {
 		let dir = tempfile::tempdir().unwrap();
@@ -547,7 +570,10 @@ mod tests {
 		assert_eq!(
 			reloaded.servers,
 			vec![
-				crate::model::ServerEntry::bar(),
+				crate::model::ServerEntry {
+					allow_unencrypted: false,
+					..crate::model::ServerEntry::bar()
+				},
 				crate::model::ServerEntry::mods(),
 				crate::model::ServerEntry::recoil()
 			]

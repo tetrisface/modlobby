@@ -1,5 +1,5 @@
 import { useNavigate, useSearchParams } from '@solidjs/router'
-import { For, Show, createSignal } from 'solid-js'
+import { For, Show, createMemo, createSignal } from 'solid-js'
 import { LoginForm } from '../components/LoginForm'
 import { Select } from '../components/Select'
 import type { ServerEntry } from '../ipc/bindings/ServerEntry'
@@ -30,11 +30,20 @@ export function Login() {
 	const [params] = useSearchParams()
 	const asked = () =>
 		(Array.isArray(params.server) ? params.server[0] : params.server) ?? null
-	const server = () =>
-		picked() ??
-		asked() ??
-		mainServer() ??
-		(servers()[0] ? serverId(servers()[0]!.host) : null)
+	/**
+	 * The server the page opened on, held once known. The lobby's main server
+	 * moves as logins land, and the servers beside this one land too:
+	 * following it would swap the form out from under a login still going,
+	 * and its answer -- an error, the button that answers it -- with it.
+	 */
+	const opened = createMemo<string | null>(
+		(held) =>
+			held ??
+			mainServer() ??
+			(servers()[0] ? serverId(servers()[0]!.host) : null),
+		null,
+	)
+	const server = () => picked() ?? asked() ?? opened()
 	/** The servers that go in beside the picked one when Log in is pressed. */
 	const beside = (): ServerEntry[] => {
 		const saved = settings()

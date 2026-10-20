@@ -2,8 +2,11 @@ import { cleanup, fireEvent, render } from '@solidjs/testing-library'
 import { invoke } from '@tauri-apps/api/core'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { Settings } from '../ipc/bindings/Settings'
+import { reconcile } from 'solid-js/store'
 import { newServer } from '../lib/servers'
+import { emptyLobby, setLobby } from '../store/lobby'
 import { setSettingsSignal } from '../store/settings'
+import { seedSession } from '../store/testing'
 import { Login } from './Login'
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
@@ -50,6 +53,7 @@ beforeEach(() => {
 afterEach(() => {
 	cleanup()
 	setSettingsSignal(null)
+	setLobby(reconcile(emptyLobby()))
 	address.params = {}
 })
 
@@ -169,6 +173,19 @@ describe('the login page', () => {
 		expect(
 			chip(container, 'server.example.com').classList.contains('also'),
 		).toBe(false)
+	})
+
+	test('stays on the server it opened on while a login beside it lands', () => {
+		setSettingsSignal(withServers(BAR, 'server.example.com'))
+		const { container } = render(() => <Login />)
+		expect(chip(container, BAR).getAttribute('aria-pressed')).toBe('true')
+
+		// A server logged in beside BAR gets in first; BAR's answer is still
+		// to come, and its form is where that answer is shown.
+		seedSession({ phase: 'ready' }, 'server.example.com')
+
+		expect(chip(container, BAR).getAttribute('aria-pressed')).toBe('true')
+		expect(serverLine(container)).toBeUndefined()
 	})
 
 	test('with none, says where one is added', () => {

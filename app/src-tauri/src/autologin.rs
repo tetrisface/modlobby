@@ -40,6 +40,9 @@ pub struct StartLogins {
 #[ts(export)]
 pub struct LoginFailure {
 	pub server: String,
+	/// What kind of failure, as a failed command's `code` says it, so the
+	/// page can offer what answers it.
+	pub code: String,
 	pub message: String,
 }
 
@@ -122,6 +125,7 @@ async fn one(
 	let went = log_in(app, &server, username, None, true, auto_login).await;
 	went.err().map(|err| LoginFailure {
 		server,
+		code: err.code.into(),
 		message: err.message,
 	})
 }
