@@ -19,8 +19,12 @@
 //! activated -- so the engine still ends when the player says so, and modlobby
 //! still sees it end.
 //!
+//! Inside modlobby's sandbox the game has no socket at all. The write directory
+//! then carries modlobby's mark, and the button appends its ask to the file
+//! modlobby watches instead, under the file channel's own token.
+//!
 //! The archive is generated rather than shipped for the same reason the widget
-//! is: the port and token change every run.
+//! is: the port and tokens change every run.
 
 use std::path::{Path, PathBuf};
 
@@ -91,7 +95,7 @@ fn modinfo() -> String {
 ///
 /// `LuaMenu/main.lua` is the entry point the engine loads (`LuaMenu.cpp:59`),
 /// and its call-ins are plain globals rather than methods on a table.
-fn main_lua(port: u16, token: &str) -> String {
+fn main_lua(port: u16, token: &str, file_token: &str) -> String {
 	format!(
 		r#"-- modlobby: BAR's in-game Lobby button.
 --
@@ -101,13 +105,40 @@ fn main_lua(port: u16, token: &str) -> String {
 --
 -- If modlobby is not listening it quits the game rather than stranding anyone
 -- in a menu that cannot draw itself.
+--
+-- Inside modlobby's sandbox there is no socket: the write directory carries
+-- modlobby's mark, and the ask goes as one line into a file modlobby watches.
 
 local PORT = {port}
 local TOKEN = "{token}"
+local CONFINED = "{confined}"
+local FILE = "{file}"
+local FILE_TOKEN = "{file_token}"
 
 local socket = socket
 
+-- The write directory is the game's working directory.
+local function confined()
+	local mark = io.open(CONFINED, "r")
+	if not mark then
+		return false
+	end
+	mark:close()
+	return true
+end
+
+local function ask_file(verb)
+	local file = io.open(FILE, "a")
+	if not file then
+		return false
+	end
+	file:write(FILE_TOKEN .. " " .. verb .. "\n")
+	file:close()
+	return true
+end
+
 local function ask(verb)
+	if confined() then return ask_file(verb) end
 	if not socket then return false end
 	local tcp = socket.tcp()
 	if not tcp then return false end
@@ -158,16 +189,26 @@ end
 function AllowDraw()
 	return false
 end
-"#
+"#,
+		confined = lobby_runtime::mods::CONFINED_MARK,
+		file = super::widget::FILE,
 	)
 }
 
 /// Writes the archive, replacing any older one. The archive's name, for `--menu`.
-pub fn install(data_dir: &Path, port: u16, token: &str) -> std::io::Result<PathBuf> {
+pub fn install(
+	data_dir: &Path,
+	port: u16,
+	token: &str,
+	file_token: &str,
+) -> std::io::Result<PathBuf> {
 	let root = dir(data_dir);
 	std::fs::create_dir_all(root.join("LuaMenu"))?;
 	std::fs::write(root.join("modinfo.lua"), modinfo())?;
-	std::fs::write(root.join("LuaMenu").join("main.lua"), main_lua(port, token))?;
+	std::fs::write(
+		root.join("LuaMenu").join("main.lua"),
+		main_lua(port, token, file_token),
+	)?;
 	Ok(root)
 }
 
@@ -272,7 +313,7 @@ mod tests {
 		let root = std::env::temp_dir().join("modlobby-menu-test");
 		let _ = std::fs::remove_dir_all(&root);
 
-		let written = install(&root, 1234, "secret").unwrap();
+		let written = install(&root, 1234, "secret", "filesecret").unwrap();
 
 		// `games/` is one of the four roots `GetDataDirRoots` returns.
 		assert_eq!(written.parent().unwrap().file_name().unwrap(), "games");
@@ -283,6 +324,7 @@ mod tests {
 		let lua = std::fs::read_to_string(written.join("LuaMenu").join("main.lua")).unwrap();
 		assert!(lua.contains("local PORT = 1234"));
 		assert!(lua.contains(r#"local TOKEN = "secret""#));
+		assert!(lua.contains(r#"local FILE_TOKEN = "filesecret""#));
 		assert!(lua.contains("function RecvLuaMsg"));
 		assert!(lua.contains("function ActivateMenu"));
 		// The dead-lobby way out: nobody is listening, so the player is told
@@ -298,5 +340,26 @@ mod tests {
 		assert!(info.contains(ARCHIVE_NAME));
 
 		std::fs::remove_dir_all(&root).unwrap();
+	}
+
+	/// Inside the sandbox the game has no socket at all, and the write
+	/// directory carries modlobby's mark: the button then appends its ask to
+	/// the file modlobby watches, under the file channel's own token.
+	#[test]
+	fn in_the_sandbox_the_lobby_button_writes_the_file() {
+		let lua = main_lua(1234, "secret", "filesecret");
+		assert!(lua.contains(&format!(
+			r#"local CONFINED = "{}""#,
+			lobby_runtime::mods::CONFINED_MARK
+		)));
+		assert!(lua.contains(&format!(
+			r#"local FILE = "{}""#,
+			crate::ingame::widget::FILE
+		)));
+		assert!(lua.contains(r#"io.open(FILE, "a")"#));
+		assert!(lua.contains(r#"FILE_TOKEN .. " " .. verb"#));
+		// An open game whose player turned sockets off still gets the engine's
+		// quit box rather than a file nobody watches.
+		assert!(lua.contains(r#"Spring.SendLuaUIMsg("modlobbyGone")"#));
 	}
 }

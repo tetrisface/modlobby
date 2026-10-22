@@ -137,8 +137,9 @@ fn link(at: &Path, target: &Path) -> io::Result<()> {
 }
 
 /// The directories that survive a reset of the mods write directory, each
-/// as a directory and nothing else.
-pub const KEPT_DIRS: &[&str] = &["cache", "demos", "fontcache"];
+/// as a directory and nothing else: what the engine writes for the player
+/// (replays, screenshots) or for itself, and never reads as code.
+pub const KEPT_DIRS: &[&str] = &["cache", "demos", "fontcache", "screenshots"];
 /// The files that survive, each as a file and nothing else.
 pub const KEPT_FILES: &[&str] = &["infolog.txt", "uikeys.txt"];
 
@@ -198,19 +199,127 @@ pub fn write_config(
 	Ok(path)
 }
 
-/// The player's files a modded game may have: their hotkeys. Never their
-/// widget configs, which hold chat history and ignore lists, and never the
-/// settings file, which [`write_config`] makes.
-const SEEDED: &[&str] = &["uikeys.txt"];
+/// The player's files a modded game may have, besides their own widgets and
+/// which widgets are on ([`seed`]): their hotkeys, BAR's keybind profiles
+/// and blueprints, which the game reads as data. Never widget data, which
+/// holds chat history, and never the settings file, which [`write_config`]
+/// makes.
+const SEEDED: &[&str] = &[
+	"uikeys.txt",
+	"LuaUI/Config/keybind_profiles.json",
+	"LuaUI/Config/blueprints.json",
+];
+/// The player's own widgets, copied whole: they run in their open games
+/// with more rights than the sandbox gives.
+const WIDGETS: &str = "LuaUI/Widgets";
+/// Where a widget handler keeps its config, one `<game>.lua` per game.
+const WIDGET_CONFIGS: &str = "LuaUI/Config";
 
+/// A file in the mods write directory that says the game runs inside the
+/// sandbox, for the Lua that behaves differently there (the menu's Lobby
+/// button has no socket to reach modlobby through). Written after every
+/// reset, so an open game never sees it.
+pub const CONFINED_MARK: &str = "modlobby-confined";
+
+/// Copies into the mods write directory, from the player's data directory,
+/// what a modded game may have of theirs: [`SEEDED`], their widgets, and of
+/// each widget handler config its [`widget_selection`]. One-way, before
+/// every launch: nothing a modded game writes ever comes back.
 pub fn seed(mods: &ModsLayout, from: &Path) -> io::Result<()> {
 	for name in SEEDED {
 		let source = from.join(name);
-		if source.is_file() {
-			std::fs::copy(&source, mods.write.join(name))?;
+		if !source.is_file() {
+			continue;
+		}
+		let target = mods.write.join(name);
+		if let Some(parent) = target.parent() {
+			std::fs::create_dir_all(parent)?;
+		}
+		std::fs::copy(&source, target)?;
+	}
+	copy_tree(&from.join(WIDGETS), &mods.write.join(WIDGETS))?;
+	let Ok(configs) = std::fs::read_dir(from.join(WIDGET_CONFIGS)) else {
+		return Ok(());
+	};
+	for entry in configs {
+		let entry = entry?;
+		let path = entry.path();
+		if !path.is_file() || path.extension().is_none_or(|ext| ext != "lua") {
+			continue;
+		}
+		let Ok(text) = std::fs::read_to_string(&path) else {
+			continue;
+		};
+		let Some(selection) = widget_selection(&text) else {
+			continue;
+		};
+		let target = mods.write.join(WIDGET_CONFIGS).join(entry.file_name());
+		if let Some(parent) = target.parent() {
+			std::fs::create_dir_all(parent)?;
+		}
+		std::fs::write(target, selection)?;
+	}
+	Ok(())
+}
+
+/// Every file under `from`, copied under `to`; nothing when `from` is not a
+/// directory.
+fn copy_tree(from: &Path, to: &Path) -> io::Result<()> {
+	if !from.is_dir() {
+		return Ok(());
+	}
+	std::fs::create_dir_all(to)?;
+	for entry in std::fs::read_dir(from)? {
+		let entry = entry?;
+		let target = to.join(entry.file_name());
+		if entry.file_type()?.is_dir() {
+			copy_tree(&entry.path(), &target)?;
+		} else {
+			std::fs::copy(entry.path(), target)?;
 		}
 	}
 	Ok(())
+}
+
+/// Of a widget handler's config (BAR's `LuaUI/Config/<game>.lua`:
+/// `allowUserWidgets`, every widget's `data`, and the `order` that says
+/// which widgets are on), the same file with only `allowUserWidgets` and
+/// `order`. The data is whatever each widget keeps, chat history among it;
+/// the order is names and numbers. `None` for a file not in that shape,
+/// which then carries nothing.
+pub fn widget_selection(text: &str) -> Option<String> {
+	let lines: Vec<&str> = text.lines().map(str::trim_end).collect();
+	if !lines.contains(&"return {") {
+		return None;
+	}
+	let allow = lines
+		.iter()
+		.find(|line| line.starts_with("\tallowUserWidgets = "));
+	let start = lines.iter().position(|line| *line == "\torder = {")?;
+	let entries = &lines[start + 1..];
+	let len = entries.iter().position(|line| *line == "\t},")?;
+	let entries = &entries[..len];
+	// One name to one number per line; anything nested is not that file.
+	if entries
+		.iter()
+		.any(|line| !line.starts_with("\t\t") || line.contains('{'))
+	{
+		return None;
+	}
+	let mut kept = String::from(
+		"-- Which widgets are on, carried by modlobby from the player's own games; what each widget keeps stays behind\nreturn {\n",
+	);
+	if let Some(allow) = allow {
+		kept.push_str(allow);
+		kept.push('\n');
+	}
+	kept.push_str("\torder = {\n");
+	for line in entries {
+		kept.push_str(line);
+		kept.push('\n');
+	}
+	kept.push_str("\t},\n}\n");
+	Some(kept)
 }
 
 /// What a confined engine may touch for this launch: the engine's own
@@ -515,6 +624,7 @@ mod tests {
 			"cache/ArchiveCache22.lua",
 			"demos/d.sdfz",
 			"fontcache/f.bin",
+			"screenshots/screen00001.png",
 			"infolog.txt",
 			"uikeys.txt",
 			"springsettings.cfg",
@@ -534,7 +644,13 @@ mod tests {
 		left.sort();
 		assert_eq!(
 			left,
-			vec!["cache", "fontcache", "infolog.txt", "uikeys.txt"]
+			vec![
+				"cache",
+				"fontcache",
+				"infolog.txt",
+				"screenshots",
+				"uikeys.txt"
+			]
 		);
 		assert!(write.join("cache/ArchiveCache22.lua").is_file());
 		assert!(
@@ -585,5 +701,84 @@ mod tests {
 		assert_eq!(once.read, [layout(&dirs.write).builds]);
 		assert_eq!(twice.read, once.read);
 		assert!(!dirs.read.iter().any(|read| read.ends_with("mod-builds")));
+	}
+
+	/// BAR keeps which widgets are on and every widget's data in one file;
+	/// the data holds chat history, the order holds names and numbers.
+	#[test]
+	fn the_widget_selection_keeps_the_order_and_drops_the_data() {
+		let config = "-- Widget Custom data and order, order = 0 disabled widget\nreturn {\n\tallowUserWidgets = true,\n\tdata = {\n\t\tChat = {\n\t\t\tinputHistory = {\n\t\t\t\t\"hello everyone\",\n\t\t\t},\n\t\t\torgLinesPacked = \"0|secret line\",\n\t\t},\n\t\t[\"Commander Name Tags\"] = {\n\t\t\tnameScaling = true,\n\t\t},\n\t},\n\torder = {\n\t\t[\"API Builder Queue\"] = 130,\n\t\t[\"API LOS Combiner GL4\"] = 0,\n\t\tChat = 7,\n\t},\n}\n";
+		let kept = widget_selection(config).expect("recognised");
+		assert!(kept.contains("allowUserWidgets = true,"), "{kept}");
+		assert!(kept.contains("[\"API Builder Queue\"] = 130,"), "{kept}");
+		assert!(kept.contains("Chat = 7,"), "{kept}");
+		assert!(!kept.contains("data = {"), "{kept}");
+		assert!(!kept.contains("inputHistory"), "{kept}");
+		assert!(!kept.contains("secret line"), "{kept}");
+		assert!(!kept.contains("hello everyone"), "{kept}");
+		assert_eq!(widget_selection("return { something = 1 }"), None);
+		assert_eq!(widget_selection(""), None);
+	}
+
+	/// What a modded game gets of the player's LuaUI: their own widgets and
+	/// which widgets are on; never widget data, where chat history lives,
+	/// and never the other files in the config directory.
+	#[test]
+	fn the_seed_carries_the_players_widgets_and_their_selection_only() {
+		let dir = tempfile::tempdir().unwrap();
+		let data = dir.path().join("data");
+		let mods = layout(&data);
+		for (rel, text) in [
+			("uikeys.txt", "bind esc quitmenu"),
+			("LuaUI/Widgets/gui_metal_tracker.lua", "-- tracker"),
+			("LuaUI/Widgets/lib/helper.lua", "-- helper"),
+			(
+				"LuaUI/Config/BYAR.lua",
+				"-- Widget Custom data and order, order = 0 disabled widget\nreturn {\n\tallowUserWidgets = true,\n\tdata = {\n\t\tChat = {\n\t\t\tinputHistory = {\n\t\t\t\t\"hello everyone\",\n\t\t\t},\n\t\t\torgLinesPacked = \"0|secret line\",\n\t\t},\n\t\t[\"Commander Name Tags\"] = {\n\t\t\tnameScaling = true,\n\t\t},\n\t},\n\torder = {\n\t\t[\"API Builder Queue\"] = 130,\n\t\t[\"API LOS Combiner GL4\"] = 0,\n\t\tChat = 7,\n\t},\n}\n",
+			),
+			(
+				"LuaUI/Config/keybind_profiles.json",
+				"{\"active\": \"mine\"}",
+			),
+			("LuaUI/Config/blueprints.json", "[]"),
+			("LuaUI/Config/pip_history.bin", "bin"),
+		] {
+			let path = data.join(rel);
+			std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+			std::fs::write(path, text).unwrap();
+		}
+		std::fs::create_dir_all(&mods.write).unwrap();
+		seed(&mods, &data).unwrap();
+		let read = |rel: &str| std::fs::read_to_string(mods.write.join(rel)).ok();
+		assert_eq!(read("uikeys.txt").as_deref(), Some("bind esc quitmenu"));
+		assert_eq!(
+			read("LuaUI/Widgets/gui_metal_tracker.lua").as_deref(),
+			Some("-- tracker")
+		);
+		assert_eq!(
+			read("LuaUI/Widgets/lib/helper.lua").as_deref(),
+			Some("-- helper")
+		);
+		let byar = read("LuaUI/Config/BYAR.lua").expect("the selection is carried");
+		assert!(byar.contains("Chat = 7,"), "{byar}");
+		assert!(!byar.contains("secret line"), "{byar}");
+		assert_eq!(
+			read("LuaUI/Config/keybind_profiles.json").as_deref(),
+			Some("{\"active\": \"mine\"}"),
+			"BAR's keybind profiles are the player's, as data"
+		);
+		assert_eq!(read("LuaUI/Config/blueprints.json").as_deref(), Some("[]"));
+		assert!(read("LuaUI/Config/pip_history.bin").is_none());
+	}
+
+	/// A player with no LuaUI yet is seeded nothing, not an error.
+	#[test]
+	fn the_seed_is_fine_without_any_luaui() {
+		let dir = tempfile::tempdir().unwrap();
+		let data = dir.path().join("data");
+		let mods = layout(&data);
+		std::fs::create_dir_all(&mods.write).unwrap();
+		seed(&mods, &data).unwrap();
+		assert!(!mods.write.join("LuaUI").exists());
 	}
 }

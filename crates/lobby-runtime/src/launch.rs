@@ -282,6 +282,11 @@ pub async fn spawn(
 	crate::mods::reset(&mods.write).map_err(|err| failed("resetting the mods directory", err))?;
 	crate::mods::seed(mods, &dirs.write)
 		.map_err(|err| failed("seeding the mods directory", err))?;
+	std::fs::write(
+		mods.write.join(crate::mods::CONFINED_MARK),
+		"This game runs inside modlobby's sandbox.\n",
+	)
+	.map_err(|err| failed("marking the mods directory", err))?;
 	let data_dirs = settings_dirs(dirs, &engine);
 	let data_dirs: Vec<&Path> = data_dirs.iter().map(PathBuf::as_path).collect();
 	let config = crate::mods::write_config(mods, &data_dirs, engine_version)
@@ -658,6 +663,12 @@ mod confined {
 		let dir = tempfile::tempdir().unwrap();
 		let dirs = engine_in(dir.path());
 		let mods = crate::mods::layout(&dirs.write);
+		// The player's own copy of the escape widget talks to the socket; the
+		// seed carries it along, and the file version written after the reset
+		// has to win.
+		let players = dirs.write.join("LuaUI").join("Widgets");
+		std::fs::create_dir_all(&players).unwrap();
+		std::fs::write(players.join("modlobby_escape.lua"), "-- socket version").unwrap();
 		// No cached verdict: the probe runs through the same recording
 		// confinement, which records the policy and refuses, so nothing
 		// is started and the policy is still what the engine would get.
@@ -697,11 +708,14 @@ mod confined {
 			mods.write.join("springsettings.cfg").is_file(),
 			"the config was written before the launch"
 		);
+		assert_eq!(
+			std::fs::read_to_string(mods.write.join("LuaUI/Widgets/modlobby_escape.lua")).unwrap(),
+			"-- escape",
+			"the escape widget landed after the reset, over the player's copy"
+		);
 		assert!(
-			mods.write
-				.join("LuaUI/Widgets/modlobby_escape.lua")
-				.is_file(),
-			"the escape widget landed after the reset"
+			mods.write.join(crate::mods::CONFINED_MARK).is_file(),
+			"the mods directory is marked as the sandbox's for the game's Lua"
 		);
 	}
 

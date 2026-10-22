@@ -87,9 +87,10 @@ impl InGame {
 
 	/// Writes the LuaMenu archive, replacing any older one. Its name, for
 	/// `--menu`; the caller passes that to the engine only if [`menu::present`]
-	/// still agrees at launch time.
-	pub fn install_menu(&mut self, data_dir: &Path) -> std::io::Result<PathBuf> {
-		let path = menu::install(data_dir, self.port, &self.token)?;
+	/// still agrees at launch time. `file_token` guards the file channel the
+	/// menu falls back to inside the sandbox.
+	pub fn install_menu(&mut self, data_dir: &Path, file_token: &str) -> std::io::Result<PathBuf> {
+		let path = menu::install(data_dir, self.port, &self.token, file_token)?;
 		self.menu = Some(path.clone());
 		Ok(path)
 	}
@@ -384,7 +385,7 @@ mod tests {
 		};
 
 		let path = ingame.install(home.path()).unwrap();
-		let menu = ingame.install_menu(home.path()).unwrap();
+		let menu = ingame.install_menu(home.path(), "filesecret").unwrap();
 		assert!(path.is_file());
 		let source = std::fs::read_to_string(&path).unwrap();
 		assert!(source.contains("4242"), "the port is baked in");
@@ -409,7 +410,7 @@ mod tests {
 			menu: None,
 		};
 		let widget = ingame.install(home.path()).unwrap();
-		let menu = ingame.install_menu(home.path()).unwrap();
+		let menu = ingame.install_menu(home.path(), "filesecret").unwrap();
 
 		ingame.uninstall_with(|| true);
 
@@ -427,7 +428,7 @@ mod tests {
 			menu: None,
 		};
 		let widget = ingame.install(home.path()).unwrap();
-		let menu = ingame.install_menu(home.path()).unwrap();
+		let menu = ingame.install_menu(home.path(), "filesecret").unwrap();
 		// A killed run: nothing is taken out.
 		ingame.leave_behind();
 
@@ -450,7 +451,7 @@ mod tests {
 			menu: None,
 		};
 		let widget = ingame.install(home.path()).unwrap();
-		let menu = ingame.install_menu(home.path()).unwrap();
+		let menu = ingame.install_menu(home.path(), "filesecret").unwrap();
 
 		ingame.leave_behind();
 		drop(ingame);
