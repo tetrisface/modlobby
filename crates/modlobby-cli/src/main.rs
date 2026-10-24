@@ -166,9 +166,18 @@ async fn main() -> anyhow::Result<()> {
 			let sha = &commit.sha;
 			let games =
 				std::env::temp_dir().join(format!("modlobby-mutator-{}", std::process::id()));
-			let built = content::git::build_commit(&http, &api, repo, sha, None, &games, |_, _| {})
-				.await
-				.map_err(anyhow::Error::msg);
+			let built = content::git::build_commit(
+				&http,
+				&api,
+				repo,
+				sha,
+				None,
+				&games,
+				&content::git::Budget::default(),
+				|_, _| {},
+			)
+			.await
+			.map_err(anyhow::Error::msg);
 			// Built to prove the commit is a mutator the engine can name, the
 			// way a player's modlobby will build it.
 			let printed = built.and_then(|path| {

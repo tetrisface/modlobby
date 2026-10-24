@@ -48,6 +48,10 @@ const MUTATOR_OFFER: &str = "game/mutatoroffer0";
 /// messages, and the host's log, put it in front of one.
 pub const MUTATORS_SUPPORTED: &str = "I support mutators [automatic]";
 
+/// What a lobby says once its player has allowed the room's mutators: the
+/// consenting build's line, which a host may come to require.
+pub const MUTATORS_SUPPORTED_V2: &str = "I support mutators [automatic] 2";
+
 /// A mutator the room loads on top of its game, as its host announces it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Mutator {
@@ -61,6 +65,10 @@ pub struct Mutator {
 	/// When that commit was made, as the host read it from the forge; shown,
 	/// never trusted.
 	pub date: Option<String>,
+	/// The branch the host says it follows (`game/mutator{i}track`), when
+	/// that is a plain branch name; the commit is checked against it rather
+	/// than the default branch.
+	pub track: Option<String>,
 }
 
 /// A GitHub commit a mutator is built from, as its host pins it:
@@ -211,6 +219,18 @@ pub struct SeatOnItsWay {
 	pub ally_team: u8,
 }
 
+/// A branch name as GitHub takes it in a compare: nothing empty, nothing
+/// that climbs, only letters, digits, `-`, `_`, `.` and `/`.
+fn is_branch_name(text: &str) -> bool {
+	let hash = text.len() >= 7 && text.bytes().all(|b| b.is_ascii_hexdigit());
+	!text.is_empty()
+		&& !hash
+		&& !text.contains("..")
+		&& text
+			.bytes()
+			.all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'/'))
+}
+
 impl MyBattle {
 	pub fn new(id: u32, game_hash: String, script_password: String) -> Self {
 		Self {
@@ -270,11 +290,17 @@ impl MyBattle {
 					.get(&format!("{MUTATOR}{index}date"))
 					.filter(|date| date.len() <= 40 && date.chars().all(|c| c.is_ascii_graphic()))
 					.cloned();
+				let track = self
+					.script_tags
+					.get(&format!("{MUTATOR}{index}track"))
+					.filter(|track| is_branch_name(track))
+					.cloned();
 				Some(Mutator {
 					name: name.clone(),
 					checksum,
 					source,
 					date,
+					track,
 				})
 			})
 			.collect()
@@ -598,12 +624,14 @@ mod tests {
 					checksum: Some(sum),
 					source: None,
 					date: None,
+					track: None,
 				},
 				Mutator {
 					name: "Second v1".into(),
 					checksum: None,
 					source: None,
 					date: None,
+					track: None,
 				},
 			]
 		);
@@ -624,6 +652,7 @@ mod tests {
 				checksum: None,
 				source: None,
 				date: None,
+				track: None,
 			}]
 		);
 		assert!(with_tags(&[]).mutators().is_empty());
@@ -672,5 +701,26 @@ mod tests {
 		] {
 			assert_eq!(GitPin::parse(&not_one), None, "{not_one}");
 		}
+	}
+
+	/// The branch a host says a mutator follows, read only when it is a
+	/// plain branch name: a host cannot steer a check with a path.
+	#[test]
+	fn a_mutators_track_is_read_when_plain() {
+		let track = |value: &str| {
+			with_tags(&[("game/mutator0", "Mod v1"), ("game/mutator0track", value)])
+				.mutators()
+				.remove(0)
+				.track
+		};
+		assert_eq!(track("release"), Some("release".into()));
+		assert_eq!(track("feature/x-1.2"), Some("feature/x-1.2".into()));
+		assert_eq!(track("a b"), None);
+		assert_eq!(track("../x"), None);
+		assert_eq!(track(""), None);
+		// A commit hash is not a branch: GitHub would compare it with itself.
+		assert_eq!(track("9108a17078f79d09925edc305ec83bc06c3a7cb3"), None);
+		assert_eq!(track("9108a17"), None);
+		assert_eq!(track("9108a17x"), Some("9108a17x".into()), "not all hex");
 	}
 }

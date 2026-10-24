@@ -6,6 +6,7 @@ import type { Connection } from './Connection'
 import type { Games } from './Games'
 import type { Lan } from './Lan'
 import type { Logging } from './Logging'
+import type { Mods } from './Mods'
 import type { Notifications } from './Notifications'
 import type { Overlay } from './Overlay'
 import type { Paths } from './Paths'
@@ -39,4 +40,5 @@ export type Settings = {
 	ui: Ui
 	lan: Lan
 	games: Games
+	mods: Mods
 }

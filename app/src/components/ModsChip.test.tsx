@@ -20,6 +20,8 @@ const sphere: MutatorView = {
 	check: null,
 	source: 'github:dev/sphere@9108a17078f79d09925edc305ec83bc06c3a7cb3',
 	date: '2025-10-05T13:32:07Z',
+	key: 'github:dev/sphere@9108a17078f79d09925edc305ec83bc06c3a7cb3',
+	standing: { kind: 'trusted', sandboxed: true },
 }
 
 describe('the mods chip', () => {

@@ -1,15 +1,6 @@
-//! The probe as a binary of its own, for the crate's tests: modlobby itself
-//! answers `--sandbox-probe` the same way.
+//! The helper as a binary of its own, for the crate's tests: modlobby ships
+//! the same entry point as `modlobby-sandbox`.
 
 fn main() {
-	match sandbox::probe::arg(std::env::args_os()) {
-		Some(args) => sandbox::probe::run_inside(&args),
-		None => {
-			eprintln!(
-				"usage: probe-helper {} <report> <canary> <outside> <loopback-port>",
-				sandbox::probe::ARG
-			);
-			std::process::exit(2);
-		}
-	}
+	sandbox::inside::main(std::env::args_os().collect())
 }

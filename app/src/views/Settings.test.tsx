@@ -19,6 +19,7 @@ function loaded(): Settings {
 		$schema: null,
 		lan: { enabled: false },
 		games: { overrides: [] },
+		mods: { trusted: [], perCommit: false },
 		servers: [
 			{
 				builtin: 'bar',

@@ -23,12 +23,15 @@ import type { SkirmishOptions } from './bindings/SkirmishOptions'
 import type { BoxesView } from './bindings/BoxesView'
 import type { Book } from './bindings/Book'
 import type { ModOption } from './bindings/ModOption'
+import type { ModSetView } from './bindings/ModSetView'
+import type { FoldKinds } from './bindings/FoldKinds'
 import type { Plan } from './bindings/Plan'
 import type { PlayerFilesView } from './bindings/PlayerFilesView'
 import type { Score } from './bindings/Score'
 import type { Sections } from './bindings/Sections'
 import type { Settings } from './bindings/Settings'
 import type { Tile } from './bindings/Tile'
+import type { TrustAsk } from './bindings/TrustAsk'
 import type { Deleted } from './bindings/Deleted'
 import type { Install } from './bindings/Install'
 import type { InstalledWidget } from './bindings/InstalledWidget'
@@ -321,6 +324,19 @@ export const api = {
 	/** The newest commit of a branch on GitHub; the default branch for `null`. */
 	newestCommit: (repo: string, branch: string | null) =>
 		invoke<CommitView>('newest_commit', { repo, branch }),
+	/** Allows these repositories' mods, sandboxed; the settings as written. */
+	trustMods: (asks: TrustAsk[]) => invoke<Settings>('trust_mods', { asks }),
+	/** Allows these mods, by their keys, in one lobby only. */
+	allowModsOnce: (room: number, keys: string[]) =>
+		invoke<void>('allow_mods_once', { room, keys }),
+	/** Every set of mods a modded game left settings for, with what changed. */
+	modSettings: () => invoke<ModSetView[]>('mod_settings'),
+	/** Folds a set's changes of these kinds into your own settings; the sets after. */
+	foldInModSettings: (id: string, kinds: FoldKinds) =>
+		invoke<ModSetView[]>('fold_in_mod_settings', { id, kinds }),
+	/** Puts a set's settings back to what its last launch was given; the sets after. */
+	discardModSettings: (id: string) =>
+		invoke<ModSetView[]>('discard_mod_settings', { id }),
 	openLogDir: () => invoke<void>('open_log_dir'),
 
 	/** With `ready`, a ready follows once the server has answered with the seat. */

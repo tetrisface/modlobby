@@ -15,6 +15,7 @@
 
 pub mod api;
 pub mod archive;
+pub mod builds;
 pub mod checksum;
 pub mod demo;
 pub mod fetch;

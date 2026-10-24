@@ -5,6 +5,8 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+# Two binaries: the app, and the sandbox helper beside it.
+default-run = "modlobby-app"
 
 [lib]
 name = "modlobby_app_lib"

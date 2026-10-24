@@ -40,6 +40,8 @@ const sphere: MutatorView = {
 	check: null,
 	source: SPHERE,
 	date: null,
+	key: SPHERE,
+	standing: { kind: 'trusted', sandboxed: true },
 }
 
 beforeEach(() => {
@@ -127,6 +129,24 @@ function pane(options: {
 }
 
 describe('the mods pane', () => {
+	test('a loaded mod that asks puts the consent card above the list, and says so on its row', () => {
+		const asking: MutatorView = {
+			...sphere,
+			standing: {
+				kind: 'asks',
+				why: 'repo',
+				text: 'A repository you have not allowed',
+			},
+		}
+		const { container, rows } = pane({ loaded: [asking] })
+		expect(container.querySelector('.mods-consent h3')?.textContent).toBe(
+			'These mods need your OK',
+		)
+		expect(rows()[0]?.row.querySelector('.mod-problem')?.textContent).toBe(
+			'A repository you have not allowed',
+		)
+	})
+
 	test('in a room whose host runs no mods, says where they are and opens the way in', () => {
 		// The form behind it reaches for the app; nothing answers here.
 		vi.mocked(invoke).mockResolvedValue(null as never)

@@ -898,6 +898,110 @@ pub struct MutatorView {
 	pub source: Option<String>,
 	/// When that commit was made, as the host announced it.
 	pub date: Option<String>,
+	/// What it is remembered by for one lobby: its commit pin, or its name.
+	pub key: String,
+	/// Where it stands with the player.
+	pub standing: StandingView,
+}
+
+/// Where a mutator stands with the player: it runs, inside the sandbox or
+/// not; it asks, and why; or GitHub is being asked about it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+#[ts(export)]
+pub enum StandingView {
+	Trusted { sandboxed: bool },
+	Asks { why: WhyView, text: String },
+	Checking,
+}
+
+/// Why a mutator asks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum WhyView {
+	/// Its repository is not allowed.
+	Repo,
+	/// Its repository is, one commit at a time, and this commit is new.
+	Commit,
+	/// Loaded by name, from no repository.
+	Unpinned,
+	/// Not on its branch, or GitHub could not be asked.
+	Branch,
+}
+
+/// What a modded game of one set of mods left changed of the player's
+/// settings, against what its launch gave it: one entry of Settings >
+/// Modded games.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ModSetView {
+	/// The set's directory name: what a fold-in or a discard names.
+	pub id: String,
+	/// The repositories, sorted; a mod with none as `name:<name>`.
+	pub repos: Vec<String>,
+	/// The mods as the host loaded them last time, in its order.
+	pub order: Vec<String>,
+	/// When the game these changes are from ended, RFC 3339.
+	pub at: String,
+	pub engine: Vec<KeyChange>,
+	pub widgets: Vec<WidgetChange>,
+	/// The keybind profiles' lines that differ.
+	pub keybinds: Option<TextChange>,
+	/// The hotkeys' (`uikeys.txt`) lines that differ.
+	pub hotkeys: Option<TextChange>,
+	/// The blueprints' lines that differ.
+	pub blueprints: Option<TextChange>,
+}
+
+/// Which of a modded game's changes to fold into the player's own settings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct FoldKinds {
+	pub engine: bool,
+	pub widgets: bool,
+	pub keybinds: bool,
+	pub hotkeys: bool,
+	pub blueprints: bool,
+}
+
+/// One key's value after a modded game against before it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct KeyChange {
+	pub key: String,
+	/// `None` for a key the game added.
+	pub before: Option<String>,
+	pub after: String,
+	/// A number or a boolean, which may fold into the open settings. A
+	/// string could be a path or an address: shown, never folded.
+	pub plain: bool,
+}
+
+/// A widget a modded game turned on or off. Its settings are not shown: a
+/// modded game starts every widget at its defaults, so what it left cannot
+/// tell a change from a default, and they stay with the set of mods.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct WidgetChange {
+	pub widget: String,
+	/// What the game turned it to.
+	pub on: bool,
+}
+
+/// A file's lines a modded game added and removed, whatever their order,
+/// as many of each as are shown, and how many more there are.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TextChange {
+	pub added: Vec<String>,
+	pub removed: Vec<String>,
+	pub more: u32,
 }
 
 /// One change to apply to the mirrored state.

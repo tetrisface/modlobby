@@ -1,4 +1,5 @@
 import type { MutatorView } from '../ipc/bindings/MutatorView'
+import type { StandingView } from '../ipc/bindings/StandingView'
 import { type Offer, sameMutator, sourceWords } from './mutators'
 import { move } from './reorder'
 
@@ -29,6 +30,24 @@ export type Pick = {
 	newest?: string | null
 	/** What it says it does, once a copy is here to read. */
 	description?: string | null
+	/** What the runtime remembers it by, for one loaded by the room. */
+	key?: string
+	/** Where it stands with you, for one loaded by the room. */
+	standing?: StandingView
+}
+
+/**
+ * What a loaded mod's row says under its name about where it stands: why it
+ * asks, or that it runs with your own rights; nothing for one that simply
+ * runs.
+ */
+export function standingNote(pick: Pick): string | null {
+	const standing = pick.standing
+	if (!standing) return null
+	if (standing.kind === 'asks') return standing.text
+	if (standing.kind === 'trusted' && !standing.sandboxed)
+		return 'runs outside the sandbox, with your own rights'
+	return null
 }
 
 /** What a room loads at most; the host refuses more (`MAX_MUTATORS`). */
@@ -87,6 +106,8 @@ export function picksOf(
 		source: mutator.source,
 		date: mutator.date,
 		description: mutator.description,
+		key: mutator.key,
+		standing: mutator.standing,
 	}))
 }
 
@@ -204,6 +225,8 @@ export function editPick(pick: Pick, text: string): Pick | null {
 		source: same ? pick.source : null,
 		date: same ? pick.date : null,
 		description: same ? pick.description : null,
+		key: same ? pick.key : undefined,
+		standing: same ? pick.standing : undefined,
 	}
 }
 

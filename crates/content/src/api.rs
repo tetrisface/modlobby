@@ -62,6 +62,18 @@ impl Api {
 		url: &str,
 		what: &str,
 	) -> Result<String, String> {
+		self.fetch(http, url, what)
+			.await
+			.map_err(|refusal| refusal.text)
+	}
+
+	/// [`Self::text`], with the status a refusal came with.
+	pub async fn fetch(
+		&self,
+		http: &reqwest::Client,
+		url: &str,
+		what: &str,
+	) -> Result<String, Refusal> {
 		let kept = self.cache.as_deref().map(|dir| kept_at(dir, url));
 		let held = kept.as_deref().and_then(read);
 		let mut request = http.get(url);
@@ -77,14 +89,17 @@ impl Api {
 		let response = request
 			.send()
 			.await
-			.map_err(|err| format!("{what}: {err}"))?;
+			.map_err(|err| Refusal::plain(format!("{what}: {err}")))?;
 		if response.status() == reqwest::StatusCode::NOT_MODIFIED
 			&& let Some(held) = held
 		{
 			return Ok(held.body);
 		}
 		if !response.status().is_success() {
-			return Err(refused(what, &response));
+			return Err(Refusal {
+				status: Some(response.status()),
+				text: refused(what, &response),
+			});
 		}
 		let etag = response
 			.headers()
@@ -94,7 +109,7 @@ impl Api {
 		let body = response
 			.text()
 			.await
-			.map_err(|err| format!("{what}: {err}"))?;
+			.map_err(|err| Refusal::plain(format!("{what}: {err}")))?;
 		if let (Some(path), Some(etag)) = (kept, etag) {
 			write(
 				&path,
@@ -116,6 +131,19 @@ impl Api {
 	) -> Result<T, String> {
 		let body = self.text(http, url, what).await?;
 		serde_json::from_str(&body).map_err(|err| format!("{what}: {err}"))
+	}
+}
+
+/// Why a forge said no: its status, when it answered at all, and the words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Refusal {
+	pub status: Option<reqwest::StatusCode>,
+	pub text: String,
+}
+
+impl Refusal {
+	fn plain(text: String) -> Self {
+		Self { status: None, text }
 	}
 }
 

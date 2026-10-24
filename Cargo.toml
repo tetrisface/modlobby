@@ -159,6 +159,11 @@ windows-sys = "=0.61.2"
 windows = "=0.62.2"
 # The content views a confined engine reads: one junction per content subdirectory.
 junction = "=2.1.0"
+# The Linux sandbox: the helper inside bwrap restricts itself with Landlock
+# and a seccomp filter, and the Wayland proxy passes file descriptors.
+landlock = "=0.4.7"
+seccompiler = "=0.5.0"
+libc = "=0.2.189"
 tempfile = "=3.27.0"
 thiserror = "=2.0.20"
 tokio = { version = "=1.53.1", features = ["rt-multi-thread", "net", "macros", "sync", "time", "io-util", "fs", "signal", "process"] }

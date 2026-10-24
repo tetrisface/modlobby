@@ -18,18 +18,39 @@ pub struct Process {
 }
 
 /// The engine among `processes` nobody owns any more: started from an engine
-/// under one of `roots` (each data directory's `engine/`), whose parent has
-/// gone, or has handed its number on to a newer process. An engine whose
-/// lobby or launcher is still running is theirs and never taken.
+/// under one of `roots` (each data directory's `engine/`), whose owner has
+/// gone, or has handed its number on to a newer process. The owner is the
+/// first ancestor that is not bubblewrap (a sandboxed engine runs two bwrap
+/// processes deep) nor what Linux hands an orphan to (pid 1, a session's
+/// `systemd`). An engine whose lobby or launcher is still running is theirs
+/// and never taken.
 // ponytail: an orphan another lobby started from the same install is taken
 // too; its command line (our `--menu`, our script names) tells them apart if
 // that ever happens.
 pub fn orphaned_engine(processes: &[Process], roots: &[PathBuf]) -> Option<u32> {
+	let named = |process: &Process, name: &str| {
+		process
+			.exe
+			.as_deref()
+			.and_then(Path::file_name)
+			.is_some_and(|file| file == name)
+	};
 	let owned = |engine: &Process| {
-		engine
-			.parent
-			.and_then(|parent| processes.iter().find(|p| p.pid == parent))
-			.is_some_and(|parent| parent.started <= engine.started)
+		let mut child = engine;
+		loop {
+			let Some(parent) = child
+				.parent
+				.and_then(|parent| processes.iter().find(|p| p.pid == parent))
+				.filter(|parent| parent.started <= child.started)
+			else {
+				return false;
+			};
+			if named(parent, "bwrap") {
+				child = parent;
+				continue;
+			}
+			return parent.pid != 1 && !named(parent, "systemd");
+		}
 	};
 	processes
 		.iter()
@@ -151,5 +172,40 @@ mod tests {
 		assert!(kill(pid));
 		child.wait().unwrap();
 		assert!(!alive(pid));
+	}
+
+	/// On Linux an engine runs two bwrap processes deep, and a process whose
+	/// parent dies is handed to pid 1 or a session's `systemd --user`: the
+	/// owner is the first ancestor that is neither.
+	#[test]
+	fn an_engine_under_bubblewrap_is_owned_by_the_lobby_above_it() {
+		let roots = [PathBuf::from("/data/engine")];
+		let ours = engine_at("/data");
+		let lobby = "/apps/modlobby";
+		let sandboxed = [
+			process(10, Some(1), 100, lobby),
+			process(20, Some(10), 101, "/usr/bin/bwrap"),
+			process(21, Some(20), 102, "/usr/bin/bwrap"),
+			process(22, Some(21), 103, &ours),
+		];
+		assert_eq!(
+			orphaned_engine(&sandboxed, &roots),
+			None,
+			"its lobby still runs"
+		);
+		// The lobby gone, its bwrap is handed to init.
+		let handed_on = [
+			process(1, None, 0, "/usr/lib/systemd/systemd"),
+			process(20, Some(1), 101, "/usr/bin/bwrap"),
+			process(21, Some(20), 102, "/usr/bin/bwrap"),
+			process(22, Some(21), 103, &ours),
+		];
+		assert_eq!(orphaned_engine(&handed_on, &roots), Some(22));
+		// Or to the session's systemd, a subreaper with a pid of its own.
+		let subreaped = [
+			process(900, Some(1), 50, "/usr/lib/systemd/systemd"),
+			process(22, Some(900), 103, &ours),
+		];
+		assert_eq!(orphaned_engine(&subreaped, &roots), Some(22));
 	}
 }

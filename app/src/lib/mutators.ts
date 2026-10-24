@@ -6,8 +6,17 @@ import type { MutatorView } from '../ipc/bindings/MutatorView'
  * it came.
  */
 export function sourceWords(source: string): string {
-	const [, repo, commit] = /^github:([^@]+)@([0-9a-f]{40})$/.exec(source) ?? []
-	return repo && commit ? `${repo} @ ${commit.slice(0, 7)}` : source
+	const pin = pinOf(source)
+	return pin ? `${pin.repo} @ ${pin.commit.slice(0, 7)}` : source
+}
+
+/** `owner/repo` and the commit out of `github:owner/repo@<commit>`; null for anything else. */
+export function pinOf(
+	source: string | null,
+): { repo: string; commit: string } | null {
+	const [, repo, commit] =
+		/^github:([^@]+)@([0-9a-f]{40})$/.exec(source ?? '') ?? []
+	return repo && commit ? { repo, commit } : null
 }
 
 /** A mutator the room's host offers to load, by the name it is added by. */

@@ -93,6 +93,7 @@ pub(crate) async fn push_settings(
 	let _ = client.set_data_dir(settings.paths.data_dir.clone()).await;
 	let _ = client.set_auto_launch(settings.play.auto_launch).await;
 	let _ = client.set_auto_download(settings.play.auto_download).await;
+	let _ = client.set_mod_trust(trust_of(&settings.mods)).await;
 	let _ = client.prefer_side(settings.play.last_side).await;
 	let _ = client
 		.set_overlay_config_dir(overlay_config_dir(settings))
@@ -105,6 +106,22 @@ pub(crate) async fn push_settings(
 		.set_map_searches(per_server(settings, |entry| entry.maps.as_deref()))
 		.await;
 	overlay.settings_changed(overlay_settings(settings));
+}
+
+/// The settings' trust list as the runtime takes it.
+fn trust_of(mods: &settings::model::Mods) -> lobby_runtime::trust::Trust {
+	lobby_runtime::trust::Trust {
+		trusted: mods
+			.trusted
+			.iter()
+			.map(|entry| lobby_runtime::trust::Trusted {
+				repo: entry.repo.clone(),
+				commit: entry.commit.clone(),
+				sandboxed: entry.sandboxed,
+			})
+			.collect(),
+		per_commit: mods.per_commit,
+	}
 }
 
 /// One of a server's own addresses — its rapid index, its map search — by
@@ -437,6 +454,7 @@ pub fn run() {
 			let skirmish_path = commands::skirmish_path(&app);
 			let from_host_handle = handle.clone();
 			let sources_handle = handle.clone();
+			let track_handle = handle.clone();
 			let (adopt_asked, adopted) = tokio::sync::oneshot::channel();
 			tauri::async_runtime::spawn(async move {
 				// Whoever reads another server's rapid before games come
@@ -469,8 +487,43 @@ pub fn run() {
 						})
 					}))
 					.await;
+				// Who asks GitHub whether a mod's commit is on its branch,
+				// before a trusted repository's mod may run.
+				let _ = client
+					.set_track_check(std::sync::Arc::new(move |pin, track| {
+						let handle = track_handle.clone();
+						Box::pin(async move {
+							let Some(app) = handle.try_state::<state::App>() else {
+								return content::git::Reach::Unknown("the app is not up".into());
+							};
+							app.on_branch(&pin.repo, &pin.commit, track.as_deref())
+								.await
+						})
+					}))
+					.await;
 				let _ = client.set_bar_content(bar).await;
 				push_settings(&client, &controller, &at_start).await;
+				// What the builds root collected and should not keep: staging a
+				// build never finished, games set aside, builds nobody asked
+				// for in months. Off the async threads; nothing waits for it.
+				let swept_from = at_start.paths.data_dir.clone();
+				tokio::task::spawn_blocking(move || {
+					let Some(dirs) = lobby_runtime::launch::data_dirs(swept_from) else {
+						return;
+					};
+					let mods = lobby_runtime::mods::layout(&dirs.write);
+					let gone = content::builds::sweep(
+						&mods.builds.join("games"),
+						&dirs.write,
+						std::time::SystemTime::now(),
+					);
+					if !gone.is_empty() {
+						tracing::info!(
+							count = gone.len(),
+							"stale builds, parts and quarantined games swept"
+						);
+					}
+				});
 				// Once the data directory is known: a game a lobby before this
 				// one left running from it is ours to show, and to end.
 				let _ = client.adopt_engine().await;
@@ -671,6 +724,11 @@ pub fn run() {
 			commands::import_player_files,
 			commands::open_url,
 			commands::newest_commit,
+			commands::trust_mods,
+			commands::allow_mods_once,
+			commands::mod_settings,
+			commands::fold_in_mod_settings,
+			commands::discard_mod_settings,
 			commands::take_seat,
 			commands::set_ready,
 			commands::set_side,

@@ -9,14 +9,17 @@ pub mod latency;
 pub mod launch;
 mod misses;
 pub mod mods;
+pub mod modsettings;
 pub mod orphan;
 pub mod platform;
 pub mod player_files;
 pub mod reconnect;
+pub mod trust;
 mod ways;
 
 pub use client::{
 	Ask, BarContent, Client, ClientError, Connector, FromHost, GameAsk, GameSources, RapidRun,
+	TrackCheck,
 };
 /// Re-exported so callers do not need `content` just to confine a runtime.
 pub use content::DataDirs;

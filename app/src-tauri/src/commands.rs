@@ -1385,6 +1385,102 @@ pub async fn update_settings(
 	Ok(written)
 }
 
+/// What the Mods tab's consent card asks to be allowed: a repository, at
+/// the commit the lobby loads it at.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TrustAsk {
+	pub repo: String,
+	pub commit: Option<String>,
+}
+
+/// `trusted` with `asks` allowed, sandboxed: by repository, or by commit
+/// when trust is per commit. An ask an entry already covers -- the same
+/// repository with no commit, or this very commit -- adds nothing.
+pub fn merged(
+	trusted: &[settings::model::Trusted],
+	asks: &[TrustAsk],
+	per_commit: bool,
+	now: &str,
+) -> Vec<settings::model::Trusted> {
+	let same = |a: &str, b: &str| a.eq_ignore_ascii_case(b);
+	let mut kept = trusted.to_vec();
+	for ask in asks {
+		let covered = kept.iter().any(|entry| {
+			same(&entry.repo, &ask.repo)
+				&& match (&entry.commit, &ask.commit) {
+					// Per commit, a repository-wide entry covers no commit.
+					(None, _) => !per_commit,
+					(Some(held), Some(wanted)) => same(held, wanted),
+					(Some(_), None) => false,
+				}
+		});
+		if covered {
+			continue;
+		}
+		kept.push(settings::model::Trusted {
+			repo: ask.repo.clone(),
+			commit: ask.commit.clone().filter(|_| per_commit),
+			sandboxed: true,
+			since: now.to_owned(),
+		});
+	}
+	kept
+}
+
+/// Allows what the Mods tab's consent card asked for, sandboxed, and tells
+/// the runtime, which then fetches, greets and launches as the standings
+/// allow.
+#[tauri::command]
+pub async fn trust_mods(
+	app: State<'_, App>,
+	overlay: State<'_, std::sync::Arc<crate::overlay::Controller>>,
+	asks: Vec<TrustAsk>,
+) -> Result<Settings> {
+	let now = lobby_runtime::player_files::rfc3339(std::time::SystemTime::now());
+	let written = app.settings.update(|current| {
+		current.mods.trusted = merged(&current.mods.trusted, &asks, current.mods.per_commit, &now);
+	})?;
+	crate::push_settings(&app.client, &overlay, &written).await;
+	Ok(written)
+}
+
+/// Allows mods in one lobby only, sandboxed, for as long as it lasts:
+/// those loaded by name alone, and commits GitHub could not put on a branch.
+#[tauri::command]
+pub async fn allow_mods_once(app: State<'_, App>, room: u32, keys: Vec<String>) -> Result<()> {
+	Ok(app.client.allow_mods_once(room, keys).await?)
+}
+
+/// Every set of mods a modded game left settings for, with what changed
+/// against what its launch gave it.
+#[tauri::command]
+pub async fn mod_settings(app: State<'_, App>) -> Result<Vec<lobby_ui::ModSetView>> {
+	Ok(app.client.mod_settings().await?)
+}
+
+/// Folds a set's changes of `kinds` into the player's own settings; the
+/// sets as they stand after.
+#[tauri::command]
+pub async fn fold_in_mod_settings(
+	app: State<'_, App>,
+	id: String,
+	kinds: lobby_ui::FoldKinds,
+) -> Result<Vec<lobby_ui::ModSetView>> {
+	Ok(app.client.fold_in_mod_settings(id, kinds).await?)
+}
+
+/// Puts a set's settings back to what its last launch was given; the sets
+/// as they stand after.
+#[tauri::command]
+pub async fn discard_mod_settings(
+	app: State<'_, App>,
+	id: String,
+) -> Result<Vec<lobby_ui::ModSetView>> {
+	Ok(app.client.discard_mod_settings(id).await?)
+}
+
 /// Records which channels to rejoin next time. Written on its own rather than
 /// through the whole settings object, so a join never races a setting the user
 /// is editing in the file at the same moment.
@@ -2047,5 +2143,72 @@ mod tests {
 		assert_eq!(draft_file("walls.txt"), None);
 		assert_eq!(draft_file("walls"), None);
 		assert_eq!(draft_file(" .lua"), None);
+	}
+
+	/// What the consent card sends becomes trust entries: sandboxed, by
+	/// repository unless trust is per commit, and never one that an entry
+	/// already covers.
+	#[test]
+	fn merging_asks_keeps_a_wider_entry_and_honours_per_commit() {
+		use super::{TrustAsk, merged};
+		use settings::model::Trusted;
+		let sha = "9108a17078f79d09925edc305ec83bc06c3a7cb3";
+		let now = "2026-10-22T10:00:00Z";
+		let wide = Trusted {
+			repo: "dev/sphere".into(),
+			commit: None,
+			sandboxed: true,
+			since: "2026-10-01T00:00:00Z".into(),
+		};
+		let ask = |repo: &str| TrustAsk {
+			repo: repo.into(),
+			commit: Some(sha.into()),
+		};
+		assert_eq!(
+			merged(
+				std::slice::from_ref(&wide),
+				&[ask("dev/sphere")],
+				false,
+				now
+			),
+			std::slice::from_ref(&wide)
+		);
+		// Per commit, a repository-wide entry covers nothing: the ask adds
+		// the commit, or the card's Allow would do nothing at all.
+		assert_eq!(
+			merged(std::slice::from_ref(&wide), &[ask("dev/sphere")], true, now),
+			[
+				wide,
+				Trusted {
+					repo: "dev/sphere".into(),
+					commit: Some(sha.into()),
+					sandboxed: true,
+					since: now.into(),
+				}
+			]
+		);
+		assert_eq!(
+			merged(&[], &[ask("dev/tiny")], false, now),
+			[Trusted {
+				repo: "dev/tiny".into(),
+				commit: None,
+				sandboxed: true,
+				since: now.into(),
+			}]
+		);
+		assert_eq!(
+			merged(&[], &[ask("dev/tiny")], true, now),
+			[Trusted {
+				repo: "dev/tiny".into(),
+				commit: Some(sha.into()),
+				sandboxed: true,
+				since: now.into(),
+			}]
+		);
+		// The same ask twice adds once.
+		assert_eq!(
+			merged(&[], &[ask("dev/tiny"), ask("dev/tiny")], false, now).len(),
+			1
+		);
 	}
 }

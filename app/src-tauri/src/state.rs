@@ -361,6 +361,7 @@ impl App {
 				&pin.commit,
 				None,
 				&builds,
+				&content::git::Budget::default(),
 				report,
 			)
 			.await
@@ -405,6 +406,24 @@ impl App {
 			Ok(fetched) => hold_to_room(fetched, ask).await,
 			Err(reason) => Err(reason),
 		})
+	}
+
+	/// Whether `sha` is on `branch` of `repo` -- its default branch when none
+	/// is named -- as GitHub says, with its answers kept under the config's
+	/// `cache/forge/`.
+	pub async fn on_branch(
+		&self,
+		repo: &str,
+		sha: &str,
+		branch: Option<&str>,
+	) -> content::git::Reach {
+		let cache = self
+			.settings
+			.dir()
+			.join("cache")
+			.join(content::api::CACHE_DIR);
+		let api = content::api::Api::github(Some(cache));
+		content::git::on_branch(&self.http, &api, repo, sha, branch).await
 	}
 
 	/// BAR's news, newest first.

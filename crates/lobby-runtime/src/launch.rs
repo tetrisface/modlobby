@@ -162,12 +162,23 @@ pub struct Launched {
 	/// own would have put the game in exclusive fullscreen. Worth telling them,
 	/// since what they change in-game lands there rather than in their file.
 	pub config: Option<PathBuf>,
+	/// The mods a confined game loads, as the key what it leaves of the
+	/// player's settings is kept under; `None` for an open game or a replay.
+	pub set: Option<crate::modsettings::ModSet>,
 }
 
-/// How an engine is started: as any game, or inside a confinement because
-/// the game loads mods, which is code from anywhere.
+/// How an engine is started: as any game; as any game but reading the mod
+/// builds too, because the player trusts every mod it loads with their own
+/// rights; or inside a confinement, because the game loads mods, which is
+/// code from anywhere.
 pub enum Mode<'a> {
 	Open,
+	Trusted {
+		mods: &'a ModsLayout,
+		/// The lobby's builds, every one trusted outside the sandbox: all an
+		/// open engine may resolve beyond the player's own content.
+		builds: Vec<PathBuf>,
+	},
 	Confined {
 		confinement: Arc<dyn sandbox::Confinement>,
 		mods: &'a ModsLayout,
@@ -181,6 +192,9 @@ pub enum Mode<'a> {
 		/// Files written into the mods write directory after its reset, by
 		/// path relative to it: the in-game escape widget.
 		after_reset: Vec<(PathBuf, String)>,
+		/// The mods the lobby loads, as the key their settings are kept
+		/// under; `None` for a replay, which has none to keep.
+		set: Option<crate::modsettings::ModSet>,
 	},
 }
 
@@ -207,6 +221,35 @@ pub fn spawn_open(
 	overlay_config_dir: Option<&Path>,
 	menu: Option<recoil::MenuArchive>,
 ) -> Result<Launched, String> {
+	start_open(prepare_open(
+		dirs,
+		engine_version,
+		target,
+		overlay_config_dir,
+		menu,
+		None,
+	)?)
+}
+
+/// An open launch made ready: the command to run, and what to remember of
+/// it once it runs.
+struct Prepared {
+	launch: recoil::Launch,
+	snapshot: Option<PathBuf>,
+	config: Option<PathBuf>,
+}
+
+/// Everything [`spawn_open`] does before the engine starts. With `builds`,
+/// that directory is read too: a view of the lobby's builds, for a game the
+/// player trusts with their own rights.
+fn prepare_open(
+	dirs: &DataDirs,
+	engine_version: &str,
+	target: String,
+	overlay_config_dir: Option<&Path>,
+	menu: Option<recoil::MenuArchive>,
+	builds: Option<&Path>,
+) -> Result<Prepared, String> {
 	let engine = find_engine(dirs, engine_version, &target)?;
 	player_files::seed(dirs);
 	// Neither failure below is worth refusing to play over: without the
@@ -231,14 +274,34 @@ pub fn spawn_open(
 		);
 	}
 
+	let mut read_dirs = dirs.read.clone();
+	if let Some(builds) = builds
+		&& !read_dirs.iter().any(|dir| dir == builds)
+	{
+		read_dirs.push(builds.to_path_buf());
+	}
 	let launch = recoil::Launch {
 		engine,
 		data_dir: dirs.write.clone(),
-		read_dirs: dirs.read.clone(),
+		read_dirs,
 		target,
 		config: config.clone(),
 		menu,
 	};
+	Ok(Prepared {
+		launch,
+		snapshot,
+		config,
+	})
+}
+
+/// Starts what [`prepare_open`] made ready.
+fn start_open(prepared: Prepared) -> Result<Launched, String> {
+	let Prepared {
+		launch,
+		snapshot,
+		config,
+	} = prepared;
 	tracing::info!(engine = %launch.engine.engine().display(), "launching");
 	let child = tokio::process::Command::from(launch.command())
 		.spawn()
@@ -247,6 +310,7 @@ pub fn spawn_open(
 		child: Started::Child(child),
 		snapshot,
 		config,
+		set: None,
 	})
 }
 
@@ -262,18 +326,43 @@ pub async fn spawn(
 	menu: Option<recoil::MenuArchive>,
 	mode: Mode<'_>,
 ) -> Result<Launched, String> {
-	let Mode::Confined {
-		confinement,
-		mods,
-		network,
-		self_exe,
-		probe_cache,
-		grants_file,
-		after_reset,
-	} = mode
-	else {
-		return spawn_open(dirs, engine_version, target, overlay_config_dir, menu);
-	};
+	let (confinement, mods, network, self_exe, probe_cache, grants_file, after_reset, set) =
+		match mode {
+			Mode::Open => {
+				return spawn_open(dirs, engine_version, target, overlay_config_dir, menu);
+			}
+			Mode::Trusted { mods, builds } => {
+				let view = crate::mods::trusted_view(mods, &builds)
+					.map_err(|err| format!("making the view of the lobby's builds: {err}"))?;
+				return start_open(prepare_open(
+					dirs,
+					engine_version,
+					target,
+					overlay_config_dir,
+					menu,
+					Some(&view),
+				)?);
+			}
+			Mode::Confined {
+				confinement,
+				mods,
+				network,
+				self_exe,
+				probe_cache,
+				grants_file,
+				after_reset,
+				set,
+			} => (
+				confinement,
+				mods,
+				network,
+				self_exe,
+				probe_cache,
+				grants_file,
+				after_reset,
+				set,
+			),
+		};
 	if let Some(reason) = confinement.unavailable() {
 		return Err(reason);
 	}
@@ -282,6 +371,17 @@ pub async fn spawn(
 	crate::mods::reset(&mods.write).map_err(|err| failed("resetting the mods directory", err))?;
 	crate::mods::seed(mods, &dirs.write)
 		.map_err(|err| failed("seeding the mods directory", err))?;
+	// What the last game of these mods left of the player's settings goes
+	// over the open seed, each file through its reader once more.
+	let mut theirs = None;
+	if let Some(set) = &set
+		&& let Some(capture) = crate::modsettings::find(&mods.settings, set)
+	{
+		match crate::modsettings::seed_from(&capture, &mods.write) {
+			Ok(seeded) => theirs = seeded.config,
+			Err(err) => tracing::warn!(%err, "the mods' kept settings were not seeded"),
+		}
+	}
 	std::fs::write(
 		mods.write.join(crate::mods::CONFINED_MARK),
 		"This game runs inside modlobby's sandbox.\n",
@@ -289,7 +389,7 @@ pub async fn spawn(
 	.map_err(|err| failed("marking the mods directory", err))?;
 	let data_dirs = settings_dirs(dirs, &engine);
 	let data_dirs: Vec<&Path> = data_dirs.iter().map(PathBuf::as_path).collect();
-	let config = crate::mods::write_config(mods, &data_dirs, engine_version)
+	let config = crate::mods::write_config(mods, &data_dirs, engine_version, theirs.as_deref())
 		.map_err(|err| failed("writing the mods config", err))?;
 	for (relative, text) in &after_reset {
 		let path = mods.write.join(relative);
@@ -299,6 +399,14 @@ pub async fn spawn(
 		}
 		std::fs::write(&path, text)
 			.map_err(|err| failed("writing into the mods directory", err))?;
+	}
+
+	// What went in, kept beside what the game will leave: the diff the
+	// player can inspect, and what a discard goes back to.
+	if let Some(set) = &set
+		&& let Err(err) = crate::modsettings::baseline(&mods.settings, set, &mods.write)
+	{
+		tracing::warn!(%err, "the mods' settings baseline was not written");
 	}
 
 	// A replay is a file the engine opens itself, and the replays directory
@@ -357,6 +465,7 @@ pub async fn spawn(
 		child: Started::Confined(Arc::new(confined)),
 		snapshot: None,
 		config: None,
+		set,
 	})
 }
 
@@ -640,6 +749,7 @@ mod confined {
 		confinement: Arc<dyn sandbox::Confinement>,
 		mods: &'a crate::mods::ModsLayout,
 		dir: &Path,
+		set: Option<crate::modsettings::ModSet>,
 	) -> Mode<'a> {
 		// The probe runs from a copy of modlobby's exe; an empty file stands
 		// in for it, since the recording confinement starts nothing.
@@ -655,6 +765,7 @@ mod confined {
 				PathBuf::from("LuaUI/Widgets/modlobby_escape.lua"),
 				"-- escape".into(),
 			)],
+			set,
 		}
 	}
 
@@ -680,7 +791,7 @@ mod confined {
 			"script.txt".into(),
 			None,
 			None,
-			mode(Arc::new(recording), &mods, dir.path()),
+			mode(Arc::new(recording), &mods, dir.path(), None),
 		)
 		.await
 		.err()
@@ -733,7 +844,7 @@ mod confined {
 			"script.txt".into(),
 			None,
 			None,
-			mode(Arc::new(refuse), &mods, dir.path()),
+			mode(Arc::new(refuse), &mods, dir.path(), None),
 		)
 		.await
 		.err()
@@ -765,7 +876,7 @@ mod confined {
 			replay.to_string_lossy().into_owned(),
 			None,
 			None,
-			mode(Arc::new(recording), &mods, dir.path()),
+			mode(Arc::new(recording), &mods, dir.path(), None),
 		)
 		.await;
 		let copy = mods.write.join("demos").join("2026-10-18_game_0.0.0.sdfz");
@@ -799,7 +910,7 @@ mod confined {
 			"script.txt".into(),
 			None,
 			None,
-			mode(Arc::new(recording), &mods, dir.path()),
+			mode(Arc::new(recording), &mods, dir.path(), None),
 		)
 		.await;
 		let policy = seen
@@ -852,5 +963,197 @@ mod confined {
 		};
 		assert_eq!(of(recoil::Want::Game), dirs.write);
 		assert_eq!(of(recoil::Want::Mutator), mods.builds);
+	}
+
+	/// A launch trusted with its mods is an open engine that reads a view
+	/// holding exactly the lobby's builds -- never the builds root, where the
+	/// host's start script could pick any build ever made.
+	#[test]
+	fn a_trusted_launch_reads_a_view_of_exactly_the_lobbys_builds() {
+		let dir = tempfile::tempdir().unwrap();
+		let dirs = engine_in(dir.path());
+		let mods = crate::mods::layout(&dirs.write);
+		let a = mods
+			.builds
+			.join("games")
+			.join("github-dev-a-000000000000.sdd");
+		let b = mods
+			.builds
+			.join("games")
+			.join("github-dev-b-000000000000.sdd");
+		for build in [&a, &b] {
+			std::fs::create_dir_all(build).unwrap();
+			std::fs::write(build.join("modinfo.lua"), "return {}").unwrap();
+		}
+		let view = crate::mods::trusted_view(&mods, std::slice::from_ref(&a)).unwrap();
+		let trusted =
+			prepare_open(&dirs, "0.0.0", "script.txt".into(), None, None, Some(&view)).unwrap();
+		assert_eq!(trusted.launch.data_dir, dirs.write);
+		assert!(
+			trusted.launch.read_dirs.contains(&view),
+			"{:?}",
+			trusted.launch.read_dirs
+		);
+		assert!(!trusted.launch.read_dirs.contains(&mods.builds));
+		let mut linked: Vec<String> = std::fs::read_dir(view.join("games"))
+			.unwrap()
+			.map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+			.collect();
+		linked.sort();
+		assert_eq!(linked, ["github-dev-a-000000000000.sdd"]);
+		assert!(
+			view.join("games")
+				.join("github-dev-a-000000000000.sdd")
+				.join("modinfo.lua")
+				.is_file()
+		);
+		let open = prepare_open(&dirs, "0.0.0", "script.txt".into(), None, None, None).unwrap();
+		assert!(!open.launch.read_dirs.contains(&mods.builds));
+	}
+
+	// ------------------------------------------- settings kept per mod set
+
+	fn sphere() -> lobby_core::Mutator {
+		lobby_core::Mutator {
+			name: "github-dev-sphere-000000000000.sdd".into(),
+			checksum: None,
+			source: Some(lobby_core::GitPin {
+				repo: "dev/sphere".into(),
+				commit: "0".repeat(40),
+			}),
+			date: None,
+			track: None,
+		}
+	}
+
+	fn plant(dir: &Path, rel: &str, text: &str) {
+		let path = dir.join(rel);
+		std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+		std::fs::write(path, text).unwrap();
+	}
+
+	/// The open seed: the player's settings and widget selection as their
+	/// ordinary games have them.
+	fn open_seed(dirs: &DataDirs) {
+		plant(
+			&dirs.write,
+			"springsettings.cfg",
+			"Fullscreen = 1\nVSync = 1\n",
+		);
+		plant(
+			&dirs.write,
+			"LuaUI/Config/BYAR.lua",
+			"return {\n\tallowUserWidgets = true,\n\torder = {\n\t\tChat = 1,\n\t},\n}\n",
+		);
+	}
+
+	#[tokio::test]
+	async fn a_set_played_before_seeds_from_its_capture() {
+		let dir = tempfile::tempdir().unwrap();
+		let dirs = engine_in(dir.path());
+		let mods = crate::mods::layout(&dirs.write);
+		open_seed(&dirs);
+		let set = crate::modsettings::ModSet::of(&[sphere()]);
+		// What the last game of this set left behind.
+		let left = dir.path().join("left");
+		plant(&left, "springsettings.cfg", "Fullscreen = 0\nVSync = 1\n");
+		plant(
+			&left,
+			"LuaUI/Config/BYAR.lua",
+			"return {\n\torder = {\n\t\tChat = 7,\n\t},\n}\n",
+		);
+		crate::modsettings::capture(&mods.settings, &set, &left, "2026-10-22T10:00:00Z").unwrap();
+		let seen = Arc::new(Mutex::new(None));
+		let recording = Recording { seen: seen.clone() };
+		let _ = spawn(
+			&dirs,
+			"0.0.0",
+			"script.txt".into(),
+			None,
+			None,
+			mode(Arc::new(recording), &mods, dir.path(), Some(set)),
+		)
+		.await;
+		let config = std::fs::read_to_string(mods.write.join("springsettings.cfg")).unwrap();
+		assert!(config.contains("Fullscreen = 0"), "{config}");
+		assert!(config.contains("LuaSocketEnabled = 0"), "{config}");
+		let widgets = std::fs::read_to_string(mods.write.join("LuaUI/Config/BYAR.lua")).unwrap();
+		assert!(widgets.contains("Chat = 7"), "{widgets}");
+	}
+
+	#[tokio::test]
+	async fn a_rejected_capture_falls_back_to_the_open_seed() {
+		let dir = tempfile::tempdir().unwrap();
+		let dirs = engine_in(dir.path());
+		let mods = crate::mods::layout(&dirs.write);
+		open_seed(&dirs);
+		let set = crate::modsettings::ModSet::of(&[sphere()]);
+		let left = dir.path().join("left");
+		plant(&left, "springsettings.cfg", "Fullscreen = 0\n");
+		let capture =
+			crate::modsettings::capture(&mods.settings, &set, &left, "2026-10-22T10:00:00Z")
+				.unwrap();
+		// Planted after the capture, around its reader: not data.
+		plant(
+			&capture.after(),
+			"LuaUI/Config/BYAR.lua",
+			"return { order = other }\n",
+		);
+		let seen = Arc::new(Mutex::new(None));
+		let recording = Recording { seen: seen.clone() };
+		let _ = spawn(
+			&dirs,
+			"0.0.0",
+			"script.txt".into(),
+			None,
+			None,
+			mode(Arc::new(recording), &mods, dir.path(), Some(set)),
+		)
+		.await;
+		let widgets = std::fs::read_to_string(mods.write.join("LuaUI/Config/BYAR.lua")).unwrap();
+		assert!(
+			widgets.contains("Chat = 1"),
+			"the open seed stands: {widgets}"
+		);
+		assert!(!widgets.contains("other"), "{widgets}");
+		let config = std::fs::read_to_string(mods.write.join("springsettings.cfg")).unwrap();
+		assert!(
+			config.contains("Fullscreen = 0"),
+			"the rest of the capture still seeds: {config}"
+		);
+	}
+
+	#[tokio::test]
+	async fn a_baseline_is_written_at_a_sets_first_launch() {
+		let dir = tempfile::tempdir().unwrap();
+		let dirs = engine_in(dir.path());
+		let mods = crate::mods::layout(&dirs.write);
+		open_seed(&dirs);
+		let set = crate::modsettings::ModSet::of(&[sphere()]);
+		let seen = Arc::new(Mutex::new(None));
+		let recording = Recording { seen: seen.clone() };
+		let _ = spawn(
+			&dirs,
+			"0.0.0",
+			"script.txt".into(),
+			None,
+			None,
+			mode(Arc::new(recording), &mods, dir.path(), Some(set.clone())),
+		)
+		.await;
+		let capture = crate::modsettings::Capture {
+			dir: mods.settings.join(set.id()),
+		};
+		assert_eq!(capture.set().map(|(kept, _)| kept), Some(set));
+		let before = std::fs::read_to_string(capture.before().join("springsettings.cfg")).unwrap();
+		// The baseline is what the engine was given: the open seed with the
+		// launch's own keys pinned over it, so Fullscreen reads pinned, VSync theirs.
+		assert!(before.contains("VSync = 1"), "{before}");
+		assert!(before.contains("Fullscreen = 0"), "{before}");
+		assert!(
+			!before.contains("LuaSocketEnabled"),
+			"a pinned key is never kept: {before}"
+		);
+		assert!(capture.before().join("LuaUI/Config/BYAR.lua").is_file());
 	}
 }

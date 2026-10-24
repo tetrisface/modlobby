@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::{Confinement, KEPT_ENV, Policy};
+use crate::{Confinement, Os, Policy, kept_env, same_key, this_os};
 
 /// The argument that turns modlobby into the probe.
 pub const ARG: &str = "--sandbox-probe";
@@ -29,14 +29,45 @@ const CHECKS: &[&str] = &[
 	"env_keys",
 ];
 
-/// What must come back `false`: everything a mod would want.
-const MUST_BE_DENIED: &[&str] = &[
-	"read_canary",
-	"write_outside",
-	"clipboard_read",
-	"child_process",
-	"tcp_loopback",
-];
+/// What must come back `false` on `os`: everything a mod would want. A
+/// child process on Linux stays inside the same namespaces, Landlock domain
+/// and seccomp filter, and a relaunch from Lua keeps its write directory and
+/// config through the environment, so there it is only reported.
+fn must_be_denied(os: Os) -> &'static [&'static str] {
+	match os {
+		Os::Windows => &[
+			"read_canary",
+			"write_outside",
+			"clipboard_read",
+			"child_process",
+			"tcp_loopback",
+		],
+		Os::Linux => &[
+			"read_canary",
+			"write_outside",
+			"clipboard_read",
+			"tcp_loopback",
+		],
+	}
+}
+
+/// Why a file outside the boundary may fail on `os` and still prove it: on
+/// Windows the container's token is refused; on Linux the file is not in the
+/// sandbox's mount namespace at all, or the root it would be written in is
+/// read-only, or Landlock refused it.
+fn denied_for_the_boundary(os: Os, detail: &str) -> bool {
+	match os {
+		Os::Windows => detail == "permission denied",
+		Os::Linux => matches!(
+			detail,
+			"permission denied" | "entity not found" | "read-only filesystem or storage medium"
+		),
+	}
+}
+
+/// What the Linux probe reports when the compositor, through the proxy,
+/// offers no clipboard to read.
+pub const NO_CLIPBOARD: &str = "no clipboard offered";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProbeArgs {
@@ -133,7 +164,88 @@ fn clipboard() -> (bool, String) {
 	}
 }
 
-#[cfg(not(windows))]
+/// Whether the compositor the sandbox hands out offers a clipboard: the
+/// registry, read once over `WAYLAND_DISPLAY`, holds none of the globals
+/// that would hand one out.
+#[cfg(target_os = "linux")]
+fn clipboard() -> (bool, String) {
+	match wayland_globals() {
+		Ok(globals) => match globals
+			.iter()
+			.find(|global| crate::wayland::HIDDEN.contains(&global.as_str()))
+		{
+			Some(offered) => (true, offered.clone()),
+			None => (false, NO_CLIPBOARD.into()),
+		},
+		Err(why) => (false, format!("the display could not be asked: {why}")),
+	}
+}
+
+/// The interfaces the compositor advertises: `get_registry`, then `sync`,
+/// and every `global` until the sync's `done`.
+#[cfg(target_os = "linux")]
+fn wayland_globals() -> Result<Vec<String>, String> {
+	use std::io::Read as _;
+	let display = std::env::var_os("WAYLAND_DISPLAY").ok_or("no WAYLAND_DISPLAY")?;
+	let path = match std::path::Path::new(&display) {
+		path if path.is_absolute() => path.to_path_buf(),
+		name => PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").ok_or("no XDG_RUNTIME_DIR")?)
+			.join(name),
+	};
+	let mut socket =
+		std::os::unix::net::UnixStream::connect(&path).map_err(|err| err.to_string())?;
+	socket
+		.set_read_timeout(Some(Duration::from_secs(3)))
+		.map_err(|err| err.to_string())?;
+	let request = |object: u32, opcode: u32, new_id: u32| -> Vec<u8> {
+		let mut out = object.to_ne_bytes().to_vec();
+		out.extend(((12_u32 << 16) | opcode).to_ne_bytes());
+		out.extend(new_id.to_ne_bytes());
+		out
+	};
+	const REGISTRY: u32 = 2;
+	const CALLBACK: u32 = 3;
+	let mut asked = request(1, 1, REGISTRY);
+	asked.extend(request(1, 0, CALLBACK));
+	socket.write_all(&asked).map_err(|err| err.to_string())?;
+	let mut held: Vec<u8> = Vec::new();
+	let mut globals = Vec::new();
+	let mut chunk = [0_u8; 4096];
+	loop {
+		while held.len() >= 8 {
+			let word =
+				|at: usize| u32::from_ne_bytes(held[at..at + 4].try_into().unwrap_or([0; 4]));
+			let (object, header) = (word(0), word(4));
+			let size = (header >> 16) as usize;
+			if size < 8 {
+				return Err("the display sent what is not Wayland".into());
+			}
+			if held.len() < size {
+				break;
+			}
+			let opcode = header & 0xffff;
+			if object == CALLBACK && opcode == 0 {
+				return Ok(globals);
+			}
+			if object == 1 && opcode == 0 {
+				return Err("the display refused the request".into());
+			}
+			if object == REGISTRY && opcode == 0 && size >= 16 {
+				let len = word(12) as usize;
+				let end = (16 + len.saturating_sub(1)).min(size);
+				globals.push(String::from_utf8_lossy(&held[16..end]).into_owned());
+			}
+			held.drain(..size);
+		}
+		let read = socket.read(&mut chunk).map_err(|err| err.to_string())?;
+		if read == 0 {
+			return Err("the display closed the connection".into());
+		}
+		held.extend_from_slice(&chunk[..read]);
+	}
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 fn clipboard() -> (bool, String) {
 	(false, "not checked on this platform".into())
 }
@@ -198,6 +310,11 @@ pub fn parse(text: &str) -> Report {
 /// the reason the boundary gives, not for want of a file or a program; else
 /// the names of the checks that did not, a missing one among them.
 pub fn verdict(report: &Report) -> Result<(), Vec<String>> {
+	verdict_on(report, this_os())
+}
+
+/// [`verdict`] by `os`'s rules.
+pub fn verdict_on(report: &Report, os: Os) -> Result<(), Vec<String>> {
 	let find = |name: &str| report.0.iter().find(|(held, _, _)| held == name);
 	let mut failed: Vec<String> = CHECKS
 		.iter()
@@ -210,16 +327,18 @@ pub fn verdict(report: &Report) -> Result<(), Vec<String>> {
 				"env_keys" => detail
 					.split(',')
 					.filter(|key| !key.is_empty())
-					.any(|key| !KEPT_ENV.iter().any(|kept| kept.eq_ignore_ascii_case(key))),
-				"read_canary" | "write_outside" => *ok || detail != "permission denied",
+					.any(|key| !kept_env(os).iter().any(|kept| same_key(os, kept, key))),
+				"read_canary" | "write_outside" => *ok || !denied_for_the_boundary(os, detail),
+				"child_process" if os == Os::Linux => false,
 				"child_process" => *ok || !detail.starts_with("blocked"),
+				"clipboard_read" if os == Os::Linux => *ok || detail != NO_CLIPBOARD,
 				"tcp_loopback" => {
 					*ok || !matches!(
 						detail.as_str(),
 						"timed out" | "connection refused" | "permission denied"
 					)
 				}
-				name if MUST_BE_DENIED.contains(&name) => *ok,
+				name if must_be_denied(os).contains(&name) => *ok,
 				_ => false,
 			}
 		})
@@ -379,7 +498,7 @@ pub async fn ensure_with(
 
 /// `exe` copied into `dir` under its own name, when the copy is missing or
 /// differs in size or modification time. Where the copy is.
-fn copied(exe: &Path, dir: &Path) -> Result<PathBuf, String> {
+pub(crate) fn copied(exe: &Path, dir: &Path) -> Result<PathBuf, String> {
 	let failed = |err: std::io::Error| format!("copying modlobby for the probe: {err}");
 	let name = exe.file_name().ok_or("modlobby's exe has no file name")?;
 	let copy = dir.join(name);
@@ -431,7 +550,7 @@ async fn run(
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{Confined, Guard, Network};
+	use crate::{Confined, Guard, Network, Os};
 	use std::sync::atomic::{AtomicBool, Ordering};
 	use std::sync::{Condvar, Mutex};
 
@@ -439,7 +558,7 @@ mod tests {
 
 	#[test]
 	fn a_report_that_holds_passes() {
-		assert_eq!(verdict(&parse(HOLDS)), Ok(()));
+		assert_eq!(verdict_on(&parse(HOLDS), Os::Windows), Ok(()));
 	}
 
 	/// Denied for the wrong reason is not denied: a canary that was never
@@ -451,7 +570,7 @@ mod tests {
 			"read_canary\tfalse\tentity not found",
 		);
 		assert_eq!(
-			verdict(&parse(&not_there)),
+			verdict_on(&parse(&not_there), Os::Windows),
 			Err(vec!["read_canary".to_owned()])
 		);
 		let no_cmd = HOLDS.replace(
@@ -459,7 +578,7 @@ mod tests {
 			"child_process\tfalse\tprogram not found",
 		);
 		assert_eq!(
-			verdict(&parse(&no_cmd)),
+			verdict_on(&parse(&no_cmd), Os::Windows),
 			Err(vec!["child_process".to_owned()])
 		);
 	}
@@ -469,17 +588,20 @@ mod tests {
 	#[test]
 	fn a_root_whose_settings_are_readable_fails_closed() {
 		let leaky = HOLDS.to_owned() + "root_0\ttrue\tsettings 1200 bytes\n";
-		assert_eq!(verdict(&parse(&leaky)), Err(vec!["root_0".to_owned()]));
+		assert_eq!(
+			verdict_on(&parse(&leaky), Os::Windows),
+			Err(vec!["root_0".to_owned()])
+		);
 		let fine = HOLDS.to_owned()
 			+ "root_0\tfalse\tpermission denied\nroot_1\tfalse\tentity not found\n";
-		assert_eq!(verdict(&parse(&fine)), Ok(()));
+		assert_eq!(verdict_on(&parse(&fine), Os::Windows), Ok(()));
 	}
 
 	#[test]
 	fn a_report_where_the_canary_was_read_fails_closed() {
 		let leaked = HOLDS.replace("read_canary\tfalse", "read_canary\ttrue");
 		assert_eq!(
-			verdict(&parse(&leaked)),
+			verdict_on(&parse(&leaked), Os::Windows),
 			Err(vec!["read_canary".to_owned()])
 		);
 	}
@@ -487,13 +609,16 @@ mod tests {
 	#[test]
 	fn a_report_with_a_key_outside_the_allowlist_fails_closed() {
 		let leaked = HOLDS.replace("PATH,TEMP", "PATH,GITHUB_TOKEN");
-		assert_eq!(verdict(&parse(&leaked)), Err(vec!["env_keys".to_owned()]));
+		assert_eq!(
+			verdict_on(&parse(&leaked), Os::Windows),
+			Err(vec!["env_keys".to_owned()])
+		);
 	}
 
 	#[test]
 	fn a_report_missing_a_check_fails_closed() {
 		let short = "read_canary\tfalse\tdenied\n";
-		let failed = verdict(&parse(short)).unwrap_err();
+		let failed = verdict_on(&parse(short), Os::Windows).unwrap_err();
 		assert!(failed.contains(&"write_inside".to_owned()), "{failed:?}");
 		assert!(failed.contains(&"tcp_loopback".to_owned()), "{failed:?}");
 	}
@@ -702,5 +827,81 @@ mod tests {
 		.await
 		.unwrap_err();
 		assert!(err.contains("spawned"), "{err}");
+	}
+
+	// ------------------------------------------------------------- Linux
+
+	/// What a bwrap sandbox reports when it holds: the canary is not in its
+	/// mount namespace, the root it is in is read-only, a child stays
+	/// inside, and the compositor offers no clipboard.
+	const HOLDS_ON_LINUX: &str = "read_canary\tfalse\tentity not found\nwrite_inside\ttrue\twritten\nwrite_outside\tfalse\tread-only filesystem or storage medium\nclipboard_read\tfalse\tno clipboard offered\nchild_process\ttrue\texit status: 0\ntcp_loopback\tfalse\tpermission denied\nenv_keys\ttrue\tPATH,HOME,WAYLAND_DISPLAY,XDG_RUNTIME_DIR,PULSE_SERVER,SPRING_WRITEDIR\n";
+
+	#[test]
+	fn on_linux_a_hidden_file_is_denied_by_absence() {
+		assert_eq!(verdict_on(&parse(HOLDS_ON_LINUX), Os::Linux), Ok(()));
+		let denied = HOLDS_ON_LINUX
+			.replace("entity not found", "permission denied")
+			.replace(
+				"read-only filesystem or storage medium",
+				"permission denied",
+			);
+		assert_eq!(verdict_on(&parse(&denied), Os::Linux), Ok(()));
+		// Windows has no namespace to hide a file in: absence proves nothing.
+		let on_windows = verdict_on(&parse(HOLDS_ON_LINUX), Os::Windows).unwrap_err();
+		assert!(
+			on_windows.contains(&"read_canary".to_owned()),
+			"{on_windows:?}"
+		);
+		assert!(
+			on_windows.contains(&"write_outside".to_owned()),
+			"{on_windows:?}"
+		);
+	}
+
+	/// A child of the engine stays inside the same sandbox on Linux, and a
+	/// relaunch keeps the write dir and config through the environment.
+	#[test]
+	fn on_linux_a_child_process_is_allowed() {
+		assert_eq!(verdict_on(&parse(HOLDS_ON_LINUX), Os::Linux), Ok(()));
+		let on_windows = verdict_on(&parse(HOLDS_ON_LINUX), Os::Windows).unwrap_err();
+		assert!(
+			on_windows.contains(&"child_process".to_owned()),
+			"{on_windows:?}"
+		);
+	}
+
+	/// The clipboard is denied by the proxy hiding it, and the probe must
+	/// have looked: a probe that could not check proves nothing.
+	#[test]
+	fn on_linux_the_clipboard_must_be_shown_hidden() {
+		let unchecked =
+			HOLDS_ON_LINUX.replace("no clipboard offered", "not checked on this platform");
+		assert_eq!(
+			verdict_on(&parse(&unchecked), Os::Linux),
+			Err(vec!["clipboard_read".to_owned()])
+		);
+		let offered = HOLDS_ON_LINUX.replace(
+			"clipboard_read\tfalse\tno clipboard offered",
+			"clipboard_read\ttrue\twl_data_device_manager",
+		);
+		assert_eq!(
+			verdict_on(&parse(&offered), Os::Linux),
+			Err(vec!["clipboard_read".to_owned()])
+		);
+	}
+
+	#[test]
+	fn on_linux_a_key_outside_the_allowlist_fails_closed() {
+		let leaked = HOLDS_ON_LINUX.replace("PATH,HOME", "PATH,GITHUB_TOKEN");
+		assert_eq!(
+			verdict_on(&parse(&leaked), Os::Linux),
+			Err(vec!["env_keys".to_owned()])
+		);
+		// Linux names are case-sensitive: `Path` is not `PATH`.
+		let cased = HOLDS_ON_LINUX.replace("PATH,HOME", "Path,HOME");
+		assert_eq!(
+			verdict_on(&parse(&cased), Os::Linux),
+			Err(vec!["env_keys".to_owned()])
+		);
 	}
 }

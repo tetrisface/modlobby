@@ -68,6 +68,8 @@ describe('the content chip', () => {
 			check,
 			source,
 			date: null,
+			key: source ?? `name:${title}`,
+			standing: { kind: 'trusted', sandboxed: true },
 		})
 		const container = chip({
 			game: null,

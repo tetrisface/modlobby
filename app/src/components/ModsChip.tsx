@@ -11,13 +11,16 @@ import { sourceWords } from '../lib/mutators'
  * recent, and where it comes from, commit and all.
  */
 export function ModsChip(props: { mods: readonly MutatorView[] }) {
+	const asking = () => props.mods.some((mod) => mod.standing.kind === 'asks')
 	const text = () => {
 		const [only] = props.mods
-		if (props.mods.length === 1 && only)
-			return only.date
-				? `Mods: ${only.title} · ${age(only.date)}`
-				: `Mods: ${only.title}`
-		return `${props.mods.length} mods: ${props.mods.map((mod) => mod.title).join(', ')}`
+		const words =
+			props.mods.length === 1 && only
+				? only.date
+					? `Mods: ${only.title} · ${age(only.date)}`
+					: `Mods: ${only.title}`
+				: `${props.mods.length} mods: ${props.mods.map((mod) => mod.title).join(', ')}`
+		return asking() ? `${words} · needs your OK` : words
 	}
 	const tip = (mod: MutatorView) =>
 		[

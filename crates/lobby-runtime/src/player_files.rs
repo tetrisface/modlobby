@@ -95,6 +95,23 @@ pub fn stamp(now: SystemTime) -> String {
 	)
 }
 
+/// `2026-10-22T10:00:00Z`: the moment as RFC 3339, for a record read by
+/// people and machines alike.
+pub fn rfc3339(now: SystemTime) -> String {
+	let secs = now
+		.duration_since(UNIX_EPOCH)
+		.map(|since| since.as_secs())
+		.unwrap_or(0);
+	let (year, month, day) = civil_from_days((secs / 86_400) as i64);
+	let rem = secs % 86_400;
+	format!(
+		"{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
+		rem / 3600,
+		rem % 3600 / 60,
+		rem % 60
+	)
+}
+
 /// Howard Hinnant's `civil_from_days`, for days since 1970-01-01.
 fn civil_from_days(days: i64) -> (i64, u32, u32) {
 	let z = days + 719_468;
@@ -433,5 +450,14 @@ mod tests {
 		let before = snapshot(home.path(), at(1)).unwrap().unwrap();
 		std::fs::write(home.path().join(SETTINGS), "").unwrap();
 		assert_eq!(collapsed(home.path(), &before), None);
+	}
+
+	#[test]
+	fn a_moment_is_written_as_rfc_3339() {
+		assert_eq!(
+			rfc3339(UNIX_EPOCH + Duration::from_secs(1_000_000_000)),
+			"2001-09-09T01:46:40Z"
+		);
+		assert_eq!(rfc3339(UNIX_EPOCH), "1970-01-01T00:00:00Z");
 	}
 }

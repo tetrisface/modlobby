@@ -139,6 +139,12 @@ pub fn hash_file<D: Digest>(path: &Path) -> std::io::Result<String> {
 	Ok(hex(&hasher.finalize()))
 }
 
+/// SHA-256 of `bytes` as lowercase hex.
+pub fn sha256_hex(bytes: &[u8]) -> String {
+	use sha2::Digest as _;
+	hex(&sha2::Sha256::digest(bytes))
+}
+
 pub fn hex(bytes: &[u8]) -> String {
 	bytes.iter().map(|b| format!("{b:02x}")).collect()
 }

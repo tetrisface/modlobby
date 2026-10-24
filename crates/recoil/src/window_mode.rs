@@ -67,7 +67,7 @@ fn candidates(data_dirs: &[&Path], engine_version: &str) -> Vec<PathBuf> {
 /// One definition of the engine's line grammar, because three things need it —
 /// reading a key, rewriting one, and copying a whole file — and a config we
 /// parse one way and rewrite another is a config we corrupt.
-fn setting(line: &str) -> Option<(&str, &str)> {
+pub fn setting(line: &str) -> Option<(&str, &str)> {
 	let line = line.trim();
 	if line.is_empty() || line.starts_with('#') || line.starts_with("//") {
 		return None;
@@ -124,7 +124,7 @@ pub fn window_mode(data_dirs: &[&Path], engine_version: &str) -> WindowMode {
 /// The first definition of a key is the one the engine reads, so that is the
 /// one rewritten; later definitions of the same key are dropped rather than
 /// left to contradict it. A key the file never mentions is appended.
-fn set_keys(text: &str, wanted: &[(&str, &str)]) -> String {
+pub fn set_keys(text: &str, wanted: &[(&str, &str)]) -> String {
 	let newline = if text.contains("\r\n") { "\r\n" } else { "\n" };
 	let mut written = vec![false; wanted.len()];
 	let mut out: Vec<String> = Vec::new();
@@ -213,15 +213,21 @@ fn pinned(theirs: &str) -> Vec<(&'static str, &'static str)> {
 /// borderless keys pinned and `extra` pinned on top: a config to launch an
 /// engine with that carries everything else of theirs.
 pub fn config_text(data_dirs: &[&Path], engine_version: &str, extra: &[(&str, &str)]) -> String {
-	let theirs = flattened(data_dirs, engine_version);
-	let mut keys = pinned(&theirs);
+	config_text_over(&flattened(data_dirs, engine_version), extra)
+}
+
+/// [`config_text`] over settings already in hand as one file's text, rather
+/// than read from the data directories: what a modded game left behind,
+/// say, with the same keys pinned over it.
+pub fn config_text_over(theirs: &str, extra: &[(&str, &str)]) -> String {
+	let mut keys = pinned(theirs);
 	let more: Vec<(&str, &str)> = extra
 		.iter()
 		.filter(|(key, _)| !keys.iter().any(|(held, _)| held.eq_ignore_ascii_case(key)))
 		.copied()
 		.collect();
 	keys.extend(more);
-	set_keys(&theirs, &keys)
+	set_keys(theirs, &keys)
 }
 
 /// Where modlobby keeps the config it launches with, and what seeded it.

@@ -13,6 +13,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use content::DataDirs;
+use content::git::Reach;
 use lobby_core::{Effect, Session, hosting};
 use lobby_ui::{
 	Batcher, ContentView, Delta, DownloadStatus, EngineStatus, GameRunningView, PasteStatus, Phase,
@@ -36,6 +37,7 @@ use crate::orphan;
 use crate::platform::Hardware;
 use crate::player_files;
 use crate::reconnect;
+use crate::trust::{self, Standing, Trust};
 use crate::ways::{self, Ways};
 
 mod links;
@@ -191,6 +193,14 @@ pub struct GameAsk {
 	/// reads.
 	pub mutator: bool,
 }
+
+/// Who asks GitHub whether a mod's commit is on its branch -- the branch the
+/// host names, or the repository's default one -- and what it said.
+pub type TrackCheck = Arc<
+	dyn Fn(lobby_core::GitPin, Option<String>) -> Pin<Box<dyn Future<Output = Reach> + Send>>
+		+ Send
+		+ Sync,
+>;
 
 /// Nowhere but rapid, until something better is handed in.
 fn rapid_only() -> GameSources {
@@ -539,6 +549,28 @@ enum Command {
 	SetAutoDownload {
 		on: bool,
 		reply: Reply<()>,
+	},
+	SetModTrust {
+		trust: Trust,
+		reply: Reply<()>,
+	},
+	AllowModsOnce {
+		room: u32,
+		keys: Vec<String>,
+		reply: Reply<()>,
+	},
+	SetTrackCheck(TrackCheck),
+	ModSettings {
+		reply: Reply<Vec<lobby_ui::ModSetView>>,
+	},
+	FoldInModSettings {
+		id: String,
+		kinds: lobby_ui::FoldKinds,
+		reply: Reply<Vec<lobby_ui::ModSetView>>,
+	},
+	DiscardModSettings {
+		id: String,
+		reply: Reply<Vec<lobby_ui::ModSetView>>,
 	},
 	SetIdleTimeout {
 		timeout: Option<Duration>,
@@ -991,6 +1023,52 @@ impl Client {
 			.await
 	}
 
+	/// Whose code runs, as settings say.
+	pub async fn set_mod_trust(&self, trust: Trust) -> Result<(), ClientError> {
+		self.ask(|reply| Command::SetModTrust { trust, reply })
+			.await
+	}
+
+	/// Allows `keys` -- each a mod's key, as its view carries it -- in lobby
+	/// `room`, which must be the one we are in, sandboxed, for as long as
+	/// that lobby lasts.
+	pub async fn allow_mods_once(&self, room: u32, keys: Vec<String>) -> Result<(), ClientError> {
+		self.ask(|reply| Command::AllowModsOnce { room, keys, reply })
+			.await
+	}
+
+	/// Who asks GitHub whether a mod's commit is on its branch.
+	pub async fn set_track_check(&self, check: TrackCheck) -> Result<(), ClientError> {
+		self.send(Command::SetTrackCheck(check)).await
+	}
+
+	/// Every set of mods a modded game left settings for, with what changed
+	/// against what its launch gave it.
+	pub async fn mod_settings(&self) -> Result<Vec<lobby_ui::ModSetView>, ClientError> {
+		self.ask(|reply| Command::ModSettings { reply }).await
+	}
+
+	/// Folds the set `id`'s changes of `kinds` into the player's own
+	/// settings; the sets as they stand after.
+	pub async fn fold_in_mod_settings(
+		&self,
+		id: String,
+		kinds: lobby_ui::FoldKinds,
+	) -> Result<Vec<lobby_ui::ModSetView>, ClientError> {
+		self.ask(|reply| Command::FoldInModSettings { id, kinds, reply })
+			.await
+	}
+
+	/// Puts the set `id`'s settings back to what its last launch was given;
+	/// the sets as they stand after.
+	pub async fn discard_mod_settings(
+		&self,
+		id: String,
+	) -> Result<Vec<lobby_ui::ModSetView>, ClientError> {
+		self.ask(|reply| Command::DiscardModSettings { id, reply })
+			.await
+	}
+
 	/// How long the window may go untouched before the connection is dropped
 	/// and not retried; `None` keeps it however long. Measured from the last
 	/// [`Self::activity`], never while a game is running.
@@ -1280,10 +1358,30 @@ impl Client {
 }
 
 /// What an engine was started with: the directory it writes and the copy of
-/// the player's files taken just before, to compare against when it exits.
+/// the player's files taken just before, to compare against when it exits;
+/// for a modded game, its set of mods and the mods layout it ran in, to keep
+/// what it leaves of the player's settings under that set.
+#[derive(Clone)]
 struct EngineRun {
 	write: PathBuf,
 	snapshot: Option<PathBuf>,
+	set: Option<(crate::modsettings::ModSet, crate::mods::ModsLayout)>,
+}
+
+/// What a modded game left of the player's settings, kept with its set for
+/// the next game of those mods and for the Settings pane; `None` for an open
+/// game, which writes the player's own files.
+fn capture_at_exit(
+	run: &EngineRun,
+	at: &str,
+) -> Option<std::io::Result<crate::modsettings::Capture>> {
+	let (set, mods) = run.set.as_ref()?;
+	Some(crate::modsettings::capture(
+		&mods.settings,
+		set,
+		&mods.write,
+		at,
+	))
 }
 
 /// The room's game as last announced, with the secret the engine presents.
@@ -1302,6 +1400,8 @@ enum Next {
 	Probe(Probe),
 	/// Whether the room's game and map here are the ones it plays, worked out.
 	Checked(Checked),
+	/// GitHub's word on a mod's branch, by the mod's key.
+	Reached(String, Reach),
 	Reconnect,
 	Idle,
 	/// A paste's answers have dried up.
@@ -1389,6 +1489,21 @@ struct Runtime {
 	/// Files a confined launch writes into the mods write directory after
 	/// its reset, by path relative to it: the in-game escape widget.
 	mods_files: Vec<(PathBuf, String)>,
+	/// Whose code runs, as settings say; pushed by the app.
+	trust: Trust,
+	/// Mods allowed for one lobby only: (server, battle id, the mod's key).
+	allowed_once: BTreeSet<(String, u32, String)>,
+	/// GitHub's word on each pinned mod's branch, by key, for this run; the
+	/// positive answers live on in the API cache across runs.
+	reaches: HashMap<String, Reach>,
+	/// Keys GitHub is being asked about.
+	reach_pending: BTreeSet<String>,
+	track_check: Option<TrackCheck>,
+	reach_tx: mpsc::Sender<(String, Reach)>,
+	reach_rx: mpsc::Receiver<(String, Reach)>,
+	/// The standing of each of the room's mods as last worked out, in load
+	/// order; empty for a room that loads none.
+	standings: Vec<Standing>,
 	/// Each server's rapid master index, by server id; see [`Self::rapid_master`].
 	rapid_masters: BTreeMap<String, String>,
 	map_searches: BTreeMap<String, String>,
@@ -1407,6 +1522,10 @@ struct Runtime {
 	/// The room's engine, game, map and mutators the content check last ran
 	/// against; scanning the rapid index is too slow to repeat per message.
 	checked: Option<RoomContent>,
+	/// The lobby (server, battle id) `checked` was checked in: the same
+	/// content in another lobby is checked again, since what was allowed
+	/// for one lobby does not follow into the next.
+	checked_lobby: Option<(String, u32)>,
 	/// The room (server, battle) whose host has been told we load mutators,
 	/// so it is told once.
 	greeted_mutator_host: Option<(String, u32)>,
@@ -1473,13 +1592,15 @@ struct Runtime {
 
 /// A room's engine, and its game and map by name, each with the hash the
 /// room announced for it -- `None` for one that is not here or had none --
-/// and the mutators it loads, each with whether it is here.
+/// and the mutators it loads, each with whether it is here and where it
+/// stands with the player. The check reads the standing; it never decides
+/// one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CheckKey {
 	engine: String,
 	game: (String, Option<u32>),
 	map: (String, Option<u32>),
-	mutators: Vec<(lobby_core::Mutator, bool)>,
+	mutators: Vec<(lobby_core::Mutator, bool, Standing)>,
 }
 
 /// What a room asks this machine for: its engine, game and map by name, and
@@ -1533,9 +1654,12 @@ fn mutator_view(
 	here: bool,
 	inside: Option<(String, Option<String>)>,
 	check: Option<lobby_ui::CheckView>,
+	standing: &Standing,
 ) -> lobby_ui::MutatorView {
 	let (title, description) = inside.unzip();
 	lobby_ui::MutatorView {
+		key: trust::key(mutator),
+		standing: standing_view(standing),
 		title: title
 			.or_else(|| mutator.source.as_ref().map(|pin| pin.repo.clone()))
 			.unwrap_or_else(|| mutator.name.clone()),
@@ -1548,6 +1672,36 @@ fn mutator_view(
 			.as_ref()
 			.map(|pin| format!("github:{}@{}", pin.repo, pin.commit)),
 		date: mutator.date.clone(),
+	}
+}
+
+/// A standing as the front end shows it, each ask with its words.
+fn standing_view(standing: &Standing) -> lobby_ui::StandingView {
+	use lobby_ui::{StandingView, WhyView};
+	match standing {
+		Standing::Trusted { sandboxed } => StandingView::Trusted {
+			sandboxed: *sandboxed,
+		},
+		Standing::Checking => StandingView::Checking,
+		Standing::Asks(why) => {
+			let (why, text) = match why {
+				trust::Why::Repo => (
+					WhyView::Repo,
+					"A repository you have not allowed".to_owned(),
+				),
+				trust::Why::Commit => (
+					WhyView::Commit,
+					"A new commit of a repository you allow per commit".to_owned(),
+				),
+				trust::Why::Unpinned => (
+					WhyView::Unpinned,
+					"Loaded by name, from no repository: allowed for one lobby at a time"
+						.to_owned(),
+				),
+				trust::Why::Branch(text) => (WhyView::Branch, text.clone()),
+			};
+			StandingView::Asks { why, text }
+		}
 	}
 }
 
@@ -1585,10 +1739,10 @@ fn check_content(dirs: DataDirs, key: &CheckKey) -> lobby_ui::ContentCheckView {
 		mutators: key
 			.mutators
 			.iter()
-			.map(|(mutator, here)| {
+			.map(|(mutator, here, standing)| {
 				let inside = mutator_archive(&library, &key.engine, mutator)
 					.and_then(|path| content::map_name::game_and_description(&path));
-				mutator_view(mutator, *here, inside, announced(mutator))
+				mutator_view(mutator, *here, inside, announced(mutator), standing)
 			})
 			.collect(),
 	}
@@ -1897,6 +2051,7 @@ impl Runtime {
 		let (download_tx, download_rx) = mpsc::channel(16);
 		let (probe_tx, probe_rx) = mpsc::channel(1);
 		let (check_tx, check_rx) = mpsc::channel(1);
+		let (reach_tx, reach_rx) = mpsc::channel(16);
 		let (opened_tx, opened_rx) = mpsc::channel(8);
 		let cache = state_dir
 			.as_deref()
@@ -1936,6 +2091,14 @@ impl Runtime {
 			confined_to,
 			confinement,
 			mods_files: Vec::new(),
+			trust: Trust::default(),
+			allowed_once: BTreeSet::new(),
+			reaches: HashMap::new(),
+			reach_pending: BTreeSet::new(),
+			track_check: None,
+			reach_tx,
+			reach_rx,
+			standings: Vec::new(),
 			rapid_masters: BTreeMap::new(),
 			map_searches: BTreeMap::new(),
 			bar_maps: BTreeSet::new(),
@@ -1948,6 +2111,7 @@ impl Runtime {
 			overlay_config_dir: None,
 			menu_archive: None,
 			checked: None,
+			checked_lobby: None,
 			greeted_mutator_host: None,
 			idle: idle::Idle::default(),
 			paste: None,
@@ -2104,7 +2268,16 @@ impl Runtime {
 			path,
 			self.overlay_config_dir.as_deref(),
 			self.menu_archive.clone(),
-			self.launch_mode(modded.then_some(sandbox::Network::None), &mods),
+			self.launch_mode(
+				if modded {
+					LaunchHow::Confined(sandbox::Network::None)
+				} else {
+					LaunchHow::Open
+				},
+				&mods,
+				// A replay keeps no settings: it has no set to keep them under.
+				None,
+			),
 		)
 		.await
 		.map_err(ClientError::Engine)?;
@@ -2120,9 +2293,11 @@ impl Runtime {
 			launch::Started::Child(child) => Engine::Started(Box::new(child)),
 			launch::Started::Confined(confined) => Engine::confined(confined),
 		});
+		let set = launched.set.map(|set| (set, crate::mods::layout(&write)));
 		self.engine_run = Some(EngineRun {
 			write,
 			snapshot: launched.snapshot,
+			set,
 		});
 		if let Some(config) = launched.config {
 			self.batcher.push(Delta::Notice {
@@ -2145,7 +2320,10 @@ impl Runtime {
 	///
 	/// `by_hand` is a person asking, which a remembered miss never holds back.
 	async fn start_download(&mut self, by_hand: bool) -> Result<(), ClientError> {
-		let Some(conn) = self.room().and_then(|room| self.link(&room)) else {
+		let Some((server, conn)) = self
+			.room()
+			.and_then(|room| self.link(&room).map(|conn| (room, conn)))
+		else {
 			return Err(ClientError::Refused("not in a room".into()));
 		};
 		let room = conn
@@ -2160,14 +2338,29 @@ impl Runtime {
 			room.game_name.clone(),
 			room.map_name.clone(),
 		);
-		let mutators = conn
-			.session
-			.state
-			.my_battle
-			.as_ref()
+		let my = conn.session.state.my_battle.as_ref();
+		let room_id = my.map_or(0, |my| my.id);
+		// Only a mod that may run is fetched; one that asks is said.
+		let (mutators, asking): (Vec<_>, Vec<_>) = my
 			.map(lobby_core::MyBattle::mutators)
-			.unwrap_or_default();
-		self.fetch(wanted, mutators, self.room(), by_hand).await
+			.unwrap_or_default()
+			.into_iter()
+			.partition(|mutator| {
+				matches!(
+					self.standing_of(&server, room_id, mutator),
+					Standing::Trusted { .. }
+				)
+			});
+		for mutator in asking {
+			self.batcher.push(Delta::Notice {
+				level: lobby_ui::NoticeLevel::Warning,
+				text: format!(
+					"{} needs your OK in the Mods tab before it is fetched",
+					mutator.name
+				),
+			});
+		}
+		self.fetch(wanted, mutators, Some(server), by_hand).await
 	}
 
 	/// Who `map` is asked of, or why nobody is.
@@ -2592,7 +2785,10 @@ impl Runtime {
 			self.checked = None;
 			return;
 		}
-		let Some(conn) = self.room().and_then(|room| self.link(&room)) else {
+		let Some((server, conn)) = self
+			.room()
+			.and_then(|room| self.link(&room).map(|conn| (room, conn)))
+		else {
 			if self.checked.take().is_some() {
 				self.set_synced(false).await;
 			}
@@ -2613,27 +2809,51 @@ impl Runtime {
 			room.map_name.clone(),
 			my.map(lobby_core::MyBattle::mutators).unwrap_or_default(),
 		);
-		if self.checked.as_ref() == Some(&key) {
+		let room_id = my.map_or(0, |my| my.id);
+		let map_hash = content::checksum::parse_room_hash(&room.map_hash);
+		// The same content in another lobby is another lobby: what was
+		// allowed in the first does not follow.
+		let lobby = (server.clone(), room_id);
+		if self.checked.as_ref() == Some(&key) && self.checked_lobby.as_ref() == Some(&lobby) {
 			return;
 		}
 		let Some(dirs) = self.data_dirs() else {
 			return;
 		};
-		let library = content::Library::new(crate::mods::with_builds(&dirs));
-		let available = library.check(&key.0, &key.1, &key.2);
-		let mutators: Vec<(lobby_core::Mutator, bool)> = key
+		let standings: Vec<Standing> = key
 			.3
 			.iter()
-			.map(|mutator| {
-				let here = mutator_archive(&library, &key.0, mutator).is_some();
-				(mutator.clone(), here)
+			.map(|mutator| self.standing_of(&server, room_id, mutator))
+			.collect();
+		// Mods still waiting on GitHub's word: asked now, once each, so that
+		// their standing can settle.
+		let to_ask: Vec<(String, lobby_core::GitPin, Option<String>)> = key
+			.3
+			.iter()
+			.zip(&standings)
+			.filter(|(_, standing)| matches!(standing, Standing::Checking))
+			.filter_map(|(mutator, _)| {
+				let pin = mutator.source.clone()?;
+				let held = trust::key(mutator);
+				(!self.reach_pending.contains(&held)).then_some((held, pin, mutator.track.clone()))
 			})
 			.collect();
-		let mutators_here = mutators.iter().all(|(_, here)| *here);
-		let mutators_to_fetch = mutators
+		self.ask_github(to_ask);
+		let library = content::Library::new(crate::mods::with_builds(&dirs));
+		let available = library.check(&key.0, &key.1, &key.2);
+		let mutators: Vec<(lobby_core::Mutator, bool, Standing)> = key
+			.3
 			.iter()
-			.any(|(mutator, here)| !here && announced_whole(mutator));
-		let map_hash = content::checksum::parse_room_hash(&room.map_hash);
+			.zip(&standings)
+			.map(|(mutator, standing)| {
+				let here = mutator_archive(&library, &key.0, mutator).is_some();
+				(mutator.clone(), here, standing.clone())
+			})
+			.collect();
+		let mutators_here = mutators.iter().all(|(_, here, _)| *here);
+		let all_trusted = trust::all_trusted(&standings);
+		let mutators_to_fetch = fetchable(&mutators);
+		self.standings = standings;
 		self.start_check(
 			CheckKey {
 				engine: key.0.clone(),
@@ -2644,6 +2864,7 @@ impl Runtime {
 			dirs,
 		);
 		self.checked = Some(key.clone());
+		self.checked_lobby = Some(lobby);
 		self.content_view = Some(ContentView {
 			engine: available.engine,
 			game: available.game,
@@ -2655,8 +2876,8 @@ impl Runtime {
 			map: available.map,
 		});
 		// A mutator missing is a game that cannot start: the engine stops at
-		// an archive it cannot find.
-		self.content_ready = available.complete() && mutators_here;
+		// an archive it cannot find. One that asks is a game that must not.
+		self.content_ready = available.complete() && mutators_here && all_trusted;
 		self.set_synced(self.content_ready).await;
 
 		// Joining a room you have no map for is a request for the map: there is
@@ -2684,6 +2905,53 @@ impl Runtime {
 		}
 	}
 
+	/// Where one of the room's mods stands with the player, from the trust
+	/// list, what was allowed in this lobby, and GitHub's word so far.
+	fn standing_of(&self, server: &str, room: u32, mutator: &lobby_core::Mutator) -> Standing {
+		standing_in(
+			&self.trust,
+			&self.allowed_once,
+			&self.reaches,
+			self.track_check.is_some(),
+			server,
+			room,
+			mutator,
+		)
+	}
+
+	/// Forgets GitHub's refusals, so they are asked about again: on leaving a
+	/// lobby, on a new way to ask, and on a change of trust.
+	fn forget_refusals(&mut self) {
+		self.reaches
+			.retain(|_, reach| !matches!(reach, Reach::Unknown(_)));
+	}
+
+	/// Asks GitHub, once per commit, whether each pinned mod is on its
+	/// branch; the answer arrives as [`Next::Reached`]. With nobody to ask,
+	/// nothing is asked, and the standing says so for as long as that lasts.
+	fn ask_github(&mut self, to_ask: Vec<(String, lobby_core::GitPin, Option<String>)>) {
+		for (key, pin, track) in to_ask {
+			let Some(check) = &self.track_check else {
+				continue;
+			};
+			self.reach_pending.insert(key.clone());
+			let check = Arc::clone(check);
+			let tx = self.reach_tx.clone();
+			tokio::spawn(async move {
+				let reach = check(pin, track).await;
+				let _ = tx.send((key, reach)).await;
+			});
+		}
+	}
+
+	async fn on_reached(&mut self, key: String, reach: Reach) {
+		self.reach_pending.remove(&key);
+		self.reaches.insert(key, reach);
+		self.checked = None;
+		self.refresh_content().await;
+		self.greet_mutator_host().await;
+	}
+
 	/// Tells a mutator host, once per room, that this lobby loads what it
 	/// announces: the host tells everybody else what the room loads and where
 	/// a lobby that loads it is, and holds the start while such a player is
@@ -2698,6 +2966,15 @@ impl Runtime {
 			{
 				return None;
 			}
+			// Not while any of its mods asks: a greeting says we load them.
+			let standings: Vec<Standing> = my
+				.mutators()
+				.iter()
+				.map(|mutator| self.standing_of(server, my.id, mutator))
+				.collect();
+			if !trust::all_trusted(&standings) {
+				return None;
+			}
 			let founder = state.battles.get(&my.id)?.founder.clone();
 			Some((server.to_owned(), my.id, founder))
 		});
@@ -2705,15 +2982,18 @@ impl Runtime {
 			return;
 		};
 		self.greeted_mutator_host = Some((server.clone(), id));
-		let effects = self
-			.link_mut(&server)
-			.and_then(|conn| {
-				conn.session
-					.say_private(&founder, lobby_core::MUTATORS_SUPPORTED)
-					.ok()
-			})
-			.unwrap_or_default();
-		self.apply_effects(&server, effects).await;
+		// The consenting build's line first, then the old one: a host on
+		// either version of the handshake hears one it knows.
+		for line in [
+			lobby_core::MUTATORS_SUPPORTED_V2,
+			lobby_core::MUTATORS_SUPPORTED,
+		] {
+			let effects = self
+				.link_mut(&server)
+				.and_then(|conn| conn.session.say_private(&founder, line).ok())
+				.unwrap_or_default();
+			self.apply_effects(&server, effects).await;
+		}
 	}
 
 	/// Holds the room's game and map, where they are here, to the hashes the
@@ -2727,10 +3007,10 @@ impl Runtime {
 			mutators: key
 				.mutators
 				.iter()
-				.map(|(mutator, here)| {
+				.map(|(mutator, here, standing)| {
 					let checking = (*here && mutator.checksum.is_some())
 						.then_some(lobby_ui::CheckView::Checking);
-					mutator_view(mutator, *here, None, checking)
+					mutator_view(mutator, *here, None, checking, standing)
 				})
 				.collect(),
 		};
@@ -2839,6 +3119,7 @@ impl Runtime {
 				Some(event) = self.download_rx.recv() => Next::Download(event),
 				Some(probe) = self.probe_rx.recv() => Next::Probe(probe),
 				Some(checked) = self.check_rx.recv() => Next::Checked(checked),
+				Some((key, reach)) = self.reach_rx.recv() => Next::Reached(key, reach),
 				() = sleep_until_due(retry) => Next::Reconnect,
 				() = sleep_until_idle(&self.idle, connected) => Next::Idle,
 				() = sleep_until_paste_quiet(&self.paste) => Next::PasteQuiet,
@@ -2856,6 +3137,7 @@ impl Runtime {
 				Next::Download(event) => self.on_download(event).await,
 				Next::Probe(probe) => self.on_probe(probe).await,
 				Next::Checked(checked) => self.on_checked(checked).await,
+				Next::Reached(key, reach) => self.on_reached(key, reach).await,
 				Next::Reconnect => self.try_reconnect().await,
 				Next::Idle => self.on_idle().await,
 				Next::PasteQuiet => self.paste_quiet(),
@@ -3174,6 +3456,74 @@ impl Runtime {
 					self.checked = None;
 					self.refresh_content().await;
 				}
+			}
+			Command::SetModTrust { trust, reply } => {
+				// Every settings save pushes the trust; the same trust again
+				// is not a reason to read the game archives again.
+				if trust == self.trust {
+					let _ = reply.send(Ok(()));
+					return;
+				}
+				self.trust = trust;
+				let _ = reply.send(Ok(()));
+				self.forget_refusals();
+				self.checked = None;
+				self.refresh_content().await;
+				self.greet_mutator_host().await;
+			}
+			Command::AllowModsOnce { room, keys, reply } => {
+				let lobby = self.room().and_then(|server| {
+					let id = self.link(&server)?.session.state.my_battle.as_ref()?.id;
+					Some((server, id))
+				});
+				let Some((server, id)) = lobby else {
+					let _ = reply.send(Err(ClientError::Refused("not in a lobby".into())));
+					return;
+				};
+				// Given for the lobby the card was shown in; a click that lands
+				// after a hop applies to nothing.
+				if id != room {
+					let _ = reply.send(Err(ClientError::Refused(
+						"that lobby is not the one you are in".into(),
+					)));
+					return;
+				}
+				for key in keys {
+					self.allowed_once.insert((server.clone(), room, key));
+				}
+				let _ = reply.send(Ok(()));
+				self.checked = None;
+				self.refresh_content().await;
+				self.greet_mutator_host().await;
+			}
+			Command::ModSettings { reply } => {
+				let _ = reply.send(Ok(self.mod_settings()));
+			}
+			Command::FoldInModSettings { id, kinds, reply } => {
+				let folded = self.capture_named(&id).and_then(|(capture, dirs)| {
+					crate::modsettings::fold_in(&capture, &dirs.write, &kinds).map_err(|err| {
+						ClientError::Refused(format!(
+							"the mods' settings were not folded in: {err}"
+						))
+					})
+				});
+				let _ = reply.send(folded.map(|_| self.mod_settings()));
+			}
+			Command::DiscardModSettings { id, reply } => {
+				let discarded = self.capture_named(&id).and_then(|(capture, _)| {
+					crate::modsettings::discard(&capture).map_err(|err| {
+						ClientError::Refused(format!(
+							"the mods' settings were not discarded: {err}"
+						))
+					})
+				});
+				let _ = reply.send(discarded.map(|_| self.mod_settings()));
+			}
+			Command::SetTrackCheck(check) => {
+				self.track_check = Some(check);
+				self.forget_refusals();
+				self.checked = None;
+				self.refresh_content().await;
 			}
 			Command::SetIdleTimeout { timeout, reply } => {
 				self.idle.set_timeout(timeout);
@@ -3667,7 +4017,12 @@ impl Runtime {
 				Effect::JoinFailed { reason } => {
 					self.reply_join(server, Err(ClientError::Refused(reason)))
 				}
-				Effect::LeftBattle { .. } => self.game = None,
+				Effect::LeftBattle { .. } => {
+					self.game = None;
+					// A launch asked for in that lobby is not asked for in the next.
+					self.auto_launch = None;
+					self.forget_refusals();
+				}
 				Effect::PlayingWith { names } => {
 					if let Some(game) = self.game.as_mut() {
 						game.view.playing_with = Some(names);
@@ -3754,8 +4109,15 @@ impl Runtime {
 					if let Some(dirs) = wanted
 						&& let Err(err) = self.launch_engine(dirs).await
 					{
+						// A refusal -- the lobby's mods asking -- is not a fault
+						// of ours; a failure to start is.
+						let level = if matches!(err, ClientError::Refused(_)) {
+							lobby_ui::NoticeLevel::Warning
+						} else {
+							lobby_ui::NoticeLevel::Error
+						};
 						self.batcher.push(Delta::Notice {
-							level: lobby_ui::NoticeLevel::Error,
+							level,
 							text: err.to_string(),
 						});
 					}
@@ -3827,7 +4189,7 @@ impl Runtime {
 		let Some(server) = self.room() else {
 			return Err(ClientError::NotConnected);
 		};
-		let (engine_version, url, modded, in_game) = {
+		let (engine_version, url, how, set, in_game) = {
 			let Some(conn) = self
 				.servers
 				.get_mut(&server)
@@ -3840,6 +4202,32 @@ impl Runtime {
 			};
 			let state = &conn.session.state;
 			let me = state.me.clone().unwrap_or_default();
+			// A mod that asks is a game that must not start, whatever is on
+			// disk. Decided from the lobby as it is now, not from standings
+			// worked out before whatever the host sent last: a swap and a
+			// start can arrive in one breath.
+			let my = state.my_battle.as_ref();
+			let room_id = my.map_or(0, |my| my.id);
+			let mutators = my.map(lobby_core::MyBattle::mutators).unwrap_or_default();
+			let standings: Vec<Standing> = mutators
+				.iter()
+				.map(|mutator| {
+					standing_in(
+						&self.trust,
+						&self.allowed_once,
+						&self.reaches,
+						self.track_check.is_some(),
+						&server,
+						room_id,
+						mutator,
+					)
+				})
+				.collect();
+			if !trust::all_trusted(&standings) {
+				return Err(ClientError::Refused(
+					"the lobby's mods need your OK in the Mods tab".into(),
+				));
+			}
 			let room = state
 				.battles
 				.get(&game.view.id)
@@ -3875,16 +4263,37 @@ impl Runtime {
 			}
 			let engine_version = room.engine_version.clone();
 			let url = recoil::spring_url(&me, &game.script_password, &game.view.ip, game.view.port);
-			let modded = state
-				.my_battle
-				.as_ref()
-				.is_some_and(|my| !my.mutators().is_empty());
+			let modded = !mutators.is_empty();
+			// What an engine trusted with every mod may resolve: those mods'
+			// builds and nothing else.
+			let builds: Vec<PathBuf> = mutators
+				.iter()
+				.filter_map(|mutator| mutator_archive(&library, &room.engine_version, mutator))
+				.collect();
+			// A build a lobby launches is in use, whenever it was made.
+			if let Err(err) = content::builds::used(
+				&crate::mods::layout(&dirs.write).builds.join("games"),
+				&builds,
+				std::time::SystemTime::now(),
+			) {
+				tracing::warn!(%err, "the builds in use were not recorded");
+			}
+			let how = how_to_launch(&standings, modded, builds);
+			let set = modded.then(|| crate::modsettings::ModSet::of(&mutators));
 			// Where no sandbox can hold it, refuse before the server is told
 			// we are in game.
-			if modded && let Some(reason) = self.confinement.unavailable() {
+			if matches!(how, LaunchHow::Confined(_))
+				&& let Some(reason) = self.confinement.unavailable()
+			{
 				return Err(ClientError::Engine(reason));
 			}
-			(engine_version, url, modded, conn.session.set_in_game(true))
+			(
+				engine_version,
+				url,
+				how,
+				set,
+				conn.session.set_in_game(true),
+			)
 		};
 		// SPADS /adduser's us to the running game only once the lobby shows us in
 		// game; the engine needs a few seconds to reach the host.
@@ -3906,7 +4315,7 @@ impl Runtime {
 			url,
 			self.overlay_config_dir.as_deref(),
 			self.menu_archive.clone(),
-			self.launch_mode(modded.then_some(sandbox::Network::Outbound), &mods),
+			self.launch_mode(how, &mods, set),
 		)
 		.await;
 		let launched = match launched {
@@ -3935,11 +4344,14 @@ impl Runtime {
 	/// the state directory, or the temp directory when there is none.
 	fn launch_mode<'a>(
 		&'a self,
-		confined: Option<sandbox::Network>,
+		how: LaunchHow,
 		mods: &'a crate::mods::ModsLayout,
+		set: Option<crate::modsettings::ModSet>,
 	) -> launch::Mode<'a> {
-		let Some(network) = confined else {
-			return launch::Mode::Open;
+		let network = match how {
+			LaunchHow::Open => return launch::Mode::Open,
+			LaunchHow::Trusted(builds) => return launch::Mode::Trusted { mods, builds },
+			LaunchHow::Confined(network) => network,
 		};
 		let state = self
 			.state_dir
@@ -3949,17 +4361,59 @@ impl Runtime {
 			confinement: Arc::clone(&self.confinement),
 			mods,
 			network,
-			self_exe: std::env::current_exe().unwrap_or_default(),
+			self_exe: sandbox::probe_exe(),
 			probe_cache: state.join("sandbox-probe.json"),
 			grants_file: state.join("sandbox-grants.json"),
 			after_reset: self.mods_files.clone(),
+			set,
 		}
+	}
+
+	/// Every set of mods with a game's settings captured, with its changes.
+	fn mod_settings(&self) -> Vec<lobby_ui::ModSetView> {
+		let Some(dirs) = self.data_dirs() else {
+			return Vec::new();
+		};
+		let settings = crate::mods::layout(&dirs.write).settings;
+		crate::modsettings::captures(&settings)
+			.into_iter()
+			.filter_map(|(_, capture, _)| crate::modsettings::changes(&capture))
+			.collect()
+	}
+
+	/// The capture of the set named `id`, found among those held rather
+	/// than joined as a path, and the data directories it belongs with.
+	fn capture_named(
+		&self,
+		id: &str,
+	) -> Result<(crate::modsettings::Capture, DataDirs), ClientError> {
+		let dirs = self
+			.data_dirs()
+			.ok_or_else(|| ClientError::Refused("no data directory yet".into()))?;
+		let settings = crate::mods::layout(&dirs.write).settings;
+		let capture = crate::modsettings::captures(&settings)
+			.into_iter()
+			.find(|(set, _, _)| set.id() == id)
+			.map(|(_, capture, _)| capture)
+			.ok_or_else(|| ClientError::Refused("no such set of mods".into()))?;
+		Ok((capture, dirs))
 	}
 
 	async fn engine_exited(&mut self, code: Option<i32>) {
 		self.engine = None;
 		tracing::info!(?code, "engine exited");
 		self.set_engine(EngineStatus::Exited { code });
+		if let Some(run) = self.engine_run.clone().filter(|run| run.set.is_some()) {
+			let at = player_files::rfc3339(std::time::SystemTime::now());
+			let kept = tokio::task::spawn_blocking(move || capture_at_exit(&run, &at)).await;
+			match kept {
+				Ok(Some(Err(err))) => {
+					tracing::warn!(%err, "the modded game's settings were not kept");
+				}
+				Err(err) => tracing::warn!(%err, "the modded game's settings were not kept"),
+				Ok(_) => {}
+			}
+		}
 		self.check_player_files();
 		if let Some(server) = self.in_game_on.take()
 			&& let Some(conn) = self.link_mut(&server)
@@ -4520,6 +4974,61 @@ impl Engine {
 	}
 }
 
+/// How a game is launched: as any game; open but reading the mod builds,
+/// because the player trusts every mod it loads with their own rights; or
+/// inside the sandbox, with the network the game needs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum LaunchHow {
+	Open,
+	/// With the lobby's builds, every one trusted outside the sandbox.
+	Trusted(Vec<PathBuf>),
+	Confined(sandbox::Network),
+}
+
+/// The launch a room's standings call for. A room with no mods is any game;
+/// one whose every mod is trusted outside the sandbox runs open; every other
+/// modded room runs confined, with the network an online game needs. A
+/// replay never comes through here: it is confined by where it is.
+fn how_to_launch(standings: &[Standing], modded: bool, builds: Vec<PathBuf>) -> LaunchHow {
+	if !modded {
+		return LaunchHow::Open;
+	}
+	if trust::launch_open(standings) {
+		return LaunchHow::Trusted(builds);
+	}
+	LaunchHow::Confined(sandbox::Network::Outbound)
+}
+
+/// Which of a lobby's mods a fetch may ask for: one that runs, is not here,
+/// and has a checksum to be held to. One that asks waits for its OK; one
+/// still being checked waits for the answer.
+fn fetchable(mutators: &[(lobby_core::Mutator, bool, Standing)]) -> bool {
+	mutators.iter().any(|(mutator, here, standing)| {
+		!here && announced_whole(mutator) && matches!(standing, Standing::Trusted { .. })
+	})
+}
+
+/// Where one of a lobby's mods stands with the player, from the trust list,
+/// what was allowed in that lobby, and GitHub's word so far. With no way to
+/// ask GitHub, a pinned mod that would need its word asks instead.
+fn standing_in(
+	trust: &Trust,
+	allowed_once: &BTreeSet<(String, u32, String)>,
+	reaches: &HashMap<String, Reach>,
+	can_ask: bool,
+	server: &str,
+	room: u32,
+	mutator: &lobby_core::Mutator,
+) -> Standing {
+	let key = trust::key(mutator);
+	let allowed = allowed_once.contains(&(server.to_owned(), room, key.clone()));
+	let no_way = Reach::Unknown("GitHub cannot be asked from here".into());
+	let reach = reaches
+		.get(&key)
+		.or_else(|| (!can_ask && mutator.source.is_some()).then_some(&no_way));
+	trust::standing(trust, mutator, reach, allowed)
+}
+
 /// Resolves with the exit code when the engine exits; never, when none runs.
 ///
 /// Cancelled and made again on every turn of the runtime's loop, so an
@@ -4646,15 +5155,16 @@ mod tests {
 			checksum: Some(checksum.into()),
 			source: None,
 			date: None,
+			track: None,
 		};
 		let key = CheckKey {
 			engine: "2026.09.01".into(),
 			game: ("Game 1".into(), None),
 			map: ("Nowhere 1".into(), None),
 			mutators: vec![
-				(mutator("Sphere v1", &hex(&single)), true),
-				(mutator("Sphere v1", &hex(&other)), true),
-				(mutator("Absent v1", &hex(&single)), false),
+				(mutator("Sphere v1", &hex(&single)), true, runs()),
+				(mutator("Sphere v1", &hex(&other)), true, runs()),
+				(mutator("Absent v1", &hex(&single)), false, runs()),
 			],
 		};
 		use lobby_ui::{CheckView, MutatorView};
@@ -4669,6 +5179,8 @@ mod tests {
 					check: Some(CheckView::Same { hash: ours }),
 					source: None,
 					date: None,
+					key: "name:Sphere v1".into(),
+					standing: lobby_ui::StandingView::Trusted { sandboxed: true },
 				},
 				MutatorView {
 					name: "Sphere v1".into(),
@@ -4681,6 +5193,8 @@ mod tests {
 					}),
 					source: None,
 					date: None,
+					key: "name:Sphere v1".into(),
+					standing: lobby_ui::StandingView::Trusted { sandboxed: true },
 				},
 				MutatorView {
 					name: "Absent v1".into(),
@@ -4690,6 +5204,8 @@ mod tests {
 					check: None,
 					source: None,
 					date: None,
+					key: "name:Absent v1".into(),
+					standing: lobby_ui::StandingView::Trusted { sandboxed: true },
 				},
 			]
 		);
@@ -4710,6 +5226,7 @@ mod tests {
 			checksum: None,
 			source,
 			date: None,
+			track: None,
 		};
 		let built = content::git::build_name("dev/sphere", sha);
 		assert!(announced_whole(&mutator(
@@ -4745,6 +5262,7 @@ mod tests {
 			checksum: None,
 			source: Some(pin),
 			date: Some("2025-10-05T13:32:09Z".into()),
+			track: None,
 		};
 		let library = content::Library::new(DataDirs::only(dir.path()));
 		assert_eq!(mutator_archive(&library, "2026.09.01", &mutator), None);
@@ -4759,7 +5277,7 @@ mod tests {
 			engine: "2026.09.01".into(),
 			game: ("Game 1".into(), None),
 			map: ("Nowhere 1".into(), None),
-			mutators: vec![(mutator, true)],
+			mutators: vec![(mutator, true, runs())],
 		};
 		assert_eq!(
 			check_content(DataDirs::only(dir.path()), &key).mutators,
@@ -4771,8 +5289,15 @@ mod tests {
 				check: None,
 				source: Some(format!("github:dev/sphere@{sha}")),
 				date: Some("2025-10-05T13:32:09Z".into()),
+				key: format!("github:dev/sphere@{sha}"),
+				standing: lobby_ui::StandingView::Trusted { sandboxed: true },
 			}]
 		);
+	}
+
+	/// A standing for a check's key: the check reads it and never decides it.
+	fn runs() -> Standing {
+		Standing::Trusted { sandboxed: true }
 	}
 
 	fn room() -> Room {
@@ -6508,6 +7033,7 @@ mod tests {
 			checksum: None,
 			source: None,
 			date: None,
+			track: None,
 		});
 		let run = recoil::Download {
 			wants: vec![(recoil::Want::Mutator, "Sphere v1".into())],
@@ -6529,5 +7055,536 @@ mod tests {
 			.map(|ask| ask.mutator)
 			.collect();
 		assert_eq!(asked, [true, false]);
+	}
+
+	// ---------------------------------------------------------- mods: consent
+
+	const SPHERE_SHA: &str = "9108a17078f79d09925edc305ec83bc06c3a7cb3";
+	const OTHER_SHA: &str = "0000000000000000000000000000000000000000";
+
+	/// The lobby's host says it runs mods and loads one: pinned to `sha`, or
+	/// by name alone.
+	fn mod_tags(sha: Option<&str>) -> Vec<u8> {
+		let mut line = String::from(
+			"SETSCRIPTTAGS game/mutatorhost=0.6.0\tgame/mutator0=github-dev-sphere-9108a17078f7.sdd",
+		);
+		if let Some(sha) = sha {
+			line.push_str(&format!("\tgame/mutator0source=github:dev/sphere@{sha}"));
+		}
+		line.push('\n');
+		line.into_bytes()
+	}
+
+	/// Whether the client greets the host within `ms`.
+	async fn greeting_within(lines: &mut Lines, ms: u64) -> bool {
+		tokio::time::timeout(Duration::from_millis(ms), async {
+			loop {
+				let line = lines.next_line().await.unwrap().expect("client hung up");
+				if line.starts_with("SAYPRIVATE host I support mutators") {
+					return;
+				}
+			}
+		})
+		.await
+		.is_ok()
+	}
+
+	/// The standings the view was last told of, once a content check carries
+	/// mutators and `fits` says so.
+	async fn standings_shown(
+		ui: &Collector,
+		fits: impl Fn(&[lobby_ui::StandingView]) -> bool,
+	) -> Vec<lobby_ui::StandingView> {
+		tokio::time::timeout(Duration::from_secs(3), async {
+			loop {
+				let found = ui
+					.take()
+					.into_iter()
+					.filter_map(|m| match m {
+						UiMessage::Deltas { deltas, .. } => Some(deltas),
+						_ => None,
+					})
+					.flatten()
+					.filter_map(|d| match d {
+						Delta::ContentCheck(view) => Some(
+							view.mutators
+								.iter()
+								.map(|mutator| mutator.standing.clone())
+								.collect::<Vec<_>>(),
+						),
+						_ => None,
+					})
+					.filter(|standings| !standings.is_empty() && fits(standings))
+					.last();
+				if let Some(found) = found {
+					return found;
+				}
+				tokio::time::sleep(Duration::from_millis(20)).await;
+			}
+		})
+		.await
+		.expect("a content check with the standings looked for")
+	}
+
+	type Lines = tokio::io::Lines<BufReader<tokio::io::ReadHalf<DuplexStream>>>;
+
+	/// A client logged in on "a", joined to room 5 and told of it, with a
+	/// checker that answers `reach` about any commit.
+	async fn joined_mods_lobby(
+		reach: content::git::Reach,
+	) -> (Client, Collector, Lines, tokio::io::WriteHalf<DuplexStream>) {
+		let (connector, mut servers) = in_memory_hosts(&["a"]);
+		let client = spawn(connector);
+		let ui = Collector::default();
+		client.subscribe(ui.clone()).await.unwrap();
+		client
+			.set_track_check(Arc::new(move |_, _| {
+				let reach = reach.clone();
+				Box::pin(async move { reach })
+			}))
+			.await
+			.unwrap();
+		let a = log_in(&client, "a");
+		let (mut lines, mut write) = accept_login_with(servers.remove("a").unwrap(), ROOM).await;
+		a.await.unwrap().unwrap();
+		let joining = tokio::spawn({
+			let client = client.clone();
+			async move { client.join_battle("a".into(), 5, None).await }
+		});
+		line_starting_with(&mut lines, "JOINBATTLE 5").await;
+		write
+			.write_all(b"JOINBATTLE 5 h\nJOINEDBATTLE 5 me\n")
+			.await
+			.unwrap();
+		joining.await.unwrap().unwrap();
+		(client, ui, lines, write)
+	}
+
+	fn trust_sphere(sandboxed: bool) -> crate::trust::Trust {
+		crate::trust::Trust {
+			trusted: vec![crate::trust::Trusted {
+				repo: "dev/sphere".into(),
+				commit: None,
+				sandboxed,
+			}],
+			per_commit: false,
+		}
+	}
+
+	fn asks(standing: &lobby_ui::StandingView, why: lobby_ui::WhyView) -> bool {
+		matches!(standing, lobby_ui::StandingView::Asks { why: held, .. } if *held == why)
+	}
+
+	/// The greeting says the consenting build's line first, then the old one,
+	/// so a host on either version of the handshake hears it.
+	#[tokio::test]
+	async fn the_greeting_sends_the_new_line_first() {
+		let (client, ui, mut lines, mut write) =
+			joined_mods_lobby(content::git::Reach::OnBranch("main".into())).await;
+		write.write_all(&mod_tags(Some(SPHERE_SHA))).await.unwrap();
+		standings_shown(&ui, |s| asks(&s[0], lobby_ui::WhyView::Repo)).await;
+		client.set_mod_trust(trust_sphere(true)).await.unwrap();
+		// The second line is paced like any chat line: a few seconds behind.
+		let said = tokio::time::timeout(Duration::from_secs(10), async {
+			let mut said = Vec::new();
+			while said.len() < 2 {
+				let line = lines.next_line().await.unwrap().expect("client hung up");
+				if line.starts_with("SAYPRIVATE host ") {
+					said.push(line);
+				}
+			}
+			said
+		})
+		.await
+		.expect("two greeting lines");
+		assert_eq!(
+			said,
+			[
+				"SAYPRIVATE host I support mutators [automatic] 2",
+				"SAYPRIVATE host I support mutators [automatic]"
+			]
+		);
+		client.shutdown().await;
+	}
+
+	#[tokio::test]
+	async fn a_lobby_whose_mod_is_not_allowed_is_not_greeted_and_shows_why() {
+		let (client, ui, mut lines, mut write) =
+			joined_mods_lobby(content::git::Reach::OnBranch("main".into())).await;
+		write.write_all(&mod_tags(Some(SPHERE_SHA))).await.unwrap();
+		let shown = standings_shown(&ui, |s| asks(&s[0], lobby_ui::WhyView::Repo)).await;
+		assert_eq!(shown.len(), 1);
+		assert!(
+			!greeting_within(&mut lines, 300).await,
+			"greeted an unallowed lobby"
+		);
+		client.shutdown().await;
+	}
+
+	#[tokio::test]
+	async fn allowing_the_repository_greets_the_host_and_clears_the_ask() {
+		let (client, ui, mut lines, mut write) =
+			joined_mods_lobby(content::git::Reach::OnBranch("main".into())).await;
+		write.write_all(&mod_tags(Some(SPHERE_SHA))).await.unwrap();
+		standings_shown(&ui, |s| asks(&s[0], lobby_ui::WhyView::Repo)).await;
+		client.set_mod_trust(trust_sphere(true)).await.unwrap();
+		assert!(greeting_within(&mut lines, 2000).await, "never greeted");
+		let shown = standings_shown(&ui, |s| {
+			s[0] == lobby_ui::StandingView::Trusted { sandboxed: true }
+		})
+		.await;
+		assert_eq!(shown.len(), 1);
+		client.shutdown().await;
+	}
+
+	#[tokio::test]
+	async fn a_check_that_cannot_be_made_asks_with_its_reason() {
+		let (client, ui, mut lines, mut write) = joined_mods_lobby(content::git::Reach::Unknown(
+			"GitHub's hourly allowance of requests for this address is used up".into(),
+		))
+		.await;
+		client.set_mod_trust(trust_sphere(true)).await.unwrap();
+		write.write_all(&mod_tags(Some(SPHERE_SHA))).await.unwrap();
+		let shown = standings_shown(&ui, |s| asks(&s[0], lobby_ui::WhyView::Branch)).await;
+		match &shown[0] {
+			lobby_ui::StandingView::Asks { text, .. } => {
+				assert!(text.contains("allowance"), "{text}")
+			}
+			other => panic!("{other:?}"),
+		}
+		assert!(!greeting_within(&mut lines, 300).await);
+		client.shutdown().await;
+	}
+
+	#[tokio::test]
+	async fn an_allowance_dies_with_the_commit_it_was_given_for() {
+		let (client, ui, _lines, mut write) =
+			joined_mods_lobby(content::git::Reach::OnBranch("main".into())).await;
+		write.write_all(&mod_tags(Some(SPHERE_SHA))).await.unwrap();
+		standings_shown(&ui, |s| asks(&s[0], lobby_ui::WhyView::Repo)).await;
+		client
+			.allow_mods_once(5, vec![format!("github:dev/sphere@{SPHERE_SHA}")])
+			.await
+			.unwrap();
+		let elsewhere = client
+			.allow_mods_once(6, vec![format!("github:dev/sphere@{SPHERE_SHA}")])
+			.await;
+		assert!(
+			elsewhere.is_err(),
+			"an allowance for another lobby is refused"
+		);
+		standings_shown(&ui, |s| {
+			s[0] == lobby_ui::StandingView::Trusted { sandboxed: true }
+		})
+		.await;
+		write.write_all(&mod_tags(Some(OTHER_SHA))).await.unwrap();
+		standings_shown(&ui, |s| asks(&s[0], lobby_ui::WhyView::Repo)).await;
+		client.shutdown().await;
+	}
+
+	#[tokio::test]
+	async fn revoking_trust_refuses_the_launch_even_after_the_greeting() {
+		let (client, ui, mut lines, mut write) =
+			joined_mods_lobby(content::git::Reach::OnBranch("main".into())).await;
+		client.set_mod_trust(trust_sphere(true)).await.unwrap();
+		write.write_all(&mod_tags(Some(SPHERE_SHA))).await.unwrap();
+		assert!(greeting_within(&mut lines, 2000).await, "never greeted");
+		client
+			.set_mod_trust(crate::trust::Trust::default())
+			.await
+			.unwrap();
+		standings_shown(&ui, |s| asks(&s[0], lobby_ui::WhyView::Repo)).await;
+		// The host's game starts; a launch now is refused for the mods, not
+		// for the missing content.
+		write.write_all(b"CLIENTSTATUS host 65\n").await.unwrap();
+		tokio::time::sleep(Duration::from_millis(100)).await;
+		let err = client.launch(scratch()).await.unwrap_err();
+		assert!(
+			matches!(&err, ClientError::Refused(text) if text.contains("Mods tab")),
+			"{err:?}"
+		);
+		client.shutdown().await;
+	}
+
+	#[tokio::test]
+	async fn a_mod_by_name_asks_and_is_never_fetched_on_its_own() {
+		let (client, ui, _lines, mut write) =
+			joined_mods_lobby(content::git::Reach::OnBranch("main".into())).await;
+		write.write_all(&mod_tags(None)).await.unwrap();
+		standings_shown(&ui, |s| asks(&s[0], lobby_ui::WhyView::Unpinned)).await;
+		// Asked by hand, the fetch leaves it out and says why.
+		let _ = client.download_missing().await;
+		let said = tokio::time::timeout(Duration::from_secs(2), async {
+			loop {
+				let found = ui
+					.take()
+					.into_iter()
+					.filter_map(|m| match m {
+						UiMessage::Deltas { deltas, .. } => Some(deltas),
+						_ => None,
+					})
+					.flatten()
+					.find_map(|d| match d {
+						Delta::Notice { text, .. } if text.contains("Mods tab") => Some(text),
+						_ => None,
+					});
+				if let Some(text) = found {
+					return text;
+				}
+				tokio::time::sleep(Duration::from_millis(20)).await;
+			}
+		})
+		.await
+		.expect("a notice saying the mod needs an OK");
+		assert!(said.contains("github-dev-sphere"), "{said}");
+		client.shutdown().await;
+	}
+
+	/// Only every mod trusted outside the sandbox opens the engine; a commit
+	/// GitHub could not vouch for keeps it confined, whatever the list says.
+	#[test]
+	fn an_unvouched_commit_of_a_whitelisted_repo_runs_confined() {
+		let open = Standing::Trusted { sandboxed: false };
+		let boxed = Standing::Trusted { sandboxed: true };
+		let unvouched = Standing::Asks(trust::Why::Branch("offline".into()));
+		let build = || {
+			vec![PathBuf::from(
+				"mod-builds/games/github-dev-a-000000000000.sdd",
+			)]
+		};
+		assert_eq!(
+			how_to_launch(&[unvouched], true, build()),
+			LaunchHow::Confined(sandbox::Network::Outbound)
+		);
+		assert_eq!(
+			how_to_launch(std::slice::from_ref(&open), true, build()),
+			LaunchHow::Trusted(build())
+		);
+		assert_eq!(
+			how_to_launch(&[open.clone(), boxed], true, build()),
+			LaunchHow::Confined(sandbox::Network::Outbound)
+		);
+		assert_eq!(
+			how_to_launch(&[open, Standing::Checking], true, build()),
+			LaunchHow::Confined(sandbox::Network::Outbound)
+		);
+		assert_eq!(how_to_launch(&[], false, Vec::new()), LaunchHow::Open);
+	}
+
+	/// The notices the view was told of, newest last, once one says `text`.
+	async fn notice_saying(ui: &Collector, text: &str) -> String {
+		tokio::time::timeout(Duration::from_secs(3), async {
+			loop {
+				let found = ui
+					.take()
+					.into_iter()
+					.filter_map(|m| match m {
+						UiMessage::Deltas { deltas, .. } => Some(deltas),
+						_ => None,
+					})
+					.flatten()
+					.find_map(|d| match d {
+						Delta::Notice { text: said, .. } if said.contains(text) => Some(said),
+						_ => None,
+					});
+				if let Some(said) = found {
+					return said;
+				}
+				tokio::time::sleep(Duration::from_millis(20)).await;
+			}
+		})
+		.await
+		.unwrap_or_else(|_| panic!("no notice saying {text:?}"))
+	}
+
+	/// A host that swaps the mod's commit and starts the game in one breath:
+	/// the launch decides from the lobby as it is now, not from the standings
+	/// worked out before the swap.
+	#[tokio::test]
+	async fn a_swap_and_a_start_in_one_write_launch_on_fresh_standings() {
+		let (client, ui, mut lines, mut write) =
+			joined_mods_lobby(content::git::Reach::OnBranch("main".into())).await;
+		client.set_mod_trust(trust_sphere(true)).await.unwrap();
+		write.write_all(&mod_tags(Some(SPHERE_SHA))).await.unwrap();
+		assert!(greeting_within(&mut lines, 2000).await);
+		standings_shown(&ui, |s| {
+			s[0] == lobby_ui::StandingView::Trusted { sandboxed: true }
+		})
+		.await;
+		// Asked before the game exists: the launch waits for the start.
+		client.launch(scratch()).await.unwrap();
+		let mut swap = mod_tags(Some(OTHER_SHA));
+		swap.extend_from_slice(b"CLIENTSTATUS host 65\n");
+		write.write_all(&swap).await.unwrap();
+		let said = notice_saying(&ui, "Mods tab").await;
+		assert!(!said.contains("content you do not have"), "{said}");
+		client.shutdown().await;
+	}
+
+	/// GitHub's refusal is not forever: once there is a way to ask again,
+	/// the mod is asked about again.
+	#[tokio::test]
+	async fn a_refused_answer_is_asked_again_once_github_can_be_asked() {
+		let (client, ui, _lines, mut write) = joined_mods_lobby(content::git::Reach::Unknown(
+			"GitHub's hourly allowance of requests for this address is used up".into(),
+		))
+		.await;
+		client.set_mod_trust(trust_sphere(true)).await.unwrap();
+		write.write_all(&mod_tags(Some(SPHERE_SHA))).await.unwrap();
+		standings_shown(&ui, |s| asks(&s[0], lobby_ui::WhyView::Branch)).await;
+		client
+			.set_track_check(Arc::new(|_, _| {
+				Box::pin(async { content::git::Reach::OnBranch("main".into()) })
+			}))
+			.await
+			.unwrap();
+		standings_shown(&ui, |s| {
+			s[0] == lobby_ui::StandingView::Trusted { sandboxed: true }
+		})
+		.await;
+		client.shutdown().await;
+	}
+
+	/// The same trust pushed again -- every settings save does -- is not a
+	/// reason to read the game archives again.
+	#[tokio::test]
+	async fn the_same_trust_pushed_again_checks_nothing_again() {
+		let (client, ui, _lines, mut write) =
+			joined_mods_lobby(content::git::Reach::OnBranch("main".into())).await;
+		client.set_mod_trust(trust_sphere(true)).await.unwrap();
+		write.write_all(&mod_tags(Some(SPHERE_SHA))).await.unwrap();
+		standings_shown(&ui, |s| {
+			s[0] == lobby_ui::StandingView::Trusted { sandboxed: true }
+		})
+		.await;
+		tokio::time::sleep(Duration::from_millis(100)).await;
+		let _ = ui.take();
+		client.set_mod_trust(trust_sphere(true)).await.unwrap();
+		tokio::time::sleep(Duration::from_millis(200)).await;
+		let checked_again = ui
+			.take()
+			.into_iter()
+			.filter_map(|m| match m {
+				UiMessage::Deltas { deltas, .. } => Some(deltas),
+				_ => None,
+			})
+			.flatten()
+			.any(|d| matches!(d, Delta::ContentCheck(_)));
+		assert!(!checked_again, "the same trust re-ran the content check");
+		client.shutdown().await;
+	}
+
+	/// An allowance given in one lobby does not follow you into another with
+	/// the very same mods: it was given for that lobby.
+	#[tokio::test]
+	async fn an_allowance_stays_in_the_lobby_it_was_given_for() {
+		let (client, ui, mut lines, mut write) =
+			joined_mods_lobby(content::git::Reach::OnBranch("main".into())).await;
+		write.write_all(&mod_tags(Some(SPHERE_SHA))).await.unwrap();
+		standings_shown(&ui, |s| asks(&s[0], lobby_ui::WhyView::Repo)).await;
+		client
+			.allow_mods_once(5, vec![format!("github:dev/sphere@{SPHERE_SHA}")])
+			.await
+			.unwrap();
+		standings_shown(&ui, |s| {
+			s[0] == lobby_ui::StandingView::Trusted { sandboxed: true }
+		})
+		.await;
+		// Another lobby of the same host, with the same mods.
+		write
+			.write_all(b"BATTLEOPENED 6 0 0 host 1.2.3.4 8453 16 0 0 h R\tv\tm\tt\tg2\n")
+			.await
+			.unwrap();
+		client.leave_battle().await.unwrap();
+		line_starting_with(&mut lines, "LEAVEBATTLE").await;
+		write.write_all(b"LEFTBATTLE 5 me\n").await.unwrap();
+		let joining = tokio::spawn({
+			let client = client.clone();
+			async move { client.join_battle("a".into(), 6, None).await }
+		});
+		line_starting_with(&mut lines, "JOINBATTLE 6").await;
+		write
+			.write_all(b"JOINBATTLE 6 h\nJOINEDBATTLE 6 me\n")
+			.await
+			.unwrap();
+		joining.await.unwrap().unwrap();
+		write.write_all(&mod_tags(Some(SPHERE_SHA))).await.unwrap();
+		standings_shown(&ui, |s| asks(&s[0], lobby_ui::WhyView::Repo)).await;
+		client.shutdown().await;
+	}
+
+	/// Which of a lobby's mods a fetch may ask for: only those that run and
+	/// are not here, with a checksum to hold them to.
+	#[test]
+	fn only_a_mod_that_runs_and_is_missing_is_fetchable() {
+		let sum = "ab".repeat(64);
+		let mutator = lobby_core::Mutator {
+			name: "Sphere v1".into(),
+			checksum: Some(sum),
+			source: None,
+			date: None,
+			track: None,
+		};
+		let runs = Standing::Trusted { sandboxed: true };
+		let asking = Standing::Asks(trust::Why::Unpinned);
+		assert!(fetchable(&[(mutator.clone(), false, runs.clone())]));
+		assert!(
+			!fetchable(&[(mutator.clone(), true, runs.clone())]),
+			"already here"
+		);
+		assert!(
+			!fetchable(&[(mutator.clone(), false, asking)]),
+			"asks first"
+		);
+		assert!(
+			!fetchable(&[(mutator, false, Standing::Checking)]),
+			"not settled"
+		);
+	}
+
+	/// A modded game's exit keeps what it left of the player's settings
+	/// with its set, whatever its exit code was; an open game keeps nothing
+	/// here, since it writes the player's own files.
+	#[test]
+	fn an_exit_without_a_code_still_captures() {
+		let dir = tempfile::tempdir().unwrap();
+		let data = dir.path().join("data");
+		let mods = crate::mods::layout(&data);
+		std::fs::create_dir_all(mods.write.join("LuaUI").join("Config")).unwrap();
+		std::fs::write(
+			mods.write.join("springsettings.cfg"),
+			"Fullscreen = 0
+",
+		)
+		.unwrap();
+		let set = crate::modsettings::ModSet::of(&[lobby_core::Mutator {
+			name: "github-dev-sphere-000000000000.sdd".into(),
+			checksum: None,
+			source: Some(lobby_core::GitPin {
+				repo: "dev/sphere".into(),
+				commit: "0".repeat(40),
+			}),
+			date: None,
+			track: None,
+		}]);
+		let run = EngineRun {
+			write: data.clone(),
+			snapshot: None,
+			set: Some((set.clone(), mods.clone())),
+		};
+		let capture = capture_at_exit(&run, "2026-10-22T10:00:00Z")
+			.expect("a modded run keeps its settings")
+			.unwrap();
+		assert_eq!(
+			capture.set(),
+			Some((set, Some("2026-10-22T10:00:00Z".into())))
+		);
+		assert!(capture.after().join("springsettings.cfg").is_file());
+		let open = EngineRun {
+			write: data,
+			snapshot: None,
+			set: None,
+		};
+		assert!(capture_at_exit(&open, "2026-10-22T10:00:00Z").is_none());
 	}
 }

@@ -30,6 +30,8 @@ import {
 } from '../store/settings'
 import { busy as updating, checkUpdate, checking } from '../store/update'
 import { GameOverrideRows } from './Games'
+import { ModdedGamesRows } from './ModdedGames'
+import { ModsTrustRows } from './ModsTrust'
 import { ServerRows } from './Servers'
 
 /** Long enough that typing a hostname is one write rather than twelve. */
@@ -76,6 +78,8 @@ const SECTIONS = {
 	updates: 'Updates',
 	servers: 'Servers',
 	games: 'Games',
+	mods: 'Mods',
+	modded: 'Modded games',
 	connection: 'Connection',
 	files: 'Files and logs',
 	chat: 'Chat',
@@ -488,8 +492,9 @@ export function SettingsView() {
 							</label>
 							<p class='muted'>
 								Engine, game and map, as soon as you join a room that lacks
-								them. Off leaves a button in the room for each, for a metered
-								connection or a disk being kept small.
+								them; mods only once you have allowed them in the Mods tab. Off
+								leaves a button in the room for each, for a metered connection
+								or a disk being kept small.
 							</p>
 						</Row>
 						<Row>
@@ -725,6 +730,14 @@ export function SettingsView() {
 						<GameOverrideRows draft={draft} setDraft={setDraft} />
 					</Section>
 
+					<Section id='mods'>
+						<ModsTrustRows draft={draft} setDraft={setDraft} />
+					</Section>
+
+					<Section id='modded'>
+						<ModdedGamesRows />
+					</Section>
+
 					<Section id='connection'>
 						<Row>
 							<label>
@@ -841,6 +854,7 @@ export function blankSettings(): Settings {
 		$schema: null,
 		lan: { enabled: false },
 		games: { overrides: [] },
+		mods: { trusted: [], perCommit: false },
 		servers: [],
 		account: { rememberPassword: false, autoLogin: false },
 		connection: { idleDisconnectMinutes: 60 },

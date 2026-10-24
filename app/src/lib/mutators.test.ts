@@ -47,6 +47,8 @@ describe('mutators', () => {
 			check: null,
 			source: `github:dev/sphere@${SHA}`,
 			date: null,
+			key: `github:dev/sphere@${SHA}`,
+			standing: { kind: 'trusted', sandboxed: true },
 		}
 		const offer = { name: 'sphere-spawner', source: loaded.source, date: null }
 		expect(sameMutator(loaded, offer)).toBe(true)

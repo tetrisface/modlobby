@@ -41,6 +41,8 @@ const sphere: MutatorView = {
 	check: null,
 	source: SPHERE_SOURCE,
 	date: '2025-10-05T13:32:07Z',
+	key: SPHERE_SOURCE,
+	standing: { kind: 'trusted', sandboxed: true },
 }
 const tiny: MutatorView = {
 	name: 'tiny maps v1',
@@ -50,6 +52,8 @@ const tiny: MutatorView = {
 	check: null,
 	source: null,
 	date: null,
+	key: 'name:tiny maps v1',
+	standing: { kind: 'trusted', sandboxed: true },
 }
 
 const room = () => picksOf([sphere, tiny], offered)
@@ -97,6 +101,8 @@ describe('the room as picks', () => {
 				source: SPHERE_SOURCE,
 				date: '2025-10-05T13:32:07Z',
 				description: null,
+				key: SPHERE_SOURCE,
+				standing: { kind: 'trusted', sandboxed: true },
 			},
 			{
 				ref: 'tiny maps v1',
@@ -105,6 +111,8 @@ describe('the room as picks', () => {
 				source: null,
 				date: null,
 				description: null,
+				key: 'name:tiny maps v1',
+				standing: { kind: 'trusted', sandboxed: true },
 			},
 		])
 	})

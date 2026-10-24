@@ -10,6 +10,7 @@ import {
 import { useNavigate } from '@solidjs/router'
 import { ActionCell, CellButton } from '../components/ActionCell'
 import { openExternal } from '../components/Linkify'
+import { ModsConsent } from '../components/ModsConsent'
 import { LoginForm } from '../components/LoginForm'
 import { Glyph } from '../components/icons'
 import { api, describeError } from '../ipc/client'
@@ -32,6 +33,7 @@ import {
 	removePick,
 	sameList,
 	sourceLinks,
+	standingNote,
 	updatedTo,
 } from '../lib/mods'
 import { hostsMods, offers } from '../lib/mutators'
@@ -368,6 +370,7 @@ function Editor() {
 			</div>
 
 			<div class='mods-body'>
+				<ModsConsent mutators={room.check().mutators} room={roomId()} />
 				<div class='setup-section'>
 					<span>Loaded</span>
 				</div>
@@ -634,6 +637,9 @@ function Row(props: {
 						}}
 						onBlur={(event) => commit(event.currentTarget.value)}
 					/>
+				</Show>
+				<Show when={standingNote(props.pick)}>
+					{(note) => <span class='mod-problem'>{note()}</span>}
 				</Show>
 			</span>
 			<span class='mod-age'>{props.pick.date ? age(props.pick.date) : ''}</span>

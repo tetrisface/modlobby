@@ -26,6 +26,9 @@ pub struct ModsLayout {
 	/// The record of every grant made for the container, beside the data
 	/// it covers: one per Windows user, whatever config dir is in use.
 	pub grants: PathBuf,
+	/// What modded games left of the player's settings, kept per set of
+	/// mods: `<parent>/mods-settings/<set>/`, read by modlobby alone.
+	pub settings: PathBuf,
 }
 
 pub fn layout(own_data_dir: &Path) -> ModsLayout {
@@ -35,6 +38,7 @@ pub fn layout(own_data_dir: &Path) -> ModsLayout {
 		builds: parent.join("mod-builds"),
 		views: parent.join("mods-view"),
 		grants: parent.join("sandbox-grants.json"),
+		settings: parent.join("mods-settings"),
 	}
 }
 
@@ -126,6 +130,29 @@ pub fn views(mods: &ModsLayout, roots: impl IntoIterator<Item = PathBuf>) -> io:
 	Ok(views)
 }
 
+/// A view for a launch trusted with its mods: `games/` holding a link to
+/// each of `builds` and nothing else, so an open engine reading it can
+/// resolve exactly the lobby's builds -- never the builds root, where the
+/// host's start script could name any build ever made. Remade every launch.
+pub fn trusted_view(mods: &ModsLayout, builds: &[PathBuf]) -> io::Result<PathBuf> {
+	let dir = mods.views.join("trusted");
+	// std's remove_dir_all unlinks a link rather than descending into it.
+	match std::fs::remove_dir_all(&dir) {
+		Ok(()) => {}
+		Err(err) if err.kind() == io::ErrorKind::NotFound => {}
+		Err(err) => return Err(err),
+	}
+	let games = dir.join("games");
+	std::fs::create_dir_all(&games)?;
+	for build in builds {
+		let name = build
+			.file_name()
+			.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "a build with no name"))?;
+		link(&games.join(name), build)?;
+	}
+	Ok(dir)
+}
+
 #[cfg(windows)]
 fn link(at: &Path, target: &Path) -> io::Result<()> {
 	junction::create(target, at)
@@ -186,15 +213,20 @@ pub const PINNED: &[(&str, &str)] = &[
 	("UDPAllowListen", ""),
 ];
 
-/// Writes `<write>/springsettings.cfg` afresh from the player's settings in
-/// `data_dirs` with [`PINNED`] and the borderless keys over them. Where it is.
+/// Writes `<write>/springsettings.cfg` afresh with [`PINNED`] and the
+/// borderless keys over the player's settings: `theirs` when the last game
+/// of the same mods left some, else those read from `data_dirs`. Where it is.
 pub fn write_config(
 	mods: &ModsLayout,
 	data_dirs: &[&Path],
 	engine_version: &str,
+	theirs: Option<&str>,
 ) -> io::Result<PathBuf> {
 	let path = mods.write.join("springsettings.cfg");
-	let text = recoil::window_mode::config_text(data_dirs, engine_version, PINNED);
+	let text = match theirs {
+		Some(theirs) => recoil::window_mode::config_text_over(theirs, PINNED),
+		None => recoil::window_mode::config_text(data_dirs, engine_version, PINNED),
+	};
 	std::fs::write(&path, text)?;
 	Ok(path)
 }
@@ -434,7 +466,7 @@ mod tests {
 		.unwrap();
 		let mods = layout(&theirs);
 		std::fs::create_dir_all(&mods.write).unwrap();
-		let config = write_config(&mods, &[&theirs], "2026.09.01").unwrap();
+		let config = write_config(&mods, &[&theirs], "2026.09.01", None).unwrap();
 		assert_eq!(config, mods.write.join("springsettings.cfg"));
 		let text = std::fs::read_to_string(&config).unwrap();
 		let value = |key: &str| {
@@ -463,7 +495,7 @@ mod tests {
 			"LuaSocketEnabled = 1\n",
 		)
 		.unwrap();
-		write_config(&mods, &[], "2026.09.01").unwrap();
+		write_config(&mods, &[], "2026.09.01", None).unwrap();
 		let text = std::fs::read_to_string(mods.write.join("springsettings.cfg")).unwrap();
 		assert!(text.contains("LuaSocketEnabled = 0"), "{text}");
 		assert!(!text.contains("LuaSocketEnabled = 1"), "{text}");

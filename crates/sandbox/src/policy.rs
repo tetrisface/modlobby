@@ -8,11 +8,29 @@ use std::path::PathBuf;
 /// which stay unreadable.
 pub const CONTENT_SUBDIRS: &[&str] = &["games", "maps", "packages", "pool", "rapid"];
 
-/// The environment variables a confined engine gets. Everything else in the
-/// parent's environment -- tokens, passwords, the paths of other installs --
-/// is dropped. `LOCALAPPDATA`, `TEMP` and `TMP` must be present for an
-/// AppContainer to start at all; Windows rewrites them to the container's
-/// own folder.
+/// The platforms a boundary is built for. A report is judged by the rules of
+/// the platform it came from: a file hidden by a mount namespace is proof on
+/// Linux and nothing on Windows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Os {
+	Windows,
+	Linux,
+}
+
+/// The platform this build runs on, as far as boundaries go.
+pub const fn this_os() -> Os {
+	if cfg!(windows) {
+		Os::Windows
+	} else {
+		Os::Linux
+	}
+}
+
+/// The environment variables a confined engine on Windows gets. Everything
+/// else in the parent's environment -- tokens, passwords, the paths of
+/// other installs -- is dropped. `LOCALAPPDATA`, `TEMP` and `TMP` must be
+/// present for an AppContainer to start at all; Windows rewrites them to
+/// the container's own folder.
 pub const KEPT_ENV: &[&str] = &[
 	"SystemRoot",
 	"SystemDrive",
@@ -24,6 +42,47 @@ pub const KEPT_ENV: &[&str] = &[
 	"PROCESSOR_ARCHITECTURE",
 	"NUMBER_OF_PROCESSORS",
 ];
+
+/// The environment a confined engine on Linux may hold: what the sandbox
+/// sets for it -- its runtime directory, the proxied display, the audio
+/// socket, its home and caches, and the engine's own directories, so a
+/// relaunch from Lua keeps them -- and the locale. Never `DISPLAY`: X11
+/// would hand it every other window's keys.
+const KEPT_ENV_LINUX: &[&str] = &[
+	"PATH",
+	"HOME",
+	"LANG",
+	"LC_ALL",
+	"XDG_RUNTIME_DIR",
+	"XDG_CACHE_HOME",
+	"WAYLAND_DISPLAY",
+	"PULSE_SERVER",
+	"SDL_VIDEODRIVER",
+	"SPRING_DATADIR",
+	"SPRING_WRITEDIR",
+	"SPRING_ISOLATED",
+	"__GL_SHADER_DISK_CACHE_PATH",
+	"MESA_SHADER_CACHE_DIR",
+	// bwrap sets it to the directory it starts the command in.
+	"PWD",
+];
+
+/// What a confined engine on `os` may find in its environment.
+pub fn kept_env(os: Os) -> &'static [&'static str] {
+	match os {
+		Os::Windows => KEPT_ENV,
+		Os::Linux => KEPT_ENV_LINUX,
+	}
+}
+
+/// Whether two environment names are one on `os`: Windows ignores case,
+/// Linux does not.
+pub fn same_key(os: Os, a: &str, b: &str) -> bool {
+	match os {
+		Os::Windows => a.eq_ignore_ascii_case(b),
+		Os::Linux => a == b,
+	}
+}
 
 /// A data root the engine reads: `dir` is listable, and holds nothing but
 /// links to `subdirs`, the content directories that are readable. The
@@ -60,16 +119,24 @@ pub struct Policy {
 	pub grants_file: PathBuf,
 }
 
-/// The parent's environment reduced to [`KEPT_ENV`], in the parent's order.
-/// Names compare case-insensitively, as Windows does.
+/// The parent's environment reduced to what this platform keeps, in the
+/// parent's order.
 pub fn scrubbed_env(
 	parent: impl IntoIterator<Item = (OsString, OsString)>,
+) -> Vec<(OsString, OsString)> {
+	scrubbed_env_on(parent, this_os())
+}
+
+/// [`scrubbed_env`] by `os`'s rules: its list, its way of comparing names.
+pub fn scrubbed_env_on(
+	parent: impl IntoIterator<Item = (OsString, OsString)>,
+	os: Os,
 ) -> Vec<(OsString, OsString)> {
 	parent
 		.into_iter()
 		.filter(|(key, _)| {
 			let key = key.to_string_lossy();
-			KEPT_ENV.iter().any(|kept| kept.eq_ignore_ascii_case(&key))
+			kept_env(os).iter().any(|kept| same_key(os, kept, &key))
 		})
 		.collect()
 }
@@ -87,17 +154,56 @@ mod tests {
 
 	#[test]
 	fn the_environment_keeps_only_what_the_engine_needs() {
-		let kept = scrubbed_env(vars(&[
-			("GITHUB_TOKEN", "x"),
-			("PATH", "p"),
-			("MODLOBBY_PASSWORD", "s"),
-			("TEMP", "t"),
-		]));
+		let kept = scrubbed_env_on(
+			vars(&[
+				("GITHUB_TOKEN", "x"),
+				("PATH", "p"),
+				("MODLOBBY_PASSWORD", "s"),
+				("TEMP", "t"),
+			]),
+			Os::Windows,
+		);
 		assert_eq!(kept, vars(&[("PATH", "p"), ("TEMP", "t")]));
 	}
 
 	#[test]
 	fn env_names_match_case_insensitively() {
-		assert_eq!(scrubbed_env(vars(&[("Path", "p")])), vars(&[("Path", "p")]));
+		assert_eq!(
+			scrubbed_env_on(vars(&[("Path", "p")]), Os::Windows),
+			vars(&[("Path", "p")])
+		);
+	}
+
+	#[test]
+	fn the_linux_environment_keeps_the_display_and_audio() {
+		let linux = kept_env(Os::Linux);
+		for key in [
+			"PATH",
+			"HOME",
+			"LANG",
+			"XDG_RUNTIME_DIR",
+			"WAYLAND_DISPLAY",
+			"PULSE_SERVER",
+			"SDL_VIDEODRIVER",
+			"SPRING_DATADIR",
+			"SPRING_WRITEDIR",
+			"SPRING_ISOLATED",
+			"PWD",
+		] {
+			assert!(linux.contains(&key), "{key}");
+		}
+		assert!(!linux.contains(&"DISPLAY"), "X11 is never handed in");
+		assert!(!linux.contains(&"DBUS_SESSION_BUS_ADDRESS"));
+		assert!(kept_env(Os::Windows).contains(&"LOCALAPPDATA"));
+		let kept = scrubbed_env_on(
+			vars(&[
+				("WAYLAND_DISPLAY", "wayland-0"),
+				("DISPLAY", ":0"),
+				("GITHUB_TOKEN", "x"),
+				("Path", "p"),
+			]),
+			Os::Linux,
+		);
+		assert_eq!(kept, vars(&[("WAYLAND_DISPLAY", "wayland-0")]));
 	}
 }

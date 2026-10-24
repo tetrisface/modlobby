@@ -64,6 +64,13 @@
         "filter": "info"
       }
     },
+    "mods": {
+      "$ref": "#/$defs/Mods",
+      "default": {
+        "perCommit": false,
+        "trusted": []
+      }
+    },
     "notifications": {
       "$ref": "#/$defs/Notifications",
       "default": {
@@ -524,6 +531,25 @@
         }
       ]
     },
+    "Mods": {
+      "description": "Mods: whose code you have agreed to run. A lobby's mods are fetched,\nbuilt and run only once their repositories are listed here; the Mods tab\nasks for the rest.",
+      "type": "object",
+      "properties": {
+        "perCommit": {
+          "description": "Whether trust is given per commit: a repository you allowed asks\nagain at each new commit. Off, any commit on its default branch.",
+          "type": "boolean",
+          "default": false
+        },
+        "trusted": {
+          "description": "Repositories, or single commits of them, whose mods may run.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Trusted"
+          }
+        }
+      }
+    },
     "Notifications": {
       "description": "What is worth saying something about, and where.",
       "type": "object",
@@ -750,6 +776,36 @@
           "default": null
         }
       }
+    },
+    "Trusted": {
+      "description": "One repository you allow, or one commit of it. Every field is required:\nan entry that does not say whether it is sandboxed is dropped, never\nread as off.",
+      "type": "object",
+      "properties": {
+        "commit": {
+          "description": "A whole commit hash: this commit and no other. `None`: any commit\non the repository's default branch.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repo": {
+          "description": "`owner/repo` on GitHub.",
+          "type": "string"
+        },
+        "sandboxed": {
+          "description": "Whether its games run inside the sandbox. Off runs mod code with\nyour own rights: only for mods you have read.",
+          "type": "boolean"
+        },
+        "since": {
+          "description": "When this was given, RFC 3339.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo",
+        "sandboxed",
+        "since"
+      ]
     },
     "Tweaks": {
       "type": "object",

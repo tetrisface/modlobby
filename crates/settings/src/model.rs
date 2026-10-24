@@ -99,6 +99,7 @@ pub struct Settings {
 	pub ui: Ui,
 	pub lan: Lan,
 	pub games: Games,
+	pub mods: Mods,
 }
 
 /// Games from anywhere but the rooms' own rapid servers.
@@ -111,6 +112,41 @@ pub struct Games {
 	/// nowhere else.
 	#[serde(deserialize_with = "lenient_list")]
 	pub overrides: Vec<GameOverride>,
+}
+
+/// Mods: whose code you have agreed to run. A lobby's mods are fetched,
+/// built and run only once their repositories are listed here; the Mods tab
+/// asks for the rest.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(default, rename_all = "camelCase")]
+#[ts(export)]
+pub struct Mods {
+	/// Repositories, or single commits of them, whose mods may run.
+	#[serde(deserialize_with = "lenient_list")]
+	pub trusted: Vec<Trusted>,
+	/// Whether trust is given per commit: a repository you allowed asks
+	/// again at each new commit. Off, any commit on its default branch.
+	pub per_commit: bool,
+}
+
+/// One repository you allow, or one commit of it. Every field is required:
+/// an entry that does not say whether it is sandboxed is dropped, never
+/// read as off.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct Trusted {
+	/// `owner/repo` on GitHub.
+	pub repo: String,
+	/// A whole commit hash: this commit and no other. `None`: any commit
+	/// on the repository's default branch.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub commit: Option<String>,
+	/// Whether its games run inside the sandbox. Off runs mod code with
+	/// your own rights: only for mods you have read.
+	pub sandboxed: bool,
+	/// When this was given, RFC 3339.
+	pub since: String,
 }
 
 /// One game, by its exact name, and where it comes from.
@@ -1159,5 +1195,44 @@ mod tests {
 			current.trim(),
 			"schema drifted; regenerate"
 		);
+	}
+
+	/// A file from before mods were a setting: nothing trusted, trust asked
+	/// per repository.
+	#[test]
+	fn a_file_from_before_mods_has_no_trust_and_asks_per_repository() {
+		let settings: Settings = serde_json::from_str("{}").unwrap();
+		assert_eq!(settings.mods, Mods::default());
+		assert!(!settings.mods.per_commit);
+		assert!(settings.mods.trusted.is_empty());
+	}
+
+	/// One entry edited into nonsense by hand costs that entry, not the list.
+	#[test]
+	fn a_malformed_trust_entry_is_dropped_and_the_rest_kept() {
+		let text = r#"{"mods":{"trusted":[{"repo":"dev/sphere","sandboxed":true,"since":"2026-10-22T10:00:00Z"},{"repo":42},{"repo":"dev/tiny","commit":"9108a17078f79d09925edc305ec83bc06c3a7cb3","sandboxed":false,"since":"2026-10-22T10:00:00Z"}]}}"#;
+		let settings: Settings = serde_json::from_str(text).unwrap();
+		let repos: Vec<&str> = settings
+			.mods
+			.trusted
+			.iter()
+			.map(|t| t.repo.as_str())
+			.collect();
+		assert_eq!(repos, ["dev/sphere", "dev/tiny"]);
+		assert_eq!(settings.mods.trusted[0].commit, None);
+		assert!(!settings.mods.trusted[1].sandboxed);
+	}
+
+	#[test]
+	fn a_trust_entry_round_trips_without_a_commit_key_when_it_has_none() {
+		let entry = Trusted {
+			repo: "dev/sphere".into(),
+			commit: None,
+			sandboxed: true,
+			since: "2026-10-22T10:00:00Z".into(),
+		};
+		let text = serde_json::to_string(&entry).unwrap();
+		assert!(!text.contains("commit"), "{text}");
+		assert_eq!(serde_json::from_str::<Trusted>(&text).unwrap(), entry);
 	}
 }
