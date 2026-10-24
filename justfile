@@ -19,6 +19,7 @@ check:
 	just bindings
 	git diff --exit-code app/src/ipc/bindings
 	(cd app && bun run check)
+	(cd app && bun run audit)
 
 # Unsigned: the .sig beside a bundle is only read by the updater, which only
 # ever fetches release.yml's bundles, and signing would need that workflow's
