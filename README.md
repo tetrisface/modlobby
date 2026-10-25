@@ -25,8 +25,7 @@ removed the older Control-click shortcut). `xattr -dr com.apple.quarantine
 
 ## From source
 
-Needs Rust via [rustup](https://rustup.rs) (the toolchain is pinned by `rust-toolchain.toml`),
-[bun](https://bun.sh), and Tauri 2's [system prerequisites](https://v2.tauri.app/start/prerequisites/)
+Needs Rust via [rustup](https://rustup.rs) (the toolchain is pinned by `rust-toolchain.toml`) and Tauri 2's [system prerequisites](https://v2.tauri.app/start/prerequisites/)
 for your platform. [mise](https://mise.jdx.dev/) installs the pinned node and bun from `mise.toml`.
 
 ```sh
