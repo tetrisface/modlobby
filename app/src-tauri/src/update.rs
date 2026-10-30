@@ -28,7 +28,6 @@
 //! had. On Linux the AppImage is rewritten in place and `install` returns, so
 //! the restart is asked for here. Nothing runs after a successful install.
 
-use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
@@ -674,22 +673,20 @@ async fn download(update: &Update, say: &impl Fn(UpdateProgress)) -> Result<Vec<
 }
 
 /// Whether installing now would end another modlobby. The Windows installer
-/// closes every process run from an executable named as this one is, whatever
-/// it is in the middle of; elsewhere an install ends nothing.
+/// closes every process run from the executable it replaces, whatever it is
+/// in the middle of; elsewhere an install ends nothing.
 fn closes_another_lobby() -> bool {
 	cfg!(windows)
-		&& std::env::current_exe().is_ok_and(|exe| {
-			exe.file_name()
-				.is_some_and(|name| another_named(&orphan::processes(), std::process::id(), name))
-		})
+		&& std::env::current_exe()
+			.is_ok_and(|exe| another_at(&orphan::processes(), std::process::id(), &exe))
 }
 
-/// Whether a process other than `me` runs from an executable called `name`,
-/// in whatever directory and case: how the installer picks what to close.
-fn another_named(processes: &[orphan::Process], me: u32, name: &OsStr) -> bool {
+/// Whether a process other than `me` runs from `exe`, in whatever case: the
+/// installer asks Windows who holds the file it replaces, and closes those.
+fn another_at(processes: &[orphan::Process], me: u32, exe: &Path) -> bool {
 	processes.iter().any(|process| {
-		let named = process.exe.as_deref().and_then(Path::file_name);
-		process.pid != me && named.is_some_and(|other| other.eq_ignore_ascii_case(name))
+		let running = process.exe.as_deref().map(Path::as_os_str);
+		process.pid != me && running.is_some_and(|other| other.eq_ignore_ascii_case(exe))
 	})
 }
 
@@ -734,14 +731,14 @@ fn install(
 
 #[cfg(test)]
 mod tests {
-	use std::ffi::OsStr;
+	use std::path::Path;
 
 	use super::{
-		PublicKey, Staged, allows, another_named, minisign_text, orphan, release_key, verify,
+		PublicKey, Staged, allows, another_at, minisign_text, orphan, release_key, verify,
 	};
 
 	#[test]
-	fn another_lobby_is_any_other_process_run_from_an_executable_named_as_this_one() {
+	fn another_lobby_is_any_other_process_run_from_this_very_executable() {
 		let process = |pid, exe: &str| orphan::Process {
 			pid,
 			parent: None,
@@ -751,15 +748,19 @@ mod tests {
 		let running = [
 			process(1, "C:/installed/modlobby-app.exe"),
 			process(2, "C:/installed/data/engine/spring.exe"),
-			process(3, "C:/built/target/debug/Modlobby-App.exe"),
+			process(3, "C:/built/target/debug/modlobby-app.exe"),
+			process(4, "C:/Installed/Modlobby-App.exe"),
 		];
-		let name = OsStr::new("modlobby-app.exe");
+		let exe = Path::new("C:/installed/modlobby-app.exe");
 
 		assert!(
-			!another_named(&running[..2], 1, name),
-			"itself and its game"
+			!another_at(&running[..3], 1, exe),
+			"itself, its game and a build elsewhere"
 		);
-		assert!(another_named(&running, 1, name), "the build beside it");
+		assert!(
+			another_at(&running, 1, exe),
+			"a second one from this install"
+		);
 	}
 
 	/// A throwaway key from `tauri signer generate` and its signature over

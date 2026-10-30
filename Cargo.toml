@@ -94,7 +94,7 @@ keyring = "=4.1.6"
 # The store search `keyring` wraps but does not re-export.
 keyring-core = "=1.0.0"
 md-5 = "=0.11.0"
-minisign-verify = "=0.2.5"
+minisign-verify = "=0.3.0"
 # Rooms on the local network: DNS-SD over mDNS (its own responder, so nothing
 # has to be installed), the interface list for subnet broadcasts, and the
 # socket options for a shared multicast listener that std does not expose.
@@ -118,14 +118,14 @@ serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
 stylua = { version = "=2.5.2", default-features = false }
 sysinfo = "=0.39.6"
-tauri = { version = "=2.11.5", features = [] }
-tauri-build = { version = "=2.6.3", features = [] }
+tauri = { version = "=2.12.5", features = [] }
+tauri-build = { version = "=2.7.4", features = [] }
 tauri-plugin-notification = "=2.3.3"
 tauri-plugin-opener = "=2.5.4"
 tauri-plugin-global-shortcut = "=2.3.2"
 tauri-plugin-window-state = "=2.4.1"
-tauri-plugin-updater = "=2.11.0"
-tauri-plugin-mcp-bridge = "=0.13.0"
+tauri-plugin-updater = "=2.14.1"
+tauri-plugin-mcp-bridge = "=0.13.2"
 # Engine builds ship as .7z, and the one archive modlobby unpacks itself is an
 # engine — everything else arrives through pr-downloader, which unpacks its own.
 sevenz-rust2 = "=0.22.2"
