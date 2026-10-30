@@ -36,6 +36,10 @@ jobs:
         working-directory: app
       - run: bun run check
         working-directory: app
+      # Asks the advisory database rather than the change, so an advisory
+      # published today can fail a pull request that touched no dependency.
+      - run: bun run audit
+        working-directory: app
 
   check:
     # Every platform compiles the Tauri crate; Linux needs WebKitGTK for it.

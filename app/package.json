@@ -17,7 +17,8 @@
 		"fmt": "biome format --write",
 		"check": "biome check && tsc --noEmit && vitest run",
 		"test:watch": "vitest",
-		"prune": "bash ../scripts/prune-target.sh"
+		"prune": "bash ../scripts/prune-target.sh",
+		"audit": "sh ../scripts/audit.sh"
 	},
 	"dependencies": {
 		"@fontsource/chakra-petch": "5.3.0",
@@ -36,10 +37,13 @@
 		"@solidjs/testing-library": "0.8.10",
 		"@tauri-apps/cli": "2.11.4",
 		"@types/bun": "1.4.0",
-		"happy-dom": "20.12.0",
+		"happy-dom": "21.0.4",
 		"typescript": "5.9.3",
-		"vite": "8.2.2",
+		"vite": "8.2.4",
 		"vite-plugin-solid": "2.11.14",
 		"vitest": "4.1.11"
+	},
+	"overrides": {
+		"dompurify": "3.4.17"
 	}
 }
