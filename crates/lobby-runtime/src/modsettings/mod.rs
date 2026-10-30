@@ -380,14 +380,19 @@ fn widget_changes(before: &Path, after: &Path) -> Vec<lobby_ui::WidgetChange> {
 }
 
 /// The widgets `now`'s `order` turns on or off against `was`'s; a widget
-/// only moved within the order is no change.
+/// only moved within the order is no change, and one `now` lists as replaced
+/// was switched off by the widget handler, not by the player.
 fn toggles(was: &lua::Lua, now: &lua::Lua) -> Vec<lobby_ui::WidgetChange> {
 	let on = |value: &lua::Lua| matches!(value, lua::Lua::Number(n) if *n > 0.0);
 	let order_was = fields_of(was, "order");
+	let replaced = fields_of(now, "replaced");
 	fields_of(now, "order")
 		.iter()
 		.filter_map(|(key, value)| {
 			let widget = key_text(key);
+			if field(&replaced, &widget).is_some() {
+				return None;
+			}
 			let was_on = field(&order_was, &widget).is_some_and(on);
 			(was_on != on(value)).then(|| lobby_ui::WidgetChange {
 				widget,
@@ -1029,6 +1034,44 @@ LuaSocketEnabled = 0
 		let left = changes(&capture).unwrap().engine;
 		assert_eq!(left.len(), 1, "{left:?}");
 		assert_eq!(left[0].key, "LogFile");
+	}
+
+	/// BAR switches off a widget another takes the place of (GetInfo `replaces`)
+	/// and lists it under `replaced`, and hands it back when the other goes. A
+	/// mod's replacement is not there in a normal game to hand anything back.
+	#[test]
+	fn a_widget_a_mod_took_the_place_of_stays_on_in_a_fold_in() {
+		let dir = tempfile::tempdir().unwrap();
+		let (_, capture) = planted(
+			dir.path(),
+			&[(
+				"LuaUI/Config/BYAR.lua",
+				"return {\n\torder = {\n\t\tStock = 3,\n\t\tOther = 2,\n\t},\n}\n",
+			)],
+			&[(
+				"LuaUI/Config/BYAR.lua",
+				"return {\n\torder = {\n\t\tStock = 0,\n\t\tOther = 0,\n\t},\n\treplaced = {\n\t\tStock = \"Swap\",\n\t},\n}\n",
+			)],
+		);
+		let open = dir.path().join("open");
+		plant(
+			&open,
+			"LuaUI/Config/BYAR.lua",
+			"return {\n\torder = {\n\t\tStock = 3,\n\t\tOther = 2,\n\t},\n}\n",
+		);
+		fold_in(&capture, &open, &kinds(false, true)).unwrap();
+		let text = std::fs::read_to_string(open.join("LuaUI/Config/BYAR.lua")).unwrap();
+		let merged = lua::read(&text).unwrap();
+		assert_eq!(
+			at(&merged, &["order", "Stock"]),
+			Some(&lua::Lua::Number(3.0)),
+			"what the mod replaced is not what the player turned off"
+		);
+		assert_eq!(
+			at(&merged, &["order", "Other"]),
+			Some(&lua::Lua::Number(0.0)),
+			"what the player did turn off still folds in"
+		);
 	}
 
 	#[test]
