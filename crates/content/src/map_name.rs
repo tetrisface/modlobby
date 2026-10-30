@@ -11,6 +11,7 @@
 //! refuses to start the game: `Dependent archive "frostycove_v1.13" (resolved
 //! to "FrostyCove_v1.13") not found` (`ArchiveScanner.cpp:1581`).
 
+use std::borrow::Cow;
 use std::io::Read;
 use std::path::Path;
 
@@ -170,7 +171,11 @@ fn root_file(path: &Path, wanted: &str) -> Option<String> {
 	match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
 		"sdz" => {
 			let mut zip = zip::ZipArchive::new(std::fs::File::open(path).ok()?).ok()?;
-			let name = zip.file_names().find(|name| at_root(name))?.to_owned();
+			let name = zip
+				.file_names()
+				.filter_map(Result::ok)
+				.find(|name| at_root(name))?
+				.into_owned();
 			zip.by_name(&name)
 				.ok()?
 				.take(MOST as u64)
@@ -255,7 +260,11 @@ fn from_sd7(path: &Path) -> Option<Says> {
 fn from_sdz(path: &Path) -> Option<Says> {
 	let file = std::fs::File::open(path).ok()?;
 	let mut zip = zip::ZipArchive::new(file).ok()?;
-	let names: Vec<String> = zip.file_names().map(str::to_owned).collect();
+	let names: Vec<String> = zip
+		.file_names()
+		.filter_map(Result::ok)
+		.map(Cow::into_owned)
+		.collect();
 	let smf = names.iter().find_map(|name| smf_name(name));
 	let mapinfo = names.iter().find(|name| is_mapinfo(name)).and_then(|name| {
 		let mut held = Vec::new();

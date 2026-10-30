@@ -14,6 +14,7 @@
 //! `.gitattributes` marks `eol=crlf` with CRLF line ends where the blob has
 //! LF; [`Attributes`] undoes that, so what is unpacked is what was committed.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -240,7 +241,11 @@ pub fn unpack(
 ) -> Result<(), String> {
 	let file = std::fs::File::open(zipball).map_err(|err| err.to_string())?;
 	let mut zip = zip::ZipArchive::new(file).map_err(|err| err.to_string())?;
-	let names: Vec<String> = zip.file_names().map(str::to_owned).collect();
+	let names = zip
+		.file_names()
+		.map(|name| name.map(Cow::into_owned))
+		.collect::<Result<Vec<String>, _>>()
+		.map_err(|err| err.to_string())?;
 	let top = names
 		.first()
 		.and_then(|name| name.split('/').next())
@@ -273,7 +278,7 @@ pub fn unpack(
 		let Some(inside) = entry.enclosed_name() else {
 			return Err(format!(
 				"{} would be written outside the game",
-				entry.name()
+				entry.name().unwrap_or_default()
 			));
 		};
 		let Ok(relative) = inside.strip_prefix(top.trim_end_matches('/')) else {
@@ -283,7 +288,10 @@ pub fn unpack(
 			continue;
 		}
 		if cfg!(windows) && !windows_writes_as_named(relative) {
-			return Err(format!("{} is not a name Windows can write", entry.name()));
+			return Err(format!(
+				"{} is not a name Windows can write",
+				entry.name().unwrap_or_default()
+			));
 		}
 		if entry.is_dir() {
 			continue;
@@ -314,11 +322,11 @@ pub fn unpack(
 		if written > cap {
 			return Err(format!(
 				"{} takes the build past {} bytes",
-				entry.name(),
+				entry.name().unwrap_or_default(),
 				budget.bytes
 			));
 		}
-		spent.spend_bytes(written, budget, entry.name())?;
+		spent.spend_bytes(written, budget, &entry.name().unwrap_or_default())?;
 	}
 	Ok(())
 }

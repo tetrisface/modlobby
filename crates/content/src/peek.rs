@@ -250,7 +250,7 @@ pub(crate) mod tests {
 		zip.write_all(&vec![b'x'; 200_000]).unwrap();
 		zip.start_file("modinfo.lua", options).unwrap();
 		zip.write_all(modinfo.as_bytes()).unwrap();
-		zip.set_comment("a comment, as some packers leave");
+		zip.set_comment("a comment, as some packers leave").unwrap();
 		zip.finish().unwrap().into_inner()
 	}
 

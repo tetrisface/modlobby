@@ -30,7 +30,7 @@
 		"@tauri-apps/plugin-notification": "2.3.3",
 		"flag-icons": "7.5.0",
 		"monaco-editor": "0.56.0",
-		"solid-js": "1.9.15"
+		"solid-js": "1.9.18"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.15",
@@ -41,7 +41,7 @@
 		"typescript": "5.9.3",
 		"vite": "8.2.4",
 		"vite-plugin-solid": "2.11.14",
-		"vitest": "4.1.11"
+		"vitest": "4.1.12"
 	},
 	"overrides": {
 		"dompurify": "3.4.17"
