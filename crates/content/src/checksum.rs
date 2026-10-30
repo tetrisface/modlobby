@@ -335,7 +335,10 @@ fn read_single(path: &Path) -> Result<Summed, Error> {
 				if entry.is_dir() {
 					continue;
 				}
-				let name = entry.name().to_owned();
+				let name = entry
+					.name()
+					.map_err(|err| read(err.to_string()))?
+					.into_owned();
 				parts
 					.add(&name, &mut entry)
 					.map_err(|err| read(err.to_string()))?;
