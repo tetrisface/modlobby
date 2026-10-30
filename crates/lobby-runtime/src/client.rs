@@ -1528,7 +1528,6 @@ struct Runtime {
 	checked_lobby: Option<(String, u32)>,
 	/// The room (server, battle) whose host has been told we load mutators,
 	/// so it is told once.
-	greeted_mutator_host: Option<(String, u32)>,
 	/// When to let the servers go because nobody has touched the window.
 	/// Off until the app pushes a limit; the CLI has no window to watch.
 	idle: idle::Idle,
@@ -2112,7 +2111,6 @@ impl Runtime {
 			menu_archive: None,
 			checked: None,
 			checked_lobby: None,
-			greeted_mutator_host: None,
 			idle: idle::Idle::default(),
 			paste: None,
 			downloading: None,
@@ -2962,8 +2960,7 @@ impl Runtime {
 		let greet = room.as_deref().and_then(|server| {
 			let state = &self.link(server)?.session.state;
 			let my = state.my_battle.as_ref()?;
-			if !my.hosts_mutators() || self.greeted_mutator_host == Some((server.to_owned(), my.id))
-			{
+			if !my.hosts_mutators() || my.greeted_host {
 				return None;
 			}
 			// Not while any of its mods asks: a greeting says we load them.
@@ -2976,12 +2973,17 @@ impl Runtime {
 				return None;
 			}
 			let founder = state.battles.get(&my.id)?.founder.clone();
-			Some((server.to_owned(), my.id, founder))
+			Some((server.to_owned(), founder))
 		});
-		let Some((server, id, founder)) = greet else {
+		let Some((server, founder)) = greet else {
 			return;
 		};
-		self.greeted_mutator_host = Some((server.clone(), id));
+		if let Some(my) = self
+			.link_mut(&server)
+			.and_then(|conn| conn.session.state.my_battle.as_mut())
+		{
+			my.greeted_host = true;
+		}
 		// The consenting build's line first, then the old one: a host on
 		// either version of the handshake hears one it knows.
 		for line in [
@@ -7203,6 +7205,40 @@ mod tests {
 				"SAYPRIVATE host I support mutators [automatic] 2",
 				"SAYPRIVATE host I support mutators [automatic]"
 			]
+		);
+		client.shutdown().await;
+	}
+
+	/// A host may forget a player who leaves, so coming back to the same room
+	/// says it again.
+	#[tokio::test]
+	async fn a_room_left_and_joined_again_is_greeted_again() {
+		let (client, ui, mut lines, mut write) =
+			joined_mods_lobby(content::git::Reach::OnBranch("main".into())).await;
+		write.write_all(&mod_tags(Some(SPHERE_SHA))).await.unwrap();
+		standings_shown(&ui, |s| asks(&s[0], lobby_ui::WhyView::Repo)).await;
+		client.set_mod_trust(trust_sphere(true)).await.unwrap();
+		assert!(greeting_within(&mut lines, 10_000).await, "never greeted");
+		assert!(greeting_within(&mut lines, 10_000).await, "one line only");
+
+		client.leave_battle().await.unwrap();
+		line_starting_with(&mut lines, "LEAVEBATTLE").await;
+		write.write_all(b"LEFTBATTLE 5 me\n").await.unwrap();
+		let joining = tokio::spawn({
+			let client = client.clone();
+			async move { client.join_battle("a".into(), 5, None).await }
+		});
+		line_starting_with(&mut lines, "JOINBATTLE 5").await;
+		write
+			.write_all(b"JOINBATTLE 5 h\nJOINEDBATTLE 5 me\n")
+			.await
+			.unwrap();
+		joining.await.unwrap().unwrap();
+		write.write_all(&mod_tags(Some(SPHERE_SHA))).await.unwrap();
+
+		assert!(
+			greeting_within(&mut lines, 10_000).await,
+			"the same room, joined again, was not greeted"
 		);
 		client.shutdown().await;
 	}

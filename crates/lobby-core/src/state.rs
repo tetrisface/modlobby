@@ -172,6 +172,9 @@ pub struct MyBattle {
 	/// The in-game ID SPADS put us on in the running game (`!joinas`), until
 	/// the next game starts.
 	pub joined_id: Option<u32>,
+	/// Whether we told this room's host that we load its mutators. Kept here so
+	/// it lasts as long as this join: a host may forget a player who leaves.
+	pub greeted_host: bool,
 	next_seq: u64,
 }
 
@@ -249,6 +252,7 @@ impl MyBattle {
 			seat_on_its_way: None,
 			held_until_ms: None,
 			joined_id: None,
+			greeted_host: false,
 			next_seq: 0,
 		}
 	}
