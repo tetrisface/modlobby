@@ -5,10 +5,10 @@ import { mapPicture, mapThumb } from '../lib/maps'
  * A map's picture in a box the stylesheet sizes, cut to that size by Rust —
  * or, `whole`, fitted inside it with nothing cut off, and the box pads it.
  *
- * Until the cut is made, the picture as published shows in its place, scaled
+ * Until the cut is made, the picture as it came shows in its place, scaled
  * by the webview — soft, but there — and the finished tile covers it. A map
- * the index does not know draws neither, so whatever the box paints under
- * this is the fallback.
+ * with no picture to be had (`MapIndex::pictures_of`) draws neither, so
+ * whatever the box paints under this is the fallback.
  */
 export function MapPicture(props: {
 	mapName: string

@@ -222,7 +222,7 @@ fn is_mapinfo(name: &str) -> bool {
 }
 
 /// The `.smf`'s name without its directory or extension, which is the map's.
-fn smf_name(name: &str) -> Option<String> {
+pub(crate) fn smf_name(name: &str) -> Option<String> {
 	let file = base(name);
 	let stem = file.get(..file.len().checked_sub(4)?)?;
 	let is_smf = file[file.len() - 4..].eq_ignore_ascii_case(".smf");

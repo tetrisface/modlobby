@@ -24,14 +24,17 @@
 //! instead — a dropped connection, a 500, a 429, a login page dressed as a
 //! picture — is not remembered, because the moment passes.
 //!
-//! Nothing here is about maps in particular: everything is keyed by the URL a
-//! picture was published at, so the banner on a news card comes through the
-//! same cache and the same resizing.
+//! Nothing past the first look at a picture is about maps in particular. A
+//! picture is kept as it came and cut from there, whether it came from a URL --
+//! the map index's, or the banner on a news card -- or out of a map's own archive
+//! ([`Picture::Minimap`]), which is the only one a map the index no longer lists
+//! has.
 
 use std::collections::{HashMap, VecDeque};
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::UNIX_EPOCH;
 
 use image::imageops::FilterType;
 use image::{ImageFormat, ImageReader};
@@ -64,10 +67,53 @@ impl Tile {
 	}
 }
 
-/// One map to make ahead of time: its published picture, at these sizes.
+/// Where a picture comes from: what its files are named after, and what is
+/// done the one time it is not on the disk yet.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Picture {
+	/// Published at this URL, which changes when the picture does.
+	Published(String),
+	/// The minimap inside the map at `archive`. An archive's name says nothing
+	/// about what is in it the way a URL does, so `stamp` does: a map replaced
+	/// under the same name, or half a download finishing, is another picture.
+	Minimap { archive: PathBuf, stamp: String },
+}
+
+impl Picture {
+	/// The minimap of the map at `archive` as it stands now, if it stands.
+	pub fn minimap(archive: PathBuf) -> Option<Self> {
+		let about = std::fs::metadata(&archive).ok()?;
+		let modified = about.modified().ok()?.duration_since(UNIX_EPOCH).ok()?;
+		let stamp = format!("{}-{}", about.len(), modified.as_nanos());
+		Some(Self::Minimap { archive, stamp })
+	}
+
+	/// What this picture's files are named after and its refusals kept under.
+	fn key(&self) -> String {
+		match self {
+			Self::Published(url) => url.clone(),
+			Self::Minimap { archive, stamp } => {
+				format!("minimap:{}:{stamp}", archive.display())
+			}
+		}
+	}
+}
+
+/// What is wanted of a picture.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Cut {
+	/// Cut to fill this box, as [`Service::get`] does.
+	Fill(Tile),
+	/// Fitted whole inside this box, as [`Service::get_whole`] does.
+	Whole(Tile),
+	/// As it came, as [`Service::original`] gives it.
+	AsItCame,
+}
+
+/// One map to make ahead of time: its picture, at these sizes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Job {
-	pub url: String,
+	pub picture: Picture,
 	/// Cut to fill each box, as [`Service::get`] does.
 	pub tiles: Vec<Tile>,
 	/// Fitted whole inside each box, as [`Service::get_whole`] does.
@@ -88,9 +134,14 @@ pub enum Error {
 	/// no use here.
 	#[error("the picture is a {0:?}, which this build cannot decode")]
 	Format(image::ImageFormat),
-	/// The answer this URL already got, given again without asking again.
+	/// The answer this picture already got, given again without asking again.
 	#[error("{0}")]
 	Refused(String),
+	#[error("{0}")]
+	Minimap(#[from] crate::map_minimap::Error),
+	/// Nothing says where this picture is.
+	#[error("nowhere to get this picture from")]
+	Nowhere,
 }
 
 impl Error {
@@ -101,6 +152,9 @@ impl Error {
 	/// exist to say "later": a 429 carries the server's own `Retry-After`, and
 	/// a 408 is the connection's, not the picture's. A format this build does
 	/// not decode is about the URL too; the picture will not change formats.
+	/// An archive with no minimap to read is about the archive as it is now,
+	/// and a [`Picture::Minimap`] names only that; one that could not be opened
+	/// says nothing about it.
 	/// Everything else is about now, and now passes: a dropped connection, a
 	/// 5xx, a local IO failure, and a body that is not a picture at all, which
 	/// is what a captive portal or a maintenance page looks like from here --
@@ -110,8 +164,13 @@ impl Error {
 		match self {
 			Self::Status(408 | 429) => false,
 			Self::Status(code) => (400..500).contains(code),
-			Self::Format(_) => true,
-			Self::Request(_) | Self::Image(_) | Self::Io(_) | Self::Refused(_) => false,
+			Self::Format(_) | Self::Minimap(crate::map_minimap::Error::Unreadable(_)) => true,
+			Self::Minimap(crate::map_minimap::Error::Io(_))
+			| Self::Request(_)
+			| Self::Image(_)
+			| Self::Io(_)
+			| Self::Refused(_)
+			| Self::Nowhere => false,
 		}
 	}
 }
@@ -124,7 +183,7 @@ pub struct Service(Arc<Inner>);
 struct Inner {
 	client: reqwest::Client,
 	dir: PathBuf,
-	/// How many pictures may be in flight at once.
+	/// How many pictures may be in flight at once, fetched or read.
 	///
 	/// The per-file lock joins callers asking for the *same* picture; a list
 	/// painting thirty rooms asks for thirty different ones in the same frame,
@@ -132,7 +191,8 @@ struct Inner {
 	/// host, and the rest wait a moment rather than arriving all at once at
 	/// somebody else's image server.
 	gate: tokio::sync::Semaphore,
-	/// URLs that answered something about themselves, and what they answered.
+	/// Pictures that answered something about themselves, and what they
+	/// answered, by [`Picture::key`].
 	///
 	/// Kept for the run rather than on disk: a picture missing because it was
 	/// published late should come back on the next start, and a lobby that has
@@ -165,31 +225,64 @@ impl Service {
 		}))
 	}
 
-	/// The picture at `url` filling `tile`, as PNG bytes: from disk when it
-	/// has been made before, otherwise made from the published picture —
-	/// itself fetched only the first time — and kept.
-	pub async fn get(&self, url: &str, tile: Tile) -> Result<Vec<u8>, Error> {
-		self.make(url, tile, "", fill).await
+	/// The first of `pictures` that can be had, cut as asked, with what to call
+	/// it. One that cannot be gives way to the next, and the next is not looked
+	/// for until then. With none to try, [`Error::Nowhere`]; with none that
+	/// worked, what the last one said.
+	pub async fn first_of(
+		&self,
+		pictures: impl IntoIterator<Item = Picture>,
+		cut: Cut,
+	) -> Result<(&'static str, Vec<u8>), Error> {
+		let mut last = Error::Nowhere;
+		for picture in pictures {
+			let made = match cut {
+				Cut::Fill(tile) => self.get(&picture, tile).await.map(|png| ("image/png", png)),
+				Cut::Whole(tile) => self
+					.get_whole(&picture, tile)
+					.await
+					.map(|png| ("image/png", png)),
+				Cut::AsItCame => self
+					.original(&picture)
+					.await
+					.map(|kept| (mime(&kept), kept)),
+			};
+			match made {
+				Ok(found) => return Ok(found),
+				Err(err) => {
+					tracing::debug!(?picture, %err, "no picture here");
+					last = err;
+				}
+			}
+		}
+		Err(last)
 	}
 
-	/// The picture at `url` whole inside `tile`: scaled to fit, never cropped,
+	/// `picture` filling `tile`, as PNG bytes: from disk when it has been made
+	/// before, otherwise made from the picture as it came — itself fetched or
+	/// read only the first time — and kept.
+	pub async fn get(&self, picture: &Picture, tile: Tile) -> Result<Vec<u8>, Error> {
+		self.make(picture, tile, "", fill).await
+	}
+
+	/// `picture` whole inside `tile`: scaled to fit, never cropped,
 	/// so the box it is drawn in pads it instead of cutting it. What a
 	/// screenshot of an interface wants — its edges are the part that says
 	/// which interface it is.
-	pub async fn get_whole(&self, url: &str, tile: Tile) -> Result<Vec<u8>, Error> {
-		self.make(url, tile, "-whole", fit).await
+	pub async fn get_whole(&self, picture: &Picture, tile: Tile) -> Result<Vec<u8>, Error> {
+		self.make(picture, tile, "-whole", fit).await
 	}
 
 	async fn make(
 		&self,
-		url: &str,
+		from: &Picture,
 		tile: Tile,
 		kind: &str,
 		resize: fn(&[u8], Tile) -> Result<Vec<u8>, image::ImageError>,
 	) -> Result<Vec<u8>, Error> {
 		let path = self.0.dir.join(format!(
 			"{}-{}x{}{kind}.png",
-			hash(url),
+			hash(&from.key()),
 			tile.width,
 			tile.height
 		));
@@ -202,7 +295,7 @@ impl Service {
 		if let Ok(png) = tokio::fs::read(&path).await {
 			return Ok(png);
 		}
-		let picture = self.published(url).await?;
+		let picture = self.original(from).await?;
 		// Decoding and resizing a 1024px picture is tens of milliseconds of
 		// CPU, which the async runtime should not sit through.
 		let png = tokio::task::spawn_blocking(move || resize(&picture, tile))
@@ -249,67 +342,89 @@ impl Service {
 				}
 			};
 			for tile in next.tiles {
-				if let Err(err) = self.get(&next.url, tile).await {
-					tracing::debug!(url = next.url, ?tile, %err, "not warmed");
+				if let Err(err) = self.get(&next.picture, tile).await {
+					tracing::debug!(picture = ?next.picture, ?tile, %err, "not warmed");
 				}
 			}
 			for tile in next.whole {
-				if let Err(err) = self.get_whole(&next.url, tile).await {
-					tracing::debug!(url = next.url, ?tile, %err, "not warmed whole");
+				if let Err(err) = self.get_whole(&next.picture, tile).await {
+					tracing::debug!(picture = ?next.picture, ?tile, %err, "not warmed whole");
 				}
 			}
 		}
 	}
 
-	/// The picture as published, from disk after the first time — and from the
+	/// The picture as it came, from disk after the first time — and from the
 	/// refusal it already got, if it got one.
-	pub async fn published(&self, url: &str) -> Result<Vec<u8>, Error> {
-		let path = self.0.dir.join(format!("{}.src", hash(url)));
-		if let Ok(picture) = tokio::fs::read(&path).await {
-			return Ok(picture);
+	pub async fn original(&self, picture: &Picture) -> Result<Vec<u8>, Error> {
+		let key = picture.key();
+		let path = self.0.dir.join(format!("{}.src", hash(&key)));
+		if let Ok(kept) = tokio::fs::read(&path).await {
+			return Ok(kept);
 		}
-		if let Some(refused) = self.refused(url) {
+		if let Some(refused) = self.refused(&key) {
 			return Err(Error::Refused(refused));
 		}
 		let lock = self.lock_for(&path);
 		let _fetching = lock.lock().await;
 		// Either could have happened while somebody else held the lock asking
 		// this same question, and both are answers.
-		if let Ok(picture) = tokio::fs::read(&path).await {
-			return Ok(picture);
+		if let Ok(kept) = tokio::fs::read(&path).await {
+			return Ok(kept);
 		}
-		if let Some(refused) = self.refused(url) {
+		if let Some(refused) = self.refused(&key) {
 			return Err(Error::Refused(refused));
 		}
-		let picture = self
-			.fetch(url)
+		let kept = self
+			.first_look(picture)
 			.await
-			.inspect_err(|err| self.refuse(url, err))?;
-		write(&path, &picture).await?;
-		Ok(picture)
+			.inspect_err(|err| self.refuse(&key, err))?;
+		write(&path, &kept).await?;
+		Ok(kept)
 	}
 
-	/// The answer this URL already got, when it got one worth keeping.
-	fn refused(&self, url: &str) -> Option<String> {
+	/// The one time a picture is not on the disk yet.
+	async fn first_look(&self, picture: &Picture) -> Result<Vec<u8>, Error> {
+		match picture {
+			Picture::Published(url) => self.fetch(url).await,
+			Picture::Minimap { archive, .. } => self.read_minimap(archive.clone()).await,
+		}
+	}
+
+	/// Decompressing holds a dictionary of tens of megabytes for as long as it
+	/// runs, and a list of old maps asks for them all in the same frame, so
+	/// these wait their turn at the gate as a download does.
+	async fn read_minimap(&self, archive: PathBuf) -> Result<Vec<u8>, Error> {
+		let _turn = self
+			.0
+			.gate
+			.acquire()
+			.await
+			.expect("the gate is never closed");
+		off_the_runtime(move || crate::map_minimap::picture_in(&archive)).await
+	}
+
+	/// The answer this picture already got, when it got one worth keeping.
+	fn refused(&self, key: &str) -> Option<String> {
 		self.0
 			.refused
 			.lock()
 			.expect("the refusal map is never poisoned")
-			.get(url)
+			.get(key)
 			.cloned()
 	}
 
-	/// Keeps an answer that was about the URL, so it is not asked for twice.
-	fn refuse(&self, url: &str, err: &Error) {
+	/// Keeps an answer that was about the picture, so it is not asked for twice.
+	fn refuse(&self, key: &str, err: &Error) {
 		if !err.settled() {
 			return;
 		}
-		tracing::debug!(url, %err, "picture refused; not asking again this run");
+		tracing::debug!(key, %err, "picture refused; not asking again this run");
 		self.0
 			.refused
 			.lock()
 			.expect("the refusal map is never poisoned")
-			.insert(url.to_owned(), err.to_string());
+			.insert(key.to_owned(), err.to_string());
 	}
 
 	fn lock_for(&self, path: &Path) -> Arc<tokio::sync::Mutex<()>> {
@@ -349,6 +464,19 @@ impl Service {
 	}
 }
 
+/// Reading an archive, away from the async runtime, which should not sit
+/// through decompressing. The parsers down there are not ours and the archive
+/// is anybody's, so a panic is an answer about that archive like any other
+/// reason it cannot be read.
+async fn off_the_runtime(
+	work: impl FnOnce() -> Result<Vec<u8>, crate::map_minimap::Error> + Send + 'static,
+) -> Result<Vec<u8>, Error> {
+	let read = tokio::task::spawn_blocking(work)
+		.await
+		.map_err(|panicked| crate::map_minimap::Error::Unreadable(panicked.to_string()))?;
+	Ok(read?)
+}
+
 /// What to call a picture kept as it came: its format, by the magic bytes.
 pub fn mime(picture: &[u8]) -> &'static str {
 	image::guess_format(picture)
@@ -356,10 +484,10 @@ pub fn mime(picture: &[u8]) -> &'static str {
 		.unwrap_or("application/octet-stream")
 }
 
-/// What a picture's files are named after: the URL, which changes when the
+/// What a picture's files are named after: its key, which changes when the
 /// picture does, and which has characters a file name cannot.
-fn hash(url: &str) -> String {
-	Md5::digest(url.as_bytes())
+fn hash(key: &str) -> String {
+	Md5::digest(key.as_bytes())
 		.iter()
 		.map(|byte| format!("{byte:02x}"))
 		.collect()
@@ -424,6 +552,10 @@ mod tests {
 
 	fn tile(width: u32, height: u32) -> Tile {
 		Tile::new(width, height).unwrap()
+	}
+
+	fn at(url: &str) -> Picture {
+		Picture::Published(url.to_owned())
 	}
 
 	async fn serving(picture: Vec<u8>, times: u64) -> (MockServer, String) {
@@ -499,8 +631,8 @@ mod tests {
 		let dir = tempfile::tempdir().unwrap();
 		let thumbs = service(dir.path());
 
-		let first = thumbs.get(&url, tile(50, 32)).await.unwrap();
-		let again = thumbs.get(&url, tile(50, 32)).await.unwrap();
+		let first = thumbs.get(&at(&url), tile(50, 32)).await.unwrap();
+		let again = thumbs.get(&at(&url), tile(50, 32)).await.unwrap();
 		assert_eq!(first, again);
 		let small = image::load_from_memory(&first).unwrap();
 		assert_eq!((small.width(), small.height()), (50, 32));
@@ -518,9 +650,10 @@ mod tests {
 		let dir = tempfile::tempdir().unwrap();
 		let thumbs = service(dir.path());
 
+		let picture = at(&url);
 		let (one, two) = tokio::join!(
-			thumbs.get(&url, tile(50, 32)),
-			thumbs.get(&url, tile(50, 32))
+			thumbs.get(&picture, tile(50, 32)),
+			thumbs.get(&picture, tile(50, 32))
 		);
 		assert_eq!(one.unwrap(), two.unwrap());
 	}
@@ -531,8 +664,8 @@ mod tests {
 		let dir = tempfile::tempdir().unwrap();
 		let thumbs = service(dir.path());
 
-		thumbs.get(&url, tile(50, 32)).await.unwrap();
-		let bigger = thumbs.get(&url, tile(100, 64)).await.unwrap();
+		thumbs.get(&at(&url), tile(50, 32)).await.unwrap();
+		let bigger = thumbs.get(&at(&url), tile(100, 64)).await.unwrap();
 		let small = image::load_from_memory(&bigger).unwrap();
 		assert_eq!((small.width(), small.height()), (100, 64));
 		assert_eq!(kept(dir.path()).len(), 3);
@@ -544,9 +677,10 @@ mod tests {
 		let dir = tempfile::tempdir().unwrap();
 		let thumbs = service(dir.path());
 
+		let picture = at(&url);
 		let (one, two) = tokio::join!(
-			thumbs.get(&url, tile(50, 32)),
-			thumbs.get(&url, tile(100, 64))
+			thumbs.get(&picture, tile(50, 32)),
+			thumbs.get(&picture, tile(100, 64))
 		);
 		one.unwrap();
 		two.unwrap();
@@ -563,7 +697,7 @@ mod tests {
 		let thumbs = service(dir.path());
 
 		let err = thumbs
-			.get(&format!("{}/gone.png", server.uri()), tile(50, 32))
+			.get(&at(&format!("{}/gone.png", server.uri())), tile(50, 32))
 			.await
 			.unwrap_err();
 		assert!(matches!(err, Error::Status(404)), "{err}");
@@ -576,7 +710,7 @@ mod tests {
 		let dir = tempfile::tempdir().unwrap();
 		let thumbs = service(dir.path());
 
-		let err = thumbs.get(&url, tile(50, 32)).await.unwrap_err();
+		let err = thumbs.get(&at(&url), tile(50, 32)).await.unwrap_err();
 		assert!(matches!(err, Error::Image(_)), "{err}");
 		assert!(!dir.path().join(CACHE_DIR).exists());
 	}
@@ -599,21 +733,21 @@ mod tests {
 
 		// The first answer is the server's, and every one after it is the
 		// same answer without the asking.
-		let first = thumbs.get(&url, tile(50, 32)).await.unwrap_err();
+		let first = thumbs.get(&at(&url), tile(50, 32)).await.unwrap_err();
 		assert!(matches!(first, Error::Status(404)), "{first}");
 		for _ in 0..4 {
-			let again = thumbs.get(&url, tile(50, 32)).await.unwrap_err();
+			let again = thumbs.get(&at(&url), tile(50, 32)).await.unwrap_err();
 			assert!(matches!(again, Error::Refused(_)), "{again}");
 			assert_eq!(again.to_string(), first.to_string());
 		}
 		// A size never asked for before goes through the same refusal rather
 		// than fetching the picture it would be cut from.
-		let other = thumbs.get(&url, tile(130, 130)).await.unwrap_err();
+		let other = thumbs.get(&at(&url), tile(130, 130)).await.unwrap_err();
 		assert!(matches!(other, Error::Refused(_)), "{other}");
 
 		// Warming is the other way the same URL comes round again.
 		thumbs.warm(vec![Job {
-			url: url.clone(),
+			picture: at(&url),
 			tiles: vec![tile(50, 32)],
 			whole: vec![],
 		}]);
@@ -642,12 +776,12 @@ mod tests {
 		let dir = tempfile::tempdir().unwrap();
 		let thumbs = service(dir.path());
 
-		let first = thumbs.get(&url, tile(50, 32)).await.unwrap_err();
+		let first = thumbs.get(&at(&url), tile(50, 32)).await.unwrap_err();
 		assert!(
 			matches!(first, Error::Format(image::ImageFormat::Gif)),
 			"{first}"
 		);
-		let again = thumbs.get(&url, tile(50, 32)).await.unwrap_err();
+		let again = thumbs.get(&at(&url), tile(50, 32)).await.unwrap_err();
 		assert!(matches!(again, Error::Refused(_)), "{again}");
 		assert!(!dir.path().join(CACHE_DIR).exists());
 		server.verify().await;
@@ -682,7 +816,7 @@ mod tests {
 		for name in ["/later.png", "/slower.png", "/portal.png"] {
 			let url = format!("{}{name}", server.uri());
 			for _ in 0..3 {
-				let err = thumbs.get(&url, tile(50, 32)).await.unwrap_err();
+				let err = thumbs.get(&at(&url), tile(50, 32)).await.unwrap_err();
 				assert!(!matches!(err, Error::Refused(_)), "{name}: {err}");
 			}
 		}
@@ -696,18 +830,18 @@ mod tests {
 		let thumbs = service(dir.path());
 
 		thumbs.warm(vec![Job {
-			url: url.clone(),
+			picture: at(&url),
 			tiles: vec![tile(50, 32), tile(130, 130)],
 			whole: vec![tile(50, 41)],
 		}]);
 		thumbs.settled().await;
 		assert_eq!(kept(dir.path()).len(), 4);
 
-		let room = thumbs.get(&url, tile(130, 130)).await.unwrap();
+		let room = thumbs.get(&at(&url), tile(130, 130)).await.unwrap();
 		let small = image::load_from_memory(&room).unwrap();
 		assert_eq!((small.width(), small.height()), (130, 130));
 		// The whole one is made ahead too, at the picture's own shape.
-		let list = thumbs.get_whole(&url, tile(50, 41)).await.unwrap();
+		let list = thumbs.get_whole(&at(&url), tile(50, 41)).await.unwrap();
 		let small = image::load_from_memory(&list).unwrap();
 		assert_eq!((small.width(), small.height()), (50, 25));
 	}
@@ -720,18 +854,202 @@ mod tests {
 
 		thumbs.warm(vec![
 			Job {
-				url: format!("{}/gone.png", server.uri()),
+				picture: at(&format!("{}/gone.png", server.uri())),
 				tiles: vec![tile(50, 32)],
 				whole: vec![],
 			},
 			Job {
-				url,
+				picture: at(&url),
 				tiles: vec![tile(50, 32)],
 				whole: vec![],
 			},
 		]);
 		thumbs.settled().await;
 		assert_eq!(kept(dir.path()).len(), 2);
+	}
+
+	const BLUE_565: u16 = 0x001F;
+	const RED_565: u16 = 0xF800;
+
+	fn map_archive(dir: &Path, colour: u16) -> (PathBuf, Picture) {
+		let archive = dir.join("old_map_1.0.sdz");
+		crate::map_minimap::tests::sdz(&archive, colour);
+		let picture = Picture::minimap(archive.clone()).unwrap();
+		(archive, picture)
+	}
+
+	fn is_blue(png: &[u8]) -> bool {
+		let image = image::load_from_memory(png).unwrap().into_rgb8();
+		let Rgb([red, green, blue]) = *image.get_pixel(1, 1);
+		blue > 240 && red < 16 && green < 16
+	}
+
+	#[test]
+	fn a_map_that_is_not_there_has_no_minimap_to_read() {
+		let dir = tempfile::tempdir().unwrap();
+		assert_eq!(Picture::minimap(dir.path().join("gone_1.0.sd7")), None);
+	}
+
+	#[tokio::test]
+	async fn a_minimap_is_read_once_and_cut_from_what_was_kept() {
+		let dir = tempfile::tempdir().unwrap();
+		let (archive, picture) = map_archive(dir.path(), BLUE_565);
+		let thumbs = service(dir.path());
+
+		let first = thumbs.get(&picture, tile(50, 32)).await.unwrap();
+		assert!(is_blue(&first));
+		// The archive is no longer asked: what came out of it was kept.
+		std::fs::remove_file(&archive).unwrap();
+		assert_eq!(thumbs.get(&picture, tile(50, 32)).await.unwrap(), first);
+		let bigger = thumbs.get(&picture, tile(100, 64)).await.unwrap();
+		assert!(is_blue(&bigger));
+		assert_eq!(kept(dir.path()).len(), 3);
+	}
+
+	#[tokio::test]
+	async fn a_map_replaced_under_its_own_name_is_a_new_picture() {
+		let dir = tempfile::tempdir().unwrap();
+		let thumbs = service(dir.path());
+		let (_, red) = map_archive(dir.path(), RED_565);
+		assert!(!is_blue(&thumbs.get(&red, tile(50, 32)).await.unwrap()));
+
+		let (_, blue) = map_archive(dir.path(), BLUE_565);
+		assert_ne!(red, blue);
+		assert!(is_blue(&thumbs.get(&blue, tile(50, 32)).await.unwrap()));
+	}
+
+	/// Half a download is an archive that cannot be read, right up until the
+	/// moment it can. A repaint must not decode it again meanwhile, and the
+	/// finished file must not be held to what the half of it said.
+	#[tokio::test]
+	async fn a_broken_archive_is_read_once_for_as_long_as_it_stays_broken() {
+		let dir = tempfile::tempdir().unwrap();
+		let thumbs = service(dir.path());
+		let archive = dir.path().join("old_map_1.0.sdz");
+		std::fs::write(&archive, b"PK half a download").unwrap();
+		let half = Picture::minimap(archive.clone()).unwrap();
+
+		let first = thumbs.original(&half).await.unwrap_err();
+		assert!(matches!(first, Error::Minimap(_)), "{first}");
+		let again = thumbs.original(&half).await.unwrap_err();
+		assert!(matches!(again, Error::Refused(_)), "{again}");
+
+		let (_, finished) = map_archive(dir.path(), BLUE_565);
+		thumbs.get(&finished, tile(50, 32)).await.unwrap();
+	}
+
+	/// An antivirus holding the file says nothing about the map.
+	#[tokio::test]
+	async fn an_archive_that_could_not_be_opened_is_tried_again() {
+		let dir = tempfile::tempdir().unwrap();
+		let thumbs = service(dir.path());
+		let (archive, picture) = map_archive(dir.path(), BLUE_565);
+		std::fs::remove_file(&archive).unwrap();
+
+		for _ in 0..2 {
+			let err = thumbs.original(&picture).await.unwrap_err();
+			assert!(
+				matches!(err, Error::Minimap(crate::map_minimap::Error::Io(_))),
+				"{err}"
+			);
+		}
+	}
+
+	/// A panic would leave an `<img>` waiting for ever and the warming worker
+	/// marked busy for the rest of the run.
+	#[tokio::test]
+	async fn a_parser_that_panics_is_an_answer_about_that_archive() {
+		let err = off_the_runtime(|| panic!("a parser met what it never expected"))
+			.await
+			.unwrap_err();
+		assert!(err.settled(), "{err}");
+		assert!(err.to_string().contains("never expected"), "{err}");
+	}
+
+	#[tokio::test]
+	async fn warming_reads_a_minimap_too() {
+		let dir = tempfile::tempdir().unwrap();
+		let thumbs = service(dir.path());
+		let (_, picture) = map_archive(dir.path(), BLUE_565);
+
+		thumbs.warm(vec![Job {
+			picture,
+			tiles: vec![tile(50, 32)],
+			whole: vec![tile(50, 41)],
+		}]);
+		thumbs.settled().await;
+		assert_eq!(kept(dir.path()).len(), 3);
+	}
+
+	#[tokio::test]
+	async fn a_picture_that_cannot_be_had_gives_way_to_the_next() {
+		let (server, url) = serving(halves(ImageFormat::Png), 1).await;
+		let dir = tempfile::tempdir().unwrap();
+		let thumbs = service(dir.path());
+		let gone = at(&format!("{}/gone.png", server.uri()));
+
+		let (mime, png) = thumbs
+			.first_of([gone, at(&url)], Cut::Fill(tile(50, 32)))
+			.await
+			.unwrap();
+		assert_eq!(mime, "image/png");
+		let small = image::load_from_memory(&png).unwrap();
+		assert_eq!((small.width(), small.height()), (50, 32));
+	}
+
+	/// The next is costly to look for, which is why it is an iterator.
+	#[tokio::test]
+	async fn the_next_is_not_looked_for_while_the_first_will_do() {
+		let (_server, url) = serving(halves(ImageFormat::Png), 1).await;
+		let dir = tempfile::tempdir().unwrap();
+		let thumbs = service(dir.path());
+		let pictures = std::iter::once(at(&url)).chain(std::iter::once_with(|| {
+			panic!("looked further than it had to")
+		}));
+		thumbs
+			.first_of(pictures, Cut::Fill(tile(50, 32)))
+			.await
+			.unwrap();
+	}
+
+	#[tokio::test]
+	async fn nothing_to_try_is_its_own_answer() {
+		let dir = tempfile::tempdir().unwrap();
+		let thumbs = service(dir.path());
+		let err = thumbs.first_of([], Cut::AsItCame).await.unwrap_err();
+		assert!(matches!(err, Error::Nowhere), "{err}");
+	}
+
+	#[tokio::test]
+	async fn with_nothing_left_to_try_the_last_failure_is_what_is_said() {
+		let server = MockServer::start().await;
+		let dir = tempfile::tempdir().unwrap();
+		let thumbs = service(dir.path());
+		let gone = at(&format!("{}/gone.png", server.uri()));
+		let err = thumbs
+			.first_of([gone], Cut::Fill(tile(50, 32)))
+			.await
+			.unwrap_err();
+		assert!(matches!(err, Error::Status(404)), "{err}");
+	}
+
+	#[tokio::test]
+	async fn each_cut_is_made_as_its_own_method_makes_it() {
+		let (_server, url) = serving(halves(ImageFormat::WebP), 1).await;
+		let dir = tempfile::tempdir().unwrap();
+		let thumbs = service(dir.path());
+
+		let (mime, whole) = thumbs
+			.first_of([at(&url)], Cut::Whole(tile(50, 50)))
+			.await
+			.unwrap();
+		assert_eq!(mime, "image/png");
+		let small = image::load_from_memory(&whole).unwrap();
+		assert_eq!((small.width(), small.height()), (50, 25));
+
+		let (mime, came) = thumbs.first_of([at(&url)], Cut::AsItCame).await.unwrap();
+		assert_eq!(mime, "image/webp");
+		assert_eq!(came, thumbs.original(&at(&url)).await.unwrap());
 	}
 
 	#[tokio::test]

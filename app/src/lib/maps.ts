@@ -14,6 +14,11 @@
  * The copy as it came is on offer too (`mapPicture`), for a box to show
  * while its size is being cut.
  *
+ * The index lists one version of each map, so Rust answers for the others out
+ * of the map's own archive where it is on this machine, and otherwise with the
+ * picture of the version listed (`MapIndex::pictures_of`). Nothing here knows
+ * the difference.
+ *
  * A lobby has to work with no network at all: every failure here returns
  * nothing and the room falls back to the start-box schematic, which needs
  * nothing.
@@ -193,7 +198,7 @@ export function mapThumb(
 }
 
 /**
- * The picture as published, for a box to show — scaled by the webview, so
+ * The picture as it came, for a box to show — scaled by the webview, so
  * soft — while Rust cuts its size. A name with no picture answers 404 here
  * too.
  */

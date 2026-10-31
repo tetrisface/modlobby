@@ -2,7 +2,7 @@
 //! size a tile shows it, made and kept by `content::map_thumb`;
 //! `thumb://localhost/whole/<width>x<height>/<spring name>`, the same fitted
 //! inside the tile rather than cut to fill it;
-//! `thumb://localhost/full/<spring name>`, the picture as published, for a
+//! `thumb://localhost/full/<spring name>`, the picture as it came, for a
 //! box to show while its size is cut; and
 //! `thumb://localhost/news/<width>x<height>/<guid>`, the banner a news item
 //! published, which the webview cannot fetch itself; and
@@ -20,14 +20,16 @@
 //! names both forms.
 //!
 //! Every form names a *key*, never a URL, and the key is looked up in
-//! something the app fetched itself — the map index, or the news feed. That is
-//! what keeps this from being an open image proxy for anything a page cares to
-//! ask for.
+//! something the app fetched itself — the map index, or the news feed — or
+//! among the maps it lists in its own maps directories. That is what keeps this
+//! from being an open image proxy, or a way to read any file, for anything a
+//! page cares to ask for.
 
-use content::map_thumb::{self, Tile};
+use content::map_thumb::{self, Cut, Picture, Tile};
 use tauri::http::{Request, Response, StatusCode, header};
 use tauri::{Manager, Runtime, UriSchemeContext, UriSchemeResponder};
 
+use crate::commands::data_dirs_of;
 use crate::state::App;
 
 pub const SCHEME: &str = "thumb";
@@ -71,50 +73,81 @@ async fn respond<R: Runtime>(app: &tauri::AppHandle<R>, path: &str) -> Response<
 		return status(StatusCode::BAD_REQUEST);
 	};
 	let state = app.state::<App>();
-	let url = match source {
-		Source::Map | Source::MapWhole => state.map_index().await.images.get(&key).cloned(),
-		Source::News => state
-			.news()
-			.await
-			.into_iter()
-			.find(|item| item.id == key)
-			.and_then(|item| item.image),
-		Source::Widget(index) => state
-			.widget_usage()
-			.await
-			.and_then(|usage| usage.image(&key, index).map(str::to_owned)),
-	};
-	let Some(url) = url else {
-		return status(StatusCode::NOT_FOUND);
-	};
-	let made = match tile {
-		// A map's tile is cut to fill it unless asked for whole. A widget's
-		// picture is a screenshot, and what it is a screenshot of is often at
-		// an edge, so it always comes whole and the tile pads it.
-		Some(tile) => match source {
-			Source::MapWhole | Source::Widget(_) => state.thumbs.get_whole(&url, tile).await,
-			_ => state.thumbs.get(&url, tile).await,
+	let cut = cut_for(source, tile);
+	let (made, lasting) = match source {
+		Source::Map | Source::MapWhole => {
+			let index = state.map_index().await;
+			let on_disk = || content::Library::new(data_dirs_of(&state)?).map_source(&key);
+			let pictures = index.pictures_of(&key, on_disk);
+			(
+				state.thumbs.first_of(pictures, cut).await,
+				index.images.contains_key(&key),
+			)
 		}
-		.map(|png| ("image/png", png)),
-		None => state
-			.thumbs
-			.published(&url)
-			.await
-			.map(|picture| (map_thumb::mime(&picture), picture)),
+		Source::News => {
+			let image = state
+				.news()
+				.await
+				.into_iter()
+				.find(|item| item.id == key)
+				.and_then(|item| item.image);
+			(
+				state
+					.thumbs
+					.first_of(image.map(Picture::Published), cut)
+					.await,
+				true,
+			)
+		}
+		Source::Widget(index) => {
+			let image = state
+				.widget_usage()
+				.await
+				.and_then(|usage| usage.image(&key, index).map(str::to_owned));
+			(
+				state
+					.thumbs
+					.first_of(image.map(Picture::Published), cut)
+					.await,
+				true,
+			)
+		}
 	};
 	match made {
 		Ok((mime, body)) => Response::builder()
 			.header(header::CONTENT_TYPE, mime)
-			// The webview may keep it as long as whatever named it is trusted;
-			// a map's picture changes about as often as the index does, and a
-			// story's banner does not change at all once it is published.
-			.header(header::CACHE_CONTROL, "private, max-age=86400")
+			.header(
+				header::CACHE_CONTROL,
+				// The webview may keep it as long as whatever named it is
+				// trusted; a map's picture changes about as often as the index
+				// does, and a story's banner does not change at all once it is
+				// published. A map the index does not list is answered by
+				// what the disk holds now or by another version, which a
+				// download changes, and asking again costs a read of a file.
+				if lasting {
+					"private, max-age=86400"
+				} else {
+					"no-cache"
+				},
+			)
 			.body(body)
 			.expect("a response from static headers"),
+		Err(map_thumb::Error::Nowhere) => status(StatusCode::NOT_FOUND),
 		Err(err) => {
 			tracing::debug!(picture = %key, %err, "no thumbnail");
 			status(StatusCode::BAD_GATEWAY)
 		}
+	}
+}
+
+/// A map's tile is cut to fill it unless asked for whole. A widget's picture is
+/// a screenshot, and what it is a screenshot of is often at an edge, so it
+/// always comes whole and the tile pads it. No tile is the picture as it came.
+fn cut_for(source: Source, tile: Option<Tile>) -> Cut {
+	match (source, tile) {
+		(_, None) => Cut::AsItCame,
+		(Source::MapWhole | Source::Widget(_), Some(tile)) => Cut::Whole(tile),
+		(Source::Map | Source::News, Some(tile)) => Cut::Fill(tile),
 	}
 }
 
@@ -174,6 +207,25 @@ fn tile(size: &str) -> Option<Tile> {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn a_map_fills_its_tile_unless_asked_for_whole() {
+		let box_ = Tile::new(50, 32).unwrap();
+		assert_eq!(cut_for(Source::Map, Some(box_)), Cut::Fill(box_));
+		assert_eq!(cut_for(Source::MapWhole, Some(box_)), Cut::Whole(box_));
+		assert_eq!(cut_for(Source::News, Some(box_)), Cut::Fill(box_));
+	}
+
+	#[test]
+	fn a_widget_comes_whole_because_its_edges_are_what_it_shows() {
+		let box_ = Tile::new(96, 60).unwrap();
+		assert_eq!(cut_for(Source::Widget(0), Some(box_)), Cut::Whole(box_));
+	}
+
+	#[test]
+	fn no_tile_is_the_picture_as_it_came() {
+		assert_eq!(cut_for(Source::Map, None), Cut::AsItCame);
+	}
 
 	#[test]
 	fn the_path_names_a_tile_and_a_map() {

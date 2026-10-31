@@ -15,10 +15,14 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
+
+use crate::map_thumb::Picture;
 
 /// The lobby feed of `beyond-all-reason/maps-metadata`, served with an ETag
 /// and a 30-minute cache lifetime; `/latest/` is the only mutable path there.
@@ -83,6 +87,69 @@ impl MapIndex {
 	fn complete(&self) -> bool {
 		!self.maps.is_empty() || self.names.is_empty()
 	}
+
+	/// Where a map's picture may be had, best first.
+	///
+	/// The index lists one version of each map, and a new version takes the old
+	/// one's row. So what it publishes is tried for the version it lists; then
+	/// the minimap in the map's own archive, which is exact for any version and
+	/// needs no network; then, for a version neither has, the picture of the
+	/// version listed, which is the same map and often the same picture.
+	///
+	/// `on_disk` finds the map's archive. It lists a directory, so it and
+	/// everything after it are not looked for until asked for.
+	pub fn pictures_of<'a>(
+		&'a self,
+		spring_name: &'a str,
+		on_disk: impl FnOnce() -> Option<PathBuf> + 'a,
+	) -> impl Iterator<Item = Picture> + 'a {
+		let published = self
+			.images
+			.get(spring_name)
+			.cloned()
+			.map(Picture::Published);
+		let minimap = std::iter::once_with(move || on_disk().and_then(Picture::minimap));
+		let kin = std::iter::once_with(move || {
+			self.kin_image(spring_name)
+				.map(|url| Picture::Published(url.to_owned()))
+		});
+		std::iter::once(published)
+			.chain(minimap)
+			.chain(kin)
+			.flatten()
+	}
+
+	/// The picture of another version of this map, the newest where two are
+	/// listed.
+	fn kin_image(&self, spring_name: &str) -> Option<&str> {
+		let wanted = family(spring_name);
+		if wanted.is_empty() {
+			return None;
+		}
+		let mut kin: Vec<String> = self
+			.images
+			.keys()
+			.filter(|name| name.as_str() != spring_name && family(name) == wanted)
+			.cloned()
+			.collect();
+		crate::newest_first(&mut kin);
+		self.images.get(kin.first()?).map(String::as_str)
+	}
+}
+
+/// The version a map's name ends in: ` v3.4.4`, `_V4`, ` 1.3`.
+static VERSION: LazyLock<Regex> =
+	LazyLock::new(|| Regex::new(r"(?i)[\s_-]+v?\d[\w.]*$").expect("a valid pattern"));
+
+/// A map's name less its version, to tell versions of one map by: `Aurelia
+/// v4.1` and `Aurelia_V4` are both `aurelia`. The mirror of `family` in the
+/// frontend's `lib/maps.ts`.
+fn family(spring_name: &str) -> String {
+	VERSION
+		.replace(spring_name, "")
+		.replace('_', " ")
+		.trim()
+		.to_lowercase()
 }
 
 /// What the cache file holds: the trimmed index, when it was confirmed, and
@@ -372,6 +439,122 @@ mod tests {
 		let bare = index.maps.get("No Picture 1").expect("the bare map");
 		assert_eq!(bare.display_name, "No Picture 1");
 		assert_eq!((bare.width, bare.height), (0, 0));
+	}
+
+	/// An index listing these maps, each picture at a URL naming its map.
+	fn listing(names: &[&str]) -> MapIndex {
+		MapIndex {
+			images: names
+				.iter()
+				.map(|name| ((*name).to_owned(), published(name)))
+				.collect(),
+			..MapIndex::default()
+		}
+	}
+
+	fn published(name: &str) -> String {
+		format!("https://maps.example/{name}")
+	}
+
+	fn from_the_web(name: &str) -> Picture {
+		Picture::Published(published(name))
+	}
+
+	#[test]
+	fn versions_of_a_map_share_a_family() {
+		for (name, wanted) in [
+			("Aurelia v4.1", "aurelia"),
+			("Aurelia_V4", "aurelia"),
+			("Supreme Isthmus v1.8", "supreme isthmus"),
+			("Pools of Ilys 0.9.11", "pools of ilys"),
+			("Tabula_Flooded_v04", "tabula flooded"),
+			("Hide and Seek 2.21", "hide and seek"),
+			("Moonshine Run v1.0.1", "moonshine run"),
+			// A map that has no version in its name goes by all of it.
+			("Ausnahmezustand", "ausnahmezustand"),
+			// Only the end of a name is its version.
+			("32x32 Hotstepper 0.5", "32x32 hotstepper"),
+		] {
+			assert_eq!(family(name), wanted, "{name}");
+		}
+	}
+
+	#[test]
+	fn the_version_listed_goes_by_its_own_picture_and_then_its_archive() {
+		let dir = tempfile::tempdir().unwrap();
+		let archive = dir.path().join("pyroclast_1.1.0.sd7");
+		std::fs::write(&archive, b"a map").unwrap();
+		let index = listing(&["Pyroclast 1.1.0"]);
+
+		let pictures: Vec<Picture> = index
+			.pictures_of("Pyroclast 1.1.0", || Some(archive.clone()))
+			.collect();
+		assert_eq!(
+			pictures,
+			[
+				from_the_web("Pyroclast 1.1.0"),
+				Picture::minimap(archive.clone()).unwrap(),
+			]
+		);
+	}
+
+	#[test]
+	fn an_old_version_on_the_disk_goes_by_its_own_minimap_before_the_listed_picture() {
+		let dir = tempfile::tempdir().unwrap();
+		let archive = dir.path().join("pyroclast_1.0.3.sd7");
+		std::fs::write(&archive, b"a map").unwrap();
+		let index = listing(&["Pyroclast 1.1.0"]);
+
+		let pictures: Vec<Picture> = index
+			.pictures_of("Pyroclast 1.0.3", || Some(archive.clone()))
+			.collect();
+		assert_eq!(
+			pictures,
+			[
+				Picture::minimap(archive.clone()).unwrap(),
+				from_the_web("Pyroclast 1.1.0"),
+			]
+		);
+	}
+
+	#[test]
+	fn an_old_version_not_on_the_disk_borrows_the_listed_picture() {
+		let index = listing(&["Pyroclast 1.1.0"]);
+		let pictures: Vec<Picture> = index.pictures_of("Pyroclast 1.0.3", || None).collect();
+		assert_eq!(pictures, [from_the_web("Pyroclast 1.1.0")]);
+	}
+
+	#[test]
+	fn two_listed_versions_lend_the_newer_picture() {
+		let index = listing(&["Supreme Isthmus v1.7", "Supreme Isthmus v2.1"]);
+		let pictures: Vec<Picture> = index.pictures_of("Supreme Isthmus v1.8", || None).collect();
+		assert_eq!(pictures, [from_the_web("Supreme Isthmus v2.1")]);
+
+		// By number, where a comparison of text would call 1.9 the newer.
+		let index = listing(&["Canis River v1.9", "Canis River v1.10"]);
+		let pictures: Vec<Picture> = index.pictures_of("Canis River v1.3", || None).collect();
+		assert_eq!(pictures, [from_the_web("Canis River v1.10")]);
+	}
+
+	#[test]
+	fn a_map_with_a_name_in_common_is_not_a_version_of_it() {
+		let index = listing(&["Pyroclast Ridge 1.0", "Old Pyroclast 2.0"]);
+		assert_eq!(index.pictures_of("Pyroclast 1.0.3", || None).count(), 0);
+	}
+
+	#[test]
+	fn a_name_that_is_nothing_but_a_version_has_no_kin() {
+		let index = listing(&["_2"]);
+		assert_eq!(index.pictures_of("_1", || None).count(), 0);
+	}
+
+	#[test]
+	fn the_disk_is_not_looked_at_while_the_published_picture_will_do() {
+		let index = listing(&["Pyroclast 1.1.0"]);
+		let first = index
+			.pictures_of("Pyroclast 1.1.0", || panic!("listed the maps directory"))
+			.next();
+		assert_eq!(first, Some(from_the_web("Pyroclast 1.1.0")));
 	}
 
 	#[test]

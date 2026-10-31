@@ -913,7 +913,7 @@ pub async fn mark_news_read(app: State<'_, App>) -> Result<()> {
 /// time, in the order given,
 /// so a room joined from the list shows its map at once rather than after a
 /// download and a decode. One worker, so it never takes more than a core; a
-/// map the index has no picture for is left out. See `content::map_thumb`.
+/// map with no picture to be had is left out. See `content::map_thumb`.
 #[tauri::command]
 pub async fn warm_map_pictures(
 	app: State<'_, App>,
@@ -922,13 +922,18 @@ pub async fn warm_map_pictures(
 	whole: Vec<content::map_thumb::Tile>,
 ) -> Result<()> {
 	let index = app.map_index().await;
+	let library = data_dirs_of(&app).map(content::Library::new);
 	let mut seen = std::collections::HashSet::new();
 	let jobs = maps
 		.iter()
-		.filter_map(|name| index.images.get(name))
-		.filter(|url| seen.insert(url.as_str()))
-		.map(|url| content::map_thumb::Job {
-			url: url.clone(),
+		.filter_map(|name| {
+			index
+				.pictures_of(name, || library.as_ref()?.map_source(name))
+				.next()
+		})
+		.filter(|picture| seen.insert(picture.clone()))
+		.map(|picture| content::map_thumb::Job {
+			picture,
 			tiles: tiles.clone(),
 			whole: whole.clone(),
 		})

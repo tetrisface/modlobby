@@ -24,6 +24,7 @@ pub mod git;
 pub mod http;
 pub mod launcher;
 pub mod map_index;
+pub mod map_minimap;
 pub mod map_name;
 pub mod map_search;
 pub mod map_thumb;
@@ -281,6 +282,13 @@ impl Library {
 			.filter(|path| path.is_file())
 	}
 
+	/// What a map can be read from, an unpacked `.sdd` included, by the same
+	/// name-to-file rule. The comparison is against what the directory lists,
+	/// so a name cannot reach anything outside it.
+	pub fn map_source(&self, display_name: &str) -> Option<PathBuf> {
+		self.map_file(display_name, &ARCHIVES)
+	}
+
 	/// A rapid package whose display name matches, downloaded into `packages/`.
 	///
 	/// Unpacked `games/*.sdd` are deliberately not matched by name: their
@@ -530,6 +538,36 @@ mod tests {
 	use std::io::Write;
 
 	use super::*;
+
+	#[test]
+	fn a_map_can_be_read_from_its_archive_or_unpacked() {
+		let dir = tempfile::tempdir().unwrap();
+		let maps = dir.path().join("maps");
+		std::fs::create_dir_all(maps.join("unpacked_1.0.sdd")).unwrap();
+		std::fs::write(maps.join("packed_1.0.sd7"), b"").unwrap();
+		let library = Library::new(dir.path().to_path_buf());
+
+		assert_eq!(
+			library.map_source("Packed 1.0"),
+			Some(maps.join("packed_1.0.sd7"))
+		);
+		assert_eq!(
+			library.map_source("Unpacked 1.0"),
+			Some(maps.join("unpacked_1.0.sdd"))
+		);
+		assert_eq!(library.map_source("Absent 1.0"), None);
+	}
+
+	#[test]
+	fn a_map_name_cannot_walk_out_of_the_maps_directory() {
+		let dir = tempfile::tempdir().unwrap();
+		std::fs::create_dir_all(dir.path().join("maps")).unwrap();
+		std::fs::write(dir.path().join("secret_1.0.sd7"), b"").unwrap();
+		let library = Library::new(dir.path().to_path_buf());
+
+		assert_eq!(library.map_source("../secret 1.0"), None);
+		assert_eq!(library.map_source("..\\secret 1.0"), None);
+	}
 
 	fn library() -> (tempfile::TempDir, Library) {
 		let dir = tempfile::tempdir().unwrap();
