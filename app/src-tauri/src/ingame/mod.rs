@@ -3,25 +3,39 @@
 //! The engine gives a lobby no way in from the outside: a global hotkey works,
 //! but Escape belongs to the game, and grabbing it system-wide would take it
 //! away from every other program too. The only thing that can see Escape
-//! *inside* a game is a widget, so there is one — about forty lines, whose
-//! entire job is to notice Escape pressed with nothing selected and tell us.
+//! *inside* a game is a widget, so there is one, whose entire job is to notice
+//! Escape pressed with nothing selected and tell us.
 //!
 //! It deliberately draws nothing. The obvious design has the widget paint its
 //! own little menu in Lua; this one just raises the lobby, which already is the
 //! menu, in HTML, with the room and the chat still in it. Fewer moving parts
 //! and a much better-looking result.
 //!
-//! Two properties make it safe to install into a directory we do not own:
+//! Telling us is the hard part, and there are three ways, tried in order:
 //!
-//! - It is inert unless modlobby is listening. A failed connection means the
-//!   key is *not* consumed, so a Chobby game behaves exactly as it always did.
+//! 1. The control socket: loopback, an ephemeral port, a token generated per
+//!    run and baked into the Lua we write. It answers, so the widget consumes
+//!    the key only when the lobby actually came up. BAR took the socket away
+//!    from user widgets (#9547), so in a BAR of today only our menu has it.
+//! 2. Our LuaMenu ([`menu`]), which BAR's own Lobby button already asks: the
+//!    widget sends it the same message, and it asks us over its socket.
+//! 3. A line appended to a file under `LuaUI/Config`, one of the two places
+//!    BAR lets a user widget write, which [`watch_file`] polls. Inside the
+//!    mods sandbox there is no socket at all and this is the only way.
+//!
+//! Two properties make all of it safe to install into a directory we do not
+//! own:
+//!
+//! - It is inert unless modlobby is listening. No answer over the port, and a
+//!   file nobody empties, both mean the key is *not* consumed, so a Chobby game
+//!   behaves exactly as it always did.
 //! - It is removed when modlobby exits cleanly, and rewritten on each launch,
 //!   so a stale one from an old version never lingers.
 //!
-//! The socket is bound to loopback on an ephemeral port and guarded by a token
-//! generated per run and baked into the widget we write. Any local process can
-//! reach a loopback port, and this one can quit a game, so being reachable is
-//! not the same as being allowed.
+//! Any local process can reach a loopback port, and a mod can write the file;
+//! both can quit a game, so being reachable is not the same as being allowed.
+//! Each carries a token of its own: a mod reads the file's from the widget we
+//! write beside it, and must never learn the socket's.
 
 pub mod menu;
 pub mod protocol;
@@ -96,12 +110,21 @@ impl InGame {
 	}
 
 	/// Writes the widget into the BAR data directory, replacing any older one.
-	pub fn install(&mut self, data_dir: &Path) -> std::io::Result<PathBuf> {
+	///
+	/// `file_token` guards the file channel; the directory the file goes in
+	/// is made here, since Lua's `io.open` will not make it.
+	pub fn install(&mut self, data_dir: &Path, file_token: &str) -> std::io::Result<PathBuf> {
 		let path = widget::path(data_dir);
-		if let Some(parent) = path.parent() {
-			std::fs::create_dir_all(parent)?;
+		for made in [path.parent(), widget::file(data_dir).parent()]
+			.into_iter()
+			.flatten()
+		{
+			std::fs::create_dir_all(made)?;
 		}
-		std::fs::write(&path, widget::source(self.port, &self.token))?;
+		std::fs::write(
+			&path,
+			widget::source(Some((self.port, &self.token)), file_token),
+		)?;
 		self.installed = Some(path.clone());
 		Ok(path)
 	}
@@ -136,10 +159,10 @@ impl InGame {
 
 pub use widget::FILE;
 
-/// Watches the file the sandboxed widget appends to, acting on each line that
-/// carries this run's token and taking the lines out once read. Polled: the
-/// file is written a few times a game, and a watcher's machinery would be
-/// more than the job.
+/// Watches the file the widget and the menu append to, acting on each line
+/// that carries this run's token and taking the lines out once read. Polled:
+/// the file is written a few times a game, and a watcher's machinery would be
+/// more than the job. Emptying it is also the Lua's sign that someone reads.
 pub fn watch_file(
 	path: PathBuf,
 	token: String,
@@ -314,6 +337,14 @@ mod tests {
 		})
 	}
 
+	/// The file as the game would find it in a write directory, its
+	/// directory made as [`InGame::install`] makes it.
+	fn file_in(write_dir: &Path) -> PathBuf {
+		let path = widget::file(write_dir);
+		std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+		path
+	}
+
 	impl Actions for Spy {
 		fn raise(&self) -> bool {
 			self.raised.fetch_add(1, Ordering::SeqCst);
@@ -384,12 +415,17 @@ mod tests {
 			menu: None,
 		};
 
-		let path = ingame.install(home.path()).unwrap();
+		let path = ingame.install(home.path(), "filesecret").unwrap();
 		let menu = ingame.install_menu(home.path(), "filesecret").unwrap();
 		assert!(path.is_file());
 		let source = std::fs::read_to_string(&path).unwrap();
 		assert!(source.contains("4242"), "the port is baked in");
 		assert!(source.contains("abc"), "and so is the token");
+		assert!(source.contains("filesecret"), "and the file channel's");
+		assert!(
+			widget::file(home.path()).parent().unwrap().is_dir(),
+			"the file's directory is made, since Lua's io.open will not"
+		);
 
 		ingame.uninstall_with(|| false);
 		assert!(!path.exists());
@@ -409,7 +445,7 @@ mod tests {
 			installed: None,
 			menu: None,
 		};
-		let widget = ingame.install(home.path()).unwrap();
+		let widget = ingame.install(home.path(), "filesecret").unwrap();
 		let menu = ingame.install_menu(home.path(), "filesecret").unwrap();
 
 		ingame.uninstall_with(|| true);
@@ -427,7 +463,7 @@ mod tests {
 			installed: None,
 			menu: None,
 		};
-		let widget = ingame.install(home.path()).unwrap();
+		let widget = ingame.install(home.path(), "filesecret").unwrap();
 		let menu = ingame.install_menu(home.path(), "filesecret").unwrap();
 		// A killed run: nothing is taken out.
 		ingame.leave_behind();
@@ -450,7 +486,7 @@ mod tests {
 			installed: None,
 			menu: None,
 		};
-		let widget = ingame.install(home.path()).unwrap();
+		let widget = ingame.install(home.path(), "filesecret").unwrap();
 		let menu = ingame.install_menu(home.path(), "filesecret").unwrap();
 
 		ingame.leave_behind();
@@ -465,7 +501,7 @@ mod tests {
 	#[tokio::test]
 	async fn a_line_appended_to_the_file_raises_the_lobby_once() {
 		let dir = tempfile::tempdir().unwrap();
-		let path = dir.path().join(FILE);
+		let path = file_in(dir.path());
 		let spy = spy(true);
 		let watcher = watch_file(path.clone(), "8f3c1d9e".into(), spy.clone());
 		std::fs::write(&path, "8f3c1d9e raise\n").unwrap();
@@ -491,7 +527,7 @@ mod tests {
 	#[tokio::test]
 	async fn a_line_with_the_wrong_token_in_the_file_does_nothing() {
 		let dir = tempfile::tempdir().unwrap();
-		let path = dir.path().join(FILE);
+		let path = file_in(dir.path());
 		let spy = spy(true);
 		let watcher = watch_file(path.clone(), "8f3c1d9e".into(), spy.clone());
 		std::fs::write(&path, "deadbeef raise\n").unwrap();
@@ -503,7 +539,7 @@ mod tests {
 	#[tokio::test]
 	async fn a_huge_escape_file_is_read_in_part_and_emptied() {
 		let dir = tempfile::tempdir().unwrap();
-		let path = dir.path().join(FILE);
+		let path = file_in(dir.path());
 		let spy = spy(true);
 		let watcher = watch_file(path.clone(), "8f3c1d9e".into(), spy.clone());
 		let mut huge = b"8f3c1d9e raise\n".to_vec();
@@ -525,7 +561,7 @@ mod tests {
 	#[tokio::test]
 	async fn bytes_that_are_not_utf8_do_not_stall_the_watcher() {
 		let dir = tempfile::tempdir().unwrap();
-		let path = dir.path().join(FILE);
+		let path = file_in(dir.path());
 		let spy = spy(true);
 		let watcher = watch_file(path.clone(), "8f3c1d9e".into(), spy.clone());
 		std::fs::write(&path, b"\xff\xfe junk\n8f3c1d9e raise\n").unwrap();
@@ -542,7 +578,7 @@ mod tests {
 	#[tokio::test]
 	async fn raise_lines_are_rate_limited() {
 		let dir = tempfile::tempdir().unwrap();
-		let path = dir.path().join(FILE);
+		let path = file_in(dir.path());
 		let spy = spy(true);
 		let watcher = watch_file(path.clone(), "8f3c1d9e".into(), spy.clone());
 		std::fs::write(&path, "8f3c1d9e raise\n".repeat(50)).unwrap();

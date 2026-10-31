@@ -9,6 +9,7 @@ function key(overrides: Partial<Parameters<typeof escapeLeavesOverlay>[0]>) {
 	return escapeLeavesOverlay({
 		key: 'Escape',
 		defaultPrevented: false,
+		repeat: false,
 		target: null,
 		...overrides,
 	})
@@ -17,6 +18,13 @@ function key(overrides: Partial<Parameters<typeof escapeLeavesOverlay>[0]>) {
 describe('escape while sitting over a game', () => {
 	test('hands the game back', () => {
 		expect(key({})).toBe(true)
+	})
+
+	test('is a fresh press, never the tail of the one that raised it', () => {
+		// The in-game Escape raises the lobby and focuses it mid-press. Held
+		// past the keyboard's repeat delay, the key's repeats land here, and
+		// taking them would put the game straight back.
+		expect(key({ repeat: true })).toBe(false)
 	})
 
 	test('is not any other key', () => {

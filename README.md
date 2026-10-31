@@ -95,18 +95,20 @@ The second is a pair of **generated files for the running game**, both written
 on start and removed when modlobby exits: `LuaUI/Widgets/modlobby_escape.lua`,
 and a small LuaMenu archive under `games/`. It goes in the directory
 modlobby writes, which is its own unless you have changed `paths.dataDir`. It
-draws nothing, and it is inert unless modlobby is listening on the loopback port
-baked into it — so a game launched from Chobby behaves exactly as it always did,
-including keeping its own Escape. Turn it off with the Escape setting under
-Overlay.
+draws nothing. It reaches modlobby the first way the game allows: the loopback
+port baked into it, modlobby's own menu, or a line appended to
+`LuaUI/Config/modlobby-ingame.txt` that modlobby polls — BAR no longer gives a
+user widget a socket. It consumes Escape only when the ask got through, so a
+game launched from Chobby behaves exactly as it always did, including keeping
+its own Escape. Turn it off with the Escape setting under Overlay.
 
 The menu archive exists for one reason: BAR's in-game top bar offers a **Lobby**
 button in place of **Quit** when the engine was started with a menu whose name
 contains `chobby` (`gui_top_bar.lua:3574`), and that button leaves the game
 running and asks the menu to show itself — which is exactly modlobby's overlay.
 The archive has no interface of its own and never draws; it turns that one
-message into the same request the Escape widget sends, and quits the process
-when a finished game drops back into it. It is a menu rather than a game
+message — which the Escape widget sends it too — into a request to modlobby,
+and quits the process when a finished game drops back into it. It is a menu rather than a game
 (`modtype = 5`, `onlyLocal`), so it does not appear in anyone's game list, and
 modlobby passes `--menu` only when the archive is actually on disk — a name the
 engine cannot resolve stops it starting at all. Turning the overlay off turns

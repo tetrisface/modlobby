@@ -366,11 +366,14 @@ pub fn run() {
 			// `LuaUI/Widgets` from every data directory it is given.
 			let widget_dir = lobby_runtime::launch::data_dirs(app.settings.get().paths.data_dir)
 				.map(|dirs| dirs.write);
-			let want_widget = app.settings.get().overlay.in_game_escape;
 			// The menu archive buys BAR's in-game "Lobby" button, and what
 			// that button does is raise the overlay -- so it is only worth
-			// writing where the overlay is on to be raised.
-			let want_menu = app.settings.get().overlay.enabled;
+			// writing where the overlay is on to be raised. The same goes for
+			// the widget: its file channel gets no "no" back, so with the
+			// overlay off it could only swallow Escape.
+			let overlay_on = app.settings.get().overlay.enabled;
+			let want_widget = overlay_on && app.settings.get().overlay.in_game_escape;
+			let want_menu = overlay_on;
 			let menu_client = app.client.clone();
 			// Held by the app so it lives as long as the process, and so the
 			// exit handler can drop it — dropping is what removes the widget.
@@ -382,23 +385,28 @@ pub fn run() {
 				}
 				match ingame::InGame::start(actions).await {
 					Ok(mut ingame) => {
-						// A game inside the sandbox has no socket: its Escape widget
-						// and the menu's Lobby button append to a file in the mods
-						// directory, watched here under a token of the file's own
-						// (the socket's is readable inside the sandbox).
+						// Where the socket does not answer -- a user widget has none
+						// since BAR #9547, and a game inside the sandbox none at
+						// all -- the Escape widget and the menu's Lobby button
+						// append to a file in the write directory of the game:
+						// the open one or the mods one, both watched here under a
+						// token of the file's own (the socket's must never be
+						// readable inside the sandbox).
 						let file_token = ingame::token();
 						if let Some(dir) =
 							widget_dir.as_deref().filter(|_| want_widget || want_menu)
 						{
 							let mods = lobby_runtime::mods::layout(dir);
-							ingame::watch_file(
-								mods.write.join(ingame::FILE),
-								file_token.clone(),
-								file_actions.clone(),
-							);
+							for write_dir in [dir, mods.write.as_path()] {
+								ingame::watch_file(
+									ingame::widget::file(write_dir),
+									file_token.clone(),
+									file_actions.clone(),
+								);
+							}
 						}
 						if let (true, Some(dir)) = (want_widget, widget_dir.as_deref()) {
-							match ingame.install(dir) {
+							match ingame.install(dir, &file_token) {
 								Ok(path) => tracing::info!(
 									path = %path.display(),
 									port = ingame.port,
@@ -406,13 +414,19 @@ pub fn run() {
 								),
 								Err(err) => tracing::warn!(%err, "could not install the widget"),
 							}
+							// The sandbox copy carries no socket secret, and an
+							// empty file goes in with it so its directory exists
+							// for the first append.
 							let _ = menu_client
-								.set_mods_files(vec![(
-									ingame::widget::path(std::path::Path::new(""))
-										.components()
-										.collect(),
-									ingame::widget::source_file(&file_token),
-								)])
+								.set_mods_files(vec![
+									(
+										ingame::widget::path(std::path::Path::new(""))
+											.components()
+											.collect(),
+										ingame::widget::source(None, &file_token),
+									),
+									(std::path::PathBuf::from(ingame::FILE), String::new()),
+								])
 								.await;
 						}
 						if let (true, Some(dir)) = (want_menu, widget_dir.as_deref()) {

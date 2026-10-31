@@ -15,17 +15,24 @@ const CLAIMS_ESCAPE =
 /**
  * Whether this key press should hand the game back.
  *
- * Escape only, and only when nothing nearer has claimed it: a dialog that
- * called `preventDefault`, or a field someone is typing in — Escape in a
- * composer clears the draft, and losing the whole lobby instead would be a
- * nasty surprise.
+ * Escape only, pressed afresh, and only when nothing nearer has claimed it: a
+ * dialog that called `preventDefault`, or a field someone is typing in —
+ * Escape in a composer clears the draft, and losing the whole lobby instead
+ * would be a nasty surprise.
+ *
+ * Not a repeat: the in-game Escape raises the lobby and focuses it mid-press,
+ * so a key held past the keyboard's repeat delay sends its repeats here, and
+ * taking one would toggle the game straight back.
  */
 export function escapeLeavesOverlay(event: {
 	key: string
 	defaultPrevented: boolean
+	repeat: boolean
 	target: EventTarget | null
 }): boolean {
-	if (event.key !== 'Escape' || event.defaultPrevented) return false
+	if (event.key !== 'Escape' || event.defaultPrevented || event.repeat) {
+		return false
+	}
 	const target = event.target
 	if (target instanceof Element && target.closest(CLAIMS_ESCAPE)) return false
 	return true

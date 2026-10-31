@@ -349,8 +349,7 @@ const WIDGETS: &str = "LuaUI/Widgets";
 const WIDGET_CONFIGS: &str = "LuaUI/Config";
 
 /// A file in the mods write directory that says the game runs inside the
-/// sandbox, for the Lua that behaves differently there (the menu's Lobby
-/// button has no socket to reach modlobby through). Written after every
+/// sandbox, for Lua that behaves differently there. Written after every
 /// reset, so an open game never sees it.
 pub const CONFINED_MARK: &str = "modlobby-confined";
 
