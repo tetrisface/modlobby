@@ -472,6 +472,37 @@ describe('a room behind the seam', () => {
 		expect(named(container, '.team')).toEqual(['me', 'BARb'])
 	})
 
+	test('the chip counts the people watching, the autohost left out', async () => {
+		// The server's two spectators are the host bot and us.
+		const host = user('Host[EU1][001]', {
+			status: {
+				inGame: false,
+				away: false,
+				rank: 0,
+				moderator: false,
+				bot: true,
+			},
+			battleStatus: status({ player: false }),
+		})
+		const me = user('me', { battleStatus: status({ player: false }) })
+		const bob = user('bob')
+		const { container } = await open(
+			fakeRoom({
+				battle: () =>
+					battle({
+						founder: host.name,
+						members: [host.name, 'bob', 'me'],
+						playerCount: 1,
+						spectatorCount: 2,
+					}),
+				users: () => ({ [host.name]: host, me, bob }),
+			}),
+		)
+		expect(container.querySelector('.chips')?.textContent).toContain(
+			'1 player · 1 spectator',
+		)
+	})
+
 	test('a change goes to the room it was given, not to a server', async () => {
 		const calls: Calls = []
 		const { container } = await open(alone(calls))

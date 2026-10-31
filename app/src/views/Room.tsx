@@ -46,7 +46,7 @@ import type { DownloadStatus } from '../ipc/bindings/DownloadStatus'
 import type { StartRectView } from '../ipc/bindings/StartRectView'
 import { api, describeError } from '../ipc/client'
 import { clock } from '../lib/age'
-import { layoutLabel } from '../lib/battles'
+import { layoutLabel, spectators } from '../lib/battles'
 import { boxSignature, centre, outline } from '../lib/boxes'
 import {
 	SKIRMISH_COMMANDS,
@@ -1448,7 +1448,7 @@ function Chips(props: { battle: BattleView }) {
 			</Show>
 			<span class='chip'>
 				{count(props.battle.playerCount, 'player')} ·{' '}
-				{count(props.battle.spectatorCount, 'spectator')}
+				{count(spectators(props.battle, room.users()), 'spectator')}
 			</span>
 		</div>
 	)

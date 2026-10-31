@@ -27,6 +27,7 @@ import { boot } from './ipc/boot'
 import { connectChannel } from './ipc/channel'
 import { milestone, reportStart } from './ipc/logging'
 import { ACTIVITY_EVENTS, activityReporter } from './lib/activity'
+import { spectators } from './lib/battles'
 import { localStore } from './lib/resize'
 import { headCount, rememberSeen } from './lib/seen'
 import { serverId } from './lib/servers'
@@ -206,6 +207,12 @@ function Layout(props: ParentProps) {
 	 */
 	const unread = () => unreadTotal(settings()?.chat.muted ?? [])
 	const named = () => Object.values(chat.named).some(Boolean)
+
+	/** The room card's count: the people watching our room, if we are in one. */
+	const roomSpectators = () => {
+		const battle = myRoom()
+		return battle ? spectators(battle, roomSession()?.users ?? {}) : 0
+	}
 
 	/**
 	 * A room waiting on us alone rings, once, as it starts to. Here rather
@@ -492,6 +499,7 @@ function Layout(props: ParentProps) {
             keeps myBattle. */}
 				<NavTabs
 					room={roomSession()?.phase === 'ready' ? myRoom() : undefined}
+					spectators={roomSpectators()}
 					loggedOut={!anyConnected()}
 					unread={unread()}
 					named={named()}

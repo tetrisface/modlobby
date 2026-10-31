@@ -11,6 +11,7 @@ import type { BattleView } from '../ipc/bindings/BattleView'
 import type { BattleList } from '../ipc/bindings/BattleList'
 import type { BattleSort } from '../ipc/bindings/BattleSort'
 import type { ModeFilter } from '../ipc/bindings/ModeFilter'
+import type { UserView } from '../ipc/bindings/UserView'
 import { ordered } from './reorder'
 import { hasEveryWord, wordsOf } from './search'
 
@@ -27,10 +28,29 @@ export type Row = {
 	chev: number | null
 	/** Mods on top of the game; see `isModded`. */
 	modded: boolean
+	/** The people watching, the autohost left out; see `spectators`. */
+	spectators: number
 }
 
 /** A room's name across every server: two servers can each have a battle 12. */
 export const battleKey = (server: string, id: number) => `${server}/${id}`
+
+/**
+ * How many people are watching a room.
+ *
+ * The server counts an autohost among its own room's spectators, since that
+ * is how it sits there (`lobby-core`'s `Battle::from_opened`), and the player
+ * count is built on that. But a bot watching is nobody watching, so what is
+ * shown leaves it out. A person hosting is counted like anyone else: they
+ * are a spectator only when they really are one.
+ */
+export function spectators(
+	battle: Pick<BattleView, 'founder' | 'spectatorCount'>,
+	users: Record<string, Pick<UserView, 'status'>>,
+): number {
+	const hostIsBot = users[battle.founder]?.status.bot ?? false
+	return Math.max(0, battle.spectatorCount - Number(hostIsBot))
+}
 
 /**
  * How a room's shape is said out loud: `2x8` is `8v8`. One team of several is
@@ -161,7 +181,7 @@ function relevance(a: Row, b: Row): number {
  * this is the default order's opinion, not a rule about every column.
  */
 function watchers(a: Row, b: Row): number {
-	return b.battle.spectatorCount - a.battle.spectatorCount
+	return b.spectators - a.spectators
 }
 
 /** The two made orders run one way, the notable rooms first; a column flips. */

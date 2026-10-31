@@ -44,13 +44,16 @@ async function settle() {
  * `lobby.battles`. `A` refuses to render outside a router, so the card sits
  * under a memory router with its history set before the first render.
  */
-function mount(at: string, b: BattleView) {
+function mount(at: string, b: BattleView, spectators = b.spectatorCount) {
 	const history = createMemoryHistory()
 	history.set({ value: at })
 	const [room, setRoom] = createStore(b)
 	const rendered = render(() => (
 		<MemoryRouter history={history}>
-			<Route path='*' component={() => <NavRoom battle={room} />} />
+			<Route
+				path='*'
+				component={() => <NavRoom battle={room} spectators={spectators} />}
+			/>
 		</MemoryRouter>
 	))
 	return { ...rendered, history, setRoom }
@@ -79,12 +82,28 @@ describe('NavRoom', () => {
 		expect(container.querySelector('.nav-room-title')?.textContent).toBe(
 			long.title,
 		)
-		expect(container.querySelector('.nav-room-count')?.textContent).toBe(
-			'12/16 +0',
-		)
-		expect(a.title).toBe(glance(long))
+		expect(a.title).toBe(glance(long, 0))
 		expect(a.title).toContain('Supreme Isthmus v2.1')
 		expect(a.title).toContain('12 players · 0 spectators')
+	})
+
+	test('nobody watching is said by saying nothing, not by +0', () => {
+		const { container } = mount('/battles', battle({ spectatorCount: 0 }))
+		expect(container.querySelector('.nav-room-count')?.textContent).toBe(
+			'12/16',
+		)
+		expect(container.querySelector('.nav-room-spectators')).toBeNull()
+	})
+
+	test("the count shown is the one given, not the server's own", () => {
+		// Three on the server's count, one of them the autohost.
+		const { container } = mount('/battles', battle({ spectatorCount: 3 }), 2)
+		expect(container.querySelector('.nav-room-count')?.textContent).toBe(
+			'12/16 +2',
+		)
+		expect(
+			(container.querySelector('a.nav-room') as HTMLAnchorElement).title,
+		).toContain('12 players · 2 spectators')
 	})
 
 	test('is the active link on the room page and its tweak page only', async () => {

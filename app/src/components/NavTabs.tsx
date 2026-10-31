@@ -104,6 +104,8 @@ type Watch = (key: NavKey, el: HTMLElement) => void
 export function NavTabs(props: {
 	/** The room you are in, when you are in one. */
 	room: BattleView | undefined
+	/** Its people watching, the autohost left out; see `lib/battles`. */
+	spectators: number
 	/** Whether the way in is offered: there is no session to be in. */
 	loggedOut: boolean
 	/** Chat's unread count, and whether any of it names you. */
@@ -237,7 +239,9 @@ export function NavTabs(props: {
 			</For>
 			{/* The room you are in, at the end of the tabs. */}
 			<Show when={isFolded('room') ? undefined : props.room}>
-				{(b) => <RoomTab battle={b()} watch={watch} />}
+				{(b) => (
+					<RoomTab battle={b()} spectators={props.spectators} watch={watch} />
+				)}
 			</Show>
 			<Show when={folded().length > 0}>
 				<span class='nav-fold' ref={fold}>
@@ -268,7 +272,7 @@ export function NavTabs(props: {
 							<Show when={isFolded('room') ? props.room : undefined}>
 								{(b) => (
 									<span onClick={() => setOpen(false)}>
-										<NavRoom battle={b()} />
+										<NavRoom battle={b()} spectators={props.spectators} />
 									</span>
 								)}
 							</Show>
@@ -312,8 +316,14 @@ function Tab(props: {
 	)
 }
 
-function RoomTab(props: { battle: BattleView; watch: Watch }) {
+function RoomTab(props: {
+	battle: BattleView
+	spectators: number
+	watch: Watch
+}) {
 	let el!: HTMLAnchorElement
 	onMount(() => props.watch('room', el))
-	return <NavRoom battle={props.battle} ref={el} />
+	return (
+		<NavRoom battle={props.battle} spectators={props.spectators} ref={el} />
+	)
 }

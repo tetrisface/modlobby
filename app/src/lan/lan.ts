@@ -96,6 +96,8 @@ export function lanRows(
 			// Nobody on the LAN has a server-given rank.
 			chev: null,
 			modded: false,
+			// A found room's host is a person, and `battleOf` counts no watchers.
+			spectators: 0,
 		}))
 }
 

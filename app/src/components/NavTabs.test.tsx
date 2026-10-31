@@ -71,6 +71,7 @@ function mount(width: number, over: Partial<Props> = {}) {
 				component={() => (
 					<NavTabs
 						room={undefined}
+						spectators={0}
 						loggedOut={false}
 						unread={0}
 						named={false}
@@ -133,7 +134,10 @@ describe('NavTabs', () => {
 
 	test('the room you are in stays when only Battles does', async () => {
 		// The card's floor, Battles, the button and two gaps.
-		const { container } = mount(230 + 60 + MENU + 2 * GAP, { room: battle() })
+		const { container } = mount(230 + 60 + MENU + 2 * GAP, {
+			room: battle(),
+			spectators: 3,
+		})
 		await settle()
 		expect(inRow(container)).toEqual(['Battles', 'EU 8v812/16 +3'])
 		fireEvent.click(more(container)!)

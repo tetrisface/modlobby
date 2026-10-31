@@ -39,6 +39,7 @@ import {
 	isModded,
 	layoutLabel,
 	medianChevron,
+	spectators,
 	stabilize,
 	type Row,
 } from '../lib/battles'
@@ -134,6 +135,7 @@ export function BattleList() {
 				hasFriend: battle.members.some((name) => known.has(name)),
 				chev: chev(battle.members, session.users),
 				modded: isModded(battle, server, modsServer()),
+				spectators: spectators(battle, session.users),
 			}))
 		}),
 		...heardRows(),
@@ -624,7 +626,11 @@ export function BattleList() {
 													<span>/</span>
 													<span>
 														{r().battle.maxPlayers}
-														<small> +{r().battle.spectatorCount}</small>
+														{/* Nothing where nobody watches: `+0` says so
+														    at the cost of a glance. */}
+														<Show when={r().spectators > 0}>
+															<small> +{r().spectators}</small>
+														</Show>
 													</span>
 												</span>
 												<span class='col-chev'>

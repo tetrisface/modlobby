@@ -10,6 +10,7 @@ import {
 	layoutLabel,
 	matches,
 	medianChevron,
+	spectators,
 	stabilize,
 	type Row,
 } from './battles'
@@ -57,6 +58,8 @@ const row = (
 		hasFriend,
 		chev: null,
 		modded: false,
+		// As if every host were a person: the server's count, whole.
+		spectators: room.spectatorCount,
 	}
 }
 
@@ -446,5 +449,33 @@ describe('a room’s median chevron', () => {
 
 	test('is nothing at all when nobody here is known', () => {
 		expect(medianChevron([])).toBeNull()
+	})
+})
+
+describe('the people watching a room', () => {
+	const person = (bot: boolean) => ({
+		status: { inGame: false, away: false, rank: 0, moderator: false, bot },
+	})
+	const hosted = (spectatorCount: number) =>
+		battle({ founder: 'Host[EU1][001]', spectatorCount })
+
+	test('leave out the autohost, which the server counts as one of them', () => {
+		const users = { 'Host[EU1][001]': person(true) }
+		expect(spectators(hosted(3), users)).toBe(2)
+		// A room just opened: the server's one spectator is the host itself.
+		expect(spectators(hosted(1), users)).toBe(0)
+	})
+
+	test('count a person hosting like anyone else', () => {
+		const users = { 'Host[EU1][001]': person(false) }
+		expect(spectators(hosted(3), users)).toBe(3)
+	})
+
+	test('take the server at its word about a host it has not described', () => {
+		expect(spectators(hosted(3), {})).toBe(3)
+	})
+
+	test('never go below nothing', () => {
+		expect(spectators(hosted(0), { 'Host[EU1][001]': person(true) })).toBe(0)
 	})
 })
