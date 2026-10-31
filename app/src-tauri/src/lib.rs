@@ -726,6 +726,7 @@ pub fn run() {
 			commands::newest_commit,
 			commands::trust_mods,
 			commands::allow_mods_once,
+			commands::sandbox_unavailable,
 			commands::mod_settings,
 			commands::fold_in_mod_settings,
 			commands::discard_mod_settings,

@@ -324,11 +324,17 @@ export const api = {
 	/** The newest commit of a branch on GitHub; the default branch for `null`. */
 	newestCommit: (repo: string, branch: string | null) =>
 		invoke<CommitView>('newest_commit', { repo, branch }),
-	/** Allows these repositories' mods, sandboxed; the settings as written. */
-	trustMods: (asks: TrustAsk[]) => invoke<Settings>('trust_mods', { asks }),
+	/**
+	 * Allows these repositories' mods, sandboxed or not; the settings as
+	 * written.
+	 */
+	trustMods: (asks: TrustAsk[], sandboxed: boolean) =>
+		invoke<Settings>('trust_mods', { asks, sandboxed }),
 	/** Allows these mods, by their keys, in one lobby only. */
-	allowModsOnce: (room: number, keys: string[]) =>
-		invoke<void>('allow_mods_once', { room, keys }),
+	allowModsOnce: (room: number, keys: string[], sandboxed: boolean) =>
+		invoke<void>('allow_mods_once', { room, keys, sandboxed }),
+	/** Why this machine cannot sandbox a modded game; null where it can. */
+	sandboxUnavailable: () => invoke<string | null>('sandbox_unavailable'),
 	/** Every set of mods a modded game left settings for, with what changed. */
 	modSettings: () => invoke<ModSetView[]>('mod_settings'),
 	/** Folds a set's changes of these kinds into your own settings; the sets after. */

@@ -95,10 +95,13 @@ fn here() -> Arc<dyn Confinement> {
 
 #[cfg(not(any(windows, target_os = "linux")))]
 fn here() -> Arc<dyn Confinement> {
+	// Named, so a player asking for help can say which platform is waiting.
+	let platform = match std::env::consts::OS {
+		"macos" => "macOS",
+		other => other,
+	};
 	Arc::new(Refuse {
-		reason:
-			"modded games run only inside a sandbox, and this build has none for this platform yet"
-				.into(),
+		reason: format!("modlobby has no sandbox for {platform} yet"),
 	})
 }
 

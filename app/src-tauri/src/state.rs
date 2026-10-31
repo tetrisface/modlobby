@@ -43,6 +43,9 @@ struct WidgetUsageHeld {
 
 pub struct App {
 	pub client: Client,
+	/// The sandbox modded games run in here, the one the runtime launches
+	/// through; asked whether it can run at all.
+	pub sandbox: Arc<dyn sandbox::Confinement>,
 	pub settings: Store,
 	pub credentials: Arc<dyn CredentialStore>,
 	pub hardware: Hardware,
@@ -105,6 +108,7 @@ impl App {
 		content::launcher::mark_applied(&cache_dir, &held.config);
 		let hardware = platform::detect();
 		let lan = crate::lan::Lan::default();
+		let sandbox = sandbox::platform();
 		let client = tauri::async_runtime::block_on(async {
 			Client::spawn_with(
 				ThrottlePolicy::default(),
@@ -113,7 +117,7 @@ impl App {
 				Arc::new(IcmpEcho),
 				Some(settings.dir().to_path_buf()),
 				None,
-				sandbox::platform(),
+				Arc::clone(&sandbox),
 			)
 		});
 		Self {
@@ -123,6 +127,7 @@ impl App {
 			presets: presets::Store::new(settings.dir()),
 			news_read: news::Memory::new(settings.dir()),
 			client,
+			sandbox,
 			settings,
 			credentials,
 			hardware,

@@ -1395,19 +1395,22 @@ pub struct TrustAsk {
 	pub commit: Option<String>,
 }
 
-/// `trusted` with `asks` allowed, sandboxed: by repository, or by commit
-/// when trust is per commit. An ask an entry already covers -- the same
-/// repository with no commit, or this very commit -- adds nothing.
+/// `trusted` with `asks` allowed: by repository, or by commit when trust is
+/// per commit; `sandboxed` as the card said. An ask an entry already covers
+/// -- the same repository with no commit, or this very commit -- adds
+/// nothing, except that an ask with the player's own rights opens the entry
+/// covering it: the newer word.
 pub fn merged(
 	trusted: &[settings::model::Trusted],
 	asks: &[TrustAsk],
 	per_commit: bool,
+	sandboxed: bool,
 	now: &str,
 ) -> Vec<settings::model::Trusted> {
 	let same = |a: &str, b: &str| a.eq_ignore_ascii_case(b);
 	let mut kept = trusted.to_vec();
 	for ask in asks {
-		let covered = kept.iter().any(|entry| {
+		let covering = kept.iter_mut().find(|entry| {
 			same(&entry.repo, &ask.repo)
 				&& match (&entry.commit, &ask.commit) {
 					// Per commit, a repository-wide entry covers no commit.
@@ -1416,20 +1419,22 @@ pub fn merged(
 					(Some(_), None) => false,
 				}
 		});
-		if covered {
+		if let Some(entry) = covering {
+			entry.sandboxed &= sandboxed;
 			continue;
 		}
 		kept.push(settings::model::Trusted {
 			repo: ask.repo.clone(),
 			commit: ask.commit.clone().filter(|_| per_commit),
-			sandboxed: true,
+			sandboxed,
 			since: now.to_owned(),
 		});
 	}
 	kept
 }
 
-/// Allows what the Mods tab's consent card asked for, sandboxed, and tells
+/// Allows what the Mods tab's consent card asked for -- sandboxed, or with
+/// the player's own rights where no sandbox holds a modded game -- and tells
 /// the runtime, which then fetches, greets and launches as the standings
 /// allow.
 #[tauri::command]
@@ -1437,20 +1442,40 @@ pub async fn trust_mods(
 	app: State<'_, App>,
 	overlay: State<'_, std::sync::Arc<crate::overlay::Controller>>,
 	asks: Vec<TrustAsk>,
+	sandboxed: bool,
 ) -> Result<Settings> {
 	let now = lobby_runtime::player_files::rfc3339(std::time::SystemTime::now());
 	let written = app.settings.update(|current| {
-		current.mods.trusted = merged(&current.mods.trusted, &asks, current.mods.per_commit, &now);
+		current.mods.trusted = merged(
+			&current.mods.trusted,
+			&asks,
+			current.mods.per_commit,
+			sandboxed,
+			&now,
+		);
 	})?;
 	crate::push_settings(&app.client, &overlay, &written).await;
 	Ok(written)
 }
 
-/// Allows mods in one lobby only, sandboxed, for as long as it lasts:
-/// those loaded by name alone, and commits GitHub could not put on a branch.
+/// Allows mods in one lobby only, for as long as it lasts: those loaded by
+/// name alone, and commits GitHub could not put on a branch. Sandboxed, or
+/// with the player's own rights where no sandbox holds a modded game.
 #[tauri::command]
-pub async fn allow_mods_once(app: State<'_, App>, room: u32, keys: Vec<String>) -> Result<()> {
-	Ok(app.client.allow_mods_once(room, keys).await?)
+pub async fn allow_mods_once(
+	app: State<'_, App>,
+	room: u32,
+	keys: Vec<String>,
+	sandboxed: bool,
+) -> Result<()> {
+	Ok(app.client.allow_mods_once(room, keys, sandboxed).await?)
+}
+
+/// Why this machine cannot sandbox a modded game, for the consent card to
+/// say; `None` where it can.
+#[tauri::command]
+pub async fn sandbox_unavailable(app: State<'_, App>) -> Result<Option<String>> {
+	Ok(app.sandbox.unavailable())
 }
 
 /// Every set of mods a modded game left settings for, with what changed
@@ -2169,6 +2194,7 @@ mod tests {
 				std::slice::from_ref(&wide),
 				&[ask("dev/sphere")],
 				false,
+				true,
 				now
 			),
 			std::slice::from_ref(&wide)
@@ -2176,7 +2202,13 @@ mod tests {
 		// Per commit, a repository-wide entry covers nothing: the ask adds
 		// the commit, or the card's Allow would do nothing at all.
 		assert_eq!(
-			merged(std::slice::from_ref(&wide), &[ask("dev/sphere")], true, now),
+			merged(
+				std::slice::from_ref(&wide),
+				&[ask("dev/sphere")],
+				true,
+				true,
+				now
+			),
 			[
 				wide,
 				Trusted {
@@ -2188,7 +2220,7 @@ mod tests {
 			]
 		);
 		assert_eq!(
-			merged(&[], &[ask("dev/tiny")], false, now),
+			merged(&[], &[ask("dev/tiny")], false, true, now),
 			[Trusted {
 				repo: "dev/tiny".into(),
 				commit: None,
@@ -2197,7 +2229,7 @@ mod tests {
 			}]
 		);
 		assert_eq!(
-			merged(&[], &[ask("dev/tiny")], true, now),
+			merged(&[], &[ask("dev/tiny")], true, true, now),
 			[Trusted {
 				repo: "dev/tiny".into(),
 				commit: Some(sha.into()),
@@ -2207,8 +2239,67 @@ mod tests {
 		);
 		// The same ask twice adds once.
 		assert_eq!(
-			merged(&[], &[ask("dev/tiny"), ask("dev/tiny")], false, now).len(),
+			merged(&[], &[ask("dev/tiny"), ask("dev/tiny")], false, true, now).len(),
 			1
+		);
+	}
+
+	/// Where no sandbox holds a modded game, the card allows with the
+	/// player's own rights: a new entry says so, and an entry that already
+	/// covers the ask, sandboxed, is turned open -- the ask is the player's
+	/// newer word. A sandboxed ask never turns an open entry back.
+	#[test]
+	fn an_ask_with_the_players_rights_is_kept_open_and_opens_a_covering_entry() {
+		use super::{TrustAsk, merged};
+		use settings::model::Trusted;
+		let now = "2026-10-31T12:00:00Z";
+		let sha = "9108a17078f79d09925edc305ec83bc06c3a7cb3";
+		let ask = |repo: &str| TrustAsk {
+			repo: repo.into(),
+			commit: Some(sha.into()),
+		};
+		assert_eq!(
+			merged(&[], &[ask("dev/tiny")], false, false, now),
+			[Trusted {
+				repo: "dev/tiny".into(),
+				commit: None,
+				sandboxed: false,
+				since: now.into(),
+			}]
+		);
+		let boxed = Trusted {
+			repo: "dev/sphere".into(),
+			commit: None,
+			sandboxed: true,
+			since: "2026-10-01T00:00:00Z".into(),
+		};
+		let opened = merged(
+			std::slice::from_ref(&boxed),
+			&[ask("dev/sphere")],
+			false,
+			false,
+			now,
+		);
+		assert_eq!(opened.len(), 1);
+		assert!(!opened[0].sandboxed, "{opened:?}");
+		assert_eq!(
+			opened[0].since, boxed.since,
+			"the entry is the same one, opened"
+		);
+		let open = Trusted {
+			sandboxed: false,
+			..boxed.clone()
+		};
+		assert_eq!(
+			merged(
+				std::slice::from_ref(&open),
+				&[ask("dev/sphere")],
+				false,
+				true,
+				now
+			),
+			std::slice::from_ref(&open),
+			"a sandboxed ask leaves an open entry as the player set it"
 		);
 	}
 }
