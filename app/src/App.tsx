@@ -31,11 +31,7 @@ import { spectators } from './lib/battles'
 import { localStore } from './lib/resize'
 import { headCount, rememberSeen } from './lib/seen'
 import { serverId } from './lib/servers'
-import {
-	clickLeavesOverlay,
-	escapeLeavesOverlay,
-	roomOnScreen,
-} from './lib/overlay'
+import { clickAway, escapeLeavesOverlay, roomOnScreen } from './lib/overlay'
 import { api, describeError, errorCode } from './ipc/client'
 import { raise } from './ipc/alerts'
 import { LAN, lanRoom } from './lan/lan'
@@ -332,9 +328,9 @@ function Layout(props: ParentProps) {
 		const keys = (event: KeyboardEvent) => {
 			if (over() && escapeLeavesOverlay(event)) void api.overlayToggle()
 		}
-		const clicks = (event: MouseEvent) => {
-			if (over() && clickLeavesOverlay(event.target)) void api.overlayToggle()
-		}
+		const away = clickAway(() => {
+			if (over()) void api.overlayToggle()
+		})
 		/**
 		 * Ctrl+wheel sizes the interface, Ctrl+0 puts it back -- Cmd on a Mac.
 		 *
@@ -355,7 +351,8 @@ function Layout(props: ParentProps) {
 		}
 		window.addEventListener('keydown', keys)
 		window.addEventListener('keydown', reset)
-		window.addEventListener('mousedown', clicks)
+		window.addEventListener('mousedown', away.press)
+		window.addEventListener('mouseup', away.release)
 		window.addEventListener('wheel', zoom, { passive: false })
 		// The idle disconnect counts from the last of these. Passive: none of
 		// them is prevented, and a scroll must not wait on IPC.
@@ -365,7 +362,8 @@ function Layout(props: ParentProps) {
 		onCleanup(() => {
 			window.removeEventListener('keydown', keys)
 			window.removeEventListener('keydown', reset)
-			window.removeEventListener('mousedown', clicks)
+			window.removeEventListener('mousedown', away.press)
+			window.removeEventListener('mouseup', away.release)
 			window.removeEventListener('wheel', zoom)
 			for (const event of ACTIVITY_EVENTS)
 				window.removeEventListener(event, touch)

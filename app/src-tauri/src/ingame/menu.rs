@@ -26,6 +26,12 @@
 //! goes as one line into the file modlobby polls, under the file channel's
 //! own token.
 //!
+//! BAR's button fires on the press, and the lobby only comes up once the game
+//! has seen the release. Windows sends a release to whichever window is under
+//! the cursor, so focus taken mid-press leaves SDL (the engine's input library)
+//! believing the button is still down, and the player's next clicks on that
+//! button are spent correcting it.
+//!
 //! The archive is generated rather than shipped for the same reason the widget
 //! is: the port and tokens change every run.
 
@@ -94,7 +100,8 @@ fn modinfo() -> String {
 	)
 }
 
-/// The menu itself: no window, no drawing, two messages.
+/// The menu itself: no window, no drawing, one message and a wait for the
+/// mouse button.
 ///
 /// `LuaMenu/main.lua` is the entry point the engine loads (`LuaMenu.cpp:59`),
 /// and its call-ins are plain globals rather than methods on a table.
@@ -168,27 +175,42 @@ local function ask(verb)
 	return ask_file(verb)
 end
 
+-- The lobby was asked for and is not up yet.
+local asked = false
+
 -- BAR sends this from the top bar while the game is still running, which is
 -- the whole point: the lobby comes up over it rather than instead of it.
 -- modlobby's Escape widget sends the same, for the same reason.
 function RecvLuaMsg(msg)
 	if msg == "showLobby" then
-		if ask("raise") then
-			return true
-		end
-		-- modlobby is not answering, and BAR hides its own quit screen for as
-		-- long as a menu is loaded (`gui_top_bar_buttons.lua:984`) -- so this
-		-- button is the only way out of the game, and it just failed. Hand the
-		-- player to the engine's own quit box, which the engine draws itself
-		-- and which offers Quit To Menu and Quit To System.
-		if Spring.SendLuaUIMsg then
-			Spring.SendLuaUIMsg("modlobbyGone")
-		end
-		return false
+		asked = true
+		return true
 	end
 	-- "disableLobbyButton" is BAR telling a real lobby to hide its own button.
 	-- There is no button here to hide.
 	return false
+end
+
+local function button_down()
+	local _, _, left, middle, right = Spring.GetMouseState()
+	return left or middle or right
+end
+
+-- The top bar asks on the press. Waiting for the release keeps the game's
+-- window in front until the game has seen it, or the next clicks on that
+-- button are lost.
+function Update()
+	if not asked or button_down() then return end
+	asked = false
+	if ask("raise") then return end
+	-- modlobby is not answering, and BAR hides its own quit screen for as long
+	-- as a menu is loaded (`gui_top_bar_buttons.lua:984`) -- so this button is
+	-- the only way out of the game, and it just failed. Hand the player to the
+	-- engine's own quit box, which the engine draws itself and which offers
+	-- Quit To Menu and Quit To System.
+	if Spring.SendLuaUIMsg then
+		Spring.SendLuaUIMsg("modlobbyGone")
+	end
 end
 
 -- Reached only with no game loaded: either the engine started here, or a game
@@ -355,6 +377,27 @@ mod tests {
 		assert!(info.contains(ARCHIVE_NAME));
 
 		std::fs::remove_dir_all(&root).unwrap();
+	}
+
+	/// The press only asks; the release is what shows the lobby. Focus taken
+	/// while the button is down is the bug that made the Lobby button need
+	/// three clicks.
+	#[test]
+	fn the_lobby_comes_up_once_the_game_has_seen_the_release() {
+		let lua = main_lua(1234, "secret", "filesecret");
+		let message = lua.find("function RecvLuaMsg").unwrap();
+		let update = lua.find("function Update").unwrap();
+		assert!(message < update);
+		assert!(
+			!lua[message..update].contains(r#"ask("raise")"#),
+			"nothing is raised from the message, which arrives on the press"
+		);
+		let wait = lua
+			.find("if not asked or button_down() then return end")
+			.unwrap();
+		let raise = lua.find(r#"if ask("raise") then return end"#).unwrap();
+		assert!(update < wait && wait < raise);
+		assert!(lua.contains("Spring.GetMouseState()"));
 	}
 
 	/// Where the port does not answer -- inside the sandbox there is no socket

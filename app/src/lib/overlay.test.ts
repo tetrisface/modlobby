@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import {
+	clickAway,
 	clickLeavesOverlay,
 	escapeLeavesOverlay,
 	roomOnScreen,
@@ -69,6 +70,56 @@ describe('clicking while sitting over a game', () => {
 
 	test('a stray event with no element behind it changes nothing', () => {
 		expect(clickLeavesOverlay(null)).toBe(false)
+	})
+})
+
+describe('a click-away from press to release', () => {
+	function gesture() {
+		const scrim = document.createElement('div')
+		const shell = document.createElement('div')
+		shell.className = 'shell'
+		let left = 0
+		const away = clickAway(() => {
+			left += 1
+		})
+		return { scrim, shell, away, left: () => left }
+	}
+
+	test('leaves on the release, with the button up, never on the press', () => {
+		// A game handed focus mid-press loses its next clicks on the Lobby button.
+		const { scrim, away, left } = gesture()
+		away.press({ target: scrim })
+		expect(left()).toBe(0)
+		away.release({ target: scrim })
+		expect(left()).toBe(1)
+	})
+
+	test('a text selection dragged out of the card stays', () => {
+		const { scrim, shell, away, left } = gesture()
+		away.press({ target: shell })
+		away.release({ target: scrim })
+		expect(left()).toBe(0)
+	})
+
+	test('a press that wanders back into the card stays', () => {
+		const { scrim, shell, away, left } = gesture()
+		away.press({ target: scrim })
+		away.release({ target: shell })
+		expect(left()).toBe(0)
+	})
+
+	test('a release with no press of its own stays', () => {
+		const { scrim, away, left } = gesture()
+		away.release({ target: scrim })
+		expect(left()).toBe(0)
+	})
+
+	test('one gesture leaves once', () => {
+		const { scrim, away, left } = gesture()
+		away.press({ target: scrim })
+		away.release({ target: scrim })
+		away.release({ target: scrim })
+		expect(left()).toBe(1)
 	})
 })
 

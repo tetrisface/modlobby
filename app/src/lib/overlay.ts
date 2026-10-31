@@ -52,6 +52,30 @@ export function clickLeavesOverlay(target: EventTarget | null): boolean {
 }
 
 /**
+ * A click-away, from its press to its release.
+ *
+ * Both ends have to be on the scrim: a text selection dragged out of the card
+ * never pressed it, and a press that wanders back into the card changed its
+ * mind.
+ *
+ * Acted on at the release, because a game given focus mid-press gets a release
+ * it never saw the press of, and SDL (the engine's input library) spends the
+ * player's next click on the game's Lobby button correcting for it.
+ */
+export function clickAway(leave: () => void) {
+	let pressedAway = false
+	return {
+		press(event: { target: EventTarget | null }) {
+			pressedAway = clickLeavesOverlay(event.target)
+		},
+		release(event: { target: EventTarget | null }) {
+			if (pressedAway && clickLeavesOverlay(event.target)) leave()
+			pressedAway = false
+		},
+	}
+}
+
+/**
  * Whether the page at this path draws the room card.
  *
  * The card carries the game buttons in its own column, so the corner draws
