@@ -62,19 +62,20 @@ pub fn key(mutator: &Mutator) -> String {
 	}
 }
 
-/// The standing of one mod. What was allowed for this lobby runs, sandboxed;
-/// a mod with no pin asks; an entry naming this very commit stands on its
-/// own, whatever GitHub says; otherwise a commit GitHub puts off its branch,
-/// or could not vouch for, asks whatever the list says; a repository entry
-/// stands once GitHub puts the commit on the branch, and waits until it has.
+/// The standing of one mod. What was allowed for this lobby runs, as the
+/// allowance says (`allowed_once`: whether sandboxed); a mod with no pin
+/// asks; an entry naming this very commit stands on its own, whatever GitHub
+/// says; otherwise a commit GitHub puts off its branch, or could not vouch
+/// for, asks whatever the list says; a repository entry stands once GitHub
+/// puts the commit on the branch, and waits until it has.
 pub fn standing(
 	trust: &Trust,
 	mutator: &Mutator,
 	reach: Option<&Reach>,
-	allowed_once: bool,
+	allowed_once: Option<bool>,
 ) -> Standing {
-	if allowed_once {
-		return Standing::Trusted { sandboxed: true };
+	if let Some(sandboxed) = allowed_once {
+		return Standing::Trusted { sandboxed };
 	}
 	let Some(pin) = &mutator.source else {
 		return Standing::Asks(Why::Unpinned);
@@ -197,12 +198,12 @@ mod tests {
 	fn an_untrusted_repository_asks() {
 		let mutator = pinned("dev/sphere", SHA);
 		assert_eq!(
-			standing(&Trust::default(), &mutator, None, false),
+			standing(&Trust::default(), &mutator, None, None),
 			Standing::Asks(Why::Repo)
 		);
 		// Known to be on its branch changes nothing: the list says nothing.
 		assert_eq!(
-			standing(&Trust::default(), &mutator, Some(&on_main()), false),
+			standing(&Trust::default(), &mutator, Some(&on_main()), None),
 			Standing::Asks(Why::Repo)
 		);
 	}
@@ -211,9 +212,9 @@ mod tests {
 	fn a_trusted_repository_waits_for_the_branch_then_passes() {
 		let trust = trusting("dev/sphere", None, true, false);
 		let mutator = pinned("dev/sphere", SHA);
-		assert_eq!(standing(&trust, &mutator, None, false), Standing::Checking);
+		assert_eq!(standing(&trust, &mutator, None, None), Standing::Checking);
 		assert_eq!(
-			standing(&trust, &mutator, Some(&on_main()), false),
+			standing(&trust, &mutator, Some(&on_main()), None),
 			Standing::Trusted { sandboxed: true }
 		);
 	}
@@ -223,12 +224,12 @@ mod tests {
 		let by_repo = trusting("dev/sphere", None, true, true);
 		let mutator = pinned("dev/sphere", SHA);
 		assert_eq!(
-			standing(&by_repo, &mutator, Some(&on_main()), false),
+			standing(&by_repo, &mutator, Some(&on_main()), None),
 			Standing::Asks(Why::Commit)
 		);
 		let this_one = trusting("dev/sphere", Some(SHA), true, true);
 		assert_eq!(
-			standing(&this_one, &mutator, None, false),
+			standing(&this_one, &mutator, None, None),
 			Standing::Trusted { sandboxed: true },
 			"a commit allowed by hand needs no word from GitHub"
 		);
@@ -237,7 +238,7 @@ mod tests {
 				&this_one,
 				&pinned("dev/sphere", OTHER),
 				Some(&on_main()),
-				false
+				None
 			),
 			Standing::Asks(Why::Commit)
 		);
@@ -252,14 +253,14 @@ mod tests {
 		let mutator = pinned("dev/sphere", SHA);
 		let expected = Standing::Asks(Why::Branch("not on main of dev/sphere: ahead".into()));
 		assert_eq!(
-			standing(&Trust::default(), &mutator, Some(&off), false),
+			standing(&Trust::default(), &mutator, Some(&off), None),
 			expected
 		);
 		let trust = trusting("dev/sphere", None, true, false);
-		assert_eq!(standing(&trust, &mutator, Some(&off), false), expected);
+		assert_eq!(standing(&trust, &mutator, Some(&off), None), expected);
 		let unknown = Reach::Unknown("GitHub's hourly allowance is used up".into());
 		assert_eq!(
-			standing(&trust, &mutator, Some(&unknown), false),
+			standing(&trust, &mutator, Some(&unknown), None),
 			Standing::Asks(Why::Branch(
 				"GitHub could not be asked: GitHub's hourly allowance is used up".into()
 			))
@@ -268,11 +269,11 @@ mod tests {
 		// it neither waits for GitHub nor yields to it.
 		let this_one = trusting("dev/sphere", Some(SHA), true, false);
 		assert_eq!(
-			standing(&this_one, &mutator, Some(&off), false),
+			standing(&this_one, &mutator, Some(&off), None),
 			Standing::Trusted { sandboxed: true }
 		);
 		assert_eq!(
-			standing(&this_one, &mutator, Some(&unknown), false),
+			standing(&this_one, &mutator, Some(&unknown), None),
 			Standing::Trusted { sandboxed: true }
 		);
 	}
@@ -282,11 +283,11 @@ mod tests {
 		let mutator = named("tiny maps v1");
 		let trust = trusting("dev/sphere", None, true, false);
 		assert_eq!(
-			standing(&trust, &mutator, None, false),
+			standing(&trust, &mutator, None, None),
 			Standing::Asks(Why::Unpinned)
 		);
 		assert_eq!(
-			standing(&trust, &mutator, None, true),
+			standing(&trust, &mutator, None, Some(true)),
 			Standing::Trusted { sandboxed: true },
 			"allowed for this lobby, sandboxed"
 		);
@@ -297,23 +298,28 @@ mod tests {
 		let open = trusting("dev/sphere", None, false, false);
 		let mutator = pinned("dev/sphere", SHA);
 		assert_eq!(
-			standing(&open, &mutator, Some(&on_main()), false),
+			standing(&open, &mutator, Some(&on_main()), None),
 			Standing::Trusted { sandboxed: false }
 		);
 		let unknown = Reach::Unknown("offline".into());
 		assert!(matches!(
-			standing(&open, &mutator, Some(&unknown), false),
+			standing(&open, &mutator, Some(&unknown), None),
 			Standing::Asks(Why::Branch(_))
 		));
 		let this_one = trusting("dev/sphere", Some(SHA), false, false);
 		assert_eq!(
-			standing(&this_one, &mutator, None, false),
+			standing(&this_one, &mutator, None, None),
 			Standing::Trusted { sandboxed: false }
 		);
-		// Allowed for this lobby is never open.
+		// Allowed for this lobby runs as the allowance says: sandboxed where
+		// a sandbox holds it, with the player's rights where none does.
 		assert_eq!(
-			standing(&Trust::default(), &mutator, None, true),
+			standing(&Trust::default(), &mutator, None, Some(true)),
 			Standing::Trusted { sandboxed: true }
+		);
+		assert_eq!(
+			standing(&Trust::default(), &mutator, None, Some(false)),
+			Standing::Trusted { sandboxed: false }
 		);
 	}
 

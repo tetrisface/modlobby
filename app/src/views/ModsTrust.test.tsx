@@ -95,7 +95,7 @@ describe('the mods section', () => {
 		expect(tiny?.textContent).toContain('9108a17')
 		// Already off: the warning stands under it.
 		expect(tiny?.textContent).toContain(
-			'Mod code from this repository runs outside the sandbox, as you do. Only for mods you have read.',
+			'Mod code from this repository runs outside the sandbox, with the same access as modlobby. Only for mods you have read.',
 		)
 	})
 

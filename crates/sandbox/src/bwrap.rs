@@ -127,13 +127,15 @@ pub fn session_refusal(env: &dyn Fn(&str) -> Option<std::ffi::OsString>) -> Opti
 	let set = |key: &str| env(key).filter(|value| !value.is_empty());
 	if set("XDG_SESSION_TYPE").is_some_and(|kind| kind.eq_ignore_ascii_case("x11")) {
 		return Some(
-			"this is an X11 session: modded games run only under Wayland, where a game 			 cannot read the keys or pixels of other windows"
+			"this is an X11 session, and the sandbox needs Wayland, where a game cannot read \
+			 the keys or pixels of other windows"
 				.into(),
 		);
 	}
 	if set("WAYLAND_DISPLAY").is_none() {
 		return Some(
-			"no Wayland display: modded games run only under Wayland, where a game 			 cannot read the keys or pixels of other windows"
+			"there is no Wayland display, and the sandbox needs one: under Wayland a game \
+			 cannot read the keys or pixels of other windows"
 				.into(),
 		);
 	}

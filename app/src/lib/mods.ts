@@ -38,7 +38,7 @@ export type Pick = {
 
 /**
  * What a loaded mod's row says under its name about where it stands: why it
- * asks, or that it runs with your own rights; nothing for one that simply
+ * asks, or that it runs outside the sandbox; nothing for one that simply
  * runs.
  */
 export function standingNote(pick: Pick): string | null {
@@ -46,7 +46,7 @@ export function standingNote(pick: Pick): string | null {
 	if (!standing) return null
 	if (standing.kind === 'asks') return standing.text
 	if (standing.kind === 'trusted' && !standing.sandboxed)
-		return 'runs outside the sandbox, with your own rights'
+		return 'runs outside the sandbox, with the same access as modlobby'
 	return null
 }
 

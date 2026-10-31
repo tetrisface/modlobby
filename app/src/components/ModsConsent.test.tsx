@@ -1,8 +1,9 @@
 import { cleanup, fireEvent, render, waitFor } from '@solidjs/testing-library'
 import { invoke } from '@tauri-apps/api/core'
-import { afterEach, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import type { MutatorView } from '../ipc/bindings/MutatorView'
 import type { Settings } from '../ipc/bindings/Settings'
+import { setSandboxReason } from '../store/sandbox'
 import { setSettingsSignal, settings } from '../store/settings'
 import { ModsChip } from './ModsChip'
 import { ModsConsent } from './ModsConsent'
@@ -67,9 +68,15 @@ const fine: MutatorView = {
 	standing: { kind: 'trusted', sandboxed: true },
 }
 
+beforeEach(() => {
+	// This machine has a sandbox unless a test says otherwise.
+	setSandboxReason(null)
+})
+
 afterEach(() => {
 	cleanup()
 	setSettingsSignal(null)
+	setSandboxReason(undefined)
 	vi.mocked(invoke).mockReset()
 })
 
@@ -126,6 +133,7 @@ test('Allow sends the repository asks to trustMods and applies the settings it r
 	await waitFor(() =>
 		expect(invoke).toHaveBeenCalledWith('trust_mods', {
 			asks: [{ repo: 'dev/sphere', commit: SHA }],
+			sandboxed: true,
 		}),
 	)
 	await waitFor(() => expect(settings()).toEqual(written))
@@ -141,9 +149,53 @@ test('Allow in this lobby sends the keys of the by-name and off-branch mods to a
 		expect(invoke).toHaveBeenCalledWith('allow_mods_once', {
 			room: 5,
 			keys: [tiny.key, fork.key],
+			sandboxed: true,
 		}),
 	)
 	expect(invoke).not.toHaveBeenCalledWith('trust_mods', expect.anything())
+})
+
+test('with no sandbox the card gives the reason once and allows with the same access as modlobby', async () => {
+	setSandboxReason('modlobby has no sandbox for macOS yet')
+	vi.mocked(invoke).mockResolvedValue(undefined as never)
+	const { container, button } = card([sphere, tiny])
+	// The reason leads, so a player can say what is in the way when they
+	// ask for help; then what allowing means.
+	expect(container.querySelector('.mods-consent p')?.textContent).toBe(
+		'Modlobby has no sandbox for macOS yet. Without a sandbox, mods you allow run with the same access as modlobby itself — allow only mods you would trust with your files.',
+	)
+	expect(container.textContent).not.toContain("inside modlobby's sandbox")
+	fireEvent.click(button('Allow')!)
+	await waitFor(() =>
+		expect(invoke).toHaveBeenCalledWith('trust_mods', {
+			asks: [{ repo: 'dev/sphere', commit: SHA }],
+			sandboxed: false,
+		}),
+	)
+	fireEvent.click(button('Allow in this lobby')!)
+	await waitFor(() =>
+		expect(invoke).toHaveBeenCalledWith('allow_mods_once', {
+			room: 5,
+			keys: [tiny.key],
+			sandboxed: false,
+		}),
+	)
+})
+
+test('the card asks the runtime once whether this machine has a sandbox', async () => {
+	setSandboxReason(undefined)
+	vi.mocked(invoke).mockImplementation(async (command) =>
+		command === 'sandbox_unavailable' ? 'no sandbox here' : undefined,
+	)
+	const { container } = card([sphere])
+	await waitFor(() =>
+		expect(container.textContent).toContain(
+			'No sandbox here. Without a sandbox',
+		),
+	)
+	expect(
+		vi.mocked(invoke).mock.calls.filter(([c]) => c === 'sandbox_unavailable'),
+	).toHaveLength(1)
 })
 
 test('the chip says the mods need an OK', () => {

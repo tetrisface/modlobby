@@ -85,7 +85,7 @@ export function ModsTrustRows(props: {
 									}
 								>
 									<option value='on'>On</option>
-									<option value='off'>Off — runs with your rights</option>
+									<option value='off'>Off — same access as modlobby</option>
 								</Select>
 							</label>
 							<button
@@ -101,8 +101,8 @@ export function ModsTrustRows(props: {
 							</button>
 							<Show when={!entry.sandboxed}>
 								<p class='mod-trust-warning'>
-									Mod code from this repository runs outside the sandbox, as you
-									do. Only for mods you have read.
+									Mod code from this repository runs outside the sandbox, with
+									the same access as modlobby. Only for mods you have read.
 								</p>
 							</Show>
 						</div>

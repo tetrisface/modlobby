@@ -557,6 +557,7 @@ enum Command {
 	AllowModsOnce {
 		room: u32,
 		keys: Vec<String>,
+		sandboxed: bool,
 		reply: Reply<()>,
 	},
 	SetTrackCheck(TrackCheck),
@@ -1030,11 +1031,22 @@ impl Client {
 	}
 
 	/// Allows `keys` -- each a mod's key, as its view carries it -- in lobby
-	/// `room`, which must be the one we are in, sandboxed, for as long as
-	/// that lobby lasts.
-	pub async fn allow_mods_once(&self, room: u32, keys: Vec<String>) -> Result<(), ClientError> {
-		self.ask(|reply| Command::AllowModsOnce { room, keys, reply })
-			.await
+	/// `room`, which must be the one we are in, for as long as that lobby
+	/// lasts: sandboxed, or with the player's own rights where no sandbox
+	/// holds a modded game.
+	pub async fn allow_mods_once(
+		&self,
+		room: u32,
+		keys: Vec<String>,
+		sandboxed: bool,
+	) -> Result<(), ClientError> {
+		self.ask(|reply| Command::AllowModsOnce {
+			room,
+			keys,
+			sandboxed,
+			reply,
+		})
+		.await
 	}
 
 	/// Who asks GitHub whether a mod's commit is on its branch.
@@ -1491,8 +1503,9 @@ struct Runtime {
 	mods_files: Vec<(PathBuf, String)>,
 	/// Whose code runs, as settings say; pushed by the app.
 	trust: Trust,
-	/// Mods allowed for one lobby only: (server, battle id, the mod's key).
-	allowed_once: BTreeSet<(String, u32, String)>,
+	/// Mods allowed for one lobby only: (server, battle id, the mod's key),
+	/// and whether the allowance keeps them sandboxed.
+	allowed_once: BTreeMap<(String, u32, String), bool>,
 	/// GitHub's word on each pinned mod's branch, by key, for this run; the
 	/// positive answers live on in the API cache across runs.
 	reaches: HashMap<String, Reach>,
@@ -2091,7 +2104,7 @@ impl Runtime {
 			confinement,
 			mods_files: Vec::new(),
 			trust: Trust::default(),
-			allowed_once: BTreeSet::new(),
+			allowed_once: BTreeMap::new(),
 			reaches: HashMap::new(),
 			reach_pending: BTreeSet::new(),
 			track_check: None,
@@ -3473,7 +3486,12 @@ impl Runtime {
 				self.refresh_content().await;
 				self.greet_mutator_host().await;
 			}
-			Command::AllowModsOnce { room, keys, reply } => {
+			Command::AllowModsOnce {
+				room,
+				keys,
+				sandboxed,
+				reply,
+			} => {
 				let lobby = self.room().and_then(|server| {
 					let id = self.link(&server)?.session.state.my_battle.as_ref()?.id;
 					Some((server, id))
@@ -3491,7 +3509,8 @@ impl Runtime {
 					return;
 				}
 				for key in keys {
-					self.allowed_once.insert((server.clone(), room, key));
+					self.allowed_once
+						.insert((server.clone(), room, key), sandboxed);
 				}
 				let _ = reply.send(Ok(()));
 				self.checked = None;
@@ -4287,7 +4306,7 @@ impl Runtime {
 			if matches!(how, LaunchHow::Confined(_))
 				&& let Some(reason) = self.confinement.unavailable()
 			{
-				return Err(ClientError::Engine(reason));
+				return Err(ClientError::Engine(no_sandbox_refusal(&reason)));
 			}
 			(
 				engine_version,
@@ -5001,6 +5020,15 @@ fn how_to_launch(standings: &[Standing], modded: bool, builds: Vec<PathBuf>) -> 
 	LaunchHow::Confined(sandbox::Network::Outbound)
 }
 
+/// Why a modded game cannot start here, with the way it still can: the
+/// mods run outside the sandbox once the player says so, in the lobby's
+/// Mods tab or for their repositories in Settings.
+fn no_sandbox_refusal(reason: &str) -> String {
+	format!(
+		"{reason}. The mods can still run with the same access as modlobby: allow them so in the Mods tab, or switch the sandbox off for their repositories in Settings › Mods"
+	)
+}
+
 /// Which of a lobby's mods a fetch may ask for: one that runs, is not here,
 /// and has a checksum to be held to. One that asks waits for its OK; one
 /// still being checked waits for the answer.
@@ -5015,7 +5043,7 @@ fn fetchable(mutators: &[(lobby_core::Mutator, bool, Standing)]) -> bool {
 /// ask GitHub, a pinned mod that would need its word asks instead.
 fn standing_in(
 	trust: &Trust,
-	allowed_once: &BTreeSet<(String, u32, String)>,
+	allowed_once: &BTreeMap<(String, u32, String), bool>,
 	reaches: &HashMap<String, Reach>,
 	can_ask: bool,
 	server: &str,
@@ -5023,7 +5051,9 @@ fn standing_in(
 	mutator: &lobby_core::Mutator,
 ) -> Standing {
 	let key = trust::key(mutator);
-	let allowed = allowed_once.contains(&(server.to_owned(), room, key.clone()));
+	let allowed = allowed_once
+		.get(&(server.to_owned(), room, key.clone()))
+		.copied();
 	let no_way = Reach::Unknown("GitHub cannot be asked from here".into());
 	let reach = reaches
 		.get(&key)
@@ -7292,6 +7322,20 @@ mod tests {
 		client.shutdown().await;
 	}
 
+	/// A launch no sandbox can hold is refused with the platform's reason and
+	/// the way out: the mods can still run with the player's own rights.
+	#[test]
+	fn the_refusal_where_no_sandbox_holds_the_game_names_the_way_out() {
+		let text = no_sandbox_refusal("this build has none for this platform yet");
+		assert!(
+			text.starts_with("this build has none for this platform yet"),
+			"{text}"
+		);
+		assert!(text.contains("same access as modlobby"), "{text}");
+		assert!(text.contains("Mods tab"), "{text}");
+		assert!(text.contains("Settings › Mods"), "{text}");
+	}
+
 	#[tokio::test]
 	async fn an_allowance_dies_with_the_commit_it_was_given_for() {
 		let (client, ui, _lines, mut write) =
@@ -7299,11 +7343,11 @@ mod tests {
 		write.write_all(&mod_tags(Some(SPHERE_SHA))).await.unwrap();
 		standings_shown(&ui, |s| asks(&s[0], lobby_ui::WhyView::Repo)).await;
 		client
-			.allow_mods_once(5, vec![format!("github:dev/sphere@{SPHERE_SHA}")])
+			.allow_mods_once(5, vec![format!("github:dev/sphere@{SPHERE_SHA}")], true)
 			.await
 			.unwrap();
 		let elsewhere = client
-			.allow_mods_once(6, vec![format!("github:dev/sphere@{SPHERE_SHA}")])
+			.allow_mods_once(6, vec![format!("github:dev/sphere@{SPHERE_SHA}")], true)
 			.await;
 		assert!(
 			elsewhere.is_err(),
@@ -7518,12 +7562,14 @@ mod tests {
 			joined_mods_lobby(content::git::Reach::OnBranch("main".into())).await;
 		write.write_all(&mod_tags(Some(SPHERE_SHA))).await.unwrap();
 		standings_shown(&ui, |s| asks(&s[0], lobby_ui::WhyView::Repo)).await;
+		// Given with the player's own rights, as the card does where no
+		// sandbox holds a modded game.
 		client
-			.allow_mods_once(5, vec![format!("github:dev/sphere@{SPHERE_SHA}")])
+			.allow_mods_once(5, vec![format!("github:dev/sphere@{SPHERE_SHA}")], false)
 			.await
 			.unwrap();
 		standings_shown(&ui, |s| {
-			s[0] == lobby_ui::StandingView::Trusted { sandboxed: true }
+			s[0] == lobby_ui::StandingView::Trusted { sandboxed: false }
 		})
 		.await;
 		// Another lobby of the same host, with the same mods.
