@@ -6,8 +6,9 @@
 //! directory is never a read directory of a normal one, and what the engine
 //! scans for code or content is wiped before every modded launch.
 
+use std::ffi::OsString;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use sandbox::{CONTENT_SUBDIRS, Network, Policy, Root, scrubbed_env};
 
@@ -123,7 +124,7 @@ pub fn views(mods: &ModsLayout, roots: impl IntoIterator<Item = PathBuf>) -> io:
 			let name = target
 				.file_name()
 				.expect("a content subdirectory has a name");
-			link(&dir.join(name), target)?;
+			show(&dir.join(name), target)?;
 		}
 		views.push(View { dir, subdirs });
 	}
@@ -153,9 +154,109 @@ pub fn trusted_view(mods: &ModsLayout, builds: &[PathBuf]) -> io::Result<PathBuf
 	Ok(dir)
 }
 
+/// One entry of a real content directory: itself, or a link and where it
+/// says it leads.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Entry {
+	Plain,
+	Link(PathBuf),
+}
+
+/// Where each entry of `dir` is shown from when the directory holds a link:
+/// a plain entry at itself, a link at its target, read against `dir` as the
+/// file system reads it. `None` when no entry is a link: the directory is
+/// then linked whole.
+fn each_entry(dir: &Path, entries: Vec<(OsString, Entry)>) -> Option<Vec<(OsString, PathBuf)>> {
+	if !entries
+		.iter()
+		.any(|(_, entry)| matches!(entry, Entry::Link(_)))
+	{
+		return None;
+	}
+	let shown = entries
+		.into_iter()
+		.map(|(name, entry)| {
+			let target = match entry {
+				Entry::Plain => dir.join(&name),
+				Entry::Link(target) => folded(&dir.join(target)),
+			};
+			(name, target)
+		})
+		.collect();
+	Some(shown)
+}
+
+/// `path` with its `.` and `..` folded away, lexically, as a link's relative
+/// target is read against the directory the link is in.
+fn folded(path: &Path) -> PathBuf {
+	let mut out = PathBuf::new();
+	for component in path.components() {
+		match component {
+			Component::ParentDir => {
+				out.pop();
+			}
+			Component::CurDir => {}
+			other => out.push(other),
+		}
+	}
+	out
+}
+
+/// Makes `at` show the real content directory `real`: one link to the whole
+/// directory, unless it holds a link, when `at` is a directory of links, one
+/// per entry at its own target. A relative link resolves against the path it
+/// is reached by, so through a link to the whole directory it would lead
+/// nowhere (the BAR launcher's dev mode makes `games/BYAR-Chobby.sdd` one).
+/// A link to nothing is left out.
+fn show(at: &Path, real: &Path) -> io::Result<()> {
+	let mut entries = Vec::new();
+	for entry in std::fs::read_dir(real)? {
+		let entry = entry?;
+		let kind = if entry.file_type()?.is_symlink() {
+			Entry::Link(std::fs::read_link(entry.path())?)
+		} else {
+			Entry::Plain
+		};
+		entries.push((entry.file_name(), kind));
+	}
+	let Some(each) = each_entry(real, entries) else {
+		return link(at, real);
+	};
+	std::fs::create_dir_all(at)?;
+	for (name, target) in each {
+		let shown = at.join(&name);
+		if target.is_dir() {
+			link(&shown, &target)?;
+		} else if target.is_file() {
+			link_file(&shown, &target)?;
+		} else {
+			tracing::warn!(entry = %shown.display(), target = %target.display(), "a link to nothing, left out of the view");
+		}
+	}
+	Ok(())
+}
+
 #[cfg(windows)]
 fn link(at: &Path, target: &Path) -> io::Result<()> {
 	junction::create(target, at)
+}
+
+/// A hard link where the volume allows one, else a symbolic link, which
+/// needs Developer Mode or admin; a file that can be neither is left out.
+#[cfg(windows)]
+fn link_file(at: &Path, target: &Path) -> io::Result<()> {
+	if std::fs::hard_link(target, at).is_ok() {
+		return Ok(());
+	}
+	if let Err(err) = std::os::windows::fs::symlink_file(target, at) {
+		tracing::warn!(entry = %at.display(), %err, "a file that cannot be linked, left out of the view");
+	}
+	Ok(())
+}
+
+#[cfg(not(windows))]
+fn link_file(at: &Path, target: &Path) -> io::Result<()> {
+	std::os::unix::fs::symlink(target, at)
 }
 
 #[cfg(not(windows))]
@@ -549,6 +650,97 @@ mod tests {
 		assert!(
 			policy.roots[0].dir.starts_with(&mods.views),
 			"the engine reads the view, not the root"
+		);
+	}
+
+	/// The BAR launcher's dev mode links `games/BYAR-Chobby.sdd` to a checkout
+	/// by a relative path. A relative link resolves against the path it is
+	/// reached by, so through a link to the whole directory it points at
+	/// nothing; such a directory is shown entry by entry, each at its own
+	/// target, and a link to nothing is left out.
+	#[cfg(windows)]
+	#[test]
+	fn a_content_dir_with_a_relative_link_is_viewed_entry_by_entry() {
+		let dir = tempfile::tempdir().unwrap();
+		let data = dir.path().join("install").join("data");
+		let games = data.join("games");
+		touch(&games.join("Beyond-All-Reason.sdd").join("modinfo.lua"));
+		touch(&games.join("extra.sdz"));
+		touch(
+			&dir.path()
+				.join("checkout")
+				.join("BYAR-Chobby")
+				.join("modinfo.lua"),
+		);
+		// Three up from `games`: data, install, then the temp dir.
+		if let Err(err) = std::os::windows::fs::symlink_dir(
+			"..\\..\\..\\checkout\\BYAR-Chobby",
+			games.join("BYAR-Chobby.sdd"),
+		) {
+			eprintln!("skipped: a symbolic link needs Developer Mode or admin here: {err}");
+			return;
+		}
+		std::os::windows::fs::symlink_dir("..\\nowhere", games.join("Gone.sdd")).unwrap();
+		let mods = layout(&dir.path().join("own").join("deeper").join("data"));
+		let views = views(&mods, [data.clone()]).unwrap();
+		let shown = views[0].dir.join("games");
+		assert!(
+			shown.join("BYAR-Chobby.sdd").join("modinfo.lua").is_file(),
+			"a relative link is shown at its own target"
+		);
+		assert!(
+			shown
+				.join("Beyond-All-Reason.sdd")
+				.join("modinfo.lua")
+				.is_file()
+		);
+		assert!(shown.join("extra.sdz").is_file(), "a file is shown too");
+		assert!(
+			!shown.join("Gone.sdd").exists(),
+			"a link to nothing is left out"
+		);
+		assert_eq!(
+			views[0].subdirs,
+			vec![games.clone()],
+			"the grants still cover the real directory"
+		);
+	}
+
+	/// A plain entry is shown at itself, a link at where it leads, a
+	/// relative link's target read from the directory the link is in. A
+	/// directory with no link in it is linked whole.
+	#[test]
+	fn a_views_entries_resolve_links_against_the_real_directory() {
+		let games = Path::new("C:/i/data/games");
+		let entries = vec![
+			(OsString::from("Beyond-All-Reason.sdd"), Entry::Plain),
+			(
+				OsString::from("BYAR-Chobby.sdd"),
+				Entry::Link(PathBuf::from("../../checkout/BYAR-Chobby")),
+			),
+			(
+				OsString::from("Abs.sdd"),
+				Entry::Link(PathBuf::from("D:/elsewhere/Abs")),
+			),
+		];
+		assert_eq!(
+			each_entry(games, entries),
+			Some(vec![
+				(
+					OsString::from("Beyond-All-Reason.sdd"),
+					PathBuf::from("C:/i/data/games/Beyond-All-Reason.sdd")
+				),
+				(
+					OsString::from("BYAR-Chobby.sdd"),
+					PathBuf::from("C:/i/checkout/BYAR-Chobby")
+				),
+				(OsString::from("Abs.sdd"), PathBuf::from("D:/elsewhere/Abs")),
+			])
+		);
+		assert_eq!(
+			each_entry(games, vec![(OsString::from("a.sdd"), Entry::Plain)]),
+			None,
+			"no link: the directory is linked whole"
 		);
 	}
 
