@@ -676,6 +676,12 @@ mod tests {
 	#[test]
 	fn a_views_entries_resolve_links_against_the_real_directory() {
 		let games = Path::new("C:/i/data/games");
+		// `D:/…` is relative on Unix, where it would join onto `games`.
+		let absolute = if cfg!(windows) {
+			"D:/elsewhere/Abs"
+		} else {
+			"/elsewhere/Abs"
+		};
 		let entries = vec![
 			(OsString::from("Beyond-All-Reason.sdd"), Entry::Plain),
 			(
@@ -684,7 +690,7 @@ mod tests {
 			),
 			(
 				OsString::from("Abs.sdd"),
-				Entry::Link(PathBuf::from("D:/elsewhere/Abs")),
+				Entry::Link(PathBuf::from(absolute)),
 			),
 		];
 		assert_eq!(
@@ -698,7 +704,7 @@ mod tests {
 					OsString::from("BYAR-Chobby.sdd"),
 					PathBuf::from("C:/i/checkout/BYAR-Chobby")
 				),
-				(OsString::from("Abs.sdd"), PathBuf::from("D:/elsewhere/Abs")),
+				(OsString::from("Abs.sdd"), PathBuf::from(absolute)),
 			])
 		);
 		assert_eq!(
