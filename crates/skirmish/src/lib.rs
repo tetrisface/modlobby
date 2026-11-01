@@ -707,6 +707,8 @@ impl Room {
 			ready_on_its_way: None,
 			seat_on_its_way: None,
 			held_until_ms: None,
+			// Nobody here can leave and take an AI with them.
+			game_roster: None,
 		}
 	}
 

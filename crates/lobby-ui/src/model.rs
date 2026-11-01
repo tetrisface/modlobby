@@ -21,7 +21,8 @@
 use std::collections::BTreeMap;
 
 use lobby_core::{
-	Battle, Bot, Intent, LobbyState, MyBattle, OptionChange, Proposal, StartRect, User, VoteState,
+	Battle, Bot, GameRoster, Intent, LobbyState, MyBattle, OptionChange, Proposal, StartRect, User,
+	VoteState,
 };
 use serde::{Deserialize, Serialize};
 use spring_protocol::{BattleStatus, Sync, UserStatus};
@@ -394,6 +395,34 @@ pub struct MyBattleView {
 	/// Whether the server has finished telling us the room as found. Until it
 	/// has, the room's AIs and seats may simply not have arrived yet.
 	pub settled: bool,
+	/// Who the game running in this room started with; `null` with no game.
+	pub game_roster: Option<GameRosterView>,
+}
+
+/// Who a running game started with, as far as we saw. The room's own AIs and
+/// seats say who is there now, and teiserver takes a leaver's AIs off the lobby
+/// while they play on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct GameRosterView {
+	pub bots: Vec<BotView>,
+	pub player_count: u32,
+	/// One per seated member.
+	pub seat_handicaps: Vec<u8>,
+	/// The AI in `bots` is read off the room's title: nobody saw it.
+	pub guessed: bool,
+}
+
+impl From<&GameRoster> for GameRosterView {
+	fn from(roster: &GameRoster) -> Self {
+		Self {
+			bots: roster.bots.iter().map(BotView::from).collect(),
+			player_count: roster.player_count,
+			seat_handicaps: roster.seat_handicaps.clone(),
+			guessed: roster.guessed,
+		}
+	}
 }
 
 /// The posture a request of ours asks for: a seat on an ally team, or none.
@@ -457,6 +486,7 @@ impl From<&MyBattle> for MyBattleView {
 			seat_on_its_way: my.seat_on_its_way.map(Into::into),
 			held_until_ms: my.held_until_ms,
 			settled: my.settled,
+			game_roster: my.game_roster.as_ref().map(GameRosterView::from),
 		}
 	}
 }

@@ -293,6 +293,41 @@ pub async fn skirmish_pve_score(app: State<'_, App>) -> Result<Option<pve::Score
 	ask_pve(&app, ask).await
 }
 
+/// Who the service is told is playing, and against what.
+///
+/// The room's own AIs whenever they name an opponent, so a room being set up
+/// for its next game is scored as set up, game running or not. Failing that,
+/// whoever the running game started with: a leaver's AIs leave the room and
+/// play on, and a room with no opponent or no seats gets no score at all.
+fn pve_roster(
+	my: &lobby_ui::MyBattleView,
+	room: &lobby_ui::BattleView,
+	users: &[lobby_ui::UserView],
+) -> Option<(pve::AiType, lobby_ui::GameRosterView)> {
+	let opponent = |bots: &[lobby_ui::BotView]| {
+		let names: Vec<String> = bots.iter().map(|bot| bot.ai.clone()).collect();
+		pve::ai_type(&names)
+	};
+	if let Some(kind) = opponent(&room.bots) {
+		let here = lobby_ui::GameRosterView {
+			bots: room.bots.clone(),
+			player_count: room.player_count,
+			seat_handicaps: room
+				.members
+				.iter()
+				.filter_map(|name| users.iter().find(|user| &user.name == name))
+				.filter_map(|user| user.battle_status.as_ref())
+				.filter(|status| status.player)
+				.map(|status| status.handicap)
+				.collect(),
+			guessed: false,
+		};
+		return Some((kind, here));
+	}
+	let started = my.game_roster.as_ref()?;
+	Some((opponent(&started.bots)?, started.clone()))
+}
+
 /// What the service is told about a room, whichever kind it is.
 fn pve_ask(
 	my: &lobby_ui::MyBattleView,
@@ -300,11 +335,12 @@ fn pve_ask(
 	users: &[lobby_ui::UserView],
 	game_id: Option<String>,
 ) -> Option<pve::Ask> {
-	let ai_names: Vec<String> = room.bots.iter().map(|bot| bot.ai.clone()).collect();
-	let kind = pve::ai_type(&ai_names)?;
+	let (kind, roster) = pve_roster(my, room, users)?;
 
 	Some(pve::Ask {
-		game_id,
+		// A guess at the opponent stays a question: this id is what would list
+		// the room as a game of that kind being played.
+		game_id: game_id.filter(|_| !roster.guessed),
 		ai_type: kind.as_str(),
 		map: room.map_name.clone(),
 		game_settings: my
@@ -318,16 +354,17 @@ fn pve_ask(
 			})
 			.collect(),
 		encounter_context: pve::Encounter {
-			human_team_size: room.player_count,
+			human_team_size: roster.player_count,
 			enemy_ai_count: matches!(kind, pve::AiType::Barbarian)
-				.then_some(room.bots.len() as u32),
+				.then_some(roster.bots.len() as u32),
 			// Each BARbarian is its own opponent with its own handicap, and
 			// the service will not place a Barbarian room without hearing
 			// them. Raptors and scavengers are one controller however many
 			// slots they take, so for them this stays empty.
 			enemy_ai_income_multipliers: matches!(kind, pve::AiType::Barbarian)
 				.then(|| {
-					room.bots
+					roster
+						.bots
 						.iter()
 						.map(|bot| pve::income_multiplier(bot.status.handicap))
 						.collect()
@@ -337,13 +374,10 @@ fn pve_ask(
 			// column from the average of these, and a governed column it
 			// cannot derive counts as missing rather than defaulted — which is
 			// what makes it decline to score the room at all.
-			human_player_income_multipliers: room
-				.members
+			human_player_income_multipliers: roster
+				.seat_handicaps
 				.iter()
-				.filter_map(|name| users.iter().find(|user| &user.name == name))
-				.filter_map(|user| user.battle_status.as_ref())
-				.filter(|status| status.player)
-				.map(|status| pve::income_multiplier(status.handicap))
+				.map(|&handicap| pve::income_multiplier(handicap))
 				.collect(),
 		},
 		// Everyone present, bar the autohost: the service has a record for
@@ -452,4 +486,189 @@ async fn current_room(app: &App) -> Result<presets::Room> {
 			})
 			.collect(),
 	})
+}
+
+#[cfg(test)]
+mod tests {
+	use std::collections::BTreeMap;
+
+	use lobby_ui::{
+		BattleStatusView, BattleView, BotView, GameRosterView, IntentView, MyBattleView, SyncView,
+		UserStatusView, UserView,
+	};
+
+	use super::pve_ask;
+
+	fn status(handicap: u8, sync: SyncView) -> BattleStatusView {
+		BattleStatusView {
+			ready: false,
+			team: 0,
+			ally_team: 0,
+			player: true,
+			handicap,
+			sync,
+			side: 0,
+		}
+	}
+
+	fn bot(ai: &str, handicap: u8) -> BotView {
+		BotView {
+			name: ai.into(),
+			owner: "host".into(),
+			status: status(handicap, SyncView::Bot),
+			team_colour: 0,
+			ai: ai.into(),
+			options: BTreeMap::new(),
+		}
+	}
+
+	/// A room of one seated human, `me`, on the map `Now`.
+	fn room(bots: Vec<BotView>) -> BattleView {
+		BattleView {
+			id: 5,
+			founder: "host".into(),
+			ip: String::new(),
+			port: 0,
+			max_players: 16,
+			passworded: false,
+			locked: false,
+			map_hash: String::new(),
+			map_name: "Now".into(),
+			engine_name: String::new(),
+			engine_version: String::new(),
+			title: String::new(),
+			game_name: String::new(),
+			members: vec!["host".into(), "me".into()],
+			spectator_count: 1,
+			player_count: 1,
+			layout: None,
+			bots,
+			start_rects: Vec::new(),
+			queue: Vec::new(),
+		}
+	}
+
+	fn user(name: &str, bot: bool, battle_status: Option<BattleStatusView>) -> UserView {
+		UserView {
+			name: name.into(),
+			country: String::new(),
+			user_id: None,
+			lobby_client: String::new(),
+			status: UserStatusView {
+				in_game: false,
+				away: false,
+				rank: 0,
+				moderator: false,
+				bot,
+			},
+			battle_status,
+			battle_id: Some(5),
+		}
+	}
+
+	fn users() -> Vec<UserView> {
+		vec![
+			user("host", true, None),
+			user("me", false, Some(status(0, SyncView::Synced))),
+		]
+	}
+
+	fn my(game_roster: Option<GameRosterView>) -> MyBattleView {
+		MyBattleView {
+			boss: None,
+			auto_balance: None,
+			preset: None,
+			id: 5,
+			game_hash: String::new(),
+			script_tags: BTreeMap::from([("game/modoptions/now".into(), "1".into())]),
+			vote: None,
+			history: Vec::new(),
+			intent: IntentView::Spectate,
+			ready_on_its_way: None,
+			seat_on_its_way: None,
+			held_until_ms: None,
+			settled: true,
+			game_roster,
+		}
+	}
+
+	/// Three humans against what is given, one of them on a handicap of 20.
+	fn started_with(bots: Vec<BotView>) -> Option<GameRosterView> {
+		Some(GameRosterView {
+			bots,
+			player_count: 3,
+			seat_handicaps: vec![0, 0, 20],
+			guessed: false,
+		})
+	}
+
+	#[test]
+	fn no_ai_and_no_game_is_nothing_to_ask() {
+		assert!(pve_ask(&my(None), &room(vec![]), &users(), None).is_none());
+	}
+
+	#[test]
+	fn a_game_whose_ais_left_is_asked_about_as_it_started() {
+		let roster = started_with(vec![bot("BARbarianAI", 10), bot("BARbarianAI", 30)]);
+		let ask = pve_ask(&my(roster), &room(vec![]), &users(), None).unwrap();
+
+		assert_eq!(ask.ai_type, "Barbarian");
+		assert_eq!(ask.encounter_context.enemy_ai_count, Some(2));
+		assert_eq!(
+			ask.encounter_context.enemy_ai_income_multipliers,
+			[1.1, 1.3]
+		);
+		assert_eq!(ask.encounter_context.human_team_size, 3);
+		assert_eq!(
+			ask.encounter_context.human_player_income_multipliers,
+			[1.0, 1.0, 1.2]
+		);
+	}
+
+	#[test]
+	fn the_roster_fills_in_the_people_and_leaves_the_settings_to_the_room() {
+		let roster = started_with(vec![bot("RaptorsDefense", 0)]);
+		let ask = pve_ask(&my(roster), &room(vec![]), &users(), None).unwrap();
+
+		assert_eq!(ask.map, "Now");
+		assert_eq!(ask.game_settings["now"], "1");
+		assert_eq!(ask.player_names, ["me"]);
+	}
+
+	#[test]
+	fn an_opponent_in_the_room_overrides_the_game_being_played() {
+		let roster = started_with(vec![bot("RaptorsDefense", 0)]);
+		let here = room(vec![bot("ScavengersDefense", 0)]);
+		let ask = pve_ask(&my(roster), &here, &users(), None).unwrap();
+
+		assert_eq!(ask.ai_type, "Scavengers");
+		assert_eq!(ask.encounter_context.human_team_size, 1);
+		assert_eq!(ask.encounter_context.human_player_income_multipliers, [1.0]);
+	}
+
+	#[test]
+	fn a_game_we_saw_goes_on_being_listed_after_its_ais_leave() {
+		let roster = started_with(vec![bot("RaptorsDefense", 0)]);
+		let listed = Some("id".to_string());
+		let ask = pve_ask(&my(roster), &room(vec![]), &users(), listed).unwrap();
+		assert_eq!(ask.game_id.as_deref(), Some("id"));
+	}
+
+	#[test]
+	fn a_guess_from_the_title_is_scored_and_never_listed() {
+		let guess = started_with(vec![bot("Raptors", 0)]).map(|roster| GameRosterView {
+			guessed: true,
+			..roster
+		});
+		let listed = Some("id".to_string());
+		let ask = pve_ask(&my(guess), &room(vec![]), &users(), listed).unwrap();
+		assert_eq!(ask.ai_type, "Raptors");
+		assert_eq!(ask.game_id, None);
+	}
+
+	#[test]
+	fn a_game_started_without_a_pve_opponent_has_nothing_to_fall_back_on() {
+		let roster = started_with(vec![bot("SimpleAI", 0)]);
+		assert!(pve_ask(&my(roster), &room(vec![]), &users(), None).is_none());
+	}
 }

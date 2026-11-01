@@ -78,6 +78,7 @@ function inARoom() {
 					seatOnItsWay: null,
 					heldUntilMs: null,
 					settled: true,
+					gameRoster: null,
 				},
 				gameRunning: null,
 				channels: [],

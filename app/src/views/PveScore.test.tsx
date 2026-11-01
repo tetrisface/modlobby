@@ -4,6 +4,7 @@ import { reconcile } from 'solid-js/store'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { BotView } from '../ipc/bindings/BotView'
+import type { GameRosterView } from '../ipc/bindings/GameRosterView'
 import type { Score } from '../ipc/bindings/Score'
 import type { UserView } from '../ipc/bindings/UserView'
 import type { Settings } from '../ipc/bindings/Settings'
@@ -123,7 +124,11 @@ function user(
 function enter(
 	bots: BotView[],
 	others: UserView[] = [],
-	over: { title?: string; settled?: boolean } = {},
+	over: {
+		title?: string
+		settled?: boolean
+		gameRoster?: GameRosterView | null
+	} = {},
 ) {
 	const next = emptyServer()
 	next.me = 'me'
@@ -147,8 +152,14 @@ function enter(
 		seatOnItsWay: null,
 		heldUntilMs: null,
 		settled: over.settled ?? true,
+		gameRoster: over.gameRoster ?? null,
 	}
 	onlySession(next)
+}
+
+/** Who a game started with, the way Rust keeps it for the length of the game. */
+function startedWith(bots: BotView[]): GameRosterView {
+	return { bots, playerCount: 1, seatHandicaps: [0], guessed: false }
 }
 
 /** Into another room as the wire has it: the room first, its AIs after. */
@@ -534,6 +545,66 @@ describe('PveScore', () => {
 		expect(container.querySelectorAll('.pve-figure b .thinking')).toHaveLength(
 			3,
 		)
+	})
+
+	test('a game whose AIs left the room keeps its row and goes on asking', async () => {
+		asked.mockResolvedValue(scored)
+		const raptors = bot('RaptorsAI')
+		enter([raptors], [], { gameRoster: startedWith([raptors]) })
+		const { container } = render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+		expect(asked).toHaveBeenCalledTimes(1)
+		const row = container.querySelector('.pve-score')
+
+		setLobby('servers', TEST_SERVER, 'battles', 7, 'bots', [])
+		expect(container.querySelector('.pve-score')).toBe(row)
+
+		vi.advanceTimersByTime(QUIET_FOR + STAGGER_STEP)
+		expect(asked).toHaveBeenCalledTimes(2)
+	})
+
+	test('an opponent read off the title at the end of the replay keeps the row and is asked about', () => {
+		asked.mockReturnValue(deferred<Score>().promise)
+		enter([], [], { title: 'Coop vs Raptors', settled: false })
+		const { container } = render(panel)
+		const row = container.querySelector('.pve-score')
+		expect(row).not.toBeNull()
+
+		setLobby('servers', TEST_SERVER, 'myBattle', {
+			settled: true,
+			gameRoster: {
+				...startedWith([bot('Raptors')]),
+				guessed: true,
+			},
+		})
+		expect(container.querySelector('.pve-score')).toBe(row)
+		vi.advanceTimersByTime(QUIET_FOR + STAGGER_STEP)
+		expect(asked).toHaveBeenCalledTimes(1)
+	})
+
+	test('the end of the game takes a row only its roster was holding up', async () => {
+		asked.mockResolvedValue(scored)
+		enter([], [], { gameRoster: startedWith([bot('RaptorsAI')]) })
+		const { container } = render(panel)
+		expect(container.querySelector('.pve-score')).not.toBeNull()
+
+		setLobby('servers', TEST_SERVER, 'myBattle', 'gameRoster', null)
+		expect(container.querySelector('.pve-score')).toBeNull()
+	})
+
+	test('AIs leaving a room with no game take the row with them', async () => {
+		asked.mockResolvedValue(scored)
+		enter([bot('RaptorsAI')])
+		const { container } = render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+		expect(container.querySelector('.pve-score')).not.toBeNull()
+
+		setLobby('servers', TEST_SERVER, 'battles', 7, 'bots', [])
+		expect(container.querySelector('.pve-score')).toBeNull()
+		vi.advanceTimersByTime(QUIET_FOR + STAGGER_STEP)
+		expect(asked).toHaveBeenCalledTimes(1)
 	})
 
 	test('a re-ask answered soon leaves the figures on screen', async () => {

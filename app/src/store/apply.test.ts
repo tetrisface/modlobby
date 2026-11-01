@@ -66,6 +66,7 @@ const room: SkirmishView = {
 		seatOnItsWay: null,
 		heldUntilMs: null,
 		settled: true,
+		gameRoster: null,
 	},
 	users: [user('me', 0)],
 	me: 'me',
@@ -388,6 +389,7 @@ describe('apply', () => {
 				seatOnItsWay: null,
 				heldUntilMs: null,
 				settled: true,
+				gameRoster: null,
 			},
 		})
 		const said = (seq: number, text: string): Delta => ({

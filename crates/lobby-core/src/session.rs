@@ -1217,23 +1217,29 @@ impl Session {
 				}
 				if status.in_game {
 					// The host's bit went up while we were standing here. A new
-					// game, so nobody has put us in it yet.
+					// game, so nobody has put us in it yet, and whoever is here
+					// is who it started with.
+					let roster = self.state.my_roster();
 					if let Some(my) = self.state.my_battle.as_mut() {
 						my.joined_id = None;
+						my.game_roster = roster;
 					}
 					let effects = self.game_running(true).into_iter().collect();
 					// The game a ready for the next game was given for has
 					// started with us on a seat: a plain ready now. One given
 					// from the join queue waits on a seat instead, and a game is
 					// no answer to that.
-					let started = self.seat.is_some()
-						&& matches!(self.intent(), Intent::ReadyNext { .. })
-						&& self.set_intent(Intent::Ready);
-					return self.room_changed(effects, started);
+					if self.seat.is_some() && matches!(self.intent(), Intent::ReadyNext { .. }) {
+						self.set_intent(Intent::Ready);
+					}
+					return self.room_changed(effects, true);
 				}
 				// The bit going the other way is the only sign a game ended.
 				// Without this the room goes on offering to connect you to one
 				// that finished, for as long as you stay in it.
+				if let Some(my) = self.state.my_battle.as_mut() {
+					my.game_roster = None;
+				}
 				let mut effects = vec![Effect::GameStopped];
 				// It is also what a ready for the next game waits on. The
 				// server's own unready may be on its way, may cross ours, or may
@@ -1244,7 +1250,7 @@ impl Session {
 					self.rearm();
 					effects.extend(self.reconcile());
 				}
-				effects
+				self.room_changed(effects, true)
 			}
 			E::BattleOpened(opened) => {
 				// The private room a cluster manager spun up for us carries our
@@ -1353,8 +1359,16 @@ impl Session {
 			}
 			E::RequestBattleStatus => {
 				// The last line of the join replay: from here on a tag that
-				// changes is history, not the room introducing itself.
-				if let Some(my) = state.my_battle.as_mut() {
+				// changes is history, not the room introducing itself. And of a
+				// game already under way, the room as found is as near as we
+				// get to who it started with.
+				let roster = self
+					.game_running(false)
+					.and_then(|_| self.state.my_roster_as_found());
+				if let Some(my) = self.state.my_battle.as_mut() {
+					if !my.settled {
+						my.game_roster = roster;
+					}
 					my.settled = true;
 				}
 				vec![self.battle_status(), Effect::RoomChanged]
@@ -2115,6 +2129,7 @@ mod tests {
 	use spring_protocol::{BattleStatus, RawMessage};
 
 	use super::*;
+	use crate::state::GameRoster;
 
 	fn session() -> Session {
 		Session::new(
@@ -3298,6 +3313,229 @@ mod tests {
 			.filter(|e| matches!(e, Effect::GameRunning { .. }))
 			.count();
 		assert_eq!(running, 1);
+	}
+
+	/// Raptors and a seat for us in room 5, its host not in a game.
+	fn among_raptors() -> Session {
+		let mut s = ready_with_room();
+		s.join_battle(5, None, "1".into());
+		feed(
+			&mut s,
+			&[
+				"CLIENTSTATUS host 64",
+				"JOINBATTLE 5 -1",
+				"JOINEDBATTLE 5 me",
+				"UPDATEBATTLEINFO 5 1 0 -1 m",
+				&told(MyBattleStatus::player(Sync::Synced, 0, 0).handicap(12)),
+				"ADDBOT 5 RaptorsAI host 1088 16777215 RaptorsDefense",
+				"REQUESTBATTLESTATUS",
+			],
+		);
+		s
+	}
+
+	fn game_roster(s: &Session) -> Option<GameRoster> {
+		s.state.my_battle.as_ref().unwrap().game_roster.clone()
+	}
+
+	fn ais(roster: &GameRoster) -> Vec<&str> {
+		roster.bots.iter().map(|bot| bot.ai.as_str()).collect()
+	}
+
+	#[test]
+	fn a_room_with_no_game_has_no_game_roster() {
+		assert_eq!(game_roster(&among_raptors()), None);
+	}
+
+	#[test]
+	fn a_game_keeps_who_it_started_with_after_they_leave_the_room() {
+		let mut s = among_raptors();
+		let effects = feed(&mut s, &["CLIENTSTATUS host 65"]);
+		assert!(effects.contains(&Effect::RoomChanged));
+
+		// teiserver strips a leaver's AIs from the lobby, game or no game.
+		feed(
+			&mut s,
+			&[
+				"REMOVEBOT 5 RaptorsAI",
+				"UPDATEBATTLEINFO 5 2 0 -1 m",
+				&told(watching()),
+			],
+		);
+		assert!(s.state.battles[&5].bots.is_empty());
+
+		let roster = game_roster(&s).unwrap();
+		assert_eq!(ais(&roster), ["RaptorsDefense"]);
+		assert_eq!(roster.player_count, 1);
+		assert_eq!(roster.seat_handicaps, [12]);
+	}
+
+	#[test]
+	fn the_end_of_a_game_lets_go_of_its_roster() {
+		let mut s = among_raptors();
+		feed(&mut s, &["CLIENTSTATUS host 65"]);
+		let effects = feed(&mut s, &["CLIENTSTATUS host 64"]);
+		assert!(effects.contains(&Effect::RoomChanged));
+		assert_eq!(game_roster(&s), None);
+	}
+
+	#[test]
+	fn the_next_game_starts_with_whoever_is_there_then() {
+		let mut s = among_raptors();
+		feed(
+			&mut s,
+			&[
+				"CLIENTSTATUS host 65",
+				"REMOVEBOT 5 RaptorsAI",
+				"CLIENTSTATUS host 64",
+				"ADDBOT 5 ScavsAI host 1088 16777215 ScavengersDefense",
+				"CLIENTSTATUS host 65",
+			],
+		);
+		assert_eq!(ais(&game_roster(&s).unwrap()), ["ScavengersDefense"]);
+	}
+
+	#[test]
+	fn a_game_under_way_on_arrival_keeps_the_room_as_found() {
+		let mut s = ready_with_room();
+		feed(&mut s, &["CLIENTSTATUS host 65"]);
+		s.join_battle(5, None, "1".into());
+		feed(&mut s, &["JOINBATTLE 5 -1"]);
+		// The AIs are still on their way until the replay ends.
+		assert_eq!(game_roster(&s), None);
+
+		feed(
+			&mut s,
+			&[
+				"ADDBOT 5 RaptorsAI host 1088 16777215 RaptorsDefense",
+				"REQUESTBATTLESTATUS",
+				"REMOVEBOT 5 RaptorsAI",
+				// A server may ask again; that is no new arrival.
+				"REQUESTBATTLESTATUS",
+			],
+		);
+		assert_eq!(ais(&game_roster(&s).unwrap()), ["RaptorsDefense"]);
+	}
+
+	/// Walking into room 5 under `title` with its game running and the replay
+	/// still going: `seats` are who is seated, by name and ally team.
+	fn finding_a_game(title: &str, seats: &[(&str, u8)]) -> Session {
+		let mut s = ready_with_room();
+		feed(
+			&mut s,
+			&[
+				"CLIENTSTATUS host 65",
+				&format!("s.battle.update_lobby_title 5\t{title}"),
+			],
+		);
+		s.join_battle(5, None, "1".into());
+		feed(&mut s, &["JOINBATTLE 5 -1"]);
+		for (name, ally_team) in seats {
+			let status = MyBattleStatus::player(Sync::Synced, 0, *ally_team).bits();
+			feed(
+				&mut s,
+				&[
+					&format!("ADDUSER {name} SE 3 x"),
+					&format!("JOINEDBATTLE 5 {name}"),
+					&format!("CLIENTBATTLESTATUS {name} {status} 0"),
+				],
+			);
+		}
+		s
+	}
+
+	#[test]
+	fn a_game_found_with_no_ai_takes_its_opponent_from_the_title() {
+		let mut s = finding_a_game("Coop vs Raptors | 4v4", &[("alice", 0), ("bob", 0)]);
+		feed(&mut s, &["REQUESTBATTLESTATUS"]);
+		let roster = game_roster(&s).unwrap();
+		assert_eq!(ais(&roster), ["Raptors"]);
+		assert!(roster.guessed);
+		assert_eq!(roster.seat_handicaps, [0, 0]);
+
+		let mut s = finding_a_game("newbies VS SCAVENGERS", &[("alice", 1)]);
+		feed(&mut s, &["REQUESTBATTLESTATUS"]);
+		assert_eq!(ais(&game_roster(&s).unwrap()), ["Scavengers"]);
+	}
+
+	#[test]
+	fn a_title_does_not_outrank_people_on_two_sides() {
+		let mut s = finding_a_game("Coop vs Raptors", &[("alice", 0), ("bob", 1)]);
+		feed(&mut s, &["REQUESTBATTLESTATUS"]);
+		assert_eq!(game_roster(&s).unwrap().bots, []);
+	}
+
+	#[test]
+	fn a_title_is_not_read_for_a_room_with_nobody_seated() {
+		let mut s = finding_a_game("Coop vs Raptors", &[]);
+		feed(&mut s, &["REQUESTBATTLESTATUS"]);
+		assert_eq!(game_roster(&s).unwrap().bots, []);
+	}
+
+	#[test]
+	fn a_title_does_not_outrank_an_ai_in_the_room() {
+		let mut s = finding_a_game("Coop vs Raptors", &[("alice", 0)]);
+		feed(
+			&mut s,
+			&[
+				"ADDBOT 5 Simple host 1088 16777215 SimpleAI",
+				"REQUESTBATTLESTATUS",
+			],
+		);
+		let roster = game_roster(&s).unwrap();
+		assert_eq!(ais(&roster), ["SimpleAI"]);
+		assert!(!roster.guessed);
+	}
+
+	#[test]
+	fn only_a_title_naming_one_placeable_opponent_counts() {
+		for title in [
+			"Raptors vs Scavengers",
+			"Coop vs Barbarians",
+			"Raptor hunters",
+			"Coop",
+		] {
+			let mut s = finding_a_game(title, &[("alice", 0)]);
+			feed(&mut s, &["REQUESTBATTLESTATUS"]);
+			assert_eq!(game_roster(&s).unwrap().bots, [], "{title}");
+		}
+	}
+
+	#[test]
+	fn a_game_we_saw_start_without_ai_had_none_whatever_its_title_says() {
+		let mut s = ready_with_room();
+		s.join_battle(5, None, "1".into());
+		feed(
+			&mut s,
+			&[
+				"CLIENTSTATUS host 64",
+				"s.battle.update_lobby_title 5\tCoop vs Raptors",
+				"JOINBATTLE 5 -1",
+				"JOINEDBATTLE 5 me",
+				&told(seated(0, false)),
+				"REQUESTBATTLESTATUS",
+				"CLIENTSTATUS host 65",
+			],
+		);
+		assert_eq!(game_roster(&s).unwrap().bots, []);
+	}
+
+	#[test]
+	fn a_title_says_nothing_with_no_game_running() {
+		let mut s = ready_with_room();
+		s.join_battle(5, None, "1".into());
+		feed(
+			&mut s,
+			&[
+				"CLIENTSTATUS host 64",
+				"s.battle.update_lobby_title 5\tCoop vs Raptors",
+				"JOINBATTLE 5 -1",
+				"JOINEDBATTLE 5 me",
+				&told(seated(0, false)),
+				"REQUESTBATTLESTATUS",
+			],
+		);
+		assert_eq!(game_roster(&s), None);
 	}
 
 	#[test]

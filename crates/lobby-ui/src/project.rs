@@ -757,6 +757,40 @@ mod tests {
 	}
 
 	#[test]
+	fn the_view_hears_who_a_game_started_with_for_as_long_as_it_runs() {
+		let (mut s, mut p) = live();
+		for line in [
+			"ADDUSER ahost EU 1 SPADS",
+			"BATTLEOPENED 5 0 0 ahost 1.2.3.4 8452 16 0 0 h R\tv\tm\tt\tg",
+			"JOINBATTLE 5 hash",
+			"ADDBOT 5 RaptorsAI ahost 1088 16777215 RaptorsDefense",
+			"REQUESTBATTLESTATUS",
+		] {
+			step(&mut s, &mut p, line);
+		}
+		let roster_ais = |deltas: Vec<Delta>| {
+			deltas.into_iter().rev().find_map(|delta| match delta {
+				Delta::MyBattle(Some(my)) => Some(my.game_roster.map(|roster| {
+					roster
+						.bots
+						.into_iter()
+						.map(|bot| bot.ai)
+						.collect::<Vec<_>>()
+				})),
+				_ => None,
+			})
+		};
+		assert_eq!(
+			roster_ais(step(&mut s, &mut p, "CLIENTSTATUS ahost 1")),
+			Some(Some(vec!["RaptorsDefense".to_string()]))
+		);
+		assert_eq!(
+			roster_ais(step(&mut s, &mut p, "CLIENTSTATUS ahost 0")),
+			Some(None)
+		);
+	}
+
+	#[test]
 	fn the_view_hears_when_a_rooms_replay_is_over() {
 		let (mut s, mut p) = live();
 		for line in [

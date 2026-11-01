@@ -172,6 +172,8 @@ pub struct MyBattle {
 	/// The in-game ID SPADS put us on in the running game (`!joinas`), until
 	/// the next game starts.
 	pub joined_id: Option<u32>,
+	/// Who the game running in this room started with, for as long as it runs.
+	pub game_roster: Option<GameRoster>,
 	/// Whether we told this room's host that we load its mutators. Kept here so
 	/// it lasts as long as this join: a host may forget a player who leaves.
 	pub greeted_host: bool,
@@ -252,6 +254,7 @@ impl MyBattle {
 			seat_on_its_way: None,
 			held_until_ms: None,
 			joined_id: None,
+			game_roster: None,
 			greeted_host: false,
 			next_seq: 0,
 		}
@@ -391,6 +394,43 @@ pub struct Bot {
 	pub ai: String,
 }
 
+/// Who a running game started with, as far as we saw.
+///
+/// The room stops being able to say: teiserver takes a leaver's AIs off the
+/// lobby while they play on (`lobby.ex` `do_remove_user_from_lobby`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GameRoster {
+	pub bots: Vec<Bot>,
+	/// [`Battle::player_count`] at the time.
+	pub player_count: u32,
+	/// One per seated member.
+	pub seat_handicaps: Vec<u8>,
+	/// The AI in `bots` is read off the room's title: nobody saw it.
+	pub guessed: bool,
+}
+
+/// The AI a room's title says it plays: `Coop vs Raptors | 4v4`.
+///
+/// Raptors and scavengers only. A Barbarian setup is decided by how many there
+/// are and their handicaps, which no title says. Naming both is not a setup at
+/// all, however `vs` falls between them.
+fn titled_opponent(title: &str) -> Option<&'static str> {
+	let title = title.to_ascii_lowercase();
+	let words: Vec<&str> = title
+		.split(|c: char| !c.is_alphanumeric())
+		.filter(|word| !word.is_empty())
+		.collect();
+	let named = |stem: &str| words.iter().any(|word| word.starts_with(stem));
+	if named("raptor") && named("scav") {
+		return None;
+	}
+	words.windows(2).find_map(|pair| match pair {
+		["vs", "raptor" | "raptors"] => Some("Raptors"),
+		["vs", "scavenger" | "scavengers"] => Some("Scavengers"),
+		_ => None,
+	})
+}
+
 /// An ally team's start box (`ADDSTARTRECT`), in map fractions out of 200.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StartRect {
@@ -506,6 +546,61 @@ pub struct ChannelSummary {
 }
 
 impl LobbyState {
+	/// Who our room has on its seats and AIs right now.
+	pub fn my_roster(&self) -> Option<GameRoster> {
+		let my = self.my_battle.as_ref()?;
+		let battle = self.battles.get(&my.id)?;
+		Some(GameRoster {
+			bots: battle.bots.values().cloned().collect(),
+			player_count: battle.player_count() as u32,
+			seat_handicaps: self.seated(battle).map(|status| status.handicap).collect(),
+			guessed: false,
+		})
+	}
+
+	/// [`Self::my_roster`] for a game already under way when we arrived.
+	///
+	/// With no AI left to see, the room's title can stand in for one. A title
+	/// outlives what it described, so it is believed only where nothing
+	/// contradicts it: no other AI in the room, and the people seated on one
+	/// side, as they are against AI. Its AI is a stand-in with nothing known
+	/// about it, which raptors and scavengers need nothing more than.
+	pub fn my_roster_as_found(&self) -> Option<GameRoster> {
+		let roster = self.my_roster()?;
+		let battle = self.battles.get(&self.my_battle.as_ref()?.id)?;
+		let mut sides = self.seated(battle).map(|status| status.ally_team);
+		let one_side = sides
+			.next()
+			.is_some_and(|first| sides.all(|side| side == first));
+		if !roster.bots.is_empty() || !one_side {
+			return Some(roster);
+		}
+		let Some(ai) = titled_opponent(&battle.title) else {
+			return Some(roster);
+		};
+		let bot = Bot {
+			name: ai.to_owned(),
+			owner: String::new(),
+			status: BattleStatus::default(),
+			team_colour: 0,
+			ai: ai.to_owned(),
+		};
+		Some(GameRoster {
+			bots: vec![bot],
+			guessed: true,
+			..roster
+		})
+	}
+
+	/// The statuses of those in `battle` with a seat.
+	fn seated<'a>(&'a self, battle: &'a Battle) -> impl Iterator<Item = &'a BattleStatus> {
+		battle
+			.members
+			.iter()
+			.filter_map(|name| self.users.get(name)?.battle_status.as_ref())
+			.filter(|status| status.player)
+	}
+
 	pub fn add_user(
 		&mut self,
 		name: String,

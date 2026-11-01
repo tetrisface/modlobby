@@ -8,6 +8,7 @@ import {
 	onCleanup,
 } from 'solid-js'
 import { Thinking } from '../components/Thinking'
+import type { BotView } from '../ipc/bindings/BotView'
 import type { Score } from '../ipc/bindings/Score'
 import { describeError } from '../ipc/client'
 import { age } from '../lib/age'
@@ -59,6 +60,9 @@ function fingerprint(room: RoomModel): string | undefined {
 		.map(([key, value]) => `${key}=${value}`)
 		.sort()
 	const bots = battle.bots.map((bot) => `${bot.ai}@${bot.status.handicap}`)
+	// News of its own when read off the title: that lands as the join replay
+	// ends, with nothing else in here moving.
+	const started = my.gameRoster?.bots.map((bot) => bot.ai) ?? []
 	const seats = battle.members.map((name) => {
 		const status = room.users()[name]?.battleStatus
 		return status?.player ? String(status.handicap) : ''
@@ -68,13 +72,25 @@ function fingerprint(room: RoomModel): string | undefined {
 		battle.mapName,
 		battle.playerCount,
 		...bots,
+		...started,
 		...seats,
 		...settings,
 	].join('\n')
 }
 
+/** Whether these AIs are a PvE opponent. */
+function namesOpponent(bots: readonly BotView[]): boolean {
+	const names = bots.map((bot) => bot.ai.toLowerCase()).join(' ')
+	const raptors = names.includes('raptor')
+	const scavengers = names.includes('scavenger')
+	// Both at once is not a setup the model knows, so it is not asked about.
+	if (raptors && scavengers) return false
+	return raptors || scavengers || names.includes('barb')
+}
+
 /**
- * Whether this room has a PvE opponent in it at all.
+ * Whether this room has a PvE opponent in it at all, or the game running in it
+ * started with one: a leaver's AIs leave the room and play on.
  *
  * Decided here as well as in Rust, which stays authoritative for what is
  * sent. This one only decides whether to ask — without it a room with no AI
@@ -83,14 +99,10 @@ function fingerprint(room: RoomModel): string | undefined {
  * find out nothing.
  */
 function isPve(room: RoomModel): boolean {
-	const names = (room.battle()?.bots ?? [])
-		.map((bot) => bot.ai.toLowerCase())
-		.join(' ')
-	const raptors = names.includes('raptor')
-	const scavengers = names.includes('scavenger')
-	// Both at once is not a setup the model knows, so it is not asked about.
-	if (raptors && scavengers) return false
-	return raptors || scavengers || names.includes('barb')
+	return (
+		namesOpponent(room.battle()?.bots ?? []) ||
+		namesOpponent(room.my()?.gameRoster?.bots ?? [])
+	)
 }
 
 /**

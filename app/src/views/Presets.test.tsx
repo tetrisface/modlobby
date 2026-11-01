@@ -120,6 +120,7 @@ function enterRoom() {
 		seatOnItsWay: null,
 		heldUntilMs: null,
 		settled: true,
+		gameRoster: null,
 	}
 	onlySession(next)
 }
