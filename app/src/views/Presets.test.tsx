@@ -119,6 +119,7 @@ function enterRoom() {
 		readyOnItsWay: null,
 		seatOnItsWay: null,
 		heldUntilMs: null,
+		settled: true,
 	}
 	onlySession(next)
 }

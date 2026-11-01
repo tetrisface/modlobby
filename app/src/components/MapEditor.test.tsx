@@ -100,6 +100,7 @@ function room(me: string, player: boolean) {
 		readyOnItsWay: null,
 		seatOnItsWay: null,
 		heldUntilMs: null,
+		settled: true,
 	})
 }
 

@@ -52,4 +52,9 @@ export type MyBattleView = {
 	 * seconds. Drawn as a hairline draining along the pending segment.
 	 */
 	heldUntilMs: number | null
+	/**
+	 * Whether the server has finished telling us the room as found. Until it
+	 * has, the room's AIs and seats may simply not have arrived yet.
+	 */
+	settled: boolean
 }

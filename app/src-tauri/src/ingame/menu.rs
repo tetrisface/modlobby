@@ -100,6 +100,11 @@ fn modinfo() -> String {
 	)
 }
 
+/// How long, in seconds, a line of the menu's may sit in the file before that
+/// means nobody reads it. Many polls long, so a double click is never taken for
+/// a lobby that has gone away.
+const UNREAD_PATIENCE_SECS: u64 = 1;
+
 /// The menu itself: no window, no drawing, one message and a wait for the
 /// mouse button.
 ///
@@ -126,6 +131,7 @@ local PORT = {port}
 local TOKEN = "{token}"
 local FILE = "{file}"
 local FILE_TOKEN = "{file_token}"
+local PATIENCE = {patience}
 
 local socket = socket
 
@@ -156,16 +162,26 @@ local function unread()
 	return size ~= nil and size > 0
 end
 
+-- When the last line went in.
+local wrote_at = nil
+
+-- A line of ours from moments ago is waiting for the next read. Any older, or
+-- one we did not write, means nobody is reading.
+local function waiting_its_turn()
+	return wrote_at ~= nil and Spring.DiffTimers(Spring.GetTimer(), wrote_at) < PATIENCE
+end
+
 -- Into the file modlobby polls. The write directory is the game's working
 -- directory.
 local function ask_file(verb)
-	if unread() then return false end
+	if unread() then return waiting_its_turn() end
 	local file = io.open(FILE, "a")
 	if not file then
 		return false
 	end
 	file:write(FILE_TOKEN .. " " .. verb .. "\n")
 	file:close()
+	wrote_at = Spring.GetTimer()
 	return true
 end
 
@@ -229,6 +245,7 @@ function AllowDraw()
 end
 "#,
 		file = super::widget::FILE,
+		patience = UNREAD_PATIENCE_SECS,
 	)
 }
 
@@ -400,6 +417,21 @@ mod tests {
 		assert!(lua.contains("Spring.GetMouseState()"));
 	}
 
+	/// A second click before the next read finds the first line still there,
+	/// and that is not a lobby that has gone: it opened the engine's quit box
+	/// behind the overlay.
+	#[test]
+	fn a_line_of_ours_from_moments_ago_is_not_a_lobby_gone() {
+		let lua = main_lua(1234, "secret", "filesecret");
+		assert!(lua.contains(&format!("local PATIENCE = {UNREAD_PATIENCE_SECS}")));
+		assert!(lua.contains("wrote_at = Spring.GetTimer()"));
+		assert!(lua.contains("Spring.DiffTimers(Spring.GetTimer(), wrote_at) < PATIENCE"));
+		assert!(
+			std::time::Duration::from_secs(UNREAD_PATIENCE_SECS) >= crate::ingame::FILE_POLL * 10,
+			"the patience has to outlast many reads"
+		);
+	}
+
 	/// Where the port does not answer -- inside the sandbox there is no socket
 	/// at all -- the button appends its ask to the file modlobby polls, under
 	/// the file channel's own token. A reply of "no" over the port is an
@@ -422,7 +454,9 @@ mod tests {
 		assert!(lua.contains("if answer ~= nil then return answer end"));
 		// A line nobody has taken out means nobody is reading: the player is
 		// handed the engine's quit box rather than a file nobody watches.
-		let unread = lua.find("if unread() then return false end").unwrap();
+		let unread = lua
+			.find("if unread() then return waiting_its_turn() end")
+			.unwrap();
 		let append = lua.find(r#"io.open(FILE, "a")"#).unwrap();
 		assert!(unread < append);
 		assert!(lua.contains(r#"Spring.SendLuaUIMsg("modlobbyGone")"#));

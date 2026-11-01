@@ -99,6 +99,7 @@ export function myBattle(over: Partial<MyBattleView> = {}): MyBattleView {
 		readyOnItsWay: null,
 		seatOnItsWay: null,
 		heldUntilMs: null,
+		settled: true,
 		...over,
 	}
 }

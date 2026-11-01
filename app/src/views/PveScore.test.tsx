@@ -12,7 +12,7 @@ import { STAGGER_STEP } from '../lib/stagger'
 import { emptyLobby, emptyServer, setLobby } from '../store/lobby'
 import { TEST_SERVER, onlySession } from '../store/testing'
 import { setSettingsSignal } from '../store/settings'
-import { PveScore, QUIET_FOR } from './PveScore'
+import { DOTS_AFTER, PveScore, QUIET_FOR } from './PveScore'
 import { RoomProvider } from './room/model'
 import { onlineRoom } from './room/online'
 
@@ -120,10 +120,15 @@ function user(
  * A room where this client asks first: the host is a bot and holds no
  * place, so nothing waits. `others` puts people ahead of us.
  */
-function enter(bots: BotView[], others: UserView[] = []) {
+function enter(
+	bots: BotView[],
+	others: UserView[] = [],
+	over: { title?: string; settled?: boolean } = {},
+) {
 	const next = emptyServer()
 	next.me = 'me'
 	next.battles[7] = room(bots)
+	next.battles[7].title = over.title ?? next.battles[7].title
 	next.battles[7].members = ['host', 'me', ...others.map((held) => held.name)]
 	next.users.host = user('host', { bot: true })
 	next.users.me = user('me', { player: true })
@@ -141,8 +146,15 @@ function enter(bots: BotView[], others: UserView[] = []) {
 		readyOnItsWay: null,
 		seatOnItsWay: null,
 		heldUntilMs: null,
+		settled: over.settled ?? true,
 	}
 	onlySession(next)
+}
+
+/** Into another room as the wire has it: the room first, its AIs after. */
+function hop(id: number) {
+	setLobby('servers', TEST_SERVER, 'battles', id, { ...room([]), id })
+	setLobby('servers', TEST_SERVER, 'myBattle', 'id', id)
 }
 
 const scored: Score = {
@@ -468,6 +480,175 @@ describe('PveScore', () => {
 		// fake timers push one millisecond out when it is set inside a timer.
 		vi.advanceTimersByTime(1)
 		expect(asked).toHaveBeenCalledTimes(2)
+	})
+
+	test('a room its title calls PvE has the row before its AIs have arrived', () => {
+		asked.mockReturnValue(deferred<Score>().promise)
+		enter([], [], { title: 'Coop vs Raptors', settled: false })
+		const { container } = render(panel)
+		vi.advanceTimersByTime(QUIET_FOR)
+		expect(container.querySelectorAll('.pve-figure b .thinking')).toHaveLength(
+			3,
+		)
+		// Rust reads the room's AIs, so there is nothing to ask about yet.
+		expect(asked).not.toHaveBeenCalled()
+	})
+
+	test('the row the title drew is the one the AIs keep', () => {
+		asked.mockReturnValue(deferred<Score>().promise)
+		enter([], [], { title: 'Coop vs Raptors', settled: false })
+		const { container } = render(panel)
+		const row = container.querySelector('.pve-score')
+		expect(row).not.toBeNull()
+
+		setLobby('servers', TEST_SERVER, 'battles', 7, 'bots', [bot('RaptorsAI')])
+		setLobby('servers', TEST_SERVER, 'myBattle', 'settled', true)
+		expect(container.querySelector('.pve-score')).toBe(row)
+		vi.advanceTimersByTime(QUIET_FOR + STAGGER_STEP)
+		expect(asked).toHaveBeenCalledTimes(1)
+	})
+
+	test('a title with no AI behind it gives the row up when the replay ends', () => {
+		enter([], [], { title: 'Coop vs Raptors', settled: false })
+		const { container } = render(panel)
+		expect(container.querySelector('.pve-score')).not.toBeNull()
+
+		setLobby('servers', TEST_SERVER, 'myBattle', 'settled', true)
+		expect(container.querySelector('.pve-score')).toBeNull()
+	})
+
+	test('once a room has said its piece the title says nothing', () => {
+		enter([], [], { title: 'Coop vs Raptors' })
+		const { container } = render(panel)
+		expect(container.querySelector('.pve-score')).toBeNull()
+	})
+
+	test('a title that does not say waits for the AIs', () => {
+		asked.mockReturnValue(deferred<Score>().promise)
+		enter([], [], { title: 'Mods 3', settled: false })
+		const { container } = render(panel)
+		expect(container.querySelector('.pve-score')).toBeNull()
+
+		setLobby('servers', TEST_SERVER, 'battles', 7, 'bots', [bot('RaptorsAI')])
+		expect(container.querySelectorAll('.pve-figure b .thinking')).toHaveLength(
+			3,
+		)
+	})
+
+	test('a re-ask answered soon leaves the figures on screen', async () => {
+		asked.mockResolvedValueOnce(scored)
+		enter([bot('RaptorsAI')])
+		const { container } = render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+
+		const again = deferred<Score>()
+		asked.mockReturnValueOnce(again.promise)
+		setLobby(
+			'servers',
+			TEST_SERVER,
+			'myBattle',
+			'scriptTags',
+			'game/modoptions/raptor_endless',
+			'1',
+		)
+		vi.advanceTimersByTime(QUIET_FOR)
+		// The settle timer hands over to the pace's own zero-length one.
+		vi.advanceTimersByTime(1)
+		expect(asked).toHaveBeenCalledTimes(2)
+		vi.advanceTimersByTime(DOTS_AFTER - 1)
+		expect(container.querySelector('.pve-figure .thinking')).toBeNull()
+		expect(container.textContent).toContain('21.5/34')
+
+		again.resolve({ ...scored, challenge: 5 })
+		await settle()
+		vi.advanceTimersByTime(DOTS_AFTER)
+		expect(container.querySelector('.pve-figure .thinking')).toBeNull()
+		expect(container.textContent).toContain('5.0/34')
+	})
+
+	test('a re-ask that takes its time says so', async () => {
+		asked.mockResolvedValueOnce(scored)
+		enter([bot('RaptorsAI')])
+		const { container } = render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+
+		asked.mockReturnValueOnce(deferred<Score>().promise)
+		setLobby(
+			'servers',
+			TEST_SERVER,
+			'myBattle',
+			'scriptTags',
+			'game/modoptions/raptor_endless',
+			'1',
+		)
+		vi.advanceTimersByTime(QUIET_FOR)
+		// The settle timer hands over to the pace's own zero-length one.
+		vi.advanceTimersByTime(1)
+		expect(asked).toHaveBeenCalledTimes(2)
+		vi.advanceTimersByTime(DOTS_AFTER)
+		expect(container.querySelectorAll('.pve-figure b .thinking')).toHaveLength(
+			3,
+		)
+	})
+
+	test('a room entered from one Rust declined waits with dots', async () => {
+		asked.mockResolvedValueOnce(null)
+		asked.mockReturnValue(deferred<Score>().promise)
+		enter([bot('RaptorsAI')])
+		const { container } = render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+		expect(container.querySelector('.pve-score')).toBeNull()
+
+		hop(8)
+		setLobby('servers', TEST_SERVER, 'battles', 8, 'bots', [bot('RaptorsAI')])
+		expect(container.querySelectorAll('.pve-figure b .thinking')).toHaveLength(
+			3,
+		)
+	})
+
+	test('a room entered from another waits with dots, not the last one’s numbers', async () => {
+		asked.mockResolvedValueOnce(scored)
+		asked.mockReturnValue(deferred<Score>().promise)
+		enter([bot('RaptorsAI')])
+		const { container } = render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+		expect(container.textContent).toContain('21.5/34')
+
+		hop(8)
+		setLobby('servers', TEST_SERVER, 'battles', 8, 'bots', [bot('RaptorsAI')])
+		expect(container.textContent).not.toContain('21.5/34')
+		expect(container.querySelectorAll('.pve-figure b .thinking')).toHaveLength(
+			3,
+		)
+	})
+
+	test('an answer about the room just left is not this room’s', async () => {
+		const leaving = deferred<Score | null>()
+		asked.mockReturnValueOnce(leaving.promise).mockResolvedValue(scored)
+		enter([bot('RaptorsAI')])
+		const { container } = render(panel)
+		vi.advanceTimersByTime(0)
+		expect(asked).toHaveBeenCalledTimes(1)
+
+		hop(8)
+		setLobby('servers', TEST_SERVER, 'battles', 8, 'bots', [bot('RaptorsAI')])
+		vi.advanceTimersByTime(QUIET_FOR)
+		// Answered from between rooms, where Rust has none to read.
+		leaving.resolve(null)
+		await settle()
+		expect(container.querySelectorAll('.pve-figure b .thinking')).toHaveLength(
+			3,
+		)
+
+		// The follow-up is this room's, and lands.
+		vi.advanceTimersByTime(0)
+		await settle()
+		expect(asked).toHaveBeenCalledTimes(2)
+		expect(container.textContent).toContain('21.5/34')
 	})
 
 	test('a failure is said rather than hidden', async () => {

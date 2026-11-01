@@ -182,7 +182,16 @@ impl Projector {
 
 	fn project_effect(&mut self, effect: &Effect, state: &LobbyState, out: &mut Vec<Delta>) {
 		match effect {
-            Effect::Joined { .. } => {
+            Effect::Joined { id } => {
+                // Leaving forgets what only a member is told, its AIs among
+                // them, and tells the view nothing. Said before the view looks
+                // at the room: it would take the last visit's AIs for these,
+                // and ask about a room that has none here yet. Likewise the
+                // seats, or the room opens on the last room's.
+                if let Some(battle) = state.battles.get(id) {
+                    out.push(Delta::BattleOpened(battle.into()));
+                }
+                out.push(Delta::StatusesForgotten);
                 out.push(Delta::MyBattle(
                     state.my_battle.as_ref().map(MyBattleView::from),
                 ));
@@ -712,6 +721,63 @@ mod tests {
 		assert_eq!(
 			running(step(&mut s, &mut p, "JOINBATTLE 6 hash")),
 			Some(None)
+		);
+	}
+
+	#[test]
+	fn a_room_entered_again_holds_only_what_it_has_said_since() {
+		let (mut s, mut p) = live();
+		for line in [
+			"ADDUSER ahost EU 1 SPADS",
+			"BATTLEOPENED 5 0 0 ahost 1.2.3.4 8452 16 0 0 h R\tv\tm\tt\tg",
+			"JOINBATTLE 5 hash",
+			"ADDBOT 5 RaptorsAI ahost 1088 16777215 RaptorsDefense",
+		] {
+			step(&mut s, &mut p, line);
+		}
+		// Leaving forgets what only a member is told and tells the view nothing,
+		// so the view still holds the bot when the room is entered again.
+		s.leave_battle();
+		s.join_battle(5, None, "pw".into());
+		let deltas = step(&mut s, &mut p, "JOINBATTLE 5 hash");
+
+		let held = deltas.iter().position(
+			|delta| matches!(delta, Delta::BattleOpened(battle) if battle.id == 5 && battle.bots.is_empty()),
+		);
+		let entered = deltas
+			.iter()
+			.position(|delta| matches!(delta, Delta::MyBattle(Some(_))));
+		assert!(held.is_some(), "the view is told what the room holds");
+		assert!(held < entered, "before anything looks at it");
+		let forgotten = deltas
+			.iter()
+			.position(|delta| matches!(delta, Delta::StatusesForgotten));
+		assert!(forgotten.is_some(), "the view is told the seats are gone");
+		assert!(forgotten < entered, "before anything looks at them");
+	}
+
+	#[test]
+	fn the_view_hears_when_a_rooms_replay_is_over() {
+		let (mut s, mut p) = live();
+		for line in [
+			"ADDUSER ahost EU 1 SPADS",
+			"BATTLEOPENED 5 0 0 ahost 1.2.3.4 8452 16 0 0 h R\tv\tm\tt\tg",
+		] {
+			step(&mut s, &mut p, line);
+		}
+		let settled = |deltas: Vec<Delta>| {
+			deltas.into_iter().rev().find_map(|delta| match delta {
+				Delta::MyBattle(Some(my)) => Some(my.settled),
+				_ => None,
+			})
+		};
+		assert_eq!(
+			settled(step(&mut s, &mut p, "JOINBATTLE 5 hash")),
+			Some(false)
+		);
+		assert_eq!(
+			settled(step(&mut s, &mut p, "REQUESTBATTLESTATUS")),
+			Some(true)
 		);
 	}
 

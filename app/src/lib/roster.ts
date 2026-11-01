@@ -2,6 +2,7 @@ import type { BattleView } from '../ipc/bindings/BattleView'
 import type { BotView } from '../ipc/bindings/BotView'
 import type { UserView } from '../ipc/bindings/UserView'
 import type { VacancyView } from '../ipc/bindings/VacancyView'
+import { isVsAi } from './battles'
 import { isUnrated, type Skill } from './skill'
 
 /**
@@ -165,14 +166,20 @@ function seat(
 		}
 	}
 
-	const count = room.layout?.teams ?? Math.max(teams.size, DEFAULT_TEAMS)
+	// Against AI the people are one side, so they are not dealt to the AI's.
+	const count =
+		room.layout?.teams ??
+		(isVsAi(room) ? 1 : Math.max(teams.size, DEFAULT_TEAMS))
 	for (let allyTeam = 0; allyTeam < count; allyTeam++) team(allyTeam)
 	// `teamSize` is the room's cap, not its roll call: an event host sets it to
 	// 100 to mean "no limit", and a hundred empty seats a side is not the shape
 	// of an 8v8. How many are really coming is the list's own player count.
 	const perTeam = Math.ceil(room.playerCount / count)
-	for (const t of teams.values())
-		t.expected = Math.max(t.users.length + t.bots.length, perTeam)
+	for (const t of teams.values()) {
+		const taken = t.users.length + t.bots.length
+		// A team past the room's shape has no seats to wait on, only what is on it.
+		t.expected = t.allyTeam < count ? Math.max(taken, perTeam) : taken
+	}
 
 	// The list said how many play. Those seats get the unplaced names, dealt
 	// round the teams in turn; whoever is left over is most likely watching.
@@ -183,7 +190,12 @@ function seat(
 	)
 	let toSeat = Math.max(0, room.playerCount - placed)
 	const dealt = new Set<string>()
-	const unplaced = pending.filter((user) => user.name !== me)
+	// By name, not strength: a skill says nothing about who plays, and dealing by
+	// it would swap who is guessed where as the tags land, for the statuses to
+	// swap back a moment later.
+	const unplaced = pending
+		.filter((user) => user.name !== me)
+		.sort((a, b) => a.name.localeCompare(b.name))
 	const round = sorted(teams)
 	for (let i = 0; toSeat > 0 && i < unplaced.length; ) {
 		let seated = false

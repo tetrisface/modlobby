@@ -391,6 +391,9 @@ pub struct MyBattleView {
 	/// seconds. Drawn as a hairline draining along the pending segment.
 	#[ts(type = "number | null")]
 	pub held_until_ms: Option<u64>,
+	/// Whether the server has finished telling us the room as found. Until it
+	/// has, the room's AIs and seats may simply not have arrived yet.
+	pub settled: bool,
 }
 
 /// The posture a request of ours asks for: a seat on an ally team, or none.
@@ -453,6 +456,7 @@ impl From<&MyBattle> for MyBattleView {
 			ready_on_its_way: my.ready_on_its_way,
 			seat_on_its_way: my.seat_on_its_way.map(Into::into),
 			held_until_ms: my.held_until_ms,
+			settled: my.settled,
 		}
 	}
 }
@@ -1055,6 +1059,8 @@ pub enum Delta {
 		name: String,
 		joined: bool,
 	},
+	/// Nobody's status holds any more: they were told of the last room.
+	StatusesForgotten,
 	MemberStatus {
 		name: String,
 		status: BattleStatusView,

@@ -12,6 +12,7 @@ import type { Score } from '../ipc/bindings/Score'
 import { describeError } from '../ipc/client'
 import { age } from '../lib/age'
 import { asker } from '../lib/asking'
+import { isVsAi } from '../lib/battles'
 import { NOTHING_YET, TOP, miniature } from '../lib/pve'
 import { askDelay } from '../lib/stagger'
 import { settings } from '../store/settings'
@@ -33,6 +34,13 @@ import { useRoom, type RoomModel } from './room/model'
 export const QUIET_FOR = 3000
 /** The least time between two asks from this client, whatever the room does. */
 export const AT_MOST_EVERY = 2000
+/**
+ * How long a fresh ask leaves the last figures up. Most come back well inside
+ * this, the memo's at once, and figures blinking to dots and back on every
+ * arrival in the room say nothing. A cold start does outlast it, and then the
+ * figures are worth taking down.
+ */
+export const DOTS_AFTER = 1000
 
 /**
  * Everything the answer depends on, as one string.
@@ -83,6 +91,20 @@ function isPve(room: RoomModel): boolean {
 	// Both at once is not a setup the model knows, so it is not asked about.
 	if (raptors && scavengers) return false
 	return raptors || scavengers || names.includes('barb')
+}
+
+/**
+ * Whether the room has the row. A room's AIs come last in what the server says
+ * on entering, and a row arriving with them would push the whole room down, so
+ * until the server has finished the title speaks for them. It only ever draws:
+ * asking waits for the AIs, which are what Rust reads.
+ */
+function hasRow(room: RoomModel): boolean {
+	if (isPve(room)) return true
+	const battle = room.battle()
+	const my = room.my()
+	if (!battle || !my || my.settled) return false
+	return isVsAi(battle)
 }
 
 /**
@@ -153,7 +175,8 @@ export function PveScore() {
 	const room = useRoom()
 	/** `undefined` before any answer; `null` when Rust declined to ask. */
 	const [score, setScore] = createSignal<Score | null | undefined>(undefined)
-	const [asking, setAsking] = createSignal(false)
+	/** An ask has been out longer than `DOTS_AFTER`. */
+	const [overdue, setOverdue] = createSignal(false)
 	const [failure, setFailure] = createSignal<string | null>(null)
 	/** Whether the full panel is open over the room. */
 	const [open, setOpen] = createSignal(false)
@@ -168,15 +191,21 @@ export function PveScore() {
 	 */
 	const asks = asker(
 		async () => {
-			setAsking(true)
+			const asked = room.my()?.id
+			const due = setTimeout(() => setOverdue(true), DOTS_AFTER)
 			try {
-				setScore(await room.io.pveScore())
+				const answer = await room.io.pveScore()
+				// A room since left is not this one, and a cold start outlasts a visit.
+				if (room.my()?.id !== asked) return
+				setScore(answer)
 				setFailure(null)
 			} catch (err) {
-				setFailure(describeError(err))
 				console.warn('pve stats:', err)
+				if (room.my()?.id !== asked) return
+				setFailure(describeError(err))
 			} finally {
-				setAsking(false)
+				clearTimeout(due)
+				setOverdue(false)
 			}
 		},
 		{ floor: AT_MOST_EVERY, stagger: () => myStagger(room) },
@@ -200,15 +229,19 @@ export function PveScore() {
 	createEffect(
 		on(watched, (now, before) => {
 			clearTimeout(pending)
-			if (now === undefined || !isPve(room)) return
+			if (now === undefined) return
 			const sameRoom = before?.split('\n')[0] === now.split('\n')[0]
+			// A new room: whatever the last one scored is not this one's. Before
+			// asking whether it is PvE, since a room's AIs arrive after the room.
+			if (!sameRoom) {
+				setScore(undefined)
+				setFailure(null)
+			}
+			if (!isPve(room)) return
 			if (sameRoom) {
 				pending = setTimeout(asks.ask, QUIET_FOR)
 				return
 			}
-			// A new room: whatever the last one scored is not this one's.
-			setScore(undefined)
-			setFailure(null)
 			asks.ask()
 		}),
 	)
@@ -217,8 +250,8 @@ export function PveScore() {
 		asks.stop()
 	})
 
-	/** No answer yet, or a fresh one on its way. */
-	const waiting = () => asking() || score() === undefined
+	/** No answer yet, or a fresh one long on its way. */
+	const waiting = () => overdue() || score() === undefined
 
 	const percent = (value: number | null | undefined) =>
 		value == null ? '—' : `${Math.round(value * 100)}%`
@@ -256,7 +289,7 @@ export function PveScore() {
 	)
 
 	return (
-		<Show when={enabled() && isPve(room) && score() !== null}>
+		<Show when={enabled() && hasRow(room) && score() !== null}>
 			{/* The whole row opens the panel: the figures are a summary of it.
 			    The button stays the way in from the keyboard. */}
 			<div class='pve-score' onClick={() => setOpen(true)}>
@@ -296,7 +329,7 @@ export function PveScore() {
 						)}
 					>
 						<span class='pve-label'>Challenge</span>
-						<span class='pve-figure'>
+						<span class='pve-figure wide'>
 							<Slot value={challenge()} />
 						</span>
 					</span>

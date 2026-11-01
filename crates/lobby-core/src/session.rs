@@ -1318,6 +1318,7 @@ impl Session {
 				// The room's word on its game, which a copy is held to.
 				tracing::info!(id, game_hash, "joined a room");
 				let script_password = self.pending_join.take().unwrap_or_default();
+				state.arrive(id);
 				state.my_battle = Some(MyBattle::new(id, game_hash, script_password));
 				self.in_flight.clear();
 				self.asked_queue = false;
@@ -1356,7 +1357,7 @@ impl Session {
 				if let Some(my) = state.my_battle.as_mut() {
 					my.settled = true;
 				}
-				vec![self.battle_status()]
+				vec![self.battle_status(), Effect::RoomChanged]
 			}
 			E::SentPrivate { name, text } => {
 				// The server echoing us back is the only confirmation the
@@ -3506,6 +3507,55 @@ mod tests {
 		assert_eq!(my.history.len(), 1);
 		assert_eq!(my.history[0].from, "QUJD");
 		assert!(my.history[0].to.is_empty());
+	}
+
+	/// Otherwise the room opens on the last room's seats: a column for a team
+	/// this room does not have, and our own seat where we have none.
+	#[test]
+	fn entering_a_room_forgets_where_anyone_sat_in_the_last() {
+		let mut s = ready_with_room();
+		s.join_battle(5, None, "1".into());
+		feed(
+			&mut s,
+			&[
+				"JOINBATTLE 5 -1",
+				"JOINEDBATTLE 5 me 1",
+				"CLIENTBATTLESTATUS host 4195330 0",
+				"CLIENTBATTLESTATUS me 4195330 0",
+				"BATTLEOPENED 6 0 0 host 1.2.3.4 8453 16 0 0 h R\tv\tm\tt\tg",
+			],
+		);
+		s.join_battle(6, None, "2".into());
+		feed(&mut s, &["JOINBATTLE 6 -1"]);
+		for name in ["host", "me"] {
+			assert_eq!(s.state.users[name].battle_status, None, "{name}");
+		}
+	}
+
+	#[test]
+	fn we_count_as_watching_a_room_from_the_moment_we_enter_it() {
+		let mut s = ready_with_room();
+		feed(&mut s, &["UPDATEBATTLEINFO 5 1 0 1 m"]);
+		let players = |s: &Session| s.state.battles[&5].player_count();
+		assert_eq!(players(&s), 0);
+		s.join_battle(5, None, "1".into());
+		feed(&mut s, &["JOINBATTLE 5 -1"]);
+		assert!(s.state.battles[&5].members.contains("me"));
+		assert_eq!(players(&s), 0, "not one more player");
+		// The server's own word on us arrives, and changes nothing.
+		feed(&mut s, &["JOINEDBATTLE 5 me 1"]);
+		assert_eq!(players(&s), 0);
+	}
+
+	#[test]
+	fn the_end_of_the_join_replay_is_a_change_to_the_room() {
+		let mut s = ready_with_room();
+		s.join_battle(5, None, "1".into());
+		feed(&mut s, &["JOINBATTLE 5 -1"]);
+		assert!(!s.state.my_battle.as_ref().unwrap().settled);
+		let effects = feed(&mut s, &["REQUESTBATTLESTATUS"]);
+		assert!(s.state.my_battle.as_ref().unwrap().settled);
+		assert!(effects.contains(&Effect::RoomChanged));
 	}
 
 	/// teiserver replays the room's whole modoption map after `JOINBATTLE`

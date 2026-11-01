@@ -1282,6 +1282,9 @@ body.resizing-y {
 		auto;
 	align-items: center;
 	gap: 0.4375rem;
+	/* Every row one height: a faction icon sets it for a seated player, and a
+	   row with none must not make a team shrink and grow as statuses land. */
+	min-height: 1.5rem;
 	padding: 0.125rem 0.25rem;
 	border-radius: 2px;
 	font-size: 0.9375rem;
@@ -1319,10 +1322,6 @@ body.resizing-y {
 }
 
 /* A seat waiting for its player: the row's height, a hint of a name. */
-.player.empty {
-	min-height: 1.375rem;
-}
-
 .player.empty .pname {
 	height: 0.5rem;
 	border-radius: 4px;
@@ -5348,12 +5347,18 @@ input[type='checkbox'].v-edit {
 	white-space: nowrap;
 }
 
+/* As wide as the widest figure each will hold, dots included, so what lands in
+   one moves nothing beside it: `100%`, and `34.0/34` for the wide one. */
 .pve-figure b {
 	display: inline-block;
-	min-width: 3ch;
+	min-width: 4.75ch;
 	font-variant-numeric: tabular-nums;
 	color: var(--text);
 	font-weight: 600;
+}
+
+.pve-figure.wide b {
+	min-width: 7ch;
 }
 
 /* The way into the full panel: the row's label and a chart glyph, one

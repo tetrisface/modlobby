@@ -315,6 +315,17 @@ function applySessionDelta(delta: Delta, server: string): void {
 				)
 			}
 			return
+		case 'statusesForgotten':
+			setLobby(
+				'servers',
+				server,
+				'users',
+				produce((users) => {
+					for (const user of Object.values(users))
+						if (user.battleStatus) user.battleStatus = null
+				}),
+			)
+			return
 		case 'bot': {
 			const { id, name, bot } = delta.data
 			if (!session.battles[id]) return

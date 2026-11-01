@@ -3,7 +3,7 @@ import type { BattleStatusView } from '../ipc/bindings/BattleStatusView'
 import type { BattleView } from '../ipc/bindings/BattleView'
 import type { UserView } from '../ipc/bindings/UserView'
 import type { BotView } from '../ipc/bindings/BotView'
-import { arrange, emptySeats, freeTeam, filled } from './roster'
+import { type SkillOf, arrange, emptySeats, freeTeam, filled } from './roster'
 import type { Skill } from './skill'
 
 const seat = (allyTeam: number, player = true): BattleStatusView => ({
@@ -85,6 +85,38 @@ describe('arrange', () => {
 		expect(names(roster.spectators)).toEqual(['Host'])
 		expect(names(roster.pending)).toEqual(['dave', 'me'])
 		expect(roster.spectatorCount).toBe(3)
+	})
+
+	test('a one-team room seats everyone there and keeps the other team for its AI', () => {
+		const roster = arrange(
+			room({ layout: { teams: 1, teamSize: 8 } }),
+			arriving,
+			'me',
+		)
+		expect(roster.teams.map((t) => t.allyTeam)).toEqual([0, 1])
+		expect(roster.teams.map((t) => names(t.guessed))).toEqual([
+			['alice', 'bob', 'carol'],
+			[],
+		])
+		expect(roster.teams.map(emptySeats)).toEqual([0, 0])
+	})
+
+	test('with no layout, a title against AI is one side too', () => {
+		const roster = arrange(room({ title: 'Coop vs Raptors' }), arriving, 'me')
+		expect(roster.teams.map((t) => t.guessed.length)).toEqual([3, 0])
+		expect(roster.teams.map(emptySeats)).toEqual([0, 0])
+	})
+
+	test('a skill landing does not change who is guessed where', () => {
+		const shaped = room({ layout: { teams: 2, teamSize: 2 } })
+		const dealt = (skillOf?: SkillOf) =>
+			arrange(shaped, arriving, 'me', skillOf).teams.map((t) =>
+				names(t.guessed),
+			)
+		const strongest: Skill = { value: 50, origin: 'exact', sigma: 1 }
+		expect(dealt((name) => (name === 'dave' ? strongest : null))).toEqual(
+			dealt(),
+		)
 	})
 
 	test('without a layout the players are split over two teams', () => {

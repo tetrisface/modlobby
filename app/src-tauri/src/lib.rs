@@ -174,6 +174,10 @@ impl ingame::Actions for InGameActions {
 		});
 		true
 	}
+
+	fn game_running(&self) -> bool {
+		self.overlay.armed_for_game()
+	}
 }
 
 /// When `run` began, for the `startup:` milestones in the log.

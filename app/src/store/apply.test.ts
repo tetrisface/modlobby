@@ -1,10 +1,12 @@
 import { describe, expect, test, vi } from 'vitest'
 import type { BattleView } from '../ipc/bindings/BattleView'
+import type { BotView } from '../ipc/bindings/BotView'
 import type { Delta } from '../ipc/bindings/Delta'
 import type { SkirmishView } from '../ipc/bindings/SkirmishView'
 import type { ServerSnapshot } from '../ipc/bindings/ServerSnapshot'
 import type { Snapshot } from '../ipc/bindings/Snapshot'
 import type { UserView } from '../ipc/bindings/UserView'
+import { bot } from '../views/room/fixture'
 import { applyDelta, applyMessage, applySnapshot } from './apply'
 import { chat } from './chat'
 import { lobby } from './lobby'
@@ -63,6 +65,7 @@ const room: SkirmishView = {
 		readyOnItsWay: null,
 		seatOnItsWay: null,
 		heldUntilMs: null,
+		settled: true,
 	},
 	users: [user('me', 0)],
 	me: 'me',
@@ -329,6 +332,45 @@ describe('apply', () => {
 		expect(lobby.ways).toEqual({})
 	})
 
+	test('forgetting the statuses forgets everyone’s, on this server only', () => {
+		const seated = {
+			ready: false,
+			team: 0,
+			allyTeam: 3,
+			player: true,
+			handicap: 0,
+			sync: 'synced' as const,
+			side: 0,
+		}
+		applySnapshot({
+			...snapshot,
+			servers: [
+				{ ...session, users: [{ ...user('alice'), battleStatus: seated }] },
+				{
+					...session,
+					server: 'other',
+					users: [{ ...user('alice'), battleStatus: seated }],
+				},
+			],
+		})
+		applyDelta({ type: 'statusesForgotten' }, S)
+		expect(at().users.alice!.battleStatus).toBeNull()
+		expect(at('other').users.alice!.battleStatus).toEqual(seated)
+	})
+
+	test('a room told again holds only what it says now', () => {
+		const told = (bots: BotView[]): Delta => ({
+			type: 'battleOpened',
+			data: { ...battle(5, ['host']), bots },
+		})
+		applySnapshot(snapshot)
+		applyDelta(told([bot('RaptorsAI')]), S)
+		expect(at().battles[5]!.bots).toHaveLength(1)
+
+		applyDelta(told([]), S)
+		expect(at().battles[5]!.bots).toEqual([])
+	})
+
 	test('a change of room empties the battle chat, a repeat does not', () => {
 		const room = (id: number) => ({
 			type: 'myBattle' as const,
@@ -345,6 +387,7 @@ describe('apply', () => {
 				readyOnItsWay: null,
 				seatOnItsWay: null,
 				heldUntilMs: null,
+				settled: true,
 			},
 		})
 		const said = (seq: number, text: string): Delta => ({

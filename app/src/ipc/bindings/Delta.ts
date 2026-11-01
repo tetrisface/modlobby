@@ -48,6 +48,7 @@ export type Delta =
 	| { type: 'battleLayout'; data: { id: number; layout: LayoutView } }
 	| { type: 'battleQueue'; data: { id: number; names: Array<string> } }
 	| { type: 'member'; data: { id: number; name: string; joined: boolean } }
+	| { type: 'statusesForgotten' }
 	| {
 			type: 'memberStatus'
 			data: { name: string; status: BattleStatusView; teamColour: number }

@@ -60,6 +60,8 @@ pub trait Actions: Send + Sync + 'static {
 	fn raise(&self) -> bool;
 	/// Stop the game, leaving the lobby up. `false` if there was none.
 	fn quit_game(&self) -> bool;
+	/// Whether a game of ours is running, the only time the file gets asks.
+	fn game_running(&self) -> bool;
 }
 
 /// A running control socket, and where its two files were written.
@@ -160,30 +162,37 @@ impl InGame {
 pub use widget::FILE;
 
 /// Watches the file the widget and the menu append to, acting on each line
-/// that carries this run's token and taking the lines out once read. Polled:
-/// the file is written a few times a game, and a watcher's machinery would be
-/// more than the job. Emptying it is also the Lua's sign that someone reads.
+/// that carries this run's token and taking the lines out once read. Emptying
+/// it is also the Lua's sign that someone reads.
+///
+/// Polled, and only while a game of ours runs: a read costs next to nothing,
+/// and a file-system watch would die with the mods write directory, which is
+/// wiped before each launch.
 pub fn watch_file(
 	path: PathBuf,
 	token: String,
 	actions: Arc<dyn Actions>,
 ) -> tokio::task::JoinHandle<()> {
 	tokio::spawn(async move {
-		let mut tick = tokio::time::interval(std::time::Duration::from_millis(250));
 		let mut last_act = std::time::Instant::now() - FILE_PACE;
 		loop {
-			tick.tick().await;
-			let Some(text) = take_file(&path) else {
-				continue;
-			};
-			for line in text.lines() {
-				let Some(command) = parse(line, &token) else {
+			while !actions.game_running() {
+				tokio::time::sleep(FILE_IDLE).await;
+			}
+			// Written before this game began, so no ask of this game's.
+			take_file(&path);
+			while actions.game_running() {
+				tokio::time::sleep(FILE_POLL).await;
+				let Some(text) = take_file(&path) else {
+					continue;
+				};
+				let Some(command) = text.lines().find_map(|line| parse(line, &token)) else {
 					continue;
 				};
 				// A mod inside the game can write this file too; it gets to
 				// ask this often and no more.
 				if last_act.elapsed() < FILE_PACE {
-					break;
+					continue;
 				}
 				last_act = std::time::Instant::now();
 				match command {
@@ -194,12 +203,17 @@ pub fn watch_file(
 						actions.quit_game();
 					}
 				}
-				break;
 			}
 		}
 	})
 }
 
+/// How often the file is read during a game: the delay it adds to Escape and
+/// the Lobby button.
+const FILE_POLL: std::time::Duration = std::time::Duration::from_millis(50);
+/// How often to look for a game starting. A game takes far longer than this to
+/// load before it can ask for anything.
+const FILE_IDLE: std::time::Duration = std::time::Duration::from_secs(1);
 /// How often the file may ask for anything.
 const FILE_PACE: std::time::Duration = std::time::Duration::from_secs(1);
 /// The most of the file that is read: a line is a few dozen bytes, and the
@@ -318,7 +332,7 @@ pub fn token() -> String {
 
 #[cfg(test)]
 mod tests {
-	use std::sync::atomic::{AtomicUsize, Ordering};
+	use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 	use super::*;
 
@@ -328,13 +342,31 @@ mod tests {
 		quit: AtomicUsize,
 		/// What the app would answer: whether this is our game.
 		answer: bool,
+		running: AtomicBool,
 	}
 
 	fn spy(answer: bool) -> Arc<Spy> {
 		Arc::new(Spy {
 			answer,
+			running: AtomicBool::new(true),
 			..Spy::default()
 		})
+	}
+
+	/// A watcher past the emptying that begins each game, so that a line from
+	/// here on is this game's.
+	async fn watching(path: &Path, spy: &Arc<Spy>) -> tokio::task::JoinHandle<()> {
+		let watcher = watch_file(path.to_path_buf(), "8f3c1d9e".into(), spy.clone());
+		tokio::task::yield_now().await;
+		watcher
+	}
+
+	/// Waits for `done`, for longer than the slowest thing a watcher waits on.
+	async fn until(done: impl Fn() -> bool) {
+		let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+		while !done() && std::time::Instant::now() < deadline {
+			tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+		}
 	}
 
 	/// The file as the game would find it in a write directory, its
@@ -353,6 +385,9 @@ mod tests {
 		fn quit_game(&self) -> bool {
 			self.quit.fetch_add(1, Ordering::SeqCst);
 			self.answer
+		}
+		fn game_running(&self) -> bool {
+			self.running.load(Ordering::SeqCst)
 		}
 	}
 
@@ -503,7 +538,7 @@ mod tests {
 		let dir = tempfile::tempdir().unwrap();
 		let path = file_in(dir.path());
 		let spy = spy(true);
-		let watcher = watch_file(path.clone(), "8f3c1d9e".into(), spy.clone());
+		let watcher = watching(&path, &spy).await;
 		std::fs::write(&path, "8f3c1d9e raise\n").unwrap();
 		let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
 		while spy.raised.load(Ordering::SeqCst) == 0 && std::time::Instant::now() < deadline {
@@ -529,7 +564,7 @@ mod tests {
 		let dir = tempfile::tempdir().unwrap();
 		let path = file_in(dir.path());
 		let spy = spy(true);
-		let watcher = watch_file(path.clone(), "8f3c1d9e".into(), spy.clone());
+		let watcher = watching(&path, &spy).await;
 		std::fs::write(&path, "deadbeef raise\n").unwrap();
 		tokio::time::sleep(std::time::Duration::from_millis(700)).await;
 		assert_eq!(spy.raised.load(Ordering::SeqCst), 0);
@@ -541,7 +576,7 @@ mod tests {
 		let dir = tempfile::tempdir().unwrap();
 		let path = file_in(dir.path());
 		let spy = spy(true);
-		let watcher = watch_file(path.clone(), "8f3c1d9e".into(), spy.clone());
+		let watcher = watching(&path, &spy).await;
 		let mut huge = b"8f3c1d9e raise\n".to_vec();
 		huge.extend(std::iter::repeat_n(b'x', 2 * 1024 * 1024));
 		std::fs::write(&path, &huge).unwrap();
@@ -563,7 +598,7 @@ mod tests {
 		let dir = tempfile::tempdir().unwrap();
 		let path = file_in(dir.path());
 		let spy = spy(true);
-		let watcher = watch_file(path.clone(), "8f3c1d9e".into(), spy.clone());
+		let watcher = watching(&path, &spy).await;
 		std::fs::write(&path, b"\xff\xfe junk\n8f3c1d9e raise\n").unwrap();
 		let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
 		while spy.raised.load(Ordering::SeqCst) == 0 && std::time::Instant::now() < deadline {
@@ -576,11 +611,66 @@ mod tests {
 
 	/// A mod that writes the file can only ask so often.
 	#[tokio::test]
+	async fn with_no_game_running_the_file_is_left_as_it_is() {
+		let dir = tempfile::tempdir().unwrap();
+		let path = file_in(dir.path());
+		let spy = spy(true);
+		spy.running.store(false, Ordering::SeqCst);
+		let watcher = watching(&path, &spy).await;
+		std::fs::write(&path, "8f3c1d9e raise\n").unwrap();
+		tokio::time::sleep(FILE_POLL * 4).await;
+		assert_eq!(spy.raised.load(Ordering::SeqCst), 0);
+		assert_eq!(
+			std::fs::read_to_string(&path).unwrap(),
+			"8f3c1d9e raise\n",
+			"a line left in the file is how the Lua knows nobody reads"
+		);
+		watcher.abort();
+	}
+
+	#[tokio::test]
+	async fn a_line_from_before_the_game_is_dropped_and_the_games_own_raises() {
+		let dir = tempfile::tempdir().unwrap();
+		let path = file_in(dir.path());
+		let spy = spy(true);
+		spy.running.store(false, Ordering::SeqCst);
+		std::fs::write(&path, "8f3c1d9e raise\n").unwrap();
+		let watcher = watching(&path, &spy).await;
+
+		spy.running.store(true, Ordering::SeqCst);
+		until(|| std::fs::read_to_string(&path).unwrap().is_empty()).await;
+		assert_eq!(std::fs::read_to_string(&path).unwrap(), "");
+		tokio::time::sleep(FILE_POLL * 4).await;
+		assert_eq!(spy.raised.load(Ordering::SeqCst), 0, "not this game's ask");
+
+		std::fs::write(&path, "8f3c1d9e raise\n").unwrap();
+		until(|| spy.raised.load(Ordering::SeqCst) == 1).await;
+		assert_eq!(spy.raised.load(Ordering::SeqCst), 1);
+		watcher.abort();
+	}
+
+	#[tokio::test]
+	async fn the_game_ending_stops_the_reading() {
+		let dir = tempfile::tempdir().unwrap();
+		let path = file_in(dir.path());
+		let spy = spy(true);
+		let watcher = watching(&path, &spy).await;
+		spy.running.store(false, Ordering::SeqCst);
+		tokio::time::sleep(FILE_POLL * 2).await;
+
+		std::fs::write(&path, "8f3c1d9e raise\n").unwrap();
+		tokio::time::sleep(FILE_POLL * 4).await;
+		assert_eq!(spy.raised.load(Ordering::SeqCst), 0);
+		assert_ne!(std::fs::read_to_string(&path).unwrap(), "");
+		watcher.abort();
+	}
+
+	#[tokio::test]
 	async fn raise_lines_are_rate_limited() {
 		let dir = tempfile::tempdir().unwrap();
 		let path = file_in(dir.path());
 		let spy = spy(true);
-		let watcher = watch_file(path.clone(), "8f3c1d9e".into(), spy.clone());
+		let watcher = watching(&path, &spy).await;
 		std::fs::write(&path, "8f3c1d9e raise\n".repeat(50)).unwrap();
 		tokio::time::sleep(std::time::Duration::from_millis(700)).await;
 		assert_eq!(

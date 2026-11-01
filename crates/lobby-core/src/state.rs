@@ -569,6 +569,28 @@ impl LobbyState {
 		self.user_battle.remove(name);
 	}
 
+	/// What entering a room makes true before the server has said so.
+	///
+	/// A status is only ever told of the room it was sent in, and nothing says
+	/// when it stops being true, so what anyone was told to be doing is the last
+	/// room's. And we are here, watching: the server's own count of us follows
+	/// its own tick, and until then the room reads one player too many.
+	pub fn arrive(&mut self, id: u32) {
+		for user in self.users.values_mut() {
+			user.battle_status = None;
+		}
+		let Some(me) = self.me.clone() else {
+			return;
+		};
+		let Some(battle) = self.battles.get_mut(&id) else {
+			return;
+		};
+		if battle.members.insert(me.clone()) {
+			battle.spectator_count += 1;
+		}
+		self.user_battle.insert(me, id);
+	}
+
 	/// The battle we are in, if it is still on the list.
 	pub fn my_room_mut(&mut self) -> Option<&mut Battle> {
 		let id = self.my_battle.as_ref()?.id;
