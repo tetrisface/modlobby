@@ -204,6 +204,7 @@ const scored: Score = {
 					challenge30Clears: 0,
 					highestChallengeCleared: 24.8,
 					clearHistogram: [1, 1],
+					playHistogram: [2, 3],
 				},
 			},
 			awards: { mostKilled: { raptors: 2, scavengers: 0, barbarians: 0 } },

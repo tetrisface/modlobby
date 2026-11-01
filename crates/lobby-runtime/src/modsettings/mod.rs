@@ -6,10 +6,13 @@
 
 pub mod config;
 pub mod lua;
+pub mod widgets;
 
 use std::collections::{BTreeSet, HashMap};
 use std::io::{self, Read as _};
 use std::path::{Path, PathBuf};
+
+use lua::{field, fields_of, key_text, set_field, table_of};
 
 /// The player's files a modded game is given and may change, under the
 /// mods write directory; beside them, every `LuaUI/Config/*.lua` a widget
@@ -332,6 +335,7 @@ pub fn changes(capture: &Capture) -> Option<lobby_ui::ModSetView> {
 	let at = at?;
 	let before = capture.before();
 	let after = capture.after();
+	let (settings, settings_more) = setting_changes(&before, &after);
 	Some(lobby_ui::ModSetView {
 		id: set.id(),
 		repos: set.repos.iter().cloned().collect(),
@@ -339,6 +343,8 @@ pub fn changes(capture: &Capture) -> Option<lobby_ui::ModSetView> {
 		at,
 		engine: engine_changes(&text_of(&before, CONFIG), &text_of(&after, CONFIG)),
 		widgets: widget_changes(&before, &after),
+		settings,
+		settings_more,
 		keybinds: text_change(&before, &after, KEYBINDS),
 		hotkeys: text_change(&before, &after, HOTKEYS),
 		blueprints: text_change(&before, &after, BLUEPRINTS),
@@ -377,6 +383,30 @@ fn widget_changes(before: &Path, after: &Path) -> Vec<lobby_ui::WidgetChange> {
 	}
 	out.sort_by(|a, b| a.widget.cmp(&b.widget));
 	out
+}
+
+/// Every widget's settings in `after` against their own in `before`, by
+/// widget and place: as many as are shown, and how many more there are.
+fn setting_changes(before: &Path, after: &Path) -> (Vec<lobby_ui::SettingChange>, u32) {
+	let mut out: Vec<lobby_ui::SettingChange> = Vec::new();
+	for rel in lua_configs(after) {
+		let Some(now) = read_lua(after, &rel) else {
+			continue;
+		};
+		let was = read_lua(before, &rel).unwrap_or(lua::Lua::Table(Vec::new()));
+		out.extend(widgets::changed(&was, &now).into_iter().map(|setting| {
+			lobby_ui::SettingChange {
+				widget: setting.widget,
+				key: widgets::path_text(&setting.path),
+				before: setting.was.as_ref().map(lua::text),
+				after: lua::text(&setting.now),
+			}
+		}));
+	}
+	out.sort_by(|a, b| (&a.widget, &a.key).cmp(&(&b.widget, &b.key)));
+	let more = out.len().saturating_sub(MOST_LINES);
+	out.truncate(MOST_LINES);
+	(out, u32::try_from(more).unwrap_or(u32::MAX))
 }
 
 /// The widgets `now`'s `order` turns on or off against `was`'s; a widget
@@ -451,37 +481,6 @@ fn lines_between(was: &str, now: &str) -> (Vec<String>, Vec<String>) {
 	(only_in(&now, &was), only_in(&was, &now))
 }
 
-/// The fields of `table`'s field `name` when that is a table, else none.
-fn fields_of(table: &lua::Lua, name: &str) -> Vec<(lua::Key, lua::Lua)> {
-	match table {
-		lua::Lua::Table(fields) => table_of(fields, name),
-		_ => Vec::new(),
-	}
-}
-
-/// The fields of the field `name` among `fields` when it is a table, else
-/// none.
-fn table_of(fields: &[(lua::Key, lua::Lua)], name: &str) -> Vec<(lua::Key, lua::Lua)> {
-	match field(fields, name) {
-		Some(lua::Lua::Table(inner)) => inner.clone(),
-		_ => Vec::new(),
-	}
-}
-
-fn field<'a>(fields: &'a [(lua::Key, lua::Lua)], name: &str) -> Option<&'a lua::Lua> {
-	fields
-		.iter()
-		.find(|(key, _)| key_text(key) == name)
-		.map(|(_, value)| value)
-}
-
-fn key_text(key: &lua::Key) -> String {
-	match key {
-		lua::Key::Name(name) | lua::Key::Str(name) => name.clone(),
-		lua::Key::Number(number) => number.to_string(),
-	}
-}
-
 /// Folds what `after/` changed, of `kinds`, into the player's own files
 /// under `open_write`, each through its writer: the plain engine keys over
 /// `springsettings.cfg`, the widgets turned on or off into the open widget
@@ -527,11 +526,7 @@ pub fn fold_in(
 			if changed.is_empty() {
 				continue;
 			}
-			let own = match std::fs::read_to_string(open_write.join(&rel)) {
-				Ok(text) => lua::read(&text)
-					.map_err(|why| io::Error::other(format!("{}: {why}", rel.display())))?,
-				Err(_) => lua::Lua::Table(Vec::new()),
-			};
+			let own = own_lua(open_write, &rel)?;
 			write_under(
 				open_write,
 				&rel,
@@ -542,6 +537,32 @@ pub fn fold_in(
 				&before,
 				&rel,
 				lua::write(&with_order(was, &now, &changed)).as_bytes(),
+			)?;
+		}
+	}
+	if kinds.settings {
+		for rel in lua_configs(&after) {
+			let Some(now) = read_lua(&after, &rel) else {
+				continue;
+			};
+			let was = read_lua(&before, &rel).unwrap_or(lua::Lua::Table(Vec::new()));
+			let changed = widgets::changed(&was, &now);
+			if changed.is_empty() {
+				continue;
+			}
+			let own = own_lua(open_write, &rel)?;
+			write_under(
+				open_write,
+				&rel,
+				lua::write(&widgets::with_settings(own, &changed)).as_bytes(),
+			)?;
+			if !written.contains(&rel) {
+				written.push(rel.clone());
+			}
+			write_under(
+				&before,
+				&rel,
+				lua::write(&widgets::with_settings(was, &changed)).as_bytes(),
 			)?;
 		}
 	}
@@ -618,13 +639,6 @@ fn with_lines(own: &str, change: &lobby_ui::TextChange) -> String {
 	out
 }
 
-fn set_field(fields: &mut Vec<(lua::Key, lua::Lua)>, name: &str, value: lua::Lua) {
-	match fields.iter_mut().find(|(key, _)| key_text(key) == name) {
-		Some((_, held)) => *held = value,
-		None => fields.push((lua::Key::Name(name.to_owned()), value)),
-	}
-}
-
 /// `rel` in `into` as it is in `from`: gone from `into` when `from` has
 /// none.
 fn settle(from: &Path, into: &Path, rel: &Path) -> io::Result<()> {
@@ -637,6 +651,18 @@ fn settle(from: &Path, into: &Path, rel: &Path) -> io::Result<()> {
 			}
 		}
 		Err(err) => Err(err),
+	}
+}
+
+/// The player's own widget config at `rel`, for a fold-in to write over: an
+/// empty table where they have none yet, and the error where theirs does not
+/// parse, since nothing of theirs is to be overwritten blind.
+fn own_lua(open_write: &Path, rel: &Path) -> io::Result<lua::Lua> {
+	match std::fs::read_to_string(open_write.join(rel)) {
+		Ok(text) => {
+			lua::read(&text).map_err(|why| io::Error::other(format!("{}: {why}", rel.display())))
+		}
+		Err(_) => Ok(lua::Lua::Table(Vec::new())),
 	}
 }
 
@@ -948,9 +974,14 @@ LuaSocketEnabled = 0
 				widget: "Chat".into(),
 				on: true,
 			}],
-			"Idle only moved in the order, and widget data is never a change: \
-			 a modded game starts every widget at its defaults"
+			"Idle only moved in the order"
 		);
+		assert!(
+			view.settings.is_empty(),
+			"Chat's settings are kept back, Idle's are the same: {:?}",
+			view.settings
+		);
+		assert_eq!(view.settings_more, 0);
 		assert_eq!(
 			view.keybinds,
 			Some(lobby_ui::TextChange {
@@ -999,6 +1030,7 @@ LuaSocketEnabled = 0
 		lobby_ui::FoldKinds {
 			engine,
 			widgets,
+			settings: false,
 			keybinds: false,
 			hotkeys: false,
 			blueprints: false,
@@ -1134,6 +1166,115 @@ LuaSocketEnabled = 0
 		let view = changes(&capture).unwrap();
 		assert_eq!(view.engine.len(), 1, "{view:?}");
 		assert!(view.widgets.is_empty(), "{view:?}");
+	}
+
+	/// A widget's settings diff by their place, over the widgets that
+	/// carry, and fold in by it: the player's other settings stay.
+	#[test]
+	fn a_widgets_settings_diff_by_their_place_and_fold_in_by_it() {
+		let dir = tempfile::tempdir().unwrap();
+		let (_, capture) = planted(
+			dir.path(),
+			&[(
+				"LuaUI/Config/BYAR.lua",
+				"return {\n\tdata = {\n\t\t[\"Top Bar\"] = {\n\t\t\tscale = 1,\n\t\t},\n\t\tChat = {\n\t\t\tsize = 1,\n\t\t},\n\t},\n\torder = {\n\t\tChat = 1,\n\t},\n}\n",
+			)],
+			&[(
+				"LuaUI/Config/BYAR.lua",
+				"return {\n\tdata = {\n\t\t[\"Top Bar\"] = {\n\t\t\tscale = 2,\n\t\t\thide = true,\n\t\t\tat = {\n\t\t\t\t3,\n\t\t\t},\n\t\t},\n\t\tChat = {\n\t\t\tsize = 2,\n\t\t},\n\t\t[\"Widget Selector\"] = {\n\t\t\tpickedSet = \"late game lag\",\n\t\t},\n\t},\n\torder = {\n\t\tChat = 1,\n\t},\n}\n",
+			)],
+		);
+		let view = changes(&capture).unwrap();
+		let change = |key: &str, before: Option<&str>, after: &str| lobby_ui::SettingChange {
+			widget: "Top Bar".into(),
+			key: key.into(),
+			before: before.map(str::to_owned),
+			after: after.into(),
+		};
+		assert_eq!(
+			view.settings,
+			[
+				change("at.1", None, "3"),
+				change("hide", None, "true"),
+				change("scale", Some("1"), "2"),
+			],
+			"Chat is kept back, the Widget Selector's preset is text"
+		);
+		assert_eq!(view.settings_more, 0);
+		assert!(view.widgets.is_empty());
+		let open = dir.path().join("open");
+		plant(
+			&open,
+			"LuaUI/Config/BYAR.lua",
+			"return {\n\tdata = {\n\t\t[\"Top Bar\"] = {\n\t\t\tscale = 1,\n\t\t\tcolour = \"ff0000\",\n\t\t},\n\t\tChat = {\n\t\t\tsize = 5,\n\t\t},\n\t},\n\torder = {\n\t\tChat = 0,\n\t},\n}\n",
+		);
+		let settings = lobby_ui::FoldKinds {
+			settings: true,
+			..kinds(false, false)
+		};
+		let written = fold_in(&capture, &open, &settings).unwrap();
+		assert_eq!(written, [Path::new("LuaUI/Config/BYAR.lua").to_path_buf()]);
+		let text = std::fs::read_to_string(open.join("LuaUI/Config/BYAR.lua")).unwrap();
+		let merged = lua::read(&text).unwrap();
+		let top = |key: &str| at(&merged, &["data", "Top Bar", key]);
+		assert_eq!(top("scale"), Some(&lua::Lua::Number(2.0)));
+		assert_eq!(top("hide"), Some(&lua::Lua::Bool(true)));
+		assert_eq!(
+			at(&merged, &["data", "Top Bar", "at", "1"]),
+			Some(&lua::Lua::Number(3.0))
+		);
+		assert_eq!(
+			top("colour"),
+			Some(&lua::Lua::Str("ff0000".into())),
+			"a setting the game did not touch stays the player's"
+		);
+		assert_eq!(
+			at(&merged, &["data", "Chat", "size"]),
+			Some(&lua::Lua::Number(5.0)),
+			"Chat's settings never cross"
+		);
+		assert_eq!(
+			at(&merged, &["order", "Chat"]),
+			Some(&lua::Lua::Number(0.0)),
+			"the order was not asked for"
+		);
+		// Folded, the baseline moved: none of it is shown again.
+		let view = changes(&capture).unwrap();
+		assert!(view.settings.is_empty(), "{:?}", view.settings);
+	}
+
+	/// A hundred settings are shown and the rest counted; every one folds.
+	#[test]
+	fn the_settings_shown_are_capped_and_the_rest_counted() {
+		let dir = tempfile::tempdir().unwrap();
+		let many: String = (0..130).map(|i| format!("\t\t\tk{i} = {i},\n")).collect();
+		let after = format!("return {{\n\tdata = {{\n\t\tBig = {{\n{many}\t\t}},\n\t}},\n}}\n");
+		let (_, capture) = planted(
+			dir.path(),
+			&[(
+				"LuaUI/Config/BYAR.lua",
+				"return {\n\tdata = {\n\t\tBig = {\n\t\t},\n\t},\n}\n",
+			)],
+			&[("LuaUI/Config/BYAR.lua", after.as_str())],
+		);
+		let view = changes(&capture).unwrap();
+		assert_eq!(view.settings.len(), MOST_LINES);
+		assert_eq!(view.settings_more, 30);
+		let open = dir.path().join("open");
+		plant(&open, "LuaUI/Config/BYAR.lua", "return {\n}\n");
+		let settings = lobby_ui::FoldKinds {
+			settings: true,
+			..kinds(false, false)
+		};
+		fold_in(&capture, &open, &settings).unwrap();
+		let text = std::fs::read_to_string(open.join("LuaUI/Config/BYAR.lua")).unwrap();
+		let merged = lua::read(&text).unwrap();
+		assert_eq!(
+			at(&merged, &["data", "Big", "k129"]),
+			Some(&lua::Lua::Number(129.0)),
+			"every one folds, shown or not"
+		);
+		assert!(changes(&capture).unwrap().settings.is_empty());
 	}
 
 	/// Discarding forgets the set: nothing is left to show, and its next

@@ -1579,8 +1579,10 @@ body.resizing-y {
 }
 
 .chat-log {
+	/* Holds nothing but the bar of a line that named you. */
+	--log-gutter: 0.45rem;
 	overflow-y: auto;
-	padding: 0.5625rem 1rem;
+	padding: 0.5625rem 1rem 0.5625rem var(--log-gutter);
 	font-size: 0.8125rem;
 	display: flex;
 	flex-direction: column;
@@ -4384,7 +4386,7 @@ input[type='checkbox'].v-edit {
 .line .at {
 	font-family: var(--mono);
 	font-size: 0.65625rem;
-	color: var(--line);
+	color: var(--faint);
 	font-variant-numeric: tabular-nums;
 	flex-shrink: 0;
 }
@@ -4506,9 +4508,18 @@ input[type='checkbox'].v-edit {
 
 /* ---- a line that named you ---- */
 
+/* The band reaches the pane's edges and its bar sits in the gutter, clear of
+   the timestamp; the text stays at the x of every other line. */
 .line.named {
+	margin-inline: calc(-1 * var(--log-gutter)) -1rem;
+	padding-inline: var(--log-gutter) 1rem;
 	background: color-mix(in srgb, var(--accent) 12%, transparent);
 	box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.line.named .at,
+.line.named .from {
+	color: var(--muted);
 }
 
 .badge.named {

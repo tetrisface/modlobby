@@ -333,10 +333,9 @@ pub fn write_config(
 }
 
 /// The player's files a modded game may have, besides their own widgets and
-/// which widgets are on ([`seed`]): their hotkeys, BAR's keybind profiles
-/// and blueprints, which the game reads as data. Never widget data, which
-/// holds chat history, and never the settings file, which [`write_config`]
-/// makes.
+/// their widget configs ([`seed`]): their hotkeys, BAR's keybind profiles
+/// and blueprints, which the game reads as data. Never the settings file,
+/// which [`write_config`] makes.
 const SEEDED: &[&str] = &[
 	"uikeys.txt",
 	"LuaUI/Config/keybind_profiles.json",
@@ -355,8 +354,10 @@ pub const CONFINED_MARK: &str = "modlobby-confined";
 
 /// Copies into the mods write directory, from the player's data directory,
 /// what a modded game may have of theirs: [`SEEDED`], their widgets, and of
-/// each widget handler config its [`widget_selection`]. One-way, before
-/// every launch: nothing a modded game writes ever comes back.
+/// each widget handler config what [`crate::modsettings::widgets::carried`]
+/// admits -- which widgets are on and their plain settings, never chat
+/// history. One-way, before every launch: nothing a modded game writes
+/// comes back by itself.
 pub fn seed(mods: &ModsLayout, from: &Path) -> io::Result<()> {
 	for name in SEEDED {
 		let source = from.join(name);
@@ -382,14 +383,19 @@ pub fn seed(mods: &ModsLayout, from: &Path) -> io::Result<()> {
 		let Ok(text) = std::fs::read_to_string(&path) else {
 			continue;
 		};
-		let Some(selection) = widget_selection(&text) else {
-			continue;
+		let config = match crate::modsettings::lua::read(&text) {
+			Ok(config) => config,
+			Err(why) => {
+				tracing::warn!(file = %path.display(), %why, "a widget config is not data; none of it carried");
+				continue;
+			}
 		};
+		let carried = crate::modsettings::widgets::carried(&config);
 		let target = mods.write.join(WIDGET_CONFIGS).join(entry.file_name());
 		if let Some(parent) = target.parent() {
 			std::fs::create_dir_all(parent)?;
 		}
-		std::fs::write(target, selection)?;
+		std::fs::write(target, crate::modsettings::lua::write(&carried))?;
 	}
 	Ok(())
 }
@@ -411,47 +417,6 @@ fn copy_tree(from: &Path, to: &Path) -> io::Result<()> {
 		}
 	}
 	Ok(())
-}
-
-/// Of a widget handler's config (BAR's `LuaUI/Config/<game>.lua`:
-/// `allowUserWidgets`, every widget's `data`, and the `order` that says
-/// which widgets are on), the same file with only `allowUserWidgets` and
-/// `order`. The data is whatever each widget keeps, chat history among it;
-/// the order is names and numbers. `None` for a file not in that shape,
-/// which then carries nothing.
-pub fn widget_selection(text: &str) -> Option<String> {
-	let lines: Vec<&str> = text.lines().map(str::trim_end).collect();
-	if !lines.contains(&"return {") {
-		return None;
-	}
-	let allow = lines
-		.iter()
-		.find(|line| line.starts_with("\tallowUserWidgets = "));
-	let start = lines.iter().position(|line| *line == "\torder = {")?;
-	let entries = &lines[start + 1..];
-	let len = entries.iter().position(|line| *line == "\t},")?;
-	let entries = &entries[..len];
-	// One name to one number per line; anything nested is not that file.
-	if entries
-		.iter()
-		.any(|line| !line.starts_with("\t\t") || line.contains('{'))
-	{
-		return None;
-	}
-	let mut kept = String::from(
-		"-- Which widgets are on, carried by modlobby from the player's own games; what each widget keeps stays behind\nreturn {\n",
-	);
-	if let Some(allow) = allow {
-		kept.push_str(allow);
-		kept.push('\n');
-	}
-	kept.push_str("\torder = {\n");
-	for line in entries {
-		kept.push_str(line);
-		kept.push('\n');
-	}
-	kept.push_str("\t},\n}\n");
-	Some(kept)
 }
 
 /// What a confined engine may touch for this launch: the engine's own
@@ -926,28 +891,11 @@ mod tests {
 		assert!(!dirs.read.iter().any(|read| read.ends_with("mod-builds")));
 	}
 
-	/// BAR keeps which widgets are on and every widget's data in one file;
-	/// the data holds chat history, the order holds names and numbers.
+	/// What a modded game gets of the player's LuaUI: their own widgets,
+	/// which widgets are on and each widget's plain settings; never chat
+	/// history, and never the other files in the config directory.
 	#[test]
-	fn the_widget_selection_keeps_the_order_and_drops_the_data() {
-		let config = "-- Widget Custom data and order, order = 0 disabled widget\nreturn {\n\tallowUserWidgets = true,\n\tdata = {\n\t\tChat = {\n\t\t\tinputHistory = {\n\t\t\t\t\"hello everyone\",\n\t\t\t},\n\t\t\torgLinesPacked = \"0|secret line\",\n\t\t},\n\t\t[\"Commander Name Tags\"] = {\n\t\t\tnameScaling = true,\n\t\t},\n\t},\n\torder = {\n\t\t[\"API Builder Queue\"] = 130,\n\t\t[\"API LOS Combiner GL4\"] = 0,\n\t\tChat = 7,\n\t},\n}\n";
-		let kept = widget_selection(config).expect("recognised");
-		assert!(kept.contains("allowUserWidgets = true,"), "{kept}");
-		assert!(kept.contains("[\"API Builder Queue\"] = 130,"), "{kept}");
-		assert!(kept.contains("Chat = 7,"), "{kept}");
-		assert!(!kept.contains("data = {"), "{kept}");
-		assert!(!kept.contains("inputHistory"), "{kept}");
-		assert!(!kept.contains("secret line"), "{kept}");
-		assert!(!kept.contains("hello everyone"), "{kept}");
-		assert_eq!(widget_selection("return { something = 1 }"), None);
-		assert_eq!(widget_selection(""), None);
-	}
-
-	/// What a modded game gets of the player's LuaUI: their own widgets and
-	/// which widgets are on; never widget data, where chat history lives,
-	/// and never the other files in the config directory.
-	#[test]
-	fn the_seed_carries_the_players_widgets_and_their_selection_only() {
+	fn the_seed_carries_the_players_widgets_their_selection_and_plain_settings() {
 		let dir = tempfile::tempdir().unwrap();
 		let data = dir.path().join("data");
 		let mods = layout(&data);
@@ -982,9 +930,11 @@ mod tests {
 			read("LuaUI/Widgets/lib/helper.lua").as_deref(),
 			Some("-- helper")
 		);
-		let byar = read("LuaUI/Config/BYAR.lua").expect("the selection is carried");
+		let byar = read("LuaUI/Config/BYAR.lua").expect("the config is carried");
 		assert!(byar.contains("Chat = 7,"), "{byar}");
+		assert!(byar.contains("nameScaling = true,"), "{byar}");
 		assert!(!byar.contains("secret line"), "{byar}");
+		assert!(!byar.contains("inputHistory"), "{byar}");
 		assert_eq!(
 			read("LuaUI/Config/keybind_profiles.json").as_deref(),
 			Some("{\"active\": \"mine\"}"),
@@ -1003,5 +953,32 @@ mod tests {
 		std::fs::create_dir_all(&mods.write).unwrap();
 		seed(&mods, &data).unwrap();
 		assert!(!mods.write.join("LuaUI").exists());
+	}
+
+	/// A widget config that is not data -- a call planted in it, a value no
+	/// literal holds -- carries nothing, not even which widgets are on.
+	#[test]
+	fn a_widget_config_that_is_not_data_carries_nothing() {
+		let dir = tempfile::tempdir().unwrap();
+		let data = dir.path().join("data");
+		let mods = layout(&data);
+		let path = data.join("LuaUI/Config/BYAR.lua");
+		std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+		std::fs::write(
+			&path,
+			"return {
+	order = {
+		Chat = 7,
+	},
+	data = {
+		x = f(),
+	},
+}
+",
+		)
+		.unwrap();
+		std::fs::create_dir_all(&mods.write).unwrap();
+		seed(&mods, &data).unwrap();
+		assert!(!mods.write.join("LuaUI/Config/BYAR.lua").exists());
 	}
 }

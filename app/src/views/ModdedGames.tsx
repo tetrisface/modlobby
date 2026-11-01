@@ -13,11 +13,12 @@ import { pushNotice } from '../store/chat'
 /**
  * What modded games left changed of your settings, kept per set of mods
  * and shown against what each game was given: engine keys, widgets turned
- * on or off and their settings, keybinds, hotkeys and blueprints. Each set
+ * on or off, widget settings, keybinds, hotkeys and blueprints. Each set
  * folds what you pick into your own settings, or is put back to what its
  * last launch had. Nothing a mod wrote crosses as bytes: every file goes
- * through modlobby's own readers and writers, and a text-valued engine key
- * -- a path, an address -- is shown but never folded.
+ * through modlobby's own readers and writers; a text-valued engine key --
+ * a path, an address -- is shown but never folded, and a widget setting
+ * that is text -- chat history, players' names -- is neither.
  */
 export function ModdedGamesRows() {
 	const [sets, { mutate }] = createResource(async () => {
@@ -53,6 +54,7 @@ function changed(set: ModSetView): FoldKinds {
 	return {
 		engine: set.engine.length > 0,
 		widgets: set.widgets.length > 0,
+		settings: set.settings.length > 0,
 		keybinds: set.keybinds !== null,
 		hotkeys: set.hotkeys !== null,
 		blueprints: set.blueprints !== null,
@@ -61,7 +63,8 @@ function changed(set: ModSetView): FoldKinds {
 
 const KINDS: readonly [keyof FoldKinds, string][] = [
 	['engine', 'Engine settings'],
-	['widgets', 'Widgets'],
+	['widgets', 'Widgets on or off'],
+	['settings', 'Widget settings'],
 	['keybinds', 'Keybinds'],
 	['hotkeys', 'Hotkeys'],
 	['blueprints', 'Blueprints'],
@@ -79,6 +82,7 @@ function ModSet(props: {
 	const asked = (): FoldKinds => ({
 		engine: wanted.engine && has().engine,
 		widgets: wanted.widgets && has().widgets,
+		settings: wanted.settings && has().settings,
 		keybinds: wanted.keybinds && has().keybinds,
 		hotkeys: wanted.hotkeys && has().hotkeys,
 		blueprints: wanted.blueprints && has().blueprints,
@@ -131,15 +135,32 @@ function ModSet(props: {
 							</ul>
 						</li>
 					</Show>
+					<Show when={has().settings}>
+						<li>
+							Widget settings
+							<ul>
+								<For each={props.set.settings}>
+									{(setting) => (
+										<li>
+											{setting.widget} · {setting.key}: {setting.before ?? '—'}{' '}
+											→ {setting.after}
+										</li>
+									)}
+								</For>
+								<Show when={props.set.settingsMore > 0}>
+									<li class='muted'>and {props.set.settingsMore} more</li>
+								</Show>
+							</ul>
+						</li>
+					</Show>
 					<Lines label='Keybinds' change={props.set.keybinds} />
 					<Lines label='Hotkeys' change={props.set.hotkeys} />
 					<Lines label='Blueprints' change={props.set.blueprints} />
 				</ul>
-				<Show when={has().widgets}>
+				<Show when={has().widgets || has().settings}>
 					<p class='muted'>
-						Widget settings changed in these games stay with this set of mods: a
-						modded game starts every widget at its defaults, so what it left
-						cannot tell your change from a default.
+						Chat history, players' names and any widget setting that is text
+						stay with this set of mods.
 					</p>
 				</Show>
 				<div class='mod-set-fold'>

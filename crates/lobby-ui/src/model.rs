@@ -951,6 +951,10 @@ pub struct ModSetView {
 	pub at: String,
 	pub engine: Vec<KeyChange>,
 	pub widgets: Vec<WidgetChange>,
+	/// The widgets' settings that differ, as many as are shown.
+	pub settings: Vec<SettingChange>,
+	/// How many more settings differ than are shown.
+	pub settings_more: u32,
 	/// The keybind profiles' lines that differ.
 	pub keybinds: Option<TextChange>,
 	/// The hotkeys' (`uikeys.txt`) lines that differ.
@@ -965,7 +969,10 @@ pub struct ModSetView {
 #[ts(export)]
 pub struct FoldKinds {
 	pub engine: bool,
+	/// Widgets turned on or off.
 	pub widgets: bool,
+	/// Widgets' settings.
+	pub settings: bool,
 	pub keybinds: bool,
 	pub hotkeys: bool,
 	pub blueprints: bool,
@@ -985,9 +992,7 @@ pub struct KeyChange {
 	pub plain: bool,
 }
 
-/// A widget a modded game turned on or off. Its settings are not shown: a
-/// modded game starts every widget at its defaults, so what it left cannot
-/// tell a change from a default, and they stay with the set of mods.
+/// A widget a modded game turned on or off.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -995,6 +1000,22 @@ pub struct WidgetChange {
 	pub widget: String,
 	/// What the game turned it to.
 	pub on: bool,
+}
+
+/// One of a widget's settings a modded game set to something its launch
+/// did not: a number, a switch or a single word, at its place in the
+/// widget's data. Settings that are text -- chat history, players' names --
+/// never cross either way and stay with the set of mods.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SettingChange {
+	pub widget: String,
+	/// The setting's place in the widget's data, its keys joined by `.`.
+	pub key: String,
+	/// `None` for a setting the game added.
+	pub before: Option<String>,
+	pub after: String,
 }
 
 /// A file's lines a modded game added and removed, whatever their order,

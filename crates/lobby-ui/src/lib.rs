@@ -14,9 +14,9 @@ pub use model::{
 	ChatKind, ChatLine, CheckView, ContentCheckView, ContentView, Delta, DownloadStatus,
 	EngineStatus, FoldKinds, FriendsView, GameRunningView, IntentView, KeyChange, LayoutView,
 	ModSetView, MutatorView, MyBattleView, NoticeLevel, OptionChangeView, PasteStatus, Phase,
-	ProposalView, SERVER_ROOM, SKIRMISH_ROOM, ServerSnapshot, SkirmishView, Snapshot, StandingView,
-	StartRectView, SyncView, TextChange, UiMessage, UserStatusView, UserView, VoteView, WhyView,
-	WidgetChange, private_room,
+	ProposalView, SERVER_ROOM, SKIRMISH_ROOM, ServerSnapshot, SettingChange, SkirmishView,
+	Snapshot, StandingView, StartRectView, SyncView, TextChange, UiMessage, UserStatusView,
+	UserView, VoteView, WhyView, WidgetChange, private_room,
 };
 pub use project::Projector;
 pub use transport::{Collector, UiClosed, UiTransport};

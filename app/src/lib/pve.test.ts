@@ -4,6 +4,7 @@ import type { Bar } from './pve'
 import type { Score } from '../ipc/bindings/Score'
 import {
 	BY_NAME,
+	OWN_RATE_FLOOR,
 	bars,
 	bestEffortText,
 	caption,
@@ -13,7 +14,9 @@ import {
 	dataWindow,
 	defaultSort,
 	diagnosticRows,
+	fieldRatio,
 	guides,
+	histogramHelp,
 	matchSummary,
 	miniature,
 	place,
@@ -54,6 +57,7 @@ function player(
 				challenge30Clears: held.challenge30Clears ?? 0,
 				highestChallengeCleared: held.highestChallengeCleared ?? null,
 				clearHistogram: held.clearHistogram ?? [],
+				playHistogram: held.playHistogram ?? [],
 			},
 		},
 		awards: { mostKilled: { raptors: 0, scavengers: 0, barbarians: 0 } },
@@ -94,6 +98,7 @@ const SCORE: Score = {
 	players: [
 		player('me', {
 			clearHistogram: [1, 3],
+			playHistogram: [2, 12],
 			highestChallengeCleared: 24.8,
 			clears: 2,
 			max: 50,
@@ -123,11 +128,30 @@ describe('pve view logic', () => {
 		expect(drawn[1]!.help.split('\n')).toEqual([
 			'300 eligible games (75.0% of played games).',
 			'30 human wins (10.0%).',
-			'Your clears: 3 of 4 (75.0%).',
+			'Your record here: 3 of 12 played (25.0%).',
 			'Your current setup is here at 21.5.',
 		])
 		// 0-17 and 17-34: middles 8.5 and 25.5, rounded.
 		expect(drawn.map((b) => b.mid)).toEqual([9, 26])
+	})
+
+	test('a service that counts no plays gets the share-of-clears wording and no own rate', () => {
+		const older = player('me', {
+			clearHistogram: [1, 3],
+			highestChallengeCleared: 24.8,
+		})
+		const counted = bars(SCORE, older)
+		// A share of clears, said as one: 3 of your 4 clears fall here.
+		expect(counted[1]!.help.split('\n')[2]).toBe('Your clears: 3 of 4 (75.0%).')
+		expect(counted.map((b) => b.own)).toEqual([1 / 3, 1])
+		const rated = bars(SCORE, older, 'winrate')
+		expect(rated.map((b) => b.ownValue)).toEqual([null, null])
+		expect(rated.map((b) => b.own)).toEqual([0, 0])
+		expect(fieldRatio(SCORE, older)).toBeNull()
+		expect(caption(SCORE, older)).toBe(
+			'Challenge 21.5 — harder than 88% of played Raptors games — your best 24.8',
+		)
+		expect(histogramHelp(SCORE, older, 'winrate')).not.toContain('Bright bars')
 	})
 
 	test('reading lines run to the edge whose bar is shorter, whatever is between', () => {
@@ -200,22 +224,34 @@ describe('pve view logic', () => {
 		expect(place([90, 100])).toEqual([true, false])
 	})
 
-	test('win-rate bars are the rate itself, without clears, fainter on few games', () => {
+	test('win-rate bars are the rate itself, yours beside it where you have played enough', () => {
 		const drawn = bars(SCORE, SCORE.players[0], 'winrate')
 		// 90 of 100 and 30 of 300: rates on their own 0-1 scale, not shares.
 		expect(drawn.map((b) => b.share)).toEqual([0.9, 0.1])
-		expect(drawn.map((b) => b.own)).toEqual([0, 0])
+		// 1 of 2 is no rate yet; 3 of 12 is, and it beats the field's 10%.
+		expect(OWN_RATE_FLOOR).toBe(5)
+		expect(drawn.map((b) => b.own)).toEqual([0, 0.25])
+		expect(drawn.map((b) => b.ownValue)).toEqual([null, 0.25])
 		// sqrt(100/400) and sqrt(300/400); counts are always full strength.
 		expect(drawn[0]!.sure).toBeCloseTo(0.5)
 		expect(drawn[1]!.sure).toBeCloseTo(Math.sqrt(0.75))
 		expect(bars(SCORE, SCORE.players[0]).every((b) => b.sure === 1)).toBe(true)
 		// The tooltip says the same in either view.
 		expect(drawn[1]!.help).toBe(bars(SCORE, SCORE.players[0])[1]!.help)
+		expect(histogramHelp(SCORE, SCORE.players[0], 'winrate')).toContain(
+			'at least 5 eligible games',
+		)
+	})
+
+	test('the field ratio weighs your clears against the field at what you play', () => {
+		// 2 games at a 90% range and 12 at a 10% one would give 3 clears; 4 is 1.33x.
+		expect(fieldRatio(SCORE, SCORE.players[0])).toBeCloseTo(4 / 3)
+		expect(fieldRatio({ ...SCORE, histogram: [] }, SCORE.players[0])).toBeNull()
 	})
 
 	test('the caption reads like the widget', () => {
 		expect(caption(SCORE, SCORE.players[0])).toBe(
-			'Challenge 21.5 — harder than 88% of played Raptors games — your best 24.8',
+			"Challenge 21.5 — harder than 88% of played Raptors games — your best 24.8 — 1.33× the field's clear rate",
 		)
 		expect(
 			caption({ ...SCORE, challenge: null, percentile: null }, undefined),

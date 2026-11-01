@@ -30,6 +30,16 @@ function sphereAndTiny(): ModSetView {
 			{ key: 'LogFile', before: null, after: 'x', plain: false },
 		],
 		widgets: [{ widget: 'Chat', on: true }],
+		settings: [
+			{
+				widget: 'Top Bar',
+				key: 'autoHideButtons',
+				before: 'false',
+				after: 'true',
+			},
+			{ widget: 'Top Bar', key: 'scale', before: null, after: '1.2' },
+		],
+		settingsMore: 3,
 		keybinds: {
 			added: ['"active": "b"'],
 			removed: ['"active": "a"'],
@@ -115,7 +125,9 @@ describe('the modded games section', () => {
 		expect(text).toContain('played 2h')
 		expect(text).toContain('Fullscreen: 1 → 0')
 		expect(text).toContain('Chat: off → on')
-		expect(text).not.toContain('Chat.size')
+		expect(text).toContain('Top Bar · autoHideButtons: false → true')
+		expect(text).toContain('Top Bar · scale: — → 1.2')
+		expect(text).toContain('and 3 more')
 		expect(text).toContain('+ "active": "b"')
 		expect(text).toContain('− "active": "a"')
 		expect(text).not.toContain('Hotkeys')
@@ -134,6 +146,7 @@ describe('the modded games section', () => {
 					kinds: {
 						engine: true,
 						widgets: true,
+						settings: true,
 						keybinds: false,
 						hotkeys: false,
 						blueprints: false,

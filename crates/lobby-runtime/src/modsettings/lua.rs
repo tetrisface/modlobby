@@ -307,6 +307,49 @@ fn emit(value: &Lua, depth: usize, out: &mut String) {
 	}
 }
 
+/// The fields of `table`'s field `name` when that is a table, else none.
+pub fn fields_of(table: &Lua, name: &str) -> Vec<(Key, Lua)> {
+	match table {
+		Lua::Table(fields) => table_of(fields, name),
+		_ => Vec::new(),
+	}
+}
+
+/// The fields of the field `name` among `fields` when it is a table, else
+/// none.
+pub fn table_of(fields: &[(Key, Lua)], name: &str) -> Vec<(Key, Lua)> {
+	match field(fields, name) {
+		Some(Lua::Table(inner)) => inner.clone(),
+		_ => Vec::new(),
+	}
+}
+
+/// The value of the field `name` among `fields`; a name and a string key
+/// of the same text are the same field, as they are to Lua.
+pub fn field<'a>(fields: &'a [(Key, Lua)], name: &str) -> Option<&'a Lua> {
+	fields
+		.iter()
+		.find(|(key, _)| key_text(key) == name)
+		.map(|(_, value)| value)
+}
+
+/// A key as text: its name or string, or its number as Lua prints it.
+pub fn key_text(key: &Key) -> String {
+	match key {
+		Key::Name(name) | Key::Str(name) => name.clone(),
+		Key::Number(number) => number.to_string(),
+	}
+}
+
+/// Sets the field `name` among `fields` to `value`, in place where it is
+/// and at the end where it is not.
+pub fn set_field(fields: &mut Vec<(Key, Lua)>, name: &str, value: Lua) {
+	match fields.iter_mut().find(|(key, _)| key_text(key) == name) {
+		Some((_, held)) => *held = value,
+		None => fields.push((Key::Name(name.to_owned()), value)),
+	}
+}
+
 const KEYWORDS: &[&str] = &[
 	"and", "break", "do", "else", "elseif", "end", "false", "for", "function", "goto", "if", "in",
 	"local", "nil", "not", "or", "repeat", "return", "then", "true", "until", "while",

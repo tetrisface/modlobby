@@ -5,7 +5,14 @@
  */
 export type FoldKinds = {
 	engine: boolean
+	/**
+	 * Widgets turned on or off.
+	 */
 	widgets: boolean
+	/**
+	 * Widgets' settings.
+	 */
+	settings: boolean
 	keybinds: boolean
 	hotkeys: boolean
 	blueprints: boolean

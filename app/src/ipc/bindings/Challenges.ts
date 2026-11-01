@@ -9,4 +9,10 @@ export type Challenges = {
 	 * The player's clears per histogram bar, aligned with [`Score::histogram`].
 	 */
 	clearHistogram: Array<number>
+	/**
+	 * The player's eligible games per histogram bar, aligned the same way, so
+	 * a bar can show how often they won there. Empty from a service that
+	 * predates it: the bars then fall back to clears alone.
+	 */
+	playHistogram: Array<number>
 }

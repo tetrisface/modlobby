@@ -379,6 +379,14 @@ export type Measure = 'count' | 'winrate'
 export const SURE_AT = 400
 
 /**
+ * Eligible games you must have played in a range before your own win rate
+ * is drawn there. One win in one game is 100% and would be the tallest bar
+ * on the chart; five games is where a rate starts to say something, and the
+ * tooltip states the count either way.
+ */
+export const OWN_RATE_FLOOR = 5
+
+/**
  * One histogram bar: where it sits on the 0-34 axis and how wide, both as
  * fractions, the middle of its range as a whole challenge score, its heights
  * (as a share of the tallest for counts, as the rate itself for win rates),
@@ -417,7 +425,12 @@ export function bars(
 	const total =
 		score.totalGames || bins.reduce((sum, bin) => sum + bin.games, 0)
 	const ownBins = me?.accomplishments.challenges.clearHistogram ?? []
+	const ownPlays = me?.accomplishments.challenges.playHistogram ?? []
 	const ownTotal = ownBins.reduce((sum, n) => sum + n, 0)
+	// Plays came to the service after clears. Without them the only record of
+	// yours is where your clears fall, and the wording has to say that rather
+	// than let a share of clears read as a win rate.
+	const played = ownPlays.length > 0
 	const shares = bins.map((bin, i) => ({
 		pop: total > 0 ? bin.games / total : 0,
 		own: ownTotal > 0 ? (ownBins[i] ?? 0) / ownTotal : 0,
@@ -427,15 +440,21 @@ export function bars(
 	return bins.map((bin, i) => {
 		const { pop, own } = shares[i]!
 		const current = at != null && holds(bin.lowerBound, bin.upperBound, at)
+		const clears = ownBins[i] ?? 0
+		const plays = ownPlays[i] ?? 0
 		// Where the bin sits is shown on the axis under it, so the text starts
 		// with what is in it.
 		const parts = [
 			`${bin.games} eligible games (${(pop * 100).toFixed(1)}% of played games).`,
 			`${bin.wins} human wins (${bin.games > 0 ? ((bin.wins / bin.games) * 100).toFixed(1) : '0.0'}%).`,
 		]
-		if (me)
+		if (me && played) {
+			// The same kind of number as the line above it, so the two compare.
+			const rate = plays > 0 ? ` (${((clears / plays) * 100).toFixed(1)}%)` : ''
+			parts.push(`Your record here: ${clears} of ${plays} played${rate}.`)
+		} else if (me)
 			parts.push(
-				`Your clears: ${ownBins[i] ?? 0} of ${ownTotal} (${(own * 100).toFixed(1)}%).`,
+				`Your clears: ${clears} of ${ownTotal} (${(own * 100).toFixed(1)}%).`,
 			)
 		if (current && at != null)
 			parts.push(`Your current setup is here at ${at.toFixed(1)}.`)
@@ -450,15 +469,17 @@ export function bars(
 			current,
 			help: parts.join('\n'),
 		}
-		// A win rate is its own scale, 0 to 1; there is no rate of your own to
-		// set beside it, as the service counts your clears but not your games.
+		// A win rate is its own scale, 0 to 1. Your own stands beside the
+		// field's once you have played enough here for it to be a rate: one
+		// win in one game would tower over everything.
 		if (measure === 'winrate') {
 			const rate = bin.games > 0 ? bin.wins / bin.games : 0
+			const ownRate = played && plays >= OWN_RATE_FLOOR ? clears / plays : null
 			return {
 				...base,
-				...drawn(rate, 0),
+				...drawn(rate, ownRate ?? 0),
 				popValue: rate,
-				ownValue: null,
+				ownValue: ownRate,
 				sure: Math.max(0.25, Math.min(1, Math.sqrt(bin.games / SURE_AT))),
 			}
 		}
@@ -586,7 +607,11 @@ export function histogramHelp(
 			score.winChance != null && score.challenge != null
 				? ` The diamond is the model's ${Math.round(score.winChance * 100)}% for this setup, at its challenge ${score.challenge.toFixed(1)}: above the bars means it expects more wins than games there produced.`
 				: ''
-		return `Bars show how often human teams won the eligible games at each challenge score, from 0 to 100% with a line at 50%. A bar resting on few games is drawn fainter.${predicted}`
+		const own =
+			(me?.accomplishments.challenges.playHistogram.length ?? 0) > 0
+				? ` Bright bars are your own win rate wherever you have played at least ${OWN_RATE_FLOOR} eligible games in the range.`
+				: ''
+		return `Bars show how often human teams won the eligible games at each challenge score, from 0 to 100% with a line at 50%. A bar resting on few games is drawn fainter.${own}${predicted}`
 	}
 	const ownTotal =
 		me?.accomplishments.challenges.clearHistogram.reduce((s, n) => s + n, 0) ??
@@ -595,6 +620,28 @@ export function histogramHelp(
 		? ` Bright bars show your ${ownTotal} eligible clears.`
 		: ' Bright bars appear when your own record is available.'
 	return `Dark bars show ${score.totalGames} eligible games by challenge score.${own} Both use one percentage scale, so bright above dark means this range holds a larger share of your clears than of all played games.`
+}
+
+/**
+ * Your clears against what the field's win rate in each range would have
+ * given you over the same games: above 1 you win more often than the players
+ * who play what you play. Controls for where you play, which a plain win
+ * rate does not. `null` without plays, or before any range has a rate.
+ */
+export function fieldRatio(
+	score: Score,
+	me: Player | undefined,
+): number | null {
+	const clears = me?.accomplishments.challenges.clearHistogram ?? []
+	const plays = me?.accomplishments.challenges.playHistogram ?? []
+	if (plays.length === 0) return null
+	const expected = score.histogram.reduce(
+		(sum, bin, i) =>
+			sum + (bin.games > 0 ? ((plays[i] ?? 0) * bin.wins) / bin.games : 0),
+		0,
+	)
+	if (expected <= 0) return null
+	return clears.reduce((sum, n) => sum + n, 0) / expected
 }
 
 export function caption(score: Score, me: Player | undefined): string {
@@ -606,6 +653,8 @@ export function caption(score: Score, me: Player | undefined): string {
 	}
 	const best = me?.accomplishments.challenges.highestChallengeCleared
 	if (best != null) text += ` — your best ${best.toFixed(1)}`
+	const ratio = fieldRatio(score, me)
+	if (ratio != null) text += ` — ${ratio.toFixed(2)}× the field's clear rate`
 	return text
 }
 

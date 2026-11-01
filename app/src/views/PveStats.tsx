@@ -381,6 +381,17 @@ export function PveStats(props: {
 												</span>
 												<Show
 													when={
+														(me()?.accomplishments.challenges.playHistogram
+															.length ?? 0) > 0
+													}
+												>
+													<span>
+														<i class='pve-swatch own' />
+														Your win rate
+													</span>
+												</Show>
+												<Show
+													when={
 														score().winChance != null &&
 														score().challenge != null
 													}

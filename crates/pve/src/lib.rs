@@ -376,6 +376,10 @@ pub struct Challenges {
 	pub highest_challenge_cleared: Option<f64>,
 	/// The player's clears per histogram bar, aligned with [`Score::histogram`].
 	pub clear_histogram: Vec<u32>,
+	/// The player's eligible games per histogram bar, aligned the same way, so
+	/// a bar can show how often they won there. Empty from a service that
+	/// predates it: the bars then fall back to clears alone.
+	pub play_histogram: Vec<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, TS)]
@@ -874,7 +878,7 @@ mod tests {
 					"participation": {"games_played": 10, "victories": 4, "distinct_maps_played": 3},
 					"encounters": {"raptor_queens_defeated": 8},
 					"personal_bests": {"max_queens_one_victory": 5},
-					"challenges": {"challenge_20_clears": 1, "highest_challenge_cleared": 24.8, "clear_histogram": [1, 1]}
+					"challenges": {"challenge_20_clears": 1, "highest_challenge_cleared": 24.8, "clear_histogram": [1, 1], "play_histogram": [2, 3]}
 				},
 				"awards": {"most_killed": {"raptors": 2}}
 			}],
@@ -923,6 +927,7 @@ mod tests {
 			Some(24.8)
 		);
 		assert_eq!(me.accomplishments.challenges.clear_histogram, vec![1, 1]);
+		assert_eq!(me.accomplishments.challenges.play_histogram, vec![2, 3]);
 		assert_eq!(me.accomplishments.encounters.scavenger_bosses_defeated, 0);
 		assert_eq!(me.awards.most_killed.raptors, 2);
 		assert_eq!(score.unresolved_players, vec!["nobody".to_owned()]);
@@ -940,6 +945,19 @@ mod tests {
 		assert!(score.players.is_empty());
 		assert_eq!(score.matched, Matched::default());
 		assert_eq!(score.degradation, None);
+	}
+
+	#[test]
+	fn a_service_without_plays_leaves_the_play_histogram_empty() {
+		let score = read(&serde_json::json!({
+			"players": [{
+				"player_id": 1, "player_name": "me",
+				"accomplishments": {"challenges": {"clear_histogram": [1]}}
+			}]
+		}));
+		let me = &score.players[0];
+		assert_eq!(me.accomplishments.challenges.clear_histogram, vec![1]);
+		assert!(me.accomplishments.challenges.play_histogram.is_empty());
 	}
 
 	#[test]
