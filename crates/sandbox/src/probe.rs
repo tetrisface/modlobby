@@ -512,7 +512,26 @@ pub(crate) fn copied(exe: &Path, dir: &Path) -> Result<PathBuf, String> {
 	}
 	std::fs::create_dir_all(dir).map_err(failed)?;
 	std::fs::copy(exe, &copy).map_err(failed)?;
+	// Written once per exe, not per launch: a copy over a program that is
+	// still running, as the last game's proxy may be, is refused.
+	keep_modified(exe, &copy).map_err(failed)?;
 	Ok(copy)
+}
+
+/// The copy's modified time set from the original's, so [`copied`] sees them
+/// as the same. Through a read handle: setting the time needs ownership, not
+/// a write handle, and a write handle open across another thread's fork
+/// refuses the exec of the copy until that fork has run.
+#[cfg(not(windows))]
+fn keep_modified(exe: &Path, copy: &Path) -> std::io::Result<()> {
+	let modified = std::fs::metadata(exe)?.modified()?;
+	std::fs::File::open(copy)?.set_modified(modified)
+}
+
+/// Windows' copy keeps the time by itself.
+#[cfg(windows)]
+fn keep_modified(_exe: &Path, _copy: &Path) -> std::io::Result<()> {
+	Ok(())
 }
 
 async fn run(
@@ -728,6 +747,29 @@ mod tests {
 			env: Vec::new(),
 			grants_file: dir.join("grants.json"),
 		}
+	}
+
+	/// The copy is written once per exe: a copy over a running program, as
+	/// the last game's proxy may still be, is refused by Linux.
+	#[cfg(target_os = "linux")]
+	#[test]
+	fn a_copy_already_there_is_not_written_over_a_running_one() {
+		let dir = tempfile::tempdir().unwrap();
+		let exe = dir.path().join("sleep");
+		std::fs::copy("/bin/sleep", &exe).unwrap();
+		// Older than its copy can be: file times tick in milliseconds, and a
+		// copy made in the exe's tick would pass for it.
+		let old = std::time::UNIX_EPOCH + Duration::from_secs(1_000_000_000);
+		std::fs::File::open(&exe)
+			.unwrap()
+			.set_modified(old)
+			.unwrap();
+		let copy = copied(&exe, &dir.path().join("bin")).unwrap();
+		let mut running = std::process::Command::new(&copy).arg("5").spawn().unwrap();
+		let again = copied(&exe, &dir.path().join("bin"));
+		running.kill().unwrap();
+		running.wait().unwrap();
+		assert_eq!(again, Ok(copy));
 	}
 
 	#[tokio::test]

@@ -8,6 +8,7 @@
 //! process of its own so a lobby restart leaves a running game its display.
 
 use std::ffi::{OsStr, OsString};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Mutex, OnceLock};
@@ -63,6 +64,25 @@ impl Bubblewrap {
 fn detached(command: &mut Command) -> &mut Command {
 	use std::os::unix::process::CommandExt as _;
 	command.process_group(0)
+}
+
+/// `command` spawned, waiting out its program being busy: a thread forking
+/// while another is still writing the helper's copy hands its child the write
+/// handle until that child execs, and an exec of the copy in that window is
+/// refused. The window is microseconds; anything longer is reported.
+fn spawned(command: &mut Command) -> io::Result<Child> {
+	let started = Instant::now();
+	loop {
+		match command.spawn() {
+			Err(err)
+				if err.kind() == io::ErrorKind::ExecutableFileBusy
+					&& started.elapsed() < Duration::from_secs(1) =>
+			{
+				std::thread::sleep(Duration::from_millis(5));
+			}
+			spawned => return spawned,
+		}
+	}
 }
 
 /// bwrap on the `PATH`.
@@ -194,15 +214,16 @@ impl Proxy {
 		let listen = run.join(format!("wayland-{stamp}"));
 		let log = std::fs::File::create(run.join("wayland-proxy.log"))
 			.map_err(|err| format!("the proxy's log: {err}"))?;
-		let mut child = detached(&mut Command::new(helper))
+		let mut command = Command::new(helper);
+		detached(&mut command)
 			.arg(PROXY)
 			.arg(&listen)
 			.arg(&upstream)
 			.stdin(Stdio::null())
 			.stdout(Stdio::null())
-			.stderr(log)
-			.spawn()
-			.map_err(|err| format!("starting the Wayland proxy: {err}"))?;
+			.stderr(log);
+		let mut child =
+			spawned(&mut command).map_err(|err| format!("starting the Wayland proxy: {err}"))?;
 		let started = Instant::now();
 		while !listen.exists() {
 			if started.elapsed() > Duration::from_secs(3) {
@@ -454,5 +475,26 @@ mod tests {
 	#[test]
 	fn the_machine_id_is_not_bound() {
 		assert!(!ETC.contains(&"machine-id"));
+	}
+
+	/// A write handle to the program, open anywhere in this process, refuses
+	/// its exec; the spawn waits for the handle to close instead of failing.
+	#[test]
+	fn a_program_still_being_written_is_waited_for() {
+		let dir = tempfile::tempdir().unwrap();
+		let program = dir.path().join("true");
+		std::fs::copy("/bin/true", &program).unwrap();
+		let writer = std::fs::OpenOptions::new()
+			.append(true)
+			.open(&program)
+			.unwrap();
+		let closes = std::thread::spawn(move || {
+			std::thread::sleep(Duration::from_millis(50));
+			drop(writer);
+		});
+		let mut command = Command::new(&program);
+		let status = spawned(&mut command).unwrap().wait().unwrap();
+		assert!(status.success());
+		closes.join().unwrap();
 	}
 }
