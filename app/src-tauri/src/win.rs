@@ -110,6 +110,48 @@ pub fn owns_foreground(pid: u32) -> bool {
 	owner == pid
 }
 
+/// Puts `window` directly under `above` in the z-order, whichever process owns
+/// that one. Nothing else about either changes, and who has the keyboard least
+/// of all: that stays with whoever has it. Whether it took.
+pub fn place_behind(window: HWND, above: HWND) -> bool {
+	use windows_sys::Win32::UI::WindowsAndMessaging::{
+		SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetWindowPos,
+	};
+
+	// SAFETY: any handle is accepted; a dead one answers zero.
+	unsafe {
+		SetWindowPos(
+			window,
+			above,
+			0,
+			0,
+			0,
+			0,
+			SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
+		) != 0
+	}
+}
+
+/// Tells the compositor to draw `window`, a window of this process, or not.
+/// Everything else goes on as usual, and unlike the layered style this is not
+/// something a change of the window's styles can undo. Whether it took: a
+/// session without a compositor does not.
+pub fn cloak(window: HWND, cloaked: bool) -> bool {
+	use windows_sys::Win32::Graphics::Dwm::{DWMWA_CLOAK, DwmSetWindowAttribute};
+
+	let cloaked = BOOL::from(cloaked);
+	// SAFETY: `cloaked` is the size given and outlives the call; a dead handle
+	// answers an error.
+	unsafe {
+		DwmSetWindowAttribute(
+			window,
+			DWMWA_CLOAK as u32,
+			(&raw const cloaked).cast(),
+			size_of::<BOOL>() as u32,
+		) >= 0
+	}
+}
+
 /// A modal error box with nothing behind it.
 pub fn alert(title: &str, message: &str) {
 	use windows_sys::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW};
@@ -126,4 +168,162 @@ pub fn alert(title: &str, message: &str) {
 			MB_OK | MB_ICONERROR,
 		)
 	};
+}
+
+#[cfg(test)]
+mod tests {
+	use std::ptr::{null, null_mut};
+
+	use windows_sys::Win32::Foundation::GENERIC_ALL;
+	use windows_sys::Win32::Graphics::Dwm::{
+		DWM_CLOAKED_APP, DWMWA_CLOAKED, DwmGetWindowAttribute,
+	};
+	use windows_sys::Win32::System::StationsAndDesktops::{CreateDesktopW, SetThreadDesktop};
+	use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetActiveWindow, SetActiveWindow};
+	use windows_sys::Win32::UI::WindowsAndMessaging::{
+		CreateWindowExW, GW_HWNDNEXT, GWL_EXSTYLE, GetWindow, GetWindowLongPtrW, IsZoomed,
+		SW_MAXIMIZE, SW_RESTORE, SW_SHOWNORMAL, SetWindowLongPtrW, ShowWindow, WS_OVERLAPPEDWINDOW,
+	};
+
+	use super::*;
+
+	fn wide(text: &str) -> Vec<u16> {
+		text.encode_utf16().chain(Some(0)).collect()
+	}
+
+	/// Runs `test` on a thread of its own, on a Windows desktop of its own:
+	/// windows made there can be shown, maximized and activated with nothing
+	/// happening on the screen anyone is using.
+	fn on_a_private_desktop(name: &str, test: impl FnOnce() + Send + 'static) {
+		let name = wide(&format!("modlobby-test-{}-{name}", std::process::id()));
+		std::thread::spawn(move || {
+			// SAFETY: the name is NUL-terminated and outlives the call; the
+			// nulls ask for the defaults. A thread that owns no window yet may
+			// change desktop. The desktop goes with the process.
+			unsafe {
+				let desktop = CreateDesktopW(name.as_ptr(), null(), null(), 0, GENERIC_ALL, null());
+				assert!(!desktop.is_null(), "a desktop of our own");
+				assert_ne!(SetThreadDesktop(desktop), 0, "and this thread on it");
+			}
+			test();
+		})
+		.join()
+		.expect("the test on its own desktop");
+	}
+
+	fn a_window() -> HWND {
+		let (class, title) = (wide("STATIC"), wide("modlobby test"));
+		// SAFETY: both strings are NUL-terminated and outlive the call, and
+		// `STATIC` is a class the system has registered.
+		let window = unsafe {
+			CreateWindowExW(
+				0,
+				class.as_ptr(),
+				title.as_ptr(),
+				WS_OVERLAPPEDWINDOW,
+				0,
+				0,
+				400,
+				300,
+				null_mut(),
+				null_mut(),
+				null_mut(),
+				null(),
+			)
+		};
+		assert!(!window.is_null(), "a window to test with");
+		window
+	}
+
+	/// The next window down that can be seen. A window takes the input method's
+	/// hidden helpers along with it, and those sit between it and anything it
+	/// is placed under.
+	fn next_seen_below(window: HWND) -> HWND {
+		let mut below = window;
+		loop {
+			// SAFETY: a live window from this thread, or one the system lists.
+			below = unsafe { GetWindow(below, GW_HWNDNEXT) };
+			if below.is_null() || unsafe { IsWindowVisible(below) } != 0 {
+				return below;
+			}
+		}
+	}
+
+	fn cloaked(window: HWND) -> bool {
+		let mut how = 0_u32;
+		// SAFETY: `how` is the size asked for and outlives the call.
+		let answered = unsafe {
+			DwmGetWindowAttribute(
+				window,
+				DWMWA_CLOAKED as u32,
+				(&raw mut how).cast(),
+				size_of::<u32>() as u32,
+			)
+		};
+		assert!(answered >= 0, "the compositor answers: {answered:#x}");
+		how & DWM_CLOAKED_APP != 0
+	}
+
+	#[test]
+	fn a_window_placed_behind_another_is_directly_under_it_and_stays_active() {
+		on_a_private_desktop("behind", || {
+			let bottom = a_window();
+			let middle = a_window();
+			let top = a_window();
+			// SAFETY: live windows of this thread.
+			unsafe {
+				ShowWindow(bottom, SW_SHOWNORMAL);
+				ShowWindow(middle, SW_SHOWNORMAL);
+				ShowWindow(top, SW_SHOWNORMAL);
+				SetActiveWindow(top);
+			}
+
+			assert!(place_behind(top, bottom));
+
+			// SAFETY: as above.
+			unsafe {
+				assert_eq!(next_seen_below(bottom), top, "right under it");
+				assert_eq!(
+					GetActiveWindow(),
+					top,
+					"who has the keyboard is a separate step"
+				);
+			}
+		});
+	}
+
+	/// What the surface leans on. The toolkit restores and maximizes a window
+	/// on its way behind a game, both of which bring it to the front, and then
+	/// rewrites its extended style, which takes the layered bit an alpha veil
+	/// needs. A cloak has to hold through all of it.
+	#[test]
+	fn a_cloak_holds_through_a_maximize_a_restore_and_a_style_rewrite() {
+		on_a_private_desktop("cloak", || {
+			let window = a_window();
+			// SAFETY: a live window of this thread.
+			unsafe { ShowWindow(window, SW_SHOWNORMAL) };
+			assert!(!cloaked(window));
+
+			assert!(cloak(window, true), "the compositor takes the request");
+			assert!(cloaked(window));
+
+			// SAFETY: as above; the style goes back as it was read.
+			unsafe {
+				ShowWindow(window, SW_MAXIMIZE);
+				assert_ne!(IsZoomed(window), 0, "really maximized");
+				assert!(cloaked(window), "through a maximize");
+
+				ShowWindow(window, SW_RESTORE);
+				assert_eq!(IsZoomed(window), 0, "really restored");
+				assert!(cloaked(window), "through a restore");
+
+				let style = GetWindowLongPtrW(window, GWL_EXSTYLE);
+				SetWindowLongPtrW(window, GWL_EXSTYLE, style);
+				assert!(cloaked(window), "through a style rewrite");
+			}
+
+			assert!(cloak(window, false));
+			assert!(!cloaked(window));
+		});
+	}
 }

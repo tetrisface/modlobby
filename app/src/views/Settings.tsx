@@ -629,6 +629,10 @@ export function SettingsView() {
 								monitor, leaves it there as an ordinary window.
 							</p>
 							<p class='muted'>
+								Back in the game, the lobby waits behind it and stays on the
+								taskbar, so you can always click your way back to it.
+							</p>
+							<p class='muted'>
 								Nothing can be drawn over an exclusive full-screen game, so if
 								your engine is set that way, modlobby launches it against its
 								own copy of your settings with borderless full screen instead.
@@ -667,14 +671,16 @@ export function SettingsView() {
 								Escape in a game opens the lobby
 							</label>
 							<p class='muted'>
-								The engine gives an outside program no way to see Escape, so
-								this writes a small widget into <code>LuaUI/Widgets</code> in
+								Only the game knows what Escape should mean once it is running,
+								so this writes a small widget into <code>LuaUI/Widgets</code> in
 								the data directory modlobby writes — its own, unless you have
 								pointed <code>paths.dataDir</code> at another lobby's install.
 								It draws nothing, it comes back out when modlobby closes, and it
 								only takes the key when modlobby answers — so a game you start
 								from Chobby keeps its own Escape. Escape with units selected
-								still deselects them, as always.
+								still deselects them, as always. While a game is loading nothing
+								in it can hear the key, so until then modlobby watches for
+								Escape itself, on Windows, and leaves it for the game as well.
 							</p>
 						</Row>
 					</Section>

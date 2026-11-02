@@ -100,6 +100,26 @@ impl Controller {
 		true
 	}
 
+	/// The game to listen for Escape on behalf of, where there is one.
+	pub fn loading_game(&self) -> Option<u32> {
+		self.overlay.lock().expect("overlay").loading_game()
+	}
+
+	/// The game says it has the keyboard. Answers whether there was a game of
+	/// ours to say it.
+	pub fn game_loaded(&self) -> bool {
+		if !self.armed_for_game() {
+			return false;
+		}
+		self.drive(Input::GameLoaded);
+		true
+	}
+
+	/// This process is a game a lobby before this one left running.
+	pub fn taken_over(&self, pid: u32) {
+		self.drive(Input::TakenOver(pid));
+	}
+
 	fn drive(&self, input: Input) {
 		// The lock is released before anything touches a window: a window call
 		// can re-enter through an event handler, and holding this across one
@@ -128,7 +148,11 @@ impl Controller {
 			Effect::Show => self.surface.show(),
 			Effect::ShowVeiled => self.surface.show_veiled(),
 			Effect::Reveal => self.surface.reveal(),
-			Effect::Hide => self.surface.hide(),
+			// Behind the game's own window, found now: it may not have had one
+			// when the game was started.
+			Effect::Lower { behind } => self
+				.surface
+				.lower(behind.and_then(|pid| self.foreground.window_of(pid))),
 			Effect::FocusSelf => self.surface.focus(),
 			Effect::FocusEngine(pid) => self.foreground.focus(pid),
 		}
@@ -166,7 +190,7 @@ impl Controller {
 mod tests {
 	use std::sync::atomic::{AtomicBool, Ordering};
 
-	use super::super::seams::ScreenId;
+	use super::super::seams::{ScreenId, WindowId};
 	use super::*;
 
 	#[derive(Default)]
@@ -181,6 +205,10 @@ mod tests {
 		theirs: Mutex<Option<ScreenId>>,
 		/// The monitor the overlay was last fitted to.
 		fitted_to: Mutex<Option<ScreenId>>,
+		/// The game's window, where it has one yet.
+		game_window: Mutex<Option<WindowId>>,
+		/// What the window was last lowered behind, when it has been lowered.
+		lowered_behind: Mutex<Option<Option<WindowId>>>,
 	}
 
 	impl Spy {
@@ -208,8 +236,9 @@ mod tests {
 			self.shown.store(true, Ordering::SeqCst);
 		}
 		fn reveal(&self) {}
-		fn hide(&self) {
-			self.shown.store(false, Ordering::SeqCst);
+		fn lower(&self, behind: Option<WindowId>) {
+			self.over.store(false, Ordering::SeqCst);
+			*self.lowered_behind.lock().unwrap() = Some(behind);
 		}
 		fn focus(&self) {}
 		fn screen(&self) -> Option<ScreenId> {
@@ -226,6 +255,12 @@ mod tests {
 		}
 		fn screen_of(&self, _pid: u32) -> Option<ScreenId> {
 			*self.theirs.lock().unwrap()
+		}
+		fn window_of(&self, _pid: u32) -> Option<WindowId> {
+			*self.game_window.lock().unwrap()
+		}
+		fn in_front(&self, _pid: u32) -> bool {
+			false
 		}
 	}
 
@@ -251,6 +286,16 @@ mod tests {
 			spy.clone(),
 		);
 		(spy, controller)
+	}
+
+	/// The answer the menu and the widget get, over the port: a game from
+	/// another lobby is told this is not its lobby.
+	#[test]
+	fn only_a_game_of_ours_can_say_it_has_loaded() {
+		let (_spy, controller) = controller();
+		assert!(!controller.game_loaded());
+		controller.engine_running(Some(7));
+		assert!(controller.game_loaded());
 	}
 
 	#[test]
@@ -296,6 +341,47 @@ mod tests {
 		controller.hotkey();
 		assert!(!spy.over.load(Ordering::SeqCst), "an ordinary window again");
 		assert!(spy.focused_engine.load(Ordering::SeqCst));
+	}
+
+	#[test]
+	fn lowering_puts_the_window_behind_the_games_own_and_hands_it_the_keyboard() {
+		let (spy, controller) = controller();
+		*spy.game_window.lock().unwrap() = Some(WindowId(9));
+		controller.engine_running(Some(7));
+		controller.hotkey();
+		controller.hotkey();
+		assert_eq!(*spy.lowered_behind.lock().unwrap(), Some(Some(WindowId(9))));
+		assert!(!spy.over.load(Ordering::SeqCst));
+		assert!(spy.focused_engine.load(Ordering::SeqCst));
+	}
+
+	#[test]
+	fn a_game_with_no_window_yet_leaves_nothing_to_lower_behind() {
+		let (spy, controller) = controller();
+		controller.engine_running(Some(7));
+		controller.hotkey();
+		controller.hotkey();
+		assert_eq!(*spy.lowered_behind.lock().unwrap(), Some(None));
+	}
+
+	#[test]
+	fn someone_keeping_the_keyboard_is_not_lowered_behind_the_game() {
+		let spy = Arc::new(Spy::default());
+		*spy.game_window.lock().unwrap() = Some(WindowId(9));
+		let controller = Controller::new(
+			OverlaySettings {
+				return_focus_to_game: false,
+				..OverlaySettings::default()
+			},
+			spy.clone(),
+			spy.clone(),
+			spy.clone(),
+		);
+		controller.engine_running(Some(7));
+		controller.hotkey();
+		controller.hotkey();
+		assert_eq!(*spy.lowered_behind.lock().unwrap(), Some(None));
+		assert!(!spy.focused_engine.load(Ordering::SeqCst));
 	}
 
 	#[test]

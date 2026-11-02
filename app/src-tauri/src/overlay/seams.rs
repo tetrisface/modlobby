@@ -1,4 +1,4 @@
-//! The three things the overlay has to ask the operating system for.
+//! The things the overlay has to ask the operating system for.
 //!
 //! Traits rather than direct calls, for the reason the rest of this repo uses
 //! them: the decision layer stays testable, and the parts that can only be
@@ -8,6 +8,10 @@
 /// the same one, and nothing more is read into it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScreenId(pub isize);
+
+/// A window of another process, by whatever the platform names one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WindowId(pub isize);
 
 /// The window this app already owns, told to change shape.
 pub trait WindowSurface: Send + Sync {
@@ -24,7 +28,11 @@ pub trait WindowSurface: Send + Sync {
 	/// its own after a short wait.
 	fn show_veiled(&self);
 	fn reveal(&self);
-	fn hide(&self);
+	/// Its ordinary shape back, unseen, and out of the way: directly behind
+	/// the window `behind` -- the game's -- or, with none to name, wherever
+	/// the platform leaves a window nobody is looking at. Where it can, it
+	/// stays somewhere the player can get it back from without any help.
+	fn lower(&self, behind: Option<WindowId>);
 	fn focus(&self);
 	/// The monitor the window is on, where the platform can say.
 	fn screen(&self) -> Option<ScreenId>;
@@ -38,6 +46,25 @@ pub trait ForegroundControl: Send + Sync {
 	/// The monitor that window is on, where the platform can say and the
 	/// process has a window yet.
 	fn screen_of(&self, pid: u32) -> Option<ScreenId>;
+	/// That window itself, where the platform can name it and the process has
+	/// one yet.
+	fn window_of(&self, pid: u32) -> Option<WindowId>;
+	/// Whether the window in front is that process's, so the keyboard is its.
+	fn in_front(&self, pid: u32) -> bool;
+}
+
+/// One look at the keys Escape depends on.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Keys {
+	/// Down now, or pressed since the last look.
+	pub escape: bool,
+	/// Shift, Ctrl, Alt or the Windows key, down now.
+	pub modifier: bool,
+}
+
+/// The keyboard, read and never taken: every key still goes where it was going.
+pub trait Keyboard: Send + Sync {
+	fn keys(&self) -> Keys;
 }
 
 /// A system-wide accelerator, held only while a game runs.

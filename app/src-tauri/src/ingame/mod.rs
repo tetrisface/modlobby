@@ -11,6 +11,9 @@
 //! menu, in HTML, with the room and the chat still in it. Fewer moving parts
 //! and a much better-looking result.
 //!
+//! It can only see it once the game has the keyboard. Until then the lobby
+//! listens by itself: see [`crate::overlay::escape`].
+//!
 //! Telling us is the hard part, and there are three ways, tried in order:
 //!
 //! 1. The control socket: loopback, an ephemeral port, a token generated per
@@ -47,11 +50,12 @@ use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 
+use lobby_runtime::launch::LaunchFiles;
 pub use protocol::{Command, parse};
 
 /// What the in-game widget can ask for.
 ///
-/// Both answer whether they acted. That answer is the whole reason the widget
+/// Each answers whether it acted. That answer is the whole reason the widget
 /// waits for a reply rather than firing and forgetting: it consumes Escape
 /// only when the key actually did something, so a game started from another
 /// lobby while modlobby happens to be open keeps its own Escape.
@@ -60,16 +64,23 @@ pub trait Actions: Send + Sync + 'static {
 	fn raise(&self) -> bool;
 	/// Stop the game, leaving the lobby up. `false` if there was none.
 	fn quit_game(&self) -> bool;
+	/// The game has the keyboard and judges Escape for itself from here.
+	/// `false` if this is not our game.
+	fn game_loaded(&self) -> bool;
 	/// Whether a game of ours is running, the only time the file gets asks.
 	fn game_running(&self) -> bool;
 }
 
-/// A running control socket, and where its two files were written.
+/// A running control socket, and where a launch of ours writes its two files.
 pub struct InGame {
 	pub port: u16,
 	pub token: String,
+	/// Guards the file channel, which a game in the sandbox can read, so it
+	/// is not the socket's. Also how this run knows its files from those of
+	/// another lobby sharing the data directory.
+	pub file_token: String,
 	installed: Option<PathBuf>,
-	/// The LuaMenu archive, when one was written.
+	/// The LuaMenu archive, when one is wanted.
 	menu: Option<PathBuf>,
 }
 
@@ -78,6 +89,7 @@ impl InGame {
 	pub async fn start(actions: Arc<dyn Actions>) -> std::io::Result<Self> {
 		let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
 		let port = listener.local_addr()?.port();
+		let file_token = token();
 		let token = token();
 
 		let guard = token.clone();
@@ -96,39 +108,51 @@ impl InGame {
 		Ok(Self {
 			port,
 			token,
+			file_token,
 			installed: None,
 			menu: None,
 		})
 	}
 
-	/// Writes the LuaMenu archive, replacing any older one. Its name, for
-	/// `--menu`; the caller passes that to the engine only if [`menu::present`]
-	/// still agrees at launch time. `file_token` guards the file channel the
-	/// menu falls back to inside the sandbox.
-	pub fn install_menu(&mut self, data_dir: &Path, file_token: &str) -> std::io::Result<PathBuf> {
-		let path = menu::install(data_dir, self.port, &self.token, file_token)?;
-		self.menu = Some(path.clone());
-		Ok(path)
-	}
-
-	/// Writes the widget into the BAR data directory, replacing any older one.
+	/// What a launch writes ahead of the engine, for this run's port and tokens,
+	/// and noted as ours to take back from `data_dir` on the way down.
 	///
-	/// `file_token` guards the file channel; the directory the file goes in
-	/// is made here, since Lua's `io.open` will not make it.
-	pub fn install(&mut self, data_dir: &Path, file_token: &str) -> std::io::Result<PathBuf> {
-		let path = widget::path(data_dir);
-		for made in [path.parent(), widget::file(data_dir).parent()]
-			.into_iter()
-			.flatten()
-		{
-			std::fs::create_dir_all(made)?;
+	/// Written by the launch and not here, because `data_dir` may be shared with
+	/// another lobby: it is the lobby that launched a game the game has to ask,
+	/// and starting up beside a game must not change who that is.
+	pub fn launch_files(
+		&mut self,
+		data_dir: &Path,
+		widget_wanted: bool,
+		menu_wanted: bool,
+	) -> LaunchFiles {
+		let socket = Some((self.port, self.token.as_str()));
+		let relative = Path::new("");
+		let mut files = LaunchFiles::default();
+		if widget_wanted {
+			self.installed = Some(widget::path(data_dir));
+			files.open.push((
+				widget::path(relative),
+				widget::source(socket, &self.file_token),
+			));
+			files.mods.push((
+				widget::path(relative),
+				widget::source(None, &self.file_token),
+			));
 		}
-		std::fs::write(
-			&path,
-			widget::source(Some((self.port, &self.token)), file_token),
-		)?;
-		self.installed = Some(path.clone());
-		Ok(path)
+		if widget_wanted || menu_wanted {
+			// Empty: Lua's `io.open` will not make the directory the first
+			// append needs.
+			let file = (PathBuf::from(FILE), String::new());
+			files.open.push(file.clone());
+			files.mods.push(file);
+		}
+		if menu_wanted {
+			self.menu = Some(menu::dir(data_dir));
+			files.open.extend(menu::files(socket, &self.file_token));
+			files.confined.extend(menu::files(None, &self.file_token));
+		}
+		files
 	}
 
 	/// Forgets both files without removing them.
@@ -144,19 +168,30 @@ impl InGame {
 		self.menu = None;
 	}
 
-	/// Takes both files back out. Called on the way down, and safe to repeat.
+	/// Takes both files back out, where they are still this run's. Called on the
+	/// way down, and safe to repeat.
 	pub fn uninstall(&mut self) {
 		self.uninstall_with(menu::engine_running_anywhere);
 	}
 
 	fn uninstall_with(&mut self, engine_running: impl Fn() -> bool) {
-		if let Some(archive) = self.menu.take() {
+		if let Some(archive) = self.menu.take()
+			&& carries(&menu::main_file(&archive), &self.file_token)
+		{
 			remove_menu(&archive, engine_running);
 		}
-		if let Some(path) = self.installed.take() {
+		if let Some(path) = self.installed.take()
+			&& carries(&path, &self.file_token)
+		{
 			remove_widget(&path);
 		}
 	}
+}
+
+/// Whether the file holds `token`, which is how a run knows what it wrote from
+/// what another lobby sharing the data directory wrote since.
+fn carries(path: &Path, token: &str) -> bool {
+	std::fs::read_to_string(path).is_ok_and(|text| text.contains(token))
 }
 
 pub use widget::FILE;
@@ -186,21 +221,25 @@ pub fn watch_file(
 				let Some(text) = take_file(&path) else {
 					continue;
 				};
-				let Some(command) = text.lines().find_map(|line| parse(line, &token)) else {
-					continue;
-				};
-				// A mod inside the game can write this file too; it gets to
-				// ask this often and no more.
-				if last_act.elapsed() < FILE_PACE {
-					continue;
-				}
-				last_act = std::time::Instant::now();
-				match command {
-					Command::Raise => {
-						actions.raise();
-					}
-					Command::QuitGame => {
-						actions.quit_game();
+				for command in text.lines().filter_map(|line| parse(line, &token)) {
+					match command {
+						// Can only stop the lobby listening for Escape, so a mod
+						// saying it early gains nothing, and it comes about as a
+						// player's first press goes in.
+						Command::Loaded => {
+							actions.game_loaded();
+						}
+						// A mod inside the game can write this file too; it gets
+						// to ask this often and no more.
+						Command::Raise | Command::QuitGame if last_act.elapsed() < FILE_PACE => {}
+						Command::Raise => {
+							last_act = std::time::Instant::now();
+							actions.raise();
+						}
+						Command::QuitGame => {
+							last_act = std::time::Instant::now();
+							actions.quit_game();
+						}
 					}
 				}
 			}
@@ -308,6 +347,7 @@ async fn serve(stream: TcpStream, token: String, actions: Arc<dyn Actions>) {
 		let acted = match parse(&line, &token) {
 			Some(Command::Raise) => actions.raise(),
 			Some(Command::QuitGame) => actions.quit_game(),
+			Some(Command::Loaded) => actions.game_loaded(),
 			// A bad token is the interesting case and says nothing back: a
 			// reply would tell a guesser whether it was close.
 			None => return,
@@ -340,6 +380,7 @@ mod tests {
 	struct Spy {
 		raised: AtomicUsize,
 		quit: AtomicUsize,
+		loaded: AtomicUsize,
 		/// What the app would answer: whether this is our game.
 		answer: bool,
 		running: AtomicBool,
@@ -370,7 +411,7 @@ mod tests {
 	}
 
 	/// The file as the game would find it in a write directory, its
-	/// directory made as [`InGame::install`] makes it.
+	/// directory made as a launch makes it.
 	fn file_in(write_dir: &Path) -> PathBuf {
 		let path = widget::file(write_dir);
 		std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -386,9 +427,49 @@ mod tests {
 			self.quit.fetch_add(1, Ordering::SeqCst);
 			self.answer
 		}
+		fn game_loaded(&self) -> bool {
+			self.loaded.fetch_add(1, Ordering::SeqCst);
+			self.answer
+		}
 		fn game_running(&self) -> bool {
 			self.running.load(Ordering::SeqCst)
 		}
+	}
+
+	#[tokio::test]
+	async fn a_game_says_over_the_port_that_it_has_loaded() {
+		let spy = spy(true);
+		let ingame = InGame::start(spy.clone()).await.unwrap();
+
+		let reply = ask(ingame.port, &format!("{} loaded\n", ingame.token)).await;
+
+		assert_eq!(reply, "ok");
+		assert_eq!(spy.loaded.load(Ordering::SeqCst), 1);
+		assert_eq!(spy.raised.load(Ordering::SeqCst), 0);
+	}
+
+	/// The widget and the menu both say it, about as a player's first Escape
+	/// goes in, and saying it can only stop the lobby listening: it is not paced
+	/// with what the file may ask for, and does not use that up.
+	#[tokio::test]
+	async fn a_game_says_through_the_file_that_it_has_loaded_and_a_press_still_gets_through() {
+		let home = tempfile::tempdir().unwrap();
+		let path = file_in(home.path());
+		let spy = spy(true);
+		let watcher = watching(&path, &spy).await;
+		// Past the emptying that begins each game.
+		tokio::time::sleep(FILE_POLL * 2).await;
+
+		std::fs::write(
+			&path,
+			"8f3c1d9e loaded\n8f3c1d9e loaded\n8f3c1d9e raise\ndeadbeef loaded\n",
+		)
+		.unwrap();
+		until(|| spy.raised.load(Ordering::SeqCst) == 1).await;
+		watcher.abort();
+
+		assert_eq!(spy.loaded.load(Ordering::SeqCst), 2);
+		assert_eq!(spy.raised.load(Ordering::SeqCst), 1);
 	}
 
 	/// Sends one line and reads the answer back.
@@ -440,18 +521,45 @@ mod tests {
 		assert_eq!(spy.raised.load(Ordering::SeqCst), 0);
 	}
 
+	fn a_run(port: u16, token: &str, file_token: &str) -> InGame {
+		InGame {
+			port,
+			token: token.into(),
+			file_token: file_token.into(),
+			installed: None,
+			menu: None,
+		}
+	}
+
+	/// What a launch of this run leaves on disk: the widget and the archive.
+	fn launch_from(ingame: &mut InGame, home: &Path) -> (PathBuf, PathBuf) {
+		let files = ingame.launch_files(home, true, true);
+		lobby_runtime::launch::write_files(home, &files.open).unwrap();
+		(widget::path(home), menu::dir(home))
+	}
+
+	#[test]
+	fn nothing_is_on_disk_until_a_launch_puts_it_there() {
+		let home = tempfile::tempdir().unwrap();
+		let mut ingame = a_run(4242, "abc", "filesecret");
+
+		let files = ingame.launch_files(home.path(), true, true);
+
+		assert!(
+			!files.open.is_empty(),
+			"handed over for the launch to write"
+		);
+		assert_eq!(std::fs::read_dir(home.path()).unwrap().count(), 0);
+		// And an exit without a launch has nothing to take back.
+		ingame.uninstall_with(|| false);
+	}
+
 	#[test]
 	fn both_files_are_written_and_taken_back_out() {
 		let home = tempfile::tempdir().unwrap();
-		let mut ingame = InGame {
-			port: 4242,
-			token: "abc".into(),
-			installed: None,
-			menu: None,
-		};
+		let mut ingame = a_run(4242, "abc", "filesecret");
 
-		let path = ingame.install(home.path(), "filesecret").unwrap();
-		let menu = ingame.install_menu(home.path(), "filesecret").unwrap();
+		let (path, menu) = launch_from(&mut ingame, home.path());
 		assert!(path.is_file());
 		let source = std::fs::read_to_string(&path).unwrap();
 		assert!(source.contains("4242"), "the port is baked in");
@@ -469,19 +577,101 @@ mod tests {
 		ingame.uninstall_with(|| false);
 	}
 
+	/// Two lobbies sharing a data directory, a release and a dev build: the
+	/// files belong to whoever launched last, and the other's exit, which a dev
+	/// build's restart is, must not take them from under that game.
+	#[test]
+	fn a_lobby_takes_back_only_the_files_that_are_its_own() {
+		let home = tempfile::tempdir().unwrap();
+		let mut ours = a_run(4242, "abc", "filesecret");
+		let mut theirs = a_run(5353, "def", "theirsecret");
+		let (path, menu) = launch_from(&mut ours, home.path());
+
+		// Beside us and never launching, its exit touches nothing.
+		theirs.launch_files(home.path(), true, true);
+		theirs.uninstall_with(|| false);
+		assert!(path.is_file());
+		assert!(menu.join("modinfo.lua").is_file());
+
+		// Once it has launched the files say so, and our exit leaves them.
+		launch_from(&mut theirs, home.path());
+		ours.uninstall_with(|| false);
+		assert!(std::fs::read_to_string(&path).unwrap().contains("5353"));
+		assert!(menu.join("LuaMenu").join("main.lua").is_file());
+
+		theirs.uninstall_with(|| false);
+		assert!(!path.exists());
+		assert!(!menu.exists());
+	}
+
+	/// A game in the sandbox can read everything it is handed, and the
+	/// socket's token must never be among it. Loopback is shut in there, but a
+	/// secret that is not present needs no such argument.
+	#[test]
+	fn what_a_sandboxed_game_reads_carries_no_socket_secret() {
+		let home = tempfile::tempdir().unwrap();
+		let mut ingame = a_run(4242, "sockettoken", "filesecret");
+
+		let files = ingame.launch_files(home.path(), true, true);
+
+		for (path, text) in files.confined.iter().chain(&files.mods) {
+			assert!(!text.contains("sockettoken"), "{path:?}");
+			assert!(!text.contains("4242"), "{path:?}");
+		}
+		let (_, menu) = files
+			.confined
+			.iter()
+			.find(|(path, _)| path.ends_with("main.lua"))
+			.expect("the menu goes in for a confined game too");
+		assert!(menu.contains("local PORT = 0"));
+		assert!(menu.contains(r#"local FILE_TOKEN = "filesecret""#));
+		// The open copy goes where the confined one does, and has the socket.
+		let (path, open) = files
+			.open
+			.iter()
+			.find(|(path, _)| path.ends_with("main.lua"))
+			.unwrap();
+		assert!(open.contains("sockettoken"));
+		assert!(files.confined.iter().any(|(same, _)| same == path));
+	}
+
+	#[test]
+	fn only_what_is_wanted_is_handed_over() {
+		let home = tempfile::tempdir().unwrap();
+		let mut ingame = a_run(4242, "abc", "filesecret");
+		let names = |files: &[(PathBuf, String)]| {
+			files
+				.iter()
+				.map(|(path, _)| path.file_name().unwrap().to_string_lossy().into_owned())
+				.collect::<Vec<_>>()
+		};
+
+		assert_eq!(
+			ingame.launch_files(home.path(), false, false),
+			LaunchFiles::default()
+		);
+
+		let widget_only = ingame.launch_files(home.path(), true, false);
+		assert!(names(&widget_only.open).contains(&"modlobby_escape.lua".to_owned()));
+		assert!(!names(&widget_only.open).contains(&"main.lua".to_owned()));
+		assert!(widget_only.confined.is_empty());
+
+		// The menu falls back on the same file, so its directory goes in too.
+		let menu_only = ingame.launch_files(home.path(), false, true);
+		assert!(!names(&menu_only.open).contains(&"modlobby_escape.lua".to_owned()));
+		assert!(names(&menu_only.open).contains(&"main.lua".to_owned()));
+		assert!(names(&menu_only.open).contains(&"modlobby-ingame.txt".to_owned()));
+		assert!(names(&menu_only.mods).contains(&"modlobby-ingame.txt".to_owned()));
+		assert!(!names(&menu_only.mods).contains(&"modlobby_escape.lua".to_owned()));
+	}
+
 	/// The bug: an exit took the menu from under a game an earlier run of ours
 	/// had started, and the game's end was a content error.
 	#[test]
 	fn a_running_engine_keeps_the_menu() {
 		let home = tempfile::tempdir().unwrap();
-		let mut ingame = InGame {
-			port: 4242,
-			token: "abc".into(),
-			installed: None,
-			menu: None,
-		};
-		let widget = ingame.install(home.path(), "filesecret").unwrap();
-		let menu = ingame.install_menu(home.path(), "filesecret").unwrap();
+		let mut ingame = a_run(4242, "abc", "filesecret");
+		let (widget, menu) = launch_from(&mut ingame, home.path());
 
 		ingame.uninstall_with(|| true);
 
@@ -492,19 +682,13 @@ mod tests {
 	#[test]
 	fn leftovers_nobody_wants_are_swept_once_no_engine_runs() {
 		let home = tempfile::tempdir().unwrap();
-		let mut ingame = InGame {
-			port: 4242,
-			token: "abc".into(),
-			installed: None,
-			menu: None,
-		};
-		let widget = ingame.install(home.path(), "filesecret").unwrap();
-		let menu = ingame.install_menu(home.path(), "filesecret").unwrap();
+		let mut ingame = a_run(4242, "abc", "filesecret");
+		let (widget, menu) = launch_from(&mut ingame, home.path());
 		// A killed run: nothing is taken out.
 		ingame.leave_behind();
 
 		sweep_with(home.path(), true, false, || true);
-		assert!(widget.is_file(), "wanted, so the install rewrites it");
+		assert!(widget.is_file(), "wanted, so the next launch rewrites it");
 		assert!(menu.is_dir(), "an engine still runs");
 
 		sweep_with(home.path(), false, false, || false);
@@ -515,14 +699,8 @@ mod tests {
 	#[test]
 	fn left_behind_for_a_running_game_both_files_stay() {
 		let home = tempfile::tempdir().unwrap();
-		let mut ingame = InGame {
-			port: 4242,
-			token: "abc".into(),
-			installed: None,
-			menu: None,
-		};
-		let widget = ingame.install(home.path(), "filesecret").unwrap();
-		let menu = ingame.install_menu(home.path(), "filesecret").unwrap();
+		let mut ingame = a_run(4242, "abc", "filesecret");
+		let (widget, menu) = launch_from(&mut ingame, home.path());
 
 		ingame.leave_behind();
 		drop(ingame);

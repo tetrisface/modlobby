@@ -11,6 +11,8 @@ pub enum Command {
 	Raise,
 	/// Stop the game.
 	QuitGame,
+	/// The load is over and the game has the keyboard.
+	Loaded,
 }
 
 /// Reads one line, or `None` if it was not the widget or not a verb we know.
@@ -25,6 +27,7 @@ pub fn parse(line: &str, token: &str) -> Option<Command> {
 	match verb.trim() {
 		"raise" => Some(Command::Raise),
 		"quit" => Some(Command::QuitGame),
+		"loaded" => Some(Command::Loaded),
 		_ => None,
 	}
 }
@@ -48,9 +51,10 @@ mod tests {
 	const TOKEN: &str = "8f3c1d9e";
 
 	#[test]
-	fn the_two_things_the_widget_can_ask_for() {
+	fn what_the_game_can_say() {
 		assert_eq!(parse("8f3c1d9e raise", TOKEN), Some(Command::Raise));
 		assert_eq!(parse("8f3c1d9e quit", TOKEN), Some(Command::QuitGame));
+		assert_eq!(parse("8f3c1d9e loaded", TOKEN), Some(Command::Loaded));
 		// Lua writes a newline; the reader may or may not have stripped it.
 		assert_eq!(parse("8f3c1d9e raise\r\n", TOKEN), Some(Command::Raise));
 	}

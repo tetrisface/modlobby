@@ -122,6 +122,10 @@ pub type FromHost = Arc<
 		+ Sync,
 >;
 
+/// Who to tell, by process id, that a game running now was taken over rather
+/// than launched, which nothing else in the stream of engine news says.
+pub type OnAdopt = Arc<dyn Fn(u32) + Send + Sync>;
+
 /// What the room's host is asked for, and what proves the asking.
 ///
 /// The credentials come from here rather than being looked up by whoever
@@ -623,6 +627,7 @@ enum Command {
 	ReleaseSeat,
 	SetDataDir(Option<PathBuf>),
 	AdoptEngine,
+	SetOnAdopt(OnAdopt),
 	/// Each server's rapid master index, by server id; one without is BAR's.
 	SetRapidMasters(BTreeMap<String, String>),
 	/// Each server's own map search (`find`), by server id.
@@ -643,9 +648,8 @@ enum Command {
 	/// overlay is switched off, which is also when nothing is written.
 	SetOverlayConfigDir(Option<PathBuf>),
 	SetMenuArchive(Option<recoil::MenuArchive>),
-	/// Files a confined launch writes into the mods write directory after
-	/// its reset, by path relative to it.
-	SetModsFiles(Vec<(PathBuf, String)>),
+	/// What a launch writes ahead of the engine.
+	SetLaunchFiles(launch::LaunchFiles),
 	/// Where to keep the skirmish room between runs.
 	SetSkirmishPath(Option<PathBuf>),
 	/// Asks a cluster manager for a room of our own; the runtime joins it
@@ -1311,6 +1315,11 @@ impl Client {
 		self.send(Command::AdoptEngine).await
 	}
 
+	/// Who to tell of a game taken over. See [`OnAdopt`].
+	pub async fn set_on_adopt(&self, on_adopt: OnAdopt) -> Result<(), ClientError> {
+		self.send(Command::SetOnAdopt(on_adopt)).await
+	}
+
 	/// Checks the room's content again after something was installed outside
 	/// the runtime's own downloads, and fetches what is still missing.
 	pub async fn recheck_content(&self) -> Result<(), ClientError> {
@@ -1324,17 +1333,17 @@ impl Client {
 		self.send(Command::SetSkirmishPath(path)).await
 	}
 
+	/// What a launch writes ahead of the engine: the in-game Escape widget and
+	/// the menu, with this run's port and tokens in them.
+	pub async fn set_launch_files(&self, files: launch::LaunchFiles) -> Result<(), ClientError> {
+		self.send(Command::SetLaunchFiles(files)).await
+	}
+
 	/// The LuaMenu archive to launch games against, when there is one.
 	///
 	/// What it buys is BAR's in-game "Lobby" button, which raises the overlay
 	/// instead of quitting. Cleared when the overlay is off, since raising a
 	/// lobby that will not come up is worse than the plain Quit button.
-	/// What a confined launch writes into the mods write directory after
-	/// its reset: the in-game escape widget, by path relative to it.
-	pub async fn set_mods_files(&self, files: Vec<(PathBuf, String)>) -> Result<(), ClientError> {
-		self.send(Command::SetModsFiles(files)).await
-	}
-
 	pub async fn set_menu_archive(
 		&self,
 		menu: Option<recoil::MenuArchive>,
@@ -1498,9 +1507,8 @@ struct Runtime {
 	/// The boundary a modded game runs inside; a refusal where this
 	/// platform has none.
 	confinement: Arc<dyn sandbox::Confinement>,
-	/// Files a confined launch writes into the mods write directory after
-	/// its reset, by path relative to it: the in-game escape widget.
-	mods_files: Vec<(PathBuf, String)>,
+	/// What a launch writes ahead of the engine; pushed by the app.
+	launch_files: launch::LaunchFiles,
 	/// Whose code runs, as settings say; pushed by the app.
 	trust: Trust,
 	/// Mods allowed for one lobby only: (server, battle id, the mod's key),
@@ -1526,6 +1534,7 @@ struct Runtime {
 	misses: Misses,
 	vet: Vet,
 	from_host: FromHost,
+	on_adopt: Option<OnAdopt>,
 	game_sources: GameSources,
 	/// Where to put a config that gets the game borderless, when the user's
 	/// own would not let the overlay cover it. `None` leaves their settings
@@ -2102,7 +2111,7 @@ impl Runtime {
 			data_dir: None,
 			confined_to,
 			confinement,
-			mods_files: Vec::new(),
+			launch_files: launch::LaunchFiles::default(),
 			trust: Trust::default(),
 			allowed_once: BTreeMap::new(),
 			reaches: HashMap::new(),
@@ -2118,6 +2127,7 @@ impl Runtime {
 			misses,
 			vet: vet_bars_only(),
 			from_host: no_host(),
+			on_adopt: None,
 			game_sources: rapid_only(),
 			engine_run: None,
 			overlay_config_dir: None,
@@ -2178,6 +2188,7 @@ impl Runtime {
 			path.to_string_lossy().into_owned(),
 			self.overlay_config_dir.as_deref(),
 			self.menu_archive.clone(),
+			&self.launch_files.open,
 		)
 		.map_err(ClientError::Engine)?;
 		self.started(launched, dirs.write);
@@ -2229,6 +2240,7 @@ impl Runtime {
 			path.to_string_lossy().into_owned(),
 			self.overlay_config_dir.as_deref(),
 			self.menu_archive.clone(),
+			&self.launch_files.open,
 		) {
 			Ok(launched) => {
 				self.started(launched, dirs.write);
@@ -2279,6 +2291,7 @@ impl Runtime {
 			path,
 			self.overlay_config_dir.as_deref(),
 			self.menu_archive.clone(),
+			&self.launch_files,
 			self.launch_mode(
 				if modded {
 					LaunchHow::Confined(sandbox::Network::None)
@@ -3629,7 +3642,7 @@ impl Runtime {
 			}
 			Command::SetOverlayConfigDir(dir) => self.overlay_config_dir = dir,
 			Command::SetMenuArchive(menu) => self.menu_archive = menu,
-			Command::SetModsFiles(files) => self.mods_files = files,
+			Command::SetLaunchFiles(files) => self.launch_files = files,
 			Command::SetSkirmishPath(path) => self.skirmish_path = path,
 			Command::SetRapidMasters(masters) => self.rapid_masters = masters,
 			Command::SetMapSearches(searches) => self.map_searches = searches,
@@ -3653,6 +3666,7 @@ impl Runtime {
 				self.refresh_content().await;
 			}
 			Command::AdoptEngine => self.adopt_engine(),
+			Command::SetOnAdopt(on_adopt) => self.on_adopt = Some(on_adopt),
 			Command::RecheckContent => self.look_again().await,
 			Command::ReleaseSeat => {
 				let Some(server) = self.room() else {
@@ -4336,6 +4350,7 @@ impl Runtime {
 			url,
 			self.overlay_config_dir.as_deref(),
 			self.menu_archive.clone(),
+			&self.launch_files,
 			self.launch_mode(how, &mods, set),
 		)
 		.await;
@@ -4385,7 +4400,6 @@ impl Runtime {
 			self_exe: sandbox::probe_exe(),
 			probe_cache: state.join("sandbox-probe.json"),
 			grants_file: state.join("sandbox-grants.json"),
-			after_reset: self.mods_files.clone(),
 			set,
 		}
 	}
@@ -4499,6 +4513,9 @@ impl Runtime {
 			next_look: Instant::now(),
 		});
 		self.set_engine(EngineStatus::Running { pid: Some(pid) });
+		if let Some(on_adopt) = &self.on_adopt {
+			on_adopt(pid);
+		}
 	}
 
 	fn set_engine(&mut self, status: EngineStatus) {

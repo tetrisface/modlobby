@@ -10,6 +10,7 @@
 //! it knows nothing about.
 
 pub mod controller;
+pub mod escape;
 pub mod foreground;
 pub mod hotkey;
 pub mod seams;

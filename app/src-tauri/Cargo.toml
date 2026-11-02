@@ -64,12 +64,23 @@ tracing-subscriber = { workspace = true }
 ts-rs = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
-# Only for the engine's window, which we do not own: flashing its taskbar
-# entry, putting it in front, and asking which monitor it is on.
+# For the engine's window, which we do not own: flashing its taskbar entry,
+# putting it in front, and asking which monitor it is on. And for ours where
+# the toolkit has no call: going behind the engine's, and being reshaped unseen.
+# And for the one key a game cannot hear while it loads.
 windows-sys = { workspace = true, features = [
   "Win32_Foundation",
+  "Win32_Graphics_Dwm",
   "Win32_Graphics_Gdi",
+  "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_WindowsAndMessaging",
+] }
+
+[target.'cfg(windows)'.dev-dependencies]
+# A desktop of the tests' own, for windows that have to be shown to be tested.
+windows-sys = { workspace = true, features = [
+  "Win32_Security",
+  "Win32_System_StationsAndDesktops",
 ] }
 
 [dev-dependencies]

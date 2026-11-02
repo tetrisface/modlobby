@@ -4,9 +4,20 @@
 //! runtime keeps exactly one UI transport (`Command::Subscribe` replaces it),
 //! so an overlay window would take the stream from the lobby behind it.
 //!
-//! Overlay shape is borderless, always-on-top, off the taskbar, and covering
-//! the monitor — deliberately not `set_fullscreen(true)`, which asks the OS
-//! for its own fullscreen treatment and then fights the game for it.
+//! Overlay shape is borderless, always-on-top and covering the monitor —
+//! deliberately not `set_fullscreen(true)`, which asks the OS for its own
+//! fullscreen treatment and then fights the game for it.
+//!
+//! Back in the game the window is an ordinary one again, directly behind the
+//! game. It is never hidden there and it stays on the taskbar: that way back
+//! needs nothing from the game or the hotkey, for when those stop answering,
+//! and it is what keeps a second lobby from being started to get one.
+//!
+//! Both reshapes run cloaked. The toolkit's restore and maximize activate a
+//! window and bring it to the front, which would put the lobby over the game
+//! in the wrong shape for a moment, and each of its flag changes rewrites the
+//! extended style an alpha veil depends on. The compositor's cloak is out of
+//! reach of all of that.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -14,7 +25,7 @@ use std::time::Duration;
 
 use tauri::{Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewWindow};
 
-use super::seams::{ScreenId, WindowSurface};
+use super::seams::{ScreenId, WindowId, WindowSurface};
 
 /// What the window looked like before it became an overlay.
 #[derive(Debug, Clone, Copy)]
@@ -60,7 +71,7 @@ impl TauriSurface {
 	}
 
 	fn enter(&self, on: Option<ScreenId>) {
-		// Out of the taskbar before anything is read or set. A minimized window
+		// Unminimized before anything is read or set. A minimized window
 		// reports itself unmaximized, sits at (-32000, -32000) with no size, and
 		// takes none of the geometry below: the later `show` restores it to
 		// whatever it was minimized from. From maximized that is a borderless
@@ -106,7 +117,6 @@ impl TauriSurface {
 		// so the coordinates land where they say.
 		let _ = self.window.set_shadow(false);
 		let _ = self.window.set_always_on_top(true);
-		let _ = self.window.set_skip_taskbar(true);
 
 		// The game's monitor where it is known, else the one the window is
 		// on. Not the same thing: the launcher pins the engine to the primary
@@ -124,8 +134,10 @@ impl TauriSurface {
 
 	fn leave(&self) {
 		let remembered = self.restore.lock().expect("overlay geometry").take();
+		// Minimized from the taskbar while over the game, it takes none of the
+		// geometry below.
+		let _ = self.window.unminimize();
 		let _ = self.window.set_always_on_top(false);
-		let _ = self.window.set_skip_taskbar(false);
 		let _ = self.window.set_maximizable(true);
 		// Back on, unconditionally: a decorated window ignores it, and every
 		// ordinary window wants its shadow.
@@ -276,6 +288,55 @@ fn set_alpha(window: &WebviewWindow, alpha: u8) {
 #[cfg(not(windows))]
 fn set_alpha(_window: &WebviewWindow, _alpha: u8) {}
 
+/// Whether the compositor draws the window. See the module doc.
+#[cfg(windows)]
+fn cloak(window: &WebviewWindow, cloaked: bool) {
+	let Ok(hwnd) = window.hwnd() else {
+		return;
+	};
+	if !crate::win::cloak(hwnd.0 as _, cloaked) {
+		tracing::warn!(cloaked, "overlay: the compositor refused the cloak");
+	}
+}
+
+#[cfg(not(windows))]
+fn cloak(_window: &WebviewWindow, _cloaked: bool) {}
+
+/// The window is about to be reshaped on its way out of the game's way.
+#[cfg(windows)]
+fn out_of_sight(window: &WebviewWindow) {
+	cloak(window, true);
+}
+
+/// Nothing here can order a window against another process's, so nothing but
+/// hiding keeps it from covering the game, and Wayland has no unminimize.
+#[cfg(not(windows))]
+fn out_of_sight(window: &WebviewWindow) {
+	let _ = window.hide();
+}
+
+/// Reshaped, and now put where it waits: directly behind the game, or, with no
+/// game's window to go behind, minimized, for the OS to say who is next. It
+/// stays on the taskbar either way.
+///
+/// The last thing done to the window. The toolkit maximizes a maximized window
+/// again on any flag change, which brings it back to the front.
+#[cfg(windows)]
+fn out_of_the_way(window: &WebviewWindow, behind: Option<WindowId>) {
+	let placed = behind.is_some_and(|game| {
+		window
+			.hwnd()
+			.is_ok_and(|hwnd| crate::win::place_behind(hwnd.0 as _, game.0 as _))
+	});
+	if !placed {
+		let _ = window.minimize();
+	}
+	cloak(window, false);
+}
+
+#[cfg(not(windows))]
+fn out_of_the_way(_window: &WebviewWindow, _behind: Option<WindowId>) {}
+
 /// The extent of a monitor named by the game's window, where the platform
 /// can say.
 #[cfg(windows)]
@@ -294,7 +355,23 @@ fn monitor_area(_screen: Option<ScreenId>) -> Option<Area> {
 
 impl WindowSurface for TauriSurface {
 	fn enter_overlay(&self, on: Option<ScreenId>) {
+		// From its ordinary shape the window is on screen, behind the game.
+		// Already in the overlay's it is only fitted again, in plain sight.
+		let arriving = self.restore.lock().expect("overlay geometry").is_none();
+		if arriving {
+			cloak(&self.window, true);
+		}
 		self.enter(on);
+		if arriving {
+			// The alpha veil takes over for the page's two frames, which a
+			// cloaked window may not get. Queued behind the toolkit's own
+			// messages: a raise arrives from threads other than the window's.
+			let window = self.window.clone();
+			let _ = self.window.run_on_main_thread(move || {
+				set_alpha(&window, 0);
+				cloak(&window, false);
+			});
+		}
 		self.dressed(true);
 	}
 
@@ -334,8 +411,15 @@ impl WindowSurface for TauriSurface {
 		set_alpha(&self.window, u8::MAX);
 	}
 
-	fn hide(&self) {
-		let _ = self.window.hide();
+	fn lower(&self, behind: Option<WindowId>) {
+		out_of_sight(&self.window);
+		self.leave();
+		// Queued behind the toolkit's own messages, as in `enter_overlay`.
+		let window = self.window.clone();
+		let _ = self
+			.window
+			.run_on_main_thread(move || out_of_the_way(&window, behind));
+		self.dressed(false);
 	}
 
 	fn focus(&self) {

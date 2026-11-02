@@ -28,6 +28,7 @@ fn overlay_settings(settings: &settings::Settings) -> overlay::OverlaySettings {
 		enabled: settings.overlay.enabled,
 		hotkey: settings.overlay.hotkey.clone(),
 		return_focus_to_game: settings.overlay.return_focus_to_game,
+		in_game_escape: settings.overlay.in_game_escape,
 	}
 }
 
@@ -173,6 +174,10 @@ impl ingame::Actions for InGameActions {
 			let _ = client.stop_engine().await;
 		});
 		true
+	}
+
+	fn game_loaded(&self) -> bool {
+		self.overlay.game_loaded()
 	}
 
 	fn game_running(&self) -> bool {
@@ -366,14 +371,23 @@ pub fn run() {
 				client: app.client.clone(),
 			});
 			let file_actions: std::sync::Arc<dyn ingame::Actions> = actions.clone();
+			// And Escape while the game cannot hear it.
+			tauri::async_runtime::spawn(
+				overlay::escape::Listener::new(
+					controller.clone(),
+					std::sync::Arc::new(overlay::foreground::Windows),
+					std::sync::Arc::new(overlay::escape::Windows),
+				)
+				.run(),
+			);
 			// The widget goes in the directory we write; the engine reads
 			// `LuaUI/Widgets` from every data directory it is given.
 			let widget_dir = lobby_runtime::launch::data_dirs(app.settings.get().paths.data_dir)
 				.map(|dirs| dirs.write);
 			// The menu archive buys BAR's in-game "Lobby" button, and what
 			// that button does is raise the overlay -- so it is only worth
-			// writing where the overlay is on to be raised. The same goes for
-			// the widget: its file channel gets no "no" back, so with the
+			// launching with where the overlay is on to be raised. The same goes
+			// for the widget: its file channel gets no "no" back, so with the
 			// overlay off it could only swallow Escape.
 			let overlay_on = app.settings.get().overlay.enabled;
 			let want_widget = overlay_on && app.settings.get().overlay.in_game_escape;
@@ -389,6 +403,7 @@ pub fn run() {
 				}
 				match ingame::InGame::start(actions).await {
 					Ok(mut ingame) => {
+						tracing::info!(port = ingame.port, "in-game control socket up");
 						// Where the socket does not answer -- a user widget has none
 						// since BAR #9547, and a game inside the sandbox none at
 						// all -- the Escape widget and the menu's Lobby button
@@ -396,7 +411,6 @@ pub fn run() {
 						// the open one or the mods one, both watched here under a
 						// token of the file's own (the socket's must never be
 						// readable inside the sandbox).
-						let file_token = ingame::token();
 						if let Some(dir) =
 							widget_dir.as_deref().filter(|_| want_widget || want_menu)
 						{
@@ -404,52 +418,23 @@ pub fn run() {
 							for write_dir in [dir, mods.write.as_path()] {
 								ingame::watch_file(
 									ingame::widget::file(write_dir),
-									file_token.clone(),
+									ingame.file_token.clone(),
 									file_actions.clone(),
 								);
 							}
-						}
-						if let (true, Some(dir)) = (want_widget, widget_dir.as_deref()) {
-							match ingame.install(dir, &file_token) {
-								Ok(path) => tracing::info!(
-									path = %path.display(),
-									port = ingame.port,
-									"in-game Escape widget installed"
-								),
-								Err(err) => tracing::warn!(%err, "could not install the widget"),
-							}
-							// The sandbox copy carries no socket secret, and an
-							// empty file goes in with it so its directory exists
-							// for the first append.
+							// Handed over, not written: a lobby beside this one may
+							// share the directory, and a game has to ask the lobby
+							// that launched it, so its launch is what writes them.
 							let _ = menu_client
-								.set_mods_files(vec![
-									(
-										ingame::widget::path(std::path::Path::new(""))
-											.components()
-											.collect(),
-										ingame::widget::source(None, &file_token),
-									),
-									(std::path::PathBuf::from(ingame::FILE), String::new()),
-								])
+								.set_launch_files(ingame.launch_files(dir, want_widget, want_menu))
 								.await;
-						}
-						if let (true, Some(dir)) = (want_menu, widget_dir.as_deref()) {
-							match ingame.install_menu(dir, &file_token) {
-								Ok(path) => {
-									tracing::info!(
-										path = %path.display(),
-										"in-game lobby menu installed"
-									);
-									let _ = menu_client
-										.set_menu_archive(Some(recoil::MenuArchive {
-											name: ingame::menu::menu_name(),
-											dir: path,
-										}))
-										.await;
-								}
-								Err(err) => {
-									tracing::warn!(%err, "could not install the lobby menu");
-								}
+							if want_menu {
+								let _ = menu_client
+									.set_menu_archive(Some(recoil::MenuArchive {
+										name: ingame::menu::menu_name(),
+										dir: ingame::menu::dir(dir),
+									}))
+									.await;
 							}
 						}
 						*held.lock().expect("in-game") = Some(ingame);
@@ -475,6 +460,15 @@ pub fn run() {
 			let track_handle = handle.clone();
 			let (adopt_asked, adopted) = tokio::sync::oneshot::channel();
 			tauri::async_runtime::spawn(async move {
+				// Ahead of the settings below, whose data directory can be what
+				// finds a game left running. The overlay cannot tell that game
+				// from one of ours by the news of it running.
+				let taking_over = controller.clone();
+				let _ = client
+					.set_on_adopt(std::sync::Arc::new(move |pid: u32| {
+						taking_over.taken_over(pid)
+					}))
+					.await;
 				// Whoever reads another server's rapid before games come
 				// from it; without one the runtime fetches from BAR's only.
 				let _ = client

@@ -189,13 +189,62 @@ pub enum Mode<'a> {
 		probe_cache: PathBuf,
 		/// Where the grants made for the container are recorded.
 		grants_file: PathBuf,
-		/// Files written into the mods write directory after its reset, by
-		/// path relative to it: the in-game escape widget.
-		after_reset: Vec<(PathBuf, String)>,
 		/// The mods the lobby loads, as the key their settings are kept
 		/// under; `None` for a replay, which has none to keep.
 		set: Option<crate::modsettings::ModSet>,
 	},
+}
+
+/// What a launch writes ahead of the engine: the in-game Escape widget and the
+/// menu, each by path relative to the directory it goes in.
+///
+/// Written by the lobby launching the game, for that game. A lobby beside it
+/// may share the data directory, and these carry the port and tokens of one
+/// run, so whoever wrote them last is who the game would ask.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LaunchFiles {
+	/// Into the write directory, for a game with the player's rights.
+	pub open: Vec<(PathBuf, String)>,
+	/// Into the write directory too, for a confined game to read through its
+	/// view of it. Nothing a game in the sandbox must not learn goes in here.
+	pub confined: Vec<(PathBuf, String)>,
+	/// Into the mods write directory, after its reset.
+	pub mods: Vec<(PathBuf, String)>,
+}
+
+/// Writes `files` under `dir`, with the directories they need. One already
+/// saying the same is left alone, so a repeat launch gives the engine's archive
+/// scanner nothing new to look at.
+pub fn write_files(dir: &Path, files: &[(PathBuf, String)]) -> std::io::Result<()> {
+	for (relative, text) in files {
+		let path = dir.join(relative);
+		if std::fs::read(&path).is_ok_and(|held| held == text.as_bytes()) {
+			continue;
+		}
+		if let Some(parent) = path.parent() {
+			std::fs::create_dir_all(parent)?;
+		}
+		std::fs::write(&path, text)?;
+	}
+	Ok(())
+}
+
+/// [`write_files`] on the way to the engine. Ahead of it rather than beside it:
+/// `--menu` is decided from what is on disk when the command is built, and an
+/// archive the engine cannot find keeps it from opening a window. Timed, since
+/// it delays the game, and not worth refusing to play over.
+fn write_for_launch(dir: &Path, files: &[(PathBuf, String)]) {
+	if files.is_empty() {
+		return;
+	}
+	let began = std::time::Instant::now();
+	match write_files(dir, files) {
+		Ok(()) => tracing::info!(
+			us = began.elapsed().as_micros() as u64,
+			"launch files written"
+		),
+		Err(err) => tracing::warn!(%err, "launch files not written; Escape may not reach us"),
+	}
 }
 
 /// The OS build the probe's verdict is keyed on, beside modlobby's version.
@@ -220,6 +269,7 @@ pub fn spawn_open(
 	target: String,
 	overlay_config_dir: Option<&Path>,
 	menu: Option<recoil::MenuArchive>,
+	files: &[(PathBuf, String)],
 ) -> Result<Launched, String> {
 	start_open(prepare_open(
 		dirs,
@@ -228,6 +278,7 @@ pub fn spawn_open(
 		overlay_config_dir,
 		menu,
 		None,
+		files,
 	)?)
 }
 
@@ -249,6 +300,7 @@ fn prepare_open(
 	overlay_config_dir: Option<&Path>,
 	menu: Option<recoil::MenuArchive>,
 	builds: Option<&Path>,
+	files: &[(PathBuf, String)],
 ) -> Result<Prepared, String> {
 	let engine = find_engine(dirs, engine_version, &target)?;
 	player_files::seed(dirs);
@@ -273,6 +325,9 @@ fn prepare_open(
 			"their settings ask for exclusive fullscreen; launching on a private copy"
 		);
 	}
+	// After the seed and the snapshot: this run's secrets are not the player's
+	// files.
+	write_for_launch(&dirs.write, files);
 
 	let mut read_dirs = dirs.read.clone();
 	if let Some(builds) = builds
@@ -324,50 +379,58 @@ pub async fn spawn(
 	target: String,
 	overlay_config_dir: Option<&Path>,
 	menu: Option<recoil::MenuArchive>,
+	files: &LaunchFiles,
 	mode: Mode<'_>,
 ) -> Result<Launched, String> {
-	let (confinement, mods, network, self_exe, probe_cache, grants_file, after_reset, set) =
-		match mode {
-			Mode::Open => {
-				return spawn_open(dirs, engine_version, target, overlay_config_dir, menu);
-			}
-			Mode::Trusted { mods, builds } => {
-				let view = crate::mods::trusted_view(mods, &builds)
-					.map_err(|err| format!("making the view of the lobby's builds: {err}"))?;
-				return start_open(prepare_open(
-					dirs,
-					engine_version,
-					target,
-					overlay_config_dir,
-					menu,
-					Some(&view),
-				)?);
-			}
-			Mode::Confined {
-				confinement,
-				mods,
-				network,
-				self_exe,
-				probe_cache,
-				grants_file,
-				after_reset,
-				set,
-			} => (
-				confinement,
-				mods,
-				network,
-				self_exe,
-				probe_cache,
-				grants_file,
-				after_reset,
-				set,
-			),
-		};
+	let (confinement, mods, network, self_exe, probe_cache, grants_file, set) = match mode {
+		Mode::Open => {
+			return spawn_open(
+				dirs,
+				engine_version,
+				target,
+				overlay_config_dir,
+				menu,
+				&files.open,
+			);
+		}
+		Mode::Trusted { mods, builds } => {
+			let view = crate::mods::trusted_view(mods, &builds)
+				.map_err(|err| format!("making the view of the lobby's builds: {err}"))?;
+			return start_open(prepare_open(
+				dirs,
+				engine_version,
+				target,
+				overlay_config_dir,
+				menu,
+				Some(&view),
+				&files.open,
+			)?);
+		}
+		Mode::Confined {
+			confinement,
+			mods,
+			network,
+			self_exe,
+			probe_cache,
+			grants_file,
+			set,
+		} => (
+			confinement,
+			mods,
+			network,
+			self_exe,
+			probe_cache,
+			grants_file,
+			set,
+		),
+	};
 	if let Some(reason) = confinement.unavailable() {
 		return Err(reason);
 	}
 	let engine = find_engine(dirs, engine_version, &target)?;
 	let failed = |what: &str, err: std::io::Error| format!("{what}: {err}");
+	// Ahead of the views and the grants the game will read them through.
+	write_for_launch(&dirs.write, &files.confined);
 	crate::mods::reset(&mods.write).map_err(|err| failed("resetting the mods directory", err))?;
 	crate::mods::seed(mods, &dirs.write)
 		.map_err(|err| failed("seeding the mods directory", err))?;
@@ -391,15 +454,8 @@ pub async fn spawn(
 	let data_dirs: Vec<&Path> = data_dirs.iter().map(PathBuf::as_path).collect();
 	let config = crate::mods::write_config(mods, &data_dirs, engine_version, theirs.as_deref())
 		.map_err(|err| failed("writing the mods config", err))?;
-	for (relative, text) in &after_reset {
-		let path = mods.write.join(relative);
-		if let Some(parent) = path.parent() {
-			std::fs::create_dir_all(parent)
-				.map_err(|err| failed("preparing the mods directory", err))?;
-		}
-		std::fs::write(&path, text)
-			.map_err(|err| failed("writing into the mods directory", err))?;
-	}
+	write_files(&mods.write, &files.mods)
+		.map_err(|err| failed("writing into the mods directory", err))?;
 
 	// What went in, kept beside what the game will leave: the diff the
 	// player can inspect, and what a discard goes back to.
@@ -761,12 +817,118 @@ mod confined {
 			self_exe: dir.join("modlobby.exe"),
 			probe_cache: dir.join("probe.json"),
 			grants_file: dir.join("grants.json"),
-			after_reset: vec![(
+			set,
+		}
+	}
+
+	const MENU_MAIN: &str = "games/shim.sdd/LuaMenu/main.lua";
+
+	fn escape_files() -> LaunchFiles {
+		LaunchFiles {
+			open: vec![(PathBuf::from(MENU_MAIN), "-- with the socket".into())],
+			confined: vec![(PathBuf::from(MENU_MAIN), "-- no socket".into())],
+			mods: vec![(
 				PathBuf::from("LuaUI/Widgets/modlobby_escape.lua"),
 				"-- escape".into(),
 			)],
-			set,
 		}
+	}
+
+	#[test]
+	fn files_get_the_directories_they_need_and_one_saying_the_same_is_left_alone() {
+		let dir = tempfile::tempdir().unwrap();
+		let path = dir.path().join(MENU_MAIN);
+		let files = |text: &str| vec![(PathBuf::from(MENU_MAIN), text.to_owned())];
+
+		write_files(dir.path(), &files("one")).unwrap();
+		assert_eq!(std::fs::read_to_string(&path).unwrap(), "one");
+
+		// Backdated, so that a rewrite cannot hide inside the clock's resolution.
+		let long_ago = SystemTime::now() - std::time::Duration::from_secs(3600);
+		std::fs::File::options()
+			.write(true)
+			.open(&path)
+			.unwrap()
+			.set_modified(long_ago)
+			.unwrap();
+		write_files(dir.path(), &files("one")).unwrap();
+		assert_eq!(
+			std::fs::metadata(&path).unwrap().modified().unwrap(),
+			long_ago,
+			"a repeat launch gives the engine's archive scanner nothing new"
+		);
+
+		write_files(dir.path(), &files("two")).unwrap();
+		assert_eq!(std::fs::read_to_string(&path).unwrap(), "two");
+	}
+
+	/// `--menu` is decided from what is on disk when the command is built, so
+	/// on a directory with no menu yet it has to be written by then, or the
+	/// game comes up without the Lobby button.
+	#[test]
+	fn an_open_launch_has_written_its_menu_by_the_time_the_command_is_built() {
+		let dir = tempfile::tempdir().unwrap();
+		let dirs = engine_in(dir.path());
+		let menu = recoil::MenuArchive {
+			name: "shim 1".into(),
+			dir: dirs.write.join("games/shim.sdd"),
+		};
+		let files = vec![
+			(
+				PathBuf::from("games/shim.sdd/modinfo.lua"),
+				"return {}".to_owned(),
+			),
+			(PathBuf::from(MENU_MAIN), "-- with the socket".to_owned()),
+		];
+
+		let prepared = prepare_open(
+			&dirs,
+			"0.0.0",
+			"script.txt".into(),
+			None,
+			Some(menu),
+			None,
+			&files,
+		)
+		.unwrap();
+
+		let command = prepared.launch.command();
+		assert!(
+			command.get_args().any(|arg| arg == "--menu"),
+			"{:?}",
+			command.get_args().collect::<Vec<_>>()
+		);
+		assert_eq!(
+			std::fs::read_to_string(dirs.write.join(MENU_MAIN)).unwrap(),
+			"-- with the socket"
+		);
+	}
+
+	/// The confined game reads the menu through its view of the write
+	/// directory, so what it gets there is the copy without the socket.
+	#[tokio::test]
+	async fn a_confined_launch_writes_the_copy_a_sandboxed_game_may_read() {
+		let dir = tempfile::tempdir().unwrap();
+		let dirs = engine_in(dir.path());
+		let mods = crate::mods::layout(&dirs.write);
+		let seen = Arc::new(Mutex::new(None));
+		let recording = Recording { seen: seen.clone() };
+
+		let _ = spawn(
+			&dirs,
+			"0.0.0",
+			"script.txt".into(),
+			None,
+			None,
+			&escape_files(),
+			mode(Arc::new(recording), &mods, dir.path(), None),
+		)
+		.await;
+
+		assert_eq!(
+			std::fs::read_to_string(dirs.write.join(MENU_MAIN)).unwrap(),
+			"-- no socket"
+		);
 	}
 
 	#[tokio::test]
@@ -791,6 +953,7 @@ mod confined {
 			"script.txt".into(),
 			None,
 			None,
+			&escape_files(),
 			mode(Arc::new(recording), &mods, dir.path(), None),
 		)
 		.await
@@ -844,6 +1007,7 @@ mod confined {
 			"script.txt".into(),
 			None,
 			None,
+			&escape_files(),
 			mode(Arc::new(refuse), &mods, dir.path(), None),
 		)
 		.await
@@ -853,6 +1017,10 @@ mod confined {
 		assert!(
 			!mods.write.exists(),
 			"nothing was prepared for a launch that cannot happen"
+		);
+		assert!(
+			!dirs.write.join(MENU_MAIN).exists(),
+			"nor anything written for it"
 		);
 	}
 
@@ -876,6 +1044,7 @@ mod confined {
 			replay.to_string_lossy().into_owned(),
 			None,
 			None,
+			&LaunchFiles::default(),
 			mode(Arc::new(recording), &mods, dir.path(), None),
 		)
 		.await;
@@ -910,6 +1079,7 @@ mod confined {
 			"script.txt".into(),
 			None,
 			None,
+			&LaunchFiles::default(),
 			mode(Arc::new(recording), &mods, dir.path(), None),
 		)
 		.await;
@@ -986,8 +1156,16 @@ mod confined {
 			std::fs::write(build.join("modinfo.lua"), "return {}").unwrap();
 		}
 		let view = crate::mods::trusted_view(&mods, std::slice::from_ref(&a)).unwrap();
-		let trusted =
-			prepare_open(&dirs, "0.0.0", "script.txt".into(), None, None, Some(&view)).unwrap();
+		let trusted = prepare_open(
+			&dirs,
+			"0.0.0",
+			"script.txt".into(),
+			None,
+			None,
+			Some(&view),
+			&[],
+		)
+		.unwrap();
 		assert_eq!(trusted.launch.data_dir, dirs.write);
 		assert!(
 			trusted.launch.read_dirs.contains(&view),
@@ -1007,7 +1185,8 @@ mod confined {
 				.join("modinfo.lua")
 				.is_file()
 		);
-		let open = prepare_open(&dirs, "0.0.0", "script.txt".into(), None, None, None).unwrap();
+		let open =
+			prepare_open(&dirs, "0.0.0", "script.txt".into(), None, None, None, &[]).unwrap();
 		assert!(!open.launch.read_dirs.contains(&mods.builds));
 	}
 
@@ -1071,6 +1250,7 @@ mod confined {
 			"script.txt".into(),
 			None,
 			None,
+			&LaunchFiles::default(),
 			mode(Arc::new(recording), &mods, dir.path(), Some(set)),
 		)
 		.await;
@@ -1107,6 +1287,7 @@ mod confined {
 			"script.txt".into(),
 			None,
 			None,
+			&LaunchFiles::default(),
 			mode(Arc::new(recording), &mods, dir.path(), Some(set)),
 		)
 		.await;
@@ -1138,6 +1319,7 @@ mod confined {
 			"script.txt".into(),
 			None,
 			None,
+			&LaunchFiles::default(),
 			mode(Arc::new(recording), &mods, dir.path(), Some(set.clone())),
 		)
 		.await;

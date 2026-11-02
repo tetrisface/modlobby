@@ -235,6 +235,12 @@ function widget:RecvLuaMsg(msg)
 	return true
 end
 
+-- The game is about to have the keyboard, and modlobby stops listening for
+-- Escape on its behalf. The menu says so too; only one has to get through.
+function widget:GamePreload()
+	ask("loaded")
+end
+
 function widget:KeyPress(key, mods, isRepeat)
 	if key ~= KEY_ESCAPE or isRepeat then
 		return false
@@ -325,6 +331,20 @@ mod tests {
 		assert!(socket < menu && menu < file);
 		// "no" over the port is an answer, not a reason to try elsewhere.
 		assert!(source.contains("if answer ~= nil then\n\t\treturn answer"));
+	}
+
+	/// The menu says it too, and only one has to get through. This is the one
+	/// for a game whose menu did not load.
+	#[test]
+	fn the_game_taking_the_keyboard_is_told_to_the_lobby() {
+		let source = source(SOCKET, "x");
+		let ask = source.find("local function ask(verb)").unwrap();
+		let told = source
+			.find("function widget:GamePreload()\n\task(\"loaded\")")
+			.unwrap();
+		assert!(ask < told, "a Lua local has to be declared before its use");
+		// Only a press goes through the menu; this goes on to the file.
+		assert!(source.contains(r#"if verb ~= "raise" or not menu_loaded() then"#));
 	}
 
 	/// The menu's name is what the widget looks for, lowercased the way BAR's

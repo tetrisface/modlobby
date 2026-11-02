@@ -45,8 +45,8 @@ pub const ARCHIVE_NAME: &str = "modlobby chobby shim";
 ///
 /// Fixed rather than the app's: an engine looks the menu up again, by the name
 /// it was launched with, when its game ends, and every build rewrites this
-/// archive on start. A release beside a dev build, or an update landing under
-/// a running game, would otherwise rename it from under the engine.
+/// archive when it launches a game. A release beside a dev build, or an update
+/// landing under a running game, would otherwise rename it from under the engine.
 const ARCHIVE_VERSION: &str = "1";
 
 /// What to pass to `--menu`: the archive's *versioned* name.
@@ -110,12 +110,13 @@ const UNREAD_PATIENCE_SECS: u64 = 1;
 ///
 /// `LuaMenu/main.lua` is the entry point the engine loads (`LuaMenu.cpp:59`),
 /// and its call-ins are plain globals rather than methods on a table.
-fn main_lua(port: u16, token: &str, file_token: &str) -> String {
+fn main_lua(socket: Option<(u16, &str)>, file_token: &str) -> String {
+	let (port, token) = socket.unwrap_or((0, ""));
 	format!(
 		r#"-- modlobby: BAR's in-game Lobby button.
 --
--- Written by modlobby when it starts, and removed once it exits with no game
--- left that could ask for it. It has no interface of its own. BAR offers a
+-- Written by modlobby when it launches a game, and removed once it exits with
+-- no game left that could ask for it. It has no interface of its own. BAR offers a
 -- "Lobby" button in place of "Quit" when a menu is loaded, and this turns that
 -- button into modlobby's overlay. modlobby's Escape widget asks through here
 -- too: a user widget has no socket of its own, a menu does.
@@ -137,7 +138,7 @@ local socket = socket
 
 -- Over the port: true for "ok", false for "no", nil when nothing answered.
 local function ask_socket(verb)
-	if not socket then return nil end
+	if PORT == 0 or not socket then return nil end
 	local tcp = socket.tcp()
 	if not tcp then return nil end
 	tcp:settimeout(0.2)
@@ -229,6 +230,12 @@ function Update()
 	end
 end
 
+-- The load screen is gone and the game has the keyboard. modlobby listens for
+-- Escape itself until now, since nothing in a loading game can hear it.
+function ActivateGame()
+	ask("loaded")
+end
+
 -- Reached only with no game loaded: either the engine started here, or a game
 -- just ended and `ReloadForce` dropped back. Neither is a state this menu has
 -- anything to offer in, so it gets out of the way and lets the process end.
@@ -249,21 +256,22 @@ end
 	)
 }
 
-/// Writes the archive, replacing any older one. The archive's name, for `--menu`.
-pub fn install(
-	data_dir: &Path,
-	port: u16,
-	token: &str,
-	file_token: &str,
-) -> std::io::Result<PathBuf> {
-	let root = dir(data_dir);
-	std::fs::create_dir_all(root.join("LuaMenu"))?;
-	std::fs::write(root.join("modinfo.lua"), modinfo())?;
-	std::fs::write(
-		root.join("LuaMenu").join("main.lua"),
-		main_lua(port, token, file_token),
-	)?;
-	Ok(root)
+/// The file of the archive at `archive` that is written anew for every run.
+pub fn main_file(archive: &Path) -> PathBuf {
+	archive.join("LuaMenu").join("main.lua")
+}
+
+/// The archive's files, by path relative to the write directory.
+///
+/// `socket` is the port and token of the control socket, or `None` for a copy
+/// that must not carry them: the one a game in the mods sandbox reads, where
+/// any mod can read the file and no connection could be made anyway.
+pub fn files(socket: Option<(u16, &str)>, file_token: &str) -> Vec<(PathBuf, String)> {
+	let root = dir(Path::new(""));
+	vec![
+		(root.join("modinfo.lua"), modinfo()),
+		(main_file(&root), main_lua(socket, file_token)),
+	]
 }
 
 /// Whether any engine runs on this machine, whoever started it: one launched
@@ -362,20 +370,39 @@ mod tests {
 		assert!(info.contains(&format!("version = '{ARCHIVE_VERSION}'")));
 	}
 
+	fn the_file<'a>(files: &'a [(PathBuf, String)], name: &Path) -> &'a str {
+		files
+			.iter()
+			.find(|(path, _)| path == name)
+			.map(|(_, text)| text.as_str())
+			.unwrap_or_else(|| panic!("{name:?} in {files:?}"))
+	}
+
+	/// The copy for the sandbox: any game in it can read the file, so it holds
+	/// no socket secret, and the Lua never tries the port.
+	#[test]
+	fn a_copy_without_a_socket_carries_no_port_or_token() {
+		let archive = dir(Path::new(""));
+		let files = files(None, "filesecret");
+		let lua = the_file(&files, &archive.join("LuaMenu").join("main.lua"));
+		assert!(lua.contains("local PORT = 0"));
+		assert!(lua.contains(r#"local TOKEN = """#));
+		assert!(lua.contains("if PORT == 0 or not socket then return nil end"));
+		assert!(lua.contains(r#"local FILE_TOKEN = "filesecret""#));
+	}
+
 	#[test]
 	fn it_is_written_where_the_scanner_looks() {
-		let root = std::env::temp_dir().join("modlobby-menu-test");
-		let _ = std::fs::remove_dir_all(&root);
-
-		let written = install(&root, 1234, "secret", "filesecret").unwrap();
+		let archive = dir(Path::new(""));
+		let files = files(Some((1234, "secret")), "filesecret");
 
 		// `games/` is one of the four roots `GetDataDirRoots` returns.
-		assert_eq!(written.parent().unwrap().file_name().unwrap(), "games");
+		assert_eq!(archive.parent().unwrap().file_name().unwrap(), "games");
 		// `modinfo.lua` is what the scanner indexes, and `recoil::MenuArchive`
 		// refuses to pass `--menu` without one.
-		assert!(written.join("modinfo.lua").is_file());
+		let info = the_file(&files, &archive.join("modinfo.lua"));
 
-		let lua = std::fs::read_to_string(written.join("LuaMenu").join("main.lua")).unwrap();
+		let lua = the_file(&files, &archive.join("LuaMenu").join("main.lua"));
 		assert!(lua.contains("local PORT = 1234"));
 		assert!(lua.contains(r#"local TOKEN = "secret""#));
 		assert!(lua.contains(r#"local FILE_TOKEN = "filesecret""#));
@@ -389,11 +416,19 @@ mod tests {
 		assert!(lua.contains("Spring.Quit()"));
 		assert!(!lua.contains("SendCommands("));
 
-		let info = std::fs::read_to_string(written.join("modinfo.lua")).unwrap();
 		assert!(info.contains("modtype = 5"), "a menu, not a game");
 		assert!(info.contains(ARCHIVE_NAME));
+	}
 
-		std::fs::remove_dir_all(&root).unwrap();
+	/// `CLoadScreen`'s destructor hands the game the keyboard and calls this.
+	#[test]
+	fn the_game_taking_the_keyboard_is_told_to_the_lobby() {
+		let lua = main_lua(Some((1234, "secret")), "filesecret");
+		let ask = lua.find("local function ask(verb)").unwrap();
+		let told = lua
+			.find("function ActivateGame()\n\task(\"loaded\")")
+			.unwrap();
+		assert!(ask < told, "a Lua local has to be declared before its use");
 	}
 
 	/// The press only asks; the release is what shows the lobby. Focus taken
@@ -401,7 +436,7 @@ mod tests {
 	/// three clicks.
 	#[test]
 	fn the_lobby_comes_up_once_the_game_has_seen_the_release() {
-		let lua = main_lua(1234, "secret", "filesecret");
+		let lua = main_lua(Some((1234, "secret")), "filesecret");
 		let message = lua.find("function RecvLuaMsg").unwrap();
 		let update = lua.find("function Update").unwrap();
 		assert!(message < update);
@@ -422,7 +457,7 @@ mod tests {
 	/// behind the overlay.
 	#[test]
 	fn a_line_of_ours_from_moments_ago_is_not_a_lobby_gone() {
-		let lua = main_lua(1234, "secret", "filesecret");
+		let lua = main_lua(Some((1234, "secret")), "filesecret");
 		assert!(lua.contains(&format!("local PATIENCE = {UNREAD_PATIENCE_SECS}")));
 		assert!(lua.contains("wrote_at = Spring.GetTimer()"));
 		assert!(lua.contains("Spring.DiffTimers(Spring.GetTimer(), wrote_at) < PATIENCE"));
@@ -438,7 +473,7 @@ mod tests {
 	/// answer, and never falls through to the file.
 	#[test]
 	fn without_an_answer_over_the_port_the_lobby_button_writes_the_file() {
-		let lua = main_lua(1234, "secret", "filesecret");
+		let lua = main_lua(Some((1234, "secret")), "filesecret");
 		assert!(lua.contains(&format!(
 			r#"local FILE = "{}""#,
 			crate::ingame::widget::FILE
