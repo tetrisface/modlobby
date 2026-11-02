@@ -419,6 +419,7 @@ pub fn run() {
 								ingame::watch_file(
 									ingame::widget::file(write_dir),
 									ingame.file_token.clone(),
+									ingame::menu::main_file(&ingame::menu::dir(dir)),
 									file_actions.clone(),
 								);
 							}

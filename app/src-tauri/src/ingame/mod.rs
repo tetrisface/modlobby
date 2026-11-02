@@ -11,8 +11,10 @@
 //! menu, in HTML, with the room and the chat still in it. Fewer moving parts
 //! and a much better-looking result.
 //!
-//! It can only see it once the game has the keyboard. Until then the lobby
-//! listens by itself: see [`crate::overlay::escape`].
+//! It can only see it once the game has the keyboard, and not at all where user
+//! widgets are switched off. Our menu ([`menu`]) reads the key for those, and
+//! the lobby reads it from outside for a game whose Lua cannot reach us: see
+//! [`crate::overlay::escape`].
 //!
 //! Telling us is the hard part, and there are three ways, tried in order:
 //!
@@ -149,8 +151,12 @@ impl InGame {
 		}
 		if menu_wanted {
 			self.menu = Some(menu::dir(data_dir));
-			files.open.extend(menu::files(socket, &self.file_token));
-			files.confined.extend(menu::files(None, &self.file_token));
+			files
+				.open
+				.extend(menu::files(socket, &self.file_token, widget_wanted));
+			files
+				.confined
+				.extend(menu::files(None, &self.file_token, widget_wanted));
 		}
 		files
 	}
@@ -200,12 +206,18 @@ pub use widget::FILE;
 /// that carries this run's token and taking the lines out once read. Emptying
 /// it is also the Lua's sign that someone reads.
 ///
+/// A game taken over from a lobby before this one asks under that lobby's
+/// token, which is the one in the menu it left at `menu_file`. Anyone who can
+/// read that file can read the token this run writes there too, so hearing it
+/// gives nobody anything new.
+///
 /// Polled, and only while a game of ours runs: a read costs next to nothing,
 /// and a file-system watch would die with the mods write directory, which is
 /// wiped before each launch.
 pub fn watch_file(
 	path: PathBuf,
 	token: String,
+	menu_file: PathBuf,
 	actions: Arc<dyn Actions>,
 ) -> tokio::task::JoinHandle<()> {
 	tokio::spawn(async move {
@@ -216,12 +228,17 @@ pub fn watch_file(
 			}
 			// Written before this game began, so no ask of this game's.
 			take_file(&path);
+			let menu_text = std::fs::read_to_string(&menu_file).unwrap_or_default();
+			let launched_with = menu::file_token_in(&menu_text);
 			while actions.game_running() {
 				tokio::time::sleep(FILE_POLL).await;
 				let Some(text) = take_file(&path) else {
 					continue;
 				};
-				for command in text.lines().filter_map(|line| parse(line, &token)) {
+				let commands = text
+					.lines()
+					.filter_map(|line| parse(line, &token).or_else(|| parse(line, launched_with?)));
+				for command in commands {
 					match command {
 						// Can only stop the lobby listening for Escape, so a mod
 						// saying it early gains nothing, and it comes about as a
@@ -397,9 +414,58 @@ mod tests {
 	/// A watcher past the emptying that begins each game, so that a line from
 	/// here on is this game's.
 	async fn watching(path: &Path, spy: &Arc<Spy>) -> tokio::task::JoinHandle<()> {
-		let watcher = watch_file(path.to_path_buf(), "8f3c1d9e".into(), spy.clone());
+		let watcher = watch_file(
+			path.to_path_buf(),
+			"8f3c1d9e".into(),
+			path.with_file_name("no-menu-here.lua"),
+			spy.clone(),
+		);
 		tokio::task::yield_now().await;
 		watcher
+	}
+
+	/// Switched off, Escape is left alone by the menu as well as having no
+	/// widget, inside the sandbox too; the menu stays for BAR's Lobby button.
+	#[test]
+	fn a_launch_with_escape_switched_off_has_a_menu_that_leaves_the_key_alone() {
+		let home = tempfile::tempdir().unwrap();
+		let mut ingame = a_run(4242, "abc", "filesecret");
+		let says = |files: &[(PathBuf, String)], wanted: &str| {
+			files
+				.iter()
+				.any(|(_, text)| text.contains(&format!("local ESCAPE_WANTED = {wanted}")))
+		};
+
+		let off = ingame.launch_files(home.path(), false, true);
+		assert!(says(&off.open, "false") && says(&off.confined, "false"));
+
+		let on = ingame.launch_files(home.path(), true, true);
+		assert!(says(&on.open, "true") && says(&on.confined, "true"));
+	}
+
+	/// A lobby restarted under a game: what the game knows is what the run that
+	/// launched it wrote, and the file that says so is still on disk.
+	#[tokio::test]
+	async fn a_game_taken_over_is_heard_under_the_token_its_launch_gave_it() {
+		let home = tempfile::tempdir().unwrap();
+		let path = file_in(home.path());
+		let menu_file = home.path().join("main.lua");
+		let (_, lua) = menu::files(None, "lastrun", true).pop().unwrap();
+		std::fs::write(&menu_file, lua).unwrap();
+		let spy = spy(true);
+		let watcher = watch_file(path.clone(), "8f3c1d9e".into(), menu_file, spy.clone());
+		// Past the emptying that begins each game.
+		tokio::time::sleep(FILE_POLL * 2).await;
+
+		std::fs::write(&path, "deadbeef raise\n").unwrap();
+		until(|| std::fs::metadata(&path).is_ok_and(|file| file.len() == 0)).await;
+		assert_eq!(spy.raised.load(Ordering::SeqCst), 0, "no token of anyone's");
+
+		std::fs::write(&path, "lastrun raise\n").unwrap();
+		until(|| spy.raised.load(Ordering::SeqCst) == 1).await;
+		watcher.abort();
+
+		assert_eq!(spy.raised.load(Ordering::SeqCst), 1);
 	}
 
 	/// Waits for `done`, for longer than the slowest thing a watcher waits on.

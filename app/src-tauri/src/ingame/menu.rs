@@ -106,11 +106,16 @@ fn modinfo() -> String {
 const UNREAD_PATIENCE_SECS: u64 = 1;
 
 /// The menu itself: no window, no drawing, one message and a wait for the
-/// mouse button.
+/// mouse button, and an eye on Escape where nothing else can judge it.
 ///
 /// `LuaMenu/main.lua` is the entry point the engine loads (`LuaMenu.cpp:59`),
 /// and its call-ins are plain globals rather than methods on a table.
-fn main_lua(socket: Option<(u16, &str)>, file_token: &str) -> String {
+///
+/// The engine hands a menu no keys and no selection (`CLuaMenu::
+/// LoadUnsyncedReadFunctions`), but it can read a key's state, which works
+/// wherever the engine does and from the load screen on (`CLoadScreen::Draw`
+/// updates it). So it can tell a press, and not what the press would do.
+fn main_lua(socket: Option<(u16, &str)>, file_token: &str, escape_wanted: bool) -> String {
 	let (port, token) = socket.unwrap_or((0, ""));
 	format!(
 		r#"-- modlobby: BAR's in-game Lobby button.
@@ -127,12 +132,21 @@ fn main_lua(socket: Option<(u16, &str)>, file_token: &str) -> String {
 -- The ask goes over the loopback port when one answers. Inside modlobby's
 -- sandbox there is no socket, and it goes as one line into a file modlobby
 -- polls instead.
+--
+-- It also reads Escape where the widget cannot judge it: during loading, and in
+-- a game with user widgets switched off. It only reads, so the key still reaches
+-- the game.
 
 local PORT = {port}
 local TOKEN = "{token}"
 local FILE = "{file}"
 local FILE_TOKEN = "{file_token}"
 local PATIENCE = {patience}
+local ESCAPE_WANTED = {escape_wanted}
+
+local KEY_ESCAPE = 27
+-- In seconds. Two presses this close mean the lobby where one might not.
+local TWICE_WITHIN = 0.5
 
 local socket = socket
 
@@ -195,12 +209,55 @@ end
 -- The lobby was asked for and is not up yet.
 local asked = false
 
+-- The load screen has gone and the game has the keyboard.
+local game_active = false
+-- modlobby's Escape widget has the keyboard too, and can see what is selected.
+local widget_up = false
+local escape_down = false
+-- When a press that may be the first of two went in.
+local first_press = nil
+
+-- Escape going down since the last look, on its own: Shift+Escape is the
+-- engine's way to abort a load.
+local function escape_pressed()
+	local down = Spring.GetKeyState(KEY_ESCAPE)
+	local pressed = down and not escape_down
+	escape_down = down
+	if not pressed then return false end
+	local alt, ctrl, meta, shift = Spring.GetModKeyState()
+	return not (alt or ctrl or meta or shift)
+end
+
+-- Whether this press is for the lobby. In a loading game it has no other use.
+-- In a running one the widget judges it. With no widget nothing here can see a
+-- selection or a chat to close, so one press stays the game's, and a second
+-- straight after is someone who wants out.
+local function means_lobby()
+	if not game_active then return true end
+	if widget_up then return false end
+	local now = Spring.GetTimer()
+	if first_press and Spring.DiffTimers(now, first_press) < TWICE_WITHIN then
+		first_press = nil
+		return true
+	end
+	first_press = now
+	return false
+end
+
 -- BAR sends this from the top bar while the game is still running, which is
 -- the whole point: the lobby comes up over it rather than instead of it.
 -- modlobby's Escape widget sends the same, for the same reason.
 function RecvLuaMsg(msg)
 	if msg == "showLobby" then
 		asked = true
+		return true
+	end
+	if msg == "modlobbyWidget" then
+		widget_up = true
+		return true
+	end
+	if msg == "modlobbyWidgetGone" then
+		widget_up = false
 		return true
 	end
 	-- "disableLobbyButton" is BAR telling a real lobby to hide its own button.
@@ -217,6 +274,9 @@ end
 -- window in front until the game has seen it, or the next clicks on that
 -- button are lost.
 function Update()
+	if ESCAPE_WANTED and escape_pressed() and means_lobby() then
+		ask("raise")
+	end
 	if not asked or button_down() then return end
 	asked = false
 	if ask("raise") then return end
@@ -231,8 +291,9 @@ function Update()
 end
 
 -- The load screen is gone and the game has the keyboard. modlobby listens for
--- Escape itself until now, since nothing in a loading game can hear it.
+-- Escape from outside until now, in case nothing in here can reach it.
 function ActivateGame()
+	game_active = true
 	ask("loaded")
 end
 
@@ -266,12 +327,29 @@ pub fn main_file(archive: &Path) -> PathBuf {
 /// `socket` is the port and token of the control socket, or `None` for a copy
 /// that must not carry them: the one a game in the mods sandbox reads, where
 /// any mod can read the file and no connection could be made anyway.
-pub fn files(socket: Option<(u16, &str)>, file_token: &str) -> Vec<(PathBuf, String)> {
+/// `escape_wanted` is whether Escape should raise the lobby: the menu is there
+/// for BAR's Lobby button either way.
+pub fn files(
+	socket: Option<(u16, &str)>,
+	file_token: &str,
+	escape_wanted: bool,
+) -> Vec<(PathBuf, String)> {
 	let root = dir(Path::new(""));
 	vec![
 		(root.join("modinfo.lua"), modinfo()),
-		(main_file(&root), main_lua(socket, file_token)),
+		(
+			main_file(&root),
+			main_lua(socket, file_token, escape_wanted),
+		),
 	]
+}
+
+/// The file token in a menu of ours, which is the one its game asks under.
+pub fn file_token_in(main_lua: &str) -> Option<&str> {
+	main_lua.lines().find_map(|line| {
+		line.strip_prefix("local FILE_TOKEN = \"")?
+			.strip_suffix('"')
+	})
 }
 
 /// Whether any engine runs on this machine, whoever started it: one launched
@@ -383,7 +461,7 @@ mod tests {
 	#[test]
 	fn a_copy_without_a_socket_carries_no_port_or_token() {
 		let archive = dir(Path::new(""));
-		let files = files(None, "filesecret");
+		let files = files(None, "filesecret", true);
 		let lua = the_file(&files, &archive.join("LuaMenu").join("main.lua"));
 		assert!(lua.contains("local PORT = 0"));
 		assert!(lua.contains(r#"local TOKEN = """#));
@@ -394,7 +472,7 @@ mod tests {
 	#[test]
 	fn it_is_written_where_the_scanner_looks() {
 		let archive = dir(Path::new(""));
-		let files = files(Some((1234, "secret")), "filesecret");
+		let files = files(Some((1234, "secret")), "filesecret", true);
 
 		// `games/` is one of the four roots `GetDataDirRoots` returns.
 		assert_eq!(archive.parent().unwrap().file_name().unwrap(), "games");
@@ -423,12 +501,54 @@ mod tests {
 	/// `CLoadScreen`'s destructor hands the game the keyboard and calls this.
 	#[test]
 	fn the_game_taking_the_keyboard_is_told_to_the_lobby() {
-		let lua = main_lua(Some((1234, "secret")), "filesecret");
+		let lua = main_lua(Some((1234, "secret")), "filesecret", true);
 		let ask = lua.find("local function ask(verb)").unwrap();
 		let told = lua
-			.find("function ActivateGame()\n\task(\"loaded\")")
+			.find("function ActivateGame()\n\tgame_active = true\n\task(\"loaded\")")
 			.unwrap();
 		assert!(ask < told, "a Lua local has to be declared before its use");
+	}
+
+	/// What a lobby taking a game over reads, since the game asks under it.
+	#[test]
+	fn the_menu_on_disk_says_which_token_its_game_asks_under() {
+		let lua = main_lua(None, "filesecret", true);
+		assert_eq!(file_token_in(&lua), Some("filesecret"));
+		assert_eq!(file_token_in("-- nothing of ours"), None);
+	}
+
+	#[test]
+	fn the_menu_leaves_the_key_alone_where_escape_is_switched_off() {
+		assert!(main_lua(None, "x", true).contains("local ESCAPE_WANTED = true"));
+		assert!(main_lua(None, "x", false).contains("local ESCAPE_WANTED = false"));
+	}
+
+	/// How a press plays out takes an engine to run. These are the rules it
+	/// rests on: one press while loading, the widget's call in a running game,
+	/// and two quick ones where there is no widget to make that call.
+	#[test]
+	fn a_press_means_the_lobby_by_what_can_judge_it() {
+		let lua = main_lua(None, "x", true);
+		assert!(lua.contains("Spring.GetKeyState(KEY_ESCAPE)"));
+		assert!(lua.contains("Spring.GetModKeyState()"));
+		let loading = lua.find("if not game_active then return true end").unwrap();
+		let widget = lua.find("if widget_up then return false end").unwrap();
+		let twice = lua.find("< TWICE_WITHIN").unwrap();
+		assert!(loading < widget && widget < twice);
+		assert!(lua.contains(r#"msg == "modlobbyWidget""#));
+		assert!(lua.contains(r#"msg == "modlobbyWidgetGone""#));
+
+		let update = lua.find("function Update()").unwrap();
+		let read = lua
+			.find("if ESCAPE_WANTED and escape_pressed() and means_lobby() then")
+			.unwrap();
+		let button = lua
+			.find("if not asked or button_down() then return end")
+			.unwrap();
+		assert!(
+			update < read && read < button,
+			"before the button's early out"
+		);
 	}
 
 	/// The press only asks; the release is what shows the lobby. Focus taken
@@ -436,7 +556,7 @@ mod tests {
 	/// three clicks.
 	#[test]
 	fn the_lobby_comes_up_once_the_game_has_seen_the_release() {
-		let lua = main_lua(Some((1234, "secret")), "filesecret");
+		let lua = main_lua(Some((1234, "secret")), "filesecret", true);
 		let message = lua.find("function RecvLuaMsg").unwrap();
 		let update = lua.find("function Update").unwrap();
 		assert!(message < update);
@@ -457,7 +577,7 @@ mod tests {
 	/// behind the overlay.
 	#[test]
 	fn a_line_of_ours_from_moments_ago_is_not_a_lobby_gone() {
-		let lua = main_lua(Some((1234, "secret")), "filesecret");
+		let lua = main_lua(Some((1234, "secret")), "filesecret", true);
 		assert!(lua.contains(&format!("local PATIENCE = {UNREAD_PATIENCE_SECS}")));
 		assert!(lua.contains("wrote_at = Spring.GetTimer()"));
 		assert!(lua.contains("Spring.DiffTimers(Spring.GetTimer(), wrote_at) < PATIENCE"));
@@ -473,7 +593,7 @@ mod tests {
 	/// answer, and never falls through to the file.
 	#[test]
 	fn without_an_answer_over_the_port_the_lobby_button_writes_the_file() {
-		let lua = main_lua(Some((1234, "secret")), "filesecret");
+		let lua = main_lua(Some((1234, "secret")), "filesecret", true);
 		assert!(lua.contains(&format!(
 			r#"local FILE = "{}""#,
 			crate::ingame::widget::FILE

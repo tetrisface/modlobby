@@ -83,6 +83,8 @@ local GetSelectedUnitsCount = Spring.GetSelectedUnitsCount
 
 local KEY_ESCAPE = 27
 local connection = nil
+-- The menu has been told this widget judges the key from here.
+local told_menu = false
 
 -- Connecting costs a round trip on loopback, which is nothing, but doing it
 -- inside the keypress would still stall a frame if the port were gone. The
@@ -218,6 +220,23 @@ function widget:Shutdown()
 		connection:close()
 		connection = nil
 	end
+	if told_menu and menu_loaded() then
+		Spring.SendLuaMenuMsg("modlobbyWidgetGone")
+	end
+end
+
+-- The first update is the game having the keyboard, and the menu watching for
+-- Escape can leave it to us, who can see what is selected. Not from Initialize:
+-- the message is a direct call into the menu, and Initialize runs on the thread
+-- that loads the game.
+function widget:Update()
+	if told_menu then
+		return
+	end
+	told_menu = true
+	if menu_loaded() then
+		Spring.SendLuaMenuMsg("modlobbyWidget")
+	end
 end
 
 -- The menu says its ask found nobody home.
@@ -331,6 +350,32 @@ mod tests {
 		assert!(socket < menu && menu < file);
 		// "no" over the port is an answer, not a reason to try elsewhere.
 		assert!(source.contains("if answer ~= nil then\n\t\treturn answer"));
+	}
+
+	/// The menu leaves a running game's Escape to this widget for as long as it
+	/// is told the widget is up. The message is a direct call into the menu's Lua,
+	/// so it comes from `Update`, on the game's main thread, and never from
+	/// `Initialize`, which runs on the thread that loads the game.
+	#[test]
+	fn the_menu_is_told_the_widget_is_up_from_the_games_own_thread_and_when_it_goes() {
+		let source = source(SOCKET, "x");
+		let declared = source.find("local told_menu = false").unwrap();
+		let initialize = source.find("function widget:Initialize()").unwrap();
+		let shutdown = source.find("function widget:Shutdown()").unwrap();
+		let update = source.find("function widget:Update()").unwrap();
+		let up = source
+			.find(r#"Spring.SendLuaMenuMsg("modlobbyWidget")"#)
+			.unwrap();
+		let gone = source
+			.find(r#"Spring.SendLuaMenuMsg("modlobbyWidgetGone")"#)
+			.unwrap();
+		assert!(
+			declared < shutdown,
+			"a Lua local is declared before its use"
+		);
+		assert!(initialize < shutdown && shutdown < gone);
+		assert!(update < up);
+		assert!(!source[initialize..shutdown].contains("SendLuaMenuMsg"));
 	}
 
 	/// The menu says it too, and only one has to get through. This is the one

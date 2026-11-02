@@ -678,9 +678,11 @@ export function SettingsView() {
 								It draws nothing, it comes back out when modlobby closes, and it
 								only takes the key when modlobby answers — so a game you start
 								from Chobby keeps its own Escape. Escape with units selected
-								still deselects them, as always. While a game is loading nothing
-								in it can hear the key, so until then modlobby watches for
-								Escape itself, on Windows, and leaves it for the game as well.
+								still deselects them, as always. While a game is loading the
+								widget cannot hear the key yet, so modlobby watches for it
+								instead, and leaves it for the game as well. Where a game has
+								user widgets switched off modlobby cannot tell what one press
+								would do, so there two quick presses open the lobby.
 							</p>
 						</Row>
 					</Section>

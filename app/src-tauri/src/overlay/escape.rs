@@ -1,20 +1,21 @@
-//! Escape heard from outside the game, while the game cannot hear it.
+//! Escape heard from outside the game, whatever state its Lua is in.
 //!
 //! The widget is what judges Escape, since only the game knows whether there
-//! is a selection to drop or a chat to close. But it can only do that once the
-//! game has the keyboard: until loading is over the engine shows keys to nothing
-//! of ours (`CPreGame::KeyPressed` and `CLoadScreen::KeyPressed`), so the key
-//! does nothing at the very moment someone wants their lobby back.
+//! is a selection to drop or a chat to close. It can only do that once the game
+//! has the keyboard, and until then our menu reads the key instead
+//! (`ingame::menu`). Both need Lua that runs and reaches us, and the menu gets no
+//! turn at all in the seconds before the load screen (`CPreGame` updates no Lua).
 //!
-//! So the lobby listens by itself until the game says it has the keyboard. A
-//! game that never says is one whose Lua cannot reach us, where nothing else
-//! could hear the key either, so the listening goes on: Escape then raises the
-//! lobby even with units selected, which beats it doing nothing.
+//! So the lobby also listens by itself until the game says it has the keyboard.
+//! A game that never says is one whose Lua cannot reach us, where nothing else
+//! could hear the key, so the listening goes on: Escape then raises the lobby
+//! even with units selected, which beats it doing nothing.
 //!
-//! Both can fire as the keyboard changes hands. Raising twice is still raising.
+//! Any of them can fire alongside another. Raising twice is still raising.
 //!
 //! It only looks, so the key reaches the game as it always did, and it asks
-//! after one key by name with nothing hooked, so no other key is ever seen.
+//! after these few keys by name with nothing hooked, so no other key is ever
+//! seen.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -94,7 +95,7 @@ impl Listener {
 			return IDLE;
 		};
 		let in_front = self.foreground.in_front(pid);
-		if self.presses.look(in_front, self.keyboard.keys()) {
+		if self.presses.look(in_front, self.keyboard.keys()) && !self.controller.is_over() {
 			tracing::info!(pid, "Escape heard from outside the game");
 			self.controller.raise();
 		}
@@ -329,6 +330,20 @@ mod tests {
 		assert_eq!(stage.looks_at_keys.load(Ordering::SeqCst), looks);
 	}
 
+	/// The menu reads the same press at the game's frame rate, usually sooner.
+	#[test]
+	fn a_lobby_already_up_is_not_raised_again() {
+		let (stage, controller, mut listener) = on_stage();
+		controller.engine_running(Some(7));
+		listener.look();
+
+		controller.raise();
+		stage.press(ESCAPE);
+		listener.look();
+
+		assert_eq!(stage.raises.load(Ordering::SeqCst), 1);
+	}
+
 	#[test]
 	fn with_no_game_the_key_is_not_looked_at() {
 		let (stage, _controller, mut listener) = on_stage();
@@ -341,7 +356,13 @@ mod tests {
 		let (stage, controller, mut listener) = on_stage();
 		controller.engine_running(Some(7));
 		listener.look();
-		for keys in [ESCAPE, UP, ESCAPE] {
+		stage.press(ESCAPE);
+		listener.look();
+		assert_eq!(stage.raises.load(Ordering::SeqCst), 1);
+
+		// Back at the game, long after any load would be over.
+		controller.hotkey();
+		for keys in [UP, ESCAPE] {
 			stage.press(keys);
 			listener.look();
 		}
