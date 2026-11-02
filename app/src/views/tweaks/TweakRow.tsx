@@ -116,33 +116,40 @@ export function TweakRow(props: { row: Row; note?: RowNote }) {
 				data-key={key()}
 			>
 				<span class='mark' />
-				<OptionName option={props.row.option} />
-				<span class='tweak-note'>
-					<span class='tweak-name' title={name()}>
-						{name()}
-					</span>
-					<Show when={doc()?.stale}>
-						<span
-							class='doc-tag'
-							title='Somebody set this slot while you were editing it'
-						>
-							room moved
+				<OptionName
+					option={props.row.option}
+					after={
+						<span class='tweak-note'>
+							<span class='tweak-name' title={name()}>
+								{name()}
+							</span>
+							<Show when={doc()?.stale}>
+								<span
+									class='doc-tag'
+									title='Somebody set this slot while you were editing it'
+								>
+									room moved
+								</span>
+							</Show>
+							<Show when={doc() && isDirty(doc()!)}>
+								<span
+									class='doc-tag dirty'
+									title='Edited here and not sent yet'
+								>
+									unsent
+								</span>
+							</Show>
+							<Show when={note().vote !== null}>
+								<span
+									class='doc-tag opt-vote'
+									title='A vote under way would change this'
+								>
+									vote
+								</span>
+							</Show>
 						</span>
-					</Show>
-					<Show when={doc() && isDirty(doc()!)}>
-						<span class='doc-tag dirty' title='Edited here and not sent yet'>
-							unsent
-						</span>
-					</Show>
-					<Show when={note().vote !== null}>
-						<span
-							class='doc-tag opt-vote'
-							title='A vote under way would change this'
-						>
-							vote
-						</span>
-					</Show>
-				</span>
+					}
+				/>
 				<input
 					class='v-edit tweak-input'
 					value={blob()}

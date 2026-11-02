@@ -76,6 +76,28 @@ const input = (view: ReturnType<typeof mount>) =>
 	view.getByLabelText('tweakdefs1 as base64url') as HTMLInputElement
 
 describe('TweakRow', () => {
+	test('the key tips itself, and the space beside it stays quiet', async () => {
+		const view = mount('TmV3')
+		await settle()
+		fireEvent.pointerOver(view.container.querySelector('.tweak-note')!)
+		expect(document.querySelector('.key-tip')).toBeNull()
+
+		const key = view.container.querySelector('.k')!
+		fireEvent.pointerOver(key)
+		expect(document.querySelector('.key-tip')?.textContent).toContain(
+			'tweakdefs1:',
+		)
+		fireEvent.pointerLeave(key)
+		expect(document.querySelector('.key-tip')).toBeNull()
+	})
+
+	test("a slot's tweak name keeps its own tip", async () => {
+		const view = mount('TmV3')
+		await settle()
+		fireEvent.pointerOver(view.container.querySelector('.tweak-name')!)
+		expect(document.querySelector('.key-tip')).toBeNull()
+	})
+
 	test('shows the key, the name the tweak goes by, and its blob', async () => {
 		const view = mount('TmV3')
 		await settle()

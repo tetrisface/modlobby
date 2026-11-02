@@ -132,28 +132,30 @@ function PlainRow(props: {
 			data-key={option().key}
 		>
 			<span class='mark' />
-			<span class='opt-name'>
-				<OptionName option={option()}>
-					<Show when={option().hidden}>
-						<span
-							class='doc-tag opt-hidden'
-							title="BAR keeps this out of its own lobby's settings"
-						>
-							hidden
+			<OptionName
+				option={option()}
+				after={
+					<For each={props.note.links}>
+						{(link) => <LinkButton link={link} />}
+					</For>
+				}
+			>
+				<Show when={option().hidden}>
+					<span
+						class='doc-tag opt-hidden'
+						title="BAR keeps this out of its own lobby's settings"
+					>
+						hidden
+					</span>
+				</Show>
+				<Show when={props.note.lock}>
+					{(lock) => (
+						<span class='doc-tag opt-off' title={notInForce(lock())}>
+							off
 						</span>
-					</Show>
-					<Show when={props.note.lock}>
-						{(lock) => (
-							<span class='doc-tag opt-off' title={notInForce(lock())}>
-								off
-							</span>
-						)}
-					</Show>
-				</OptionName>
-				<For each={props.note.links}>
-					{(link) => <LinkButton link={link} />}
-				</For>
-			</span>
+					)}
+				</Show>
+			</OptionName>
 			<span class='opt-value'>
 				<Switch fallback={<span class='v'>{displayText(props.row)}</span>}>
 					<Match when={props.editable}>
@@ -161,7 +163,7 @@ function PlainRow(props: {
 					</Match>
 				</Switch>
 				<Show when={props.row.changed && defaultWords(option()) !== ''}>
-					<span class='opt-default'>default {defaultWords(option())}</span>
+					<span class='opt-default'>default: {defaultWords(option())}</span>
 				</Show>
 				<Show when={props.note.vote !== null}>
 					<span

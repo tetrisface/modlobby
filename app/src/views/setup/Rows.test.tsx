@@ -106,10 +106,10 @@ describe('the default beside a value', () => {
 	test('a changed row says what it left, in the words the row uses', () => {
 		const { row } = draw([rowOf(MAX_UNITS, '10000'), rowOf(MODE, 'killall')])
 		expect(row('maxunits').querySelector('.opt-default')?.textContent).toBe(
-			'default 2000',
+			'default: 2000',
 		)
 		expect(row('deathmode').querySelector('.opt-default')?.textContent).toBe(
-			'default Kill all Commanders',
+			'default: Kill all Commanders',
 		)
 	})
 

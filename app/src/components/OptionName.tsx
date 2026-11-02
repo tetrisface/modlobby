@@ -8,27 +8,45 @@ import { Marked } from './Marked'
  * An option's name, and on hover its Lua key set apart from what BAR says
  * of it, then what its table says: its range, or its choices, and its default.
  * Not a `title`: a native tooltip cannot style the key.
+ *
+ * Only the name answers, and the stylesheet's little more around it: the rest of
+ * the row is for reading across. `children` go inside the name, where one with a
+ * tip of its own keeps it, and `after` beside it.
  */
 export function OptionName(props: {
 	option: ModOption
 	children?: JSX.Element
+	after?: JSX.Element
 }) {
 	const [at, setAt] = createSignal<DOMRect>()
+	let name: HTMLSpanElement | undefined
+
+	function over(event: PointerEvent) {
+		const tipped = (event.target as Element).closest('[title]')
+		setAt(
+			tipped !== null && name?.contains(tipped)
+				? undefined
+				: name?.getBoundingClientRect(),
+		)
+	}
+
 	return (
-		<span
-			class='k'
-			aria-description={hint(props.option)}
-			onPointerEnter={(event) =>
-				setAt(event.currentTarget.getBoundingClientRect())
-			}
-			onPointerLeave={() => setAt()}
-		>
-			<Marked text={label(props.option)} />
-			{props.children}
+		<span class='opt-name'>
+			<span
+				class='k'
+				ref={name}
+				aria-description={hint(props.option)}
+				onPointerOver={over}
+				onPointerLeave={() => setAt()}
+			>
+				<Marked text={label(props.option)} />
+				{props.children}
+			</span>
+			{props.after}
 			<Show when={at()}>
-				{(name) => (
+				{(rect) => (
 					<Portal>
-						<span class='key-tip' role='tooltip' style={place(name())}>
+						<span class='key-tip' role='tooltip' style={place(rect())}>
 							<code>{props.option.key}:</code>
 							{props.option.desc && ` ${props.option.desc}`}
 							<Show when={tipFacts(props.option)}>
