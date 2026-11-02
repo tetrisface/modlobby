@@ -581,11 +581,7 @@ describe('order', () => {
 			},
 			{
 				name: 'Map',
-				rows: [
-					typed('override', 'string', 'mapmetadata'),
-					typed('x', 'link'),
-					typed('y', 'slider'),
-				],
+				rows: [typed('override', 'string', 'mapmetadata'), typed('x', 'link')],
 			},
 		]
 		const keys = (grouping: Grouping) =>
@@ -595,15 +591,14 @@ describe('order', () => {
 			])
 		expect(regroup(sections, 'section')).toBe(sections)
 		expect(keys('none')).toEqual([
-			['', ['ranked', 'start', 'tweakdefs', 'lava', 'override', 'x', 'y']],
+			['', ['ranked', 'start', 'tweakdefs', 'lava', 'override', 'x']],
 		])
 		expect(keys('type')).toEqual([
 			['Documents', ['tweakdefs', 'override']],
 			['Switches', ['ranked']],
 			['Numbers', ['start']],
 			['Text', ['lava']],
-			['Links', ['x']],
-			['Other', ['y']],
+			['Other', ['x']],
 		])
 		expect(regroup([], 'none')).toEqual([])
 	})

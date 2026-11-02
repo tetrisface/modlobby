@@ -287,6 +287,72 @@ describe('the strip under the list', () => {
 	})
 })
 
+describe('links', () => {
+	const options = (): ModOption[] => [
+		...fixtureOptions(),
+		{
+			key: 'startmetal_thread_link',
+			name: 'Feedback thread',
+			desc: 'Discussion about starting metal.',
+			type: 'link',
+			section: 'options_cheats',
+			link: 'https://discord.com/channels/1/2',
+		},
+		{
+			key: 'cheats_channel_link',
+			name: 'Development Discussion',
+			desc: 'Cheats discussion.',
+			type: 'link',
+			section: 'options_cheats',
+			link: 'https://discord.com/channels/3/4',
+		},
+	]
+	/** The two declared where BAR declares them: one right after its option. */
+	const placed = () => {
+		const all = options()
+		const thread = all.findIndex((o) => o.key === 'startmetal_thread_link')
+		const [link] = all.splice(thread, 1)
+		const metal = all.findIndex((o) => o.key === 'startmetal')
+		all.splice(metal + 1, 0, link!)
+		return all
+	}
+
+	test('sits on the option it is about, and is no row of its own', async () => {
+		const container = await list(fakeRoom({ log: ownLog() }), placed())
+		expect(
+			container.querySelector('[data-key="startmetal"] .opt-link'),
+		).not.toBeNull()
+		expect(
+			container.querySelector('[data-key="startenergy"] .opt-link'),
+		).toBeNull()
+		expect(
+			container.querySelector('[data-key="startmetal_thread_link"]'),
+		).toBeNull()
+	})
+
+	test('about the whole tab, it heads the tab with its prose', async () => {
+		const container = await list(fakeRoom({ log: ownLog() }), placed())
+		expect(container.querySelector('.setup-intro .opt-link')).toBeNull()
+		fireEvent.click(
+			[...container.querySelectorAll<HTMLElement>('.setup-tab')].find((tab) =>
+				tab.textContent?.startsWith('Cheats'),
+			)!,
+		)
+		const link = container.querySelector<HTMLButtonElement>(
+			'.setup-intro .opt-link',
+		)
+		expect(link?.title).toBe('Cheats discussion\nOpens discord.com')
+	})
+
+	test('is told of in the strip when its option is picked', async () => {
+		const container = await list(fakeRoom({ log: ownLog() }), placed())
+		fireEvent.click(container.querySelector('[data-key="startmetal"]')!)
+		expect(container.querySelector('.inspector-link')?.textContent).toBe(
+			'Discussion about starting metal · discord.com',
+		)
+	})
+})
+
 describe("a tab's own prose", () => {
 	const options = (): ModOption[] => [
 		...fixtureOptions(),

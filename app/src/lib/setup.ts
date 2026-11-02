@@ -152,7 +152,8 @@ function groupsOf(options: ModOption[]): Group[] {
 	let current: Group = { name: '', options: [] }
 
 	for (const option of options) {
-		if (option.type === 'separator') continue
+		// A link goes on the option it is about, or at the head of its tab: see `linksOf`.
+		if (option.type === 'separator' || option.type === 'link') continue
 		if (option.type === 'subheader') {
 			const label = option.name ?? ''
 			if (!label.startsWith('--')) continue
@@ -298,8 +299,6 @@ export function isCleared(text: string): boolean {
 }
 
 function isChanged(option: ModOption, current: string): boolean {
-	// Somewhere to go, not something to set.
-	if (option.type === 'link') return false
 	// A map option is set or cleared; there is no default to sit on.
 	if (isMapOption(option)) return !isCleared(current)
 	const def = defaultText(option)
@@ -502,15 +501,7 @@ export type Grouping = 'section' | 'type' | 'none'
 export const DOCUMENTS = 'Documents'
 
 /** Type headings in the order they are drawn. */
-const TYPES = [
-	DOCUMENTS,
-	'Switches',
-	'Choices',
-	'Numbers',
-	'Text',
-	'Links',
-	'Other',
-]
+const TYPES = [DOCUMENTS, 'Switches', 'Choices', 'Numbers', 'Text', 'Other']
 
 /** What kind of control a row is, as its heading when rows go by type. */
 export function typeOf(row: Row): string {
@@ -520,7 +511,6 @@ export function typeOf(row: Row): string {
 		list: 'Choices',
 		number: 'Numbers',
 		string: 'Text',
-		link: 'Links',
 	}
 	// A control type BAR added after this build arrives as `{ other }`.
 	const type = row.option.type
@@ -627,7 +617,6 @@ export function wordsFor(option: ModOption, text: string): string {
 /** What a row shows on the right: the value, or the default it is sitting on. */
 export function displayText(row: Row): string {
 	const { option } = row
-	if (option.type === 'link') return option.link ?? ''
 	const text = row.current ?? defaultText(option)
 	// The Map tab asks Rust for words; this is what it says until then.
 	if (isMapOption(option)) return isCleared(text) ? 'none' : `${text.length} B`
@@ -719,6 +708,62 @@ export type Lock = { by: string; value: string }
 export const notInForce = (lock: Lock): string =>
 	`Not in force while ${lock.by} is ${lock.value}`
 
+/** Somewhere BAR points to about an option or a tab: what it is, and which site it is on. */
+export type OptionLink = { url: string; desc: string; host: string }
+
+/** The site an address goes to; nothing for what no lobby should open. */
+export function linkHost(url: string | undefined): string {
+	try {
+		const { protocol, hostname } = new URL(url ?? '')
+		return protocol === 'https:' || protocol === 'http:' ? hostname : ''
+	} catch {
+		return ''
+	}
+}
+
+const isLayout = (option: ModOption) =>
+	option.type === 'section' ||
+	option.type === 'subheader' ||
+	option.type === 'separator'
+
+/**
+ * BAR's links, by what they are about. It declares most right after their
+ * option, with a key that extends the option's: `evocom`, then
+ * `evocom_feedback_thread_link`. Its names for them, `Feedback thread` over
+ * and over, only make sense in that spot, so a link has no row of its own: it
+ * goes on its option. One that follows anything else is about its whole tab.
+ */
+export function linksOf(options: readonly ModOption[]): {
+	byKey: ReadonlyMap<string, OptionLink[]>
+	bySection: ReadonlyMap<string, OptionLink[]>
+} {
+	const byKey = new Map<string, OptionLink[]>()
+	const bySection = new Map<string, OptionLink[]>()
+	const file = (
+		table: Map<string, OptionLink[]>,
+		key: string,
+		link: OptionLink,
+	) => table.set(key, [...(table.get(key) ?? []), link])
+
+	let before: ModOption | null = null
+	for (const option of options) {
+		if (isLayout(option)) continue
+		if (option.type !== 'link') {
+			before = option
+			continue
+		}
+		const link: OptionLink = {
+			url: option.link ?? '',
+			desc: (option.desc || label(option)).replace(/\.$/, ''),
+			host: linkHost(option.link),
+		}
+		if (before !== null && option.key.startsWith(`${before.key}_`))
+			file(byKey, before.key, link)
+		else file(bySection, option.section ?? '', link)
+	}
+	return { byKey, bySection }
+}
+
 /** What the pane knows about a row beyond its value. */
 export type RowNote = {
 	/** It changed a moment ago. */
@@ -729,6 +774,8 @@ export type RowNote = {
 	lock: Lock | null
 	/** The strip under the list is pinned to it. */
 	on: boolean
+	/** Where BAR points to about it. */
+	links: OptionLink[]
 }
 
 export const NO_NOTE: RowNote = {
@@ -736,6 +783,7 @@ export const NO_NOTE: RowNote = {
 	vote: null,
 	lock: null,
 	on: false,
+	links: [],
 }
 
 /**

@@ -1,4 +1,4 @@
-import { Show, createSignal, onCleanup } from 'solid-js'
+import { For, Show, createSignal, onCleanup } from 'solid-js'
 import { Marked } from '../../components/Marked'
 import { Segmented } from '../../components/Segmented'
 import type { OptionChangeView } from '../../ipc/bindings/OptionChangeView'
@@ -16,13 +16,14 @@ import {
 	voteOn,
 	wordsFor,
 	type Lock,
+	type OptionLink,
 	type Row,
 } from '../../lib/setup'
 import { KINDS, isDocumentKey, kindOf, slotId } from '../../lib/tweakspace'
 import { createCountdown, tally } from '../../lib/vote'
 import { tweakspaceFor } from '../../store/tweakspaceInstance'
 import { useRoom } from '../room/model'
-import { useCommit } from './Rows'
+import { LinkButton, useCommit } from './Rows'
 
 /**
  * The foot of the list: everything known about one row, in a place that does
@@ -41,6 +42,7 @@ export function Inspector(props: {
 	change: OptionChangeView | undefined
 	vote: VoteView | null
 	lock: Lock | null
+	links: OptionLink[]
 }) {
 	const space = tweakspaceFor(useRoom())
 	/** The name a document's tweak goes by, which only the workspace knows. */
@@ -64,8 +66,7 @@ export function Inspector(props: {
 							<Show
 								when={
 									choices(row().option).length === 0 &&
-									!isDocumentKey(row().option.key) &&
-									row().option.type !== 'link'
+									!isDocumentKey(row().option.key)
 								}
 							>
 								<span
@@ -87,6 +88,14 @@ export function Inspector(props: {
 						<p class='inspector-facts'>
 							{factsOf(row(), nameOf(row().option.key)).join(' · ')}
 						</p>
+						<For each={props.links}>
+							{(link) => (
+								<p class='inspector-link'>
+									<LinkButton link={link} />
+									{link.host === '' ? link.desc : `${link.desc} · ${link.host}`}
+								</p>
+							)}
+						</For>
 						<Show when={props.lock}>
 							{(lock) => <p class='inspector-off'>{notInForce(lock())}</p>}
 						</Show>
@@ -111,8 +120,7 @@ export function Inspector(props: {
 
 /** What the table tells about a row; for a document, how long it is rather than what it holds. */
 function factsOf(row: Row, name: string): string[] {
-	const { key, link, type } = row.option
-	if (type === 'link') return [link ?? '']
+	const { key } = row.option
 	if (!isDocumentKey(key)) return facts(row.option)
 	const blob = row.current ?? ''
 	if (isCleared(blob)) return ['empty']

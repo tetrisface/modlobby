@@ -3,6 +3,7 @@ import { ActionCell, CellButton } from '../../components/ActionCell'
 import { openExternal } from '../../components/Linkify'
 import { OptionName } from '../../components/OptionName'
 import { Select } from '../../components/Select'
+import { Glyph } from '../../components/icons'
 import { describeError } from '../../ipc/client'
 import {
 	NO_NOTE,
@@ -13,6 +14,7 @@ import {
 	notInForce,
 	resetValue,
 	tipFacts,
+	type OptionLink,
 	type Row,
 	type RowNote,
 } from '../../lib/setup'
@@ -92,9 +94,6 @@ export function Rows(props: {
 									<Match when={isDocumentKey(key)}>
 										<TweakRow row={row()} note={noteOf(row())} />
 									</Match>
-									<Match when={row().option.type === 'link'}>
-										<LinkRow row={row()} note={noteOf(row())} />
-									</Match>
 								</Switch>
 							)}
 						</Show>
@@ -133,23 +132,28 @@ function PlainRow(props: {
 			data-key={option().key}
 		>
 			<span class='mark' />
-			<OptionName option={option()}>
-				<Show when={option().hidden}>
-					<span
-						class='doc-tag opt-hidden'
-						title="BAR keeps this out of its own lobby's settings"
-					>
-						hidden
-					</span>
-				</Show>
-				<Show when={props.note.lock}>
-					{(lock) => (
-						<span class='doc-tag opt-off' title={notInForce(lock())}>
-							off
+			<span class='opt-name'>
+				<OptionName option={option()}>
+					<Show when={option().hidden}>
+						<span
+							class='doc-tag opt-hidden'
+							title="BAR keeps this out of its own lobby's settings"
+						>
+							hidden
 						</span>
-					)}
-				</Show>
-			</OptionName>
+					</Show>
+					<Show when={props.note.lock}>
+						{(lock) => (
+							<span class='doc-tag opt-off' title={notInForce(lock())}>
+								off
+							</span>
+						)}
+					</Show>
+				</OptionName>
+				<For each={props.note.links}>
+					{(link) => <LinkButton link={link} />}
+				</For>
+			</span>
 			<span class='opt-value'>
 				<Switch fallback={<span class='v'>{displayText(props.row)}</span>}>
 					<Match when={props.editable}>
@@ -185,31 +189,29 @@ function PlainRow(props: {
 	)
 }
 
-/** One of BAR's links: somewhere to go, with no value to set. */
-function LinkRow(props: { row: Row; note: RowNote }) {
-	const url = () => props.row.option.link ?? ''
+/**
+ * One of BAR's links, as an icon: what it is and which site it is on come up on
+ * hover. Never the whole address, which says little and on a Linux desktop is
+ * one more long line for a native tooltip to draw. An address no lobby should
+ * open comes from a game's own file, so it is greyed; Rust refuses it as well.
+ */
+export function LinkButton(props: { link: OptionLink }) {
+	const openable = () => props.link.host !== ''
 	return (
-		<div
-			class='opt link'
-			classList={{ on: props.note.on }}
-			data-key={props.row.option.key}
+		<button
+			type='button'
+			class='opt-link'
+			title={
+				openable()
+					? `${props.link.desc}\nOpens ${props.link.host}`
+					: 'Only web links open from here'
+			}
+			aria-label={props.link.desc}
+			disabled={!openable()}
+			onClick={() => void openExternal(props.link.url)}
 		>
-			<span class='mark' />
-			<OptionName option={props.row.option} />
-			<span class='opt-value'>
-				<span class='v' title={url()}>
-					{url()}
-				</span>
-			</span>
-			<ActionCell filled={url() !== ''}>
-				<CellButton
-					icon='act-external'
-					title={`Open ${url()}`}
-					disabled={url() === ''}
-					onClick={() => void openExternal(url())}
-				/>
-			</ActionCell>
-		</div>
+			<Glyph id='act-external' />
+		</button>
 	)
 }
 

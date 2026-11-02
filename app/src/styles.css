@@ -3281,10 +3281,12 @@ body.resizing {
 }
 
 /* Sized to what the column shows at once, which an opened tweak row and its
-   editor are sized to in turn: the send bar is on screen without scrolling. */
+   editor are sized to in turn: the send bar is on screen without scrolling.
+   The gutter keeps the values where they are when a list grows a scrollbar. */
 .setup-list > .setup-detail {
 	flex: 1;
 	container-type: size;
+	scrollbar-gutter: stable;
 }
 
 /* No headings, so no overview beside the list. */
@@ -3375,14 +3377,11 @@ body.resizing {
 }
 
 /* A changed row earns a marker; the rest stay quiet so it reads at a glance.
-   The name's column has a ceiling, the same in every section, so a value sits
-   by its name however wide the pane is dragged. Measured on BAR's table: 16rem
-   holds all but two of its names, whose ends the tooltip and the strip below
-   have. Past the narrow end the name takes what the value leaves instead:
-   there is no distance left to close. */
+   The name takes the row and the value holds its right edge, so the values
+   line up down the pane. A long one, and what it left, stop short of the name. */
 .opt {
 	display: grid;
-	grid-template-columns: 0.125rem minmax(0, min(16rem, 55%)) minmax(0, 1fr) auto;
+	grid-template-columns: 0.125rem minmax(0, 1fr) fit-content(60%) auto;
 	align-items: center;
 	gap: 0.5625rem;
 	margin-inline: -0.375rem;
@@ -3399,10 +3398,34 @@ body.resizing {
 	background: color-mix(in srgb, var(--accent) 9%, transparent);
 }
 
-/* The value, what it left, and anything else there is to say about it. The
-   default gives way first; the value's own end only once it fills the column. */
+/* An option's name, and the icon of any link about it. */
+.opt-name {
+	display: flex;
+	align-items: center;
+	gap: 0.375rem;
+	min-width: 0;
+}
+
+.opt-link {
+	flex: none;
+	display: inline-flex;
+	padding: 0.0625rem;
+	color: var(--faint);
+	background: transparent;
+	border: 0;
+	border-radius: 2px;
+}
+
+.opt-link:hover:not(:disabled) {
+	color: var(--accent);
+}
+
+/* The value at the right edge, and to its left what it left and anything else
+   there is to say about it. The default gives way first; the value's own end
+   only once it fills the column. */
 .opt-value {
 	display: flex;
+	flex-direction: row-reverse;
 	align-items: center;
 	gap: 0.625rem;
 	min-width: 0;
@@ -3464,10 +3487,6 @@ body.resizing {
 
 	.opt-default {
 		display: none;
-	}
-
-	.inspector {
-		height: 10rem;
 	}
 }
 
@@ -3544,6 +3563,13 @@ body.resizing {
 	border-top: 1px solid var(--line);
 }
 
+/* More lines to fit at this width: a pane this narrow wraps nearly all of them. */
+@container setup-list (max-width: 30rem) {
+	.inspector {
+		height: 10rem;
+	}
+}
+
 .inspector p {
 	margin: 0;
 }
@@ -3605,6 +3631,12 @@ body.resizing {
 	font-size: 0.75rem;
 }
 
+.inspector-link {
+	display: flex;
+	align-items: center;
+	gap: 0.375rem;
+}
+
 .inspector-off {
 	color: var(--warn);
 }
@@ -3632,6 +3664,12 @@ body.resizing {
 
 .setup-intro p {
 	margin: 0;
+}
+
+.setup-intro .opt-link {
+	display: inline-flex;
+	margin-left: 0.375rem;
+	vertical-align: middle;
 }
 
 @keyframes key-tip-wait {
@@ -3912,7 +3950,7 @@ body.resizing {
 }
 
 .v-edit {
-	justify-self: start;
+	justify-self: end;
 	max-width: 100%;
 	font-family: var(--mono);
 	font-size: 0.71875rem;

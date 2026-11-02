@@ -33,6 +33,7 @@ import {
 	drawnOrder,
 	keepOrder,
 	latestChange,
+	linksOf,
 	locksOf,
 	readModOptions,
 	rowsByGroup,
@@ -46,6 +47,7 @@ import {
 	type Changed,
 	type Drawn,
 	type Grouping,
+	type OptionLink,
 	type Row,
 	type RowNote,
 	type RowOrder,
@@ -68,7 +70,7 @@ import { Presets } from './Presets'
 import { useRoom, type RoomModel } from './room/model'
 import { canSet, setRefusal } from './room/move'
 import { Inspector } from './setup/Inspector'
-import { Rows } from './setup/Rows'
+import { LinkButton, Rows } from './setup/Rows'
 import { Tweaks } from './tweaks/Tweaks'
 
 const TWEAK_GROUP = 'Tweak slots'
@@ -344,6 +346,8 @@ export function Setup() {
 	const history = () => room.my()?.history ?? []
 	const recent = createRecent(history)
 	const locks = createMemo(() => locksOf(catalogue() ?? [], values()))
+	const links = createMemo(() => linksOf(catalogue() ?? []))
+	const tabLinks = () => links().bySection.get(tab().key) ?? []
 
 	/** What the pane knows about a row beyond its value. */
 	const noteOf = (row: Row): RowNote => {
@@ -359,6 +363,7 @@ export function Setup() {
 						: wordsFor(row.option, proposal.value),
 			lock: locks().get(key) ?? null,
 			on: inspecting.pinned() === key,
+			links: links().byKey.get(key) ?? [],
 		}
 	}
 
@@ -649,8 +654,13 @@ export function Setup() {
 										if (key !== null) inspecting.pin(key)
 									}}
 								>
-									<Show when={!searching() && tab().intro.length > 0}>
-										<TabIntro lines={tab().intro} />
+									<Show
+										when={
+											!searching() &&
+											(tab().intro.length > 0 || tabLinks().length > 0)
+										}
+									>
+										<TabIntro lines={tab().intro} links={tabLinks()} />
 									</Show>
 									<Sections
 										sections={shown()}
@@ -681,6 +691,9 @@ export function Setup() {
 										)}
 										vote={room.my()?.vote ?? null}
 										lock={locks().get(inspected()?.option.key ?? '') ?? null}
+										links={
+											links().byKey.get(inspected()?.option.key ?? '') ?? []
+										}
 									/>
 								</Show>
 							</Query.Provider>
@@ -705,13 +718,25 @@ function noteOfPane(room: RoomModel): string {
 	return 'A change takes effect here'
 }
 
-/** What BAR writes at the head of a tab; a warning reads as one. */
-function TabIntro(props: { lines: string[] }) {
+/**
+ * What BAR writes at the head of a tab, a warning reading as one, and any link
+ * about the tab as a whole. Those go by its first line, which says what the tab is.
+ */
+function TabIntro(props: { lines: string[]; links: OptionLink[] }) {
+	const icons = () => (
+		<For each={props.links}>{(link) => <LinkButton link={link} />}</For>
+	)
 	return (
 		<div class='setup-intro'>
+			<Show when={props.lines.length === 0}>
+				<p>{icons()}</p>
+			</Show>
 			<For each={props.lines}>
-				{(line) => (
-					<p classList={{ 'setup-note': line.startsWith('Warning') }}>{line}</p>
+				{(line, at) => (
+					<p classList={{ 'setup-note': line.startsWith('Warning') }}>
+						{line}
+						<Show when={at() === 0}>{icons()}</Show>
+					</p>
 				)}
 			</For>
 		</div>

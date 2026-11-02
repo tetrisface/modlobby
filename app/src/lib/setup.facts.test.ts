@@ -6,13 +6,14 @@ import {
 	displayText,
 	facts,
 	latestChange,
+	linkHost,
+	linksOf,
 	litChoice,
 	locksOf,
 	resetValue,
 	rowsOf,
 	tabs,
 	tipFacts,
-	typeOf,
 	voteOn,
 } from './setup'
 
@@ -185,23 +186,107 @@ describe('a text cleared by a host', () => {
 })
 
 describe('a link', () => {
-	const link: ModOption = {
-		key: 'easytax_link',
-		name: 'Changelog',
+	const evocom: ModOption = {
+		key: 'evocom',
+		name: 'Evolving Commanders',
+		type: 'bool',
+		section: 'options_extra',
+	}
+	const thread: ModOption = {
+		key: 'evocom_feedback_thread_link',
+		name: 'Feedback thread',
+		desc: 'Discord discussion about Evolving Commanders.',
 		type: 'link',
-		link: 'https://example.com/changes',
+		section: 'options_extra',
+		link: 'https://discord.com/channels/1/2',
+	}
+	const channel: ModOption = {
+		key: 'raptors_dev_channel_link',
+		name: 'Development Discussion',
+		desc: 'Raptors development discussion.',
+		type: 'link',
+		section: 'raptor_defense_options',
+		link: 'https://discord.com/channels/3/4',
 	}
 
-	test('shows where it goes', () => {
-		expect(displayText(row(link))).toBe('https://example.com/changes')
+	test('belongs to the option it follows and whose key it extends', () => {
+		const { byKey, bySection } = linksOf([evocom, thread])
+		expect(byKey.get('evocom')).toEqual([
+			{
+				url: 'https://discord.com/channels/1/2',
+				desc: 'Discord discussion about Evolving Commanders',
+				host: 'discord.com',
+			},
+		])
+		expect(bySection.size).toBe(0)
 	})
 
-	test('is never a change, whatever a lobby holds under its key', () => {
-		expect(row(link, 'anything').changed).toBe(false)
+	test('following anything else, it belongs to its tab', () => {
+		const coop: ModOption = {
+			key: 'coop',
+			type: 'bool',
+			section: 'options_main',
+		}
+		const { byKey, bySection } = linksOf([coop, channel])
+		expect(byKey.size).toBe(0)
+		expect(bySection.get('raptor_defense_options')?.[0]?.desc).toBe(
+			'Raptors development discussion',
+		)
 	})
 
-	test('goes under its own heading when rows go by type', () => {
-		expect(typeOf(row(link))).toBe('Links')
+	test('a key that only starts the same is not its owner', () => {
+		const evo: ModOption = {
+			key: 'evo',
+			type: 'bool',
+			section: 'options_extra',
+		}
+		expect(linksOf([evo, thread]).byKey.has('evo')).toBe(false)
+	})
+
+	test('layout between an option and its link does not part them', () => {
+		const gap: ModOption = {
+			key: 'sub_header',
+			type: 'separator',
+			section: 'options_extra',
+		}
+		expect(linksOf([evocom, gap, thread]).byKey.has('evocom')).toBe(true)
+	})
+
+	test('with no description, it is called what BAR calls it', () => {
+		const bare = { ...thread, desc: '' }
+		expect(linksOf([evocom, bare]).byKey.get('evocom')?.[0]?.desc).toBe(
+			'Feedback thread',
+		)
+	})
+
+	test('is no row of any tab', () => {
+		const section: ModOption = {
+			key: 'options_extra',
+			name: 'Extras',
+			type: 'section',
+			weight: 1,
+		}
+		const keys = tabs([section, evocom, thread])
+			.flatMap((tab) => tab.groups)
+			.flatMap((group) => group.options.map((option) => option.key))
+		expect(keys).toContain('evocom')
+		expect(keys).not.toContain('evocom_feedback_thread_link')
+	})
+})
+
+describe('where a link goes', () => {
+	test('is its host', () => {
+		expect(linkHost('https://gist.github.com/RebelNode/43b9')).toBe(
+			'gist.github.com',
+		)
+		expect(linkHost('http://example.com/a')).toBe('example.com')
+	})
+
+	test('is nowhere for what no lobby should open', () => {
+		expect(linkHost('javascript:alert(1)')).toBe('')
+		expect(linkHost('file:///C:/secret')).toBe('')
+		expect(linkHost('not a url')).toBe('')
+		expect(linkHost(undefined)).toBe('')
 	})
 })
 

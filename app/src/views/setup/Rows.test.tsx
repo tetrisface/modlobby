@@ -229,32 +229,59 @@ describe('a list being edited', () => {
 	})
 })
 
-describe('a link', () => {
-	const LINK: ModOption = {
-		key: 'changelog',
-		name: 'Changelog',
-		type: 'link',
-		link: 'https://example.com/changes',
+describe("an option's link", () => {
+	const LINK = {
+		url: 'https://discord.com/channels/1/2',
+		desc: 'Discord discussion about Max Units',
+		host: 'discord.com',
 	}
+	const linked = (link = LINK) => ({ ...NO_NOTE, links: [link] })
 
-	test('shows where it goes and opens it in the system browser', () => {
+	test('is an icon that opens it in the system browser', () => {
 		vi.mocked(invoke).mockResolvedValue(undefined)
-		const { row } = draw([rowOf(LINK)])
-		expect(row('changelog').querySelector('.v')?.textContent).toBe(
-			'https://example.com/changes',
-		)
-		fireEvent.click(row('changelog').querySelector('.act-cell button')!)
-		expect(invoke).toHaveBeenCalledWith('open_url', {
-			url: 'https://example.com/changes',
-		})
+		const { row } = draw([rowOf(MAX_UNITS)], { note: () => linked() })
+		fireEvent.click(row('maxunits').querySelector('.opt-link')!)
+		expect(invoke).toHaveBeenCalledWith('open_url', { url: LINK.url })
 	})
 
-	test('has nothing to reset or edit', () => {
-		const { row } = draw([rowOf(LINK)])
-		expect(row('changelog').querySelectorAll('.act-cell button')).toHaveLength(
-			1,
+	test('prints neither its address nor a label on the row', () => {
+		const { row } = draw([rowOf(MAX_UNITS)], { note: () => linked() })
+		expect(row('maxunits').textContent).not.toContain('discord')
+		expect(row('maxunits').textContent).not.toContain('Discord')
+	})
+
+	test('says what it is and where it goes on hover, never the whole address', () => {
+		const { row } = draw([rowOf(MAX_UNITS)], { note: () => linked() })
+		const link = row('maxunits').querySelector<HTMLButtonElement>('.opt-link')!
+		expect(link.title).toBe(
+			'Discord discussion about Max Units\nOpens discord.com',
 		)
-		expect(row('changelog').querySelector('input')).toBeNull()
+		expect(link.getAttribute('aria-label')).toBe(LINK.desc)
+	})
+
+	test('that no lobby should open is greyed, saying why', () => {
+		const { row } = draw([rowOf(MAX_UNITS)], {
+			note: () => linked({ ...LINK, url: 'javascript:alert(1)', host: '' }),
+		})
+		const link = row('maxunits').querySelector<HTMLButtonElement>('.opt-link')!
+		expect(link.disabled).toBe(true)
+		expect(link.title).toBe('Only web links open from here')
+	})
+
+	test('leaves the value and the reset where they are', () => {
+		const { row } = draw([rowOf(MAX_UNITS, '10000')], {
+			editable: false,
+			note: () => linked(),
+		})
+		expect(row('maxunits').querySelector('.opt-value .v')?.textContent).toBe(
+			'10000',
+		)
+		expect(row('maxunits').querySelectorAll('.act-cell button')).toHaveLength(1)
+	})
+
+	test('a row with none has no icon', () => {
+		const { row } = draw([rowOf(MAX_UNITS)])
+		expect(row('maxunits').querySelector('.opt-link')).toBeNull()
 	})
 })
 

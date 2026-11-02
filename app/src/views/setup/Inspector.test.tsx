@@ -6,7 +6,7 @@ import type { ModOption } from '../../ipc/bindings/ModOption'
 import type { OptionChangeView } from '../../ipc/bindings/OptionChangeView'
 import type { TweakView } from '../../ipc/bindings/TweakView'
 import type { VoteView } from '../../ipc/bindings/VoteView'
-import { rowsOf, type Lock, type Row } from '../../lib/setup'
+import { rowsOf, type Lock, type OptionLink, type Row } from '../../lib/setup'
 import { fakeRoom, myBattle, recordingIo, type Calls } from '../room/fixture'
 import { RoomProvider } from '../room/model'
 import { Inspector } from './Inspector'
@@ -74,6 +74,7 @@ function draw(
 		vote?: VoteView | null
 		lock?: Lock | null
 		needle?: string
+		links?: OptionLink[]
 	} = {},
 ) {
 	const calls: Calls = []
@@ -88,6 +89,7 @@ function draw(
 					change={over.change}
 					vote={over.vote ?? null}
 					lock={over.lock ?? null}
+					links={over.links ?? []}
 				/>
 			</Query.Provider>
 		</RoomProvider>
@@ -226,6 +228,7 @@ describe('a document', () => {
 					change={undefined}
 					vote={null}
 					lock={null}
+					links={[]}
 				/>
 			</RoomProvider>
 		))
@@ -236,17 +239,31 @@ describe('a document', () => {
 	})
 })
 
-describe('a link', () => {
-	test('says where it goes', () => {
-		const { text } = draw(
-			rowOf({
-				key: 'changelog',
-				name: 'Changelog',
-				type: 'link',
-				link: 'https://example.com/changes',
-			}),
+describe("an option's link", () => {
+	const links = [
+		{
+			url: 'https://discord.com/channels/1/2',
+			desc: 'Discord discussion about Max Units',
+			host: 'discord.com',
+		},
+	]
+
+	test('says what it is and which site it goes to, never the whole address', () => {
+		const { text, container } = draw(rowOf(MAX_UNITS), { links })
+		expect(text('.inspector-link')).toBe(
+			'Discord discussion about Max Units · discord.com',
 		)
-		expect(text('.inspector-facts')).toBe('https://example.com/changes')
+		expect(container.textContent).not.toContain('channels')
+	})
+
+	test('can be followed from here too', () => {
+		const { container } = draw(rowOf(MAX_UNITS), { links })
+		expect(container.querySelector('.inspector-link .opt-link')).not.toBeNull()
+	})
+
+	test('none, nothing said', () => {
+		const { container } = draw(rowOf(MAX_UNITS))
+		expect(container.querySelector('.inspector-link')).toBeNull()
 	})
 })
 
@@ -416,6 +433,7 @@ describe('as the row it describes changes', () => {
 					change={undefined}
 					vote={null}
 					lock={null}
+					links={[]}
 				/>
 			</RoomProvider>
 		))
