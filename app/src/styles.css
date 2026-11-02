@@ -3389,6 +3389,21 @@ body.resizing {
 	font-size: 0.9rem;
 }
 
+/* Every other row carries a faint band, which takes the eye across to its value
+   at the far edge. It has no visible ends and next to no contrast, so it reads
+   as a rhythm rather than as a spreadsheet's cells. `--band` is the one number
+   to tune. Held to the specificity of `.opt:hover` below, which replaces it. */
+.setup-rows > .opt:where(:nth-child(even)) {
+	--band: color-mix(in srgb, var(--text) 2%, transparent);
+	background: linear-gradient(
+		90deg,
+		transparent,
+		var(--band) 15%,
+		var(--band) 85%,
+		transparent
+	);
+}
+
 .opt:hover {
 	background: var(--panel);
 }
