@@ -28,4 +28,16 @@ export type ModOption = {
 	 * Declared `hidden = true`: Chobby draws neither the option nor the tab.
 	 */
 	hidden?: boolean
+	/**
+	 * Where a `Kind::Link` goes.
+	 */
+	link?: string
+	/**
+	 * The options a switch holds off while on, and a number while off its default.
+	 */
+	lock?: Array<string>
+	/**
+	 * The options a switch holds off while off, and a number while on its default.
+	 */
+	unlock?: Array<string>
 }
