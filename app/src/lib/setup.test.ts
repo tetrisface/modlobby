@@ -399,6 +399,7 @@ describe('search', () => {
 		key: 'named',
 		name: 'Named',
 		desc: '',
+		intro: [],
 		groups: [
 			{
 				name: '',

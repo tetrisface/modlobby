@@ -84,6 +84,12 @@ pub struct Item {
 	pub name: String,
 	#[serde(default, skip_serializing_if = "String::is_empty")]
 	pub desc: String,
+	/// The options this choice switches off.
+	#[serde(default, skip_serializing_if = "Vec::is_empty")]
+	pub lock: Vec<String>,
+	/// The options this choice switches back on.
+	#[serde(default, skip_serializing_if = "Vec::is_empty")]
+	pub unlock: Vec<String>,
 }
 
 /// One row of BAR's table, in the order the file declares it.
@@ -117,6 +123,15 @@ pub struct ModOption {
 	/// Declared `hidden = true`: Chobby draws neither the option nor the tab.
 	#[serde(default, skip_serializing_if = "is_false")]
 	pub hidden: bool,
+	/// Where a `Kind::Link` goes.
+	#[serde(default, skip_serializing_if = "String::is_empty")]
+	pub link: String,
+	/// The options a switch holds off while on, and a number while off its default.
+	#[serde(default, skip_serializing_if = "Vec::is_empty")]
+	pub lock: Vec<String>,
+	/// The options a switch holds off while off, and a number while on its default.
+	#[serde(default, skip_serializing_if = "Vec::is_empty")]
+	pub unlock: Vec<String>,
 }
 
 fn is_false(hidden: &bool) -> bool {
@@ -169,6 +184,9 @@ fn read_option(field: &Field) -> Option<ModOption> {
 		weight: None,
 		items: Vec::new(),
 		hidden: false,
+		link: String::new(),
+		lock: Vec::new(),
+		unlock: Vec::new(),
 	};
 
 	for field in entry.fields() {
@@ -188,6 +206,9 @@ fn read_option(field: &Field) -> Option<ModOption> {
 			"weight" => option.weight = number(value),
 			"hidden" => option.hidden = boolean(value).unwrap_or(false),
 			"items" => option.items = table(value).map(read_items).unwrap_or_default(),
+			"link" => option.link = string(value).unwrap_or_default(),
+			"lock" => option.lock = strings(value),
+			"unlock" => option.unlock = strings(value),
 			_ => {}
 		}
 	}
@@ -209,6 +230,8 @@ fn read_items(items: &TableConstructor) -> Vec<Item> {
 				key: String::new(),
 				name: String::new(),
 				desc: String::new(),
+				lock: Vec::new(),
+				unlock: Vec::new(),
 			};
 			for field in entry.fields() {
 				let Field::NameKey { key, value, .. } = field else {
@@ -218,10 +241,27 @@ fn read_items(items: &TableConstructor) -> Vec<Item> {
 					Some("key") => item.key = string(value).unwrap_or_default(),
 					Some("name") => item.name = string(value).unwrap_or_default(),
 					Some("desc") => item.desc = string(value).unwrap_or_default(),
+					Some("lock") => item.lock = strings(value),
+					Some("unlock") => item.unlock = strings(value),
 					_ => {}
 				}
 			}
 			(!item.key.is_empty()).then_some(item)
+		})
+		.collect()
+}
+
+/// `{ "a", "b" }` as its strings; anything else as none.
+fn strings(expression: &Expression) -> Vec<String> {
+	let Some(entries) = table(expression) else {
+		return Vec::new();
+	};
+	entries
+		.fields()
+		.iter()
+		.filter_map(|field| match field {
+			Field::NoKey(entry) => string(entry),
+			_ => None,
 		})
 		.collect()
 }
@@ -497,5 +537,51 @@ mod tests {
 		let options = schema();
 		assert!(find(&options, "holiday_events").hidden);
 		assert!(!find(&options, "startmetal").hidden);
+	}
+
+	#[test]
+	fn a_link_option_carries_where_it_goes() {
+		let options = schema();
+		let link = find(&options, "raptors_dev_channel_link");
+		assert_eq!(link.kind, Kind::Link);
+		assert!(link.link.starts_with("https://"), "{:?}", link.link);
+		assert_eq!(find(&options, "startmetal").link, "");
+	}
+
+	#[test]
+	fn a_list_item_says_what_it_switches_off_and_on() {
+		let options = schema();
+		let mode = find(&options, "deathmode");
+		let item = |key: &str| mode.items.iter().find(|item| item.key == key).unwrap();
+		assert!(item("com").lock.contains(&"dominion_config".to_owned()));
+		assert!(item("com").unlock.is_empty());
+		assert!(
+			item("dominion")
+				.unlock
+				.contains(&"dominion_config".to_owned())
+		);
+		assert!(item("dominion").lock.is_empty());
+	}
+
+	#[test]
+	fn a_switch_says_what_it_switches_off_and_on() {
+		let options = schema();
+		assert!(
+			find(&options, "evocom")
+				.unlock
+				.contains(&"evocomlevelcap".to_owned())
+		);
+		let lava = find(&options, "map_waterislava");
+		assert!(lava.unlock.contains(&"map_lavatidemode".to_owned()));
+		assert!(lava.lock.contains(&"sub_header_lava3".to_owned()));
+		assert!(find(&options, "startmetal").lock.is_empty());
+	}
+
+	#[test]
+	fn what_an_option_does_not_declare_stays_off_the_wire() {
+		let json = serde_json::to_string(find(&schema(), "startmetal")).unwrap();
+		for field in ["link", "lock", "unlock"] {
+			assert!(!json.contains(field), "{field} in {json}");
+		}
 	}
 }

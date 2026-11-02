@@ -16,11 +16,21 @@
  */
 
 import type { ModOption } from '../ipc/bindings/ModOption'
+import type { OptionChangeView } from '../ipc/bindings/OptionChangeView'
 import type { OptionValue } from '../ipc/bindings/OptionValue'
+import type { ProposalView } from '../ipc/bindings/ProposalView'
+import type { VoteView } from '../ipc/bindings/VoteView'
 import { hasEveryWord } from './search'
 
 export type Group = { name: string; options: ModOption[] }
-export type Tab = { key: string; name: string; desc: string; groups: Group[] }
+export type Tab = {
+	key: string
+	name: string
+	desc: string
+	groups: Group[]
+	/** What BAR writes at the head of the tab: how to play it, and its warnings. */
+	intro: string[]
+}
 
 export type Row = {
 	option: ModOption
@@ -130,12 +140,20 @@ export const ALL_TAB = 'all'
  * declared in: Chobby leaves it out, but a host takes it, a room can hold it,
  * and a modding lobby shows what a room holds. The row says it is hidden.
  */
+function introOf(options: ModOption[]): string[] {
+	return options
+		.filter((option) => option.type === 'subheader')
+		.map((option) => (option.name ?? '').trim())
+		.filter((text) => text !== '' && !text.startsWith('--'))
+}
+
 function groupsOf(options: ModOption[]): Group[] {
 	const groups: Group[] = []
 	let current: Group = { name: '', options: [] }
 
 	for (const option of options) {
-		if (option.type === 'separator') continue
+		// A link goes on the option it is about, or at the head of its tab: see `linksOf`.
+		if (option.type === 'separator' || option.type === 'link') continue
 		if (option.type === 'subheader') {
 			const label = option.name ?? ''
 			if (!label.startsWith('--')) continue
@@ -177,6 +195,7 @@ function moddingTab(options: ModOption[], extra: readonly string[]): Tab {
 		name: 'Modding',
 		desc: 'What unit definitions the game loads, and the Lua that rewrites them.',
 		groups,
+		intro: [],
 	}
 }
 
@@ -203,6 +222,7 @@ function mapTab(options: ModOption[]): Tab | null {
 		name: 'Map',
 		desc: 'What the map brings to the room: its start boxes, any custom arrangement, and fixed start positions.',
 		groups: [{ name: 'Map metadata', options: rows }],
+		intro: [],
 	}
 }
 
@@ -225,16 +245,18 @@ export function tabs(
 		.sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0))
 
 	const declared = sections
-		.map((section) => ({
-			key: section.key,
-			name: (section.name || section.key).replace(/^_+/, ''),
-			desc: section.desc ?? '',
-			groups: groupsOf(
-				options.filter(
-					(option) => option.section === section.key && !MOVED.has(option.key),
-				),
-			),
-		}))
+		.map((section) => {
+			const own = options.filter(
+				(option) => option.section === section.key && !MOVED.has(option.key),
+			)
+			return {
+				key: section.key,
+				name: (section.name || section.key).replace(/^_+/, ''),
+				desc: section.desc ?? '',
+				groups: groupsOf(own),
+				intro: introOf(own),
+			}
+		})
 		.filter((tab) => tab.groups.length > 0)
 
 	const map = mapTab(options)
@@ -282,7 +304,13 @@ function isChanged(option: ModOption, current: string): boolean {
 	const def = defaultText(option)
 	if (option.type === 'number') return Number(current) !== Number(def)
 	if (option.type === 'bool') return isOn(current) !== isOn(def)
+	if (isEmptyByDefault(option)) return !isCleared(current)
 	return current !== def
+}
+
+/** A text BAR starts empty, which a host can only clear by writing `0`. */
+function isEmptyByDefault(option: ModOption): boolean {
+	return option.type === 'string' && defaultText(option) === ''
 }
 
 /** What a row is called: BAR's name, or the key when it has none. */
@@ -426,7 +454,6 @@ export function changedByTab(
 	return rowsByTab(tabs, values, (row) => row.changed)
 }
 
-/** Whether a row is a tweak slot, whatever its index. */
 /** How rows under a heading are ordered: what differs from the default first, or by name. */
 export type RowOrder = 'changed' | 'name'
 
@@ -565,6 +592,7 @@ function keepRows(rows: Row[], keys: readonly string[]): Row[] {
 	return [...kept, ...fresh.values()]
 }
 
+/** Whether a row is a tweak slot, whatever its index. */
 export function isTweakSlot(row: Row): boolean {
 	return tweakKey(row.option.key) !== null
 }
@@ -578,14 +606,225 @@ export function changedCount(tab: Tab, values: Record<string, string>): number {
 	)
 }
 
+/** A value of this option in words: an item's name, on or off, the number. */
+export function wordsFor(option: ModOption, text: string): string {
+	if (option.type === 'bool') return isOn(text) ? 'on' : 'off'
+	if (isEmptyByDefault(option) && isCleared(text)) return 'empty'
+	const item = option.items?.find((entry) => entry.key === text)
+	return item?.name ?? text
+}
+
 /** What a row shows on the right: the value, or the default it is sitting on. */
 export function displayText(row: Row): string {
-	const text = row.current ?? defaultText(row.option)
+	const { option } = row
+	const text = row.current ?? defaultText(option)
 	// The Map tab asks Rust for words; this is what it says until then.
-	if (isMapOption(row.option))
-		return isCleared(text) ? 'none' : `${text.length} B`
-	if (row.option.type === 'bool') return isOn(text) ? 'on' : 'off'
-	if (row.option.type === 'string' && text === '') return 'empty'
-	const item = row.option.items?.find((entry) => entry.key === text)
-	return item?.name ?? text
+	if (isMapOption(option)) return isCleared(text) ? 'none' : `${text.length} B`
+	return wordsFor(option, text)
+}
+
+/** BAR's default for this option, in the words a row would show it in. */
+export function defaultWords(option: ModOption): string {
+	return wordsFor(option, defaultText(option))
+}
+
+/** Which of the table's facts about an option there are to tell. */
+export function facts(option: ModOption): string[] {
+	const told: string[] = []
+	if (option.min !== null && option.min !== undefined)
+		told.push(`min ${option.min}`)
+	if (option.max !== null && option.max !== undefined)
+		told.push(`max ${option.max}`)
+	// BAR: a step of nought or less means no steps at all.
+	if (option.step !== null && option.step !== undefined && option.step > 0)
+		told.push(`step ${option.step}`)
+	const def = defaultWords(option)
+	if (def !== '') told.push(`default ${def}`)
+	return told
+}
+
+/** The facts on one line, as a tooltip has room for, a list's choices first. */
+export function tipFacts(option: ModOption): string {
+	const named = option.type === 'list' ? choices(option) : []
+	return [...named.map((choice) => choice.label), ...facts(option)].join(' · ')
+}
+
+export type Choice = { value: string; label: string; desc: string }
+
+/** What an option can be set to, where that is a short list: a switch's two, a list's items. */
+export function choices(option: ModOption): Choice[] {
+	if (option.type === 'bool')
+		return [
+			{ value: '0', label: 'off', desc: '' },
+			{ value: '1', label: 'on', desc: '' },
+		]
+	if (option.type !== 'list') return []
+	return (option.items ?? []).map((item) => ({
+		value: item.key,
+		label: item.name || item.key,
+		desc: item.desc ?? '',
+	}))
+}
+
+/** Which of `choices` a value lights, however a switch's value arrived. */
+export function litChoice(option: ModOption, text: string): string {
+	if (option.type === 'bool') return isOn(text) ? '1' : '0'
+	return text
+}
+
+/**
+ * What to send to put an option back on its default. A host skips an empty
+ * value (`sendBattleSetting`) and clears by writing `0`, the way Chobby does;
+ * anywhere else an empty text is simply empty.
+ */
+export function resetValue(option: ModOption, host: boolean): string {
+	const def = defaultText(option)
+	if (def !== '') return def
+	return option.type === 'string' && !host ? '' : '0'
+}
+
+/** The newest thing the lobby has seen happen to this option, if anything. */
+export function latestChange(
+	history: readonly OptionChangeView[],
+	key: string,
+): OptionChangeView | undefined {
+	return history.filter((change) => change.key === key).at(-1)
+}
+
+/** What a vote under way would set this option to, if that is what it is about. */
+export function voteOn(
+	vote: VoteView | null | undefined,
+	key: string,
+): Extract<ProposalView, { type: 'setOption' }> | null {
+	const proposal = vote?.proposal
+	return proposal?.type === 'setOption' && proposal.key === key
+		? proposal
+		: null
+}
+
+/** Why an option is not in force: which option holds it off, at what value. */
+export type Lock = { by: string; value: string }
+
+export const notInForce = (lock: Lock): string =>
+	`Not in force while ${lock.by} is ${lock.value}`
+
+/** Somewhere BAR points to about an option or a tab: what it is, and which site it is on. */
+export type OptionLink = { url: string; desc: string; host: string }
+
+/** The site an address goes to; nothing for what no lobby should open. */
+export function linkHost(url: string | undefined): string {
+	try {
+		const { protocol, hostname } = new URL(url ?? '')
+		return protocol === 'https:' || protocol === 'http:' ? hostname : ''
+	} catch {
+		return ''
+	}
+}
+
+const isLayout = (option: ModOption) =>
+	option.type === 'section' ||
+	option.type === 'subheader' ||
+	option.type === 'separator'
+
+/**
+ * BAR's links, by what they are about. It declares most right after their
+ * option, with a key that extends the option's: `evocom`, then
+ * `evocom_feedback_thread_link`. Its names for them, `Feedback thread` over
+ * and over, only make sense in that spot, so a link has no row of its own: it
+ * goes on its option. One that follows anything else is about its whole tab.
+ */
+export function linksOf(options: readonly ModOption[]): {
+	byKey: ReadonlyMap<string, OptionLink[]>
+	bySection: ReadonlyMap<string, OptionLink[]>
+} {
+	const byKey = new Map<string, OptionLink[]>()
+	const bySection = new Map<string, OptionLink[]>()
+	const file = (
+		table: Map<string, OptionLink[]>,
+		key: string,
+		link: OptionLink,
+	) => table.set(key, [...(table.get(key) ?? []), link])
+
+	let before: ModOption | null = null
+	for (const option of options) {
+		if (isLayout(option)) continue
+		if (option.type !== 'link') {
+			before = option
+			continue
+		}
+		const link: OptionLink = {
+			url: option.link ?? '',
+			desc: (option.desc || label(option)).replace(/\.$/, ''),
+			host: linkHost(option.link),
+		}
+		if (before !== null && option.key.startsWith(`${before.key}_`))
+			file(byKey, before.key, link)
+		else file(bySection, option.section ?? '', link)
+	}
+	return { byKey, bySection }
+}
+
+/** What the pane knows about a row beyond its value. */
+export type RowNote = {
+	/** It changed a moment ago. */
+	recent: boolean
+	/** What a vote under way would set it to, in words; empty for a document. */
+	vote: string | null
+	/** What holds it off, if anything does. */
+	lock: Lock | null
+	/** The strip under the list is pinned to it. */
+	on: boolean
+	/** Where BAR points to about it. */
+	links: OptionLink[]
+}
+
+export const NO_NOTE: RowNote = {
+	recent: false,
+	vote: null,
+	lock: null,
+	on: false,
+	links: [],
+}
+
+/**
+ * The options this one holds off at this value: BAR's grammar between options,
+ * as Chobby reads it (`gui_modoptions_panel.lua`, `postLock`). A list's chosen
+ * item names them; a switch names one list for on and another for off; a
+ * number one for on its default and another for off it.
+ */
+function heldOff(option: ModOption, text: string): readonly string[] {
+	if (option.type === 'bool')
+		return (isOn(text) ? option.lock : option.unlock) ?? []
+	if (option.type === 'list')
+		return option.items?.find((item) => item.key === text)?.lock ?? []
+	if (option.type === 'number')
+		return (
+			(Number(text) === Number(defaultText(option))
+				? option.unlock
+				: option.lock) ?? []
+		)
+	return []
+}
+
+/**
+ * Every option something else currently holds off, and what does. A switch that
+ * names itself is BAR's way of tucking options out of Chobby's summary of what
+ * changed: they stay in force, so it holds none of them off. Held by two, the
+ * first is named.
+ */
+export function locksOf(
+	options: readonly ModOption[],
+	values: Record<string, string>,
+): ReadonlyMap<string, Lock> {
+	const locks = new Map<string, Lock>()
+	for (const option of options) {
+		const text = values[option.key] ?? defaultText(option)
+		const held = heldOff(option, text)
+		if (held.includes(option.key)) continue
+		for (const key of held) {
+			if (locks.has(key)) continue
+			locks.set(key, { by: label(option), value: wordsFor(option, text) })
+		}
+	}
+	return locks
 }

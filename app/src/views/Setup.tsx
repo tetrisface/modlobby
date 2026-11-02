@@ -1,20 +1,19 @@
-import { Select } from '../components/Select'
 import {
 	For,
-	Match,
 	createEffect,
 	Show,
-	Switch,
 	createMemo,
 	createResource,
 	createSignal,
 	on,
 } from 'solid-js'
-import { OptionName } from '../components/OptionName'
 import { ResizeHandle } from '../components/ResizeHandle'
 import { SearchBox } from '../components/SearchBox'
 import { Segmented } from '../components/Segmented'
-import { api, describeError } from '../ipc/client'
+import { Query } from '../components/SettingRow'
+import { api } from '../ipc/client'
+import { createInspecting } from '../lib/inspecting'
+import { createRecent } from '../lib/recent'
 import {
 	clamp,
 	dragWidth,
@@ -31,22 +30,26 @@ import {
 	changedByTab,
 	changedCount,
 	changedView,
-	defaultText,
-	displayText,
 	drawnOrder,
-	isOn,
 	keepOrder,
+	latestChange,
+	linksOf,
+	locksOf,
 	readModOptions,
 	rowsByGroup,
 	rowsByTab,
 	searchRows,
 	arrange,
 	tabs,
+	voteOn,
+	wordsFor,
 	DOCUMENTS,
 	type Changed,
 	type Drawn,
 	type Grouping,
+	type OptionLink,
 	type Row,
+	type RowNote,
 	type RowOrder,
 	type Section,
 	type Tab,
@@ -57,24 +60,23 @@ import {
 	DOC_KEYS,
 	SCRATCH,
 	isDirty,
-	isMapTable,
-	slotOf,
+	isDocumentKey,
 	titleOf,
 } from '../lib/tweakspace'
-import { pushNotice } from '../store/chat'
 import { tweakspaceFor } from '../store/tweakspaceInstance'
 import { PasteBanner } from './PasteBanner'
 import { Mods, runsMods } from './Mods'
 import { Presets } from './Presets'
 import { useRoom, type RoomModel } from './room/model'
 import { canSet, setRefusal } from './room/move'
-import { TweakRow } from './tweaks/TweakRow'
+import { Inspector } from './setup/Inspector'
+import { LinkButton, Rows } from './setup/Rows'
 import { Tweaks } from './tweaks/Tweaks'
 
 const TWEAK_GROUP = 'Tweak slots'
 
 /** Shown before the game is installed, when there is no table to read. */
-const NO_TABS: Tab = { key: '', name: '', desc: '', groups: [] }
+const NO_TABS: Tab = { key: '', name: '', desc: '', groups: [], intro: [] }
 
 /** The tab across all tabs; `groups` is empty because it draws its own body. */
 const ALL: Tab = {
@@ -82,6 +84,7 @@ const ALL: Tab = {
 	name: 'All',
 	desc: "Every setting that differs from BAR's default, whichever tab it is in.",
 	groups: [],
+	intro: [],
 }
 
 /** The All tab's sections: one per tab, headed by the tab's name. */
@@ -107,15 +110,6 @@ const SHOW = [
 		title: "What differs from BAR's default",
 	},
 	{ value: 'all', label: 'All', title: 'Every setting' },
-] as const
-
-const ORDER = [
-	{
-		value: 'changed',
-		label: 'Changed first',
-		title: "What differs from BAR's default on top, the rest in BAR's order",
-	},
-	{ value: 'name', label: 'A–Z', title: 'By name' },
 ] as const
 
 const GROUPS = [
@@ -242,6 +236,16 @@ export function Setup() {
 		undefined,
 		{ equals: sameKeys },
 	)
+	/** The row a press or a pointer is on; an open editor is not its row to pick. */
+	const keyAt = (target: EventTarget | null): string | null => {
+		const element = target as Element
+		if (element.closest('.tweak-inline')) return null
+		return element.closest<HTMLElement>('[data-key]')?.dataset.key ?? null
+	}
+
+	/** Which row the strip under the list describes. */
+	const inspecting = createInspecting()
+
 	/**
 	 * The row the pointer rests on, and the list as it was drawn when it came
 	 * to rest there. While it rests the order holds and the row stays shown:
@@ -257,6 +261,7 @@ export function Setup() {
 		const key =
 			(event.target as Element).closest<HTMLElement>('[data-key]')?.dataset
 				.key ?? null
+		inspecting.point(keyAt(event.target))
 		if (key === (resting()?.key ?? null)) return
 		setResting(key === null ? null : { key, drawn: drawnOrder(listed()) })
 	}
@@ -273,13 +278,14 @@ export function Setup() {
 	const changedRows = () => changedView(values(), kept())
 
 	/**
-	 * A search across every tab. While it holds something the body is the
+	 * A search across every tab. While it holds something the list is the
 	 * matches, under the tab each lives in; the tab that was open is
 	 * untouched, so clearing it lands where you were.
 	 */
 	const [needle, setNeedle] = createSignal('')
 	const searching = () => needle().trim() !== ''
 	const found = createMemo(() => searchRows(TABS(), values(), needle()))
+	createEffect(on(needle, () => list?.scrollTo?.({ top: 0 }), { defer: true }))
 
 	/**
 	 * What the rows show and in what order: one choice each for every tab,
@@ -300,28 +306,66 @@ export function Setup() {
 	const arranged = (sections: Section[]) =>
 		arrange(sections, grouping(), rowOrder())
 
-	/** The list: the All tab's tabs or a tab's groups, as Show, Group and Sort have them. */
-	const listed = createMemo(() =>
-		arranged(
+	/** The list: what a search found, the All tab's tabs or a tab's groups, as Show, Group and Sort have them. */
+	const listed = createMemo(() => {
+		if (searching()) return arranged(byTabName(found()))
+		return arranged(
 			tab().key === ALL_TAB
 				? byTabName(rowsByTab(TABS(), values(), filter()))
 				: rowsByGroup(tab(), values(), filter()),
-		),
-	)
+		)
+	})
 	/** The list as drawn: `listed`, in the order it had while the pointer rests on a row. */
 	const shown = createMemo(() => {
 		const rest = resting()
 		return rest === null ? listed() : keepOrder(listed(), rest.drawn)
 	})
-	/** The list's headings, which the overview beside it names. */
+	/** The list's headings, which the overview beside it names. A search has no overview. */
 	const headings = createMemo(
 		() =>
-			shown()
-				.map((section) => section.name)
-				.filter((name) => name !== ''),
+			searching()
+				? []
+				: shown()
+						.map((section) => section.name)
+						.filter((name) => name !== ''),
 		undefined,
 		{ equals: (a, b) => a.join('\n') === b.join('\n') },
 	)
+
+	/** The row the strip describes, as drawn right now; none once it has gone from the list. */
+	const inspected = createMemo(() => {
+		const key = inspecting.key()
+		if (key === null) return null
+		for (const section of shown()) {
+			const row = section.rows.find((entry) => entry.option.key === key)
+			if (row) return row
+		}
+		return null
+	})
+
+	const history = () => room.my()?.history ?? []
+	const recent = createRecent(history)
+	const locks = createMemo(() => locksOf(catalogue() ?? [], values()))
+	const links = createMemo(() => linksOf(catalogue() ?? []))
+	const tabLinks = () => links().bySection.get(tab().key) ?? []
+
+	/** What the pane knows about a row beyond its value. */
+	const noteOf = (row: Row): RowNote => {
+		const { key } = row.option
+		const proposal = voteOn(room.my()?.vote, key)
+		return {
+			recent: recent().has(key),
+			vote:
+				proposal === null
+					? null
+					: isDocumentKey(key)
+						? ''
+						: wordsFor(row.option, proposal.value),
+			lock: locks().get(key) ?? null,
+			on: inspecting.pinned() === key,
+			links: links().byKey.get(key) ?? [],
+		}
+	}
 
 	/** The list's own scrolling page, which the overview reads and moves. */
 	let list: HTMLDivElement | undefined
@@ -338,11 +382,27 @@ export function Setup() {
 		line: READ_LINE,
 	})
 
+	/** Sort's choices: with only changes shown, "changed first" comes to BAR's order. */
+	const orders = () =>
+		[
+			{
+				value: 'changed',
+				label: 'Changed first',
+				title:
+					shownRows() === 'changed'
+						? "Everything shown differs from BAR's default, so this is BAR's own order"
+						: "What differs from BAR's default on top, the rest in BAR's order",
+			},
+			{ value: 'name', label: 'A–Z', title: 'By name' },
+		] as const
+
 	/**
 	 * The foot of the list. A choice that does not apply to what is open is
 	 * greyed with the reason, never taken away.
 	 */
-	const viewBar = (showFixed: string | null) => (
+	const showFixed = () =>
+		searching() ? 'A search looks through every setting' : null
+	const viewBar = () => (
 		<div class='setup-bar'>
 			<span class='setup-bar-pair'>
 				<span class='setup-bar-label'>Show</span>
@@ -351,8 +411,8 @@ export function Setup() {
 					value={shownRows()}
 					options={SHOW}
 					onChange={setShow}
-					disabled={showFixed !== null}
-					title={showFixed ?? undefined}
+					disabled={showFixed() !== null}
+					title={showFixed() ?? undefined}
 				/>
 			</span>
 			<span class='setup-bar-pair'>
@@ -360,7 +420,7 @@ export function Setup() {
 				<Segmented
 					label='Sort'
 					value={rowOrder()}
-					options={ORDER}
+					options={orders()}
 					onChange={setOrder}
 				/>
 			</span>
@@ -539,50 +599,32 @@ export function Setup() {
 					when={!drafting()}
 					fallback={<Tweaks drafts onClose={closeDrafts} />}
 				>
-					<Show
-						when={!searching()}
-						fallback={
-							<div class='setup-list'>
-								<div class='setup-detail setup-found'>
-									<Sections
-										sections={arranged(byTabName(found()))}
-										empty={`Nothing matches "${needle().trim()}".`}
-										editable={editable()}
-										onDrafts={openDrafts}
-									/>
-								</div>
-								{viewBar('A search looks through every setting')}
-							</div>
-						}
-					>
-						<div
-							class='setup-body'
-							classList={{ bare: headings().length === 0 }}
-						>
-							{/* The list at a glance, as Settings has its page: every
-								    heading in it, the one being read marked, and a press
-								    to go there. Nothing to name when nothing is headed. */}
-							<Show when={headings().length > 0}>
-								<nav class='groups' aria-label='Sections'>
-									<For each={headings()}>
-										{(name) => (
-											<button
-												type='button'
-												class='group'
-												classList={{ on: overview.marked() === name }}
-												aria-current={
-													overview.marked() === name ? 'location' : undefined
-												}
-												onClick={() => overview.jump(name, 'smooth')}
-											>
-												{name}
-											</button>
-										)}
-									</For>
-								</nav>
-							</Show>
+					<div class='setup-body' classList={{ bare: headings().length === 0 }}>
+						{/* The list at a glance, as Settings has its page: every
+							    heading in it, the one being read marked, and a press
+							    to go there. Nothing to name when nothing is headed. */}
+						<Show when={headings().length > 0}>
+							<nav class='groups' aria-label='Sections'>
+								<For each={headings()}>
+									{(name) => (
+										<button
+											type='button'
+											class='group'
+											classList={{ on: overview.marked() === name }}
+											aria-current={
+												overview.marked() === name ? 'location' : undefined
+											}
+											onClick={() => overview.jump(name, 'smooth')}
+										>
+											{name}
+										</button>
+									)}
+								</For>
+							</nav>
+						</Show>
 
-							<div class='setup-list'>
+						<div class='setup-list' onMouseLeave={() => inspecting.leave()}>
+							<Query.Provider value={needle}>
 								<div
 									class='setup-detail'
 									ref={list}
@@ -596,23 +638,68 @@ export function Setup() {
 									onMouseLeave={() => {
 										overview.leave()
 										setResting(null)
+										inspecting.stop()
+									}}
+									onClick={(event) => {
+										const key = keyAt(event.target)
+										if (key === null) return
+										const control = (event.target as Element).closest(
+											'input, select, button, a',
+										)
+										if (control) inspecting.pin(key)
+										else inspecting.toggle(key)
+									}}
+									onFocusIn={(event) => {
+										const key = keyAt(event.target)
+										if (key !== null) inspecting.pin(key)
 									}}
 								>
+									<Show
+										when={
+											!searching() &&
+											(tab().intro.length > 0 || tabLinks().length > 0)
+										}
+									>
+										<TabIntro lines={tab().intro} links={tabLinks()} />
+									</Show>
 									<Sections
 										sections={shown()}
 										empty={
-											tab().key === ALL_TAB
-												? "Every setting is on BAR's default."
-												: "Every setting in this tab is on BAR's default."
+											searching()
+												? `Nothing matches "${needle().trim()}".`
+												: tab().key === ALL_TAB
+													? "Every setting is on BAR's default."
+													: "Every setting in this tab is on BAR's default."
 										}
 										editable={editable()}
 										onDrafts={openDrafts}
+										note={noteOf}
 									/>
 								</div>
-								{viewBar(null)}
-							</div>
+								{/* An open editor is the row's own detail, and wants the room. */}
+								<Show when={space.ws.expanded === null}>
+									<Inspector
+										row={inspected()}
+										fallback={
+											tab().desc ||
+											'Rest the pointer on a setting to read about it.'
+										}
+										refusal={setRefusal(room)}
+										change={latestChange(
+											history(),
+											inspected()?.option.key ?? '',
+										)}
+										vote={room.my()?.vote ?? null}
+										lock={locks().get(inspected()?.option.key ?? '') ?? null}
+										links={
+											links().byKey.get(inspected()?.option.key ?? '') ?? []
+										}
+									/>
+								</Show>
+							</Query.Provider>
+							{viewBar()}
 						</div>
-					</Show>
+					</div>
 				</Show>
 			</Show>
 		</aside>
@@ -629,6 +716,31 @@ function noteOfPane(room: RoomModel): string {
 	if (why !== null) return why
 	if (room.caps.spads) return 'A change is proposed to the host'
 	return 'A change takes effect here'
+}
+
+/**
+ * What BAR writes at the head of a tab, a warning reading as one, and any link
+ * about the tab as a whole. Those go by its first line, which says what the tab is.
+ */
+function TabIntro(props: { lines: string[]; links: OptionLink[] }) {
+	const icons = () => (
+		<For each={props.links}>{(link) => <LinkButton link={link} />}</For>
+	)
+	return (
+		<div class='setup-intro'>
+			<Show when={props.lines.length === 0}>
+				<p>{icons()}</p>
+			</Show>
+			<For each={props.lines}>
+				{(line, at) => (
+					<p classList={{ 'setup-note': line.startsWith('Warning') }}>
+						{line}
+						<Show when={at() === 0}>{icons()}</Show>
+					</p>
+				)}
+			</For>
+		</div>
+	)
 }
 
 /**
@@ -649,6 +761,7 @@ function Sections(props: {
 	empty: string
 	editable: boolean
 	onDrafts: () => void
+	note: (row: Row) => RowNote
 }) {
 	const byName = createMemo(
 		() => new Map(props.sections.map((section) => [section.name, section])),
@@ -666,7 +779,11 @@ function Sections(props: {
 								<Show when={name !== ''}>
 									<SectionHead name={name} onDrafts={props.onDrafts} />
 								</Show>
-								<Rows rows={entry().rows} editable={props.editable} />
+								<Rows
+									rows={entry().rows}
+									editable={props.editable}
+									note={props.note}
+								/>
 							</div>
 						)}
 					</Show>
@@ -695,146 +812,5 @@ function SectionHead(props: { name: string; onDrafts: () => void }) {
 				</button>
 			</Show>
 		</div>
-	)
-}
-
-/**
- * Settings as rows. A base64url document -- a tweak, the start-box override,
- * or one of the map's own tables -- is a `TweakRow` wherever it appears: its
- * blob to read or paste over, and the editor one press away.
- *
- * Exported because an AI's own options are the same kind of table -- BAR's
- * `modoptions.lua` and an engine AI's `AIOptions.lua` are one format -- and
- * drawing them the same way is the whole reason they can be. `set` is where
- * a changed value goes; the room's own settings are the default.
- *
- * Kept by option key, never by place or by identity. The rows are made again
- * whenever the room says anything, so one kept by identity would be a new row
- * each time -- under an open tweak, a new editor. And sorting moves them, so
- * one kept by place would hand its input to whichever setting lands there,
- * with what was being typed sent as that setting's value.
- */
-export function Rows(props: {
-	rows: Row[]
-	editable: boolean
-	set?: (key: string, value: string) => Promise<void>
-}) {
-	const byKey = createMemo(
-		() => new Map(props.rows.map((row) => [row.option.key, row])),
-	)
-	return (
-		<div class='setup-rows'>
-			<Show
-				when={props.rows.length > 0}
-				fallback={<p class='muted setup-empty'>Nothing here.</p>}
-			>
-				<For each={props.rows.map((row) => row.option.key)}>
-					{(key) => (
-						<Show when={byKey().get(key)}>
-							{(row) => (
-								<Show
-									when={slotOf(key) === null && !isMapTable(key)}
-									fallback={<TweakRow row={row()} />}
-								>
-									<div
-										class='opt'
-										classList={{ changed: row().changed }}
-										data-key={key}
-									>
-										<span class='mark' />
-										<OptionName option={row().option}>
-											<Show when={row().option.hidden}>
-												<span
-													class='doc-tag opt-hidden'
-													title="BAR keeps this out of its own lobby's settings"
-												>
-													hidden
-												</span>
-											</Show>
-										</OptionName>
-										<Switch
-											fallback={<span class='v'>{displayText(row())}</span>}
-										>
-											<Match when={props.editable}>
-												<Control row={row()} set={props.set} />
-											</Match>
-										</Switch>
-									</div>
-								</Show>
-							)}
-						</Show>
-					)}
-				</For>
-			</Show>
-		</div>
-	)
-}
-
-/**
- * One editable setting. The value is sent when it is committed, never on
- * every keystroke: each send is a chat command the whole room sees.
- */
-function Control(props: {
-	row: Row
-	set?: (key: string, value: string) => Promise<void>
-}) {
-	const room = useRoom()
-	const value = () => props.row.current ?? defaultText(props.row.option)
-
-	async function set(next: string) {
-		if (next === value()) return
-		try {
-			const put = props.set ?? room.io.setOption
-			await put(props.row.option.key, next)
-		} catch (error) {
-			pushNotice('warning', `${props.row.option.key}: ${describeError(error)}`)
-		}
-	}
-
-	return (
-		<Switch fallback={<span class='v'>{displayText(props.row)}</span>}>
-			<Match when={props.row.option.type === 'bool'}>
-				<input
-					class='v-edit'
-					type='checkbox'
-					checked={isOn(value())}
-					onChange={(event) =>
-						void set(event.currentTarget.checked ? '1' : '0')
-					}
-				/>
-			</Match>
-			<Match when={props.row.option.type === 'number'}>
-				<input
-					class='v-edit'
-					type='number'
-					value={value()}
-					min={props.row.option.min ?? undefined}
-					max={props.row.option.max ?? undefined}
-					step={props.row.option.step ?? undefined}
-					onChange={(event) => void set(event.currentTarget.value)}
-				/>
-			</Match>
-			<Match when={props.row.option.type === 'list'}>
-				<Select
-					class='v-edit'
-					value={value()}
-					onChange={(event) => void set(event.currentTarget.value)}
-				>
-					<For each={props.row.option.items ?? []}>
-						{(item) => <option value={item.key}>{item.name}</option>}
-					</For>
-				</Select>
-			</Match>
-			<Match when={props.row.option.type === 'string'}>
-				<input
-					class='v-edit'
-					type='text'
-					spellcheck={false}
-					placeholder='empty'
-					value={value()}
-					onChange={(event) => void set(event.currentTarget.value.trim())}
-				/>
-			</Match>
-		</Switch>
 	)
 }

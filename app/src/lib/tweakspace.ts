@@ -187,6 +187,10 @@ export function slotOf(key: string): Slot | null {
 	return tweakKey(key)
 }
 
+/** Whether a key holds a document, drawn as a blob and its editor rather than a value. */
+export const isDocumentKey = (key: string): boolean =>
+	slotOf(key) !== null || isMapTable(key)
+
 export function slotKey(slot: Slot): string {
 	if (slot.kind === 'boxes') return BOX_OVERRIDE
 	return `tweak${slot.kind}${slot.index === 0 ? '' : slot.index}`
