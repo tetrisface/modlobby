@@ -18,8 +18,10 @@ import {
 	type Lock,
 	type Row,
 } from '../../lib/setup'
-import { KINDS, isDocumentKey, kindOf } from '../../lib/tweakspace'
+import { KINDS, isDocumentKey, kindOf, slotId } from '../../lib/tweakspace'
 import { createCountdown, tally } from '../../lib/vote'
+import { tweakspaceFor } from '../../store/tweakspaceInstance'
+import { useRoom } from '../room/model'
 import { useCommit } from './Rows'
 
 /**
@@ -40,6 +42,9 @@ export function Inspector(props: {
 	vote: VoteView | null
 	lock: Lock | null
 }) {
+	const space = tweakspaceFor(useRoom())
+	/** The name a document's tweak goes by, which only the workspace knows. */
+	const nameOf = (key: string) => space.ws.docs[slotId(key)]?.name ?? ''
 	return (
 		<section class='inspector' aria-label='About this setting'>
 			<Show
@@ -79,7 +84,9 @@ export function Inspector(props: {
 							)}
 						</Show>
 						<Pills row={row()} refusal={props.refusal} />
-						<p class='inspector-facts'>{factsOf(row()).join(' · ')}</p>
+						<p class='inspector-facts'>
+							{factsOf(row(), nameOf(row().option.key)).join(' · ')}
+						</p>
 						<Show when={props.lock}>
 							{(lock) => <p class='inspector-off'>{notInForce(lock())}</p>}
 						</Show>
@@ -103,14 +110,14 @@ export function Inspector(props: {
 }
 
 /** What the table tells about a row; for a document, how long it is rather than what it holds. */
-function factsOf(row: Row): string[] {
+function factsOf(row: Row, name: string): string[] {
 	const { key, link, type } = row.option
 	if (type === 'link') return [link ?? '']
 	if (!isDocumentKey(key)) return facts(row.option)
 	const blob = row.current ?? ''
-	return isCleared(blob)
-		? ['empty']
-		: [`${blob.length} characters of ${KINDS[kindOf(key)].blob}`]
+	if (isCleared(blob)) return ['empty']
+	const size = `${blob.length} characters of ${KINDS[kindOf(key)].blob}`
+	return name === '' ? [size] : [name, size]
 }
 
 /** What it can be, the value lit. Greyed for somebody the host would refuse, still readable. */

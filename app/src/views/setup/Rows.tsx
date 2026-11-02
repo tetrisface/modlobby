@@ -265,12 +265,19 @@ function Control(props: { row: Row; set?: Put }) {
 					min={option().min ?? undefined}
 					max={option().max ?? undefined}
 					step={option().step ?? undefined}
-					onChange={(event) =>
+					onChange={(event) => {
+						const field = event.currentTarget
+						// A stray key reads as an empty value too, and must not reset
+						// the setting for the whole lobby.
+						if (field.validity.badInput) {
+							field.value = value()
+							return
+						}
 						set(
-							event.currentTarget.value ||
+							field.value ||
 								resetValue(option(), !props.set && room.caps.spads),
 						)
-					}
+					}}
 				/>
 			</Match>
 			<Match when={option().type === 'list'}>

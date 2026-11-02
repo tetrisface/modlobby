@@ -88,6 +88,8 @@ describe('createInspecting', () => {
 		it.toggle('a')
 		it.toggle('a')
 		expect(it.pinned()).toBeNull()
+		// The pointer that pressed it is still on it, so it stays the row being read.
+		expect(it.key()).toBe('a')
 		it.dispose()
 	})
 

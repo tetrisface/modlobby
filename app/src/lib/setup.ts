@@ -759,9 +759,10 @@ function heldOff(option: ModOption, text: string): readonly string[] {
 }
 
 /**
- * Every option something else currently holds off, and what does. BAR uses a
- * dummy switch that names itself to tuck options away; nothing is held off by
- * its own value, so that part is skipped. Held by two, the first is named.
+ * Every option something else currently holds off, and what does. A switch that
+ * names itself is BAR's way of tucking options out of Chobby's summary of what
+ * changed: they stay in force, so it holds none of them off. Held by two, the
+ * first is named.
  */
 export function locksOf(
 	options: readonly ModOption[],
@@ -770,8 +771,10 @@ export function locksOf(
 	const locks = new Map<string, Lock>()
 	for (const option of options) {
 		const text = values[option.key] ?? defaultText(option)
-		for (const key of heldOff(option, text)) {
-			if (key === option.key || locks.has(key)) continue
+		const held = heldOff(option, text)
+		if (held.includes(option.key)) continue
+		for (const key of held) {
+			if (locks.has(key)) continue
 			locks.set(key, { by: label(option), value: wordsFor(option, text) })
 		}
 	}

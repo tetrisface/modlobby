@@ -3653,7 +3653,7 @@ body.resizing {
 
 /* A row's small actions sit at the pane's right edge; a row with nothing it
    can do keeps its place in the column and stays out of the way. */
-.opt > .act-cell:has(button:disabled) {
+.opt > .act-cell:not(:has(button:not(:disabled))) {
 	border-color: transparent;
 	background: transparent;
 }
@@ -3807,6 +3807,22 @@ body.resizing {
 /* Tweak keys are all about one width; a floor lines their names up. */
 .opt.tweak .k {
 	min-width: 6.5rem;
+}
+
+/* At this width the floor and the name would push the row out of the list. The
+   name gives way, since the strip under the list has it; its tags stay. */
+@container setup-list (max-width: 30rem) {
+	.opt.tweak {
+		grid-template-columns: 0.125rem auto auto minmax(0, 1fr) auto;
+	}
+
+	.opt.tweak .k {
+		min-width: 0;
+	}
+
+	.tweak-note .tweak-name {
+		display: none;
+	}
 }
 
 .opt.tweak .slot-open .icon {

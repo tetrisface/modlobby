@@ -306,7 +306,9 @@ describe('options another option switches off', () => {
 		expect(moved.get('b')).toEqual({ by: 'Amount', value: '3000' })
 	})
 
-	test('an option that names itself is not held off by itself', () => {
+	test('a switch that names itself only tucks options away, and holds none of them off', () => {
+		// BAR's `dummyboolfeelfreetotouch`, which hides what it names from
+		// Chobby's summary: all of those are in force whatever it says.
 		const dummy = bool({
 			key: 'dummy',
 			name: 'Dummy',
@@ -314,7 +316,7 @@ describe('options another option switches off', () => {
 		})
 		const locks = locksOf([dummy], {})
 		expect(locks.has('dummy')).toBe(false)
-		expect(locks.has('other')).toBe(true)
+		expect(locks.has('other')).toBe(false)
 	})
 
 	test('a key held by two options names the first', () => {

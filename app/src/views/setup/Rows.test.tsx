@@ -178,6 +178,16 @@ describe('a number being edited', () => {
 		)
 	})
 
+	test('a typo it cannot read as a number goes back to what it held, and sends nothing', () => {
+		const { calls, row } = draw([rowOf(MAX_UNITS, '10000')])
+		const field = input(row('maxunits'))
+		// What a number field reports for "1e": an empty value, and this.
+		Object.defineProperty(field, 'validity', { value: { badInput: true } })
+		fireEvent.change(field, { target: { value: '' } })
+		expect(calls).toEqual([])
+		expect(field.value).toBe('10000')
+	})
+
 	test('left empty goes back to that default rather than sending nothing', () => {
 		const { calls, row } = draw([rowOf(MAX_UNITS, '10000')])
 		fireEvent.change(input(row('maxunits')), { target: { value: '' } })

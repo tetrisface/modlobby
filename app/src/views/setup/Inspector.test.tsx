@@ -4,13 +4,26 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import { Query } from '../../components/SettingRow'
 import type { ModOption } from '../../ipc/bindings/ModOption'
 import type { OptionChangeView } from '../../ipc/bindings/OptionChangeView'
+import type { TweakView } from '../../ipc/bindings/TweakView'
 import type { VoteView } from '../../ipc/bindings/VoteView'
 import { rowsOf, type Lock, type Row } from '../../lib/setup'
-import { fakeRoom, recordingIo, type Calls } from '../room/fixture'
+import { fakeRoom, myBattle, recordingIo, type Calls } from '../room/fixture'
 import { RoomProvider } from '../room/model'
 import { Inspector } from './Inspector'
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => []) }))
+// Decodes every blob, the name its tweak goes by being the blob itself.
+vi.mock('@tauri-apps/api/core', () => ({
+	invoke: vi.fn(async (command: string, args: { blob?: string }) => {
+		if (command !== 'tweak_decode') return []
+		return {
+			text: `-- ${args.blob}\n`,
+			formatted: `-- ${args.blob}\n`,
+			name: args.blob ?? null,
+			summary: '',
+			diagnostics: [],
+		} satisfies TweakView
+	}),
+}))
 
 afterEach(() => {
 	cleanup()
@@ -195,6 +208,31 @@ describe('a document', () => {
 	test('says when it is empty', () => {
 		expect(draw(rowOf(SLOT)).text('.inspector-facts')).toBe('empty')
 		expect(draw(rowOf(SLOT, '0')).text('.inspector-facts')).toBe('empty')
+	})
+
+	test('says the name its tweak goes by, which a narrow pane leaves off the row', async () => {
+		const room = fakeRoom({
+			// A workspace lives as long as its room; this one gets a room of its own.
+			log: '#inspector-slot',
+			my: () =>
+				myBattle({ scriptTags: { 'game/modoptions/tweakdefs1': 'Faster' } }),
+		})
+		const { container } = render(() => (
+			<RoomProvider value={room}>
+				<Inspector
+					row={rowOf(SLOT, 'Faster')}
+					fallback=''
+					refusal={null}
+					change={undefined}
+					vote={null}
+					lock={null}
+				/>
+			</RoomProvider>
+		))
+		for (let turn = 0; turn < 8; turn++) await Promise.resolve()
+		expect(container.querySelector('.inspector-facts')?.textContent).toBe(
+			'Faster · 6 characters of base64url',
+		)
 	})
 })
 

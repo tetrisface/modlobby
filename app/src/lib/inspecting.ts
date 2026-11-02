@@ -46,10 +46,14 @@ export function createInspecting() {
 			if (pinned() !== null) setRested(null)
 		},
 		pin,
-		/** A press on the row itself: pinned, or let go if it already was. */
+		/**
+		 * A press on the row itself: pinned, or let go if it already was. Let go,
+		 * it stays the row being read: the pointer that pressed it is still there.
+		 */
 		toggle(key: string) {
-			if (pinned() === key) setPinned(null)
-			else pin(key)
+			if (pinned() !== key) return pin(key)
+			setPinned(null)
+			setRested(key)
 		},
 	}
 }
