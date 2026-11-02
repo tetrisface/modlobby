@@ -189,6 +189,40 @@ a:focus-visible {
 	display: none;
 }
 
+/* A choice with what it does written under it; shut, the box says only its
+   name. The authored button is there for that, so it wears the box's own look. */
+.select > button {
+	padding: 0;
+	font: inherit;
+	letter-spacing: inherit;
+	color: inherit;
+	background: transparent;
+	border: 0;
+	border-radius: 0;
+}
+
+.select:has(.select-note)::picker(select) {
+	max-width: min(32rem, 90vw);
+}
+
+.select option:has(> .select-note) {
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 0;
+}
+
+.select-note {
+	font-family: var(--body);
+	font-size: 0.6875rem;
+	line-height: 1.3;
+	white-space: normal;
+	color: var(--muted);
+}
+
+.select > button .select-note {
+	display: none;
+}
+
 button.primary {
 	background: var(--accent);
 	color: #10131a;
@@ -3098,10 +3132,6 @@ body.resizing {
 	color: var(--text);
 }
 
-.setup-found {
-	flex: 1;
-}
-
 /* One row by default: the pane is measured so they fit. Dragged narrower,
    they wrap onto a second row rather than scroll. */
 /* A paste on its way out, above the tabs so it pushes them down. */
@@ -3242,6 +3272,7 @@ body.resizing {
 
 /* The list and its view choices under it: the list scrolls, the choices stay. */
 .setup-list {
+	container: setup-list / inline-size;
 	display: flex;
 	flex-direction: column;
 	flex: 1;
@@ -3249,8 +3280,11 @@ body.resizing {
 	min-width: 0;
 }
 
+/* Sized to what the column shows at once, which an opened tweak row and its
+   editor are sized to in turn: the send bar is on screen without scrolling. */
 .setup-list > .setup-detail {
 	flex: 1;
+	container-type: size;
 }
 
 /* No headings, so no overview beside the list. */
@@ -3263,7 +3297,7 @@ body.resizing {
 .setup-group {
 	display: flex;
 	flex-direction: column;
-	gap: 0.625rem;
+	gap: 0.25rem;
 }
 
 .setup-bar {
@@ -3312,16 +3346,27 @@ body.resizing {
 	font-size: 1rem;
 }
 
+/* It stays at the top while its own rows pass under it, so a long section
+   still says whose rows these are. A sticky inset counts from inside the
+   scroller's padding, hence the negative `top`; the margins take its
+   background out to the column's edges so nothing shows past it. */
 .setup-section {
+	position: sticky;
+	top: -0.75rem;
+	z-index: 1;
 	display: flex;
 	align-items: baseline;
 	gap: 0.5rem;
+	margin-inline: -0.875rem;
+	padding: 0.3125rem 0.875rem;
 	font-family: var(--display);
 	font-size: 0.6875rem;
 	font-weight: 600;
 	letter-spacing: 0.14em;
 	text-transform: uppercase;
-	color: var(--faint);
+	color: var(--muted);
+	background: var(--raised);
+	border-bottom: 1px solid var(--line);
 }
 
 .setup-rows {
@@ -3329,14 +3374,101 @@ body.resizing {
 	flex-direction: column;
 }
 
-/* A changed row earns a marker; the rest stay quiet so it reads at a glance. */
+/* A changed row earns a marker; the rest stay quiet so it reads at a glance.
+   The name's column has a ceiling, the same in every section, so a value sits
+   by its name however wide the pane is dragged. Measured on BAR's table: 16rem
+   holds all but two of its names, whose ends the tooltip and the strip below
+   have. Past the narrow end the name takes what the value leaves instead:
+   there is no distance left to close. */
 .opt {
 	display: grid;
-	grid-template-columns: 0.125rem 1fr auto;
+	grid-template-columns: 0.125rem minmax(0, min(16rem, 55%)) minmax(0, 1fr) auto;
 	align-items: center;
 	gap: 0.5625rem;
-	padding: 0.1875rem 0;
+	margin-inline: -0.375rem;
+	padding: 0.1875rem 0.375rem;
 	font-size: 0.9rem;
+}
+
+.opt:hover {
+	background: var(--panel);
+}
+
+/* The row the strip under the list is pinned to. */
+.opt.on {
+	background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+
+/* The value, what it left, and anything else there is to say about it. The
+   default gives way first; the value's own end only once it fills the column. */
+.opt-value {
+	display: flex;
+	align-items: center;
+	gap: 0.625rem;
+	min-width: 0;
+}
+
+.opt-value > .v,
+.opt-value > .v-edit {
+	flex: none;
+	max-width: 100%;
+}
+
+/* The same width whatever it holds, so the defaults beside them line up. */
+.opt-value > input[type='number'].v-edit {
+	width: 6.5rem;
+}
+
+.opt-value > input[type='number'].v-edit:out-of-range {
+	border-color: var(--error);
+}
+
+.opt-default {
+	flex: 0 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	font-family: var(--mono);
+	font-size: 0.75rem;
+	color: var(--faint);
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+.opt .opt-vote {
+	flex-shrink: 0;
+	padding: 0.0625rem 0.3125rem;
+	border: 1px solid currentColor;
+	border-radius: 2px;
+}
+
+/* Changed a moment ago. Taken off by a timer rather than an animation, so it
+   reads the same with reduced motion on. */
+.opt.recent .opt-value > .v,
+.opt.recent .opt-value > .v-edit,
+.opt.tweak.recent .tweak-input {
+	background: color-mix(in srgb, var(--accent) 16%, transparent);
+	border-radius: 2px;
+	box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+/* Held off by another option: still here, plainly not in force. */
+.opt.off .k,
+.opt.off .opt-value > .v {
+	color: var(--faint);
+}
+
+@container setup-list (max-width: 30rem) {
+	.opt {
+		grid-template-columns: 0.125rem minmax(0, 1fr) fit-content(45%) auto;
+	}
+
+	.opt-default {
+		display: none;
+	}
+
+	.inspector {
+		height: 10rem;
+	}
 }
 
 .opt .mark {
@@ -3364,7 +3496,9 @@ body.resizing {
    does not flicker one up per row. */
 .key-tip {
 	position: fixed;
-	z-index: 40;
+	/* At the document's own level: above the sheets (60), an AI's options being
+	   one, and the notices (70) it might otherwise sit under. */
+	z-index: 80;
 	width: max-content;
 	padding: 0.375rem 0.5625rem;
 	font-family: var(--body);
@@ -3385,24 +3519,152 @@ body.resizing {
 	color: var(--muted);
 }
 
+.key-tip-facts {
+	display: block;
+	margin-top: 0.25rem;
+	font-family: var(--mono);
+	color: var(--muted);
+}
+
+/* ---- the strip under the list (`Inspector`) ----
+   Everything known about one row. Its height is fixed, so picking a row never
+   moves the list; a long description scrolls inside it rather than growing. */
+.inspector {
+	flex: none;
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+	height: 7.5rem;
+	padding: 0.5rem 0.875rem;
+	overflow-y: auto;
+	font-size: 0.8125rem;
+	line-height: 1.4;
+	color: var(--muted);
+	background: var(--panel);
+	border-top: 1px solid var(--line);
+}
+
+.inspector p {
+	margin: 0;
+}
+
+.inspector-head {
+	display: flex;
+	align-items: baseline;
+	gap: 0.625rem;
+	min-width: 0;
+}
+
+.inspector-name {
+	font-weight: 500;
+	color: var(--text);
+}
+
+.inspector-key,
+.inspector-facts,
+.inspector-value {
+	font-family: var(--mono);
+	font-size: 0.75rem;
+}
+
+.inspector-key {
+	color: var(--faint);
+}
+
+.inspector-value {
+	margin-left: auto;
+	color: var(--muted);
+}
+
+.inspector-value.changed {
+	color: var(--accent);
+}
+
+.inspector .doc-tag.opt-hidden {
+	color: var(--faint);
+}
+
+.inspector .choice {
+	flex-wrap: wrap;
+	width: fit-content;
+	max-width: 100%;
+}
+
+/* Greyed for somebody the host would refuse, and still what is being read: the
+   lit one is the lobby's value. */
+.inspector .choice button:disabled {
+	opacity: 1;
+	color: var(--faint);
+}
+
+.inspector .choice button.on:disabled {
+	color: var(--accent);
+}
+
+.inspector-choice {
+	font-size: 0.75rem;
+}
+
+.inspector-off {
+	color: var(--warn);
+}
+
+.inspector-vote {
+	color: var(--warn);
+}
+
+.opt mark,
+.inspector mark {
+	color: var(--text);
+	background: color-mix(in srgb, var(--accent) 30%, transparent);
+	border-radius: 1px;
+}
+
+/* What BAR writes at the head of a tab. */
+.setup-intro {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+	font-size: 0.8125rem;
+	line-height: 1.4;
+	color: var(--muted);
+}
+
+.setup-intro p {
+	margin: 0;
+}
+
 @keyframes key-tip-wait {
 	from {
 		visibility: hidden;
 	}
 }
 
-.opt .opt-hidden {
+.opt .opt-hidden,
+.opt .opt-off {
 	margin-left: 0.5rem;
 	color: var(--faint);
 }
 
+/* A change that is not in force is the surprise worth saying out loud. */
+.opt.changed .opt-off {
+	color: var(--warn);
+}
+
+/* A row's small actions sit at the pane's right edge; a row with nothing it
+   can do keeps its place in the column and stays out of the way. */
+.opt > .act-cell:has(button:disabled) {
+	border-color: transparent;
+	background: transparent;
+}
+
 .opt .v {
+	min-width: 0;
 	font-family: var(--mono);
 	font-size: 0.83rem;
-	color: var(--faint);
+	color: var(--muted);
 	font-variant-numeric: tabular-nums;
 	white-space: nowrap;
-	max-width: 11.25rem;
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
@@ -3571,21 +3833,15 @@ body.resizing {
 	background: var(--accent);
 }
 
-/* What the detail column shows at once: an opened row and its editor are
-   sized to it, so the send bar is on screen without scrolling for it. */
-.setup-body > .setup-detail {
-	container-type: size;
-}
-
-/* The row scrolled to the top, the card fills what is left; the height is
-   the reader's to drag from the corner after that. */
+/* The row scrolled to just under its section's heading, the card fills what
+   is left; the height is the reader's to drag from the corner after that. */
 .opt.tweak.open {
-	scroll-margin-top: 0.75rem;
+	scroll-margin-top: 2rem;
 }
 
 .tweak-inline {
 	display: flex;
-	height: clamp(14rem, calc(100cqh - 3.75rem), 44rem);
+	height: clamp(14rem, calc(100cqh - 4.25rem), 44rem);
 	min-height: 14rem;
 	margin: 0 -0.5rem 0.625rem;
 	overflow: hidden;
@@ -3640,8 +3896,8 @@ body.resizing {
 }
 
 .v-edit {
-	justify-self: end;
-	max-width: 11.25rem;
+	justify-self: start;
+	max-width: 100%;
 	font-family: var(--mono);
 	font-size: 0.71875rem;
 	padding: 0.125rem 0.375rem;

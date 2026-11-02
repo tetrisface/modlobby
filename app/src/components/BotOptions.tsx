@@ -10,7 +10,7 @@ import { api, describeError } from '../ipc/client'
 import { isGameMode } from '../lib/roster'
 import { rowsOf } from '../lib/setup'
 import { pushNotice } from '../store/chat'
-import { Rows } from '../views/Setup'
+import { Rows } from '../views/setup/Rows'
 import { useRoom } from '../views/room/model'
 import { setBonus } from '../views/room/move'
 

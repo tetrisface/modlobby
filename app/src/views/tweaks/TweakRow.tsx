@@ -2,7 +2,7 @@ import { Show, createEffect, createResource } from 'solid-js'
 import { ActionCell, CellButton } from '../../components/ActionCell'
 import { OptionName } from '../../components/OptionName'
 import { api, describeError } from '../../ipc/client'
-import { isCleared, type Row } from '../../lib/setup'
+import { NO_NOTE, isCleared, type Row, type RowNote } from '../../lib/setup'
 import {
 	KINDS,
 	MAP_TABLE_REFUSAL,
@@ -26,8 +26,9 @@ import { Tweaks } from './Tweaks'
  * reset, and the row says so meanwhile. One of the map's own tables is the
  * same row with nothing to send: read, opened, refused.
  */
-export function TweakRow(props: { row: Row }) {
+export function TweakRow(props: { row: Row; note?: RowNote }) {
 	const room = useRoom()
+	const note = () => props.note ?? NO_NOTE
 	const space = tweakspaceFor(room)
 	const key = () => props.row.option.key
 	const id = () => slotId(key())
@@ -106,7 +107,12 @@ export function TweakRow(props: { row: Row }) {
 			<div
 				ref={line}
 				class='opt tweak'
-				classList={{ changed: props.row.changed, open: open() }}
+				classList={{
+					changed: props.row.changed,
+					open: open(),
+					recent: note().recent,
+					on: note().on,
+				}}
 				data-key={key()}
 			>
 				<span class='mark' />
@@ -126,6 +132,14 @@ export function TweakRow(props: { row: Row }) {
 					<Show when={doc() && isDirty(doc()!)}>
 						<span class='doc-tag dirty' title='Edited here and not sent yet'>
 							unsent
+						</span>
+					</Show>
+					<Show when={note().vote !== null}>
+						<span
+							class='doc-tag opt-vote'
+							title='A vote under way would change this'
+						>
+							vote
 						</span>
 					</Show>
 				</span>

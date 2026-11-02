@@ -399,6 +399,7 @@ describe('search', () => {
 		key: 'named',
 		name: 'Named',
 		desc: '',
+		intro: [],
 		groups: [
 			{
 				name: '',
@@ -580,7 +581,11 @@ describe('order', () => {
 			},
 			{
 				name: 'Map',
-				rows: [typed('override', 'string', 'mapmetadata'), typed('x', 'link')],
+				rows: [
+					typed('override', 'string', 'mapmetadata'),
+					typed('x', 'link'),
+					typed('y', 'slider'),
+				],
 			},
 		]
 		const keys = (grouping: Grouping) =>
@@ -590,14 +595,15 @@ describe('order', () => {
 			])
 		expect(regroup(sections, 'section')).toBe(sections)
 		expect(keys('none')).toEqual([
-			['', ['ranked', 'start', 'tweakdefs', 'lava', 'override', 'x']],
+			['', ['ranked', 'start', 'tweakdefs', 'lava', 'override', 'x', 'y']],
 		])
 		expect(keys('type')).toEqual([
 			['Documents', ['tweakdefs', 'override']],
 			['Switches', ['ranked']],
 			['Numbers', ['start']],
 			['Text', ['lava']],
-			['Other', ['x']],
+			['Links', ['x']],
+			['Other', ['y']],
 		])
 		expect(regroup([], 'none')).toEqual([])
 	})
