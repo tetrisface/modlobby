@@ -47,6 +47,13 @@ export type Score = {
 	 */
 	aiType: string
 	/**
+	 * The one AI family the room's slots share, as the service classified
+	 * it: `BARb`, `SMRTBARb`, `RaptorsAI`. `None` when the service could not
+	 * settle on one, which `degradation` then explains, or from a service
+	 * that predates the field.
+	 */
+	aiFamily: string | null
+	/**
 	 * Eligible played games by challenge score, lowest bar first.
 	 */
 	histogram: Array<Bin>

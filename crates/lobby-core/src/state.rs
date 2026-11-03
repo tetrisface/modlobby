@@ -424,9 +424,11 @@ fn titled_opponent(title: &str) -> Option<&'static str> {
 	if named("raptor") && named("scav") {
 		return None;
 	}
+	// Named as the engine names the controller, which is what a bot's AI field
+	// holds when someone did see it: a guess is a guess about the same thing.
 	words.windows(2).find_map(|pair| match pair {
-		["vs", "raptor" | "raptors"] => Some("Raptors"),
-		["vs", "scavenger" | "scavengers"] => Some("Scavengers"),
+		["vs", "raptor" | "raptors"] => Some("RaptorsAI"),
+		["vs", "scavenger" | "scavengers"] => Some("ScavengersAI"),
 		_ => None,
 	})
 }

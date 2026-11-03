@@ -8,6 +8,8 @@ import {
 	bars,
 	bestEffortText,
 	caption,
+	declinedText,
+	opponentText,
 	cascade,
 	cell,
 	columns,
@@ -73,6 +75,7 @@ const SCORE: Score = {
 	dataUntil: '2026-06-20T22:46:17Z',
 	dataSince: '2025-01-02T03:04:05Z',
 	aiType: 'Raptors',
+	aiFamily: 'RaptorsAI',
 	histogram: [
 		{ lowerBound: 0, upperBound: 17, games: 100, wins: 90 },
 		{ lowerBound: 17, upperBound: 34, games: 300, wins: 30 },
@@ -290,6 +293,7 @@ describe('pve view logic', () => {
 					unknownSettingCount: 1,
 					unknownSettingNames: ['x'],
 					unsupportedSettingNames: [],
+					unknownAiNames: [],
 				},
 			}),
 		).toMatch(/^This lobby uses 1 option this server/)
@@ -301,11 +305,62 @@ describe('pve view logic', () => {
 					unknownSettingCount: 0,
 					unknownSettingNames: [],
 					unsupportedSettingNames: ['a', 'b', '__unseen_tweak_profile__'],
+					unknownAiNames: [],
 				},
 			}),
 		).toMatch(
 			/^No recorded games have changed 2 options this lobby uses, and no recorded game used this lobby's tweak files\./,
 		)
+	})
+
+	test('a room the service declined to score says why, and the header names the family', () => {
+		const declined = (reason: string, over: Partial<Score> = {}): Score => ({
+			...SCORE,
+			aiType: 'Barbarian',
+			aiFamily: 'SMRTBARb',
+			challenge: null,
+			winChance: null,
+			degradation: {
+				reason,
+				unknownSettingCount: 0,
+				unknownSettingNames: [],
+				unsupportedSettingNames: [],
+				unknownAiNames: [],
+			},
+			...over,
+		})
+		expect(declinedText(SCORE)).toBe('')
+		expect(declinedText(declined('unsupported_ai_family'))).toBe(
+			"No win chance or challenge: the service has no model for SMRTBARb yet. The records below are each person's lifetime record against Barbarian AIs.",
+		)
+		// A release that knows the family measures its exact setting.
+		expect(
+			declinedText(
+				declined('unsupported_ai_family', {
+					matched: { ...SCORE.matched, status: 'exact', method: '' },
+				}),
+			),
+		).toMatch(/exact-setting figures are measured from recorded SMRTBARb games/)
+		expect(
+			declinedText(declined('mixed_ai_families', { aiFamily: null })),
+		).toMatch(/mixes AI families/)
+		const stranger = declined('unknown_ai_family', { aiFamily: null })
+		stranger.degradation!.unknownAiNames = ['Circuit']
+		expect(declinedText(stranger)).toBe(
+			'No win chance or challenge: this room has an AI the service does not recognise (Circuit).',
+		)
+		// The same text is what the best-effort line shows, so the panel's one
+		// explanation slot carries it without a second slot.
+		expect(bestEffortText(declined('unsupported_ai_family'))).toMatch(
+			/^No win chance/,
+		)
+		expect(opponentText(SCORE)).toBe('Raptors')
+		expect(opponentText(declined('unsupported_ai_family'))).toBe(
+			'Skirmish · SMRTBARb',
+		)
+		expect(
+			opponentText({ ...SCORE, aiType: 'Barbarian', aiFamily: 'BARb' }),
+		).toBe('Barbarian')
 	})
 
 	test('diagnostic rows carry the overlap, the field counts and the ids', () => {

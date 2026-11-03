@@ -683,8 +683,53 @@ export function matchText(score: Score): string {
 	}
 }
 
+/** The family a mode means when the service names no other. */
+const USUAL_FAMILY: Record<string, string> = {
+	Barbarian: 'BARb',
+	Raptors: 'RaptorsAI',
+	Scavengers: 'ScavengersAI',
+}
+
+/**
+ * What the panel calls the opponent: the mode, or the family when it is not
+ * the mode's usual one, so a room of SMRTBARb is never headed "Barbarian".
+ */
+export function opponentText(score: Score): string {
+	const family = score.aiFamily
+	if (!family || USUAL_FAMILY[score.aiType] === family) return score.aiType
+	return `Skirmish · ${family}`
+}
+
+/** Why the service scored nothing at all, or ''. */
+export function declinedText(score: Score): string {
+	const held = score.degradation
+	if (!held) return ''
+	switch (held.reason) {
+		case 'unsupported_ai_family': {
+			const family = score.aiFamily ?? 'this opponent'
+			// An exact match means the service knows this family's settings
+			// and measured this one; only the model-derived figures are absent.
+			if (score.matched.status === 'exact')
+				return `No win chance or challenge: the service has no model for ${family} yet. The exact-setting figures are measured from recorded ${family} games; the lifetime records are each person's own.`
+			return `No win chance or challenge: the service has no model for ${family} yet. The records below are each person's lifetime record against ${enemyNoun(score.aiType, 2)}.`
+		}
+		case 'mixed_ai_families':
+			return 'No win chance or challenge: this room mixes AI families, which the service does not score.'
+		case 'unknown_ai_family': {
+			const names = held.unknownAiNames.length
+				? ` (${some(held.unknownAiNames)})`
+				: ''
+			return `No win chance or challenge: this room has an AI the service does not recognise${names}.`
+		}
+		default:
+			return ''
+	}
+}
+
 /** Why the numbers are estimates rather than measurements, or ''. */
 export function bestEffortText(score: Score): string {
+	const declined = declinedText(score)
+	if (declined) return declined
 	const held = score.degradation
 	if (!held) return ''
 	if (held.reason === 'unknown_modoptions') {

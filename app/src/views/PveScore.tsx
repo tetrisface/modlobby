@@ -14,7 +14,7 @@ import { describeError } from '../ipc/client'
 import { age } from '../lib/age'
 import { asker } from '../lib/asking'
 import { isVsAi } from '../lib/battles'
-import { NOTHING_YET, TOP, miniature } from '../lib/pve'
+import { NOTHING_YET, TOP, declinedText, miniature } from '../lib/pve'
 import { askDelay } from '../lib/stagger'
 import { settings } from '../store/settings'
 import { PveStats } from './PveStats'
@@ -273,6 +273,12 @@ export function PveScore() {
 		return held == null ? '—' : `${held.toFixed(1)}/34`
 	}
 
+	/** Why there is no figure at all: the opponent is not one the service scores. */
+	const declined = () => {
+		const held = score()
+		return held ? declinedText(held) : ''
+	}
+
 	/** A tooltip with how old the newest game behind the numbers is under it. */
 	const dated = (text: string) => {
 		const ago = age(score()?.dataUntil ?? '')
@@ -375,6 +381,12 @@ export function PveScore() {
 							/>
 						</span>
 					</span>
+
+					<Show when={!waiting() && declined()}>
+						<span class='chip warn' title={declined()}>
+							unscored
+						</span>
+					</Show>
 
 					<Show when={!waiting() && score()?.bestEffort}>
 						<span
