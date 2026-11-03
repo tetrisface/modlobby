@@ -177,6 +177,7 @@ const scored: Score = {
 	dataUntil: '2026-06-20T22:46:17Z',
 	dataSince: '2025-01-02T03:04:05Z',
 	aiType: 'Raptors',
+	aiFamily: 'RaptorsAI',
 	histogram: [
 		{ lowerBound: 0, upperBound: 17, games: 100, wins: 90 },
 		{ lowerBound: 17, upperBound: 34, games: 300, wins: 30 },

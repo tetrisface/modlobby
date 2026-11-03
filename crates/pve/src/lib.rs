@@ -67,22 +67,100 @@ impl AiType {
 	}
 }
 
-/// The opponent a set of AI names describes, if they agree on one.
+/// The AI families the service names, by the exact engine `shortName` a bot
+/// carries (`ADDBOT`'s AI field, which the start script passes on as the AI's
+/// short name). This is the service's own table, `rust-api/src/data/opponent.rs`,
+/// and a test there reads this file to keep the two in step: edit both.
 ///
-/// Mirrors the widget's `AiTypeFromText`: a name mentioning raptors is
-/// raptors, one mentioning scavengers is scavengers, and something mentioning
-/// both is neither — a mixed room is not a setup the model was trained on, and
-/// guessing one of them would put a confident number on a game nobody played.
-pub fn ai_type(ai_names: &[String]) -> Option<AiType> {
-	let folded = ai_names.join(" ").to_ascii_lowercase();
-	let raptors = folded.contains("raptor");
-	let scavengers = folded.contains("scavenger");
-	match (raptors, scavengers) {
-		(true, false) => Some(AiType::Raptors),
-		(false, true) => Some(AiType::Scavengers),
-		(true, true) => None,
-		(false, false) => folded.contains("barb").then_some(AiType::Barbarian),
-	}
+/// The two scenario controllers, each a mode of its own:
+const SCENARIO_FAMILIES: &[(&str, AiType)] = &[
+	("RaptorsAI", AiType::Raptors),
+	("ScavengersAI", AiType::Scavengers),
+];
+
+/// Every family that plays a team: BARbarians, host-built builds of them, and
+/// BAR's own Lua practice bots. All are asked about as `Barbarian`, the mode
+/// the service keeps their records under; which of them it can score is the
+/// service's to say, and it says so in the answer.
+const SKIRMISH_FAMILIES: &[&str] = &[
+	"BARb",
+	"SMRTBARb",
+	"Barb3",
+	"Barb4",
+	"RR03Barb4",
+	"TwTBarb3",
+	"BARb3",
+	"BARbAggressor",
+	"SimpleAI",
+	"SimpleDefenderAI",
+	"SimpleConstructorAI",
+	"ReaperAI",
+	"FelAI",
+	"Nightmare",
+	"STAI",
+	"KAJxAI",
+	"DevilBot",
+	"BattleBlitzAI2",
+];
+
+/// What a room is set up against, read from the exact AI names in it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Opponent {
+	/// The mode the service wants on the wire.
+	pub kind: AiType,
+	/// The one family every opponent slot shares, when the slots agree and
+	/// the service names it; `None` for a mixture or a stranger. The panel
+	/// header shows it, so a room of `SMRTBARb` is never labelled BARb.
+	pub family: Option<String>,
+	/// Every slot as reported, in room order. These go along so the service
+	/// decides what the room is: a lobby reports, it does not guess.
+	pub names: Vec<String>,
+}
+
+/// The opponent a room's AI names describe, if there is one to ask about.
+///
+/// A scenario controller names its mode; two of them name none, because the
+/// service declines mixed scenarios and there is no one mode to ask under. A
+/// room with no scenario controller but some family that plays a team is a
+/// skirmish and is asked about as `Barbarian`. A room naming nothing this
+/// service knows is not a PvE room as far as a lobby can tell, so nothing is
+/// sent; a room that mixes a known family with a stranger is sent as it is,
+/// and the service answers with the stranger's name instead of a number.
+pub fn opponent(ai_names: &[String]) -> Option<Opponent> {
+	let names: Vec<String> = ai_names
+		.iter()
+		.map(|name| name.trim().to_owned())
+		.filter(|name| !name.is_empty())
+		.collect();
+	let scenario = |family: &str| names.iter().any(|name| name == family);
+	let raptors = scenario("RaptorsAI");
+	let scavengers = scenario("ScavengersAI");
+	let skirmish = names
+		.iter()
+		.any(|name| SKIRMISH_FAMILIES.contains(&name.as_str()));
+	let kind = match (raptors, scavengers) {
+		(true, false) => AiType::Raptors,
+		(false, true) => AiType::Scavengers,
+		(true, true) => return None,
+		(false, false) if skirmish => AiType::Barbarian,
+		(false, false) => return None,
+	};
+	let known = |name: &str| {
+		SKIRMISH_FAMILIES.contains(&name)
+			|| SCENARIO_FAMILIES.iter().any(|(family, _)| *family == name)
+	};
+	let mut distinct: Vec<&str> = names.iter().map(String::as_str).collect();
+	distinct.sort_unstable();
+	distinct.dedup();
+	let family = match distinct.as_slice() {
+		[only] if known(only) => Some((*only).to_owned()),
+		_ => None,
+	};
+	Some(Opponent {
+		kind,
+		family,
+		names,
+	})
 }
 
 /// What the room is, as the service wants to hear it.
@@ -137,6 +215,11 @@ pub struct Encounter {
 	/// in as many words.
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub enemy_ai_count: Option<u32>,
+	/// The exact engine name of every opponent slot, one entry each, the same
+	/// slots `enemy_ai_count` counts. The service classifies the opponent from
+	/// these; without them it assumes the mode's usual family and says so.
+	#[serde(skip_serializing_if = "Vec::is_empty")]
+	pub enemy_ai_names: Vec<String>,
 	/// One income multiplier per seated human, `1.0` being no handicap.
 	///
 	/// Not optional in practice. The service derives its `Player Handicap`
@@ -193,6 +276,11 @@ pub struct Score {
 	pub data_since: Option<String>,
 	/// The opponent the room was scored against, as the service names it.
 	pub ai_type: String,
+	/// The one AI family the room's slots share, as the service classified
+	/// it: `BARb`, `SMRTBARb`, `RaptorsAI`. `None` when the service could not
+	/// settle on one, which `degradation` then explains, or from a service
+	/// that predates the field.
+	pub ai_family: Option<String>,
 	/// Eligible played games by challenge score, lowest bar first.
 	pub histogram: Vec<Bin>,
 	pub total_games: u32,
@@ -257,11 +345,16 @@ pub struct Diff {
 )]
 #[ts(export, rename_all = "camelCase")]
 pub struct Degradation {
-	/// `unknown_modoptions` or `unsupported_modoptions`.
+	/// `unknown_modoptions`, `unsupported_modoptions`, or one of the three
+	/// that mean the room was not scored at all: `unsupported_ai_family`,
+	/// `mixed_ai_families`, `unknown_ai_family`.
 	pub reason: String,
 	pub unknown_setting_count: u32,
 	pub unknown_setting_names: Vec<String>,
 	pub unsupported_setting_names: Vec<String>,
+	/// The AI names the service could not place, when the reason is
+	/// `unknown_ai_family`.
+	pub unknown_ai_names: Vec<String>,
 }
 
 /// How much of the service's setting catalogue the request covered.
@@ -565,6 +658,10 @@ pub fn read(body: &serde_json::Value) -> Score {
 		data_since: text("source_window", "earliest_replay_time"),
 		// Known to whoever asked, not to the answer: `Service` fills it in.
 		ai_type: String::new(),
+		ai_family: body
+			.get("ai_family")
+			.and_then(serde_json::Value::as_str)
+			.map(str::to_owned),
 		histogram: typed(
 			body.get("difficulty_histogram")
 				.and_then(|held| held.get("bins")),
@@ -820,26 +917,57 @@ mod tests {
 		list.iter().map(|name| (*name).to_owned()).collect()
 	}
 
-	#[test]
-	fn the_opponent_is_read_from_the_ai_names_in_the_room() {
-		assert_eq!(ai_type(&names(&["RaptorsAI"])), Some(AiType::Raptors));
-		assert_eq!(ai_type(&names(&["ScavengersAI"])), Some(AiType::Scavengers));
-		assert_eq!(ai_type(&names(&["BARb"])), Some(AiType::Barbarian));
-		// However it happens to be spelled.
-		assert_eq!(ai_type(&names(&["raptor"])), Some(AiType::Raptors));
+	fn kind(list: &[&str]) -> Option<AiType> {
+		opponent(&names(list)).map(|found| found.kind)
 	}
 
 	#[test]
-	fn a_room_with_both_is_not_guessed_at() {
-		// Nothing the model was trained on, so a confident number here would
-		// describe a game nobody has played.
-		assert_eq!(ai_type(&names(&["RaptorsAI", "ScavengersAI"])), None);
+	fn the_opponent_is_read_from_the_exact_ai_names_in_the_room() {
+		assert_eq!(kind(&["RaptorsAI"]), Some(AiType::Raptors));
+		assert_eq!(
+			kind(&["ScavengersAI", "ScavengersAI"]),
+			Some(AiType::Scavengers)
+		);
+		let barbs = opponent(&names(&["BARb", " BARb "])).unwrap();
+		assert_eq!(barbs.kind, AiType::Barbarian);
+		assert_eq!(barbs.family.as_deref(), Some("BARb"));
+		assert_eq!(barbs.names, ["BARb", "BARb"]);
+		// A host-built Barbarian is asked about as one, under its own name.
+		let smrt = opponent(&names(&["SMRTBARb"])).unwrap();
+		assert_eq!(smrt.kind, AiType::Barbarian);
+		assert_eq!(smrt.family.as_deref(), Some("SMRTBARb"));
+	}
+
+	#[test]
+	fn a_spelling_is_not_a_family() {
+		// The old substring rule took anything mentioning raptors for the
+		// raptor controller; a name the engine never uses names nothing.
+		assert_eq!(kind(&["raptor"]), None);
+		assert_eq!(kind(&["BARbarianAI"]), None);
+	}
+
+	#[test]
+	fn a_room_with_both_scenario_controllers_is_not_asked_about() {
+		// The service declines these, and there is no one mode to ask under.
+		assert_eq!(kind(&["RaptorsAI", "ScavengersAI"]), None);
+	}
+
+	#[test]
+	fn a_mixed_or_strange_room_is_sent_as_it_is_for_the_service_to_judge() {
+		let mixed = opponent(&names(&["RaptorsAI", "SimpleAI"])).unwrap();
+		assert_eq!(mixed.kind, AiType::Raptors);
+		assert_eq!(mixed.family, None);
+		assert_eq!(mixed.names, ["RaptorsAI", "SimpleAI"]);
+		let stranger = opponent(&names(&["BARb", "Circuit"])).unwrap();
+		assert_eq!(stranger.kind, AiType::Barbarian);
+		assert_eq!(stranger.family, None);
+		assert_eq!(stranger.names, ["BARb", "Circuit"]);
 	}
 
 	#[test]
 	fn a_room_with_no_pve_opponent_scores_nothing() {
-		assert_eq!(ai_type(&names(&[])), None);
-		assert_eq!(ai_type(&names(&["NullAI", "SimpleAI"])), None);
+		assert_eq!(kind(&[]), None);
+		assert_eq!(kind(&["NullAI", "Circuit"]), None);
 	}
 
 	#[test]
@@ -854,6 +982,8 @@ mod tests {
 					{"lower_bound": 17, "upper_bound": 34, "games": 200, "wins": 20}
 				]
 			},
+			"ai_family": "SMRTBARb",
+			"degradation": {"reason": "unknown_ai_family", "unknown_ai_names": ["Circuit"]},
 			"difficulty_estimate": {
 				"player_win_probability": 0.31, "evidence_games": 4200,
 				"difficulty_target_sha256": "feedface"
@@ -890,6 +1020,10 @@ mod tests {
 		assert_eq!(score.win_chance, Some(0.31));
 		assert_eq!(score.evidence_games, Some(4200.0));
 		assert!(!score.best_effort);
+		assert_eq!(score.ai_family.as_deref(), Some("SMRTBARb"));
+		let held = score.degradation.as_ref().expect("the refusal is read");
+		assert_eq!(held.reason, "unknown_ai_family");
+		assert_eq!(held.unknown_ai_names, ["Circuit"]);
 		assert_eq!(score.data_until.as_deref(), Some("2026-06-20T22:46:17Z"));
 		assert_eq!(score.data_since.as_deref(), Some("2025-01-02T03:04:05Z"));
 		assert_eq!(score.histogram.len(), 2);
@@ -989,6 +1123,7 @@ mod tests {
 			encounter_context: Encounter {
 				human_team_size: 8,
 				enemy_ai_count: None,
+				enemy_ai_names: Vec::new(),
 				human_player_income_multipliers: vec![1.0; 8],
 				enemy_ai_income_multipliers: vec![],
 			},
@@ -1017,6 +1152,7 @@ mod tests {
 			encounter_context: Encounter {
 				human_team_size: 3,
 				enemy_ai_count: None,
+				enemy_ai_names: Vec::new(),
 				human_player_income_multipliers: vec![1.0, 1.0, 1.0],
 				enemy_ai_income_multipliers: vec![],
 			},
@@ -1038,6 +1174,7 @@ mod tests {
 			encounter_context: Encounter {
 				human_team_size: 8,
 				enemy_ai_count: None,
+				enemy_ai_names: Vec::new(),
 				human_player_income_multipliers: vec![1.0],
 				enemy_ai_income_multipliers: vec![],
 			},
@@ -1067,6 +1204,7 @@ mod tests {
 			encounter_context: Encounter {
 				human_team_size: 2,
 				enemy_ai_count: Some(2),
+				enemy_ai_names: Vec::new(),
 				human_player_income_multipliers: vec![1.0, 1.0],
 				enemy_ai_income_multipliers: vec![income_multiplier(0), income_multiplier(50)],
 			},
@@ -1159,6 +1297,7 @@ mod tests {
 			encounter_context: Encounter {
 				human_team_size: 2,
 				enemy_ai_count: None,
+				enemy_ai_names: Vec::new(),
 				human_player_income_multipliers: vec![1.0, 1.0],
 				enemy_ai_income_multipliers: vec![],
 			},

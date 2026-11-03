@@ -303,12 +303,12 @@ fn pve_roster(
 	my: &lobby_ui::MyBattleView,
 	room: &lobby_ui::BattleView,
 	users: &[lobby_ui::UserView],
-) -> Option<(pve::AiType, lobby_ui::GameRosterView)> {
+) -> Option<(pve::Opponent, lobby_ui::GameRosterView)> {
 	let opponent = |bots: &[lobby_ui::BotView]| {
 		let names: Vec<String> = bots.iter().map(|bot| bot.ai.clone()).collect();
-		pve::ai_type(&names)
+		pve::opponent(&names)
 	};
-	if let Some(kind) = opponent(&room.bots) {
+	if let Some(found) = opponent(&room.bots) {
 		let here = lobby_ui::GameRosterView {
 			bots: room.bots.clone(),
 			player_count: room.player_count,
@@ -322,7 +322,7 @@ fn pve_roster(
 				.collect(),
 			guessed: false,
 		};
-		return Some((kind, here));
+		return Some((found, here));
 	}
 	let started = my.game_roster.as_ref()?;
 	Some((opponent(&started.bots)?, started.clone()))
@@ -335,7 +335,8 @@ fn pve_ask(
 	users: &[lobby_ui::UserView],
 	game_id: Option<String>,
 ) -> Option<pve::Ask> {
-	let (kind, roster) = pve_roster(my, room, users)?;
+	let (opponent, roster) = pve_roster(my, room, users)?;
+	let kind = opponent.kind;
 
 	Some(pve::Ask {
 		// A guess at the opponent stays a question: this id is what would list
@@ -357,6 +358,9 @@ fn pve_ask(
 			human_team_size: roster.player_count,
 			enemy_ai_count: matches!(kind, pve::AiType::Barbarian)
 				.then_some(roster.bots.len() as u32),
+			// Exact names, whatever the mode: the service classifies the
+			// opponent from these and says in its answer what it made of them.
+			enemy_ai_names: opponent.names,
 			// Each BARbarian is its own opponent with its own handicap, and
 			// the service will not place a Barbarian room without hearing
 			// them. Raptors and scavengers are one controller however many
@@ -609,11 +613,12 @@ mod tests {
 
 	#[test]
 	fn a_game_whose_ais_left_is_asked_about_as_it_started() {
-		let roster = started_with(vec![bot("BARbarianAI", 10), bot("BARbarianAI", 30)]);
+		let roster = started_with(vec![bot("BARb", 10), bot("BARb", 30)]);
 		let ask = pve_ask(&my(roster), &room(vec![]), &users(), None).unwrap();
 
 		assert_eq!(ask.ai_type, "Barbarian");
 		assert_eq!(ask.encounter_context.enemy_ai_count, Some(2));
+		assert_eq!(ask.encounter_context.enemy_ai_names, ["BARb", "BARb"]);
 		assert_eq!(
 			ask.encounter_context.enemy_ai_income_multipliers,
 			[1.1, 1.3]
@@ -627,7 +632,7 @@ mod tests {
 
 	#[test]
 	fn the_roster_fills_in_the_people_and_leaves_the_settings_to_the_room() {
-		let roster = started_with(vec![bot("RaptorsDefense", 0)]);
+		let roster = started_with(vec![bot("RaptorsAI", 0)]);
 		let ask = pve_ask(&my(roster), &room(vec![]), &users(), None).unwrap();
 
 		assert_eq!(ask.map, "Now");
@@ -637,18 +642,19 @@ mod tests {
 
 	#[test]
 	fn an_opponent_in_the_room_overrides_the_game_being_played() {
-		let roster = started_with(vec![bot("RaptorsDefense", 0)]);
-		let here = room(vec![bot("ScavengersDefense", 0)]);
+		let roster = started_with(vec![bot("RaptorsAI", 0)]);
+		let here = room(vec![bot("ScavengersAI", 0)]);
 		let ask = pve_ask(&my(roster), &here, &users(), None).unwrap();
 
 		assert_eq!(ask.ai_type, "Scavengers");
+		assert_eq!(ask.encounter_context.enemy_ai_names, ["ScavengersAI"]);
 		assert_eq!(ask.encounter_context.human_team_size, 1);
 		assert_eq!(ask.encounter_context.human_player_income_multipliers, [1.0]);
 	}
 
 	#[test]
 	fn a_game_we_saw_goes_on_being_listed_after_its_ais_leave() {
-		let roster = started_with(vec![bot("RaptorsDefense", 0)]);
+		let roster = started_with(vec![bot("RaptorsAI", 0)]);
 		let listed = Some("id".to_string());
 		let ask = pve_ask(&my(roster), &room(vec![]), &users(), listed).unwrap();
 		assert_eq!(ask.game_id.as_deref(), Some("id"));
@@ -656,7 +662,7 @@ mod tests {
 
 	#[test]
 	fn a_guess_from_the_title_is_scored_and_never_listed() {
-		let guess = started_with(vec![bot("Raptors", 0)]).map(|roster| GameRosterView {
+		let guess = started_with(vec![bot("RaptorsAI", 0)]).map(|roster| GameRosterView {
 			guessed: true,
 			..roster
 		});
@@ -668,7 +674,21 @@ mod tests {
 
 	#[test]
 	fn a_game_started_without_a_pve_opponent_has_nothing_to_fall_back_on() {
-		let roster = started_with(vec![bot("SimpleAI", 0)]);
+		let roster = started_with(vec![bot("Circuit", 0)]);
 		assert!(pve_ask(&my(roster), &room(vec![]), &users(), None).is_none());
+	}
+
+	#[test]
+	fn a_host_built_barbarian_is_asked_about_under_its_own_name() {
+		// The service is the one that knows whether it can score SMRTBARb; the
+		// room is sent as it is, and the answer carries the verdict.
+		let here = room(vec![bot("SMRTBARb", 0), bot("SMRTBARb", 0)]);
+		let ask = pve_ask(&my(None), &here, &users(), None).unwrap();
+		assert_eq!(ask.ai_type, "Barbarian");
+		assert_eq!(ask.encounter_context.enemy_ai_count, Some(2));
+		assert_eq!(
+			ask.encounter_context.enemy_ai_names,
+			["SMRTBARb", "SMRTBARb"]
+		);
 	}
 }

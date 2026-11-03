@@ -5,10 +5,17 @@
  */
 export type Degradation = {
 	/**
-	 * `unknown_modoptions` or `unsupported_modoptions`.
+	 * `unknown_modoptions`, `unsupported_modoptions`, or one of the three
+	 * that mean the room was not scored at all: `unsupported_ai_family`,
+	 * `mixed_ai_families`, `unknown_ai_family`.
 	 */
 	reason: string
 	unknownSettingCount: number
 	unknownSettingNames: Array<string>
 	unsupportedSettingNames: Array<string>
+	/**
+	 * The AI names the service could not place, when the reason is
+	 * `unknown_ai_family`.
+	 */
+	unknownAiNames: Array<string>
 }

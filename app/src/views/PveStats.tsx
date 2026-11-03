@@ -23,6 +23,7 @@ import {
 	guides,
 	histogramHelp,
 	matchHelp,
+	opponentText,
 	matchSummary,
 	matchText,
 	ownPlayer,
@@ -78,6 +79,8 @@ export function PveStats(props: {
 	const measure = (): Measure => (held() === 'winrate' ? 'winrate' : 'count')
 
 	const ai = () => props.score?.aiType ?? ''
+	/** The header's name for the opponent: the family when it is not the mode's usual one. */
+	const opponent = () => (props.score ? opponentText(props.score) : '')
 	const me = () => (props.score ? ownPlayer(props.score, room.me()) : undefined)
 
 	/** The histogram bar under the pointer, which the reading lines follow. */
@@ -176,7 +179,7 @@ export function PveStats(props: {
 			>
 				<header class='ed-head'>
 					<h2>
-						PvE stats <span class='muted'>{ai()}</span>
+						PvE stats <span class='muted'>{opponent()}</span>
 					</h2>
 					<span class='spacer' />
 					<button
@@ -336,7 +339,7 @@ export function PveStats(props: {
 																bottom: `${line.height}%`,
 															}}
 														>
-															<span>{(line.value * 100).toFixed(1)}%</span>
+															<span>{line.text}</span>
 														</div>
 													)}
 												</For>
@@ -366,7 +369,7 @@ export function PveStats(props: {
 													<>
 														<span>
 															<i class='pve-swatch pop' />
-															Played games
+															Everyone's played games
 														</span>
 														<span>
 															<i class='pve-swatch own' />

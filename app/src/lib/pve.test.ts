@@ -8,6 +8,8 @@ import {
 	bars,
 	bestEffortText,
 	caption,
+	declinedText,
+	opponentText,
 	cascade,
 	cell,
 	columns,
@@ -73,6 +75,7 @@ const SCORE: Score = {
 	dataUntil: '2026-06-20T22:46:17Z',
 	dataSince: '2025-01-02T03:04:05Z',
 	aiType: 'Raptors',
+	aiFamily: 'RaptorsAI',
 	histogram: [
 		{ lowerBound: 0, upperBound: 17, games: 100, wins: 90 },
 		{ lowerBound: 17, upperBound: 34, games: 300, wins: 30 },
@@ -145,7 +148,7 @@ describe('pve view logic', () => {
 		expect(counted[1]!.help.split('\n')[2]).toBe('Your clears: 3 of 4 (75.0%).')
 		expect(counted.map((b) => b.own)).toEqual([1 / 3, 1])
 		const rated = bars(SCORE, older, 'winrate')
-		expect(rated.map((b) => b.ownValue)).toEqual([null, null])
+		expect(rated.map((b) => b.ownText)).toEqual([null, null])
 		expect(rated.map((b) => b.own)).toEqual([0, 0])
 		expect(fieldRatio(SCORE, older)).toBeNull()
 		expect(caption(SCORE, older)).toBe(
@@ -163,8 +166,8 @@ describe('pve view logic', () => {
 			own: 0,
 			popHeight: pop,
 			ownHeight: own,
-			popValue: pop / 100,
-			ownValue: own > 0 ? own / 100 : null,
+			popText: `${pop}%`,
+			ownText: own > 0 ? `${own}` : null,
 			sure: 1,
 			current: false,
 			help: '',
@@ -198,16 +201,23 @@ describe('pve view logic', () => {
 		const second = guides(shown, 1)
 		expect(second.side).toBe('left')
 		expect([second.from, second.to]).toEqual([0, 0.5])
-		// Both bars of the second bin, with what they stand for: 75% of games,
-		// 75% of your clears; same height, so one label goes below.
-		expect(second.lines.map((l) => [l.own, l.value])).toEqual([
-			[false, 0.75],
-			[true, 0.75],
+		// Both bars of the second bin, with what is written for them: 75% of
+		// games, and your 3 clears there as a count. Your share of your own
+		// clears is a percent of another whole, which beside the games' percent
+		// would read as the same kind of number. Same height, so one label goes
+		// below.
+		expect(second.lines.map((l) => [l.own, l.text])).toEqual([
+			[false, '75.0%'],
+			[true, '3'],
 		])
 		expect(second.lines.filter((l) => l.below)).toHaveLength(1)
+		// The count is the one the tooltip gives, with or without plays.
+		expect(shown[1]!.help).toContain('3 of 12 played')
+		const older = player('me', { clearHistogram: [1, 3] })
+		expect(guides(bars(SCORE, older), 1).lines[1]!.text).toBe('3')
 		// Win rate: one line, the rate.
 		const rate = guides(bars(SCORE, SCORE.players[0], 'winrate'), 0)
-		expect(rate.lines.map((l) => l.value)).toEqual([0.9])
+		expect(rate.lines.map((l) => l.text)).toEqual(['90.0%'])
 	})
 
 	test('reading labels stay in the chart and off each other', () => {
@@ -231,7 +241,7 @@ describe('pve view logic', () => {
 		// 1 of 2 is no rate yet; 3 of 12 is, and it beats the field's 10%.
 		expect(OWN_RATE_FLOOR).toBe(5)
 		expect(drawn.map((b) => b.own)).toEqual([0, 0.25])
-		expect(drawn.map((b) => b.ownValue)).toEqual([null, 0.25])
+		expect(drawn.map((b) => b.ownText)).toEqual([null, '25.0%'])
 		// sqrt(100/400) and sqrt(300/400); counts are always full strength.
 		expect(drawn[0]!.sure).toBeCloseTo(0.5)
 		expect(drawn[1]!.sure).toBeCloseTo(Math.sqrt(0.75))
@@ -290,6 +300,7 @@ describe('pve view logic', () => {
 					unknownSettingCount: 1,
 					unknownSettingNames: ['x'],
 					unsupportedSettingNames: [],
+					unknownAiNames: [],
 				},
 			}),
 		).toMatch(/^This lobby uses 1 option this server/)
@@ -301,11 +312,62 @@ describe('pve view logic', () => {
 					unknownSettingCount: 0,
 					unknownSettingNames: [],
 					unsupportedSettingNames: ['a', 'b', '__unseen_tweak_profile__'],
+					unknownAiNames: [],
 				},
 			}),
 		).toMatch(
 			/^No recorded games have changed 2 options this lobby uses, and no recorded game used this lobby's tweak files\./,
 		)
+	})
+
+	test('a room the service declined to score says why, and the header names the family', () => {
+		const declined = (reason: string, over: Partial<Score> = {}): Score => ({
+			...SCORE,
+			aiType: 'Barbarian',
+			aiFamily: 'SMRTBARb',
+			challenge: null,
+			winChance: null,
+			degradation: {
+				reason,
+				unknownSettingCount: 0,
+				unknownSettingNames: [],
+				unsupportedSettingNames: [],
+				unknownAiNames: [],
+			},
+			...over,
+		})
+		expect(declinedText(SCORE)).toBe('')
+		expect(declinedText(declined('unsupported_ai_family'))).toBe(
+			"No win chance or challenge: the service has no model for SMRTBARb yet. The records below are each person's lifetime record against Barbarian AIs.",
+		)
+		// A release that knows the family measures its exact setting.
+		expect(
+			declinedText(
+				declined('unsupported_ai_family', {
+					matched: { ...SCORE.matched, status: 'exact', method: '' },
+				}),
+			),
+		).toMatch(/exact-setting figures are measured from recorded SMRTBARb games/)
+		expect(
+			declinedText(declined('mixed_ai_families', { aiFamily: null })),
+		).toMatch(/mixes AI families/)
+		const stranger = declined('unknown_ai_family', { aiFamily: null })
+		stranger.degradation!.unknownAiNames = ['Circuit']
+		expect(declinedText(stranger)).toBe(
+			'No win chance or challenge: this room has an AI the service does not recognise (Circuit).',
+		)
+		// The same text is what the best-effort line shows, so the panel's one
+		// explanation slot carries it without a second slot.
+		expect(bestEffortText(declined('unsupported_ai_family'))).toMatch(
+			/^No win chance/,
+		)
+		expect(opponentText(SCORE)).toBe('Raptors')
+		expect(opponentText(declined('unsupported_ai_family'))).toBe(
+			'Skirmish · SMRTBARb',
+		)
+		expect(
+			opponentText({ ...SCORE, aiType: 'Barbarian', aiFamily: 'BARb' }),
+		).toBe('Barbarian')
 	})
 
 	test('diagnostic rows carry the overlap, the field counts and the ids', () => {

@@ -3449,13 +3449,13 @@ mod tests {
 		let mut s = finding_a_game("Coop vs Raptors | 4v4", &[("alice", 0), ("bob", 0)]);
 		feed(&mut s, &["REQUESTBATTLESTATUS"]);
 		let roster = game_roster(&s).unwrap();
-		assert_eq!(ais(&roster), ["Raptors"]);
+		assert_eq!(ais(&roster), ["RaptorsAI"]);
 		assert!(roster.guessed);
 		assert_eq!(roster.seat_handicaps, [0, 0]);
 
 		let mut s = finding_a_game("newbies VS SCAVENGERS", &[("alice", 1)]);
 		feed(&mut s, &["REQUESTBATTLESTATUS"]);
-		assert_eq!(ais(&game_roster(&s).unwrap()), ["Scavengers"]);
+		assert_eq!(ais(&game_roster(&s).unwrap()), ["ScavengersAI"]);
 	}
 
 	#[test]
