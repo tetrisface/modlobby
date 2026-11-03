@@ -393,9 +393,8 @@ export const OWN_RATE_FLOOR = 5
  * how strongly to draw it, and its tooltip, one fact a line.
  *
  * `popHeight` and `ownHeight` are what is drawn, in percent of the chart,
- * with the floors that keep a non-zero bar visible; `popValue` and
- * `ownValue` are what those heights stand for (a share of games or of your
- * clears, or a win rate), `null` where there is no bar.
+ * with the floors that keep a non-zero bar visible; `popText` and `ownText`
+ * are what a reading line writes for them, `null` where there is no bar.
  */
 export type Bar = {
 	left: number
@@ -405,8 +404,8 @@ export type Bar = {
 	own: number
 	popHeight: number
 	ownHeight: number
-	popValue: number
-	ownValue: number | null
+	popText: string
+	ownText: string | null
 	sure: number
 	current: boolean
 	help: string
@@ -478,22 +477,31 @@ export function bars(
 			return {
 				...base,
 				...drawn(rate, ownRate ?? 0),
-				popValue: rate,
-				ownValue: ownRate,
+				popText: percent(rate),
+				ownText: ownRate == null ? null : percent(ownRate),
 				sure: Math.max(0.25, Math.min(1, Math.sqrt(bin.games / SURE_AT))),
 			}
 		}
+		// Your bar stands as tall as its share of your clears, a percent of
+		// another whole than the games' share beside it; written as one, it
+		// would read as the same kind of number. The count is what the tooltip
+		// says.
 		return {
 			...base,
 			...drawn(
 				tallest > 0 ? pop / tallest : 0,
 				tallest > 0 ? own / tallest : 0,
 			),
-			popValue: pop,
-			ownValue: (ownBins[i] ?? 0) > 0 ? own : null,
+			popText: percent(pop),
+			ownText: clears > 0 ? `${clears}` : null,
 			sure: 1,
 		}
 	})
+}
+
+/** `0.173` as `17.3%`. */
+function percent(fraction: number): string {
+	return `${(fraction * 100).toFixed(1)}%`
 }
 
 /** Heights as drawn: a bar with anything in it never vanishes to a hairline. */
@@ -548,7 +556,7 @@ export function place(heights: number[]): boolean[] {
  * the line its label sits so two close lines do not print over each other. */
 export type Guide = {
 	height: number
-	value: number
+	text: string
 	own: boolean
 	below: boolean
 }
@@ -573,14 +581,14 @@ export function guides(
 	if (bar.popHeight > 0)
 		lines.push({
 			height: bar.popHeight,
-			value: bar.popValue,
+			text: bar.popText,
 			own: false,
 			below: false,
 		})
-	if (bar.ownHeight > 0 && bar.ownValue != null)
+	if (bar.ownHeight > 0 && bar.ownText != null)
 		lines.push({
 			height: bar.ownHeight,
-			value: bar.ownValue,
+			text: bar.ownText,
 			own: true,
 			below: false,
 		})
@@ -619,7 +627,7 @@ export function histogramHelp(
 	const own = me
 		? ` Bright bars show your ${ownTotal} eligible clears.`
 		: ' Bright bars appear when your own record is available.'
-	return `Dark bars show ${score.totalGames} eligible games by challenge score.${own} Both use one percentage scale, so bright above dark means this range holds a larger share of your clears than of all played games.`
+	return `Dark bars show everyone's ${score.totalGames} eligible games by challenge score, yours among them.${own} Both use one percentage scale, so bright above dark means this range holds a larger share of your clears than of all played games.`
 }
 
 /**

@@ -339,7 +339,7 @@ export function PveStats(props: {
 																bottom: `${line.height}%`,
 															}}
 														>
-															<span>{(line.value * 100).toFixed(1)}%</span>
+															<span>{line.text}</span>
 														</div>
 													)}
 												</For>
@@ -369,7 +369,7 @@ export function PveStats(props: {
 													<>
 														<span>
 															<i class='pve-swatch pop' />
-															Played games
+															Everyone's played games
 														</span>
 														<span>
 															<i class='pve-swatch own' />
