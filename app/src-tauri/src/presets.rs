@@ -686,6 +686,9 @@ mod tests {
 		let ask = pve_ask(&my(None), &here, &users(), None).unwrap();
 		assert_eq!(ask.ai_type, "Barbarian");
 		assert_eq!(ask.encounter_context.enemy_ai_count, Some(2));
-		assert_eq!(ask.encounter_context.enemy_ai_names, ["SMRTBARb", "SMRTBARb"]);
+		assert_eq!(
+			ask.encounter_context.enemy_ai_names,
+			["SMRTBARb", "SMRTBARb"]
+		);
 	}
 }
