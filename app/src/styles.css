@@ -6151,6 +6151,25 @@ input[type='checkbox'].v-edit {
 
 .pve-table thead th {
 	background: var(--panel);
+	/* Wrapped and single-line labels share one line above the figures. */
+	vertical-align: bottom;
+}
+
+/* A tab's columns can be wider than the card held to one line each, so a
+   label wraps between its words rather than pushing the table out sideways. */
+.pve-table thead .num {
+	white-space: normal;
+}
+
+/* Inline rather than a reversed flex row: the mark, first in the markup,
+   stays beside the label's first line instead of at the column's far edge. */
+.pve-table thead .num .sort-head {
+	display: inline-block;
+	text-align: inherit;
+}
+
+.pve-table thead .num .sort-mark {
+	margin-right: 0.25rem;
 }
 
 /* Columns scoped to the served setting, which may not be this room's. */

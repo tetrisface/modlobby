@@ -520,13 +520,12 @@ export function PveStats(props: {
 																aria-sort={mark(index())}
 																title={column.help}
 															>
+																{/* The mark leads, so it rides a wrapped label's first line. */}
 																<button
 																	type='button'
 																	class='sort-head'
 																	onClick={() => sortBy(index())}
 																>
-																	{column.label}
-																	{inexact() && column.setup ? '*' : ''}
 																	<span class='sort-mark' aria-hidden='true'>
 																		{sort() === index()
 																			? descending()
@@ -534,6 +533,8 @@ export function PveStats(props: {
 																				: '↑'
 																			: ''}
 																	</span>
+																	{column.label}
+																	{inexact() && column.setup ? '*' : ''}
 																</button>
 															</th>
 														)}
