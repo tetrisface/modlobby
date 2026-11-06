@@ -216,6 +216,8 @@ describe('loading a slot', () => {
 			'{ a = { b = 1 } }\n',
 		)
 		expect(shownText('boxes', '{\n"a": 1\n}', '{ "a": 1 }')).toBe('{ "a": 1 }')
+		// A StyLua config may ask for Windows line endings; the editor has LF.
+		expect(shownText('units', '{a=1}', '{ a = 1 }\r\n')).toBe('{ a = 1 }\n')
 	})
 
 	test('a document goes out the way it came, until a form is chosen for it', () => {
@@ -252,6 +254,18 @@ describe('drafts', () => {
 			loaded: true,
 		})
 		expect(isDirty(draft)).toBe(false)
+	})
+
+	test('a draft saved with Windows line endings is read with the editor’s', () => {
+		const draft = draftOfFile(
+			'walls.lua',
+			'-- T3 walls\r\n{ armwall = {} }\r\n',
+		)
+		expect(draft).toMatchObject({
+			original: '-- T3 walls\n{ armwall = {} }\n',
+			buffer: '-- T3 walls\n{ armwall = {} }\n',
+			name: 'T3 walls',
+		})
 	})
 
 	test('a draft is named by the header being typed before the one the room holds', () => {

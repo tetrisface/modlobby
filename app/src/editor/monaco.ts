@@ -123,7 +123,14 @@ const models = new Map<string, monaco.editor.ITextModel>()
 const ids = new WeakMap<monaco.editor.ITextModel, string>()
 const views = new Map<string, monaco.editor.ICodeEditorViewState | null>()
 
-/** The document's model, made on first sight and brought up to `text`. */
+/**
+ * The document's model, made on first sight and brought up to `text`.
+ *
+ * Always LF, as the store holds text. Monaco takes a new model's line ending
+ * from its text, and from the OS when the text has no line break -- CRLF on
+ * Windows. A slot opened empty then hands back every text seeded into it with
+ * CRLF, and the store reads that as an edit nobody made.
+ */
 export function modelFor(
 	id: string,
 	text: string,
@@ -139,6 +146,7 @@ export function modelFor(
 		language,
 		monaco.Uri.from({ scheme: 'tweak', path: `/${id}.${language}` }),
 	)
+	model.setEOL(monaco.editor.EndOfLineSequence.LF)
 	model.updateOptions(MODEL_OPTIONS)
 	models.set(id, model)
 	ids.set(model, id)

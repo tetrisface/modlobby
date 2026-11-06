@@ -223,14 +223,21 @@ export function arrivedCompact(lua: string): boolean {
 }
 
 /**
+ * LF, the editor's line ending (`editor/monaco`). Text from a file or from
+ * Rust is brought to it, or what the editor hands back would differ from
+ * `original` by line endings alone and read as an edit.
+ */
+const editorLines = (text: string): string => text.replace(/\r\n?/g, '\n')
+
+/**
  * A slot's text for the editor. A tweak somebody laid out is shown as it
  * arrived, so that sent as is it goes back in its author's layout; one that
  * arrived compact is laid out here, or there is no reading it. The override
- * is generated, and always laid out. Line endings are the editor's own.
+ * is generated, and always laid out.
  */
 export function shownText(kind: Kind, text: string, formatted: string): string {
-	if (kind === 'boxes' || arrivedCompact(text)) return formatted
-	return text.replace(/\r\n?/g, '\n')
+	const shown = kind === 'boxes' || arrivedCompact(text) ? formatted : text
+	return editorLines(shown)
 }
 
 export function slotDoc(key: string): Doc {
@@ -266,9 +273,10 @@ export function scratchDoc(kind: Kind): Doc {
 
 export function draftDoc(
 	name: string,
-	lua: string,
-	kind: Kind = guessKind(lua),
+	text: string,
+	kind: Kind = guessKind(text),
 ): Doc {
+	const lua = editorLines(text)
 	return {
 		id: draftId(name),
 		origin: 'draft',
