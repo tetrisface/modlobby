@@ -64,6 +64,9 @@ pub struct App {
 	pub rapid: std::sync::Arc<content::rapid::Vetter>,
 	/// The pve.bar stats service, with what it has already answered this run.
 	pub pve: pve::Service,
+	/// The same service's live games list, which is where the battle list
+	/// reads what other rooms last scored.
+	pub pve_listed: pve::Listed,
 	/// BAR's map index for this run, loaded the first time anything asks.
 	map_index: tokio::sync::Mutex<MapIndexHeld>,
 	/// What of BAR's news has already been read, kept between runs.
@@ -132,6 +135,7 @@ impl App {
 			credentials,
 			hardware,
 			pve: pve::Service::new(http.clone(), pve::ENDPOINT),
+			pve_listed: pve::Listed::new(http.clone(), pve::LIVE_GAMES_ENDPOINT),
 			thumbs: content::map_thumb::Service::new(http.clone(), &cache_dir),
 			rapid: std::sync::Arc::new(content::rapid::Vetter::new(
 				http.clone(),

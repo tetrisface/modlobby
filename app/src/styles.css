@@ -7952,8 +7952,26 @@ button.link:hover {
 	grid-template-columns: 3.5rem 5rem 1.5rem 4.5rem 1fr 6rem 17.75rem 3rem 6.75rem;
 }
 
+/* And one just before the map while any room has a score to show, after the
+   server's when both are there, so the figure always touches its map. */
+.battle-row.scored {
+	grid-template-columns: 3.5rem 5rem 1.5rem 4.5rem 1fr 3rem 17.75rem 3rem 6.75rem;
+}
+
+.battle-row.marked.scored {
+	grid-template-columns: 3.5rem 5rem 1.5rem 4.5rem 1fr 6rem 3rem 17.75rem 3rem 6.75rem;
+}
+
 .col-server {
 	overflow: hidden;
+	white-space: nowrap;
+}
+
+/* What the room last scored, flush against the map it was scored on: the
+   decimals line up down the list. "34.0" is the widest it gets. */
+.col-challenge {
+	text-align: right;
+	font-variant-numeric: tabular-nums;
 	white-space: nowrap;
 }
 

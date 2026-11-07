@@ -689,6 +689,7 @@ pub fn run() {
 			commands::remember_side,
 			commands::game_modoptions,
 			presets::pve_score,
+			presets::pve_listed_scores,
 			presets::list_presets,
 			presets::chobby_presets_path,
 			presets::open_presets_file,

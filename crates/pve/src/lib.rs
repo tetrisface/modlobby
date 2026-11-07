@@ -31,6 +31,10 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use ts_rs::TS;
 
+mod listing;
+
+pub use listing::{HOLD_FOR, LIVE_GAMES_ENDPOINT, Listed, ListedScore, Listings, Room};
+
 /// The service the in-game widget talks to (`include/remote.lua:16-18`),
 /// over TLS rather than the widget's plain HTTP.
 pub const ENDPOINT: &str = "https://d29i3oohxql6zz.cloudfront.net/api/v1/stats";
@@ -759,6 +763,7 @@ pub struct Service {
 	client: reqwest::Client,
 	endpoint: String,
 	memo: Mutex<Memo>,
+	told: Mutex<Told>,
 }
 
 impl Service {
@@ -767,6 +772,7 @@ impl Service {
 			client,
 			endpoint: endpoint.into(),
 			memo: Mutex::new(Memo::default()),
+			told: Mutex::new(Told::default()),
 		}
 	}
 
@@ -779,8 +785,15 @@ impl Service {
 	///
 	/// A setup this process has already been answered about is answered from
 	/// memory: the service scores a setup, not a moment, so the same question
-	/// gets the same number, and the panel re-mounting or a setting toggled
-	/// and toggled back is not worth a Lambda's cold start.
+	/// gets the same number, and the panel re-mounting is not worth a Lambda's
+	/// cold start.
+	///
+	/// Except where the ask names a game. Then it is also an announcement --
+	/// the service keeps the room's live row on whatever it was last told, and
+	/// every other client's battle list reads that row -- so memory may only
+	/// answer the setup the room last told it about. A setting toggled and
+	/// toggled back is asked again: answering it from memory would leave the
+	/// row showing the toggle.
 	pub async fn score_with(&self, ask: &Ask, patience: Patience) -> Result<Score, Error> {
 		let body = serde_json::to_vec(ask).map_err(|err| Error::Request(err.to_string()))?;
 		if body.len() > BODY_LIMIT {
@@ -790,7 +803,14 @@ impl Service {
 			});
 		}
 		let key = Memo::key(&body);
-		if let Some(held) = self.memo.lock().expect("pve memo").get(&key) {
+		let announced = match ask.game_id.as_deref() {
+			Some(game) => self.told.lock().expect("pve told").is(game, &key),
+			None => true,
+		};
+		let held = announced
+			.then(|| self.memo.lock().expect("pve memo").get(&key))
+			.flatten();
+		if let Some(held) = held {
 			tracing::debug!("pve stats: answered from memory");
 			return Ok(held);
 		}
@@ -803,6 +823,9 @@ impl Service {
 				Ok(mut score) => {
 					score.ai_type = ask.ai_type.to_owned();
 					self.memo.lock().expect("pve memo").put(key, score.clone());
+					if let Some(game) = &ask.game_id {
+						self.told.lock().expect("pve told").note(game, key);
+					}
 					return Ok(score);
 				}
 				Err(err) => err,
@@ -860,6 +883,35 @@ impl Memo {
 
 	pub fn is_empty(&self) -> bool {
 		self.held.is_empty()
+	}
+}
+
+/// The setup each listed game last told the service about, by game id.
+///
+/// The service's row for a game holds what it was last told, so this is what
+/// that row says now, as far as this process knows. As many games as the
+/// memo holds setups: a client is in one room at a time, and rooms past
+/// that have long since changed hands.
+#[derive(Debug, Default)]
+struct Told {
+	held: VecDeque<(String, [u8; 32])>,
+}
+
+impl Told {
+	/// Whether this game's row is on this setup already.
+	fn is(&self, game: &str, key: &[u8; 32]) -> bool {
+		self.held
+			.iter()
+			.any(|(held, told)| held == game && told == key)
+	}
+
+	/// The game told the service about this setup, so its row is on it now.
+	fn note(&mut self, game: &str, key: [u8; 32]) {
+		self.held.retain(|(held, _)| held != game);
+		self.held.push_back((game.to_owned(), key));
+		while self.held.len() > MEMO_CAP {
+			self.held.pop_front();
+		}
 	}
 }
 
@@ -1387,6 +1439,54 @@ mod tests {
 		let mut other = ask();
 		other.encounter_context.human_team_size = 3;
 		service.score(&other).await.unwrap();
+	}
+
+	/// A service whose every answer is the same score, counting what it hears.
+	async fn answering(expected: u64) -> (wiremock::MockServer, Service) {
+		use wiremock::matchers::method;
+		use wiremock::{Mock, MockServer, ResponseTemplate};
+
+		let server = MockServer::start().await;
+		Mock::given(method("POST"))
+			.respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+				"difficulty_histogram": {"current_difficulty": 21.5}
+			})))
+			.expect(expected)
+			.mount(&server)
+			.await;
+		let service = Service::new(content::http::client("test"), server.uri());
+		(server, service)
+	}
+
+	#[tokio::test]
+	async fn a_listed_room_back_on_an_earlier_setup_says_so_again() {
+		// The room's live row is what everyone else's battle list reads, so a
+		// room that went A, B and back to A has to tell the service it is on A
+		// again; the memo answering that third ask would leave the row on B.
+		// Asking A twice running is still one question.
+		let (_server, service) = answering(3).await;
+		let a = ask();
+		let mut b = ask();
+		b.map = "Supreme Isthmus 1.2".into();
+
+		service.score(&a).await.unwrap();
+		service.score(&b).await.unwrap();
+		service.score(&a).await.unwrap();
+		service.score(&a).await.unwrap();
+	}
+
+	#[tokio::test]
+	async fn an_unlisted_room_back_on_an_earlier_setup_is_answered_from_memory() {
+		// A skirmish names no game, so there is no row to keep right.
+		let (_server, service) = answering(2).await;
+		let mut a = ask();
+		a.game_id = None;
+		let mut b = a.clone();
+		b.map = "Supreme Isthmus 1.2".into();
+
+		service.score(&a).await.unwrap();
+		service.score(&b).await.unwrap();
+		service.score(&a).await.unwrap();
 	}
 
 	#[tokio::test]

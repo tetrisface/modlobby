@@ -18,12 +18,14 @@ import type { UserView } from '../ipc/bindings/UserView'
 import type { ModeFilter } from '../ipc/bindings/ModeFilter'
 import { dismiss } from '../components/dismiss'
 import { Chevrons, RankIcon } from '../components/icons'
+import { ListedChallenge } from '../components/ListedChallenge'
 import { MapPicture } from '../components/MapPicture'
 import { Thinking } from '../components/Thinking'
 import { api, describeError } from '../ipc/client'
 import { LAN } from '../lan/lan'
 import { heardRows, watchLan } from '../lan/store'
 import { elapsed } from '../lib/running'
+import { listed as listedScores, watchListedScores } from '../store/listed'
 import {
 	asking as askingAbout,
 	askAboutGame,
@@ -111,6 +113,8 @@ export function BattleList() {
 
 	// Rooms on the network are heard for as long as this list is on screen.
 	onCleanup(watchLan())
+	// And what rooms last scored is asked for as long, too.
+	onCleanup(watchListedScores())
 
 	/** The mods server, whose rooms all play with mods. */
 	const modsServer = () => {
@@ -206,6 +210,16 @@ export function BattleList() {
 	 */
 	const marked = createMemo(() =>
 		rows().some((row) => row.server !== barServer()),
+	)
+
+	/**
+	 * Whether any listed room has a score to show. While one does, every row
+	 * carries the challenge column, so the maps line up; while none does, the
+	 * title keeps the room -- which is most of the time, with the setting off
+	 * or nobody here having sat in a PvE room lately.
+	 */
+	const scored = createMemo(() =>
+		rows().some((row) => listedScores()[row.key] !== undefined),
 	)
 
 	// How long each running game has been going. The store holds it, because a
@@ -579,6 +593,7 @@ export function BattleList() {
 													running: r().running,
 													locked: r().battle.locked,
 													marked: marked(),
+													scored: scored(),
 												}}
 												style={{
 													position: 'absolute',
@@ -653,6 +668,17 @@ export function BattleList() {
 																{serverLabel(r().server)}
 															</span>
 														</Show>
+													</span>
+												</Show>
+												{/* Against the map, right-aligned, so the figure
+												    reads as the setup's and lines up down the list.
+												    Empty for a room nobody here has asked about. */}
+												<Show when={scored()}>
+													<span class='col-challenge'>
+														<ListedChallenge
+															score={listedScores()[r().key]}
+															now={now()}
+														/>
 													</span>
 												</Show>
 												<span class='col-map'>

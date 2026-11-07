@@ -293,6 +293,40 @@ pub async fn skirmish_pve_score(app: State<'_, App>) -> Result<Option<pve::Score
 	ask_pve(&app, ask).await
 }
 
+/// What each room in the battle list last scored, by battle list key.
+///
+/// Read off the service's live games list rather than asked: the list can
+/// only score a room someone in it has asked about, which is every room a
+/// modlobby with PvE stats on has sat in. Nothing is fetched while the
+/// setting is off -- the same switch as the panel's, so a player who turned
+/// pve.bar off never hears from it.
+///
+/// The list is fetched before the rooms are read, so each score is checked
+/// against the room as it is now.
+#[tauri::command]
+pub async fn pve_listed_scores(
+	app: State<'_, App>,
+) -> Result<std::collections::HashMap<String, pve::ListedScore>> {
+	if !app.settings.get().play.pve_stats {
+		return Ok(std::collections::HashMap::new());
+	}
+	let listings = app.pve_listed.current().await.map_err(|err| {
+		// The list keeps the numbers it has; the reason lives here.
+		tracing::debug!(error = %err, "pve stats: no live games list");
+		ApiError::new("pve", err.to_string())
+	})?;
+	let snapshot = app.client.snapshot().await?;
+	let rooms = snapshot.servers.iter().flat_map(|session| {
+		session.battles.iter().map(move |battle| pve::Room {
+			server: &session.server,
+			battle_id: battle.id,
+			founder: &battle.founder,
+			map: &battle.map_name,
+		})
+	});
+	Ok(listings.for_rooms(rooms))
+}
+
 /// Who the service is told is playing, and against what.
 ///
 /// The room's own AIs whenever they name an opponent, so a room being set up

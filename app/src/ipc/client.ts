@@ -27,6 +27,7 @@ import type { ModSetView } from './bindings/ModSetView'
 import type { FoldKinds } from './bindings/FoldKinds'
 import type { Plan } from './bindings/Plan'
 import type { PlayerFilesView } from './bindings/PlayerFilesView'
+import type { ListedScore } from './bindings/ListedScore'
 import type { Score } from './bindings/Score'
 import type { Sections } from './bindings/Sections'
 import type { Settings } from './bindings/Settings'
@@ -217,6 +218,9 @@ export const api = {
 		invoke<void>('request_game_status', { server, founder }),
 
 	pveScore: () => invoke<Score | null>('pve_score'),
+	/** What each room in the battle list last scored, by battle list key. */
+	pveListedScores: () =>
+		invoke<Record<string, ListedScore>>('pve_listed_scores'),
 	widgetUsage: () => invoke<Usage | null>('widget_usage'),
 	/** What modlobby installed, and what BAR's own config says about it. */
 	widgetInstalled: () => invoke<WidgetStatus>('widget_installed'),
