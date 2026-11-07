@@ -286,6 +286,13 @@ pub struct Score {
 	/// 0-34, where 17 is an estimated even game for a representative team.
 	/// `None` when the service could not place this setup.
 	pub challenge: Option<f64>,
+	/// The same setup with every human seat taken
+	/// ([`Encounter::human_team_capacity`]); `challenge` again for a full
+	/// room. `None` for a game in progress, a seat count the service could not
+	/// score, and a service that predates it.
+	pub full_challenge: Option<f64>,
+	/// How many seats `full_challenge` is scored at.
+	pub full_players: Option<u32>,
 	/// Where that sits among games actually played, 0-100.
 	pub percentile: Option<f64>,
 	/// Estimated chance a representative human team wins, 0-1.
@@ -675,6 +682,8 @@ pub fn read(body: &serde_json::Value) -> Score {
 	let degradation: Option<Degradation> = typed(body.get("degradation"));
 	Score {
 		challenge: number("difficulty_histogram", "current_difficulty"),
+		full_challenge: number("full_team", "challenge").filter(|full| full.is_finite()),
+		full_players: number("full_team", "human_team_size").map(|seats| seats as u32),
 		percentile: number("difficulty_histogram", "current_percentile"),
 		win_chance: number("difficulty_estimate", "player_win_probability"),
 		evidence_games: number("difficulty_estimate", "evidence_games"),
@@ -1058,6 +1067,7 @@ mod tests {
 				]
 			},
 			"ai_family": "SMRTBARb",
+			"full_team": {"human_team_size": 8, "challenge": 15.25, "player_win_probability": 0.55},
 			"degradation": {"reason": "unknown_ai_family", "unknown_ai_names": ["Circuit"]},
 			"difficulty_estimate": {
 				"player_win_probability": 0.31, "evidence_games": 4200,
@@ -1091,6 +1101,8 @@ mod tests {
 		});
 		let score = read(&body);
 		assert_eq!(score.challenge, Some(21.5));
+		assert_eq!(score.full_challenge, Some(15.25));
+		assert_eq!(score.full_players, Some(8));
 		assert_eq!(score.percentile, Some(88.0));
 		assert_eq!(score.win_chance, Some(0.31));
 		assert_eq!(score.evidence_games, Some(4200.0));
@@ -1148,6 +1160,8 @@ mod tests {
 	fn an_answer_missing_pieces_leaves_blanks_rather_than_failing() {
 		let score = read(&serde_json::json!({"difficulty_estimate": {}}));
 		assert_eq!(score.challenge, None);
+		assert_eq!(score.full_challenge, None);
+		assert_eq!(score.full_players, None);
 		assert_eq!(score.win_chance, None);
 		assert_eq!(score.data_until, None);
 		assert!(score.histogram.is_empty());

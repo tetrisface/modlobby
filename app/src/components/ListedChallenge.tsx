@@ -1,6 +1,7 @@
 import { Show } from 'solid-js'
 import type { ListedScore } from '../ipc/bindings/ListedScore'
-import { challengeParts, challengeTip, SPAN } from '../lib/listed'
+import { SPAN } from '../lib/challenge'
+import { challengeParts, challengeTip } from '../lib/listed'
 
 /**
  * A room's last scored challenge, as a battle list row shows it: `12–15`,

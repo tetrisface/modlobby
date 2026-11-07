@@ -1,5 +1,6 @@
 import {
 	For,
+	type JSX,
 	Show,
 	createEffect,
 	createMemo,
@@ -13,6 +14,7 @@ import type { Score } from '../ipc/bindings/Score'
 import { describeError } from '../ipc/client'
 import { age } from '../lib/age'
 import { asker } from '../lib/asking'
+import { challengePair, SPAN } from '../lib/challenge'
 import { isVsAi } from '../lib/battles'
 import { NOTHING_YET, TOP, declinedText, miniature } from '../lib/pve'
 import { askDelay } from '../lib/stagger'
@@ -268,9 +270,39 @@ export function PveScore() {
 	const percent = (value: number | null | undefined) =>
 		value == null ? '—' : `${Math.round(value * 100)}%`
 
-	const challenge = () => {
-		const held = score()?.challenge
-		return held == null ? '—' : `${held.toFixed(1)}/34`
+	/**
+	 * `12.0–15.1/34`: as seated, then with every seat taken, the way the
+	 * battle list writes it but to the decimal, the seated figure muted. One
+	 * figure for a full room, a game in progress, or an older service.
+	 */
+	const challenge = (): JSX.Element => {
+		const held = score()
+		if (held?.challenge == null) return '—'
+		const { now, main } = challengePair(
+			held.challenge,
+			held.fullChallenge,
+			(value) => value.toFixed(1),
+		)
+		return (
+			<>
+				{now !== null && (
+					<>
+						<span class='challenge-now'>{now}</span>
+						{SPAN}
+					</>
+				)}
+				{main}/34
+			</>
+		)
+	}
+
+	/** Under the scale: which figure is which, once there are two. */
+	const challengeSeats = () => {
+		const held = score()
+		if (held?.challenge == null || held.fullChallenge == null) return ''
+		const seats =
+			held.fullPlayers == null ? 'every seat' : `all ${held.fullPlayers} seats`
+		return `\n\nAs seated now: ${held.challenge.toFixed(1)}\nWith ${seats} taken: ${held.fullChallenge.toFixed(1)}`
 	}
 
 	/** Why there is no figure at all: the opponent is not one the service scores. */
@@ -295,7 +327,7 @@ export function PveScore() {
 	 * this panel is in view for as long as the room is, and a cycle there is
 	 * noise; a dash afterwards is the answer "none".
 	 */
-	const Slot = (props: { value: string }) => (
+	const Slot = (props: { value: JSX.Element }) => (
 		<b>
 			<Show
 				when={!waiting()}
@@ -343,7 +375,7 @@ export function PveScore() {
 					<span
 						class='pve-stat'
 						title={dated(
-							'Absolute difficulty on a 0-34 scale. 17 is an estimated even game for a representative human team; higher is harder. A dash means the service has not placed this setup among played games yet.',
+							`Absolute difficulty on a 0-34 scale. 17 is an estimated even game for a representative human team; higher is harder. A dash means the service has not placed this setup among played games yet.${challengeSeats()}`,
 						)}
 					>
 						<span class='pve-label'>Challenge</span>

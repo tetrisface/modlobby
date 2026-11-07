@@ -68,6 +68,8 @@ function player(
 
 const SCORE: Score = {
 	challenge: 21.5,
+	fullChallenge: null,
+	fullPlayers: null,
 	percentile: 88,
 	winChance: 0.31,
 	evidenceGames: 4200,

@@ -170,6 +170,8 @@ function hop(id: number) {
 
 const scored: Score = {
 	challenge: 21.5,
+	fullChallenge: null,
+	fullPlayers: null,
 	percentile: 88,
 	winChance: 0.31,
 	evidenceGames: 4200,
@@ -321,6 +323,41 @@ describe('PveScore', () => {
 
 		vi.advanceTimersByTime(STAGGER_STEP)
 		expect(asked).toHaveBeenCalledTimes(1)
+	})
+
+	test('a room still filling shows now–full, the full team unmuted', async () => {
+		asked.mockResolvedValue({
+			...scored,
+			challenge: 18.4,
+			fullChallenge: 21.5,
+			fullPlayers: 8,
+		})
+		enter([bot('RaptorsAI')])
+		const { container } = render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+
+		const figure = container.querySelector('.pve-figure b') as HTMLElement
+		expect(figure.textContent).toBe('18.4\u201321.5/34')
+		expect(figure.querySelector('.challenge-now')?.textContent).toBe('18.4')
+		const tip = figure.closest('.pve-stat')?.getAttribute('title') ?? ''
+		expect(tip).toContain('As seated now: 18.4\nWith all 8 seats taken: 21.5')
+	})
+
+	test('a full room, or one the service gave no full figure, shows one', async () => {
+		asked.mockResolvedValue({
+			...scored,
+			fullChallenge: 21.5,
+			fullPlayers: 8,
+		})
+		enter([bot('RaptorsAI')])
+		const { container } = render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+
+		const figure = container.querySelector('.pve-figure b') as HTMLElement
+		expect(figure.textContent).toBe('21.5/34')
+		expect(figure.querySelector('.challenge-now')).toBeNull()
 	})
 
 	test('the numbers land in their slots', async () => {

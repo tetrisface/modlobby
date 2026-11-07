@@ -16,6 +16,17 @@ export type Score = {
 	 */
 	challenge: number | null
 	/**
+	 * The same setup with every human seat taken
+	 * ([`Encounter::human_team_capacity`]); `challenge` again for a full
+	 * room. `None` for a game in progress, a seat count the service could not
+	 * score, and a service that predates it.
+	 */
+	fullChallenge: number | null
+	/**
+	 * How many seats `full_challenge` is scored at.
+	 */
+	fullPlayers: number | null
+	/**
 	 * Where that sits among games actually played, 0-100.
 	 */
 	percentile: number | null

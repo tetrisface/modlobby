@@ -14,27 +14,14 @@
 
 import type { ListedScore } from '../ipc/bindings/ListedScore'
 import { age } from './age'
+import { type ChallengeParts, challengePair, SPAN } from './challenge'
 
-/** Between the two figures: an en dash, unspaced, as between any two numbers. */
-export const SPAN = '–'
-
-/**
- * The figures as the cell shows them: `main`, and `now` before it when the
- * room is not full yet and the two differ.
- *
- * `main` is the full-team figure whenever there is one; a room scored without
- * a seat count has only the figure it was scored at. Whole numbers: a column
- * of decimals is noise to scan, and the tooltip keeps them.
- */
-export type ChallengeParts = { now: string | null; main: string }
-
+/** Whole numbers: a column of decimals is noise to scan; the tooltip keeps them. */
 const whole = (challenge: number) => Math.round(challenge).toString()
 
+/** The cell's figures, rounded: see `challengePair`. */
 export function challengeParts(score: ListedScore): ChallengeParts {
-	const now = whole(score.challenge)
-	if (score.fullChallenge === null) return { now: null, main: now }
-	const full = whole(score.fullChallenge)
-	return { now: full === now ? null : now, main: full }
+	return challengePair(score.challenge, score.fullChallenge, whole)
 }
 
 /** The cell's text: `12–15`, or one figure. */
