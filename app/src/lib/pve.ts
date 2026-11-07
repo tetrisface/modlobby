@@ -652,12 +652,25 @@ export function fieldRatio(
 	return clears.reduce((sum, n) => sum + n, 0) / expected
 }
 
+/**
+ * Whose games the histogram and its percentile count: one AI's. The service
+ * admits other skirmish AIs to the Barbarian mode (SMRTBARb, Barb3, BAR's
+ * practice bots) and measures their own settings, but keeps their games out of
+ * the histogram until a model of their own passes its gates, so a SMRTBARb room
+ * is placed among BARb games. Raptors and Scavengers are one AI each, which the
+ * mode's name already says.
+ */
+export function countedText(score: Score): string {
+	if (score.aiType === 'Barbarian') return 'BARb'
+	return score.aiType || 'PvE'
+}
+
 export function caption(score: Score, me: Player | undefined): string {
 	let text = 'Current setup: not yet placed'
 	if (score.challenge != null) {
 		text = `Challenge ${score.challenge.toFixed(1)}`
 		if (score.percentile != null)
-			text += ` — harder than ${Math.round(score.percentile)}% of played ${score.aiType || 'PvE'} games`
+			text += ` — harder than ${Math.round(score.percentile)}% of played ${countedText(score)} games`
 	}
 	const best = me?.accomplishments.challenges.highestChallengeCleared
 	if (best != null) text += ` — your best ${best.toFixed(1)}`

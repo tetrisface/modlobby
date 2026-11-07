@@ -5,6 +5,7 @@ import { Thinking } from '../components/Thinking'
 import type { Score } from '../ipc/bindings/Score'
 import {
 	BY_NAME,
+	type Column,
 	type Measure,
 	type Row,
 	TABS,
@@ -56,8 +57,9 @@ const MEASURES = [
  * same five figures, the histogram with your clears over everyone's games,
  * the data window, the match evidence, and each person's record under the
  * widget's four tabs, with its Diagnostics as a fifth. Nothing moves when a
- * control is used: every view scrolls inside one fixed box, so spectator
- * rows and tab changes never resize the card.
+ * control is used: every view scrolls inside one box, sized for the biggest
+ * record tab with everyone in it, so spectator rows and tab changes never
+ * resize the card.
  */
 export function PveStats(props: {
 	score: Score | null | undefined
@@ -73,7 +75,12 @@ export function PveStats(props: {
 		defaultSort('achievements', props.score?.aiType ?? ''),
 	)
 	const [descending, setDescending] = createSignal(true)
-	const [spectators, setSpectators] = createSignal(false)
+	/** Watchers' records under the players, kept across openings and restarts. */
+	const [spectatorsHeld, setSpectators] = sticky<boolean>(
+		'pve.spectators',
+		false,
+	)
+	const spectators = () => spectatorsHeld() === true
 	/** What the histogram's bars measure, kept from one opening to the next. */
 	const [held, setMeasure] = sticky<Measure>('pve.measure', 'count')
 	const measure = (): Measure => (held() === 'winrate' ? 'winrate' : 'count')
@@ -95,6 +102,22 @@ export function PveStats(props: {
 	const cols = createMemo(() =>
 		props.score ? columns(tab(), props.score) : [],
 	)
+	/** Every record tab's columns, which the sizer lays out in one place. */
+	const everyTab = createMemo(() => {
+		const score = props.score
+		return score ? TABS.map((held) => columns(held.key, score)) : []
+	})
+	/** Seated people and watchers, in the order the service listed them. */
+	const split = createMemo(() => {
+		const users = room.users()
+		const watching = (name: string) =>
+			users[name]?.battleStatus?.player === false
+		const all = props.score ? rows(props.score) : []
+		return {
+			players: all.filter((row) => !watching(row.name)),
+			watchers: all.filter((row) => watching(row.name)),
+		}
+	})
 
 	const pick = (next: Tab | 'diagnostics') => {
 		setView(next)
@@ -115,22 +138,18 @@ export function PveStats(props: {
 
 	/** Seated people and watchers, each sorted the same way. */
 	const groups = createMemo(() => {
-		if (!props.score) return { players: [] as Row[], watchers: [] as Row[] }
-		const users = room.users()
-		const watching = (name: string) =>
-			users[name]?.battleStatus?.player === false
-		const all = rows(props.score)
 		const order = (held: Row[]) =>
 			sortRows(held, cols(), sort(), descending(), cascade(tab(), ai()))
 		return {
-			players: order(all.filter((row) => !watching(row.name))),
-			watchers: order(all.filter((row) => watching(row.name))),
+			players: order(split().players),
+			watchers: order(split().watchers),
 		}
 	})
 
+	/** The setting served is not this room's own, so its columns carry a mark. */
 	const inexact = () => {
 		const source = props.score?.setup?.source
-		return cols().some((c) => c.setup) && !!source && source !== 'exact'
+		return !!source && source !== 'exact'
 	}
 
 	const Figure = (held: {
@@ -145,12 +164,48 @@ export function PveStats(props: {
 		</div>
 	)
 
-	const Table = (held: { rows: Row[]; empty: string }) => (
+	const Heads = (held: { columns: Column[] }) => (
+		<tr>
+			<th aria-sort={mark(BY_NAME)}>
+				<button type='button' class='sort-head' onClick={() => sortBy(BY_NAME)}>
+					Player
+					<span class='sort-mark' aria-hidden='true'>
+						{sort() === BY_NAME ? (descending() ? '↓' : '↑') : ''}
+					</span>
+				</button>
+			</th>
+			<For each={held.columns}>
+				{(column, index) => (
+					<th
+						class='num'
+						classList={{ 'pve-setup': column.setup }}
+						aria-sort={mark(index())}
+						title={column.help}
+					>
+						{/* The mark leads, so it rides a wrapped label's first line. */}
+						<button
+							type='button'
+							class='sort-head'
+							onClick={() => sortBy(index())}
+						>
+							<span class='sort-mark' aria-hidden='true'>
+								{sort() === index() ? (descending() ? '↓' : '↑') : ''}
+							</span>
+							{column.label}
+							{inexact() && column.setup ? '*' : ''}
+						</button>
+					</th>
+				)}
+			</For>
+		</tr>
+	)
+
+	const Table = (held: { rows: Row[]; columns: Column[]; empty: string }) => (
 		<Show
 			when={held.rows.length > 0}
 			fallback={
 				<tr class='pve-empty'>
-					<td colspan={cols().length + 1}>{held.empty}</td>
+					<td colspan={held.columns.length + 1}>{held.empty}</td>
 				</tr>
 			}
 		>
@@ -158,7 +213,7 @@ export function PveStats(props: {
 				{(row) => (
 					<tr classList={{ own: row.name === room.me() }}>
 						<td class='pve-name'>{row.name}</td>
-						<For each={cols()}>
+						<For each={held.columns}>
 							{(column) => (
 								<td class='num' classList={{ 'pve-setup': column.setup }}>
 									{row.player ? cell(column.value(row.player)) : ''}
@@ -169,6 +224,31 @@ export function PveStats(props: {
 				)}
 			</For>
 		</Show>
+	)
+
+	/** A record table's body: the players, then the watchers when asked for. */
+	const Body = (held: {
+		columns: Column[]
+		groups: { players: Row[]; watchers: Row[] }
+		spectators: boolean
+	}) => (
+		<tbody>
+			<Table
+				rows={held.groups.players}
+				columns={held.columns}
+				empty='No player records'
+			/>
+			<Show when={held.spectators}>
+				<tr class='pve-group'>
+					<td colspan={held.columns.length + 1}>Spectators</td>
+				</tr>
+				<Table
+					rows={held.groups.watchers}
+					columns={held.columns}
+					empty='No spectator records'
+				/>
+			</Show>
+		</tbody>
 	)
 
 	return (
@@ -451,113 +531,80 @@ export function PveStats(props: {
 									active={view()}
 									onSelect={(key) => pick(key as Tab | 'diagnostics')}
 								/>
-								<div class='pve-scroll'>
-									<Show
-										when={view() !== 'diagnostics'}
-										fallback={
-											<div class='pve-diag'>
-												<For each={diagnosticRows(score())}>
-													{(row) => (
-														<div class='pve-diag-row'>
-															<span class='pve-label'>{row.label}</span>
-															<span>{row.value}</span>
-														</div>
-													)}
-												</For>
-												<Show when={score().matched.diffs.length > 0}>
-													<table class='widget-table pve-table pve-diffs'>
-														<thead>
-															<tr>
-																<th>Field</th>
-																<th>Current</th>
-																<th>
-																	{score().matched.method === 'raw_fallback'
-																		? 'Fallback'
-																		: 'Similar'}
-																</th>
-															</tr>
-														</thead>
-														<tbody>
-															<For each={score().matched.diffs}>
-																{(diff) => (
-																	<tr>
-																		<td>{diff.column}</td>
-																		<td>{diff.current}</td>
-																		<td>{diff.closest}</td>
-																	</tr>
-																)}
-															</For>
-														</tbody>
-													</table>
-												</Show>
-											</div>
-										}
-									>
-										<table class='widget-table pve-table'>
-											<thead>
-												<tr>
-													<th aria-sort={mark(BY_NAME)}>
-														<button
-															type='button'
-															class='sort-head'
-															onClick={() => sortBy(BY_NAME)}
-														>
-															Player
-															<span class='sort-mark' aria-hidden='true'>
-																{sort() === BY_NAME
-																	? descending()
-																		? '↓'
-																		: '↑'
-																	: ''}
-															</span>
-														</button>
-													</th>
-													<For each={cols()}>
-														{(column, index) => (
-															<th
-																class='num'
-																classList={{ 'pve-setup': column.setup }}
-																aria-sort={mark(index())}
-																title={column.help}
-															>
-																{/* The mark leads, so it rides a wrapped label's first line. */}
-																<button
-																	type='button'
-																	class='sort-head'
-																	onClick={() => sortBy(index())}
-																>
-																	<span class='sort-mark' aria-hidden='true'>
-																		{sort() === index()
-																			? descending()
-																				? '↓'
-																				: '↑'
-																			: ''}
-																	</span>
-																	{column.label}
-																	{inexact() && column.setup ? '*' : ''}
-																</button>
-															</th>
+								<div class='pve-frame'>
+									{/* Every record tab with everyone in it, laid out but never
+									    seen: the frame takes the biggest one's size up front, so
+									    no tab or spectator row resizes it later. */}
+									<div class='pve-sizer' aria-hidden='true'>
+										<For each={everyTab()}>
+											{(tabColumns) => (
+												<table class='widget-table pve-table'>
+													<thead>
+														<Heads columns={tabColumns} />
+													</thead>
+													<Body
+														columns={tabColumns}
+														groups={split()}
+														spectators
+													/>
+												</table>
+											)}
+										</For>
+									</div>
+									<div class='pve-scroll'>
+										<Show
+											when={view() !== 'diagnostics'}
+											fallback={
+												<div class='pve-diag'>
+													<For each={diagnosticRows(score())}>
+														{(row) => (
+															<div class='pve-diag-row'>
+																<span class='pve-label'>{row.label}</span>
+																<span>{row.value}</span>
+															</div>
 														)}
 													</For>
-												</tr>
-											</thead>
-											<tbody>
-												<Table
-													rows={groups().players}
-													empty='No player records'
+													<Show when={score().matched.diffs.length > 0}>
+														<table class='widget-table pve-table pve-diffs'>
+															<thead>
+																<tr>
+																	<th>Field</th>
+																	<th>Current</th>
+																	<th>
+																		{score().matched.method === 'raw_fallback'
+																			? 'Fallback'
+																			: 'Similar'}
+																	</th>
+																</tr>
+															</thead>
+															<tbody>
+																<For each={score().matched.diffs}>
+																	{(diff) => (
+																		<tr>
+																			<td>{diff.column}</td>
+																			<td>{diff.current}</td>
+																			<td>{diff.closest}</td>
+																		</tr>
+																	)}
+																</For>
+															</tbody>
+														</table>
+													</Show>
+												</div>
+											}
+										>
+											<table class='widget-table pve-table'>
+												<thead>
+													<Heads columns={cols()} />
+												</thead>
+												<Body
+													columns={cols()}
+													groups={groups()}
+													spectators={spectators()}
 												/>
-												<Show when={spectators()}>
-													<tr class='pve-group'>
-														<td colspan={cols().length + 1}>Spectators</td>
-													</tr>
-													<Table
-														rows={groups().watchers}
-														empty='No spectator records'
-													/>
-												</Show>
-											</tbody>
-										</table>
-									</Show>
+											</table>
+										</Show>
+									</div>
 								</div>
 							</section>
 						</>

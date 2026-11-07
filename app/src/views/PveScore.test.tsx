@@ -235,6 +235,16 @@ describe('PveScore', () => {
 		// Date too: the pace between asks is measured on the clock.
 		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
 		asked.mockReset()
+		// happy-dom ships no `localStorage`; the panel's remembered toggles get
+		// an empty one per test, so one test's clicks are not the next's defaults.
+		const held = new Map<string, string>()
+		Object.defineProperty(window, 'localStorage', {
+			value: {
+				getItem: (key: string) => held.get(key) ?? null,
+				setItem: (key: string, value: string) => void held.set(key, value),
+			},
+			configurable: true,
+		})
 	})
 	afterEach(() => {
 		// Without globals, nothing unmounts the last test's panel for us, and a
@@ -243,6 +253,7 @@ describe('PveScore', () => {
 		vi.useRealTimers()
 		setLobby(reconcile(emptyLobby()))
 		setSettingsSignal(null)
+		Reflect.deleteProperty(window, 'localStorage')
 	})
 
 	/** The settings file with the one field this panel reads set. */
@@ -368,18 +379,34 @@ describe('PveScore', () => {
 		expect(sheet.querySelector('.pve-bar.current')).not.toBeNull()
 		expect(sheet.textContent).toContain('your best 24.8')
 		expect(sheet.textContent).toContain('2025-01-02 –')
+		// The table on show, not the sizer's unseen copies.
+		const shown = () => sheet.querySelector('.pve-scroll > table')
 		// Known players first, then the name the service did not know, and the
 		// own row marked.
-		const names = [...sheet.querySelectorAll('tbody .pve-name')].map(
+		const names = [...shown()!.querySelectorAll('tbody .pve-name')].map(
 			(td) => td.textContent,
 		)
 		expect(names).toEqual(['me', 'newbie'])
-		expect(sheet.querySelector('tr.own .pve-name')?.textContent).toBe('me')
+		expect(shown()!.querySelector('tr.own .pve-name')?.textContent).toBe('me')
 		// The default tab sorts by Max here; the figure lands in that column.
 		expect(
-			sheet.querySelector('th[aria-sort="descending"]')?.textContent,
+			shown()!.querySelector('th[aria-sort="descending"]')?.textContent,
 		).toContain('Max here')
-		expect(sheet.querySelector('tr.own')?.textContent).toContain('50')
+		expect(shown()!.querySelector('tr.own')?.textContent).toContain('50')
+		// The sizer lays out every record tab with everyone in it, spectator
+		// group included, so the table area is as big as the biggest needs
+		// before any tab is opened or spectators are shown.
+		const sized = [...sheet.querySelectorAll('.pve-sizer table')]
+		expect(sized).toHaveLength(4)
+		for (const table of sized) {
+			expect(
+				[...table.querySelectorAll('tbody .pve-name')].map(
+					(td) => td.textContent,
+				),
+			).toEqual(['me', 'newbie'])
+			expect(table.querySelector('.pve-group')?.textContent).toBe('Spectators')
+		}
+		expect(shown()!.querySelector('.pve-group')).toBeNull()
 		// The widget's Diagnostics is a fifth view in the same box.
 		const diagnostics = [...sheet.querySelectorAll('[role=tab]')].find((held) =>
 			held.textContent?.includes('Diagnostics'),
@@ -388,12 +415,39 @@ describe('PveScore', () => {
 		expect(sheet.querySelector('.pve-diag')?.textContent).toContain(
 			'exact setting',
 		)
-		expect(sheet.querySelector('tbody .pve-name')).toBeNull()
+		expect(shown()).toBeNull()
+		expect(sheet.querySelectorAll('.pve-sizer table')).toHaveLength(4)
 
 		;(
 			sheet.querySelector('header button:last-child') as HTMLButtonElement
 		).click()
 		expect(container.querySelector('.pve-stats')).toBeNull()
+	})
+
+	test('the spectators toggle is remembered the next time the panel is drawn', async () => {
+		asked.mockResolvedValue(scored)
+		enter([bot('RaptorsAI')])
+		const first = render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+		;(first.getByLabelText('Open PvE stats') as HTMLButtonElement).click()
+		const toggle = () =>
+			[...document.querySelectorAll('.pve-stats button')].find(
+				(button) => button.textContent?.trim() === 'Spectators',
+			) as HTMLButtonElement
+		toggle().click()
+		expect(toggle().classList.contains('on')).toBe(true)
+		cleanup()
+
+		// A fresh panel, as after a restart: the stored choice is all that is left.
+		const second = render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+		;(second.getByLabelText('Open PvE stats') as HTMLButtonElement).click()
+		expect(toggle().classList.contains('on')).toBe(true)
+		expect(
+			document.querySelector('.pve-scroll > table .pve-group')?.textContent,
+		).toBe('Spectators')
 	})
 
 	test('a figure in the row opens the panel too', async () => {

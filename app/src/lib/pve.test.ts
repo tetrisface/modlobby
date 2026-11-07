@@ -268,6 +268,13 @@ describe('pve view logic', () => {
 		).toBe('Current setup: not yet placed')
 	})
 
+	test('a skirmish room is placed among the BARb games the histogram counts, whatever AI it has', () => {
+		for (const aiFamily of ['BARb', 'SMRTBARb', 'SimpleAI', null])
+			expect(
+				caption({ ...SCORE, aiType: 'Barbarian', aiFamily }, undefined),
+			).toBe('Challenge 21.5 — harder than 88% of played BARb games')
+	})
+
 	test('the data window spans the oldest game to how long ago the newest was', () => {
 		const now = Date.parse('2026-06-22T22:46:17Z')
 		expect(dataWindow(SCORE, now)).toBe('2025-01-02 – 2d ago')

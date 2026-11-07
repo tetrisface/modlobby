@@ -5772,12 +5772,17 @@ input[type='checkbox'].v-edit {
 /* ---- the widget's whole panel ---- */
 
 .sheet-card.pve-stats {
-	width: min(52rem, calc(100vw - 40px));
+	/* Its usual width, or up to half as wide again where a record tab's
+	   columns need it to keep their labels on one line. */
+	width: fit-content;
+	min-width: min(52rem, calc(100vw - 40px));
+	max-width: min(78rem, calc(100vw - 40px));
 	max-height: calc(100vh - 80px);
 	overflow-y: auto;
 	font-size: 0.75rem;
 	/* Centred, which only holds still because nothing in it changes height:
-	   the table area below is a fixed box and scrolls inside itself. */
+	   the table area below is sized once for every tab and scrolls inside
+	   itself. */
 	/* Its prose wraps whatever the room around it says; a sheet that inherits
 	   `nowrap` runs off the card and scrolls sideways. */
 	white-space: normal;
@@ -5786,6 +5791,14 @@ input[type='checkbox'].v-edit {
 .pve-stats .ed-head button.on {
 	color: var(--accent);
 	border-color: var(--accent);
+}
+
+/* Prose wraps at the width the tables settle on instead of asking for its
+   own: one long sentence would widen the card to its cap. */
+.pve-stats > p,
+.pve-line,
+.pve-caption {
+	contain: inline-size;
 }
 
 .pve-summary {
@@ -6142,11 +6155,47 @@ input[type='checkbox'].v-edit {
 	max-width: none;
 }
 
-/* A fixed height, not a maximum: rows appearing (spectators) or a tab with
-   taller content scroll here rather than resizing the card around them. */
+/* The table area, as big as the sizer in it says: tall enough for everyone,
+   spectators included, from the usual 18rem up to 60% taller, and as wide as
+   the widest tab needs. The view shown scrolls on top of it, so
+   showing spectators or changing tab never resizes the card; with spectators
+   hidden, the room they would take stays empty below the players. */
+.pve-frame {
+	position: relative;
+	max-height: 28.8rem;
+	overflow: hidden;
+}
+
+/* Laid out but never painted or focused: every record tab's table in one
+   grid cell, so the box is the widest one's width and the tallest one's
+   height. It reserves the scroll box's gutter so it measures what that box
+   has to hold. */
+.pve-sizer {
+	display: grid;
+	min-height: 18rem;
+	overflow: hidden;
+	scrollbar-gutter: stable;
+	visibility: hidden;
+}
+
+.pve-sizer > table {
+	grid-area: 1 / 1;
+}
+
 .pve-scroll {
-	height: 18rem;
+	position: absolute;
+	inset: 0;
 	overflow-y: auto;
+	/* Reserved whether or not the rows overflow, so the scrollbar coming and
+	   going cannot change what the rows have to fit in. */
+	scrollbar-gutter: stable;
+}
+
+/* A tenth shorter than the widget list's rows: one line of figures per
+   person, so more people fit before the box scrolls. */
+.pve-table tbody td {
+	padding-top: 0.4rem;
+	padding-bottom: 0.4rem;
 }
 
 .pve-table thead th {
