@@ -7963,13 +7963,14 @@ button.link:hover {
 }
 
 /* And one just before the map while any room has a score to show, after the
-   server's when both are there, so the figure always touches its map. */
+   server's when both are there, so the figures always touch their map.
+   3.75rem fits "34–34", the widest pair. */
 .battle-row.scored {
-	grid-template-columns: 3.5rem 5rem 1.5rem 4.5rem 1fr 3rem 17.75rem 3rem 6.75rem;
+	grid-template-columns: 3.5rem 5rem 1.5rem 4.5rem 1fr 3.75rem 17.75rem 3rem 6.75rem;
 }
 
 .battle-row.marked.scored {
-	grid-template-columns: 3.5rem 5rem 1.5rem 4.5rem 1fr 6rem 3rem 17.75rem 3rem 6.75rem;
+	grid-template-columns: 3.5rem 5rem 1.5rem 4.5rem 1fr 6rem 3.75rem 17.75rem 3rem 6.75rem;
 }
 
 .col-server {
@@ -7977,12 +7978,17 @@ button.link:hover {
 	white-space: nowrap;
 }
 
-/* What the room last scored, flush against the map it was scored on: the
-   decimals line up down the list. "34.0" is the widest it gets. */
+/* What the room last scored, flush against the map it was scored on, the
+   figures lined up down the list. With every seat taken comes last, in the
+   row's own colour; the room as it was scored is muted before it. */
 .col-challenge {
 	text-align: right;
 	font-variant-numeric: tabular-nums;
 	white-space: nowrap;
+}
+
+.challenge-now {
+	color: var(--muted);
 }
 
 .server-mark {

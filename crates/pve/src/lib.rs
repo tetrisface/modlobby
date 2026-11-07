@@ -215,6 +215,12 @@ pub fn lobby_game_id(host: &str, battle_id: u32, founder: &str) -> String {
 #[serde(rename_all = "snake_case")]
 pub struct Encounter {
 	pub human_team_size: u32,
+	/// Seats on the human side, filled or not: [`human_team_capacity`]. The
+	/// service scores the room a second time as if every one were taken and
+	/// lists both, so the battle list can say what a filling lobby is heading
+	/// for. `None` for a game in progress, which takes no one new.
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub human_team_capacity: Option<u32>,
 	/// Only meaningful for BARbarians: repeated raptor or scavenger slots are
 	/// one controller and do not make the game harder, which the widget notes
 	/// in as many words.
@@ -244,6 +250,22 @@ pub struct Encounter {
 	/// which have no per-slot handicap, so it stays empty for them.
 	#[serde(skip_serializing_if = "Vec::is_empty")]
 	pub enemy_ai_income_multipliers: Vec<f64>,
+}
+
+/// How many humans a room seats once it is full.
+///
+/// PvE puts every human on one ally team, so a full team is the room's team
+/// size (SPADS' `teamSize`, from `s.battle.teams`), not teams times team size:
+/// the other team is the AI's. Capped by the room's player limit, and taken
+/// from that alone when SPADS has not said its shape. Never fewer than the
+/// players already seated -- a room over its own size is full as it is -- and
+/// a limit of 0, which a LAN room may announce, means just that.
+pub fn human_team_capacity(team_size: Option<u32>, max_players: u32, seated: u32) -> u32 {
+	let limit = match team_size {
+		Some(size) if size > 0 => size.min(max_players),
+		_ => max_players,
+	};
+	limit.max(seated)
 }
 
 /// The income multiplier a seated player's handicap amounts to.
@@ -1175,6 +1197,7 @@ mod tests {
 			game_settings: settings,
 			encounter_context: Encounter {
 				human_team_size: 8,
+				human_team_capacity: None,
 				enemy_ai_count: None,
 				enemy_ai_names: Vec::new(),
 				human_player_income_multipliers: vec![1.0; 8],
@@ -1204,6 +1227,7 @@ mod tests {
 			game_settings: BTreeMap::new(),
 			encounter_context: Encounter {
 				human_team_size: 3,
+				human_team_capacity: None,
 				enemy_ai_count: None,
 				enemy_ai_names: Vec::new(),
 				human_player_income_multipliers: vec![1.0, 1.0, 1.0],
@@ -1226,6 +1250,7 @@ mod tests {
 			game_settings: BTreeMap::from([("raptor_endless".to_owned(), "1".to_owned())]),
 			encounter_context: Encounter {
 				human_team_size: 8,
+				human_team_capacity: None,
 				enemy_ai_count: None,
 				enemy_ai_names: Vec::new(),
 				human_player_income_multipliers: vec![1.0],
@@ -1240,6 +1265,49 @@ mod tests {
 		assert!(!json.contains("account"));
 		assert!(!json.contains("game_id"));
 		assert!(json.contains("human_team_size"));
+		assert!(
+			!json.contains("human_team_capacity"),
+			"no seat count, no field: an older service hears what it always did"
+		);
+	}
+
+	#[test]
+	fn a_lobby_says_how_many_seats_it_has() {
+		let ask = Ask {
+			game_id: None,
+			player_names: Vec::new(),
+			player_filter_requested: true,
+			ai_type: AiType::Raptors.as_str(),
+			map: "Comet Catcher Remake 1.8".into(),
+			game_settings: BTreeMap::new(),
+			encounter_context: Encounter {
+				human_team_size: 3,
+				human_team_capacity: Some(8),
+				enemy_ai_count: None,
+				enemy_ai_names: Vec::new(),
+				human_player_income_multipliers: vec![1.0, 1.0, 1.0],
+				enemy_ai_income_multipliers: vec![],
+			},
+		};
+		let json = serde_json::to_value(&ask).unwrap();
+		assert_eq!(json["encounter_context"]["human_team_size"], 3);
+		assert_eq!(json["encounter_context"]["human_team_capacity"], 8);
+	}
+
+	#[test]
+	fn a_full_team_is_the_human_side_of_the_room() {
+		// A co-op room of one team of 16, capped by the room's own limit.
+		assert_eq!(human_team_capacity(Some(16), 16, 3), 16);
+		assert_eq!(human_team_capacity(Some(16), 8, 3), 8);
+		// 8v8 against the AI: the AI's team is not seats for people.
+		assert_eq!(human_team_capacity(Some(8), 16, 2), 8);
+		// No shape from SPADS: the room's limit is all there is.
+		assert_eq!(human_team_capacity(None, 12, 4), 12);
+		assert_eq!(human_team_capacity(Some(0), 12, 4), 12);
+		// Over its own size, or a LAN room that names no limit: full as it is.
+		assert_eq!(human_team_capacity(Some(4), 16, 6), 6);
+		assert_eq!(human_team_capacity(None, 0, 2), 2);
+		assert_eq!(human_team_capacity(Some(8), 0, 2), 2);
 	}
 
 	#[test]
@@ -1256,6 +1324,7 @@ mod tests {
 			game_settings: BTreeMap::new(),
 			encounter_context: Encounter {
 				human_team_size: 2,
+				human_team_capacity: None,
 				enemy_ai_count: Some(2),
 				enemy_ai_names: Vec::new(),
 				human_player_income_multipliers: vec![1.0, 1.0],
@@ -1349,6 +1418,7 @@ mod tests {
 			game_settings: BTreeMap::from([("raptor_endless".to_owned(), "1".to_owned())]),
 			encounter_context: Encounter {
 				human_team_size: 2,
+				human_team_capacity: None,
 				enemy_ai_count: None,
 				enemy_ai_names: Vec::new(),
 				human_player_income_multipliers: vec![1.0, 1.0],

@@ -10,6 +10,9 @@
 //! Only the challenge: it describes the setup, not who plays it, and it is
 //! the same number the in-room panel shows. The list's percentile is a
 //! different one from the panel's, so showing it would contradict the panel.
+//! Two challenges where the service has both: the room with the players it
+//! had when it was scored, and the room with every seat taken
+//! ([`crate::Encounter::human_team_capacity`]).
 //!
 //! What reads it here is deliberately forgiving. The list is the service's
 //! (`live-api`'s `LiveGameSummary`, which pins these fields in a test of its
@@ -44,8 +47,15 @@ const DEADLINE: Duration = Duration::from_secs(5);
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct ListedScore {
-	/// 0-34, where 17 is an estimated even game for a representative team.
+	/// 0-34, where 17 is an estimated even game for a representative team,
+	/// with the players seated when the room was scored.
 	pub challenge: f64,
+	/// The same with every human seat taken. `None` for a room whose asker
+	/// did not say how many seats it has (an older modlobby, or a running
+	/// game) and from a service that predates the figure.
+	pub full_challenge: Option<f64>,
+	/// How many played when it was scored: who `challenge` is for.
+	pub players: Option<u32>,
 	/// When someone in the room last told the service about this setup, as
 	/// the service's ISO timestamp. It has no newer word than that: a room
 	/// whose setup has not changed since has not been asked about since.
@@ -82,12 +92,19 @@ struct Game {
 	map: String,
 	last_seen_at: String,
 	difficulty: Difficulty,
+	/// Read loosely: an odd seat count costs the tooltip a line, not the room
+	/// its score.
+	#[serde(default)]
+	encounter_context: serde_json::Value,
 }
 
 #[derive(Deserialize)]
 struct Difficulty {
 	status: String,
 	challenge: Option<f64>,
+	/// Loosely too: the current figure stands without it.
+	#[serde(default)]
+	full_team_challenge: serde_json::Value,
 }
 
 impl Listings {
@@ -115,11 +132,23 @@ impl Listings {
 			if game.difficulty.status != "estimated" || !challenge.is_finite() {
 				continue;
 			}
+			let full_challenge = game
+				.difficulty
+				.full_team_challenge
+				.as_f64()
+				.filter(|full| full.is_finite());
+			let players = game
+				.encounter_context
+				.get("human_count")
+				.and_then(serde_json::Value::as_u64)
+				.and_then(|count| u32::try_from(count).ok());
 			// The service lists the newest first; a duplicate is older news.
 			by_game.entry(id).or_insert(Entry {
 				map: game.map,
 				score: ListedScore {
 					challenge,
+					full_challenge,
+					players,
 					scored_at: game.last_seen_at,
 				},
 			});
@@ -270,11 +299,12 @@ mod tests {
 			"ai_type": "Raptors",
 			"map": map,
 			"player_count": 8,
-			"encounter_context": {"human_count": 8, "enemy_ai_count": null},
+			"encounter_context": {"human_count": 3, "enemy_ai_count": null},
 			"setting_id": "0123456789abcdef0123456789abcdef",
 			"difficulty": {
 				"status": status,
 				"challenge": challenge,
+				"full_team_challenge": challenge.map(|now| now - 4.0),
 				"context_percentile": 71.5,
 				"representative_team_win_probability": 0.41,
 				"historical_games": 120,
@@ -305,8 +335,40 @@ mod tests {
 			listings.score_for(ROOM, "Full Metal Plate 1.5"),
 			Some(ListedScore {
 				challenge: 16.4,
+				full_challenge: Some(16.4 - 4.0),
+				players: Some(3),
 				scored_at: "2026-11-07T18:12:00Z".into(),
 			})
+		);
+	}
+
+	#[test]
+	fn a_room_without_a_full_team_figure_keeps_its_current_one() {
+		let mut older = game(Some(ROOM), "Map", "estimated", Some(16.4));
+		older["difficulty"]
+			.as_object_mut()
+			.unwrap()
+			.remove("full_team_challenge");
+		older.as_object_mut().unwrap().remove("encounter_context");
+		let mut nameless = game(Some(&"b".repeat(32)), "Map", "estimated", Some(9.0));
+		nameless["difficulty"]["full_team_challenge"] = serde_json::Value::Null;
+		let mut odd = game(Some(&"c".repeat(32)), "Map", "estimated", Some(5.0));
+		odd["difficulty"]["full_team_challenge"] = serde_json::json!("full");
+		odd["encounter_context"]["human_count"] = serde_json::json!(-1);
+		let listings = Listings::read(&page(vec![older, nameless, odd]));
+		for (id, now) in [
+			(ROOM.to_owned(), 16.4),
+			("b".repeat(32), 9.0),
+			("c".repeat(32), 5.0),
+		] {
+			let score = listings.score_for(&id, "Map").expect("still scored");
+			assert_eq!(score.challenge, now);
+			assert_eq!(score.full_challenge, None);
+		}
+		assert_eq!(listings.score_for(ROOM, "Map").unwrap().players, None);
+		assert_eq!(
+			listings.score_for(&"c".repeat(32), "Map").unwrap().players,
+			None
 		);
 	}
 

@@ -10,7 +10,12 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
 const asked = vi.mocked(invoke)
 
 const KEY = 'server4.beyondallreason.info/5'
-const SCORE: ListedScore = { challenge: 16.4, scoredAt: '2026-11-07T18:00:00Z' }
+const SCORE: ListedScore = {
+	challenge: 16.4,
+	fullChallenge: 19.0,
+	players: 3,
+	scoredAt: '2026-11-07T18:00:00Z',
+}
 
 /** Lets an awaited answer reach the store. */
 async function settle() {

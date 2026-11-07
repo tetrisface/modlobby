@@ -327,17 +327,20 @@ pub async fn pve_listed_scores(
 	Ok(listings.for_rooms(rooms))
 }
 
-/// Who the service is told is playing, and against what.
+/// Who the service is told is playing, against what, and how many seats the
+/// room has for people.
 ///
 /// The room's own AIs whenever they name an opponent, so a room being set up
-/// for its next game is scored as set up, game running or not. Failing that,
-/// whoever the running game started with: a leaver's AIs leave the room and
-/// play on, and a room with no opponent or no seats gets no score at all.
+/// for its next game is scored as set up, game running or not; its seats are
+/// the room's ([`pve::human_team_capacity`]). Failing that, whoever the
+/// running game started with: a leaver's AIs leave the room and play on, and
+/// a game in progress seats no one new, so it has no seat count. A room with
+/// no opponent or no seats gets no score at all.
 fn pve_roster(
 	my: &lobby_ui::MyBattleView,
 	room: &lobby_ui::BattleView,
 	users: &[lobby_ui::UserView],
-) -> Option<(pve::Opponent, lobby_ui::GameRosterView)> {
+) -> Option<(pve::Opponent, lobby_ui::GameRosterView, Option<u32>)> {
 	let opponent = |bots: &[lobby_ui::BotView]| {
 		let names: Vec<String> = bots.iter().map(|bot| bot.ai.clone()).collect();
 		pve::opponent(&names)
@@ -356,10 +359,15 @@ fn pve_roster(
 				.collect(),
 			guessed: false,
 		};
-		return Some((found, here));
+		let seats = pve::human_team_capacity(
+			room.layout.map(|layout| layout.team_size),
+			room.max_players,
+			room.player_count,
+		);
+		return Some((found, here, Some(seats)));
 	}
 	let started = my.game_roster.as_ref()?;
-	Some((opponent(&started.bots)?, started.clone()))
+	Some((opponent(&started.bots)?, started.clone(), None))
 }
 
 /// What the service is told about a room, whichever kind it is.
@@ -369,7 +377,7 @@ fn pve_ask(
 	users: &[lobby_ui::UserView],
 	game_id: Option<String>,
 ) -> Option<pve::Ask> {
-	let (opponent, roster) = pve_roster(my, room, users)?;
+	let (opponent, roster, seats) = pve_roster(my, room, users)?;
 	let kind = opponent.kind;
 
 	Some(pve::Ask {
@@ -390,6 +398,7 @@ fn pve_ask(
 			.collect(),
 		encounter_context: pve::Encounter {
 			human_team_size: roster.player_count,
+			human_team_capacity: seats,
 			enemy_ai_count: matches!(kind, pve::AiType::Barbarian)
 				.then_some(roster.bots.len() as u32),
 			// Exact names, whatever the mode: the service classifies the
@@ -662,6 +671,8 @@ mod tests {
 			ask.encounter_context.human_player_income_multipliers,
 			[1.0, 1.0, 1.2]
 		);
+		// A game in progress seats no one new: no full-team figure for it.
+		assert_eq!(ask.encounter_context.human_team_capacity, None);
 	}
 
 	#[test]
@@ -684,6 +695,19 @@ mod tests {
 		assert_eq!(ask.encounter_context.enemy_ai_names, ["ScavengersAI"]);
 		assert_eq!(ask.encounter_context.human_team_size, 1);
 		assert_eq!(ask.encounter_context.human_player_income_multipliers, [1.0]);
+		// No shape from SPADS, so the room's 16-player limit is its seats.
+		assert_eq!(ask.encounter_context.human_team_capacity, Some(16));
+	}
+
+	#[test]
+	fn a_room_being_set_up_names_its_human_team_as_its_seats() {
+		let mut here = room(vec![bot("RaptorsAI", 0)]);
+		here.layout = Some(lobby_ui::LayoutView {
+			teams: 1,
+			team_size: 8,
+		});
+		let ask = pve_ask(&my(None), &here, &users(), None).unwrap();
+		assert_eq!(ask.encounter_context.human_team_capacity, Some(8));
 	}
 
 	#[test]

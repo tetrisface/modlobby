@@ -5,9 +5,20 @@
  */
 export type ListedScore = {
 	/**
-	 * 0-34, where 17 is an estimated even game for a representative team.
+	 * 0-34, where 17 is an estimated even game for a representative team,
+	 * with the players seated when the room was scored.
 	 */
 	challenge: number
+	/**
+	 * The same with every human seat taken. `None` for a room whose asker
+	 * did not say how many seats it has (an older modlobby, or a running
+	 * game) and from a service that predates the figure.
+	 */
+	fullChallenge: number | null
+	/**
+	 * How many played when it was scored: who `challenge` is for.
+	 */
+	players: number | null
 	/**
 	 * When someone in the room last told the service about this setup, as
 	 * the service's ISO timestamp. It has no newer word than that: a room
