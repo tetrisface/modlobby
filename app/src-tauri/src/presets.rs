@@ -370,6 +370,30 @@ fn pve_roster(
 	Some((opponent(&started.bots)?, started.clone(), None))
 }
 
+/// The room's ally teams as its start script will number them, read off the
+/// seated members, the AIs and the room's start rectangles.
+fn room_ally_teams(room: &lobby_ui::BattleView, users: &[lobby_ui::UserView]) -> Vec<pve::AllyTeam> {
+	let humans = room
+		.members
+		.iter()
+		.filter_map(|name| users.iter().find(|user| &user.name == name))
+		.filter_map(|user| user.battle_status.as_ref())
+		.filter(|status| status.player)
+		.map(|status| status.ally_team);
+	let ais = room.bots.iter().map(|bot| bot.status.ally_team);
+	pve::ally_teams(humans, ais, |ally| {
+		room.start_rects
+			.iter()
+			.find(|rect| rect.ally_team == ally)
+			.map(|rect| pve::StartRect {
+				left: rect.left,
+				top: rect.top,
+				right: rect.right,
+				bottom: rect.bottom,
+			})
+	})
+}
+
 /// What the service is told about a room, whichever kind it is.
 fn pve_ask(
 	my: &lobby_ui::MyBattleView,
@@ -379,6 +403,13 @@ fn pve_ask(
 ) -> Option<pve::Ask> {
 	let (opponent, roster, seats) = pve_roster(my, room, users)?;
 	let kind = opponent.kind;
+	// Seats are known only for the room itself; a game in progress keeps a
+	// head count and no seating, so its boxes are left out of the score.
+	let ally_teams = if seats.is_some() {
+		room_ally_teams(room, users)
+	} else {
+		Vec::new()
+	};
 
 	Some(pve::Ask {
 		// A guess at the opponent stays a question: this id is what would list
@@ -426,6 +457,7 @@ fn pve_ask(
 				.iter()
 				.map(|&handicap| pve::income_multiplier(handicap))
 				.collect(),
+			ally_teams,
 		},
 		// Everyone present, bar the autohost: the service has a record for
 		// people, not for SPADS. Sorted so the same room is the same body.
@@ -647,6 +679,31 @@ mod tests {
 			seat_handicaps: vec![0, 0, 20],
 			guessed: false,
 		})
+	}
+
+	#[test]
+	fn a_room_reports_its_ally_teams_in_start_script_order_with_their_rectangles() {
+		let mut enemy = bot("BARb", 0);
+		enemy.status.ally_team = 3;
+		let mut here = room(vec![enemy.clone(), enemy]);
+		here.start_rects = vec![
+			lobby_ui::StartRectView { ally_team: 3, left: 140, top: 0, right: 200, bottom: 200 },
+			// A rectangle on an ally team nobody sits on is not part of the game.
+			lobby_ui::StartRectView { ally_team: 7, left: 0, top: 0, right: 10, bottom: 10 },
+		];
+		let ask = pve_ask(&my(None), &here, &users(), None).unwrap();
+		let teams = &ask.encounter_context.ally_teams;
+		assert_eq!(teams.len(), 2);
+		assert_eq!((teams[0].human_players, teams[0].ais, teams[0].start_rect), (1, 0, None));
+		assert_eq!((teams[1].human_players, teams[1].ais), (0, 2));
+		assert_eq!(teams[1].start_rect.map(|rect| rect.left), Some(140));
+	}
+
+	#[test]
+	fn a_game_in_progress_reports_no_ally_teams() {
+		let roster = started_with(vec![bot("BARb", 10)]);
+		let ask = pve_ask(&my(roster), &room(vec![]), &users(), None).unwrap();
+		assert!(ask.encounter_context.ally_teams.is_empty());
 	}
 
 	#[test]

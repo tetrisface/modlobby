@@ -250,6 +250,65 @@ pub struct Encounter {
 	/// which have no per-slot handicap, so it stays empty for them.
 	#[serde(skip_serializing_if = "Vec::is_empty")]
 	pub enemy_ai_income_multipliers: Vec<f64>,
+	/// The room's ally teams as its start script will number them
+	/// ([`ally_teams`]). The service resolves each one's start box from these
+	/// and the room's `mapmetadata_*` modoptions, the way the game enforces
+	/// it, and scores how the boxes sit. Empty when the room's seating is not
+	/// known (a game in progress keeps only a head count), which leaves the
+	/// boxes out of the score rather than guessing them.
+	#[serde(skip_serializing_if = "Vec::is_empty")]
+	pub ally_teams: Vec<AllyTeam>,
+}
+
+/// One ally team of a room, numbered as its start script numbers it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct AllyTeam {
+	/// Seated humans on this ally team. Spectators sit on none.
+	pub human_players: u32,
+	/// AI slots on this ally team: the opponent on an ally team without
+	/// humans, allies beside them.
+	pub ais: u32,
+	/// The room's start rectangle for this ally team, if it has one.
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub start_rect: Option<StartRect>,
+}
+
+/// A start rectangle in the lobby's 0-200 coordinates (`ADDSTARTRECT`), z down.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct StartRect {
+	pub left: u16,
+	pub top: u16,
+	pub right: u16,
+	pub bottom: u16,
+}
+
+/// A room's ally teams as its start script will number them.
+///
+/// The ally team numbers the room's humans and AIs sit on, sorted and
+/// renumbered without gaps -- what this lobby's own start scripts do
+/// (`lan::Room::host_script`) and what the replays the service learned from
+/// carry -- each with the rectangle the room gives that ally team's lobby
+/// number. A rectangle on an ally team nobody sits on is not part of the game.
+pub fn ally_teams(
+	human_ally_teams: impl IntoIterator<Item = u8>,
+	ai_ally_teams: impl IntoIterator<Item = u8>,
+	start_rect: impl Fn(u8) -> Option<StartRect>,
+) -> Vec<AllyTeam> {
+	let humans: Vec<u8> = human_ally_teams.into_iter().collect();
+	let ais: Vec<u8> = ai_ally_teams.into_iter().collect();
+	let mut sides: Vec<u8> = humans.iter().chain(&ais).copied().collect();
+	sides.sort_unstable();
+	sides.dedup();
+	let count = |slots: &[u8], side: u8| slots.iter().filter(|ally| **ally == side).count() as u32;
+	sides
+		.into_iter()
+		.map(|side| AllyTeam {
+			human_players: count(&humans, side),
+			ais: count(&ais, side),
+			start_rect: start_rect(side),
+		})
+		.collect()
 }
 
 /// How many humans a room seats once it is full.
@@ -1216,6 +1275,7 @@ mod tests {
 				enemy_ai_names: Vec::new(),
 				human_player_income_multipliers: vec![1.0; 8],
 				enemy_ai_income_multipliers: vec![],
+				ally_teams: Vec::new(),
 			},
 		};
 		assert!(serde_json::to_vec(&ask).unwrap().len() > BODY_LIMIT);
@@ -1246,6 +1306,7 @@ mod tests {
 				enemy_ai_names: Vec::new(),
 				human_player_income_multipliers: vec![1.0, 1.0, 1.0],
 				enemy_ai_income_multipliers: vec![],
+				ally_teams: Vec::new(),
 			},
 		};
 		let json = serde_json::to_string(&ask).unwrap();
@@ -1269,6 +1330,7 @@ mod tests {
 				enemy_ai_names: Vec::new(),
 				human_player_income_multipliers: vec![1.0],
 				enemy_ai_income_multipliers: vec![],
+				ally_teams: Vec::new(),
 			},
 		};
 		let json = serde_json::to_string(&ask).unwrap();
@@ -1301,6 +1363,7 @@ mod tests {
 				enemy_ai_names: Vec::new(),
 				human_player_income_multipliers: vec![1.0, 1.0, 1.0],
 				enemy_ai_income_multipliers: vec![],
+				ally_teams: Vec::new(),
 			},
 		};
 		let json = serde_json::to_value(&ask).unwrap();
@@ -1343,11 +1406,58 @@ mod tests {
 				enemy_ai_names: Vec::new(),
 				human_player_income_multipliers: vec![1.0, 1.0],
 				enemy_ai_income_multipliers: vec![income_multiplier(0), income_multiplier(50)],
+				ally_teams: Vec::new(),
 			},
 		};
 		let json = serde_json::to_string(&ask).unwrap();
 		assert!(json.contains("\"enemy_ai_count\":2"));
 		assert!(json.contains("\"enemy_ai_income_multipliers\":[1.0,1.5]"));
+	}
+
+	#[test]
+	fn ally_teams_are_renumbered_without_gaps_and_keep_their_lobby_rectangles() {
+		let rect = |left| StartRect { left, top: 0, right: left + 20, bottom: 200 };
+		// Humans on lobby ally 2, two AIs on 5, an ally AI beside the humans,
+		// and a rectangle on ally 0 where nobody sits.
+		let teams = ally_teams([2, 2, 2], [5, 5, 2], |ally| match ally {
+			0 => Some(rect(0)),
+			2 => Some(rect(40)),
+			_ => None,
+		});
+		assert_eq!(
+			teams,
+			vec![
+				AllyTeam { human_players: 3, ais: 1, start_rect: Some(rect(40)) },
+				AllyTeam { human_players: 0, ais: 2, start_rect: None },
+			]
+		);
+		assert!(ally_teams([], [], |_| None).is_empty());
+	}
+
+	#[test]
+	fn ally_teams_go_out_in_the_shape_the_service_reads_and_only_when_known() {
+		let encounter = |ally_teams| Encounter {
+			human_team_size: 1,
+			human_team_capacity: None,
+			enemy_ai_count: None,
+			enemy_ai_names: Vec::new(),
+			human_player_income_multipliers: vec![1.0],
+			enemy_ai_income_multipliers: Vec::new(),
+			ally_teams,
+		};
+		let teams = ally_teams([0], [1], |ally| {
+			(ally == 0).then_some(StartRect { left: 0, top: 0, right: 60, bottom: 200 })
+		});
+		let json = serde_json::to_value(encounter(teams)).unwrap();
+		assert_eq!(
+			json["ally_teams"],
+			serde_json::json!([
+				{"human_players": 1, "ais": 0, "start_rect": {"left": 0, "top": 0, "right": 60, "bottom": 200}},
+				{"human_players": 0, "ais": 1}
+			])
+		);
+		// An unknown seating sends nothing, so older answers keep their memo.
+		assert!(serde_json::to_value(encounter(Vec::new())).unwrap().get("ally_teams").is_none());
 	}
 
 	#[test]
@@ -1437,6 +1547,7 @@ mod tests {
 				enemy_ai_names: Vec::new(),
 				human_player_income_multipliers: vec![1.0, 1.0],
 				enemy_ai_income_multipliers: vec![],
+				ally_teams: Vec::new(),
 			},
 		}
 	}
