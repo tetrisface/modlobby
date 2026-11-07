@@ -101,6 +101,7 @@ const SKIRMISH_FAMILIES: &[&str] = &[
 	"KAJxAI",
 	"DevilBot",
 	"BattleBlitzAI2",
+	"Apex",
 ];
 
 /// What a room is set up against, read from the exact AI names in it.
