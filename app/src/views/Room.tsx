@@ -12,12 +12,12 @@ import {
 	createSignal,
 	onCleanup,
 } from 'solid-js'
+import { ChatText, createEntries } from '../components/ChatText'
 import { Composer } from '../components/Composer'
 import { GameActions } from '../components/GameActions'
 import { ContentChip } from '../components/ContentChip'
 import { ModsChip } from '../components/ModsChip'
 import { GetEngine } from '../components/GetEngine'
-import { Linkify } from '../components/Linkify'
 import { MapEditor } from '../components/MapEditor'
 import {
 	MapPicker,
@@ -55,6 +55,7 @@ import {
 	type Vocabulary,
 } from '../lib/compose'
 import { downloadFraction } from '../lib/download'
+import { isTable } from '../lib/hostTable'
 import { TILES, mapFacts, mapSiteName } from '../lib/maps'
 import {
 	type Roster,
@@ -125,6 +126,7 @@ export function Room() {
 
 	const battle = createMemo(room.battle)
 	const lines = () => chat.rooms[room.log] ?? []
+	const entries = createEntries(lines)
 
 	const friends = createMemo(() => new Set(roomSession()?.friends.friends))
 	const isFriend = (name: string) => friends().has(name)
@@ -1271,7 +1273,15 @@ export function Room() {
 
 							<div class='room-chat' ref={chatPane}>
 								<div class='chat-log' ref={log}>
-									<For each={lines()}>{(line) => <Line line={line} />}</For>
+									<For each={entries()}>
+										{(entry) =>
+											isTable(entry) ? (
+												<Line line={entry.line} rows={entry.rows} />
+											) : (
+												<Line line={entry} />
+											)
+										}
+									</For>
 								</div>
 								<Composer
 									placeholder={
@@ -1529,7 +1539,11 @@ function Missing(props: { parts: readonly string[]; engineVersion: string }) {
 	)
 }
 
-function Line(props: { line: ChatLine }) {
+function Line(props: {
+	line: ChatLine
+	/** The rows of the host table this line opens. */
+	rows?: string[]
+}) {
 	return (
 		<div
 			class={`line ${props.line.kind}`}
@@ -1548,9 +1562,7 @@ function Line(props: { line: ChatLine }) {
 			>
 				{props.line.from}
 			</span>
-			<span class='text'>
-				<Linkify text={props.line.text} />
-			</span>
+			<ChatText line={props.line} rows={props.rows} />
 		</div>
 	)
 }

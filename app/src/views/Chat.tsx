@@ -31,14 +31,15 @@ import {
 	serverRoom,
 	watchRoom,
 } from '../store/chat'
+import { ChatText, createEntries } from '../components/ChatText'
 import { Composer } from '../components/Composer'
-import { Linkify } from '../components/Linkify'
 import { showPlayerMenu } from '../components/PlayerMenu'
 import { Glyph } from '../components/icons'
 import { isMuted, rememberChannel, toggleMute } from '../store/channels'
 import { TabStrip, type Tab as StripTab } from '../components/TabStrip'
 import { clock } from '../lib/age'
 import { SPADS_COMMANDS, settingKeys, type Vocabulary } from '../lib/compose'
+import { isTable } from '../lib/hostTable'
 import { ordered } from '../lib/reorder'
 import { clashes } from '../lib/servers'
 import {
@@ -271,6 +272,7 @@ export function Chat() {
 	}
 
 	const lines = () => chat.rooms[room()] ?? []
+	const entries = createEntries(lines)
 	const members = () => chat.channels[room()]?.members ?? []
 	/** Friends first, then alphabetical — the same order as everywhere else. */
 	const sortedMembers = createMemo(() => {
@@ -768,7 +770,7 @@ export function Chat() {
 				<div class='chat-body' classList={{ roster: showMembers() }}>
 					<div class='chat-log' ref={log}>
 						<For
-							each={lines()}
+							each={entries()}
 							fallback={
 								<p class='muted setup-empty'>
 									{/* The commands need a server to answer them, so offering
@@ -788,9 +790,22 @@ export function Chat() {
 								</p>
 							}
 						>
-							{(line) => (
-								<Line line={line} me={meIn(room())} server={serverOf(room())} />
-							)}
+							{(entry) =>
+								isTable(entry) ? (
+									<Line
+										line={entry.line}
+										rows={entry.rows}
+										me={meIn(room())}
+										server={serverOf(room())}
+									/>
+								) : (
+									<Line
+										line={entry}
+										me={meIn(room())}
+										server={serverOf(room())}
+									/>
+								)
+							}
 						</For>
 					</div>
 
@@ -866,6 +881,8 @@ function MuteToggle(props: { room: string; label: string }) {
 
 function Line(props: {
 	line: ChatLine
+	/** The rows of the host table this line opens. */
+	rows?: string[]
 	me: string | null
 	/** The server the line was said on. */
 	server: string | undefined
@@ -892,9 +909,7 @@ function Line(props: {
 			>
 				{props.line.from}
 			</span>
-			<span class='text'>
-				<Linkify text={props.line.text} />
-			</span>
+			<ChatText line={props.line} rows={props.rows} />
 		</div>
 	)
 }

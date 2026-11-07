@@ -1661,6 +1661,16 @@ body.resizing-y {
 	color: var(--accent);
 }
 
+/* A host's table keeps the padding SPADS lines its columns up with. */
+.line .host-table {
+	margin: 0;
+	font-family: var(--mono);
+	font-size: 0.75rem;
+	white-space: pre;
+	overflow-wrap: normal;
+	overflow-x: auto;
+}
+
 .chat-input {
 	display: flex;
 	gap: 0.5rem;
