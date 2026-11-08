@@ -18,8 +18,14 @@ const disconnected = (entry: ServerEntry) =>
  */
 export function AccountMenu(props: { name: string }) {
 	const [open, setOpen] = createSignal(false)
-	/** The server the login form is open on, for one with nothing to reconnect with. */
-	const [asking, setAsking] = createSignal<string | null>(null)
+	/**
+	 * The server the login form is open on, for one with nothing to reconnect
+	 * with or whose account was turned away, and why it was.
+	 */
+	const [asking, setAsking] = createSignal<{
+		server: string
+		refused?: string
+	} | null>(null)
 	let root: HTMLDivElement | undefined
 	createEffect(() => {
 		if (open())
@@ -40,9 +46,9 @@ export function AccountMenu(props: { name: string }) {
 			(session) => session.phase === null && session.retryAt !== null,
 		)
 
-	function logIn(server: string) {
+	function logIn(server: string, refused?: string) {
 		setOpen(false)
-		setAsking(server)
+		setAsking({ server, refused })
 	}
 
 	async function logOut(server: string) {
@@ -57,11 +63,13 @@ export function AccountMenu(props: { name: string }) {
 		try {
 			await api.reconnect(server)
 		} catch (error) {
-			if (errorCode(error) === 'noCredentials') logIn(server)
+			const code = errorCode(error)
+			if (code === 'noCredentials') logIn(server)
+			else if (code === 'loginDenied') logIn(server, describeError(error))
 			else
 				noticeLoginFailure(
 					server,
-					errorCode(error),
+					code,
 					describeError(error),
 					'could not reconnect to',
 				)
@@ -120,8 +128,12 @@ export function AccountMenu(props: { name: string }) {
 				</div>
 			</Show>
 			<Show when={asking()} keyed>
-				{(server) => (
-					<LoginSheet server={server} close={() => setAsking(null)} />
+				{(ask) => (
+					<LoginSheet
+						server={ask.server}
+						refused={ask.refused}
+						close={() => setAsking(null)}
+					/>
 				)}
 			</Show>
 		</div>

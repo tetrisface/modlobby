@@ -52,9 +52,14 @@ pub enum ClientError {
 	AlreadyConnected,
 	#[error(transparent)]
 	Transport(#[from] TransportError),
-	/// The server or host said no: login denied, join refused, disconnected.
+	/// The server or host said no: join refused, disconnected, a login
+	/// refused for flooding (the retry's wait answers that one).
 	#[error("{0}")]
 	Refused(String),
+	/// The server refused the account that logged in: a wrong password, an
+	/// unknown name, a ban. Trying the same again cannot help; a person can.
+	#[error("{0}")]
+	LoginDenied(String),
 	#[error(transparent)]
 	TooLong(#[from] TooLong),
 	#[error("engine: {0}")]
@@ -3979,7 +3984,14 @@ impl Runtime {
 						queue.extend(effects);
 					}
 				}
-				Effect::LoginDenied { reason } => self.refuse(server, reason).await,
+				Effect::LoginDenied { reason } => {
+					let refusal = if links::flooded(&reason) {
+						ClientError::Refused(reason)
+					} else {
+						ClientError::LoginDenied(reason)
+					};
+					self.refuse(server, refusal).await
+				}
 				Effect::AgreementRequired { text } => {
 					// Not a refusal, and never a reason to hang up: this is
 					// the one connection the emailed code can be sent on.
@@ -4043,10 +4055,10 @@ impl Runtime {
 				Effect::Redirect { host, port } => {
 					self.refuse(
 						server,
-						format!(
+						ClientError::Refused(format!(
 							"server redirects to {host}:{}",
 							port.map_or("?".into(), |p| p.to_string())
-						),
+						)),
 					)
 					.await
 				}
@@ -4058,7 +4070,11 @@ impl Runtime {
 							.trip(Area::Login, Instant::now() + wait)
 							.await;
 					}
-					self.refuse(server, format!("disconnected: {reason}")).await;
+					self.refuse(
+						server,
+						ClientError::Refused(format!("disconnected: {reason}")),
+					)
+					.await;
 				}
 				Effect::Joined { .. } => {
 					self.leave_rooms_except(server).await;
@@ -6467,7 +6483,52 @@ mod tests {
 
 		let answer = confirming.await.unwrap();
 		assert!(
-			matches!(&answer, Err(ClientError::Refused(reason)) if reason == "Incorrect code"),
+			matches!(&answer, Err(ClientError::LoginDenied(reason)) if reason == "Incorrect code"),
+			"{answer:?}"
+		);
+		client.shutdown().await;
+	}
+
+	/// Greets with `TASSERVER`, takes the `LOGIN`, and answers it with `denied`.
+	async fn deny_login(server: DuplexStream, denied: &[u8]) -> FakeServer {
+		let (read, mut write) = tokio::io::split(server);
+		let mut lines = BufReader::new(read).lines();
+		write.write_all(b"TASSERVER 0.38 * 8201 0\n").await.unwrap();
+		let sent = lines.next_line().await.unwrap().unwrap();
+		assert!(sent.starts_with("LOGIN me "), "{sent}");
+		write.write_all(denied).await.unwrap();
+		(lines, write)
+	}
+
+	#[tokio::test]
+	async fn a_refused_password_is_a_login_denial() {
+		let (connector, server) = in_memory();
+		let client = spawn(connector);
+		let login = log_in(&client, "a");
+		let _server = deny_login(server, b"DENIED Invalid password\n").await;
+
+		let answer = login.await.unwrap();
+		assert!(
+			matches!(&answer, Err(ClientError::LoginDenied(reason)) if reason == "Invalid password"),
+			"{answer:?}"
+		);
+		client.shutdown().await;
+	}
+
+	#[tokio::test]
+	async fn a_flood_refusal_is_not_a_login_denial() {
+		let (connector, server) = in_memory();
+		let client = spawn(connector);
+		let login = log_in(&client, "a");
+		let _server = deny_login(
+			server,
+			b"DENIED Flood protection - Please wait 20 seconds and try again\n",
+		)
+		.await;
+
+		let answer = login.await.unwrap();
+		assert!(
+			matches!(&answer, Err(ClientError::Refused(reason)) if reason.starts_with("Flood protection")),
 			"{answer:?}"
 		);
 		client.shutdown().await;

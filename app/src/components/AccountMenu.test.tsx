@@ -98,6 +98,22 @@ describe('the account menu', () => {
 		expect(container.querySelector('.account-menu')).toBeNull()
 	})
 
+	test('asks for the password again when the server refuses it', async () => {
+		asked.mockImplementation(async (command: string) => {
+			if (command === 'reconnect')
+				throw { code: 'loginDenied', message: 'Invalid password' }
+			if (command === 'login_wait') return 0
+			return false
+		})
+		const { container } = open()
+		fireEvent.click(button(container, 'Reconnect'))
+		await vi.waitFor(() =>
+			expect(document.querySelector('.login-sheet')?.textContent).toContain(
+				'Invalid password',
+			),
+		)
+	})
+
 	test('closes on Escape', () => {
 		const { container } = open()
 		fireEvent.keyDown(document, { key: 'Escape' })

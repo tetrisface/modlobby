@@ -48,6 +48,7 @@ impl From<ClientError> for ApiError {
 			}
 			ClientError::Transport(_) => "transport",
 			ClientError::Refused(_) => "refused",
+			ClientError::LoginDenied(_) => "loginDenied",
 			ClientError::TooLong(_) => "tooLong",
 			ClientError::Engine(_) => "engine",
 			ClientError::Stopped => "stopped",
@@ -2140,9 +2141,19 @@ mod tests {
 		assert!(!reached_the_server(&Err(ClientError::NoCredentials)));
 		assert!(!reached_the_server(&Err(ClientError::AlreadyConnected)));
 		assert!(reached_the_server(&Ok(())));
-		assert!(reached_the_server(&Err(ClientError::Refused(
+		assert!(reached_the_server(&Err(ClientError::LoginDenied(
 			"wrong password".into()
 		))));
+	}
+
+	#[test]
+	fn a_refused_account_has_a_code_of_its_own() {
+		use super::{ApiError, ClientError};
+		let denied = ApiError::from(ClientError::LoginDenied("Invalid password".into()));
+		assert_eq!(
+			(denied.code, denied.message.as_str()),
+			("loginDenied", "Invalid password")
+		);
 	}
 
 	use super::ai_rank;
