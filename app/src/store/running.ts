@@ -17,8 +17,14 @@ const [running, setRunning] = createSignal<Record<string, Running>>({})
 
 export { running }
 
-/** What the battle list can see: whichever games are going right now. */
-export function noteRunning(keys: ReadonlySet<string>, settled: boolean): void {
+/**
+ * What the battle list can see: whichever games are going right now, and for
+ * each room whether its server had been looked at before (see `track`).
+ */
+export function noteRunning(
+	keys: ReadonlySet<string>,
+	settled: (key: string) => boolean,
+): void {
 	// A game that ended takes its answer with it: the next one in that room is a
 	// different game, and worth asking about again.
 	for (const key of answered) if (!keys.has(key)) answered.delete(key)

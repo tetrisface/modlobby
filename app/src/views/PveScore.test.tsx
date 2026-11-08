@@ -833,7 +833,7 @@ describe('PveScore', () => {
 		await settle()
 
 		// The row's label is the way in; the panel is not drawn until asked for.
-		expect(container.textContent).not.toContain('Training games')
+		expect(container.textContent).not.toContain('Games modelled')
 		const button = getByLabelText('Open PvE stats') as HTMLButtonElement
 		// Its icon is the histogram in little: the two bins merge into one bar,
 		// with the tick where the setup sits.
@@ -842,11 +842,12 @@ describe('PveScore', () => {
 		button.click()
 
 		const sheet = container.querySelector('.pve-stats')!
-		expect(sheet.textContent).toContain('Training games')
+		expect(sheet.textContent).toContain('Games modelled')
+		expect(sheet.textContent).toContain('4,200')
 		expect(sheet.querySelectorAll('.pve-bar')).toHaveLength(2)
 		expect(sheet.querySelector('.pve-bar.current')).not.toBeNull()
 		expect(sheet.textContent).toContain('your best 24.8')
-		expect(sheet.textContent).toContain('2025-01-02 –')
+		expect(sheet.textContent).toContain('from 2025-01-02 up to')
 		// The table on show, not the sizer's unseen copies.
 		const shown = () => sheet.querySelector('.pve-scroll > table')
 		// Known players first, then the name the service did not know, and the
@@ -861,9 +862,9 @@ describe('PveScore', () => {
 			shown()!.querySelector('th[aria-sort="descending"]')?.textContent,
 		).toContain('Max here')
 		expect(shown()!.querySelector('tr.own')?.textContent).toContain('50')
-		// The sizer lays out every record tab with everyone in it, spectator
-		// group included, so the table area is as big as the biggest needs
-		// before any tab is opened or spectators are shown.
+		// The sizer lays out every record tab with everyone in it, so the table
+		// area is as big as the biggest needs before any tab is opened. Nobody
+		// is watching, so there is no spectators' group to make room for.
 		const sized = [...sheet.querySelectorAll('.pve-sizer table')]
 		expect(sized).toHaveLength(4)
 		for (const table of sized) {
@@ -872,7 +873,7 @@ describe('PveScore', () => {
 					(td) => td.textContent,
 				),
 			).toEqual(['me', 'newbie'])
-			expect(table.querySelector('.pve-group')?.textContent).toBe('Spectators')
+			expect(table.querySelector('.pve-group')).toBeNull()
 		}
 		expect(shown()!.querySelector('.pve-group')).toBeNull()
 		// The widget's Diagnostics is a fifth view in the same box.
@@ -893,8 +894,11 @@ describe('PveScore', () => {
 	})
 
 	test('the spectators toggle is remembered the next time the panel is drawn', async () => {
-		asked.mockResolvedValue(scored)
-		enter([bot('RaptorsAI')])
+		asked.mockResolvedValue({
+			...scored,
+			unresolvedPlayers: [...scored.unresolvedPlayers, 'zoe'],
+		})
+		enter([bot('RaptorsAI')], [user('zoe')])
 		const first = render(panel)
 		vi.advanceTimersByTime(0)
 		await settle()
@@ -916,6 +920,63 @@ describe('PveScore', () => {
 		expect(
 			document.querySelector('.pve-scroll > table .pve-group')?.textContent,
 		).toBe('Spectators')
+	})
+
+	test('with nobody watching the toggle stays and the empty group does not', async () => {
+		asked.mockResolvedValue(scored)
+		enter([bot('RaptorsAI')])
+		const { getByLabelText } = render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+		;(getByLabelText('Open PvE stats') as HTMLButtonElement).click()
+		const toggle = [...document.querySelectorAll('.pve-stats button')].find(
+			(button) => button.textContent?.trim() === 'Spectators',
+		) as HTMLButtonElement
+		if (!toggle.classList.contains('on')) toggle.click()
+		expect(document.querySelector('.pve-scroll > table .pve-group')).toBeNull()
+		expect(document.querySelector('.pve-stats')?.textContent).not.toContain(
+			'No spectator records',
+		)
+	})
+
+	test('the panel heads with the figures the row does, the full team unmuted', async () => {
+		asked.mockResolvedValue({
+			...scored,
+			challenge: 24.9,
+			winChance: 0.27,
+			percentile: 48,
+			seated: 10,
+			full: full(12, 23.4, 0.31, 42),
+		})
+		enter([bot('RaptorsAI')])
+		const { getByLabelText } = render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+		;(getByLabelText('Open PvE stats') as HTMLButtonElement).click()
+
+		const tiles = new Map(
+			[...document.querySelectorAll('.pve-summary .pve-metric')].map((tile) => [
+				tile.querySelector('.pve-label')?.textContent,
+				tile.querySelector('.pve-figure') as HTMLElement,
+			]),
+		)
+		expect(tiles.get('Challenge')?.textContent).toBe('24.9\u201323.4')
+		expect(
+			tiles.get('Challenge')?.querySelector('.challenge-now')?.textContent,
+		).toBe('24.9')
+		expect(tiles.get('Win chance')?.textContent).toBe('27%\u201331%')
+		// One name for one figure: the row's.
+		expect(tiles.get('Harder than')?.textContent).toBe('48%\u201342%')
+		expect(tiles.has('Difficulty percentile')).toBe(false)
+		expect(
+			tiles.get('Challenge')?.closest('[title]')?.getAttribute('title'),
+		).toContain(
+			'The muted figure is the room with the 10 seated now; the other, with all 12 seats taken.',
+		)
+		// The chart and its caption speak for the full team.
+		expect(document.querySelector('.pve-caption')?.textContent).toMatch(
+			/^Challenge 23\.4 — harder than 42%/,
+		)
 	})
 
 	test('a figure in the row opens the panel too', async () => {

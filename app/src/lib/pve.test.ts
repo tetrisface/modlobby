@@ -18,8 +18,12 @@ import {
 	diagnosticRows,
 	fieldRatio,
 	guides,
+	headline,
 	histogramHelp,
-	matchSummary,
+	leadingSort,
+	matchDetail,
+	matchHelp,
+	matchLine,
 	miniature,
 	place,
 	matchText,
@@ -266,7 +270,7 @@ describe('pve view logic', () => {
 
 	test('the caption reads like the widget', () => {
 		expect(caption(SCORE, SCORE.players[0])).toBe(
-			"Challenge 21.5 — harder than 88% of played Raptors games — your best 24.8 — 1.33× the field's clear rate",
+			'Challenge 21.5 — harder than 88% of played Raptors games — your best 24.8 — you win 33% more often than others at the challenges you play',
 		)
 		expect(
 			caption({ ...SCORE, challenge: null, percentile: null }, undefined),
@@ -282,24 +286,84 @@ describe('pve view logic', () => {
 
 	test('the data window spans the oldest game to how long ago the newest was', () => {
 		const now = Date.parse('2026-06-22T22:46:17Z')
-		expect(dataWindow(SCORE, now)).toBe('2025-01-02 – 2d ago')
+		expect(dataWindow(SCORE, now)).toBe('from 2025-01-02 up to 2d ago')
+		expect(dataWindow({ ...SCORE, dataSince: null }, now)).toBe('up to 2d ago')
 		expect(dataWindow({ ...SCORE, dataUntil: null }, now)).toBe('')
 	})
 
+	test('the chart and caption speak for the full team where there is one', () => {
+		expect(headline(SCORE)).toBe(SCORE)
+		const filling = {
+			...SCORE,
+			full: {
+				players: 12,
+				challenge: 23.4,
+				winChance: 0.31,
+				percentile: 42,
+				uncertain: false,
+			},
+		}
+		const lead = headline(filling)
+		expect([lead.challenge, lead.winChance, lead.percentile]).toEqual([
+			23.4, 0.31, 42,
+		])
+		expect(caption(lead, undefined)).toBe(
+			'Challenge 23.4 — harder than 42% of played Raptors games',
+		)
+	})
+
+	test('a field ratio near one says so rather than 0% more', () => {
+		// 20 games where humans win 10%: two wins is exactly the field's rate.
+		const even = player('me', {
+			clearHistogram: [0, 2],
+			playHistogram: [0, 20],
+		})
+		expect(fieldRatio(SCORE, even)).toBeCloseTo(1)
+		expect(caption(SCORE, even)).toContain(
+			'you win about as often as others at the challenges you play',
+		)
+		const behind = player('me', {
+			clearHistogram: [0, 1],
+			playHistogram: [2, 10],
+		})
+		expect(caption(SCORE, behind)).toContain('you win 64% less often than')
+	})
+
 	test('match wording follows status and method', () => {
-		expect(matchText(SCORE)).toBe('Raw fallback')
-		expect(
-			matchText({ ...SCORE, matched: { ...SCORE.matched, status: 'exact' } }),
-		).toBe('Exact')
-		expect(
-			matchText({
-				...SCORE,
-				matched: { ...SCORE.matched, method: 'similar', similarity: 0.9 },
-			}),
-		).toBe('Similar 0.900')
-		expect(matchSummary(SCORE)).toBe(
+		const exact = { ...SCORE, matched: { ...SCORE.matched, status: 'exact' } }
+		const similar = {
+			...SCORE,
+			matched: { ...SCORE.matched, method: 'similar', similarity: 0.9 },
+		}
+		const none = {
+			...SCORE,
+			matched: { ...SCORE.matched, status: 'not_found' },
+		}
+		expect(matchText(SCORE)).toBe('Weak')
+		expect(matchText(exact)).toBe('Exact')
+		expect(matchText(similar)).toBe('Strong')
+		expect(matchText(none)).toBe('None')
+		// The method and the number are behind the hover, not on the tile.
+		expect(matchHelp(SCORE)).toMatch(/^Weak: .*\(a raw fallback\)/)
+		expect(matchHelp(similar)).toContain('(similarity 0.900, where 1.000')
+		expect(matchDetail(SCORE)).toBe(
 			'Match: raw lobby fallback; 1 visible difference; 1 additional field difference hidden',
 		)
+	})
+
+	test('the match line counts the differences, visible or not, and is quiet when there are none', () => {
+		expect(matchLine(SCORE)).toBe(
+			'Closest recorded setup differs in 2 settings · see Diagnostics',
+		)
+		expect(
+			matchLine({ ...SCORE, matched: { ...SCORE.matched, status: 'exact' } }),
+		).toBe('')
+		expect(
+			matchLine({
+				...SCORE,
+				matched: { ...SCORE.matched, status: 'not_found' },
+			}),
+		).toBe('No recorded setting is near enough to compare with this lobby.')
 	})
 
 	test('best effort says which kind of gap the service reported', () => {
@@ -472,6 +536,28 @@ describe('pve view logic', () => {
 			'nobody',
 			'Zed',
 		])
+	})
+
+	test('a tab opens on the first column anyone has a figure in', () => {
+		const cols = columns('achievements', SCORE)
+		// Max here has figures, so it leads, as the widget's default does.
+		expect(leadingSort('achievements', 'Raptors', rows(SCORE), cols)).toBe(4)
+		// Nobody has played this setup: both setup columns are blank, so the
+		// arrow goes where the order actually comes from.
+		const unplayed = {
+			...SCORE,
+			players: [
+				player('me', { challenge30Clears: 18, challenge20Clears: 132 }),
+				player('dmpt', { challenge30Clears: 1 }),
+			],
+		}
+		const blank = rows(unplayed)
+		expect(leadingSort('achievements', 'Raptors', blank, cols)).toBe(2)
+		// Nobody with any figure at all: the tab's own default.
+		const empty = { ...SCORE, players: [player('a')] }
+		expect(leadingSort('achievements', 'Raptors', rows(empty), cols)).toBe(
+			defaultSort('achievements', 'Raptors'),
+		)
 	})
 
 	test('the setup columns say what the service actually served', () => {

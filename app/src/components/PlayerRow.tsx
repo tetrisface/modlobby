@@ -65,14 +65,16 @@ export function PlayerRow(props: {
 					<SideIcon side={battle().side} />
 					{/* The press is handled by the row, so that a drag off the name
               is the same gesture as a drag off anywhere else in it. */}
-					<span
-						class='pname'
-						classList={{ me: props.me, friend: props.friend }}
-						onContextMenu={menu}
-					>
-						{props.user.name}
+					<span class='who'>
+						<span
+							class='pname'
+							classList={{ me: props.me, friend: props.friend }}
+							onContextMenu={menu}
+						>
+							{props.user.name}
+						</span>
+						<Marks status={props.user.status} boss={props.boss ?? false} />
 					</span>
-					<Marks status={props.user.status} boss={props.boss ?? false} />
 				</div>
 			)}
 		</Show>
@@ -275,19 +277,21 @@ export function WatcherRow(props: {
 			<Flag country={props.user.country} />
 			<RankIcon status={props.user.status} />
 			<SkillCell skill={props.skill} absent='' />
-			<span
-				class='pname'
-				classList={{
-					me: props.me,
-					friend: props.friend,
-					bot: props.user.status.bot,
-				}}
-				onClick={(event) => showPlayerMenu(props.user.name, event)}
-				onContextMenu={(event) => showPlayerMenu(props.user.name, event)}
-			>
-				{props.user.name}
+			<span class='who'>
+				<span
+					class='pname'
+					classList={{
+						me: props.me,
+						friend: props.friend,
+						bot: props.user.status.bot,
+					}}
+					onClick={(event) => showPlayerMenu(props.user.name, event)}
+					onContextMenu={(event) => showPlayerMenu(props.user.name, event)}
+				>
+					{props.user.name}
+				</span>
+				<Marks status={props.user.status} boss={props.boss ?? false} />
 			</span>
-			<Marks status={props.user.status} boss={props.boss ?? false} />
 		</div>
 	)
 }

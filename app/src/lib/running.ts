@@ -54,8 +54,12 @@ export function track(
 	previous: Readonly<Record<string, Running>>,
 	/** The rooms whose game is going, as battle list keys. */
 	running: ReadonlySet<string>,
-	/** Whether anything has been seen at all yet — false on the first look. */
-	settled: boolean,
+	/**
+	 * Whether a room's server had been looked at before this — false on that
+	 * server's first look after logging in, when every game it shows was
+	 * already going.
+	 */
+	settled: (key: string) => boolean,
 	now: number,
 ): Record<string, Running> {
 	const next: Record<string, Running> = {}
@@ -66,14 +70,20 @@ export function track(
 			next[key] = held
 			continue
 		}
-		next[key] = { since: now, exact: settled }
+		next[key] = { since: now, exact: settled(key) }
 	}
 	return next
 }
 
-/** `7m`, `1h04`, and `+` when the start is only a floor. */
+/**
+ * `7m`, `1h04`, and `+` when the start is only a floor. A game we watched
+ * start under a minute ago is `<1m`: `0m` reads as a clock that is not
+ * running. A floor under a minute is nothing at all: "at least 0m" is every
+ * game at login, and says nothing about any of them.
+ */
 export function elapsed(running: Running, now: number): string {
 	const minutes = Math.max(0, Math.floor((now - running.since) / 60_000))
+	if (minutes === 0) return running.exact ? '<1m' : ''
 	return `${span(minutes)}${running.exact ? '' : '+'}`
 }
 

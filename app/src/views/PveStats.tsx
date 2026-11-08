@@ -1,8 +1,10 @@
-import { For, Show, createMemo, createSignal } from 'solid-js'
+import { For, type JSX, Show, createMemo, createSignal } from 'solid-js'
+import { FigurePair } from '../components/FigurePair'
 import { Segmented } from '../components/Segmented'
 import { TabStrip } from '../components/TabStrip'
 import { Thinking } from '../components/Thinking'
 import type { Score } from '../ipc/bindings/Score'
+import { challengePair, chance, percentRank, tenths } from '../lib/challenge'
 import {
 	BY_NAME,
 	type Column,
@@ -19,14 +21,15 @@ import {
 	cell,
 	columns,
 	dataWindow,
-	defaultSort,
 	diagnosticRows,
 	guides,
+	headline,
 	histogramHelp,
+	leadingSort,
 	matchHelp,
-	opponentText,
-	matchSummary,
+	matchLine,
 	matchText,
+	opponentText,
 	ownPlayer,
 	roster,
 	sortRows,
@@ -34,8 +37,25 @@ import {
 import { sticky } from '../lib/sticky'
 import { useRoom } from './room/model'
 
-const percent = (value: number | null) =>
-	value == null ? '—' : `${Math.round(value * 100)}%`
+/** Whole numbers with their thousands marked: `92,458`. */
+const COUNT = new Intl.NumberFormat('en')
+
+/**
+ * A figure as seated, then with every seat taken, the way the room's row
+ * writes it; `absent` where the service gave none.
+ */
+function paired(
+	now: number | null,
+	full: number | null | undefined,
+	format: (value: number) => string,
+	absent: string,
+): JSX.Element {
+	return now == null ? (
+		absent
+	) : (
+		<FigurePair parts={challengePair(now, full ?? null, format)} />
+	)
+}
 
 const MEASURES = [
 	{
@@ -75,9 +95,8 @@ export function PveStats(props: {
 	/** The record tabs, plus the widget's Diagnostics as a view of its own. */
 	const [view, setView] = createSignal<Tab | 'diagnostics'>('achievements')
 	const [tab, setTab] = createSignal<Tab>('achievements')
-	const [sort, setSort] = createSignal<number | typeof BY_NAME>(
-		defaultSort('achievements', props.score?.aiType ?? ''),
-	)
+	/** The column clicked, while one has been since the tab opened. */
+	const [chosen, setChosen] = createSignal<number | typeof BY_NAME | null>(null)
 	const [descending, setDescending] = createSignal(true)
 	/** Watchers' records under the players, kept across openings and restarts. */
 	const [spectatorsHeld, setSpectators] = sticky<boolean>(
@@ -96,9 +115,15 @@ export function PveStats(props: {
 
 	/** The histogram bar under the pointer, which the reading lines follow. */
 	const [hovered, setHovered] = createSignal<number | null>(null)
-	const shown = createMemo(() =>
-		props.score ? bars(props.score, me(), measure()) : [],
-	)
+	/**
+	 * The score the chart and its caption speak for: every seat taken, the
+	 * figure in full colour beside the muted seated one above them.
+	 */
+	const lead = createMemo(() => (props.score ? headline(props.score) : null))
+	const shown = createMemo(() => {
+		const score = lead()
+		return score ? bars(score, me(), measure()) : []
+	})
 	const reading = () => {
 		const at = hovered()
 		return at === null ? null : guides(shown(), at)
@@ -125,19 +150,28 @@ export function PveStats(props: {
 		}
 	})
 
+	const sort = createMemo(
+		() =>
+			chosen() ??
+			leadingSort(
+				tab(),
+				ai(),
+				[...split().players, ...split().watchers],
+				cols(),
+			),
+	)
+
 	const pick = (next: Tab | 'diagnostics') => {
 		setView(next)
 		if (next === 'diagnostics') return
 		setTab(next)
-		setSort(defaultSort(next, ai()))
+		setChosen(null)
 		setDescending(true)
 	}
 	const sortBy = (by: number | typeof BY_NAME) => {
 		if (sort() === by) setDescending(!descending())
-		else {
-			setSort(by)
-			setDescending(by !== BY_NAME)
-		}
+		else setDescending(by !== BY_NAME)
+		setChosen(by)
 	}
 	const mark = (by: number | typeof BY_NAME) =>
 		sort() === by ? (descending() ? 'descending' : 'ascending') : 'none'
@@ -152,6 +186,16 @@ export function PveStats(props: {
 		}
 	})
 
+	/** Under a figure's explanation, once it has two: which is which. */
+	const seats = () => {
+		const full = props.score?.full
+		if (!full) return ''
+		const seated = props.score?.seated
+		const now =
+			seated == null ? 'as seated now' : `with the ${seated} seated now`
+		return `\n\nThe muted figure is the room ${now}; the other, with all ${full.players} seats taken.`
+	}
+
 	/** The setting served is not this room's own, so its columns carry a mark. */
 	const inexact = () => {
 		const source = props.score?.setup?.source
@@ -160,7 +204,7 @@ export function PveStats(props: {
 
 	const Figure = (held: {
 		label: string
-		value: string
+		value: JSX.Element
 		help: string
 		class?: string
 	}) => (
@@ -251,7 +295,7 @@ export function PveStats(props: {
 				columns={held.columns}
 				empty='No player records'
 			/>
-			<Show when={held.spectators}>
+			<Show when={held.spectators && held.groups.watchers.length > 0}>
 				<tr class='pve-group'>
 					<td colspan={held.columns.length + 1}>Spectators</td>
 				</tr>
@@ -306,33 +350,40 @@ export function PveStats(props: {
 							<div class='pve-summary'>
 								<Figure
 									label='Win chance'
-									value={percent(score().winChance)}
-									help='Estimated chance a representative current BAR human team wins this map and setup. The people in this room are not part of that estimate.'
+									value={paired(
+										score().winChance,
+										score().full?.winChance,
+										chance,
+										'—',
+									)}
+									help={`Estimated chance a representative current BAR human team wins this map and setup. The people in this room are not part of that estimate.${seats()}`}
 								/>
 								<Figure
 									label='Challenge'
-									value={
-										score().challenge == null
-											? 'Unplaced'
-											: score().challenge!.toFixed(1)
-									}
-									help='Absolute difficulty on a 0-34 scale. 17 is an estimated even game for a representative human team; higher is harder. Difficulty percentile is the relative placement among played games.'
+									value={paired(
+										score().challenge,
+										score().full?.challenge,
+										tenths,
+										'Unplaced',
+									)}
+									help={`Absolute difficulty on a 0-34 scale. 17 is an estimated even game for a representative human team; higher is harder. Harder than is its place among played games.${seats()}`}
 								/>
 								<Figure
-									label='Difficulty percentile'
-									value={
-										score().percentile == null
-											? 'Unplaced'
-											: `P${Math.round(score().percentile!)}`
-									}
-									help={`Share of eligible played ${ai()} games whose setup had a lower Challenge than this one. A relative placement, not the Challenge score itself.`}
+									label='Harder than'
+									value={paired(
+										score().percentile,
+										score().full?.percentile,
+										percentRank,
+										'Unplaced',
+									)}
+									help={`Share of eligible played ${ai()} games whose setup had a lower Challenge than this one. A relative placement, not the Challenge score itself.${seats()}`}
 								/>
 								<Figure
-									label='Training games'
+									label='Games modelled'
 									value={
 										score().evidenceGames == null
 											? '—'
-											: String(Math.round(score().evidenceGames!))
+											: COUNT.format(Math.round(score().evidenceGames!))
 									}
 									help={`Eligible ${ai()} games used to train this model after validity and grace-period filtering. Overall model data, not the number of exact or nearby matches and not a confidence score.`}
 								/>
@@ -361,14 +412,14 @@ export function PveStats(props: {
 											<i class='pve-half' />
 											<Show
 												when={
-													score().winChance != null && score().challenge != null
+													lead()?.winChance != null && lead()?.challenge != null
 												}
 											>
 												<i
 													class='pve-predicted'
 													style={{
-														left: `${(Math.min(score().challenge!, TOP) / TOP) * 100}%`,
-														bottom: `${score().winChance! * 100}%`,
+														left: `${(Math.min(lead()!.challenge!, TOP) / TOP) * 100}%`,
+														bottom: `${lead()!.winChance! * 100}%`,
 													}}
 												/>
 											</Show>
@@ -454,7 +505,7 @@ export function PveStats(props: {
 									<div class='pve-legend-row'>
 										<div
 											class='pve-legend'
-											title={histogramHelp(score(), me(), measure())}
+											title={histogramHelp(lead()!, me(), measure())}
 										>
 											<Show
 												when={measure() === 'winrate'}
@@ -488,8 +539,8 @@ export function PveStats(props: {
 												</Show>
 												<Show
 													when={
-														score().winChance != null &&
-														score().challenge != null
+														lead()?.winChance != null &&
+														lead()?.challenge != null
 													}
 												>
 													<span>
@@ -510,7 +561,7 @@ export function PveStats(props: {
 											onChange={setMeasure}
 										/>
 									</div>
-									<p class='pve-caption'>{caption(score(), me())}</p>
+									<p class='pve-caption'>{caption(lead()!, me())}</p>
 								</div>
 							</Show>
 
@@ -525,7 +576,9 @@ export function PveStats(props: {
 									</div>
 								)}
 							</Show>
-							<p class='pve-line muted'>{matchSummary(score())}</p>
+							<Show when={matchLine(score())}>
+								{(line) => <p class='pve-line muted'>{line()}</p>}
+							</Show>
 							<Show when={bestEffortText(score())}>
 								{(text) => <p class='pve-line warn'>{text()}</p>}
 							</Show>

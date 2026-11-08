@@ -201,6 +201,18 @@ export function IconSprite() {
 					/>
 				</symbol>
 
+				{/* How hard a PvE room is, before its challenge figure in the battle
+            list: a dial with its needle past the middle. */}
+				<symbol id='stat-gauge' viewBox='0 0 20 20'>
+					<path
+						d='M3.4 14.6 A6.8 6.8 0 0 1 16.6 14.6 M10 14.6 L13.4 9.2'
+						fill='none'
+						stroke='currentColor'
+						stroke-width='1.6'
+						stroke-linecap='round'
+					/>
+				</symbol>
+
 				{/* Faction. The one coloured mark on a row, because `side` is chosen
             and known — unlike the colour the engine assigns at game start. */}
 				<symbol id='side-armada' viewBox='0 0 20 20'>
@@ -455,6 +467,15 @@ export function Glyph(props: { id: string }) {
 	return (
 		<svg class='icon act' aria-hidden='true'>
 			<use href={`#${props.id}`} />
+		</svg>
+	)
+}
+
+/** The dial before a listed room's challenge; the cell's tooltip says the rest. */
+export function Gauge() {
+	return (
+		<svg class='icon gauge' aria-hidden='true'>
+			<use href='#stat-gauge' />
 		</svg>
 	)
 }

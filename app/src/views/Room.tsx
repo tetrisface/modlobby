@@ -867,13 +867,8 @@ export function Room() {
 										)}
 									</Show>
 								</span>
-								{/* Whose room it is, which is only worth saying when it is
-                    somebody else's. */}
-								<Show when={room.caps.spads}>
-									<span>
-										Host <b>{b().founder}</b>
-									</span>
-								</Show>
+								{/* No Host: a SPADS room's host is its autohost, a bot, and
+                    the spectator list already names it. */}
 								<Show when={severalServers() && roomServer()}>
 									{(server) => (
 										<span>
@@ -1479,6 +1474,13 @@ function Missing(props: { parts: readonly string[]; engineVersion: string }) {
 	const download = () => lobby.download
 	const fetchable = () => !props.parts.includes('engine')
 	const auto = () => settings()?.play.autoDownload ?? true
+	/** The engine's own card, below the pills, which names the engine itself. */
+	const engineCard = () =>
+		!fetchable() &&
+		download().state !== 'running' &&
+		download().state !== 'failed'
+	const named = () =>
+		engineCard() ? props.parts.filter((part) => part !== 'engine') : props.parts
 
 	async function start() {
 		try {
@@ -1490,7 +1492,9 @@ function Missing(props: { parts: readonly string[]; engineVersion: string }) {
 
 	return (
 		<>
-			<span class='chip warn'>Missing {props.parts.join(', ')}</span>
+			<Show when={named().length > 0}>
+				<span class='chip warn'>Missing {named().join(', ')}</span>
+			</Show>
 			{/* The fallback is the point: with auto-download on and the engine
           already here, none of the arms matched and the row offered nothing
           at all — a dead end one second after the engine landed. */}

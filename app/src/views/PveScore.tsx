@@ -8,15 +8,16 @@ import {
 	on,
 	onCleanup,
 } from 'solid-js'
+import { FigurePair } from '../components/FigurePair'
 import { Thinking } from '../components/Thinking'
 import type { BotView } from '../ipc/bindings/BotView'
 import type { Score } from '../ipc/bindings/Score'
 import { describeError } from '../ipc/client'
 import { age } from '../lib/age'
 import { asker } from '../lib/asking'
-import { challengePair, SPAN } from '../lib/challenge'
+import { challengePair, chance, percentRank, tenths } from '../lib/challenge'
 import { isVsAi } from '../lib/battles'
-import { NOTHING_YET, TOP, declinedText, miniature } from '../lib/pve'
+import { NOTHING_YET, TOP, declinedText, headline, miniature } from '../lib/pve'
 import { askDelay } from '../lib/stagger'
 import {
 	playerHandicap,
@@ -232,7 +233,10 @@ function myStagger(room: RoomModel): number {
  */
 function Miniature(props: { score: Score | undefined }) {
 	const drawn = createMemo(() =>
-		props.score?.histogram.length ? miniature(props.score) : NOTHING_YET,
+		// Marked where the row's full-colour figure is: every seat taken.
+		props.score?.histogram.length
+			? miniature(headline(props.score))
+			: NOTHING_YET,
 	)
 	return (
 		<svg
@@ -403,30 +407,20 @@ export function PveScore() {
 		full: number | null | undefined,
 		format: (value: number) => string,
 		unit = '',
-	): JSX.Element => {
-		if (now == null) return '—'
-		const parts = challengePair(now, full ?? null, format)
-		return (
-			<>
-				{parts.now !== null && (
-					<>
-						<span class='challenge-now'>{parts.now}</span>
-						{SPAN}
-					</>
-				)}
-				{parts.main}
-				{unit}
-			</>
+	): JSX.Element =>
+		now == null ? (
+			'—'
+		) : (
+			<FigurePair
+				parts={challengePair(now, full ?? null, format)}
+				unit={unit}
+			/>
 		)
-	}
-	const tenths = (value: number) => value.toFixed(1)
-	const whole = (value: number) => `${Math.round(value * 100)}%`
-	const percentRank = (value: number) => `${Math.round(value)}%`
 
 	/** `12.0–15.1/34`: to the decimal here, whole numbers in the battle list. */
 	const challenge = () =>
 		pair(shown()?.challenge, shown()?.full?.challenge, tenths, '/34')
-	const win = () => pair(shown()?.winChance, shown()?.full?.winChance, whole)
+	const win = () => pair(shown()?.winChance, shown()?.full?.winChance, chance)
 	const harder = () =>
 		pair(shown()?.percentile, shown()?.full?.percentile, percentRank)
 
@@ -521,7 +515,7 @@ export function PveScore() {
 					<span
 						class='pve-stat'
 						title={dated(
-							`Absolute difficulty on a 0-34 scale. 17 is an estimated even game for a representative human team; higher is harder.A dash means the service has not placed this setup among played games yet.${bothSeats(shown()?.challenge, shown()?.full?.challenge, tenths)}`,
+							`Absolute difficulty on a 0-34 scale. 17 is an estimated even game for a representative human team; higher is harder. A dash means the service has not placed this setup among played games yet.${bothSeats(shown()?.challenge, shown()?.full?.challenge, tenths)}`,
 						)}
 					>
 						<span class='pve-label'>Challenge</span>
@@ -533,7 +527,7 @@ export function PveScore() {
 					<span
 						class='pve-stat'
 						title={dated(
-							`Estimated chance a representative current BAR human team wins this map and setup. The people in this room are not part of that estimate.${bothSeats(shown()?.winChance, shown()?.full?.winChance, whole)}`,
+							`Estimated chance a representative current BAR human team wins this map and setup. The people in this room are not part of that estimate.${bothSeats(shown()?.winChance, shown()?.full?.winChance, chance)}`,
 						)}
 					>
 						<span class='pve-label'>Win</span>

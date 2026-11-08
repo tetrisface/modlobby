@@ -925,12 +925,20 @@ textarea {
 .chips {
 	display: flex;
 	flex-wrap: wrap;
+	/* A pill is as tall as its text, whatever shares its line. */
+	align-items: center;
 	gap: 0.3125rem;
 }
 
 /* A sentence among pills takes the row rather than sharing one. */
 .chips .chip-say {
 	flex-basis: 100%;
+}
+
+/* So does the engine's card, under the pills rather than between them. */
+.chips .get-engine {
+	flex-basis: 100%;
+	order: 1;
 }
 
 /* Sentence case, not shouted: these are short statements about the room —
@@ -1308,12 +1316,14 @@ body.resizing-y {
 	opacity: 1;
 }
 
-/* Chobby's column order: status, country, rank, skill, faction, name. */
+/* Chobby's column order: status, country, rank, skill, faction, name. The
+   marks ride in the name's cell (`.who`): a column of their own cost every
+   row a gap, crown or not, and a long name its last letters. The skill
+   track holds two digits or `??` in the mono face, 0.86rem, and no more:
+   what it had past that came out of the name. */
 .player {
 	display: grid;
-	grid-template-columns:
-		1.125rem 1rem 1.125rem 1.625rem 1.25rem minmax(0, 1fr)
-		auto;
+	grid-template-columns: 1.125rem 1rem 1.125rem 1.125rem 1.25rem minmax(0, 1fr);
 	align-items: center;
 	gap: 0.4375rem;
 	/* Every row one height: a faction icon sets it for a seated player, and a
@@ -1334,7 +1344,7 @@ body.resizing-y {
    card beside a team lines up with it. */
 .watcher {
 	display: grid;
-	grid-template-columns: 1rem 1.125rem 1.625rem minmax(0, 1fr) auto;
+	grid-template-columns: 1rem 1.125rem 1.125rem minmax(0, 1fr);
 	align-items: center;
 	gap: 0.4375rem;
 	padding: 0.125rem 0.25rem;
@@ -1344,7 +1354,7 @@ body.resizing-y {
 
 /* In the queue, the place in line comes first. */
 .watcher.queued {
-	grid-template-columns: 1.25rem 1rem 1.125rem 1.625rem minmax(0, 1fr) auto;
+	grid-template-columns: 1.25rem 1rem 1.125rem 1.125rem minmax(0, 1fr);
 }
 
 .watcher .place {
@@ -1577,7 +1587,22 @@ body.resizing-y {
 /* After the name, as Chobby stacks them: boss, then away. */
 .marks {
 	display: flex;
+	flex: none;
 	gap: 0.1875rem;
+}
+
+/* No marks, no gap after the name. */
+.marks:empty {
+	display: none;
+}
+
+/* A name and the marks right after it, Chobby's slot for them: the name
+   gives way to the marks, never the other way round. */
+.who {
+	display: flex;
+	align-items: center;
+	gap: 0.3125rem;
+	min-width: 0;
 }
 
 .icon.mark {
@@ -4835,9 +4860,7 @@ input[type='checkbox'].v-edit {
 }
 
 .occupants-head {
-	font-size: 0.6875rem;
-	text-transform: uppercase;
-	letter-spacing: 0.06em;
+	font-size: 0.75rem;
 	color: var(--dim);
 }
 
@@ -7969,14 +7992,15 @@ button.link:hover {
 }
 
 /* And one just before the map while any room has a score to show, after the
-   server's when both are there, so the figures always touch their map.
-   3.75rem fits "34–34", the widest pair. */
+   server's when both are there, so the figures sit by their map. 5.75rem
+   fits the gauge and "34–34", the widest pair, in bold, and the space that
+   keeps the last figure from reading as part of the map's name. */
 .battle-row.scored {
-	grid-template-columns: 3.5rem 5rem 1.5rem 4.5rem 1fr 3.75rem 17.75rem 3rem 6.75rem;
+	grid-template-columns: 3.5rem 5rem 1.5rem 4.5rem 1fr 5.75rem 17.75rem 3rem 6.75rem;
 }
 
 .battle-row.marked.scored {
-	grid-template-columns: 3.5rem 5rem 1.5rem 4.5rem 1fr 6rem 3.75rem 17.75rem 3rem 6.75rem;
+	grid-template-columns: 3.5rem 5rem 1.5rem 4.5rem 1fr 6rem 5.75rem 17.75rem 3rem 6.75rem;
 }
 
 .col-server {
@@ -7984,13 +8008,32 @@ button.link:hover {
 	white-space: nowrap;
 }
 
-/* What the room last scored, flush against the map it was scored on, the
-   figures lined up down the list. With every seat taken comes last, in the
-   row's own colour; the room as it was scored is muted before it. */
+/* What the room last scored, beside the map it was scored on, the figures
+   lined up down the list. With every seat taken comes last, bold as the
+   room's own row writes it; the room as seated now is muted before it. */
 .col-challenge {
-	text-align: right;
+	display: flex;
+	justify-content: flex-end;
+	padding-right: 0.625rem;
 	font-variant-numeric: tabular-nums;
 	white-space: nowrap;
+}
+
+.listed-challenge {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.3125rem;
+}
+
+.listed-challenge b {
+	color: var(--text);
+	font-weight: 600;
+}
+
+.icon.gauge {
+	width: 0.9375rem;
+	height: 0.9375rem;
+	color: var(--muted);
 }
 
 .challenge-now {

@@ -150,22 +150,27 @@ export function isModded(
 }
 
 /**
- * Chobby's bands, outermost first: open rooms, then running, then locked, then
- * passworded. Player count decides inside a band, and the id breaks the tie so
- * the order never flickers between updates.
+ * Which of Chobby's bands a room is in, lowest first: open rooms, then
+ * running, then idle ones (no game, nobody seated), then the locked rooms
+ * split the same way, then every passworded room as one band. Relevance sorts
+ * by it before anything else.
+ */
+export function band(row: Row): number {
+	if (row.battle.passworded) return 8
+	const idle = !row.running && row.battle.playerCount === 0
+	return (row.battle.locked ? 4 : 0) + (idle ? 2 : 0) + (row.running ? 1 : 0)
+}
+
+/**
+ * Chobby's order: by band, then player count inside a band; the id breaks the
+ * tie so the order never flickers between updates. Passworded rooms go by
+ * title.
  */
 function relevance(a: Row, b: Row): number {
-	if (a.battle.passworded !== b.battle.passworded)
-		return a.battle.passworded ? 1 : -1
+	const apart = band(a) - band(b)
+	if (apart !== 0) return apart
 	if (a.battle.passworded)
 		return a.battle.title.toLowerCase() < b.battle.title.toLowerCase() ? -1 : 1
-
-	if (a.battle.locked !== b.battle.locked) return a.battle.locked ? 1 : -1
-
-	const idle = (row: Row) => !row.running && row.battle.playerCount === 0
-	if (idle(a) !== idle(b)) return idle(a) ? 1 : -1
-
-	if (a.running !== b.running) return a.running ? 1 : -1
 
 	if (a.battle.playerCount !== b.battle.playerCount)
 		return b.battle.playerCount - a.battle.playerCount
@@ -265,13 +270,65 @@ export const MODES: ReadonlyArray<{ key: ModeFilter; label: string }> = [
  * - a held key whose room has closed simply drops out — a row cannot outlive
  *   its room, and the collapse is the one movement that cannot be helped;
  * - a room the held order does not know is appended at the bottom, in its own
- *   sorted order, rather than teleporting into the middle.
+ *   sorted order, rather than teleporting into the middle;
+ * - a room in `moved` takes its place by the fresh sort among the held rooms,
+ *   which everything else keeps.
  */
-export function stabilize(sorted: Row[], held: readonly string[]): Row[] {
+export function stabilize(
+	sorted: Row[],
+	held: readonly string[],
+	/**
+	 * Rooms that may leave their held place: each goes in just above the first
+	 * held room the fresh sort puts below it. See `regrouped`.
+	 */
+	moved: ReadonlySet<string> = new Set(),
+): Row[] {
 	const byKey = new Map(sorted.map((row) => [row.key, row]))
+	const rank = new Map(sorted.map((row, index) => [row.key, index]))
 	// The same "saved order, applied to what is actually there" rule the chat
 	// tabs follow, over battle keys instead of room names.
-	return ordered([...byKey.keys()], held).flatMap((key) => byKey.get(key) ?? [])
+	const staying = ordered(
+		[...byKey.keys()].filter((key) => !moved.has(key)),
+		held.filter((key) => !moved.has(key)),
+	)
+	const moving = [...moved]
+		.filter((key) => byKey.has(key))
+		.sort((a, b) => rank.get(a)! - rank.get(b)!)
+	// `ordered` puts the held rooms first; the ones opened since stay under them.
+	const known = new Set(held)
+	let end = staying.filter((key) => known.has(key)).length
+	for (const key of moving) {
+		const below = staying.findIndex(
+			(other, at) => at < end && rank.get(other)! > rank.get(key)!,
+		)
+		staying.splice(below === -1 ? end : below, 0, key)
+		end += 1
+	}
+	return staying.flatMap((key) => byKey.get(key) ?? [])
+}
+
+/**
+ * The held rooms whose band changed since the order was taken: a game that
+ * started, a room that locked or emptied. Held where it was, a room that
+ * started its game sits among the open ones for as long as the pointer stays
+ * in the list, which reads as a room to join. The one under the pointer stays
+ * put all the same; it is the one being reached for.
+ */
+export function regrouped(
+	sorted: readonly Row[],
+	/** Each held room's band when the order was taken, by key. */
+	bands: ReadonlyMap<string, number>,
+	pointer: string | null,
+): Set<string> {
+	return new Set(
+		sorted
+			.filter((row) => row.key !== pointer)
+			.filter((row) => {
+				const was = bands.get(row.key)
+				return was !== undefined && was !== band(row)
+			})
+			.map((row) => row.key),
+	)
 }
 
 /**

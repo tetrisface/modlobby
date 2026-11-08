@@ -4,12 +4,14 @@ import type { BattleView } from '../ipc/bindings/BattleView'
 import type { BotView } from '../ipc/bindings/BotView'
 import {
 	arrange,
+	band,
 	battleKey,
 	isModded,
 	isVsAi,
 	layoutLabel,
 	matches,
 	medianChevron,
+	regrouped,
 	spectators,
 	stabilize,
 	type Row,
@@ -407,6 +409,67 @@ describe('holding the order still under the pointer', () => {
 	test('holding nothing is the sorted list itself', () => {
 		const resorted = [row({ id: 2 }), row({ id: 1 })]
 		expect(ids(stabilize(resorted, held()))).toEqual([2, 1])
+	})
+
+	describe('a room that changes band', () => {
+		// Held while all of 1-3 were open and 4 was running; then 2's game
+		// started, which the fresh sort puts below 3 and among the running.
+		const before = [
+			row({ id: 1, playerCount: 8 }),
+			row({ id: 2, playerCount: 4 }),
+			row({ id: 3, playerCount: 1 }),
+			row({ id: 4, playerCount: 9 }, true),
+		]
+		const bands = new Map(before.map((r) => [r.key, band(r)]))
+		const now = arrange(
+			[
+				before[0]!,
+				row({ id: 2, playerCount: 4 }, true),
+				before[2]!,
+				before[3]!,
+			],
+			filters(),
+			'',
+		)
+
+		test('leaves its held place for the one the sort gives it', () => {
+			const moved = regrouped(now, bands, null)
+			expect([...moved]).toEqual([battleKey('s', 2)])
+			expect(ids(stabilize(now, held(1, 2, 3, 4), moved))).toEqual([1, 3, 4, 2])
+		})
+
+		test('stays put while the pointer is on it', () => {
+			const moved = regrouped(now, bands, battleKey('s', 2))
+			expect(moved.size).toBe(0)
+			expect(ids(stabilize(now, held(1, 2, 3, 4), moved))).toEqual([1, 2, 3, 4])
+		})
+
+		test('a changed player count alone moves nothing', () => {
+			const fuller = [row({ id: 3, playerCount: 12 }), ...before.slice(0, 2)]
+			expect(regrouped(fuller, bands, null).size).toBe(0)
+		})
+
+		test('lands among held rooms, above the rooms that opened since', () => {
+			const opened = row({ id: 7, playerCount: 2 })
+			const fresh = arrange([...now, opened], filters(), '')
+			const moved = regrouped(fresh, bands, null)
+			expect(ids(stabilize(fresh, held(1, 2, 3, 4), moved))).toEqual([
+				1, 3, 4, 2, 7,
+			])
+		})
+	})
+})
+
+describe('band', () => {
+	test('follows relevance: open, running, idle, then locked, then passworded', () => {
+		const open = row({ playerCount: 3 })
+		const running = row({ playerCount: 3 }, true)
+		const idle = row({ playerCount: 0 })
+		const locked = row({ playerCount: 3, locked: true })
+		const passworded = row({ playerCount: 3, passworded: true })
+		const bands = [open, running, idle, locked, passworded].map(band)
+		expect(bands).toEqual([...bands].sort((a, b) => a - b))
+		expect(new Set(bands).size).toBe(5)
 	})
 })
 

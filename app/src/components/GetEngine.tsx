@@ -126,11 +126,27 @@ export function GetEngine(props: {
 		}
 	}
 
-	/** Named where the room knows the version, general where it does not. */
-	const heading = () =>
-		props.version
+	const installed = () => {
+		const at = progress()
+		return at?.phase === 'done' ? at.version : null
+	}
+
+	/**
+	 * Where the engine stands, named where the room knows the version and
+	 * general where it does not. "Not installed" is only true until the fetch
+	 * starts; past that it reads as a fetch that never began.
+	 */
+	const heading = () => {
+		const done = installed()
+		if (done !== null) return `Engine ${done} installed.`
+		if (busy())
+			return props.version
+				? `Getting engine ${props.version}.`
+				: 'Getting the newest engine.'
+		return props.version
 			? `Engine ${props.version} is not installed.`
 			: 'The engine is not installed.'
+	}
 
 	const said = () => {
 		const at = progress()
@@ -143,7 +159,7 @@ export function GetEngine(props: {
 			case 'extracting':
 				return 'unpacking…'
 			case 'done':
-				return `engine ${at.version} installed`
+				return null
 			case 'failed':
 				return at.reason
 		}
@@ -159,10 +175,14 @@ export function GetEngine(props: {
 	return (
 		<div class='get-engine'>
 			<div class='get-engine-say'>
-				<strong>{heading()}</strong>{' '}
-				<span class='muted'>
-					It is a few hundred megabytes and only needs fetching once.
-				</span>
+				<strong>{heading()}</strong>
+				{/* The case for fetching it, while that is still the question. */}
+				<Show when={!busy() && installed() === null}>
+					{' '}
+					<span class='muted'>
+						It is a few hundred megabytes and only needs fetching once.
+					</span>
+				</Show>
 			</div>
 			<Show when={said()}>
 				{(text) => (

@@ -36,11 +36,13 @@ import {
 	MODES,
 	SORTS,
 	arrange,
+	band,
 	battleKey,
 	fixed,
 	isModded,
 	layoutLabel,
 	medianChevron,
+	regrouped,
 	spectators,
 	stabilize,
 	type Row,
@@ -173,19 +175,42 @@ export function BattleList() {
 	 * the order and leaving it lets the fresh sort through; rows keep updating
 	 * their contents in place the whole time. Changing what is asked for —
 	 * sort, filters, search — releases the pin too, because then the reader
-	 * asked for the movement.
+	 * asked for the movement. So does the window losing focus: an alt-tab can
+	 * leave without a `pointerleave`, and the pin would outlive the visit.
+	 *
+	 * A room whose band changes under the pin — its game started, it locked —
+	 * moves to where the order puts it now; see `regrouped`.
 	 */
-	const [held, setHeld] = createSignal<string[] | null>(null)
+	/** The room the pointer rests on, whose people the card shows. */
+	const [peek, setPeek] = createSignal<Peek | null>(null)
+	const [held, setHeld] = createSignal<{
+		order: string[]
+		bands: Map<string, number>
+	} | null>(null)
+	const hold = () =>
+		setHeld({
+			order: sorted().map((row) => row.key),
+			bands: new Map(sorted().map((row) => [row.key, band(row)])),
+		})
 	createEffect(() => {
 		filters()
 		search()
 		leftOut()
 		setHeld(null)
 	})
+	const release = () => setHeld(null)
+	window.addEventListener('blur', release)
+	onCleanup(() => window.removeEventListener('blur', release))
 
 	const rows = createMemo(() => {
 		const pinned = held()
-		return pinned === null ? sorted() : stabilize(sorted(), pinned)
+		if (pinned === null) return sorted()
+		const at = peek()
+		const pointer = at === null ? null : battleKey(at.server, at.id)
+		const moved = fixed(filters().sort)
+			? regrouped(sorted(), pinned.bands, pointer)
+			: undefined
+		return stabilize(sorted(), pinned.order, moved)
 	})
 
 	// The maps on show, top first, so the rooms most likely to be joined have
@@ -225,17 +250,21 @@ export function BattleList() {
 	// How long each running game has been going. The store holds it, because a
 	// host can also tell us outright — see `store/running`.
 	const [now, setNow] = createSignal(Date.now())
-	let looked = false
+	/**
+	 * The servers whose rooms have been looked at while logged in. Anything
+	 * running at a server's first look was already running before it, and a
+	 * server whose session dropped looks for the first time again when it is
+	 * back: its games kept going while we were away.
+	 */
+	let looked = new Set<string>()
 
 	createEffect(() => {
-		const going = new Set(
-			all()
-				.filter((row) => row.running)
-				.map((row) => row.key),
-		)
-		noteRunning(going, looked)
-		// Anything running at the first look was already running before it.
-		if (anyReady()) looked = true
+		const rows = all().filter((row) => row.running)
+		const going = new Set(rows.map((row) => row.key))
+		const serverOf = new Map(rows.map((row) => [row.key, row.server]))
+		const before = looked
+		noteRunning(going, (key) => before.has(serverOf.get(key) ?? ''))
+		looked = new Set(readyServers())
 	})
 
 	// A minute is the resolution the label has, so it is the rate it needs.
@@ -357,7 +386,6 @@ export function BattleList() {
 	 * nothing to go back to.
 	 */
 	const [remembered, setRemembered] = createSignal<BattleOn | null>(null)
-	const [peek, setPeek] = createSignal<Peek | null>(null)
 	/**
 	 * Where the pointer is, kept apart from `peek` on purpose: rolling it into
 	 * that object would make the card's name list re-sort on every mouse move,
@@ -566,8 +594,8 @@ export function BattleList() {
 			<div
 				class='list'
 				ref={scrollRef}
-				onPointerEnter={() => setHeld(rows().map((row) => row.key))}
-				onPointerLeave={() => setHeld(null)}
+				onPointerEnter={hold}
+				onPointerLeave={release}
 			>
 				<Show
 					when={rows().length > 0}
@@ -878,13 +906,19 @@ function Occupants(props: { peek: Peek | null; now: number; x: number }) {
 		return elapsed(held, props.now)
 	}
 
-	/** Friends first, then everyone else; the host bot is not a person. */
+	/**
+	 * Friends first, then everyone else. An autohost is not a person, and the
+	 * room's own spectator list is where it still shows; somebody hosting
+	 * their own room is one of the people in it.
+	 */
 	const people = createMemo(() => {
 		const room = battle()
 		if (!room) return []
 		const friends = new Set(session()?.friends.friends)
+		const hostBot =
+			session()?.users[room.founder]?.status.bot === true ? room.founder : null
 		return room.members
-			.filter((name) => name !== room.founder)
+			.filter((name) => name !== hostBot)
 			.sort((a, b) => {
 				const known = Number(friends.has(b)) - Number(friends.has(a))
 				return known || a.localeCompare(b)
@@ -914,9 +948,6 @@ function Occupants(props: { peek: Peek | null; now: number; x: number }) {
 								{going()}
 							</span>
 						)}
-					</Show>
-					<Show when={battle()?.founder}>
-						{(host) => <span class='muted'> · hosted by {host()}</span>}
 					</Show>
 					<Show when={severalServers() && props.peek}>
 						{(peek) => (

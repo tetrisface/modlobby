@@ -201,6 +201,27 @@ export function defaultSort(tab: Tab, ai: string): number {
 }
 
 /**
+ * The column a tab opens sorted by: the first in its cascade that anyone in
+ * `rows` has a figure in. An arrow on a column that is blank for everyone
+ * leaves the order to the cascade, unmarked, and it reads as random.
+ */
+export function leadingSort(
+	tab: Tab,
+	ai: string,
+	rows: readonly Row[],
+	cols: readonly Column[],
+): number {
+	const filled = cascade(tab, ai).find((index) => {
+		const column = cols[index]
+		return (
+			column !== undefined &&
+			rows.some((row) => (valueOf(row, column) ?? 0) !== 0)
+		)
+	})
+	return filled ?? defaultSort(tab, ai)
+}
+
+/**
  * Where a tie on the sorted column goes next. The widget's reasoning, kept:
  * cross-mode ties fall to how rare each mode's ceiling is (bosses, queens,
  * BARbs), awards to mode popularity (BARb, Raptors, Scavengers).
@@ -689,6 +710,32 @@ export function countedText(score: Score): string {
 	return score.aiType || 'PvE'
 }
 
+/**
+ * The score with every seat taken, where the service gave one: the figure a
+ * lobby still filling is heading for, which the room's row shows in full
+ * colour. The chart and its caption speak for it; the score itself where
+ * there is nothing more to say.
+ */
+export function headline(score: Score): Score {
+	const full = score.full
+	if (!full) return score
+	return {
+		...score,
+		challenge: full.challenge,
+		winChance: full.winChance,
+		percentile: full.percentile,
+	}
+}
+
+/** `fieldRatio` in words: `you win 33% more often than others …`. */
+function againstTheField(ratio: number): string {
+	const where = 'than others at the challenges you play'
+	const apart = Math.round((ratio - 1) * 100)
+	if (apart === 0)
+		return `you win about as often as others at the challenges you play`
+	return `you win ${Math.abs(apart)}% ${apart > 0 ? 'more' : 'less'} often ${where}`
+}
+
 export function caption(score: Score, me: Player | undefined): string {
 	let text = 'Current setup: not yet placed'
 	if (score.challenge != null) {
@@ -699,30 +746,33 @@ export function caption(score: Score, me: Player | undefined): string {
 	const best = me?.accomplishments.challenges.highestChallengeCleared
 	if (best != null) text += ` — your best ${best.toFixed(1)}`
 	const ratio = fieldRatio(score, me)
-	if (ratio != null) text += ` — ${ratio.toFixed(2)}× the field's clear rate`
+	if (ratio != null) text += ` — ${againstTheField(ratio)}`
 	return text
 }
 
-/** "2024-03-10 – 4d 2h ago": the span of games the answer rests on. */
+/** "from 2024-03-10 up to 4d 2h ago": the span of games the answer rests on. */
 export function dataWindow(score: Score, now = Date.now()): string {
 	const until = score.dataUntil ? age(score.dataUntil, now) : ''
 	if (!until) return ''
 	const since = score.dataSince?.slice(0, 10)
-	return since ? `${since} – ${until}` : until
+	return since ? `from ${since} up to ${until}` : `up to ${until}`
 }
 
-/** The Match figure: how the served setting relates to this room. */
+/**
+ * The Match figure: how well the recorded setting behind the figures fits
+ * this room, on one scale anyone ranks unprompted — Exact, Strong, Weak,
+ * None. Strong is a setting similar in effect; Weak is the service falling
+ * back to comparing lobby fields one by one, the weaker evidence. `matchHelp`
+ * and Diagnostics name the method and the numbers.
+ */
 export function matchText(score: Score): string {
 	switch (score.matched.status) {
 		case 'exact':
 			return 'Exact'
 		case 'closest':
-			if (score.matched.method === 'raw_fallback') return 'Raw fallback'
-			return score.matched.similarity != null
-				? `Similar ${score.matched.similarity.toFixed(3)}`
-				: 'Similar'
+			return score.matched.method === 'raw_fallback' ? 'Weak' : 'Strong'
 		case 'not_found':
-			return 'Not found'
+			return 'None'
 		default:
 			return score.matched.status || '—'
 	}
@@ -813,11 +863,17 @@ const UNSEEN: Record<string, string> = {
 export function matchHelp(score: Score): string {
 	let text =
 		'The matched lobby setting supplies setting-specific statistics and displayed differences. Match is separate from Win chance and is not a confidence score.'
-	if (score.matched.status === 'closest')
+	if (score.matched.status === 'closest') {
+		const similarity = score.matched.similarity
+		const scored =
+			similarity == null
+				? ''
+				: ` (similarity ${similarity.toFixed(3)}, where 1.000 is the closest possible)`
 		text =
 			score.matched.method === 'raw_fallback'
-				? 'Raw fallback compares available lobby fields for the setting-specific statistics and differences shown. The overlap is not model confidence and does not say which setup is harder. Match selection is separate from Win chance.'
-				: 'Similarity summarizes the comparison used for the setting-specific statistics and differences shown. 1.000 is the closest possible match; it is not confidence and does not say which setup is harder. Match selection is separate from Win chance.'
+				? 'Weak: no recorded setting was near enough in effect, so the service compared the lobby fields it has one by one (a raw fallback). Exact, Strong, Weak and None run from the best fit to no fit at all. The overlap is not model confidence and does not say which setup is harder. Match selection is separate from Win chance.'
+				: `Strong: a recorded setting similar in effect${scored}. Exact, Strong, Weak and None run from the best fit to no fit at all. It is not confidence and does not say which setup is harder. Match selection is separate from Win chance.`
+	}
 	const best = bestEffortText(score)
 	return best ? `${text} ${best}` : text
 }
@@ -828,8 +884,22 @@ function hiddenText(score: Score): string {
 	return `${n} additional field difference${n === 1 ? '' : 's'} hidden`
 }
 
+/**
+ * The panel's line under the data: how far the recorded setting is from this
+ * room, as one count. Nothing for an exact match, which the Match figure
+ * already says; `matchDetail` is the long form, for Diagnostics.
+ */
+export function matchLine(score: Score): string {
+	if (score.matched.status === 'exact') return ''
+	if (score.matched.status !== 'closest')
+		return 'No recorded setting is near enough to compare with this lobby.'
+	const n =
+		score.matched.diffs.length + Math.max(0, score.matched.hiddenDifferences)
+	return `Closest recorded setup differs in ${n} setting${n === 1 ? '' : 's'} · see Diagnostics`
+}
+
 /** "Match: raw lobby fallback; 2 visible differences; 1 additional field difference hidden" */
-export function matchSummary(score: Score): string {
+export function matchDetail(score: Score): string {
 	if (score.matched.status === 'exact') return 'Match: exact setting'
 	if (!score.matched.method && score.matched.status !== 'closest')
 		return 'Match: no trusted setting match'
@@ -874,7 +944,7 @@ export function diagnosticRows(
 	const add = (label: string, value: string) => {
 		if (value) out.push({ label, value })
 	}
-	add('Match', matchSummary(score).replace(/^Match: /, ''))
+	add('Match', matchDetail(score).replace(/^Match: /, ''))
 	add('Raw overlap', rawOverlap(score))
 	const held = score.completeness
 	if (held) {

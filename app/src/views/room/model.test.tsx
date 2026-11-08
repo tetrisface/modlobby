@@ -570,9 +570,11 @@ describe('a room behind the seam', () => {
 		expect(calls).not.toContainEqual(['launch', []])
 		expect(buttons(container, '.host-bar')).not.toContain('Start')
 		expect(buttons(container, '.host-bar')).toContain('Force start')
-		// A listed room is named for other people and run by somebody, so it says
-		// whose it is and offers the pen. The skirmish test asserts neither.
-		expect(container.textContent).toContain('Host')
+		// A listed room is named for other people, so it offers the pen. Its
+		// host is an autohost, which the header leaves to the spectator list.
+		expect(container.querySelector('.card-meta')?.textContent).not.toContain(
+			'Host',
+		)
 		expect(container.querySelector('.room-title button')).toBeTruthy()
 	})
 

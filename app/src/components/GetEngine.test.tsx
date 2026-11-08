@@ -57,6 +57,29 @@ describe('getting the first engine onto a machine', () => {
 		expect(sent('download_engine')).toHaveLength(2)
 	})
 
+	test('says what is happening once the fetch is under way', async () => {
+		// "Not installed" beside a bar that is moving reads as a fetch that
+		// never started.
+		vi.mocked(invoke).mockImplementation((command) =>
+			command === 'download_engine'
+				? new Promise(() => {})
+				: Promise.resolve(null),
+		)
+		const { container } = render(() => <GetEngine version='2026.09.02' auto />)
+		await settle()
+		expect(container.textContent).toContain('Getting engine 2026.09.02.')
+		expect(container.textContent).not.toContain('not installed')
+		expect(container.textContent).not.toContain('only needs fetching once')
+	})
+
+	test('before any fetch, it says what is missing and what it costs', () => {
+		const { container } = render(() => <GetEngine version='2026.09.02' />)
+		expect(container.textContent).toContain(
+			'Engine 2026.09.02 is not installed.',
+		)
+		expect(container.textContent).toContain('only needs fetching once')
+	})
+
 	test('a room that remounts does not ask the index again', async () => {
 		// A tab away and back, a list rebuilding its rows: each of those used to
 		// be another trip to BAR's index for a version it may well have no build

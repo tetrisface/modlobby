@@ -8,6 +8,13 @@
 /** Between the two figures: an en dash, unspaced, as between any two numbers. */
 export const SPAN = '–'
 
+/** A challenge to the decimal, as the room writes it. */
+export const tenths = (value: number) => value.toFixed(1)
+/** A chance, 0-1, as a whole percent. */
+export const chance = (value: number) => `${Math.round(value * 100)}%`
+/** A percentile, 0-100, as a whole percent: "Harder than". */
+export const percentRank = (value: number) => `${Math.round(value)}%`
+
 /**
  * The figures as written: `main`, and `now` before it when the room is not
  * full yet and the two read differently.
