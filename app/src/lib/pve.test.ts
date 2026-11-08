@@ -23,6 +23,7 @@ import {
 	miniature,
 	place,
 	matchText,
+	roster,
 	rows,
 	sortRows,
 } from './pve'
@@ -403,6 +404,29 @@ describe('pve view logic', () => {
 			'amy',
 			'nobody',
 		])
+	})
+
+	test('the roster drops whoever left and waits on whoever came since the ask', () => {
+		const asked = ['me', 'Zed', 'amy', 'nobody']
+		const now = ['me', 'amy', 'nobody', 'newcomer']
+		const held = roster(SCORE, now, asked)
+		expect(held.map((r) => [r.name, r.pending ?? false])).toEqual([
+			['me', false],
+			['amy', false],
+			['nobody', false],
+			['newcomer', true],
+		])
+		expect(held.at(-1)?.player).toBeNull()
+	})
+
+	test('the roster matches names without case, as the service does', () => {
+		const held = roster(
+			SCORE,
+			['ME', 'zed', 'Amy', 'Nobody'],
+			['me', 'Zed', 'amy', 'nobody'],
+		)
+		expect(held.map((r) => r.name)).toEqual(['me', 'Zed', 'amy', 'nobody'])
+		expect(held.some((r) => r.pending)).toBe(false)
 	})
 
 	test('sorting puts missing values last whichever way, then falls through the cascade', () => {

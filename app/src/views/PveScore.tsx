@@ -130,12 +130,16 @@ function seats(room: RoomModel): Seats {
  * Who the service is told is here, as Rust sends `player_names`: everyone but
  * the room's bots, sorted. The answer carries a record for each of them.
  */
-function present(room: RoomModel): string {
+function present(room: RoomModel): string[] {
 	const users = room.users()
 	return (room.battle()?.members ?? [])
 		.filter((name) => !users[name]?.status.bot)
 		.sort()
-		.join('\n')
+}
+
+/** Whether two sorted lists of names are the same people. */
+function samePeople(a: readonly string[], b: readonly string[]): boolean {
+	return a.length === b.length && a.every((name, at) => name === b[at])
 }
 
 /**
@@ -268,7 +272,7 @@ export function PveScore() {
 	/** The room's `setup` when the answer in `score` was asked for. */
 	const [askedSetup, setAskedSetup] = createSignal<string | undefined>()
 	/** Who was `present` when the answer in `score` was asked for. */
-	const [askedPresent, setAskedPresent] = createSignal<string | undefined>()
+	const [askedPresent, setAskedPresent] = createSignal<string[] | undefined>()
 	/** An ask has been out longer than `DOTS_AFTER`. */
 	const [overdue, setOverdue] = createSignal(false)
 	const [failure, setFailure] = createSignal<string | null>(null)
@@ -298,14 +302,15 @@ export function PveScore() {
 
 	/**
 	 * Whether the room needs asking about: the answer held falls short of it.
-	 * A head count its table covers does not; someone arriving or leaving
-	 * does, for the records in the full panel, and so does a failed ask.
+	 * A head count its table covers does not; a failed ask does. Someone
+	 * arriving or leaving does only while the full panel is open: the records
+	 * there are the one thing who is here changes.
 	 */
 	const needed = () =>
 		enabled() &&
 		(current() === null ||
-			askedPresent() !== present(room) ||
-			failure() !== null)
+			failure() !== null ||
+			(open() && !samePeople(askedPresent() ?? [], present(room))))
 
 	/**
 	 * Paced, because the service is a Lambda with a concurrency of one and a
@@ -375,6 +380,17 @@ export function PveScore() {
 	)
 	onCleanup(() => asks.stop())
 
+	// Opening the panel is news to its records: whoever came or went while it
+	// was shut has not been asked about.
+	createEffect(
+		on(
+			open,
+			(isOpen) => {
+				if (isOpen && watched() !== undefined && isPve(room)) asks.ask()
+			},
+			{ defer: true },
+		),
+	)
 	/**
 	 * A figure as seated, then with every seat taken, the way the battle list
 	 * writes its challenge: `now–full`, the seated one muted. One figure for a
@@ -567,6 +583,8 @@ export function PveScore() {
 					failure={failure()}
 					onClose={() => setOpen(false)}
 				/>
+					present={present(room)}
+					asked={askedPresent() ?? present(room)}
 			</Show>
 		</Show>
 	)

@@ -28,7 +28,7 @@ import {
 	matchSummary,
 	matchText,
 	ownPlayer,
-	rows,
+	roster,
 	sortRows,
 } from '../lib/pve'
 import { sticky } from '../lib/sticky'
@@ -65,6 +65,10 @@ export function PveStats(props: {
 	score: Score | null | undefined
 	waiting: boolean
 	failure: string | null
+	/** Who is in the room now, bots aside, as the service is told. */
+	present: readonly string[]
+	/** Who was in it when `score` was asked for. */
+	asked: readonly string[]
 	onClose: () => void
 }) {
 	const room = useRoom()
@@ -112,7 +116,9 @@ export function PveStats(props: {
 		const users = room.users()
 		const watching = (name: string) =>
 			users[name]?.battleStatus?.player === false
-		const all = props.score ? rows(props.score) : []
+		const all = props.score
+			? roster(props.score, props.present, props.asked)
+			: []
 		return {
 			players: all.filter((row) => !watching(row.name)),
 			watchers: all.filter((row) => watching(row.name)),
@@ -216,7 +222,14 @@ export function PveStats(props: {
 						<For each={held.columns}>
 							{(column) => (
 								<td class='num' classList={{ 'pve-setup': column.setup }}>
-									{row.player ? cell(column.value(row.player)) : ''}
+									{/* Still dots where a newcomer's figures will land,
+									    while there is an ask to land them. */}
+									<Show
+										when={row.pending && !props.failure}
+										fallback={row.player ? cell(column.value(row.player)) : ''}
+									>
+										<Thinking still title={`asking for ${row.name}’s record`} />
+									</Show>
 								</td>
 							)}
 						</For>

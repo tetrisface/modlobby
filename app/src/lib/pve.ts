@@ -27,8 +27,11 @@ export type Column = {
 	setup?: boolean
 }
 
-/** A table row: a name the service knows, or one it has never seen play. */
-export type Row = { name: string; player: Player | null }
+/**
+ * A table row: a name the service knows, one it has never seen play, or,
+ * `pending`, one it has not been asked about yet.
+ */
+export type Row = { name: string; player: Player | null; pending?: boolean }
 
 /** Which of the three opponent columns is the room's. */
 function opponent(ai: string): 0 | 1 | 2 {
@@ -293,6 +296,27 @@ export function rows(score: Score): Row[] {
 		.filter((name) => !seen.has(name.toLowerCase()))
 		.map((name) => ({ name, player: null }))
 	return [...known, ...unknown]
+}
+
+/**
+ * The records as the room is now, which is ahead of the answer: rows for
+ * whoever is still `present`, then a pending row for each person who came
+ * after the names in `asked` went out. Names compare without case, as the
+ * service matches them.
+ */
+export function roster(
+	score: Score,
+	present: readonly string[],
+	asked: readonly string[],
+): Row[] {
+	const fold = (name: string) => name.toLowerCase()
+	const here = new Set(present.map(fold))
+	const covered = new Set(asked.map(fold))
+	const stayed = rows(score).filter((row) => here.has(fold(row.name)))
+	const arrived = present
+		.filter((name) => !covered.has(fold(name)))
+		.map((name) => ({ name, player: null, pending: true }))
+	return [...stayed, ...arrived]
 }
 
 export function ownPlayer(score: Score, me: string | null): Player | undefined {
