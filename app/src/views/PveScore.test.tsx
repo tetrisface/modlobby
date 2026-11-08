@@ -10,7 +10,7 @@ import type { SizeScore } from '../ipc/bindings/SizeScore'
 import type { UserView } from '../ipc/bindings/UserView'
 import type { Settings } from '../ipc/bindings/Settings'
 import { age } from '../lib/age'
-import { STAGGER_STEP } from '../lib/stagger'
+import { STAGGER_CAP, STAGGER_STEP } from '../lib/stagger'
 import { emptyLobby, emptyServer, setLobby } from '../store/lobby'
 import { TEST_SERVER, onlySession } from '../store/testing'
 import { setSettingsSignal } from '../store/settings'
@@ -448,8 +448,9 @@ describe('PveScore', () => {
 			'50%\u201365%',
 			'60%\u201330%',
 		])
-		// The room is still asked about, for its row in everyone's battle list,
-		// and a slow answer is no reason for dots: the figures are already right.
+		// Someone arrived, so the room is still asked about, for their record in
+		// the full panel; a slow answer is no reason for dots: the figures are
+		// already right.
 		vi.advanceTimersByTime(QUIET_FOR + 1)
 		expect(asked).toHaveBeenCalledTimes(2)
 		vi.advanceTimersByTime(DOTS_AFTER)
@@ -530,6 +531,126 @@ describe('PveScore', () => {
 		vi.advanceTimersByTime(AT_MOST_EVERY + QUIET_FOR + 1)
 		await settle()
 		expect(asked).toHaveBeenCalledTimes(4)
+	})
+
+	/** A spectator already in the room takes a seat: the server says so, then the host recounts. */
+	function takesSeat(name: string, players: number) {
+		setLobby(
+			'servers',
+			TEST_SERVER,
+			'users',
+			name,
+			'battleStatus',
+			'player',
+			true,
+		)
+		setLobby('servers', TEST_SERVER, 'battles', 7, 'playerCount', players)
+	}
+
+	/** Long enough for any ask the room is owed to have gone out. */
+	const ANY_ASK = QUIET_FOR + AT_MOST_EVERY + STAGGER_CAP
+
+	test('a spectator taking a seat is shown from the table and not asked about', async () => {
+		asked.mockResolvedValue(filling)
+		enter([bot('RaptorsAI')], [user('friend')])
+		const { container } = render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+		expect(asked).toHaveBeenCalledTimes(1)
+
+		takesSeat('friend', 2)
+		expect(container.querySelector('.pve-figure b')?.textContent).toBe(
+			'17.0–12.0/34',
+		)
+		// Nobody arrived, and the answer holds every head count to the seat count.
+		vi.advanceTimersByTime(ANY_ASK)
+		await settle()
+		expect(asked).toHaveBeenCalledTimes(1)
+	})
+
+	test('a change after a quiet spell is asked about at once', async () => {
+		asked.mockResolvedValue(scored)
+		enter([bot('RaptorsAI')])
+		render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+		expect(asked).toHaveBeenCalledTimes(1)
+
+		// Still for the whole quiet already: that wait is done, not owed again.
+		vi.advanceTimersByTime(QUIET_FOR)
+		setLobby(
+			'servers',
+			TEST_SERVER,
+			'myBattle',
+			'scriptTags',
+			'game/modoptions/raptor_endless',
+			'1',
+		)
+		vi.advanceTimersByTime(0)
+		expect(asked).toHaveBeenCalledTimes(2)
+	})
+
+	test('a seat taken while the room is asked about adds no ask', async () => {
+		asked.mockResolvedValueOnce(filling)
+		enter([bot('RaptorsAI')], [user('friend')])
+		render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+
+		const out = deferred<Score>()
+		asked.mockReturnValueOnce(out.promise).mockResolvedValue(filling)
+		vi.advanceTimersByTime(QUIET_FOR)
+		setLobby(
+			'servers',
+			TEST_SERVER,
+			'myBattle',
+			'scriptTags',
+			'game/modoptions/raptor_endless',
+			'1',
+		)
+		vi.advanceTimersByTime(0)
+		expect(asked).toHaveBeenCalledTimes(2)
+
+		takesSeat('friend', 2)
+		out.resolve(filling)
+		await settle()
+		vi.advanceTimersByTime(ANY_ASK)
+		await settle()
+		// The answer on its way covers two players as it covers one.
+		expect(asked).toHaveBeenCalledTimes(2)
+	})
+
+	test('a room changed back while it is asked about is asked again after', async () => {
+		asked.mockResolvedValueOnce(scored)
+		enter([bot('RaptorsAI')])
+		const { container } = render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+
+		const out = deferred<Score>()
+		asked.mockReturnValueOnce(out.promise).mockResolvedValue(scored)
+		const endless = (value: string) =>
+			setLobby(
+				'servers',
+				TEST_SERVER,
+				'myBattle',
+				'scriptTags',
+				'game/modoptions/raptor_endless',
+				value,
+			)
+		vi.advanceTimersByTime(QUIET_FOR)
+		endless('1')
+		vi.advanceTimersByTime(0)
+		expect(asked).toHaveBeenCalledTimes(2)
+
+		// Back to what the held answer was for, but the one on its way is not.
+		endless('0')
+		out.resolve({ ...scored, challenge: 5 })
+		await settle()
+		vi.advanceTimersByTime(ANY_ASK)
+		await settle()
+		expect(asked).toHaveBeenCalledTimes(3)
+		expect(container.textContent).toContain('21.5/34')
 	})
 
 	test('a size the model barely saw is called an uncertain projection', async () => {
