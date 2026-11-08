@@ -203,8 +203,9 @@ pub struct Session {
 	/// `c.telemetry.*` properties.
 	teiserver: bool,
 	agreement: Vec<String>,
-	/// Script password of a `JOINBATTLE` the host has not answered yet.
-	pending_join: Option<String>,
+	/// The room and script password of a `JOINBATTLE` the host has not
+	/// answered yet.
+	pending_join: Option<(u32, String)>,
 	/// The seat we hold in our room; `None` is a spectator. The server's word
 	/// on it, unless a request of ours it has not answered yet is still on its
 	/// way, in which case it is that request (see `in_flight`).
@@ -405,15 +406,26 @@ impl Session {
 		password: Option<&str>,
 		script_password: String,
 	) -> Vec<Effect> {
+		// Already on the way there, as from a second click while the host takes
+		// its time: asking again would have the server take us out and put us
+		// back, under the second ask's script password.
+		if self.joining() == Some(id) {
+			return vec![];
+		}
 		let mut effects = match self.state.my_battle.as_ref() {
 			Some(my) if my.id == id => return vec![],
 			Some(_) => self.leave_battle(),
 			None => Vec::new(),
 		};
 		let line = battle::join_battle(id, password, &script_password);
-		self.pending_join = Some(script_password);
+		self.pending_join = Some((id, script_password));
 		effects.push(Effect::Send(Envelope::queue(Area::Other, line)));
 		effects
+	}
+
+	/// The room a join of ours is on its way to.
+	pub fn joining(&self) -> Option<u32> {
+		self.pending_join.as_ref().map(|(id, _)| *id)
 	}
 
 	/// Joins a spare autohost to make it ours. Once the host lets us in,
@@ -1294,7 +1306,19 @@ impl Session {
 				}
 				vec![]
 			}
-			E::JoinedBattle { id, name, .. } => {
+			E::JoinedBattle {
+				id,
+				name,
+				script_password,
+			} => {
+				// Our own arrival carries the script password the server gave
+				// the host, which is the one the engine has to present.
+				let ours = state.me.as_deref() == Some(name.as_str());
+				if let Some(password) = script_password.filter(|_| ours)
+					&& let Some(my) = state.my_battle.as_mut().filter(|my| my.id == id)
+				{
+					my.script_password = password;
+				}
 				state.join_battle(id, name);
 				vec![]
 			}
@@ -1323,7 +1347,12 @@ impl Session {
 			E::JoinBattle { id, game_hash } => {
 				// The room's word on its game, which a copy is held to.
 				tracing::info!(id, game_hash, "joined a room");
-				let script_password = self.pending_join.take().unwrap_or_default();
+				// A join the server made itself has none of ours; its
+				// `JOINEDBATTLE` echo, next, says which.
+				let script_password = match self.pending_join.take() {
+					Some((asked, password)) if asked == id => password,
+					_ => String::new(),
+				};
 				state.arrive(id);
 				state.my_battle = Some(MyBattle::new(id, game_hash, script_password));
 				self.in_flight.clear();
@@ -3123,6 +3152,56 @@ mod tests {
 			Some((5, "4242"))
 		);
 		assert_eq!(s.state.user_battle["me"], 5);
+	}
+
+	fn my_script_password(s: &Session) -> Option<&str> {
+		s.state
+			.my_battle
+			.as_ref()
+			.map(|m| m.script_password.as_str())
+	}
+
+	/// teiserver hands the host the script password it holds when the host
+	/// accepts, and echoes it to us in our own `JOINEDBATTLE`. That echo is
+	/// the one the engine has to present, whatever we asked with.
+	#[test]
+	fn the_script_password_the_server_echoes_is_the_one_kept() {
+		let mut s = ready_with_room();
+		s.join_battle(5, None, "1111".into());
+		feed(&mut s, &["JOINBATTLE 5 -1", "JOINEDBATTLE 5 me 2222"]);
+		assert_eq!(my_script_password(&s), Some("2222"));
+
+		// Somebody else's echo, as a host would see it, is not ours.
+		feed(&mut s, &["JOINEDBATTLE 5 bob 3333"]);
+		assert_eq!(my_script_password(&s), Some("2222"));
+	}
+
+	/// A join the server makes on its own (teiserver's `force_join_battle`)
+	/// follows no ask of ours, so only the echo knows the password.
+	#[test]
+	fn a_join_we_never_asked_for_takes_the_echoed_script_password() {
+		let mut s = ready_with_room();
+		feed(&mut s, &["JOINBATTLE 5 -1", "JOINEDBATTLE 5 me 2222"]);
+		assert_eq!(my_script_password(&s), Some("2222"));
+	}
+
+	/// A second click while the host takes its time. Asking again would have
+	/// teiserver take us out and put us back under the second password, and
+	/// answer both asks; the first answer used to take the only password we
+	/// held, the second found none, and the engine was turned away with
+	/// "Incorrect password".
+	#[test]
+	fn asking_again_for_the_room_on_its_way_sends_nothing() {
+		let mut s = ready_with_room();
+		assert_eq!(
+			sent_lines(&s.join_battle(5, None, "1111".into())),
+			["JOINBATTLE 5 empty 1111"]
+		);
+		assert!(s.join_battle(5, None, "2222".into()).is_empty());
+
+		// No echo, as from a server that keeps the password to the host.
+		feed(&mut s, &["JOINBATTLE 5 -1"]);
+		assert_eq!(my_script_password(&s), Some("1111"));
 	}
 
 	#[test]

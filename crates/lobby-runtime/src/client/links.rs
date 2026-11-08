@@ -289,7 +289,7 @@ impl Runtime {
 		}
 		let link = slot.link.take();
 		self.reply_login(server, Err(ClientError::Refused(reason.clone())));
-		self.reply_join(server, Err(ClientError::Refused(reason)));
+		self.reply_join(server, Err(reason));
 		if let Some(conn) = link {
 			conn.transport.shutdown().await;
 		}
@@ -315,7 +315,7 @@ impl Runtime {
 		slot.link = None;
 		let armed = slot.reconnect.is_armed();
 		self.reply_login(server, Err(ClientError::Refused(reason.clone())));
-		self.reply_join(server, Err(ClientError::Refused(reason.clone())));
+		self.reply_join(server, Err(reason.clone()));
 		if was_room {
 			self.game = None;
 			self.auto_launch = None;

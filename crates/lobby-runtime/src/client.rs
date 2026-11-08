@@ -1490,8 +1490,9 @@ struct Runtime {
 	/// Whether this machine has everything the room needs. Launching without
 	/// it produces an engine that quits with a sync error.
 	content_ready: bool,
-	/// The join being answered, and the server it went to.
-	join_reply: Option<(String, Reply<()>)>,
+	/// The join being answered, the server it went to, and every ask waiting
+	/// on it: a second click on the room on its way joins the first.
+	join_reply: Option<(String, Vec<Reply<()>>)>,
 	/// The server the running game was reported in-game on, to report its end to.
 	in_game_on: Option<String>,
 	/// Whether the idle limit is to be ignored, for as long as somebody says so.
@@ -3246,6 +3247,20 @@ impl Runtime {
 				password,
 				reply,
 			} => {
+				// Already on the way there, as from a second click while the host
+				// takes its time: the session sends nothing, and this is answered
+				// with the first ask.
+				let on_its_way = self
+					.link(&server)
+					.is_some_and(|conn| conn.session.joining() == Some(id));
+				if on_its_way
+					&& let Some((_, waiting)) =
+						self.join_reply.as_mut().filter(|(on, _)| *on == server)
+				{
+					tracing::info!(server, id, "join: asked again");
+					waiting.push(reply);
+					return;
+				}
 				let Some(conn) = self.link_mut(&server) else {
 					let _ = reply.send(Err(ClientError::NotConnected));
 					return;
@@ -3266,7 +3281,7 @@ impl Runtime {
 				let effects = conn
 					.session
 					.join_battle(id, password.as_deref(), script_password);
-				self.join_reply = Some((server.clone(), reply));
+				self.join_reply = Some((server.clone(), vec![reply]));
 				self.join_asked = Some(Instant::now());
 				tracing::info!(server, id, "join: asked");
 				self.apply_effects(&server, effects).await;
@@ -4049,9 +4064,7 @@ impl Runtime {
 					self.leave_rooms_except(server).await;
 					self.reply_join(server, Ok(()));
 				}
-				Effect::JoinFailed { reason } => {
-					self.reply_join(server, Err(ClientError::Refused(reason)))
-				}
+				Effect::JoinFailed { reason } => self.reply_join(server, Err(reason)),
 				Effect::LeftBattle { .. } => {
 					self.game = None;
 					// A launch asked for in that lobby is not asked for in the next.
@@ -4526,7 +4539,10 @@ impl Runtime {
 	/// The room's deltas go out before the answer: the front end walks into
 	/// the room on the answer, and a room view without `myBattle` walks
 	/// straight back out.
-	fn reply_join(&mut self, server: &str, result: Result<(), ClientError>) {
+	///
+	/// `result` is the refusal's reason, if any, since every ask waiting on the
+	/// join is told it.
+	fn reply_join(&mut self, server: &str, result: Result<(), String>) {
 		// A join on another server is not this one's to answer.
 		if self.join_reply.as_ref().is_some_and(|(on, _)| on != server) {
 			return;
@@ -4541,9 +4557,11 @@ impl Runtime {
 		if result.is_err() {
 			self.join_asked = None;
 		}
-		if let Some((_, reply)) = self.join_reply.take() {
+		if let Some((_, waiting)) = self.join_reply.take() {
 			self.flush();
-			let _ = reply.send(result);
+			for reply in waiting {
+				let _ = reply.send(result.clone().map_err(ClientError::Refused));
+			}
 		}
 	}
 
@@ -5989,6 +6007,53 @@ mod tests {
 		let snapshot = client.snapshot().await.unwrap();
 		let (room_server, room) = snapshot.room().expect("a room");
 		assert_eq!((room_server.server.as_str(), room.id), ("b", 5));
+		client.shutdown().await;
+	}
+
+	/// A second click on a room while its host takes its time is the same
+	/// join: one `JOINBATTLE` goes out, and both clicks are answered when it
+	/// lands.
+	#[tokio::test]
+	async fn a_second_ask_for_the_room_on_its_way_is_answered_with_the_first() {
+		let (connector, mut servers) = in_memory_hosts(&["a"]);
+		let client = spawn(connector);
+		let a = log_in(&client, "a");
+		let (mut lines, mut write) = accept_login_with(servers.remove("a").unwrap(), ROOM).await;
+		a.await.unwrap().unwrap();
+
+		let first = tokio::spawn({
+			let client = client.clone();
+			async move { client.join_battle("a".into(), 5, None).await }
+		});
+		let asked = line_starting_with(&mut lines, "JOINBATTLE 5").await;
+		let second = client.join_battle("a".into(), 5, None);
+		tokio::pin!(second);
+		// One poll puts the ask on the runtime's channel, and the snapshot asked
+		// behind it comes back once the runtime has handled it.
+		assert!(
+			tokio::time::timeout(Duration::ZERO, &mut second)
+				.await
+				.is_err()
+		);
+		client.snapshot().await.unwrap();
+
+		let password = asked.rsplit(' ').next().unwrap();
+		write
+			.write_all(
+				format!("JOINBATTLE 5 h\nJOINEDBATTLE 5 me {password}\nREQUESTBATTLESTATUS\n")
+					.as_bytes(),
+			)
+			.await
+			.unwrap();
+		first.await.unwrap().expect("the first click is answered");
+		second.await.expect("the second click is answered");
+		loop {
+			let line = line_starting_with(&mut lines, "").await;
+			assert!(!line.starts_with("JOINBATTLE"), "asked twice: {line}");
+			if line.starts_with("MYBATTLESTATUS") {
+				break;
+			}
+		}
 		client.shutdown().await;
 	}
 
