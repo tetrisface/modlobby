@@ -5,9 +5,10 @@
  */
 export type Degradation = {
 	/**
-	 * `unknown_modoptions`, `unsupported_modoptions`, or one of the three
+	 * `unknown_modoptions`, `unsupported_modoptions`, or one of the four
 	 * that mean the room was not scored at all: `unsupported_ai_family`,
-	 * `mixed_ai_families`, `unknown_ai_family`.
+	 * `mixed_ai_families`, `unknown_ai_family`, and `endless_mode` (a
+	 * Raptors or Scavengers room with endless on has no win condition).
 	 */
 	reason: string
 	unknownSettingCount: number

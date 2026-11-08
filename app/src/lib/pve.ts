@@ -736,6 +736,10 @@ export function declinedText(score: Score): string {
 		}
 		case 'mixed_ai_families':
 			return 'No win chance or challenge: this room mixes AI families, which the service does not score.'
+		case 'endless_mode':
+			// Killing the queen loops to a harder round instead of ending the
+			// game, so no game in this mode can be won or lost.
+			return `No win chance or challenge: endless mode has no win condition, so the service does not score it. The records below are each person's lifetime record against ${enemyNoun(score.aiType, 2)}.`
 		case 'unknown_ai_family': {
 			const names = held.unknownAiNames.length
 				? ` (${some(held.unknownAiNames)})`

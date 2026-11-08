@@ -484,9 +484,10 @@ pub struct Diff {
 )]
 #[ts(export, rename_all = "camelCase")]
 pub struct Degradation {
-	/// `unknown_modoptions`, `unsupported_modoptions`, or one of the three
+	/// `unknown_modoptions`, `unsupported_modoptions`, or one of the four
 	/// that mean the room was not scored at all: `unsupported_ai_family`,
-	/// `mixed_ai_families`, `unknown_ai_family`.
+	/// `mixed_ai_families`, `unknown_ai_family`, and `endless_mode` (a
+	/// Raptors or Scavengers room with endless on has no win condition).
 	pub reason: String,
 	pub unknown_setting_count: u32,
 	pub unknown_setting_names: Vec<String>,
@@ -1218,7 +1219,7 @@ mod tests {
 				"match_method": "raw_fallback", "difference_count": 3, "similarity": 0.9,
 				"hidden_diff_summary": {"total": 1},
 				"display_diffs": [
-					{"column": "raptor_endless", "incoming": "1", "expected": "0"},
+					{"column": "raptor_queentimemult", "incoming": "1", "expected": "0"},
 					{"column": "tweakdefs1", "incoming": "x", "expected": "y"},
 					{"column": "same", "incoming": 5, "expected": 5},
 					{"column": "gone", "incoming": null, "expected": true}
@@ -1293,7 +1294,7 @@ mod tests {
 			score.matched.diffs,
 			vec![
 				Diff {
-					column: "raptor_endless".into(),
+					column: "raptor_queentimemult".into(),
 					current: "1".into(),
 					closest: "0".into()
 				},
@@ -1337,6 +1338,34 @@ mod tests {
 		assert!(score.players.is_empty());
 		assert_eq!(score.matched, Matched::default());
 		assert_eq!(score.degradation, None);
+	}
+
+	#[test]
+	fn an_endless_room_is_read_as_declined_with_its_field_and_records() {
+		// Endless mode has no win condition: the service sends no estimate and
+		// no match, but keeps the unplaced histogram and each player's record.
+		let score = read(&serde_json::json!({
+			"degradation": {
+				"reason": "endless_mode",
+				"effects": ["difficulty_estimate_suppressed", "exact_match_suppressed", "closest_match_suppressed"]
+			},
+			"difficulty_histogram": {
+				"current_status": "unplaced", "total_games": 300,
+				"bins": [{"lower_bound": 0, "upper_bound": 34, "games": 300, "wins": 110}]
+			},
+			"players": [{"player_id": 1, "player_name": "me",
+				"accomplishments": {"participation": {"games_played": 10, "victories": 4}}}]
+		}));
+		assert_eq!(score.challenge, None);
+		assert_eq!(score.win_chance, None);
+		assert_eq!(score.percentile, None);
+		assert!(!score.best_effort);
+		assert_eq!(
+			score.degradation.map(|held| held.reason).as_deref(),
+			Some("endless_mode")
+		);
+		assert_eq!(score.total_games, 300);
+		assert_eq!(score.players[0].accomplishments.participation.victories, 4);
 	}
 
 	#[test]

@@ -711,6 +711,39 @@ describe('PveScore', () => {
 		expect(container.textContent).not.toContain('unplaced')
 	})
 
+	test('an endless room is unscored, and the chip says it has no win condition', async () => {
+		asked.mockResolvedValue({
+			...scored,
+			challenge: null,
+			percentile: null,
+			winChance: null,
+			evidenceGames: null,
+			matched: { ...scored.matched, status: 'not_found' },
+			degradation: {
+				reason: 'endless_mode',
+				unknownSettingCount: 0,
+				unknownSettingNames: [],
+				unsupportedSettingNames: [],
+				unknownAiNames: [],
+			},
+		})
+		enter([bot('RaptorsAI')])
+		const { container } = render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+
+		const slots = [...container.querySelectorAll('.pve-figure b')].map(
+			(slot) => slot.textContent,
+		)
+		expect(slots).toEqual(['—', '—', '—'])
+		const chip = [...container.querySelectorAll('.chip')].find(
+			(held) => held.textContent?.trim() === 'unscored',
+		)
+		expect(chip?.getAttribute('title')).toMatch(
+			/^No win chance or challenge: endless mode has no win condition/,
+		)
+	})
+
 	test('a change during a slow first ask is asked about once, afterwards', async () => {
 		// The first ask is a cold start: the service is still thinking.
 		const cold = deferred<Score>()
