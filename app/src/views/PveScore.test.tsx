@@ -668,6 +668,28 @@ describe('PveScore', () => {
 		expect(asked).toHaveBeenCalledTimes(1)
 	})
 
+	test('a seat taken moves the figures before the host recounts the room', async () => {
+		asked.mockResolvedValue(filling)
+		enter([bot('RaptorsAI')], [user('friend')])
+		const { container } = render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+
+		// The seat alone: the host's spectator count has yet to follow it.
+		setLobby(
+			'servers',
+			TEST_SERVER,
+			'users',
+			'friend',
+			'battleStatus',
+			'player',
+			true,
+		)
+		expect(container.querySelector('.pve-figure b')?.textContent).toBe(
+			'17.0–12.0/34',
+		)
+	})
+
 	test('a change after a quiet spell is asked about at once', async () => {
 		asked.mockResolvedValue(scored)
 		enter([bot('RaptorsAI')])

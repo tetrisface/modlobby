@@ -346,23 +346,28 @@ fn pve_roster(
 		pve::opponent(&names)
 	};
 	if let Some(found) = opponent(&room.bots) {
+		let seat_handicaps: Vec<u8> = room
+			.members
+			.iter()
+			.filter_map(|name| users.iter().find(|user| &user.name == name))
+			.filter_map(|user| user.battle_status.as_ref())
+			.filter(|status| status.player)
+			.map(|status| status.handicap)
+			.collect();
+		// Counted off the seats rather than the room's head count, which waits
+		// on the host's spectator count: SPADS counts the same seats
+		// (`getNbNonPlayer`), one round trip later.
+		let seated = seat_handicaps.len() as u32;
 		let here = lobby_ui::GameRosterView {
 			bots: room.bots.clone(),
-			player_count: room.player_count,
-			seat_handicaps: room
-				.members
-				.iter()
-				.filter_map(|name| users.iter().find(|user| &user.name == name))
-				.filter_map(|user| user.battle_status.as_ref())
-				.filter(|status| status.player)
-				.map(|status| status.handicap)
-				.collect(),
+			player_count: seated,
+			seat_handicaps,
 			guessed: false,
 		};
 		let seats = pve::human_team_capacity(
 			room.layout.map(|layout| layout.team_size),
 			room.max_players,
-			room.player_count,
+			seated,
 		);
 		return Some((found, here, Some(seats)));
 	}
@@ -822,6 +827,21 @@ mod tests {
 		assert_eq!(
 			ask.encounter_context.enemy_ai_names,
 			["SMRTBARb", "SMRTBARb"]
+		);
+	}
+
+	#[test]
+	fn a_seat_taken_counts_before_the_host_recounts_the_room() {
+		// The host's spectator count still says one player.
+		let mut here = room(vec![bot("RaptorsAI", 0)]);
+		here.members.push("friend".into());
+		let mut people = users();
+		people.push(user("friend", false, Some(status(20, SyncView::Synced))));
+		let ask = pve_ask(&my(None), &here, &people, None).unwrap();
+		assert_eq!(ask.encounter_context.human_team_size, 2);
+		assert_eq!(
+			ask.encounter_context.human_player_income_multipliers,
+			[1.0, 1.2]
 		);
 	}
 }

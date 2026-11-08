@@ -116,13 +116,15 @@ function setup(room: RoomModel): string | undefined {
 	].join('\n')
 }
 
-/** Who sits in the room, as the service counts them. */
+/**
+ * Who sits in the room, as Rust tells the service: counted off the seats,
+ * which is the count the host announces one round trip later.
+ */
 function seats(room: RoomModel): Seats {
+	const seated = seatedStatuses(room)
 	return {
-		players: room.battle()?.playerCount ?? 0,
-		handicap: playerHandicap(
-			seatedStatuses(room).map((status) => status.handicap),
-		),
+		players: seated.length,
+		handicap: playerHandicap(seated.map((status) => status.handicap)),
 	}
 }
 
@@ -157,7 +159,7 @@ function fingerprint(room: RoomModel): string | undefined {
 			? `${name}: ${status.handicap} on ${status.allyTeam}`
 			: name
 	})
-	return [base, battle.playerCount, ...members].join('\n')
+	return [base, ...members].join('\n')
 }
 
 /** Whether these AIs are a PvE opponent. */
@@ -378,8 +380,6 @@ export function PveScore() {
 			asks.ask()
 		}),
 	)
-	onCleanup(() => asks.stop())
-
 	// Opening the panel is news to its records: whoever came or went while it
 	// was shut has not been asked about.
 	createEffect(
@@ -391,6 +391,8 @@ export function PveScore() {
 			{ defer: true },
 		),
 	)
+	onCleanup(() => asks.stop())
+
 	/**
 	 * A figure as seated, then with every seat taken, the way the battle list
 	 * writes its challenge: `now–full`, the seated one muted. One figure for a
@@ -581,10 +583,10 @@ export function PveScore() {
 					score={shown()}
 					waiting={waiting()}
 					failure={failure()}
-					onClose={() => setOpen(false)}
-				/>
 					present={present(room)}
 					asked={askedPresent() ?? present(room)}
+					onClose={() => setOpen(false)}
+				/>
 			</Show>
 		</Show>
 	)
