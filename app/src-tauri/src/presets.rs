@@ -372,7 +372,10 @@ fn pve_roster(
 
 /// The room's ally teams as its start script will number them, read off the
 /// seated members, the AIs and the room's start rectangles.
-fn room_ally_teams(room: &lobby_ui::BattleView, users: &[lobby_ui::UserView]) -> Vec<pve::AllyTeam> {
+fn room_ally_teams(
+	room: &lobby_ui::BattleView,
+	users: &[lobby_ui::UserView],
+) -> Vec<pve::AllyTeam> {
 	let humans = room
 		.members
 		.iter()
@@ -687,14 +690,29 @@ mod tests {
 		enemy.status.ally_team = 3;
 		let mut here = room(vec![enemy.clone(), enemy]);
 		here.start_rects = vec![
-			lobby_ui::StartRectView { ally_team: 3, left: 140, top: 0, right: 200, bottom: 200 },
+			lobby_ui::StartRectView {
+				ally_team: 3,
+				left: 140,
+				top: 0,
+				right: 200,
+				bottom: 200,
+			},
 			// A rectangle on an ally team nobody sits on is not part of the game.
-			lobby_ui::StartRectView { ally_team: 7, left: 0, top: 0, right: 10, bottom: 10 },
+			lobby_ui::StartRectView {
+				ally_team: 7,
+				left: 0,
+				top: 0,
+				right: 10,
+				bottom: 10,
+			},
 		];
 		let ask = pve_ask(&my(None), &here, &users(), None).unwrap();
 		let teams = &ask.encounter_context.ally_teams;
 		assert_eq!(teams.len(), 2);
-		assert_eq!((teams[0].human_players, teams[0].ais, teams[0].start_rect), (1, 0, None));
+		assert_eq!(
+			(teams[0].human_players, teams[0].ais, teams[0].start_rect),
+			(1, 0, None)
+		);
 		assert_eq!((teams[1].human_players, teams[1].ais), (0, 2));
 		assert_eq!(teams[1].start_rect.map(|rect| rect.left), Some(140));
 	}
