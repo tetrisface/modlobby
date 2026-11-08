@@ -273,6 +273,30 @@ impl MyBattle {
 			.map_or("", String::as_str)
 	}
 
+	/// Takes the host's word for the AIs the running game started with
+	/// (`status game`), where nothing better was seen: a guess off the title,
+	/// or no AI at all because its owner left before we arrived. An AI seen
+	/// in the room was seen whole, seat and bonus included, which the host's
+	/// word has not got, so it stands. Whether the roster changed.
+	pub fn learn_game_bots(&mut self, bots: Vec<Bot>) -> bool {
+		let Some(roster) = self.game_roster.as_mut() else {
+			return false;
+		};
+		if !roster.guessed && !roster.bots.is_empty() {
+			return false;
+		}
+		let heard = GameRoster {
+			bots,
+			guessed: false,
+			..roster.clone()
+		};
+		if *roster == heard {
+			return false;
+		}
+		*roster = heard;
+		true
+	}
+
 	/// The mutators the room loads, in load order: `game/mutator0` onwards to
 	/// the first gap or empty name, which is where the engine stops reading
 	/// `MUTATOR0` onwards too (`GameSetup.cpp:303-313`).
@@ -392,6 +416,20 @@ pub struct Bot {
 	pub status: BattleStatus,
 	pub team_colour: u32,
 	pub ai: String,
+}
+
+impl Bot {
+	/// An AI known by name alone, with nothing of its seat or bonus: what a
+	/// title or a host's word gives.
+	pub fn named(name: &str, owner: &str, ai: &str) -> Self {
+		Self {
+			name: name.to_owned(),
+			owner: owner.to_owned(),
+			status: BattleStatus::default(),
+			team_colour: 0,
+			ai: ai.to_owned(),
+		}
+	}
 }
 
 /// Who a running game started with, as far as we saw.
@@ -566,7 +604,9 @@ impl LobbyState {
 	/// outlives what it described, so it is believed only where nothing
 	/// contradicts it: no other AI in the room, and the people seated on one
 	/// side, as they are against AI. Its AI is a stand-in with nothing known
-	/// about it, which raptors and scavengers need nothing more than.
+	/// about it, which raptors and scavengers need nothing more than. The
+	/// host's own list of what the game started with replaces the guess when
+	/// it answers `status game` ([`MyBattle::learn_game_bots`]).
 	pub fn my_roster_as_found(&self) -> Option<GameRoster> {
 		let roster = self.my_roster()?;
 		let battle = self.battles.get(&self.my_battle.as_ref()?.id)?;
@@ -580,15 +620,8 @@ impl LobbyState {
 		let Some(ai) = titled_opponent(&battle.title) else {
 			return Some(roster);
 		};
-		let bot = Bot {
-			name: ai.to_owned(),
-			owner: String::new(),
-			status: BattleStatus::default(),
-			team_colour: 0,
-			ai: ai.to_owned(),
-		};
 		Some(GameRoster {
-			bots: vec![bot],
+			bots: vec![Bot::named(ai, "", ai)],
 			guessed: true,
 			..roster
 		})

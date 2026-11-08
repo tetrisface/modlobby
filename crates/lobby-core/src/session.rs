@@ -1571,6 +1571,24 @@ impl Session {
 				{
 					effects.push(Effect::Vacated { seats });
 				}
+				// What the game started against, which the room itself may no
+				// longer show: a leaver's AIs go with them.
+				if self.hosts_my_battle(&name)
+					&& let Some(bots) = answer.as_deref().and_then(spads::game_bots)
+				{
+					let bots = bots
+						.iter()
+						.map(|bot| Bot::named(&bot.name, &bot.owner, &bot.ai))
+						.collect();
+					let learned = self
+						.state
+						.my_battle
+						.as_mut()
+						.is_some_and(|my| my.learn_game_bots(bots));
+					if learned {
+						effects.push(Effect::RoomChanged);
+					}
+				}
 				if let Some(password) = private_host_password(&text) {
 					self.private_host = Some(password.clone());
 					effects.push(Effect::PrivateHostOffered {
@@ -3469,6 +3487,85 @@ mod tests {
 	fn a_title_is_not_read_for_a_room_with_nobody_seated() {
 		let mut s = finding_a_game("Coop vs Raptors", &[]);
 		feed(&mut s, &["REQUESTBATTLESTATUS"]);
+		assert_eq!(game_roster(&s).unwrap().bots, []);
+	}
+
+	/// The host's `status game` answer for a game two people started against
+	/// a Scavengers AI whose owner has since left the room.
+	const SCAVENGERS_STATUS: &str = r#"!#JSONRPC {"jsonrpc":"2.0","result":{"game":{"clients":[{"Name":"alice","Team":0,"Id":0,"Status":"Playing"},{"Name":"bob","Team":0,"Id":1,"Status":"Playing"},{"Name":"ScavengersDefenseAI(1) (bot)","Team":1,"Id":2,"Version":"ScavengersAI (SimpleIdeas)"}],"status":{"gameTime":1651}}},"id":1}"#;
+
+	/// The same, for a game of people against people.
+	const PVP_STATUS: &str = r#"!#JSONRPC {"jsonrpc":"2.0","result":{"game":{"clients":[{"Name":"alice","Team":0,"Id":0,"Status":"Playing"},{"Name":"bob","Team":1,"Id":1,"Status":"Playing"}],"status":{"gameTime":1651}}},"id":1}"#;
+
+	#[test]
+	fn the_hosts_game_status_names_the_ais_a_found_game_started_with() {
+		let mut s = finding_a_game("SCVX[MOD] | Coop", &[("alice", 0), ("bob", 0)]);
+		feed(&mut s, &["REQUESTBATTLESTATUS"]);
+		assert_eq!(game_roster(&s).unwrap().bots, []);
+
+		let effects = feed(&mut s, &[&format!("SAIDPRIVATE host {SCAVENGERS_STATUS}")]);
+		assert!(effects.contains(&Effect::RoomChanged));
+		let roster = game_roster(&s).unwrap();
+		assert_eq!(ais(&roster), ["ScavengersAI"]);
+		assert_eq!(roster.bots[0].name, "ScavengersDefenseAI(1)");
+		assert_eq!(roster.bots[0].owner, "SimpleIdeas");
+		assert!(!roster.guessed);
+	}
+
+	#[test]
+	fn the_hosts_game_status_outranks_the_title() {
+		let mut s = finding_a_game("Coop vs Raptors", &[("alice", 0), ("bob", 0)]);
+		feed(&mut s, &["REQUESTBATTLESTATUS"]);
+		assert!(game_roster(&s).unwrap().guessed);
+		feed(&mut s, &[&format!("SAIDPRIVATE host {SCAVENGERS_STATUS}")]);
+		let roster = game_roster(&s).unwrap();
+		assert_eq!(ais(&roster), ["ScavengersAI"]);
+		assert!(!roster.guessed);
+
+		// A title left over from an earlier game, over people against people.
+		let mut s = finding_a_game("Coop vs Raptors", &[("alice", 0), ("bob", 0)]);
+		feed(&mut s, &["REQUESTBATTLESTATUS"]);
+		feed(&mut s, &[&format!("SAIDPRIVATE host {PVP_STATUS}")]);
+		let roster = game_roster(&s).unwrap();
+		assert_eq!(roster.bots, []);
+		assert!(!roster.guessed);
+	}
+
+	#[test]
+	fn an_ai_seen_at_the_start_keeps_what_was_seen_of_it() {
+		let mut s = among_raptors();
+		feed(&mut s, &["CLIENTSTATUS host 65"]);
+		let seen = game_roster(&s).unwrap();
+		assert!(seen.bots[0].status.player);
+		// The host names the AI again, knowing nothing of its seat or bonus.
+		let answer = r#"!#JSONRPC {"jsonrpc":"2.0","result":{"game":{"clients":[{"Name":"me","Team":0,"Id":0,"Status":"Playing"},{"Name":"RaptorsAI (bot)","Team":1,"Id":1,"Version":"RaptorsDefense (host)"}]}},"id":1}"#;
+		let effects = feed(&mut s, &[&format!("SAIDPRIVATE host {answer}")]);
+		assert_eq!(game_roster(&s), Some(seen));
+		assert!(!effects.contains(&Effect::RoomChanged));
+	}
+
+	#[test]
+	fn a_game_status_answer_is_nothing_without_a_game() {
+		let mut s = ready_with_room();
+		s.join_battle(5, None, "1".into());
+		feed(
+			&mut s,
+			&[
+				"CLIENTSTATUS host 64",
+				"JOINBATTLE 5 -1",
+				"REQUESTBATTLESTATUS",
+			],
+		);
+		let effects = feed(&mut s, &[&format!("SAIDPRIVATE host {SCAVENGERS_STATUS}")]);
+		assert_eq!(game_roster(&s), None);
+		assert!(!effects.contains(&Effect::RoomChanged));
+	}
+
+	#[test]
+	fn only_our_own_host_is_believed_about_the_games_ais() {
+		let mut s = finding_a_game("SCVX[MOD] | Coop", &[("alice", 0)]);
+		feed(&mut s, &["REQUESTBATTLESTATUS"]);
+		feed(&mut s, &[&format!("SAIDPRIVATE alice {SCAVENGERS_STATUS}")]);
 		assert_eq!(game_roster(&s).unwrap().bots, []);
 	}
 

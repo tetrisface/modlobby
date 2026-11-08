@@ -500,6 +500,48 @@ pub fn vacated(text: &str, seated: impl Fn(&str) -> Option<u32>) -> Option<Vec<V
 	)
 }
 
+/// An AI the running game started with, as the host lists it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GameBot {
+	/// Its name in the room (`ScavengersDefenseAI(1)`).
+	pub name: String,
+	/// The AI the engine runs for it (`ScavengersAI`, `BARb`…).
+	pub ai: String,
+	pub owner: String,
+}
+
+/// The AIs the running game started with, out of a `status game` answer.
+///
+/// SPADS lists them from its own copy of the start roster
+/// (`getGameStatus`, `$p_runningBattle->{bots}`), so they are there whether
+/// or not their owners stayed: teiserver takes a leaver's AIs off the lobby,
+/// and a room joined after that shows none. A bot's row has no `Status`;
+/// its `Version` is `<ai> (<owner>)` (`spads.pl:12429`). `None` where the
+/// text is not such an answer; an answer naming no AI is an empty list.
+pub fn game_bots(text: &str) -> Option<Vec<GameBot>> {
+	Some(
+		game_clients(text)?
+			.iter()
+			.filter_map(|client| {
+				let name = client.get("Name")?.as_str()?.strip_suffix(" (bot)")?;
+				let version = client
+					.get("Version")
+					.and_then(serde_json::Value::as_str)
+					.unwrap_or_default();
+				let (ai, owner) = version
+					.strip_suffix(')')
+					.and_then(|version| version.rsplit_once(" ("))
+					.unwrap_or((version, ""));
+				Some(GameBot {
+					name: name.to_owned(),
+					ai: ai.to_owned(),
+					owner: owner.to_owned(),
+				})
+			})
+			.collect(),
+	)
+}
+
 /// The `result.game.clients` rows of a `status game` answer.
 fn game_clients(text: &str) -> Option<Vec<serde_json::Value>> {
 	let mut rpc: serde_json::Value = serde_json::from_str(text.strip_prefix(RPC_PREFIX)?).ok()?;
@@ -902,6 +944,40 @@ mod tests {
 			])
 		);
 		assert_eq!(vacated(GAME_STATUS_REQUEST, room), None);
+	}
+
+	#[test]
+	fn the_ais_a_game_started_with_are_read_out_of_the_game_status() {
+		let answer = r#"!#JSONRPC {"jsonrpc":"2.0","result":{"game":{"clients":[
+			{"Name":"alice","Team":0,"Id":0,"Status":"Playing"},
+			{"Name":"ScavengersDefenseAI(1) (bot)","Team":1,"Id":1,"Version":"ScavengersAI (SimpleIdeas)"},
+			{"Name":"BARb (bot)","Team":1,"Id":2,"Version":"BARb (host)"},
+			{"Name":"Odd (bot)","Team":1,"Id":3,"Version":"OddAI"},
+			{"Name":"watcher","Status":"Spectating"}
+		]}},"id":1}"#;
+		let bot = |name: &str, ai: &str, owner: &str| GameBot {
+			name: name.into(),
+			ai: ai.into(),
+			owner: owner.into(),
+		};
+		assert_eq!(
+			game_bots(answer),
+			Some(vec![
+				bot("ScavengersDefenseAI(1)", "ScavengersAI", "SimpleIdeas"),
+				bot("BARb", "BARb", "host"),
+				bot("Odd", "OddAI", ""),
+			])
+		);
+		assert_eq!(game_bots(GAME_STATUS_REQUEST), None);
+	}
+
+	#[test]
+	fn a_game_status_naming_no_ai_is_an_answer_too() {
+		let answer = r#"!#JSONRPC {"jsonrpc":"2.0","result":{"game":{"clients":[
+			{"Name":"alice","Team":0,"Id":0,"Status":"Playing"},
+			{"Name":"bob","Team":1,"Id":1,"Status":"Playing"}
+		]}},"id":1}"#;
+		assert_eq!(game_bots(answer), Some(vec![]));
 	}
 
 	#[test]
