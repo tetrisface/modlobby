@@ -11,15 +11,18 @@
 //! the same number the in-room panel shows. The list's percentile is a
 //! different one from the panel's, so showing it would contradict the panel.
 //! Two challenges where the service has both: the room with the players it
-//! had when it was scored, and the room with every seat taken
-//! ([`crate::Encounter::human_team_capacity`]).
+//! has, and the room with every seat taken
+//! ([`crate::Encounter::human_team_capacity`]). Where the service lists the
+//! room's figure at every team size, "the players it has" is the room's head
+//! count now, read by the battle list; otherwise it is whoever was seated when
+//! the room was last asked about.
 //!
 //! What reads it here is deliberately forgiving. The list is the service's
 //! (`live-api`'s `LiveGameSummary`, which pins these fields in a test of its
 //! own); a field that is gone or of another shape means no score for that
 //! room, never an error.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -56,6 +59,12 @@ pub struct ListedScore {
 	pub full_challenge: Option<f64>,
 	/// How many played when it was scored: who `challenge` is for.
 	pub players: Option<u32>,
+	/// The challenge at each human team size up to the seat count, by size:
+	/// the same setup's table, so the list can read the room at the head count
+	/// it has now. Empty from an asker that named no seat count and from a
+	/// service that predates the table; `challenge` is then the room's figure.
+	#[ts(type = "Record<number, number>")]
+	pub sizes: BTreeMap<u32, f64>,
 	/// When someone in the room last told the service about this setup, as
 	/// the service's ISO timestamp. It has no newer word than that: a room
 	/// whose setup has not changed since has not been asked about since.
@@ -105,6 +114,24 @@ struct Difficulty {
 	/// Loosely too: the current figure stands without it.
 	#[serde(default)]
 	full_team_challenge: serde_json::Value,
+	/// Loosely as well, entry by entry.
+	#[serde(default)]
+	team_size_challenges: serde_json::Value,
+}
+
+/// The per-size table as listed, `{"1": 21.5, …}`: an entry whose size or
+/// figure does not read as one is dropped, the rest kept.
+fn sizes(listed: &serde_json::Value) -> BTreeMap<u32, f64> {
+	let Some(by_size) = listed.as_object() else {
+		return BTreeMap::new();
+	};
+	by_size
+		.iter()
+		.filter_map(|(size, challenge)| {
+			let challenge = challenge.as_f64().filter(|value| value.is_finite())?;
+			Some((size.parse().ok()?, challenge))
+		})
+		.collect()
 }
 
 impl Listings {
@@ -149,6 +176,7 @@ impl Listings {
 					challenge,
 					full_challenge,
 					players,
+					sizes: sizes(&game.difficulty.team_size_challenges),
 					scored_at: game.last_seen_at,
 				},
 			});
@@ -305,6 +333,7 @@ mod tests {
 				"status": status,
 				"challenge": challenge,
 				"full_team_challenge": challenge.map(|now| now - 4.0),
+				"team_size_challenges": {},
 				"context_percentile": 71.5,
 				"representative_team_win_probability": 0.41,
 				"historical_games": 120,
@@ -337,9 +366,42 @@ mod tests {
 				challenge: 16.4,
 				full_challenge: Some(16.4 - 4.0),
 				players: Some(3),
+				sizes: BTreeMap::new(),
 				scored_at: "2026-11-07T18:12:00Z".into(),
 			})
 		);
+	}
+
+	#[test]
+	fn a_room_listed_with_its_table_is_read_at_every_size() {
+		let mut filling = game(Some(ROOM), "Map", "estimated", Some(21.5));
+		filling["difficulty"]["team_size_challenges"] =
+			serde_json::json!({"1": 21.5, "2": 17.0, "3": 14.2, "4": 12.0});
+		let listings = Listings::read(&page(vec![filling]));
+		assert_eq!(
+			listings.score_for(ROOM, "Map").unwrap().sizes,
+			BTreeMap::from([(1, 21.5), (2, 17.0), (3, 14.2), (4, 12.0)])
+		);
+	}
+
+	#[test]
+	fn an_odd_entry_in_the_table_costs_that_entry_and_not_the_room() {
+		let mut odd = game(Some(ROOM), "Map", "estimated", Some(21.5));
+		odd["difficulty"]["team_size_challenges"] =
+			serde_json::json!({"1": 21.5, "two": 17.0, "3": "hard", "4": 12.0});
+		let mut older = game(Some(&"b".repeat(32)), "Map", "estimated", Some(9.0));
+		older["difficulty"]
+			.as_object_mut()
+			.unwrap()
+			.remove("team_size_challenges");
+		let listings = Listings::read(&page(vec![odd, older]));
+		assert_eq!(
+			listings.score_for(ROOM, "Map").unwrap().sizes,
+			BTreeMap::from([(1, 21.5), (4, 12.0)])
+		);
+		let older = listings.score_for(&"b".repeat(32), "Map").unwrap();
+		assert!(older.sizes.is_empty());
+		assert_eq!(older.challenge, 9.0);
 	}
 
 	#[test]

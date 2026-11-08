@@ -14,6 +14,7 @@ const SCORE: ListedScore = {
 	challenge: 16.4,
 	fullChallenge: 19.0,
 	players: 3,
+	sizes: {},
 	scoredAt: '2026-11-07T18:00:00Z',
 }
 

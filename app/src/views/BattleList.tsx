@@ -677,6 +677,7 @@ export function BattleList() {
 													<span class='col-challenge'>
 														<ListedChallenge
 															score={listedScores()[r().key]}
+															players={r().battle.playerCount}
 															now={now()}
 														/>
 													</span>

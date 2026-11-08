@@ -10,7 +10,7 @@ describe('ListedChallenge', () => {
 
 	test('a room without a score shows nothing at all', () => {
 		const { container } = render(() => (
-			<ListedChallenge score={undefined} now={Date.now()} />
+			<ListedChallenge score={undefined} players={0} now={Date.now()} />
 		))
 		expect(container.textContent).toBe('')
 		expect(container.querySelector('[title]')).toBeNull()
@@ -23,8 +23,10 @@ describe('ListedChallenge', () => {
 					challenge: 12.4,
 					fullChallenge: 15.1,
 					players: 3,
+					sizes: {},
 					scoredAt: SCORED_AT,
 				}}
+				players={3}
 				now={threeMinutesOn}
 			/>
 		))
@@ -42,8 +44,10 @@ describe('ListedChallenge', () => {
 					challenge: 24.85,
 					fullChallenge: null,
 					players: 8,
+					sizes: {},
 					scoredAt: SCORED_AT,
 				}}
+				players={8}
 				now={threeMinutesOn}
 			/>
 		))
@@ -53,5 +57,24 @@ describe('ListedChallenge', () => {
 		expect(cell.title).toContain(
 			'With the 8 players seated when it was scored: 24.9',
 		)
+	})
+
+	test('a room listed with its table follows the seats taken since', () => {
+		const { container } = render(() => (
+			<ListedChallenge
+				score={{
+					challenge: 21.5,
+					fullChallenge: 12.0,
+					players: 1,
+					sizes: { 1: 21.5, 2: 17.0, 3: 14.2, 4: 12.0 },
+					scoredAt: SCORED_AT,
+				}}
+				players={3}
+				now={threeMinutesOn}
+			/>
+		))
+		const cell = container.querySelector('[title]') as HTMLElement
+		expect(cell.textContent).toBe('14–12')
+		expect(cell.title).toContain('With the 3 players seated now: 14.2')
 	})
 })
