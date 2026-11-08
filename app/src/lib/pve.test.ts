@@ -68,8 +68,10 @@ function player(
 
 const SCORE: Score = {
 	challenge: 21.5,
-	fullChallenge: null,
-	fullPlayers: null,
+	full: null,
+	sizes: [],
+	seated: null,
+	handicap: null,
 	percentile: 88,
 	winChance: 0.31,
 	evidenceGames: 4200,

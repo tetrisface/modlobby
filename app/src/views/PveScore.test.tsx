@@ -6,6 +6,7 @@ import type { BattleView } from '../ipc/bindings/BattleView'
 import type { BotView } from '../ipc/bindings/BotView'
 import type { GameRosterView } from '../ipc/bindings/GameRosterView'
 import type { Score } from '../ipc/bindings/Score'
+import type { SizeScore } from '../ipc/bindings/SizeScore'
 import type { UserView } from '../ipc/bindings/UserView'
 import type { Settings } from '../ipc/bindings/Settings'
 import { age } from '../lib/age'
@@ -13,7 +14,7 @@ import { STAGGER_STEP } from '../lib/stagger'
 import { emptyLobby, emptyServer, setLobby } from '../store/lobby'
 import { TEST_SERVER, onlySession } from '../store/testing'
 import { setSettingsSignal } from '../store/settings'
-import { DOTS_AFTER, PveScore, QUIET_FOR } from './PveScore'
+import { AT_MOST_EVERY, DOTS_AFTER, PveScore, QUIET_FOR } from './PveScore'
 import { RoomProvider } from './room/model'
 import { onlineRoom } from './room/online'
 
@@ -170,8 +171,11 @@ function hop(id: number) {
 
 const scored: Score = {
 	challenge: 21.5,
-	fullChallenge: null,
-	fullPlayers: null,
+	full: null,
+	sizes: [],
+	// The room `enter` sets up: this client the one player, unhandicapped.
+	seated: 1,
+	handicap: 0,
 	percentile: 88,
 	winChance: 0.31,
 	evidenceGames: 4200,
@@ -231,6 +235,16 @@ const scored: Score = {
 }
 
 const asked = vi.mocked(invoke)
+
+/** One team size's figures, as the service's table carries them. */
+function full(
+	players: number,
+	challenge: number,
+	winChance: number,
+	percentile: number,
+): SizeScore {
+	return { players, challenge, winChance, percentile, uncertain: false }
+}
 
 describe('PveScore', () => {
 	beforeEach(() => {
@@ -325,39 +339,213 @@ describe('PveScore', () => {
 		expect(asked).toHaveBeenCalledTimes(1)
 	})
 
-	test('a room still filling shows now–full, the full team unmuted', async () => {
+	test('a room still filling shows each figure now–full, the full team unmuted', async () => {
 		asked.mockResolvedValue({
 			...scored,
 			challenge: 18.4,
-			fullChallenge: 21.5,
-			fullPlayers: 8,
+			full: full(8, 21.5, 0.45, 95),
 		})
 		enter([bot('RaptorsAI')])
 		const { container } = render(panel)
 		vi.advanceTimersByTime(0)
 		await settle()
 
-		const figure = container.querySelector('.pve-figure b') as HTMLElement
-		expect(figure.textContent).toBe('18.4\u201321.5/34')
-		expect(figure.querySelector('.challenge-now')?.textContent).toBe('18.4')
-		const tip = figure.closest('.pve-stat')?.getAttribute('title') ?? ''
-		expect(tip).toContain('As seated now: 18.4\nWith all 8 seats taken: 21.5')
+		const [challenge, win, harder] = [
+			...container.querySelectorAll('.pve-figure b'),
+		] as [HTMLElement, HTMLElement, HTMLElement]
+		expect(challenge.textContent).toBe('18.4\u201321.5/34')
+		expect(challenge.querySelector('.challenge-now')?.textContent).toBe('18.4')
+		const tip = (figure: HTMLElement) =>
+			figure.closest('.pve-stat')?.getAttribute('title') ?? ''
+		expect(tip(challenge)).toContain(
+			'As seated now (1): 18.4\nWith all 8 seats taken: 21.5',
+		)
+		// Win and "Harder than" follow the same seats, as the service scores them.
+		expect(win.textContent).toBe('31%\u201345%')
+		expect(win.querySelector('.challenge-now')?.textContent).toBe('31%')
+		expect(tip(win)).toContain(
+			'As seated now (1): 31%\nWith all 8 seats taken: 45%',
+		)
+		expect(harder.textContent).toBe('88%\u201395%')
+		expect(tip(harder)).toContain('With all 8 seats taken: 95%')
 	})
 
 	test('a full room, or one the service gave no full figure, shows one', async () => {
+		asked.mockResolvedValue({ ...scored, full: full(8, 21.5, 0.31, 88) })
+		enter([bot('RaptorsAI')])
+		const { container } = render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+
+		const slots = [...container.querySelectorAll('.pve-figure b')]
+		expect(slots.map((slot) => slot.textContent)).toEqual([
+			'21.5/34',
+			'31%',
+			'88%',
+		])
+		expect(container.querySelector('.challenge-now')).toBeNull()
+	})
+
+	/** A room asked about with one player and four seats, its table filled in. */
+	const filling: Score = {
+		...scored,
+		full: full(4, 12.0, 0.6471, 30),
+		sizes: [
+			full(1, 21.5, 0.31, 88),
+			full(2, 17.0, 0.5, 60),
+			full(3, 14.2, 0.5824, 45),
+			full(4, 12.0, 0.6471, 30),
+		],
+	}
+
+	/** Another player takes a seat in the room `enter` set up. */
+	function joins(name: string, handicap = 0, allyTeam = 0) {
+		const seated = user(name, { player: true })
+		seated.battleStatus = {
+			ready: false,
+			team: 0,
+			allyTeam,
+			player: true,
+			handicap,
+			sync: 'synced',
+			side: 0,
+		}
+		setLobby('servers', TEST_SERVER, 'users', name, seated)
+		setLobby('servers', TEST_SERVER, 'battles', 7, 'members', (members) => [
+			...members,
+			name,
+		])
+		setLobby(
+			'servers',
+			TEST_SERVER,
+			'battles',
+			7,
+			'playerCount',
+			(count) => count + 1,
+		)
+	}
+
+	test('a player joining shows that many players’ figures at once', async () => {
+		asked.mockResolvedValueOnce(filling)
+		enter([bot('RaptorsAI')])
+		const { container } = render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+		expect(container.querySelector('.pve-figure b')?.textContent).toBe(
+			'21.5\u201312.0/34',
+		)
+
+		const again = deferred<Score>()
+		asked.mockReturnValueOnce(again.promise)
+		joins('friend')
+		// Before any ask: the table already answers for two players.
+		const slots = () =>
+			[...container.querySelectorAll('.pve-figure b')].map(
+				(slot) => slot.textContent,
+			)
+		expect(slots()).toEqual([
+			'17.0\u201312.0/34',
+			'50%\u201365%',
+			'60%\u201330%',
+		])
+		// The room is still asked about, for its row in everyone's battle list,
+		// and a slow answer is no reason for dots: the figures are already right.
+		vi.advanceTimersByTime(QUIET_FOR + 1)
+		expect(asked).toHaveBeenCalledTimes(2)
+		vi.advanceTimersByTime(DOTS_AFTER)
+		expect(container.querySelector('.pve-figure .thinking')).toBeNull()
+		expect(slots()[0]).toBe('17.0\u201312.0/34')
+	})
+
+	test('a newcomer at another handicap waits for the service', async () => {
+		asked.mockResolvedValueOnce(filling)
+		enter([bot('RaptorsAI')])
+		const { container } = render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+
+		asked.mockReturnValueOnce(deferred<Score>().promise)
+		// The table assumed everyone at the seated average, which this is not.
+		joins('strong', 20)
+		expect(container.querySelector('.pve-figure b')?.textContent).toBe(
+			'21.5\u201312.0/34',
+		)
+		vi.advanceTimersByTime(QUIET_FOR + 1)
+		vi.advanceTimersByTime(DOTS_AFTER)
+		expect(container.querySelectorAll('.pve-figure b .thinking')).toHaveLength(
+			3,
+		)
+	})
+
+	test('a player moving to another ally team asks again, and the table does not answer', async () => {
+		asked.mockResolvedValueOnce(filling)
+		enter([bot('RaptorsAI')])
+		const { container } = render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+
+		asked.mockReturnValueOnce(deferred<Score>().promise)
+		setLobby(
+			'servers',
+			TEST_SERVER,
+			'users',
+			'me',
+			'battleStatus',
+			'allyTeam',
+			2,
+		)
+		vi.advanceTimersByTime(QUIET_FOR + 1)
+		// Nobody arrived or left, but the start boxes the room plays may have.
+		expect(asked).toHaveBeenCalledTimes(2)
+		vi.advanceTimersByTime(DOTS_AFTER)
+		expect(container.querySelectorAll('.pve-figure b .thinking')).toHaveLength(
+			3,
+		)
+	})
+
+	test('the host redrawing a start box or changing the seat count asks again', async () => {
+		asked.mockResolvedValue(filling)
+		enter([bot('RaptorsAI')])
+		render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+		expect(asked).toHaveBeenCalledTimes(1)
+
+		setLobby('servers', TEST_SERVER, 'battles', 7, 'startRects', [
+			{ allyTeam: 0, left: 0, top: 0, right: 50, bottom: 200 },
+		])
+		vi.advanceTimersByTime(QUIET_FOR + 1)
+		await settle()
+		expect(asked).toHaveBeenCalledTimes(2)
+
+		setLobby('servers', TEST_SERVER, 'battles', 7, 'layout', {
+			teams: 2,
+			teamSize: 8,
+		})
+		vi.advanceTimersByTime(AT_MOST_EVERY + QUIET_FOR + 1)
+		await settle()
+		expect(asked).toHaveBeenCalledTimes(3)
+
+		setLobby('servers', TEST_SERVER, 'battles', 7, 'maxPlayers', 10)
+		vi.advanceTimersByTime(AT_MOST_EVERY + QUIET_FOR + 1)
+		await settle()
+		expect(asked).toHaveBeenCalledTimes(4)
+	})
+
+	test('a size the model barely saw is called an uncertain projection', async () => {
 		asked.mockResolvedValue({
 			...scored,
-			fullChallenge: 21.5,
-			fullPlayers: 8,
+			full: { ...full(20, 14.9, 0.5618, 40), uncertain: true },
 		})
 		enter([bot('RaptorsAI')])
 		const { container } = render(panel)
 		vi.advanceTimersByTime(0)
 		await settle()
 
-		const figure = container.querySelector('.pve-figure b') as HTMLElement
-		expect(figure.textContent).toBe('21.5/34')
-		expect(figure.querySelector('.challenge-now')).toBeNull()
+		const chip = [...container.querySelectorAll('.chip')].find(
+			(held) => held.textContent === 'uncertain projection',
+		)
+		expect(chip?.getAttribute('title')).toContain('20 players')
 	})
 
 	test('the numbers land in their slots', async () => {

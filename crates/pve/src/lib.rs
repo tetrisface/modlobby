@@ -346,12 +346,21 @@ pub struct Score {
 	/// `None` when the service could not place this setup.
 	pub challenge: Option<f64>,
 	/// The same setup with every human seat taken
-	/// ([`Encounter::human_team_capacity`]); `challenge` again for a full
-	/// room. `None` for a game in progress, a seat count the service could not
-	/// score, and a service that predates it.
-	pub full_challenge: Option<f64>,
-	/// How many seats `full_challenge` is scored at.
-	pub full_players: Option<u32>,
+	/// ([`Encounter::human_team_capacity`]); the seated figures again for a
+	/// full room. `None` for a game in progress, a seat count the service could
+	/// not score, and a service that predates it.
+	pub full: Option<SizeScore>,
+	/// The setup at every team size from one player to the seat count, so a
+	/// join or a leave can be shown before the room is asked about again.
+	/// Empty whenever `full` is `None`, and from a service that predates it.
+	pub sizes: Vec<SizeScore>,
+	/// How many players were seated when this was asked: which entry of
+	/// `sizes` the figures above restate. Filled in by [`Service`].
+	pub seated: Option<u32>,
+	/// The Player Handicap the service derived for this ask
+	/// ([`player_handicap`]): every entry of `sizes` assumes it, so a room
+	/// whose seated players average to another one needs asking again.
+	pub handicap: Option<f64>,
 	/// Where that sits among games actually played, 0-100.
 	pub percentile: Option<f64>,
 	/// Estimated chance a representative human team wins, 0-1.
@@ -388,6 +397,43 @@ pub struct Score {
 	pub setting_hash: Option<String>,
 	/// Which model release produced the numbers.
 	pub contract_hash: Option<String>,
+}
+
+/// The room's figures at one human team size.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SizeScore {
+	/// Human players this entry is scored with.
+	pub players: u32,
+	/// 0-34, as [`Score::challenge`].
+	pub challenge: f64,
+	/// As [`Score::win_chance`].
+	pub win_chance: f64,
+	/// As [`Score::percentile`]: "Harder than".
+	pub percentile: Option<f64>,
+	/// The model saw almost no games with this many players, so the figure
+	/// extrapolates past its data: an uncertain projection.
+	pub uncertain: bool,
+}
+
+/// The service's Player Handicap for these multipliers: the average of
+/// `(multiplier - 1) * 100`, to one decimal, exactly as it derives the column.
+/// `None` for no seated players or a multiplier it would refuse.
+pub fn player_handicap(multipliers: &[f64]) -> Option<f64> {
+	if multipliers.is_empty()
+		|| multipliers
+			.iter()
+			.any(|value| !value.is_finite() || *value < 0.0)
+	{
+		return None;
+	}
+	let average = multipliers
+		.iter()
+		.map(|value| (value - 1.0) * 100.0)
+		.sum::<f64>()
+		/ multipliers.len() as f64;
+	Some((average * 10.0).round() / 10.0)
 }
 
 /// One bar of the service's difficulty histogram.
@@ -741,8 +787,15 @@ pub fn read(body: &serde_json::Value) -> Score {
 	let degradation: Option<Degradation> = typed(body.get("degradation"));
 	Score {
 		challenge: number("difficulty_histogram", "current_difficulty"),
-		full_challenge: number("full_team", "challenge").filter(|full| full.is_finite()),
-		full_players: number("full_team", "human_team_size").map(|seats| seats as u32),
+		full: body.get("full_team").and_then(size_score),
+		sizes: body
+			.get("team_sizes")
+			.and_then(serde_json::Value::as_array)
+			.map(|entries| entries.iter().filter_map(size_score).collect())
+			.unwrap_or_default(),
+		// Known to whoever asked, not to the answer: `Service` fills them in.
+		seated: None,
+		handicap: None,
 		percentile: number("difficulty_histogram", "current_percentile"),
 		win_chance: number("difficulty_estimate", "player_win_probability"),
 		evidence_games: number("difficulty_estimate", "evidence_games"),
@@ -803,6 +856,24 @@ pub fn read(body: &serde_json::Value) -> Score {
 			.map(str::to_owned),
 		contract_hash: text("difficulty_estimate", "difficulty_target_sha256"),
 	}
+}
+
+/// One of the service's per-size figures (`full_team`, `team_sizes`), or
+/// nothing when it lacks a size or a finite challenge. A win chance the entry
+/// omits is the challenge's own: `challenge = 34 * (1 - p)`.
+fn size_score(held: &serde_json::Value) -> Option<SizeScore> {
+	let finite = |key: &str| held.get(key)?.as_f64().filter(|value| value.is_finite());
+	let challenge = finite("challenge")?;
+	Some(SizeScore {
+		players: u32::try_from(held.get("human_team_size")?.as_u64()?).ok()?,
+		challenge,
+		win_chance: finite("player_win_probability").unwrap_or(1.0 - challenge / 34.0),
+		percentile: finite("percentile"),
+		uncertain: held
+			.get("uncertain")
+			.and_then(serde_json::Value::as_bool)
+			.unwrap_or(false),
+	})
 }
 
 /// A piece of the answer as a type, or nothing when it is absent or not the
@@ -912,6 +983,9 @@ impl Service {
 			let failed = match asked {
 				Ok(mut score) => {
 					score.ai_type = ask.ai_type.to_owned();
+					score.seated = Some(ask.encounter_context.human_team_size);
+					score.handicap =
+						player_handicap(&ask.encounter_context.human_player_income_multipliers);
 					self.memo.lock().expect("pve memo").put(key, score.clone());
 					if let Some(game) = &ask.game_id {
 						self.told.lock().expect("pve told").note(game, key);
@@ -1126,7 +1200,14 @@ mod tests {
 				]
 			},
 			"ai_family": "SMRTBARb",
-			"full_team": {"human_team_size": 8, "challenge": 15.25, "player_win_probability": 0.55},
+			"full_team": {"human_team_size": 8, "challenge": 15.25, "player_win_probability": 0.55, "percentile": 61.5},
+			"team_sizes": [
+				{"human_team_size": 1, "challenge": 30.5, "player_win_probability": 0.1, "percentile": 99},
+				{"human_team_size": 7, "challenge": 16, "uncertain": true},
+				{"human_team_size": 8, "challenge": 15.25, "player_win_probability": 0.55, "percentile": 61.5},
+				{"challenge": 3},
+				{"human_team_size": 9, "challenge": null}
+			],
 			"degradation": {"reason": "unknown_ai_family", "unknown_ai_names": ["Circuit"]},
 			"difficulty_estimate": {
 				"player_win_probability": 0.31, "evidence_games": 4200,
@@ -1160,8 +1241,37 @@ mod tests {
 		});
 		let score = read(&body);
 		assert_eq!(score.challenge, Some(21.5));
-		assert_eq!(score.full_challenge, Some(15.25));
-		assert_eq!(score.full_players, Some(8));
+		let full = SizeScore {
+			players: 8,
+			challenge: 15.25,
+			win_chance: 0.55,
+			percentile: Some(61.5),
+			uncertain: false,
+		};
+		assert_eq!(score.full, Some(full.clone()));
+		// Entries without a size or a challenge are dropped, a missing win
+		// chance is the challenge's own, and only a true uncertainty is one.
+		assert_eq!(
+			score.sizes,
+			vec![
+				SizeScore {
+					players: 1,
+					challenge: 30.5,
+					win_chance: 0.1,
+					percentile: Some(99.0),
+					uncertain: false,
+				},
+				SizeScore {
+					players: 7,
+					challenge: 16.0,
+					win_chance: 1.0 - 16.0 / 34.0,
+					percentile: None,
+					uncertain: true,
+				},
+				full,
+			]
+		);
+		assert_eq!((score.seated, score.handicap), (None, None));
 		assert_eq!(score.percentile, Some(88.0));
 		assert_eq!(score.win_chance, Some(0.31));
 		assert_eq!(score.evidence_games, Some(4200.0));
@@ -1219,8 +1329,8 @@ mod tests {
 	fn an_answer_missing_pieces_leaves_blanks_rather_than_failing() {
 		let score = read(&serde_json::json!({"difficulty_estimate": {}}));
 		assert_eq!(score.challenge, None);
-		assert_eq!(score.full_challenge, None);
-		assert_eq!(score.full_players, None);
+		assert_eq!(score.full, None);
+		assert!(score.sizes.is_empty());
 		assert_eq!(score.win_chance, None);
 		assert_eq!(score.data_until, None);
 		assert!(score.histogram.is_empty());
@@ -1416,7 +1526,12 @@ mod tests {
 
 	#[test]
 	fn ally_teams_are_renumbered_without_gaps_and_keep_their_lobby_rectangles() {
-		let rect = |left| StartRect { left, top: 0, right: left + 20, bottom: 200 };
+		let rect = |left| StartRect {
+			left,
+			top: 0,
+			right: left + 20,
+			bottom: 200,
+		};
 		// Humans on lobby ally 2, two AIs on 5, an ally AI beside the humans,
 		// and a rectangle on ally 0 where nobody sits.
 		let teams = ally_teams([2, 2, 2], [5, 5, 2], |ally| match ally {
@@ -1427,8 +1542,16 @@ mod tests {
 		assert_eq!(
 			teams,
 			vec![
-				AllyTeam { human_players: 3, ais: 1, start_rect: Some(rect(40)) },
-				AllyTeam { human_players: 0, ais: 2, start_rect: None },
+				AllyTeam {
+					human_players: 3,
+					ais: 1,
+					start_rect: Some(rect(40))
+				},
+				AllyTeam {
+					human_players: 0,
+					ais: 2,
+					start_rect: None
+				},
 			]
 		);
 		assert!(ally_teams([], [], |_| None).is_empty());
@@ -1446,7 +1569,12 @@ mod tests {
 			ally_teams,
 		};
 		let teams = ally_teams([0], [1], |ally| {
-			(ally == 0).then_some(StartRect { left: 0, top: 0, right: 60, bottom: 200 })
+			(ally == 0).then_some(StartRect {
+				left: 0,
+				top: 0,
+				right: 60,
+				bottom: 200,
+			})
 		});
 		let json = serde_json::to_value(encounter(teams)).unwrap();
 		assert_eq!(
@@ -1457,7 +1585,12 @@ mod tests {
 			])
 		);
 		// An unknown seating sends nothing, so older answers keep their memo.
-		assert!(serde_json::to_value(encounter(Vec::new())).unwrap().get("ally_teams").is_none());
+		assert!(
+			serde_json::to_value(encounter(Vec::new()))
+				.unwrap()
+				.get("ally_teams")
+				.is_none()
+		);
 	}
 
 	#[test]
@@ -1682,6 +1815,37 @@ mod tests {
 		service.score(&a).await.unwrap();
 		service.score(&b).await.unwrap();
 		service.score(&a).await.unwrap();
+	}
+
+	#[tokio::test]
+	async fn an_answer_remembers_the_seats_and_handicap_it_was_asked_for() {
+		// The panel shows another size from the table only while the room
+		// averages to the same handicap: the answer has to carry what it
+		// assumed, from memory as much as from the network.
+		let (_server, service) = answering(1).await;
+		let mut asked = ask();
+		asked.game_id = None;
+		asked.encounter_context.human_team_size = 3;
+		asked.encounter_context.human_player_income_multipliers = vec![1.0, 1.1, 1.0];
+		for _ in 0..2 {
+			let score = service.score(&asked).await.unwrap();
+			assert_eq!(score.seated, Some(3));
+			assert_eq!(score.handicap, Some(3.3));
+		}
+	}
+
+	#[test]
+	fn the_handicap_is_averaged_and_rounded_as_the_service_derives_it() {
+		assert_eq!(player_handicap(&[]), None);
+		assert_eq!(player_handicap(&[1.0, 1.0]), Some(0.0));
+		assert_eq!(player_handicap(&[1.0, 1.1, 1.0]), Some(3.3));
+		assert_eq!(player_handicap(&[1.05, 1.0]), Some(2.5));
+		assert_eq!(
+			player_handicap(&[income_multiplier(100), income_multiplier(0)]),
+			Some(50.0)
+		);
+		assert_eq!(player_handicap(&[1.0, -0.5]), None);
+		assert_eq!(player_handicap(&[f64::NAN]), None);
 	}
 
 	#[tokio::test]

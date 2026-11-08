@@ -5,6 +5,7 @@ import type { Degradation } from './Degradation'
 import type { Matched } from './Matched'
 import type { Player } from './Player'
 import type { SetupContext } from './SetupContext'
+import type { SizeScore } from './SizeScore'
 
 /**
  * What the room scores.
@@ -17,15 +18,28 @@ export type Score = {
 	challenge: number | null
 	/**
 	 * The same setup with every human seat taken
-	 * ([`Encounter::human_team_capacity`]); `challenge` again for a full
-	 * room. `None` for a game in progress, a seat count the service could not
-	 * score, and a service that predates it.
+	 * ([`Encounter::human_team_capacity`]); the seated figures again for a
+	 * full room. `None` for a game in progress, a seat count the service could
+	 * not score, and a service that predates it.
 	 */
-	fullChallenge: number | null
+	full: SizeScore | null
 	/**
-	 * How many seats `full_challenge` is scored at.
+	 * The setup at every team size from one player to the seat count, so a
+	 * join or a leave can be shown before the room is asked about again.
+	 * Empty whenever `full` is `None`, and from a service that predates it.
 	 */
-	fullPlayers: number | null
+	sizes: Array<SizeScore>
+	/**
+	 * How many players were seated when this was asked: which entry of
+	 * `sizes` the figures above restate. Filled in by [`Service`].
+	 */
+	seated: number | null
+	/**
+	 * The Player Handicap the service derived for this ask
+	 * ([`player_handicap`]): every entry of `sizes` assumes it, so a room
+	 * whose seated players average to another one needs asking again.
+	 */
+	handicap: number | null
 	/**
 	 * Where that sits among games actually played, 0-100.
 	 */

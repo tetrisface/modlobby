@@ -18,6 +18,12 @@ import { challengePair, SPAN } from '../lib/challenge'
 import { isVsAi } from '../lib/battles'
 import { NOTHING_YET, TOP, declinedText, miniature } from '../lib/pve'
 import { askDelay } from '../lib/stagger'
+import {
+	playerHandicap,
+	reseated,
+	type Seats,
+	uncertainSizes,
+} from '../lib/teamSize'
 import { settings } from '../store/settings'
 import { PveStats } from './PveStats'
 import { useRoom, type RoomModel } from './room/model'
@@ -45,15 +51,25 @@ export const AT_MOST_EVERY = 2000
  */
 export const DOTS_AFTER = 1000
 
+/** The battle status of every member seated as a player, spectators left out. */
+function seatedStatuses(room: RoomModel) {
+	return (room.battle()?.members ?? []).flatMap((name) => {
+		const status = room.users()[name]?.battleStatus
+		return status?.player ? [status] : []
+	})
+}
+
 /**
- * Everything the answer depends on, as one string.
+ * Everything the answer depends on except how many sit in the room and at
+ * what handicap, as one string: what the per-size table cannot answer for. The
+ * room's id comes first, which is how a new room is told from a changed one.
  *
  * Rust builds the request from the room; this only has to notice when any of
  * that changes. Reading each value here is what subscribes to it — the store
  * mutates the settings object in place, so watching the object itself would
  * never fire again after the first look.
  */
-function fingerprint(room: RoomModel): string | undefined {
+function setup(room: RoomModel): string | undefined {
 	const my = room.my()
 	const battle = room.battle()
 	if (!my || !battle) return undefined
@@ -61,23 +77,63 @@ function fingerprint(room: RoomModel): string | undefined {
 		.filter(([key]) => key.startsWith('game/modoptions/'))
 		.map(([key, value]) => `${key}=${value}`)
 		.sort()
-	const bots = battle.bots.map((bot) => `${bot.ai}@${bot.status.handicap}`)
+	const bots = battle.bots.map(
+		(bot) => `${bot.ai}@${bot.status.handicap} on ${bot.status.allyTeam}`,
+	)
 	// News of its own when read off the title: that lands as the join replay
 	// ends, with nothing else in here moving.
 	const started = my.gameRoster?.bots.map((bot) => bot.ai) ?? []
-	const seats = battle.members.map((name) => {
-		const status = room.users()[name]?.battleStatus
-		return status?.player ? String(status.handicap) : ''
-	})
+	// Which ally teams the humans are on, and the boxes each may start in,
+	// decide the room's start-box geometry; the layout and the player limit,
+	// its seat count.
+	const humanTeams = [
+		...new Set(seatedStatuses(room).map((status) => status.allyTeam)),
+	].sort((a, b) => a - b)
+	const boxes = battle.startRects
+		.map(
+			(rect) =>
+				`box ${rect.allyTeam}: ${rect.left},${rect.top},${rect.right},${rect.bottom}`,
+		)
+		.sort()
+	const layout = battle.layout
+		? `${battle.layout.teams}x${battle.layout.teamSize}`
+		: 'no layout'
 	return [
 		my.id,
 		battle.mapName,
-		battle.playerCount,
+		`${layout}, at most ${battle.maxPlayers}`,
+		`humans on ${humanTeams.join(',')}`,
 		...bots,
 		...started,
-		...seats,
+		...boxes,
 		...settings,
 	].join('\n')
+}
+
+/** Who sits in the room, as the service counts them. */
+function seats(room: RoomModel): Seats {
+	return {
+		players: room.battle()?.playerCount ?? 0,
+		handicap: playerHandicap(
+			seatedStatuses(room).map((status) => status.handicap),
+		),
+	}
+}
+
+/**
+ * Everything the answer depends on, as one string: the setup, then who sits
+ * where. A player moving to another ally team is a change of its own even with
+ * nobody arriving or leaving.
+ */
+function fingerprint(room: RoomModel): string | undefined {
+	const base = setup(room)
+	const battle = room.battle()
+	if (base === undefined || !battle) return undefined
+	const seated = battle.members.map((name) => {
+		const status = room.users()[name]?.battleStatus
+		return status?.player ? `${status.handicap} on ${status.allyTeam}` : ''
+	})
+	return [base, battle.playerCount, ...seated].join('\n')
 }
 
 /** Whether these AIs are a PvE opponent. */
@@ -189,6 +245,8 @@ export function PveScore() {
 	const room = useRoom()
 	/** `undefined` before any answer; `null` when Rust declined to ask. */
 	const [score, setScore] = createSignal<Score | null | undefined>(undefined)
+	/** The room's `setup` when the answer in `score` was asked for. */
+	const [askedSetup, setAskedSetup] = createSignal<string | undefined>()
 	/** An ask has been out longer than `DOTS_AFTER`. */
 	const [overdue, setOverdue] = createSignal(false)
 	const [failure, setFailure] = createSignal<string | null>(null)
@@ -206,12 +264,14 @@ export function PveScore() {
 	const asks = asker(
 		async () => {
 			const asked = room.my()?.id
+			const askedFor = setup(room)
 			const due = setTimeout(() => setOverdue(true), DOTS_AFTER)
 			try {
 				const answer = await room.io.pveScore()
 				// A room since left is not this one, and a cold start outlasts a visit.
 				if (room.my()?.id !== asked) return
 				setScore(answer)
+				setAskedSetup(askedFor)
 				setFailure(null)
 			} catch (err) {
 				console.warn('pve stats:', err)
@@ -264,56 +324,94 @@ export function PveScore() {
 		asks.stop()
 	})
 
-	/** No answer yet, or a fresh one long on its way. */
-	const waiting = () => overdue() || score() === undefined
-
-	const percent = (value: number | null | undefined) =>
-		value == null ? '—' : `${Math.round(value * 100)}%`
+	/**
+	 * The answer as it reads for the room right now: the answer itself while
+	 * the room is as it was asked about, that size's figures from its table
+	 * when only the number of players moved, and `null` when the table cannot
+	 * say — the setup or the handicap changed — and the room needs asking.
+	 */
+	const current = createMemo(() => {
+		const held = score()
+		if (!held || askedSetup() !== setup(room)) return null
+		return reseated(held, seats(room))
+	})
+	/** What the row shows: the current answer, else the last one until the next. */
+	const shown = () => current() ?? score()
 
 	/**
-	 * `12.0–15.1/34`: as seated, then with every seat taken, the way the
-	 * battle list writes it but to the decimal, the seated figure muted. One
-	 * figure for a full room, a game in progress, or an older service.
+	 * No answer yet, or a fresh one long on its way for a room the last answer
+	 * cannot speak for.
 	 */
-	const challenge = (): JSX.Element => {
-		const held = score()
-		if (held?.challenge == null) return '—'
-		const { now, main } = challengePair(
-			held.challenge,
-			held.fullChallenge,
-			(value) => value.toFixed(1),
-		)
+	const waiting = () =>
+		(overdue() && current() === null) || score() === undefined
+
+	/**
+	 * A figure as seated, then with every seat taken, the way the battle list
+	 * writes its challenge: `now–full`, the seated one muted. One figure for a
+	 * full room, a game in progress, or an older service.
+	 */
+	const pair = (
+		now: number | null | undefined,
+		full: number | null | undefined,
+		format: (value: number) => string,
+		unit = '',
+	): JSX.Element => {
+		if (now == null) return '—'
+		const parts = challengePair(now, full ?? null, format)
 		return (
 			<>
-				{now !== null && (
+				{parts.now !== null && (
 					<>
-						<span class='challenge-now'>{now}</span>
+						<span class='challenge-now'>{parts.now}</span>
 						{SPAN}
 					</>
 				)}
-				{main}/34
+				{parts.main}
+				{unit}
 			</>
 		)
 	}
+	const tenths = (value: number) => value.toFixed(1)
+	const whole = (value: number) => `${Math.round(value * 100)}%`
+	const percentRank = (value: number) => `${Math.round(value)}%`
 
-	/** Under the scale: which figure is which, once there are two. */
-	const challengeSeats = () => {
-		const held = score()
-		if (held?.challenge == null || held.fullChallenge == null) return ''
-		const seats =
-			held.fullPlayers == null ? 'every seat' : `all ${held.fullPlayers} seats`
-		return `\n\nAs seated now: ${held.challenge.toFixed(1)}\nWith ${seats} taken: ${held.fullChallenge.toFixed(1)}`
+	/** `12.0–15.1/34`: to the decimal here, whole numbers in the battle list. */
+	const challenge = () =>
+		pair(shown()?.challenge, shown()?.full?.challenge, tenths, '/34')
+	const win = () => pair(shown()?.winChance, shown()?.full?.winChance, whole)
+	const harder = () =>
+		pair(shown()?.percentile, shown()?.full?.percentile, percentRank)
+
+	/** Under a figure's explanation: which number is which, once there are two. */
+	const bothSeats = (
+		now: number | null | undefined,
+		full: number | null | undefined,
+		format: (value: number) => string,
+	) => {
+		const held = shown()
+		if (now == null || full == null || !held?.full) return ''
+		const players = held.seated == null ? '' : ` (${held.seated})`
+		return `\n\nAs seated now${players}: ${format(now)}\nWith all ${held.full.players} seats taken: ${format(full)}`
+	}
+
+	/** Sizes the model saw too few games at to stand behind, as a chip's words. */
+	const uncertain = () => {
+		const held = shown()
+		const sizes = held ? uncertainSizes(held) : []
+		if (sizes.length === 0) return ''
+		const players = sizes.map((size) => `${size} players`).join(' and ')
+		return `Almost no games have been played with ${players}, so that figure is an uncertain projection: the model extrapolates from smaller teams rather than measuring this one.`
 	}
 
 	/** Why there is no figure at all: the opponent is not one the service scores. */
 	const declined = () => {
-		const held = score()
+		const held = shown()
 		return held ? declinedText(held) : ''
 	}
 
 	/** A tooltip with how old the newest game behind the numbers is under it. */
 	const dated = (text: string) => {
-		const ago = age(score()?.dataUntil ?? '')
+		const ago = age(shown()?.dataUntil ?? '')
 		return ago ? `${text}\nData updated ${ago}` : text
 	}
 
@@ -360,7 +458,7 @@ export function PveScore() {
 							</span>
 						}
 					>
-						<Miniature score={score() ?? undefined} />
+						<Miniature score={shown() ?? undefined} />
 					</Show>
 				</button>
 
@@ -375,7 +473,7 @@ export function PveScore() {
 					<span
 						class='pve-stat'
 						title={dated(
-							`Absolute difficulty on a 0-34 scale. 17 is an estimated even game for a representative human team; higher is harder. A dash means the service has not placed this setup among played games yet.${challengeSeats()}`,
+							`Absolute difficulty on a 0-34 scale. 17 is an estimated even game for a representative human team; higher is harder.A dash means the service has not placed this setup among played games yet.${bothSeats(shown()?.challenge, shown()?.full?.challenge, tenths)}`,
 						)}
 					>
 						<span class='pve-label'>Challenge</span>
@@ -387,30 +485,24 @@ export function PveScore() {
 					<span
 						class='pve-stat'
 						title={dated(
-							'Estimated chance a representative current BAR human team wins this map and setup. The people in this room are not part of that estimate.',
+							`Estimated chance a representative current BAR human team wins this map and setup. The people in this room are not part of that estimate.${bothSeats(shown()?.winChance, shown()?.full?.winChance, whole)}`,
 						)}
 					>
 						<span class='pve-label'>Win</span>
 						<span class='pve-figure'>
-							<Slot value={percent(score()?.winChance)} />
+							<Slot value={win()} />
 						</span>
 					</span>
 
 					<span
 						class='pve-stat muted'
 						title={dated(
-							'Share of eligible played games against this opponent whose setup had a lower Challenge than this one. Counted per game, so a setup played often weighs more than one played once.',
+							`Share of eligible played games against this opponent whose setup had a lower Challenge than this one. Counted per game, so a setup played often weighs more than one played once.${bothSeats(shown()?.percentile, shown()?.full?.percentile, percentRank)}`,
 						)}
 					>
 						<span class='pve-label'>Harder than</span>
 						<span class='pve-figure'>
-							<Slot
-								value={
-									score()?.percentile == null
-										? '—'
-										: `${Math.round(score()?.percentile ?? 0)}%`
-								}
-							/>
+							<Slot value={harder()} />
 						</span>
 					</span>
 
@@ -420,7 +512,13 @@ export function PveScore() {
 						</span>
 					</Show>
 
-					<Show when={!waiting() && score()?.bestEffort}>
+					<Show when={!waiting() && uncertain()}>
+						<span class='chip warn' title={uncertain()}>
+							uncertain projection
+						</span>
+					</Show>
+
+					<Show when={!waiting() && shown()?.bestEffort}>
 						<span
 							class='chip warn'
 							title='This room uses settings the service has not catalogued, so these are best-effort estimates rather than an exact match.'
@@ -434,7 +532,7 @@ export function PveScore() {
 			    panel, Close included, must not travel up and open it again. */}
 			<Show when={open()}>
 				<PveStats
-					score={score()}
+					score={shown()}
 					waiting={waiting()}
 					failure={failure()}
 					onClose={() => setOpen(false)}
