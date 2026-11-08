@@ -2,8 +2,9 @@
 //!
 //! The look is one small request for the release manifest, made once a day
 //! when the app opens (if the setting allows) or whenever the version in the
-//! nav is clicked. A newer version found puts a button beside it. With
-//! `updates.download` on, the look goes on to fetch the installer by itself
+//! nav is clicked; when that request fails, GitHub's API is asked for the
+//! same manifest ([`look`]). A newer version found puts a button beside it.
+//! With `updates.download` on, the look goes on to fetch the installer by itself
 //! and stops there, as [`Pending::Downloaded`], so the button only restarts.
 //! Otherwise the click downloads the installer and installs it at once. A
 //! click is never refused: the restart leaves the room and lets a game play
@@ -35,7 +36,9 @@ use std::time::{Duration, SystemTime};
 use base64::prelude::*;
 use lobby_runtime::orphan;
 use minisign_verify::{PublicKey, Signature};
-use serde::Serialize;
+use reqwest::header::ACCEPT;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_updater::{Update, UpdaterExt};
 
@@ -641,15 +644,106 @@ pub async fn daily(handle: AppHandle) {
 	}
 }
 
-/// The release manifest, compared with this build. One small request.
+/// Where GitHub's API names the newest release. github.com's pages, which
+/// serve the endpoint in `tauri.conf.json`, can fail on their own while the
+/// API answers, and the manifest's installers are API URLs already.
+const LATEST_RELEASE_API: &str = "https://api.github.com/repos/tetrisface/modlobby/releases/latest";
+
+/// The manifest's name among a release's files, as the release workflow
+/// uploads it.
+const MANIFEST: &str = "latest.json";
+
+/// The release manifest, compared with this build: one small request to the
+/// endpoint in `tauri.conf.json`, or two to GitHub's API when that fails. The
+/// plugin says only that the endpoint failed, not how; the API's answer is
+/// ours to read, so its reason is the one given. Neither route is trusted:
+/// the release's signature binds the installer, and its version with it.
 async fn look(handle: &AppHandle) -> Result<Option<Update>> {
 	let updater = handle
 		.updater()
 		.map_err(|err| ApiError::new("update", err.to_string()))?;
-	updater
-		.check()
+	let failed = match updater.check().await {
+		Ok(found) => return Ok(found),
+		Err(err) => err,
+	};
+	tracing::info!(%failed, "update: the release endpoint failed; asking GitHub's API");
+	let app = handle.state::<App>();
+	let manifest = manifest_via_api(&app.http, LATEST_RELEASE_API)
 		.await
+		.map_err(|reason| ApiError::new("update", format!("looking for a release: {reason}")))?;
+	updater
+		.restore_update(manifest)
 		.map_err(|err| ApiError::new("update", format!("looking for a release: {err}")))
+}
+
+/// The newest release's manifest by way of GitHub's API: the release names
+/// the manifest's asset, and the asset's URL hands over its bytes when asked
+/// for them as such. `Err` is the reason, worded for the notice.
+async fn manifest_via_api(
+	http: &reqwest::Client,
+	latest: &str,
+) -> std::result::Result<serde_json::Value, String> {
+	#[derive(Deserialize)]
+	struct Release {
+		tag_name: String,
+		assets: Vec<Asset>,
+	}
+	#[derive(Deserialize)]
+	struct Asset {
+		name: String,
+		url: String,
+	}
+
+	let release: Release = read(
+		http.get(latest)
+			.header(ACCEPT, "application/vnd.github+json"),
+	)
+	.await?;
+	let manifest = release
+		.assets
+		.into_iter()
+		.find(|asset| asset.name == MANIFEST)
+		.ok_or_else(|| {
+			format!(
+				"the newest release, {}, has no {MANIFEST}",
+				release.tag_name
+			)
+		})?;
+	read(
+		http.get(manifest.url)
+			.header(ACCEPT, "application/octet-stream"),
+	)
+	.await
+}
+
+/// One JSON answer from GitHub, or what kept it, worded for the notice.
+async fn read<T: DeserializeOwned>(
+	request: reqwest::RequestBuilder,
+) -> std::result::Result<T, String> {
+	let response = request.send().await.map_err(unanswered)?;
+	let status = response.status();
+	if status.is_success() {
+		return response.json().await.map_err(unanswered);
+	}
+	if status.is_server_error() {
+		return Err(format!(
+			"GitHub is not answering ({status}); try again later"
+		));
+	}
+	Err(format!("GitHub answered {status}"))
+}
+
+/// A request that came to nothing, in the notice's words; reqwest's own go to
+/// the log.
+fn unanswered(err: reqwest::Error) -> String {
+	tracing::info!(%err, "update: asking GitHub's API");
+	if err.is_timeout() {
+		return "GitHub did not answer in time".into();
+	}
+	if err.is_decode() {
+		return "GitHub's answer could not be read".into();
+	}
+	"GitHub could not be reached".into()
 }
 
 async fn download(update: &Update, say: &impl Fn(UpdateProgress)) -> Result<Vec<u8>> {
@@ -733,9 +827,145 @@ fn install(
 mod tests {
 	use std::path::Path;
 
+	use serde_json::json;
+	use wiremock::matchers::{header, method, path};
+	use wiremock::{Mock, MockServer, ResponseTemplate};
+
 	use super::{
-		PublicKey, Staged, allows, another_at, minisign_text, orphan, release_key, verify,
+		PublicKey, Staged, allows, another_at, manifest_via_api, minisign_text, orphan,
+		release_key, verify,
 	};
+
+	/// GitHub's latest-release answer, cut to what the look reads, its assets
+	/// served by `server` under `/assets/<index>`.
+	fn listing(server: &MockServer, assets: &[&str]) -> serde_json::Value {
+		let assets: Vec<_> = assets
+			.iter()
+			.enumerate()
+			.map(
+				|(index, name)| json!({"name": name, "url": format!("{}/assets/{index}", server.uri())}),
+			)
+			.collect();
+		json!({"tag_name": "v0.2.3", "assets": assets})
+	}
+
+	async fn listed(server: &MockServer, assets: &[&str]) {
+		Mock::given(method("GET"))
+			.and(path("/latest"))
+			.respond_with(ResponseTemplate::new(200).set_body_json(listing(server, assets)))
+			.expect(1)
+			.mount(server)
+			.await;
+	}
+
+	async fn look_at(server: &MockServer) -> Result<serde_json::Value, String> {
+		manifest_via_api(
+			&content::http::client("test"),
+			&format!("{}/latest", server.uri()),
+		)
+		.await
+	}
+
+	/// The asset's API URL hands over its bytes only when asked for them as
+	/// such, and on GitHub by a redirect to the storage that holds them.
+	#[tokio::test]
+	async fn the_api_hands_over_the_manifest_its_newest_release_lists() {
+		let server = MockServer::start().await;
+		listed(&server, &["modlobby_x64-setup.exe", "latest.json"]).await;
+		Mock::given(method("GET"))
+			.and(path("/assets/1"))
+			.and(header("accept", "application/octet-stream"))
+			.respond_with(
+				ResponseTemplate::new(302)
+					.insert_header("location", format!("{}/stored/latest.json", server.uri())),
+			)
+			.expect(1)
+			.mount(&server)
+			.await;
+		let manifest = json!({"version": "0.2.3", "platforms": {}});
+		Mock::given(method("GET"))
+			.and(path("/stored/latest.json"))
+			.and(header("accept", "application/octet-stream"))
+			.respond_with(ResponseTemplate::new(200).set_body_json(&manifest))
+			.expect(1)
+			.mount(&server)
+			.await;
+
+		assert_eq!(look_at(&server).await, Ok(manifest));
+	}
+
+	/// The release workflow's failing, not GitHub's, and said as such.
+	#[tokio::test]
+	async fn a_newest_release_without_a_manifest_is_named() {
+		let server = MockServer::start().await;
+		listed(&server, &["modlobby_x64-setup.exe"]).await;
+
+		assert_eq!(
+			look_at(&server).await,
+			Err("the newest release, v0.2.3, has no latest.json".into())
+		);
+	}
+
+	#[tokio::test]
+	async fn github_failing_says_its_status_and_to_try_later() {
+		let server = MockServer::start().await;
+		Mock::given(method("GET"))
+			.respond_with(ResponseTemplate::new(504))
+			.expect(1)
+			.mount(&server)
+			.await;
+
+		assert_eq!(
+			look_at(&server).await,
+			Err("GitHub is not answering (504 Gateway Timeout); try again later".into())
+		);
+	}
+
+	#[tokio::test]
+	async fn github_refusing_says_its_status() {
+		let server = MockServer::start().await;
+		Mock::given(method("GET"))
+			.respond_with(ResponseTemplate::new(403))
+			.expect(1)
+			.mount(&server)
+			.await;
+
+		assert_eq!(
+			look_at(&server).await,
+			Err("GitHub answered 403 Forbidden".into())
+		);
+	}
+
+	#[tokio::test]
+	async fn an_answer_that_is_not_json_is_unreadable_rather_than_missing() {
+		let server = MockServer::start().await;
+		Mock::given(method("GET"))
+			.respond_with(
+				ResponseTemplate::new(200).set_body_string("<html>sign in to the wifi</html>"),
+			)
+			.expect(1)
+			.mount(&server)
+			.await;
+
+		assert_eq!(
+			look_at(&server).await,
+			Err("GitHub's answer could not be read".into())
+		);
+	}
+
+	#[tokio::test]
+	async fn nobody_listening_is_github_unreachable() {
+		// A port the OS just handed out and took back. Not a dropped
+		// `MockServer`: wiremock pools those, still listening.
+		let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+		let gone = format!("http://{}/latest", listener.local_addr().unwrap());
+		drop(listener);
+
+		assert_eq!(
+			manifest_via_api(&content::http::client("test"), &gone).await,
+			Err("GitHub could not be reached".into())
+		);
+	}
 
 	#[test]
 	fn another_lobby_is_any_other_process_run_from_this_very_executable() {
