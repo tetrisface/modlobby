@@ -906,11 +906,13 @@ impl Default for Notifications {
 #[serde(default, rename_all = "camelCase")]
 #[ts(export)]
 pub struct Chat {
-	/// Whether to drop the host's machine-readable lines rather than show them.
+	/// Whether to drop the host's chatter rather than show it: lines the room
+	/// already shows in its own form.
 	///
 	/// SPADS rides structured state on battle chat as `BarManager|{…}`, which
-	/// this already parses into the room. Chobby hides the same lines behind
-	/// the same default, calling it "filter bot chatter"
+	/// this already parses into the room, and greets everyone who joins with
+	/// the preset the room shows too. Chobby hides the same lines behind the
+	/// same default, calling it "filter bot chatter"
 	/// (`gui_settings_window.lua:1146`).
 	pub filter_host_chatter: bool,
 	/// Lines kept per room before the oldest are dropped.

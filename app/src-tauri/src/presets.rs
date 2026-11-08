@@ -676,6 +676,7 @@ mod tests {
 			held_until_ms: None,
 			settled: true,
 			game_roster,
+			welcome: Vec::new(),
 		}
 	}
 

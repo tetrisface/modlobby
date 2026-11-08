@@ -79,6 +79,7 @@ function inARoom() {
 					heldUntilMs: null,
 					settled: true,
 					gameRoster: null,
+					welcome: [],
 				},
 				gameRunning: null,
 				channels: [],

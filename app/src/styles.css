@@ -770,6 +770,9 @@ textarea {
 	flex-direction: column;
 	height: 100%;
 	min-height: 0;
+	/* The card asks how wide the room is, which is what decides where the
+	   welcome note fits. */
+	container: room / inline-size;
 }
 
 /* ---- the lobby card ---- */
@@ -885,6 +888,106 @@ textarea {
 
 .card-actions .button:hover {
 	border-color: var(--muted);
+}
+
+/* The room's welcome takes the width the card leaves empty between its
+   details and its buttons. */
+.room-card.welcomed {
+	grid-template-columns: 8.25rem 1fr minmax(18rem, 26rem) auto;
+}
+
+/* Too narrow for text beside the details: the note goes under them, and the
+   title keeps its width. */
+@container room (width < 70rem) {
+	.room-card.welcomed {
+		grid-template-columns: 8.25rem 1fr auto;
+	}
+
+	/* Spanning both rows, the map would stretch out of square. */
+	.room-card.welcomed > .minimap {
+		grid-row: 1 / span 2;
+		align-self: start;
+	}
+
+	.room-card.welcomed > .room-welcome {
+		grid-column: 2;
+		grid-row: 2;
+	}
+
+	.room-card.welcomed > .card-actions {
+		grid-column: 3;
+		grid-row: 1 / span 2;
+	}
+}
+
+.room-welcome {
+	align-self: start;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+	padding: 0.5rem 0.75rem 0.5625rem;
+	background: var(--sunken);
+	border: 1px solid var(--line);
+	border-radius: 3px;
+}
+
+.room-welcome-head {
+	display: flex;
+	justify-content: space-between;
+	gap: 1rem;
+	font-family: var(--display);
+	font-size: 0.65625rem;
+	font-weight: 500;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--faint);
+}
+
+.room-welcome-head span {
+	font-family: var(--mono);
+	letter-spacing: 0;
+	text-transform: none;
+}
+
+/* Three lines, wherever the paragraphs break. */
+.room-welcome-text {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 3;
+	overflow: hidden;
+	font-size: 0.8125rem;
+	line-height: 1.4;
+	overflow-wrap: anywhere;
+}
+
+.room-welcome-text.open {
+	display: block;
+	-webkit-line-clamp: none;
+}
+
+.room-welcome-text p {
+	margin: 0;
+}
+
+.room-welcome-text p + p {
+	margin-top: 0.25rem;
+}
+
+.room-welcome-more {
+	align-self: flex-end;
+	padding: 0;
+	background: none;
+	border: none;
+	font-size: 0.65625rem;
+	font-weight: 500;
+	letter-spacing: 0.04em;
+	color: var(--faint);
+}
+
+.room-welcome-more:hover,
+.room-welcome-more:focus-visible {
+	color: var(--text);
 }
 
 /* A quarter grid under everything, so a square with no picture yet reads as

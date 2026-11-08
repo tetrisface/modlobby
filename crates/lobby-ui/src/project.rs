@@ -232,6 +232,9 @@ impl Projector {
             } => {
                 let kind = match () {
                     () if lobby_core::spads::is_machine(text) => ChatKind::Machine,
+                    () if *announcement && lobby_core::spads::is_greeting(text) => {
+                        ChatKind::Machine
+                    }
                     () if *announcement => ChatKind::Announcement,
                     () => ChatKind::Chat,
                 };
@@ -264,6 +267,13 @@ impl Projector {
                     kind,
                 )));
             }
+            Effect::WelcomeLine { from, text } => out.push(Delta::Chat(self.line(
+                state,
+                &private_room(from),
+                from,
+                text,
+                ChatKind::Motd,
+            ))),
             Effect::ChannelChat {
                 room,
                 from,
@@ -571,6 +581,72 @@ mod tests {
 				..
 			}
 		)));
+	}
+
+	#[test]
+	fn the_hosts_greeting_is_chatter_and_names_nobody() {
+		let (mut s, mut p) = live();
+		let deltas = step(
+			&mut s,
+			&mut p,
+			"SAIDBATTLEEX host * Hi me! Current battle type is coop.",
+		);
+		let [Delta::Chat(line)] = &deltas[..] else {
+			panic!("expected one chat line, got {deltas:?}")
+		};
+		assert_eq!(
+			line.kind,
+			ChatKind::Machine,
+			"filtered with the bot chatter"
+		);
+		assert!(!line.mention, "a greeting is not somebody calling us");
+	}
+
+	#[test]
+	fn a_rooms_welcome_is_kept_in_the_conversation_and_raises_nothing() {
+		let (mut s, mut p) = live();
+		for line in [
+			"ADDUSER Coordinator ?? 0 Teiserver",
+			"CLIENTSTATUS Coordinator 96",
+			"ADDUSER host EU 0 SPADS",
+			"BATTLEOPENED 3 0 0 host 1.2.3.4 8452 16 0 0 -1 R\tv\tm\tt\tg",
+			"JOINBATTLE 3 hash",
+		] {
+			step(&mut s, &mut p, line);
+		}
+		let hashes = "#".repeat(40);
+		let deltas: Vec<Delta> = [
+			format!("SAIDPRIVATE Coordinator {hashes}"),
+			"SAIDPRIVATE Coordinator Links are on the About page.".into(),
+			format!("SAIDPRIVATE Coordinator {hashes}"),
+		]
+		.iter()
+		.flat_map(|line| step(&mut s, &mut p, line))
+		.collect();
+
+		assert!(
+			!deltas
+				.iter()
+				.any(|delta| matches!(delta, Delta::Alert { .. })),
+			"{deltas:?}"
+		);
+		let lines: Vec<&ChatLine> = deltas
+			.iter()
+			.filter_map(|delta| match delta {
+				Delta::Chat(line) => Some(line),
+				_ => None,
+			})
+			.collect();
+		assert_eq!(lines.len(), 3, "every line stays in the history");
+		assert!(
+			lines
+				.iter()
+				.all(|line| line.kind == ChatKind::Motd && line.room == private_room("Coordinator"))
+		);
+		let Some(Delta::MyBattle(Some(my))) = deltas.last() else {
+			panic!("the room is told last, got {deltas:?}")
+		};
+		assert_eq!(my.welcome, ["Links are on the About page."]);
 	}
 
 	#[test]

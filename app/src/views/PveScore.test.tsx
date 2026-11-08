@@ -154,6 +154,7 @@ function enter(
 		heldUntilMs: null,
 		settled: over.settled ?? true,
 		gameRoster: over.gameRoster ?? null,
+		welcome: [],
 	}
 	onlySession(next)
 }

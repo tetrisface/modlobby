@@ -46,6 +46,7 @@ const mine = (id: number): MyBattleView => ({
 	heldUntilMs: null,
 	settled: true,
 	gameRoster: null,
+	welcome: [],
 })
 
 afterEach(() => setLobby(reconcile(emptyLobby())))

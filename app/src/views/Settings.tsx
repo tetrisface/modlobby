@@ -822,8 +822,9 @@ export function SettingsView() {
 							<p class='muted'>
 								SPADS rides the room's state on battle chat as
 								<code> BarManager|&#123;…&#125;</code>, which this reads and
-								turns into the room you see. Off, those lines are shown as they
-								arrive.
+								turns into the room you see. Its greeting to everyone who joins
+								only names the preset, which the room shows too. Off, those
+								lines are shown as they arrive.
 							</p>
 						</Row>
 						<Row>

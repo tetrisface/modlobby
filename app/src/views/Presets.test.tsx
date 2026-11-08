@@ -121,6 +121,7 @@ function enterRoom() {
 		heldUntilMs: null,
 		settled: true,
 		gameRoster: null,
+		welcome: [],
 	}
 	onlySession(next)
 }

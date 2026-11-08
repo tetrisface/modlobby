@@ -177,6 +177,11 @@ pub struct MyBattle {
 	/// Whether we told this room's host that we load its mutators. Kept here so
 	/// it lasts as long as this join: a host may forget a player who leaves.
 	pub greeted_host: bool,
+	/// What the room says to whoever joins it, a line per paragraph: its
+	/// welcome message, from teiserver's Coordinator. Empty when it has none.
+	pub welcome: Vec<String>,
+	/// That welcome while it arrives, a private message at a time.
+	pub welcome_reader: crate::welcome::Reader,
 	next_seq: u64,
 }
 
@@ -256,6 +261,8 @@ impl MyBattle {
 			joined_id: None,
 			game_roster: None,
 			greeted_host: false,
+			welcome: Vec::new(),
+			welcome_reader: crate::welcome::Reader::default(),
 			next_seq: 0,
 		}
 	}

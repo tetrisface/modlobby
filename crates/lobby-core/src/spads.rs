@@ -218,6 +218,16 @@ pub fn is_machine(text: &str) -> bool {
 			.is_some_and(|body| body.starts_with("BarManager|"))
 }
 
+/// Whether a line is the host greeting somebody who joined. BAR's hosts say
+/// `Hi <name>! Current battle type is <preset>.` to the whole room on every
+/// join (`spads_cluster.conf` `welcomeMsg`), which names nothing the room
+/// does not already show.
+pub fn is_greeting(text: &str) -> bool {
+	text.strip_prefix("* Hi ")
+		.and_then(|rest| rest.split_once("! Current battle type is "))
+		.is_some_and(|(name, preset)| !name.contains(' ') && preset.ends_with('.'))
+}
+
 /// How SPADS marks a JSON-RPC request or answer on a private message. An
 /// answer too long for one message comes as `!#JSONRPC(n/m) ` pieces instead
 /// (`spads.pl:3462`); [`RpcChunks`] puts those back together.
@@ -978,6 +988,19 @@ mod tests {
 			{"Name":"bob","Team":1,"Id":1,"Status":"Playing"}
 		]}},"id":1}"#;
 		assert_eq!(game_bots(answer), Some(vec![]));
+	}
+
+	#[test]
+	fn a_joiner_greeted_is_a_greeting_whoever_it_is() {
+		assert!(is_greeting("* Hi tetrisface! Current battle type is coop."));
+		assert!(is_greeting(
+			"* Hi [AB]alice_2! Current battle type is team."
+		));
+		assert!(!is_greeting("Hi alice! Current battle type is coop."));
+		assert!(!is_greeting(
+			"* Hi there, alice! Current battle type is coop."
+		));
+		assert!(!is_greeting("* Hi alice! Welcome."));
 	}
 
 	#[test]

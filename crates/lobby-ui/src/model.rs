@@ -397,6 +397,9 @@ pub struct MyBattleView {
 	pub settled: bool,
 	/// Who the game running in this room started with; `null` with no game.
 	pub game_roster: Option<GameRosterView>,
+	/// What the room says to whoever joins it, a line per paragraph. Empty
+	/// when it has nothing to say.
+	pub welcome: Vec<String>,
 }
 
 /// Who a running game started with, as far as we saw. The room's own AIs and
@@ -487,6 +490,7 @@ impl From<&MyBattle> for MyBattleView {
 			held_until_ms: my.held_until_ms,
 			settled: my.settled,
 			game_roster: my.game_roster.as_ref().map(GameRosterView::from),
+			welcome: my.welcome.clone(),
 		}
 	}
 }
@@ -805,12 +809,14 @@ pub enum ChatKind {
 	Emote,
 	/// Said by the app rather than by anyone on the server.
 	System,
-	/// The server's message of the day: the same greeting on every connect,
-	/// so it is there to scroll back to but never counts as unread.
+	/// A greeting: the server's message of the day on every connect, or a
+	/// room's welcome on every join. There to scroll back to, but it never
+	/// counts as unread.
 	Motd,
-	/// A host line written for a program to read, not a person: the
-	/// `BarManager|{…}` side-channel. Already parsed into room state by the
-	/// time it gets here, so showing it is a debugging choice.
+	/// Host chatter the room already shows in its own form: the
+	/// `BarManager|{…}` side-channel, parsed into room state by the time it
+	/// gets here, and the host's greeting on every join, which names only the
+	/// preset. Showing either is a debugging choice.
 	Machine,
 }
 

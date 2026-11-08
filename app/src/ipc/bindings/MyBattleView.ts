@@ -62,4 +62,9 @@ export type MyBattleView = {
 	 * Who the game running in this room started with; `null` with no game.
 	 */
 	gameRoster: GameRosterView | null
+	/**
+	 * What the room says to whoever joins it, a line per paragraph. Empty
+	 * when it has nothing to say.
+	 */
+	welcome: Array<string>
 }

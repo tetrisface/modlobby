@@ -4183,6 +4183,7 @@ impl Runtime {
 				| Effect::PasteQueued { .. }
 				| Effect::BattleChat { .. }
 				| Effect::PrivateChat { .. }
+				| Effect::WelcomeLine { .. }
 				| Effect::ChannelChat { .. }
 				| Effect::ChannelJoined { .. }
 				| Effect::ChannelJoinFailed { .. }

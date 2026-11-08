@@ -709,6 +709,8 @@ impl Room {
 			held_until_ms: None,
 			// Nobody here can leave and take an AI with them.
 			game_roster: None,
+			// Nobody greets you in a room of your own.
+			welcome: Vec::new(),
 		}
 	}
 

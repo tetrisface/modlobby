@@ -101,6 +101,7 @@ export function myBattle(over: Partial<MyBattleView> = {}): MyBattleView {
 		heldUntilMs: null,
 		settled: true,
 		gameRoster: null,
+		welcome: [],
 		...over,
 	}
 }

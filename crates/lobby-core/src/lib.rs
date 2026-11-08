@@ -8,6 +8,7 @@ pub mod hosting;
 pub mod session;
 pub mod spads;
 pub mod state;
+pub mod welcome;
 
 pub use hosting::{Rtts, SpareRoom};
 pub use session::{Effect, FriendAction, SeatError, Session, UnknownFriendAction};

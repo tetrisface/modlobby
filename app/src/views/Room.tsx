@@ -89,6 +89,7 @@ import { RoomTitle } from './RoomTitle'
 import { useRoom, type RoomModel } from './room/model'
 import { RosterRuler, UNMEASURED, teamColumns } from './room/Columns'
 import { WatcherStack } from './room/Watchers'
+import { Welcome } from './room/Welcome'
 import { readiness } from './room/readiness'
 import { dragging } from '../lib/drag'
 import { Seat, canAddAi, showAddAi, sitOn, standUp } from './Seat'
@@ -623,6 +624,7 @@ export function Room() {
 
 	/** Where players start, out of the room's script tags. */
 	const startPos = () => Number(room.my()?.scriptTags['game/startpostype'] ?? 2)
+	const welcome = () => room.my()?.welcome ?? []
 
 	/**
 	 * A version, as a thing to change where it is ours to change and as a plain
@@ -751,7 +753,10 @@ export function Room() {
 		<Show when={battle()}>
 			{(b) => (
 				<section class='room'>
-					<header class='room-card'>
+					<header
+						class='room-card'
+						classList={{ welcomed: welcome().length > 0 }}
+					>
 						<Minimap
 							rects={b().startRects}
 							mapName={b().mapName}
@@ -937,6 +942,9 @@ export function Room() {
 							</div>
 							<Chips battle={b()} />
 						</div>
+						<Show when={welcome().length > 0}>
+							<Welcome lines={welcome()} />
+						</Show>
 						<div class='card-actions'>
 							{/* While our own engine runs, the useful button is not another
                   launch — it is the way back to the game the lobby is

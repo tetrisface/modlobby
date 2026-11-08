@@ -10,6 +10,7 @@ use spring_protocol::{
 use crate::hosting::{self, Rtts, SpareRoom};
 use crate::spads::{self, Announcement, VoteState};
 use crate::state::{Bot, Channel, Intent, LobbyState, MyBattle, Phase, SeatOnItsWay, StartRect};
+use crate::welcome;
 use spring_protocol::policy::PasteBurst;
 
 /// What the application must do in response to an event.
@@ -120,6 +121,13 @@ pub enum Effect {
 	/// under whichever way the message went; `from` is who wrote it.
 	PrivateChat {
 		with: String,
+		from: String,
+		text: String,
+	},
+	/// A line of the welcome the Coordinator sends on joining a room. Kept in
+	/// its conversation, but nothing to be told about: the room's card shows
+	/// the welcome once it has all arrived.
+	WelcomeLine {
 		from: String,
 		text: String,
 	},
@@ -1564,6 +1572,9 @@ impl Session {
 				effects
 			}
 			E::SaidPrivate { name, text } => {
+				if let Some(effects) = self.welcome_line(&name, &text) {
+					return effects;
+				}
 				let mut effects = Vec::new();
 				// A host answering what we asked about its game, on the side
 				// channel SPADS carries over private messages, in pieces when
@@ -2057,6 +2068,35 @@ impl Session {
 			None => return None,
 		};
 		Some(u32::from(status.ally_team))
+	}
+
+	/// A private message that is part of our room's welcome, read into the
+	/// room; `None` for any other. Only the server's own Coordinator is heard:
+	/// a person could register that name on a server without one, but not
+	/// the bot flag.
+	fn welcome_line(&mut self, from: &str, text: &str) -> Option<Vec<Effect>> {
+		let coordinator = from == welcome::COORDINATOR
+			&& self
+				.state
+				.users
+				.get(from)
+				.is_some_and(|user| user.status.bot);
+		if !coordinator {
+			return None;
+		}
+		let my = self.state.my_battle.as_mut()?;
+		let line = Effect::WelcomeLine {
+			from: from.to_owned(),
+			text: text.to_owned(),
+		};
+		match my.welcome_reader.read(text) {
+			welcome::Read::Outside => None,
+			welcome::Read::Inside => Some(vec![line]),
+			welcome::Read::Done(message) => {
+				my.welcome = message;
+				Some(vec![line, Effect::RoomChanged])
+			}
+		}
 	}
 
 	fn hosts_my_battle(&self, name: &str) -> bool {
@@ -4126,6 +4166,63 @@ mod tests {
 				text: "Setting tweakdefs requires boss privileges".into()
 			}]
 		);
+	}
+
+	/// What teiserver's Coordinator sends on our joining a room with a
+	/// welcome message and a play restriction (`consul_server.ex`).
+	const WELCOME_BUNDLE: [&str; 5] = [
+		"SAIDPRIVATE Coordinator ########################################",
+		"SAIDPRIVATE Coordinator Links are on the About page.",
+		"SAIDPRIVATE Coordinator This lobby has the following play restrictions:",
+		"SAIDPRIVATE Coordinator Max chev: 3",
+		"SAIDPRIVATE Coordinator ########################################",
+	];
+
+	#[test]
+	fn a_rooms_welcome_goes_to_its_card_and_raises_nothing() {
+		let mut s = in_a_public_room();
+		feed(
+			&mut s,
+			&[
+				"ADDUSER Coordinator ?? 0 Teiserver",
+				"CLIENTSTATUS Coordinator 96",
+			],
+		);
+		let effects = feed(&mut s, &WELCOME_BUNDLE);
+		assert!(
+			!effects
+				.iter()
+				.any(|effect| matches!(effect, Effect::PrivateChat { .. })),
+			"{effects:?}"
+		);
+		let kept = effects
+			.iter()
+			.filter(|effect| matches!(effect, Effect::WelcomeLine { .. }))
+			.count();
+		assert_eq!(
+			kept,
+			WELCOME_BUNDLE.len(),
+			"every line stays in the conversation"
+		);
+		assert_eq!(effects.last(), Some(&Effect::RoomChanged));
+		assert_eq!(
+			s.state.my_battle.unwrap().welcome,
+			["Links are on the About page."]
+		);
+	}
+
+	#[test]
+	fn a_person_named_coordinator_cannot_write_the_welcome() {
+		let mut s = in_a_public_room();
+		feed(&mut s, &["ADDUSER Coordinator ?? 0 SpringLobby"]);
+		let effects = feed(&mut s, &WELCOME_BUNDLE);
+		assert!(
+			effects
+				.iter()
+				.all(|effect| matches!(effect, Effect::PrivateChat { .. })),
+			"{effects:?}"
+		);
+		assert!(s.state.my_battle.unwrap().welcome.is_empty());
 	}
 
 	#[test]
