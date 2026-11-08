@@ -91,7 +91,7 @@ const SCORE: Score = {
 		similarity: null,
 		differenceCount: 3,
 		hiddenDifferences: 1,
-		diffs: [{ column: 'raptor_endless', current: '1', closest: '0' }],
+		diffs: [{ column: 'raptor_queentimemult', current: '1', closest: '0' }],
 	},
 	degradation: null,
 	completeness: {
@@ -367,6 +367,22 @@ describe('pve view logic', () => {
 		expect(declinedText(stranger)).toBe(
 			'No win chance or challenge: this room has an AI the service does not recognise (Circuit).',
 		)
+		// Endless mode has no win condition, so the service never scores it.
+		expect(
+			declinedText(
+				declined('endless_mode', { aiType: 'Raptors', aiFamily: 'RaptorsAI' }),
+			),
+		).toBe(
+			"No win chance or challenge: endless mode has no win condition, so the service does not score it. The records below are each person's lifetime record against queens.",
+		)
+		expect(
+			declinedText(
+				declined('endless_mode', {
+					aiType: 'Scavengers',
+					aiFamily: 'ScavengersAI',
+				}),
+			),
+		).toMatch(/lifetime record against bosses\.$/)
 		// The same text is what the best-effort line shows, so the panel's one
 		// explanation slot carries it without a second slot.
 		expect(bestEffortText(declined('unsupported_ai_family'))).toMatch(
