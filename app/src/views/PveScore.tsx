@@ -46,9 +46,9 @@ import { useRoom, type RoomModel } from './room/model'
  * of minutes, each arriving as its own script tag, and only the end of that
  * is worth somebody else's service answering.
  */
-export const QUIET_FOR = 3000
+export const QUIET_FOR = 2000
 /** The least time between two asks from this client, whatever the room does. */
-export const AT_MOST_EVERY = 2000
+export const AT_MOST_EVERY = 1000
 /**
  * How long a fresh ask leaves the last figures up. Most come back well inside
  * this, the memo's at once, and figures blinking to dots and back on every

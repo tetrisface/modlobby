@@ -25,7 +25,7 @@
 
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -976,6 +976,9 @@ impl Service {
 			return Ok(held);
 		}
 
+		// How long an answer takes, retries and their pauses included, is what
+		// the front end's pacing (`asking.ts`, `stagger.ts`) is tuned against.
+		let started = Instant::now();
 		let mut attempt = 1;
 		loop {
 			let asked =
@@ -990,11 +993,22 @@ impl Service {
 					if let Some(game) = &ask.game_id {
 						self.told.lock().expect("pve told").note(game, key);
 					}
+					tracing::info!(
+						ms = started.elapsed().as_millis() as u64,
+						attempts = attempt,
+						"pve stats: answered"
+					);
 					return Ok(score);
 				}
 				Err(err) => err,
 			};
 			let Some(pause) = patience.pause_after(&failed, attempt + 1) else {
+				// The caller logs why.
+				tracing::info!(
+					ms = started.elapsed().as_millis() as u64,
+					attempts = attempt,
+					"pve stats: gave up"
+				);
 				return Err(failed);
 			};
 			tracing::info!(error = %failed, attempt, ?pause, "pve stats: asking again after a pause");
