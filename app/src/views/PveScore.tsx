@@ -39,10 +39,16 @@ import { useRoom, type RoomModel } from './room/model'
  * the full panel can show each person's own record; the estimate itself is
  * for a generic team and does not use who is present.
  */
-/** How long the room has to stop changing before it is worth asking again. */
-export const QUIET_FOR = 3000
+/**
+ * How long the room has to have been still for a change to be asked about at
+ * once. A change inside a run of them waits until the run has been still
+ * this long: a host applying a preset changes a hundred settings in a couple
+ * of minutes, each arriving as its own script tag, and only the end of that
+ * is worth somebody else's service answering.
+ */
+export const QUIET_FOR = 2000
 /** The least time between two asks from this client, whatever the room does. */
-export const AT_MOST_EVERY = 2000
+export const AT_MOST_EVERY = 1000
 /**
  * How long a fresh ask leaves the last figures up. Most come back well inside
  * this, the memo's at once, and figures blinking to dots and back on every
@@ -110,30 +116,50 @@ function setup(room: RoomModel): string | undefined {
 	].join('\n')
 }
 
-/** Who sits in the room, as the service counts them. */
+/**
+ * Who sits in the room, as Rust tells the service: counted off the seats,
+ * which is the count the host announces one round trip later.
+ */
 function seats(room: RoomModel): Seats {
+	const seated = seatedStatuses(room)
 	return {
-		players: room.battle()?.playerCount ?? 0,
-		handicap: playerHandicap(
-			seatedStatuses(room).map((status) => status.handicap),
-		),
+		players: seated.length,
+		handicap: playerHandicap(seated.map((status) => status.handicap)),
 	}
 }
 
 /**
- * Everything the answer depends on, as one string: the setup, then who sits
- * where. A player moving to another ally team is a change of its own even with
- * nobody arriving or leaving.
+ * Who the service is told is here, as Rust sends `player_names`: everyone but
+ * the room's bots, sorted. The answer carries a record for each of them.
+ */
+function present(room: RoomModel): string[] {
+	const users = room.users()
+	return (room.battle()?.members ?? [])
+		.filter((name) => !users[name]?.status.bot)
+		.sort()
+}
+
+/** Whether two sorted lists of names are the same people. */
+function samePeople(a: readonly string[], b: readonly string[]): boolean {
+	return a.length === b.length && a.every((name, at) => name === b[at])
+}
+
+/**
+ * Everything the answer depends on, as one string: the setup, then who is
+ * here and where each sits. Any change to it is a reason to look again;
+ * whether it is a reason to ask is for `needed` to say.
  */
 function fingerprint(room: RoomModel): string | undefined {
 	const base = setup(room)
 	const battle = room.battle()
 	if (base === undefined || !battle) return undefined
-	const seated = battle.members.map((name) => {
+	const members = battle.members.map((name) => {
 		const status = room.users()[name]?.battleStatus
-		return status?.player ? `${status.handicap} on ${status.allyTeam}` : ''
+		return status?.player
+			? `${name}: ${status.handicap} on ${status.allyTeam}`
+			: name
 	})
-	return [base, battle.playerCount, ...seated].join('\n')
+	return [base, ...members].join('\n')
 }
 
 /** Whether these AIs are a PvE opponent. */
@@ -247,82 +273,13 @@ export function PveScore() {
 	const [score, setScore] = createSignal<Score | null | undefined>(undefined)
 	/** The room's `setup` when the answer in `score` was asked for. */
 	const [askedSetup, setAskedSetup] = createSignal<string | undefined>()
+	/** Who was `present` when the answer in `score` was asked for. */
+	const [askedPresent, setAskedPresent] = createSignal<string[] | undefined>()
 	/** An ask has been out longer than `DOTS_AFTER`. */
 	const [overdue, setOverdue] = createSignal(false)
 	const [failure, setFailure] = createSignal<string | null>(null)
 	/** Whether the full panel is open over the room. */
 	const [open, setOpen] = createSignal(false)
-
-	/**
-	 * Paced, because the service is a Lambda with a concurrency of one and a
-	 * twenty-second cold start, and everyone in the room sees the same change
-	 * at the same moment. One ask out at a time, a floor between asks, and a
-	 * wait by seat rank so the room's clients arrive one after another rather
-	 * than all at once. Rust reads the room afresh for each ask, so a single
-	 * follow-up covers whatever changed while one was out.
-	 */
-	const asks = asker(
-		async () => {
-			const asked = room.my()?.id
-			const askedFor = setup(room)
-			const due = setTimeout(() => setOverdue(true), DOTS_AFTER)
-			try {
-				const answer = await room.io.pveScore()
-				// A room since left is not this one, and a cold start outlasts a visit.
-				if (room.my()?.id !== asked) return
-				setScore(answer)
-				setAskedSetup(askedFor)
-				setFailure(null)
-			} catch (err) {
-				console.warn('pve stats:', err)
-				if (room.my()?.id !== asked) return
-				setFailure(describeError(err))
-			} finally {
-				clearTimeout(due)
-				setOverdue(false)
-			}
-		},
-		{ floor: AT_MOST_EVERY, stagger: () => myStagger(room) },
-	)
-
-	/**
-	 * Asked as soon as a room is in view, then again whenever it settles.
-	 *
-	 * A host applying a preset changes a hundred settings in a couple of
-	 * minutes, and each one arrives as its own script tag. Asking per change
-	 * would put a hundred requests on somebody else's service to answer a
-	 * question whose answer only matters once the changes stop.
-	 */
-	let pending: ReturnType<typeof setTimeout> | undefined
-	// A memo, so a change that leaves the string as it was — someone toggling
-	// ready, say — does not count as the room changing.
-	const print = createMemo(() => fingerprint(room))
-	// The setting is part of the key: turning it on in a room asks once, and
-	// turning it off drops whatever was waiting to go out.
-	const watched = createMemo(() => (enabled() ? print() : undefined))
-	createEffect(
-		on(watched, (now, before) => {
-			clearTimeout(pending)
-			if (now === undefined) return
-			const sameRoom = before?.split('\n')[0] === now.split('\n')[0]
-			// A new room: whatever the last one scored is not this one's. Before
-			// asking whether it is PvE, since a room's AIs arrive after the room.
-			if (!sameRoom) {
-				setScore(undefined)
-				setFailure(null)
-			}
-			if (!isPve(room)) return
-			if (sameRoom) {
-				pending = setTimeout(asks.ask, QUIET_FOR)
-				return
-			}
-			asks.ask()
-		}),
-	)
-	onCleanup(() => {
-		clearTimeout(pending)
-		asks.stop()
-	})
 
 	/**
 	 * The answer as it reads for the room right now: the answer itself while
@@ -344,6 +301,97 @@ export function PveScore() {
 	 */
 	const waiting = () =>
 		(overdue() && current() === null) || score() === undefined
+
+	/**
+	 * Whether the room needs asking about: the answer held falls short of it.
+	 * A head count its table covers does not; a failed ask does. Someone
+	 * arriving or leaving does only while the full panel is open: the records
+	 * there are the one thing who is here changes.
+	 */
+	const needed = () =>
+		enabled() &&
+		(current() === null ||
+			failure() !== null ||
+			(open() && !samePeople(askedPresent() ?? [], present(room))))
+
+	/**
+	 * Paced, because the service is a Lambda with a concurrency of one and a
+	 * twenty-second cold start, and everyone in the room sees the same change
+	 * at the same moment. One ask out at a time, at once after a quiet spell
+	 * but once at the end of a run of changes, a floor between asks, and a
+	 * wait by seat rank so the room's clients arrive one after another rather
+	 * than all at once. Rust reads the room afresh for each ask, so a single
+	 * follow-up covers whatever changed while one was out.
+	 */
+	const asks = asker(
+		async () => {
+			const asked = room.my()?.id
+			const askedFor = setup(room)
+			const askedWho = present(room)
+			const due = setTimeout(() => setOverdue(true), DOTS_AFTER)
+			try {
+				const answer = await room.io.pveScore()
+				// A room since left is not this one, and a cold start outlasts a visit.
+				if (room.my()?.id !== asked) return
+				setScore(answer)
+				setAskedSetup(askedFor)
+				setAskedPresent(askedWho)
+				setFailure(null)
+			} catch (err) {
+				console.warn('pve stats:', err)
+				if (room.my()?.id !== asked) return
+				setFailure(describeError(err))
+			} finally {
+				clearTimeout(due)
+				setOverdue(false)
+			}
+		},
+		{
+			quiet: QUIET_FOR,
+			floor: AT_MOST_EVERY,
+			stagger: () => myStagger(room),
+		},
+		needed,
+	)
+
+	/** Asked as soon as a room is in view, then as it changes; `asks` paces it. */
+	// A memo, so a change that leaves the string as it was — someone toggling
+	// ready, say — does not count as the room changing.
+	const print = createMemo(() => fingerprint(room))
+	// The setting is part of the key: turning it on in a room asks once, and
+	// turning it off drops whatever was waiting to go out.
+	const watched = createMemo(() => (enabled() ? print() : undefined))
+	createEffect(
+		on(watched, (now, before) => {
+			if (now === undefined) {
+				asks.forget()
+				return
+			}
+			const sameRoom = before?.split('\n')[0] === now.split('\n')[0]
+			// A new room: whatever the last one scored is not this one's, and
+			// whatever changed in the last one is not its history. Before asking
+			// whether it is PvE, since a room's AIs arrive after the room.
+			if (!sameRoom) {
+				setScore(undefined)
+				setFailure(null)
+				asks.forget()
+			}
+			if (!isPve(room)) return
+			asks.ask()
+		}),
+	)
+	// Opening the panel is news to its records: whoever came or went while it
+	// was shut has not been asked about.
+	createEffect(
+		on(
+			open,
+			(isOpen) => {
+				if (isOpen && watched() !== undefined && isPve(room)) asks.ask()
+			},
+			{ defer: true },
+		),
+	)
+	onCleanup(() => asks.stop())
 
 	/**
 	 * A figure as seated, then with every seat taken, the way the battle list
@@ -535,6 +583,8 @@ export function PveScore() {
 					score={shown()}
 					waiting={waiting()}
 					failure={failure()}
+					present={present(room)}
+					asked={askedPresent() ?? present(room)}
 					onClose={() => setOpen(false)}
 				/>
 			</Show>

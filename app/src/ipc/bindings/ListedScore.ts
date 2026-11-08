@@ -20,6 +20,13 @@ export type ListedScore = {
 	 */
 	players: number | null
 	/**
+	 * The challenge at each human team size up to the seat count, by size:
+	 * the same setup's table, so the list can read the room at the head count
+	 * it has now. Empty from an asker that named no seat count and from a
+	 * service that predates the table; `challenge` is then the room's figure.
+	 */
+	sizes: Record<number, number>
+	/**
 	 * When someone in the room last told the service about this setup, as
 	 * the service's ISO timestamp. It has no newer word than that: a room
 	 * whose setup has not changed since has not been asked about since.

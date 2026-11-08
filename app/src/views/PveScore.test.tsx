@@ -10,7 +10,7 @@ import type { SizeScore } from '../ipc/bindings/SizeScore'
 import type { UserView } from '../ipc/bindings/UserView'
 import type { Settings } from '../ipc/bindings/Settings'
 import { age } from '../lib/age'
-import { STAGGER_STEP } from '../lib/stagger'
+import { STAGGER_CAP, STAGGER_STEP } from '../lib/stagger'
 import { emptyLobby, emptyServer, setLobby } from '../store/lobby'
 import { TEST_SERVER, onlySession } from '../store/testing'
 import { setSettingsSignal } from '../store/settings'
@@ -156,6 +156,11 @@ function enter(
 		gameRoster: over.gameRoster ?? null,
 	}
 	onlySession(next)
+}
+
+/** A member whose battle status has not come yet: neither seated nor watching. */
+function unseated(name: string): UserView {
+	return { ...user(name), battleStatus: null }
 }
 
 /** Who a game started with, the way Rust keeps it for the length of the game. */
@@ -435,10 +440,8 @@ describe('PveScore', () => {
 			'21.5\u201312.0/34',
 		)
 
-		const again = deferred<Score>()
-		asked.mockReturnValueOnce(again.promise)
 		joins('friend')
-		// Before any ask: the table already answers for two players.
+		// The table already answers for two players.
 		const slots = () =>
 			[...container.querySelectorAll('.pve-figure b')].map(
 				(slot) => slot.textContent,
@@ -448,13 +451,111 @@ describe('PveScore', () => {
 			'50%\u201365%',
 			'60%\u201330%',
 		])
-		// The room is still asked about, for its row in everyone's battle list,
-		// and a slow answer is no reason for dots: the figures are already right.
-		vi.advanceTimersByTime(QUIET_FOR + 1)
-		expect(asked).toHaveBeenCalledTimes(2)
-		vi.advanceTimersByTime(DOTS_AFTER)
-		expect(container.querySelector('.pve-figure .thinking')).toBeNull()
+		// Only the full panel's records care who arrived, and it is shut.
+		vi.advanceTimersByTime(ANY_ASK)
+		await settle()
+		expect(asked).toHaveBeenCalledTimes(1)
 		expect(slots()[0]).toBe('17.0\u201312.0/34')
+	})
+
+	/** The table of records on show in the full panel, not the sizer's copies. */
+	function recordRow(container: HTMLElement, name: string) {
+		return [...container.querySelectorAll('.pve-scroll > table tbody tr')].find(
+			(row) => row.querySelector('.pve-name')?.textContent === name,
+		)
+	}
+
+	/** The answer with a record for `name` beside this client's. */
+	function withRecord(score: Score, name: string): Score {
+		const theirs = score.players
+			.slice(0, 1)
+			.map((mine) => ({ ...mine, playerId: 2, playerName: name }))
+		return { ...score, players: [...score.players, ...theirs] }
+	}
+
+	test('an arrival while the panel is open waits in a row of dots for its record', async () => {
+		asked.mockResolvedValueOnce(filling)
+		enter([bot('RaptorsAI')])
+		const { container, getByLabelText } = render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+		;(getByLabelText('Open PvE stats') as HTMLButtonElement).click()
+		// Opening asks nothing new: the answer has everyone here.
+		vi.advanceTimersByTime(ANY_ASK)
+		await settle()
+		expect(asked).toHaveBeenCalledTimes(1)
+
+		const out = deferred<Score>()
+		asked.mockReturnValueOnce(out.promise)
+		joins('friend')
+		expect(recordRow(container, 'friend')?.querySelector('.thinking')).not.toBe(
+			null,
+		)
+		vi.advanceTimersByTime(ANY_ASK)
+		expect(asked).toHaveBeenCalledTimes(2)
+
+		out.resolve(withRecord(filling, 'friend'))
+		await settle()
+		expect(recordRow(container, 'friend')?.querySelector('.thinking')).toBe(
+			null,
+		)
+	})
+
+	test('an arrival while the panel is shut is asked about when it opens', async () => {
+		asked.mockResolvedValueOnce(filling)
+		enter([bot('RaptorsAI')])
+		const { container, getByLabelText } = render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+		joins('friend')
+		vi.advanceTimersByTime(ANY_ASK)
+		await settle()
+		expect(asked).toHaveBeenCalledTimes(1)
+
+		asked.mockReturnValueOnce(deferred<Score>().promise)
+		;(getByLabelText('Open PvE stats') as HTMLButtonElement).click()
+		// Their row is there at once, waiting; the room has been still, so the
+		// ask goes without one.
+		expect(recordRow(container, 'friend')?.querySelector('.thinking')).not.toBe(
+			null,
+		)
+		vi.advanceTimersByTime(0)
+		expect(asked).toHaveBeenCalledTimes(2)
+	})
+
+	test('someone leaving takes their row before any answer says so', async () => {
+		asked.mockResolvedValue(withRecord(scored, 'friend'))
+		enter([bot('RaptorsAI')], [unseated('friend')])
+		const { container, getByLabelText } = render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+		;(getByLabelText('Open PvE stats') as HTMLButtonElement).click()
+		expect(recordRow(container, 'friend')).toBeDefined()
+
+		asked.mockReturnValueOnce(deferred<Score>().promise)
+		setLobby('servers', TEST_SERVER, 'battles', 7, 'members', ['host', 'me'])
+		expect(recordRow(container, 'friend')).toBeUndefined()
+		// The open panel's records are still owed an answer that agrees.
+		vi.advanceTimersByTime(ANY_ASK)
+		expect(asked).toHaveBeenCalledTimes(2)
+	})
+
+	test('a waiting row stops waiting when the ask for it fails', async () => {
+		asked.mockResolvedValueOnce(filling)
+		enter([bot('RaptorsAI')])
+		const { container, getByLabelText } = render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+		;(getByLabelText('Open PvE stats') as HTMLButtonElement).click()
+
+		asked.mockRejectedValueOnce({ code: 'pve', message: 'busy' })
+		joins('friend')
+		vi.advanceTimersByTime(ANY_ASK)
+		await settle()
+		expect(recordRow(container, 'friend')).toBeDefined()
+		expect(recordRow(container, 'friend')?.querySelector('.thinking')).toBe(
+			null,
+		)
 	})
 
 	test('a newcomer at another handicap waits for the service', async () => {
@@ -532,6 +633,148 @@ describe('PveScore', () => {
 		expect(asked).toHaveBeenCalledTimes(4)
 	})
 
+	/** A spectator already in the room takes a seat: the server says so, then the host recounts. */
+	function takesSeat(name: string, players: number) {
+		setLobby(
+			'servers',
+			TEST_SERVER,
+			'users',
+			name,
+			'battleStatus',
+			'player',
+			true,
+		)
+		setLobby('servers', TEST_SERVER, 'battles', 7, 'playerCount', players)
+	}
+
+	/** Long enough for any ask the room is owed to have gone out. */
+	const ANY_ASK = QUIET_FOR + AT_MOST_EVERY + STAGGER_CAP
+
+	test('a spectator taking a seat is shown from the table and not asked about', async () => {
+		asked.mockResolvedValue(filling)
+		enter([bot('RaptorsAI')], [user('friend')])
+		const { container } = render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+		expect(asked).toHaveBeenCalledTimes(1)
+
+		takesSeat('friend', 2)
+		expect(container.querySelector('.pve-figure b')?.textContent).toBe(
+			'17.0–12.0/34',
+		)
+		// Nobody arrived, and the answer holds every head count to the seat count.
+		vi.advanceTimersByTime(ANY_ASK)
+		await settle()
+		expect(asked).toHaveBeenCalledTimes(1)
+	})
+
+	test('a seat taken moves the figures before the host recounts the room', async () => {
+		asked.mockResolvedValue(filling)
+		enter([bot('RaptorsAI')], [user('friend')])
+		const { container } = render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+
+		// The seat alone: the host's spectator count has yet to follow it.
+		setLobby(
+			'servers',
+			TEST_SERVER,
+			'users',
+			'friend',
+			'battleStatus',
+			'player',
+			true,
+		)
+		expect(container.querySelector('.pve-figure b')?.textContent).toBe(
+			'17.0–12.0/34',
+		)
+	})
+
+	test('a change after a quiet spell is asked about at once', async () => {
+		asked.mockResolvedValue(scored)
+		enter([bot('RaptorsAI')])
+		render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+		expect(asked).toHaveBeenCalledTimes(1)
+
+		// Still for the whole quiet already: that wait is done, not owed again.
+		vi.advanceTimersByTime(QUIET_FOR)
+		setLobby(
+			'servers',
+			TEST_SERVER,
+			'myBattle',
+			'scriptTags',
+			'game/modoptions/raptor_endless',
+			'1',
+		)
+		vi.advanceTimersByTime(0)
+		expect(asked).toHaveBeenCalledTimes(2)
+	})
+
+	test('a seat taken while the room is asked about adds no ask', async () => {
+		asked.mockResolvedValueOnce(filling)
+		enter([bot('RaptorsAI')], [user('friend')])
+		render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+
+		const out = deferred<Score>()
+		asked.mockReturnValueOnce(out.promise).mockResolvedValue(filling)
+		vi.advanceTimersByTime(QUIET_FOR)
+		setLobby(
+			'servers',
+			TEST_SERVER,
+			'myBattle',
+			'scriptTags',
+			'game/modoptions/raptor_endless',
+			'1',
+		)
+		vi.advanceTimersByTime(0)
+		expect(asked).toHaveBeenCalledTimes(2)
+
+		takesSeat('friend', 2)
+		out.resolve(filling)
+		await settle()
+		vi.advanceTimersByTime(ANY_ASK)
+		await settle()
+		// The answer on its way covers two players as it covers one.
+		expect(asked).toHaveBeenCalledTimes(2)
+	})
+
+	test('a room changed back while it is asked about is asked again after', async () => {
+		asked.mockResolvedValueOnce(scored)
+		enter([bot('RaptorsAI')])
+		const { container } = render(panel)
+		vi.advanceTimersByTime(0)
+		await settle()
+
+		const out = deferred<Score>()
+		asked.mockReturnValueOnce(out.promise).mockResolvedValue(scored)
+		const endless = (value: string) =>
+			setLobby(
+				'servers',
+				TEST_SERVER,
+				'myBattle',
+				'scriptTags',
+				'game/modoptions/raptor_endless',
+				value,
+			)
+		vi.advanceTimersByTime(QUIET_FOR)
+		endless('1')
+		vi.advanceTimersByTime(0)
+		expect(asked).toHaveBeenCalledTimes(2)
+
+		// Back to what the held answer was for, but the one on its way is not.
+		endless('0')
+		out.resolve({ ...scored, challenge: 5 })
+		await settle()
+		vi.advanceTimersByTime(ANY_ASK)
+		await settle()
+		expect(asked).toHaveBeenCalledTimes(3)
+		expect(container.textContent).toContain('21.5/34')
+	})
+
 	test('a size the model barely saw is called an uncertain projection', async () => {
 		asked.mockResolvedValue({
 			...scored,
@@ -584,7 +827,7 @@ describe('PveScore', () => {
 
 	test('the chart button opens the full panel with the histogram and each record', async () => {
 		asked.mockResolvedValue(scored)
-		enter([bot('RaptorsAI')])
+		enter([bot('RaptorsAI')], [unseated('newbie')])
 		const { container, getByLabelText } = render(panel)
 		vi.advanceTimersByTime(0)
 		await settle()
