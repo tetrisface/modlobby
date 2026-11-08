@@ -159,6 +159,25 @@ describe('the login form', () => {
 		)
 	})
 
+	test('opened on a refused login, says why and sends nothing until asked', async () => {
+		serve({ has_password: true })
+		const kept = settingsWith()
+		kept.servers = [{ ...newServer(SERVER), username: 'me' }]
+		kept.account = { rememberPassword: true, autoLogin: false }
+		setSettingsSignal(kept)
+		const { container } = render(() => (
+			<LoginForm server={SERVER} startsAtOnce refused='Invalid password' />
+		))
+		const field = container.querySelector<HTMLInputElement>(
+			'input[autocomplete="current-password"]',
+		)!
+		await waitFor(() => expect(field.value).toBe('••••••••'))
+		expect(container.textContent).toContain('Invalid password')
+		// Long enough for the login limit's answer to arrive and clear the start.
+		await new Promise((resolve) => setTimeout(resolve, 20))
+		expect(asked).not.toHaveBeenCalledWith('login', expect.anything())
+	})
+
 	test('with nobody named in the settings, the name comes from the keyring, its password kept', async () => {
 		serve({ kept_usernames: ['me'] })
 		const { container } = render(() => <LoginForm server={SERVER} asksFlags />)

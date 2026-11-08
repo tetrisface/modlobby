@@ -274,9 +274,10 @@ impl Runtime {
 	/// The server said no (before or after login): answer whoever waits, then drop the link.
 	/// A refusal we can do nothing about, except when it is the server telling
 	/// us to wait — which is the one refusal worth answering by waiting.
-	pub(super) async fn refuse(&mut self, server: &str, reason: String) {
+	pub(super) async fn refuse(&mut self, server: &str, refusal: ClientError) {
+		let reason = refusal.to_string();
 		let was_room = self.room().as_deref() == Some(server);
-		let transient = reason.to_ascii_lowercase().contains("flood protection");
+		let transient = flooded(&reason);
 		let slot = self.servers.entry(server.to_owned()).or_default();
 		if transient && slot.credentials.is_some() {
 			slot.reconnect
@@ -288,7 +289,7 @@ impl Runtime {
 			);
 		}
 		let link = slot.link.take();
-		self.reply_login(server, Err(ClientError::Refused(reason.clone())));
+		self.reply_login(server, Err(refusal));
 		self.reply_join(server, Err(reason));
 		if let Some(conn) = link {
 			conn.transport.shutdown().await;
@@ -468,6 +469,12 @@ impl Runtime {
 			..session
 		})
 	}
+}
+
+/// Whether a refusal is the server asking for a wait rather than turning the
+/// account away.
+pub(super) fn flooded(reason: &str) -> bool {
+	reason.to_ascii_lowercase().contains("flood protection")
 }
 
 /// The next thing any server's link delivers, and whose; never, with no

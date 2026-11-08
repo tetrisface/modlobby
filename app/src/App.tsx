@@ -139,14 +139,19 @@ function Reconnect() {
 			),
 		)
 		const failed = tried.filter((failure) => failure !== null)
-		// Nothing to try again with anywhere: this run never logged in, or
-		// logged out of everything.
+		// Nothing a retry can fix anywhere: this run never logged in, logged
+		// out of everything, or had its accounts turned away.
 		if (
 			failed.length === idle.length &&
-			failed.every(({ error }) => noCredentials(error))
+			failed.every(({ error }) => noCredentials(error) || denied(error))
 		) {
 			setNeedsLogin(true)
-			navigate('/login')
+			const turnedAway = failed.find(({ error }) => denied(error))
+			navigate(
+				turnedAway
+					? `/login?server=${encodeURIComponent(turnedAway.server)}`
+					: '/login',
+			)
 			return
 		}
 		for (const { server, error } of failed)
@@ -186,6 +191,7 @@ function Reconnect() {
 }
 
 const noCredentials = (error: unknown) => errorCode(error) === 'noCredentials'
+const denied = (error: unknown) => errorCode(error) === 'loginDenied'
 
 /** The earlier of two moments, either of which may be missing. */
 function soonest(a: number | null, b: number | null): number | null {

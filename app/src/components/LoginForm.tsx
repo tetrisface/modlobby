@@ -61,6 +61,12 @@ export function LoginForm(props: {
 	 */
 	startsAtOnce?: boolean
 	/**
+	 * Why the server turned away the login that opened the form: the form's
+	 * error until the next try, and what keeps `startsAtOnce` from sending
+	 * the refused password again.
+	 */
+	refused?: string
+	/**
 	 * Servers logged in to as well when Log in is pressed, each as its own
 	 * account with the password the keyring remembers: the login page's other
 	 * servers that log in at startup. Each answers for itself, in the notices.
@@ -108,7 +114,8 @@ export function LoginForm(props: {
 	const showsStored = () => hasStored() && !typing() && !password()
 	/** Why this username cannot be had, answered without asking the server. */
 	const [nameProblem, setNameProblem] = createSignal<string | null>(null)
-	const [error, setError] = createSignal<string | null>(null)
+	// Read once, like `mode`: the next try answers for itself.
+	const [error, setError] = createSignal<string | null>(props.refused ?? null)
 	const [busy, setBusy] = createSignal(false)
 	/** Seconds teiserver's login limit still needs; 0 when clear. */
 	const [wait, setWait] = createSignal(0)
@@ -148,7 +155,8 @@ export function LoginForm(props: {
 	// login it refuses starts the limit's twenty seconds again.
 	let started = false
 	createEffect(() => {
-		if (started || !props.startsAtOnce || !hasStored() || password()) return
+		if (started || !props.startsAtOnce || props.refused) return
+		if (!hasStored() || password()) return
 		if (!waitKnown() || wait() > 0) return
 		started = true
 		void login()
@@ -610,6 +618,8 @@ export function LoginForm(props: {
 export function LoginSheet(props: {
 	server: string
 	mode?: 'login' | 'register'
+	/** Why the server turned away the login this sheet answers. */
+	refused?: string
 	close: () => void
 }) {
 	return (
@@ -625,6 +635,7 @@ export function LoginSheet(props: {
 					<LoginForm
 						server={props.server}
 						mode={props.mode}
+						refused={props.refused}
 						onDone={() => props.close()}
 						startsAtOnce
 					/>
