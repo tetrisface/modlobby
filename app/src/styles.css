@@ -3934,15 +3934,18 @@ body.resizing {
 	background: var(--accent);
 }
 
-/* The row scrolled to just under its section's heading, the card fills what
-   is left; the height is the reader's to drag from the corner after that. */
-.opt.tweak.open {
+/* An opened tweak scrolls the row above it, or itself when it leads, to just
+   under its section's heading. The card fills what is left but for `--around`,
+   the rows on either side, measured, and as much air under the row below as
+   the row above has under the heading. The height is the reader's to drag
+   from the corner after that. */
+.setup-rows > .opt {
 	scroll-margin-top: 2rem;
 }
 
 .tweak-inline {
 	display: flex;
-	height: clamp(14rem, calc(100cqh - 4.25rem), 44rem);
+	height: clamp(14rem, calc(100cqh - 4.5rem - var(--around, 0px)), 44rem);
 	min-height: 14rem;
 	margin: 0 -0.5rem 0.625rem;
 	overflow: hidden;

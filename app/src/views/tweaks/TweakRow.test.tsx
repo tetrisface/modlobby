@@ -201,6 +201,64 @@ describe('TweakRow', () => {
 		expect(view.getByText('unsent')).toBeTruthy()
 	})
 
+	test('opened, a row keeps the slot above in sight and leaves room for the one below', async () => {
+		const keys = ['tweakdefs1', 'tweakdefs2', 'tweakdefs3']
+		const room = fakeRoom({
+			log: `#tweak-row-${rooms++}`,
+			my: () =>
+				myBattle({
+					scriptTags: Object.fromEntries(
+						keys.map((key) => [`game/modoptions/${key}`, 'TmV3']),
+					),
+				}),
+		})
+		const view = render(() => (
+			<RoomProvider value={room}>
+				<div class='setup-rows'>
+					{keys.map((key) => (
+						<TweakRow row={row(key, 'TmV3')} />
+					))}
+				</div>
+			</RoomProvider>
+		))
+		await settle()
+
+		// Rows 30 high with 4 between, as a column would lay them out.
+		const top: Record<string, number> = {
+			tweakdefs1: 100,
+			tweakdefs2: 134,
+			tweakdefs3: 400,
+		}
+		const scrolled: Element[] = []
+		const { getBoundingClientRect } = HTMLElement.prototype
+		const { scrollIntoView } = Element.prototype
+		HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
+			const at = top[this.dataset.key ?? ''] ?? 0
+			return { top: at, height: 30, bottom: at + 30 } as DOMRect
+		}
+		Element.prototype.scrollIntoView = function (this: Element) {
+			scrolled.push(this)
+		}
+		try {
+			const card = () =>
+				view.container.querySelector<HTMLElement>('.tweak-inline')!
+			const line = (key: string) =>
+				view.container.querySelector(`.opt[data-key='${key}']`)
+
+			fireEvent.click(view.getByTitle('Open tweakdefs2 in the editor'))
+			expect(scrolled.at(-1)).toBe(line('tweakdefs1'))
+			expect(card().style.getPropertyValue('--around')).toBe('64px')
+
+			// The first row has nothing above it but its heading.
+			fireEvent.click(view.getByTitle('Open tweakdefs1 in the editor'))
+			expect(scrolled.at(-1)).toBe(line('tweakdefs1'))
+			expect(card().style.getPropertyValue('--around')).toBe('30px')
+		} finally {
+			HTMLElement.prototype.getBoundingClientRect = getBoundingClientRect
+			Element.prototype.scrollIntoView = scrollIntoView
+		}
+	})
+
 	test('a map table reads like a slot and opens the same editor, refused from anyone', async () => {
 		const view = mount('eJyr', {}, 'mapmetadata_startpos')
 		await settle()

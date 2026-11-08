@@ -1,4 +1,4 @@
-import { Show, createEffect, createResource } from 'solid-js'
+import { Show, createEffect, createResource, createSignal } from 'solid-js'
 import { ActionCell, CellButton } from '../../components/ActionCell'
 import { OptionName } from '../../components/OptionName'
 import { api, describeError } from '../../ipc/client'
@@ -62,11 +62,23 @@ export function TweakRow(props: { row: Row; note?: RowNote }) {
 	)
 	const name = () => doc()?.name ?? words() ?? ''
 
-	// Opened, the row goes to the top of the column and the editor fills the
-	// rest, send bar included -- nothing to scroll for to find it.
+	// Opened, the row goes to the top of the column under the row above it, and
+	// the editor fills the rest but for the row below: a slot is found among
+	// its neighbours, and the send bar is on screen without scrolling. The
+	// neighbours are measured, since any row can stand beside a tweak's.
 	let line: HTMLDivElement | undefined
+	let card: HTMLDivElement | undefined
+	const [around, setAround] = createSignal(0)
 	createEffect(() => {
-		if (open()) line?.scrollIntoView?.({ block: 'start', behavior: 'smooth' })
+		if (!open() || !line) return
+		const above = line.previousElementSibling
+		const below = card?.nextElementSibling
+		const top = line.getBoundingClientRect().top
+		setAround(
+			(above ? top - above.getBoundingClientRect().top : 0) +
+				(below?.getBoundingClientRect().height ?? 0),
+		)
+		;(above ?? line).scrollIntoView?.({ block: 'start', behavior: 'smooth' })
 	})
 
 	async function copy() {
@@ -186,7 +198,12 @@ export function TweakRow(props: { row: Row; note?: RowNote }) {
 			<Show when={open()}>
 				{/* The row's own for the list's purposes: a hand on the editor
 				    is a hand on its row. */}
-				<div class='tweak-inline' data-key={key()}>
+				<div
+					ref={card}
+					class='tweak-inline'
+					data-key={key()}
+					style={{ '--around': `${around()}px` }}
+				>
 					<Tweaks />
 				</div>
 			</Show>
