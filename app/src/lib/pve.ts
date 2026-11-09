@@ -727,13 +727,17 @@ export function headline(score: Score): Score {
 	}
 }
 
-/** `fieldRatio` in words: `you win 33% more often than others …`. */
-function againstTheField(ratio: number): string {
-	const where = 'than others at the challenges you play'
+/**
+ * `fieldRatio` in words: `you win 33% more often than others …`. Behind the
+ * field it says nothing: the caption praises, it never ranks you down.
+ */
+function againstTheField(ratio: number | null): string | null {
+	if (ratio == null) return null
 	const apart = Math.round((ratio - 1) * 100)
+	if (apart < 0) return null
 	if (apart === 0)
-		return `you win about as often as others at the challenges you play`
-	return `you win ${Math.abs(apart)}% ${apart > 0 ? 'more' : 'less'} often ${where}`
+		return 'you win about as often as others at the challenges you play'
+	return `you win ${apart}% more often than others at the challenges you play`
 }
 
 export function caption(score: Score, me: Player | undefined): string {
@@ -745,8 +749,8 @@ export function caption(score: Score, me: Player | undefined): string {
 	}
 	const best = me?.accomplishments.challenges.highestChallengeCleared
 	if (best != null) text += ` — your best ${best.toFixed(1)}`
-	const ratio = fieldRatio(score, me)
-	if (ratio != null) text += ` — ${againstTheField(ratio)}`
+	const versus = againstTheField(fieldRatio(score, me))
+	if (versus) text += ` — ${versus}`
 	return text
 }
 

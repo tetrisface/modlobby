@@ -312,7 +312,7 @@ describe('pve view logic', () => {
 		)
 	})
 
-	test('a field ratio near one says so rather than 0% more', () => {
+	test('a field ratio near one says so rather than 0% more, and below it says nothing', () => {
 		// 20 games where humans win 10%: two wins is exactly the field's rate.
 		const even = player('me', {
 			clearHistogram: [0, 2],
@@ -326,7 +326,10 @@ describe('pve view logic', () => {
 			clearHistogram: [0, 1],
 			playHistogram: [2, 10],
 		})
-		expect(caption(SCORE, behind)).toContain('you win 64% less often than')
+		expect(fieldRatio(SCORE, behind)).toBeCloseTo(1 / 2.8)
+		expect(caption(SCORE, behind)).toBe(
+			'Challenge 21.5 — harder than 88% of played Raptors games',
+		)
 	})
 
 	test('match wording follows status and method', () => {
