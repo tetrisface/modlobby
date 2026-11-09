@@ -39,7 +39,7 @@ export function Welcome(props: { lines: readonly string[] }) {
 	return (
 		<aside class='room-welcome' aria-label='Welcome from the Coordinator'>
 			<span class='room-welcome-head'>
-				Welcome <span>Coordinator</span>
+				Welcome <span>@Coordinator</span>
 			</span>
 			<div
 				class='room-welcome-text'

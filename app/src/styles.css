@@ -890,10 +890,30 @@ textarea {
 	border-color: var(--muted);
 }
 
-/* The room's welcome takes the width the card leaves empty between its
-   details and its buttons. */
+/* The room's welcome, beside the details. They keep up to 56rem, a title of
+   about 90 characters where the server caps a rename at 70, so a changed
+   title leaves the note where it is. The empty column after the note takes
+   the slack. The margin keeps a pushed note off the title's pen, and the
+   note's track counts it: 18 to 26rem of note. */
 .room-card.welcomed {
-	grid-template-columns: 8.25rem 1fr minmax(18rem, 26rem) auto;
+	--details: minmax(0, 56rem);
+	grid-template-columns: 8.25rem var(--details) minmax(19rem, 27rem) 1fr auto;
+}
+
+.room-card.welcomed > .room-welcome {
+	margin-left: 1rem;
+}
+
+.room-card.welcomed > .card-actions {
+	grid-column: -2;
+}
+
+/* Room to spare: a longer title pushes the note along rather than lose its
+   end. */
+@container room (width >= 110rem) {
+	.room-card.welcomed {
+		--details: minmax(56rem, max-content);
+	}
 }
 
 /* Too narrow for text beside the details: the note goes under them, and the
@@ -912,6 +932,7 @@ textarea {
 	.room-card.welcomed > .room-welcome {
 		grid-column: 2;
 		grid-row: 2;
+		margin-left: 0;
 	}
 
 	.room-card.welcomed > .card-actions {
