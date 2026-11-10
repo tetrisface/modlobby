@@ -15,6 +15,9 @@ use serde_json::{Map, Value};
 
 use crate::Preset;
 
+/// The colours an AI is given when it brings none of its own.
+pub const COLOURS: [u32; 6] = [0x4b73f2, 0x3fd07f, 0x2fb8f0, 0x9e5ce8, 0x50a0ff, 0x8fd04b];
+
 /// One AI, as Chobby's file names its parts.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

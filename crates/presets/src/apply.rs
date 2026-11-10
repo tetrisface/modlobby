@@ -8,11 +8,12 @@
 //! who sends it — and every line that did not need sending is a second wasted
 //! and a second closer to being ignored.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::bots;
 use crate::model::Preset;
 
 /// Which parts of a preset to put back. Chobby offers the same five
@@ -63,6 +64,34 @@ pub struct Plan {
 	pub start_boxes_unsent: bool,
 	/// Settings the room already has, which is why they are not in `lines`.
 	pub already_set: usize,
+	/// AIs the load adds.
+	pub bots: usize,
+	/// Set when an AI added has options of its own, which a room on the
+	/// server keeps nowhere.
+	pub bot_options_unsent: bool,
+	/// The AIs to add, for whoever carries the plan out.
+	#[serde(skip)]
+	#[ts(skip)]
+	pub seats: Vec<Seating>,
+}
+
+/// An AI to add, as `ADDBOT` takes one, with the bonus that follows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Seating {
+	pub name: String,
+	pub ai: String,
+	pub team: u8,
+	pub ally_team: u8,
+	pub colour: u32,
+	pub handicap: u8,
+}
+
+/// An AI already in the room.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RoomBot {
+	pub name: String,
+	pub ai: String,
+	pub ally_team: u8,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -81,6 +110,61 @@ pub struct PlannedBox {
 pub struct Room {
 	pub map: Option<String>,
 	pub modoptions: BTreeMap<String, String>,
+	/// The SPADS preset it runs under: what a reset goes back to when the
+	/// preset names none of its own.
+	pub preset: Option<String>,
+	pub bots: Vec<RoomBot>,
+	/// Team numbers held, by players and AIs alike.
+	pub teams: BTreeSet<u8>,
+}
+
+/// The preset's AIs the room does not already have. One of the same kind on
+/// the same side counts as there, so loading twice is the same game twice.
+/// Each added one takes a team nobody holds and a name the room does not.
+fn seatings(preset: &Preset, room: &Room) -> Vec<(Seating, bool)> {
+	let mut present: Vec<&RoomBot> = room.bots.iter().collect();
+	let mut names: BTreeSet<String> = room.bots.iter().map(|held| held.name.clone()).collect();
+	let mut teams = room.teams.clone();
+	let mut seats = Vec::new();
+	for bot in bots::read(preset) {
+		let there = present.iter().position(|held| {
+			held.ally_team == bot.ally_number && held.ai.eq_ignore_ascii_case(&bot.ai_lib)
+		});
+		if let Some(at) = there {
+			present.remove(at);
+			continue;
+		}
+		let name = unused_name(&bot.ai_lib, &names);
+		names.insert(name.clone());
+		let team = (0..=u8::MAX)
+			.find(|team| !teams.contains(team))
+			.unwrap_or(u8::MAX);
+		teams.insert(team);
+		let fallback = bots::COLOURS[usize::from(bot.ally_number) % bots::COLOURS.len()];
+		let seat = Seating {
+			name,
+			ai: bot.ai_lib.clone(),
+			team,
+			ally_team: bot.ally_number,
+			colour: bot.colour().unwrap_or(fallback),
+			handicap: bot.handicap,
+		};
+		seats.push((seat, !bot.ai_options.is_empty()));
+	}
+	seats
+}
+
+/// `BARb`, then `BARb2`, as the seat bar names them: one the room does not
+/// hold, without the spaces the protocol splits a line on.
+fn unused_name(ai: &str, taken: &BTreeSet<String>) -> String {
+	let base: String = ai.chars().filter(|c| !c.is_whitespace()).collect();
+	if !taken.contains(&base) {
+		return base;
+	}
+	(2..)
+		.map(|n| format!("{base}{n}"))
+		.find(|name| !taken.contains(name))
+		.unwrap_or(base)
 }
 
 /// The modoption BAR reads a custom startbox arrangement from.
@@ -115,7 +199,7 @@ pub fn plan(preset: &Preset, room: &Room, sections: Sections) -> Plan {
 	if sections.battle {
 		// First, because it is what clears the room.
 		if sections.reset
-			&& let Some(name) = preset.battle.get("preset")
+			&& let Some(name) = preset.battle.get("preset").or(room.preset.as_ref())
 		{
 			lines.push(format!("!preset {name}"));
 		}
@@ -239,11 +323,19 @@ pub fn plan(preset: &Preset, room: &Room, sections: Sections) -> Plan {
 	let set = format!("!bSet {START_BOXES_SET} ");
 	lines.sort_by_key(|line| line.starts_with(&set));
 
+	let seated = if sections.bots {
+		seatings(preset, room)
+	} else {
+		Vec::new()
+	};
 	Plan {
 		start_boxes,
 		start_boxes_unsent,
 		lines,
 		already_set,
+		bots: seated.len(),
+		bot_options_unsent: seated.iter().any(|(_, options)| *options),
+		seats: seated.into_iter().map(|(seat, _)| seat).collect(),
 	}
 }
 
@@ -320,6 +412,108 @@ mod tests {
 	fn resetting_is_the_first_thing_that_happens() {
 		let plan = plan(&preset(), &Room::default(), Sections::default());
 		assert_eq!(plan.lines[0], "!preset coop");
+	}
+
+	#[test]
+	fn a_preset_naming_no_preset_resets_the_room_to_the_one_it_runs() {
+		let mut held = preset();
+		held.battle.remove("preset");
+		let room = Room {
+			preset: Some("team".into()),
+			..Room::default()
+		};
+		assert_eq!(
+			plan(&held, &room, Sections::default()).lines[0],
+			"!preset team"
+		);
+	}
+
+	fn with_bots(bots: &[crate::Bot]) -> Preset {
+		let mut held = preset();
+		crate::bots::write(&mut held, bots);
+		held
+	}
+
+	fn bots_on() -> Sections {
+		Sections {
+			bots: true,
+			..Sections::default()
+		}
+	}
+
+	#[test]
+	fn the_ais_go_to_free_teams_under_names_the_room_does_not_hold() {
+		let mut barb = crate::Bot::new("BARb 1", "BARb", 1).with_colour(0x0000FF);
+		barb.handicap = 60;
+		let room = Room {
+			bots: vec![RoomBot {
+				name: "BARb".into(),
+				ai: "BARb".into(),
+				ally_team: 0,
+			}],
+			teams: BTreeSet::from([0, 1]),
+			..Room::default()
+		};
+		let raptors = crate::Bot::new("Raptors", "RaptorsAI", 1);
+		let plan = plan(&with_bots(&[barb, raptors]), &room, bots_on());
+		assert_eq!(plan.bots, 2);
+		assert_eq!(
+			plan.seats,
+			[
+				Seating {
+					name: "BARb2".into(),
+					ai: "BARb".into(),
+					team: 2,
+					ally_team: 1,
+					colour: 0x0000FF,
+					handicap: 60,
+				},
+				Seating {
+					name: "RaptorsAI".into(),
+					ai: "RaptorsAI".into(),
+					team: 3,
+					ally_team: 1,
+					colour: crate::bots::COLOURS[1],
+					handicap: 0,
+				},
+			]
+		);
+	}
+
+	#[test]
+	fn an_ai_the_room_already_has_on_that_side_is_not_added_again() {
+		let room = Room {
+			bots: vec![RoomBot {
+				name: "RaptorsAI".into(),
+				ai: "raptorsai".into(),
+				ally_team: 1,
+			}],
+			..Room::default()
+		};
+		let two = [
+			crate::Bot::new("RaptorsAI(1)", "RaptorsAI", 1),
+			crate::Bot::new("RaptorsAI(2)", "RaptorsAI", 1),
+		];
+		let plan = plan(&with_bots(&two), &room, bots_on());
+		assert_eq!(plan.bots, 1, "one is there already; the second is added");
+		assert_eq!(plan.seats[0].name, "RaptorsAI2");
+	}
+
+	#[test]
+	fn an_added_ais_own_options_are_said_to_stay_behind() {
+		let mut barb = crate::Bot::new("BARb", "BARb", 1);
+		barb.ai_options.insert("profile".into(), "hard".into());
+		assert!(plan(&with_bots(&[barb]), &Room::default(), bots_on()).bot_options_unsent);
+		let plain = crate::Bot::new("BARb", "BARb", 1);
+		assert!(!plan(&with_bots(&[plain]), &Room::default(), bots_on()).bot_options_unsent);
+	}
+
+	#[test]
+	fn the_ais_stay_out_unless_asked_for() {
+		let held = with_bots(&[crate::Bot::new("BARb", "BARb", 1)]);
+		let plan = plan(&held, &Room::default(), Sections::default());
+		assert_eq!(plan.bots, 0);
+		assert!(plan.seats.is_empty());
 	}
 
 	#[test]

@@ -11,6 +11,9 @@ import { RoomProvider, type RoomModel } from './room/model'
 import { Setup } from './Setup'
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
+vi.mock('@tauri-apps/api/event', () => ({
+	listen: vi.fn(async () => () => {}),
+}))
 
 // The editor is Monaco, which the test DOM cannot draw; that it opens is enough.
 vi.mock('./tweaks/Tweaks', () => ({ Tweaks: () => <div>the editor</div> }))
@@ -63,6 +66,28 @@ describe('which face the pane opens on', () => {
 		// The tags land after the room does.
 		setTags({ 'game/mutatorhost': '1' })
 		expect(on()).toBe('Mods')
+	})
+
+	test('four faces, the settings of games already played last', async () => {
+		const on = pane(fakeRoom())
+		vi.mocked(invoke).mockImplementation(async (command: string) => {
+			if (command === 'game_history' || command === 'game_history_scan')
+				return { settings: [], usual: {}, blobs: {}, ignoredPrefixes: [] }
+			if (command === 'game_history_values') return { values: {}, blobs: {} }
+			return command === 'engine_def_tags' ? { weapon: [] } : []
+		})
+		const faces = [...document.querySelectorAll('.pane-tab')]
+		expect(faces.map((face) => face.textContent)).toEqual([
+			'Options',
+			'Presets',
+			'Mods',
+			'History',
+		])
+
+		fireEvent.click(faces[3] as Element)
+		await settle()
+		expect(on()).toBe('History')
+		expect(document.querySelector('.past-games')).not.toBeNull()
 	})
 })
 

@@ -95,6 +95,7 @@ export function localRoom(): RoomModel {
 		presets: () => ({
 			savePreset: api.skirmishSavePreset,
 			applyPreset: api.skirmishApplyPreset,
+			applyHistory: api.skirmishApplyHistory,
 		}),
 	}
 }

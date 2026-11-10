@@ -298,14 +298,32 @@ export function isCleared(text: string): boolean {
 	return text === '' || text === '0'
 }
 
-function isChanged(option: ModOption, current: string): boolean {
+/**
+ * Whether two values of an option are the same value, by the option's own
+ * type: `1.0` is `1` for a number, `true` is `1` for a switch. `null` is the
+ * default. An option the game does not declare is compared as written.
+ */
+export function sameValue(
+	option: ModOption | undefined,
+	a: string | null,
+	b: string | null,
+): boolean {
+	if (option === undefined) return a === b
 	// A map option is set or cleared; there is no default to sit on.
-	if (isMapOption(option)) return !isCleared(current)
+	if (isMapOption(option)) {
+		const [x, y] = [a ?? '', b ?? '']
+		return x === y || (isCleared(x) && isCleared(y))
+	}
 	const def = defaultText(option)
-	if (option.type === 'number') return Number(current) !== Number(def)
-	if (option.type === 'bool') return isOn(current) !== isOn(def)
-	if (isEmptyByDefault(option)) return !isCleared(current)
-	return current !== def
+	const [x, y] = [a ?? def, b ?? def]
+	if (option.type === 'number') return Number(x) === Number(y)
+	if (option.type === 'bool') return isOn(x) === isOn(y)
+	if (isEmptyByDefault(option)) return x === y || (isCleared(x) && isCleared(y))
+	return x === y
+}
+
+function isChanged(option: ModOption, current: string): boolean {
+	return !sameValue(option, current, null)
 }
 
 /** A text BAR starts empty, which a host can only clear by writing `0`. */

@@ -19,6 +19,10 @@ const MAGIC: &[u8] = b"spring demofile";
 /// Where each field we need sits, from the top of the header.
 const VERSION_AT: usize = 16;
 const HEADER_SIZE_AT: usize = 20;
+/// `gameID`: sixteen bytes, all zero when the engine had none to write.
+const GAME_ID_AT: usize = 280;
+/// `unixTime`: when the game started, in seconds, as a `u64`.
+const UNIX_TIME_AT: usize = 296;
 const SCRIPT_SIZE_AT: usize = 304;
 /// Everything up to and including `scriptSize`.
 const NEEDED: usize = SCRIPT_SIZE_AT + 4;
@@ -78,6 +82,14 @@ pub struct Length {
 	pub wall: u32,
 }
 
+impl Length {
+	/// This length, if the game reached its game over: any game over takes
+	/// some seconds on the clock, and a game nobody saw end keeps zeros.
+	pub fn ended(self) -> Option<Self> {
+		(self.wall > 0).then_some(self)
+	}
+}
+
 /// The game's length from a replay's bytes.
 pub fn length_from_bytes(head: &[u8]) -> Result<Length, Error> {
 	check(head, LENGTH_NEEDED)?;
@@ -98,8 +110,8 @@ pub fn length(path: impl AsRef<Path>) -> Result<Length, Error> {
 	length_from_bytes(&head)
 }
 
-/// The start script from a replay's bytes.
-pub fn script_from_bytes(head: &[u8]) -> Result<String, Error> {
+/// Where the start script sits: from `headerSize`, for `scriptSize` bytes.
+fn script_span(head: &[u8]) -> Result<std::ops::Range<usize>, Error> {
 	check(head, NEEDED)?;
 
 	// `headerSize` is the header's own length and doubles as its minor
@@ -115,25 +127,68 @@ pub fn script_from_bytes(head: &[u8]) -> Result<String, Error> {
 		return Err(Error::Impossible(i64::from(script_size)));
 	}
 	let end = start.checked_add(size).ok_or(Error::Truncated)?;
-	if head.len() < end {
+	Ok(start..end)
+}
+
+/// The start script from a replay's bytes.
+pub fn script_from_bytes(head: &[u8]) -> Result<String, Error> {
+	let span = script_span(head)?;
+	let Some(script) = head.get(span) else {
 		return Err(Error::Truncated);
-	}
+	};
 
 	// Trailing NULs: the engine writes the script with its terminator.
-	let script = &head[start..end];
 	let script = script.split(|byte| *byte == 0).next().unwrap_or(script);
 	Ok(String::from_utf8_lossy(script).into_owned())
 }
 
 /// The start script from a replay on disk, compressed (`.sdfz`) or not.
 pub fn script(path: impl AsRef<Path>) -> Result<String, Error> {
-	// Only the front of the file: everything after the script is the demo
-	// stream, which is the part that makes these files large.
-	let mut head = Vec::new();
-	open(path.as_ref())?
-		.take(MOST_WE_WILL_READ as u64)
-		.read_to_end(&mut head)?;
-	script_from_bytes(&head)
+	head(path).map(|head| head.script)
+}
+
+/// What a replay says about its game before the demo stream begins.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Head {
+	/// The engine's `GameID`; `None` when the header holds only zeros.
+	pub game_id: Option<[u8; 16]>,
+	/// When the game started, in seconds since the Unix epoch.
+	pub started: u64,
+	/// `None` for a game left before its game over, whose header keeps zeros.
+	pub length: Option<Length>,
+	pub script: String,
+}
+
+/// The head of a replay on disk, compressed (`.sdfz`) or not.
+pub fn head(path: impl AsRef<Path>) -> Result<Head, Error> {
+	head_from_reader(open(path.as_ref())?)
+}
+
+/// The head from a replay's bytes, reading exactly the header and the script
+/// and none of the demo stream after them, which is what makes a replay large.
+pub fn head_from_reader(mut reader: impl Read) -> Result<Head, Error> {
+	let mut bytes = Vec::with_capacity(LENGTH_NEEDED);
+	(&mut reader)
+		.take(LENGTH_NEEDED as u64)
+		.read_to_end(&mut bytes)?;
+	check(&bytes, LENGTH_NEEDED)?;
+
+	let end = script_span(&bytes)?.end;
+	let rest = end.saturating_sub(bytes.len());
+	reader.take(rest as u64).read_to_end(&mut bytes)?;
+
+	let id: [u8; 16] = bytes[GAME_ID_AT..GAME_ID_AT + 16]
+		.try_into()
+		.expect("sixteen bytes");
+	let started: [u8; 8] = bytes[UNIX_TIME_AT..UNIX_TIME_AT + 8]
+		.try_into()
+		.expect("eight bytes");
+	Ok(Head {
+		game_id: id.iter().any(|byte| *byte != 0).then_some(id),
+		started: u64::from_le_bytes(started),
+		length: length_from_bytes(&bytes)?.ended(),
+		script: script_from_bytes(&bytes)?,
+	})
 }
 
 /// A replay's bytes from the top, decompressed when it is an `.sdfz`.
@@ -226,5 +281,81 @@ mod tests {
 	fn a_script_written_with_its_terminator_does_not_keep_it() {
 		let bytes = demo("[GAME]{}\0", KNOWN_VERSION);
 		assert_eq!(script_from_bytes(&bytes).unwrap(), "[GAME]{}");
+	}
+
+	/// Counts what is taken from the reader it wraps.
+	struct Counting<R> {
+		inner: R,
+		taken: usize,
+	}
+
+	impl<R: Read> Read for Counting<R> {
+		fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+			let read = self.inner.read(buf)?;
+			self.taken += read;
+			Ok(read)
+		}
+	}
+
+	#[test]
+	fn the_head_stops_reading_where_the_script_ends() {
+		let script = "[GAME]\n{\n\tMapName=Comet Catcher;\n}\n";
+		let mut bytes = demo(script, KNOWN_VERSION);
+		let end = bytes.len();
+		bytes.extend(std::iter::repeat_n(0xA5_u8, 10 * 1024 * 1024));
+		let mut reader = Counting {
+			inner: std::io::Cursor::new(bytes),
+			taken: 0,
+		};
+
+		let head = head_from_reader(&mut reader).unwrap();
+
+		assert_eq!(head.script, script);
+		assert_eq!(reader.taken, end, "not a byte of the demo stream");
+	}
+
+	#[test]
+	fn the_head_carries_the_game_id_and_when_it_started() {
+		let mut bytes = demo("[GAME]{}", KNOWN_VERSION);
+		let id: [u8; 16] = std::array::from_fn(|at| at as u8 + 1);
+		bytes[GAME_ID_AT..GAME_ID_AT + 16].copy_from_slice(&id);
+		bytes[UNIX_TIME_AT..UNIX_TIME_AT + 8].copy_from_slice(&1_762_000_000_u64.to_le_bytes());
+
+		let head = head_from_reader(bytes.as_slice()).unwrap();
+
+		assert_eq!(head.game_id, Some(id));
+		assert_eq!(head.started, 1_762_000_000);
+	}
+
+	#[test]
+	fn a_zero_game_id_is_no_id() {
+		let head = head_from_reader(demo("[GAME]{}", KNOWN_VERSION).as_slice()).unwrap();
+		assert_eq!(head.game_id, None);
+	}
+
+	#[test]
+	fn the_head_has_a_length_only_for_a_game_that_reached_its_end() {
+		let mut bytes = demo("[GAME]{}", KNOWN_VERSION);
+		assert_eq!(head_from_reader(bytes.as_slice()).unwrap().length, None);
+
+		bytes[GAME_TIME_AT..GAME_TIME_AT + 4].copy_from_slice(&2_280_i32.to_le_bytes());
+		bytes[WALLCLOCK_TIME_AT..WALLCLOCK_TIME_AT + 4].copy_from_slice(&2_400_i32.to_le_bytes());
+		assert_eq!(
+			head_from_reader(bytes.as_slice()).unwrap().length,
+			Some(Length {
+				game: 2_280,
+				wall: 2_400
+			})
+		);
+	}
+
+	#[test]
+	fn a_head_cut_off_inside_its_script_is_truncated() {
+		let mut bytes = demo("[GAME]{ MapName=X; }", KNOWN_VERSION);
+		bytes.truncate(bytes.len() - 4);
+		assert!(matches!(
+			head_from_reader(bytes.as_slice()),
+			Err(Error::Truncated)
+		));
 	}
 }

@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use presets::{Book, Preset, Sections, Stamp};
 use tauri::State;
 
-use crate::commands::{ApiError, Result, open};
+use crate::commands::{ApiError, Result, data_dirs, disk_work, listed_replay, open};
 use crate::state::App;
 
 impl From<presets::Error> for ApiError {
@@ -30,7 +30,7 @@ impl From<content::demo::Error> for ApiError {
 	}
 }
 
-fn now() -> Stamp {
+pub(crate) fn now() -> Stamp {
 	std::time::SystemTime::now()
 		.duration_since(std::time::UNIX_EPOCH)
 		.map(|since| since.as_secs())
@@ -127,10 +127,12 @@ pub async fn save_preset(app: State<'_, App>, name: String) -> Result<Book> {
 	Ok(app.presets.put(preset, now())?)
 }
 
-/// A preset made from the game a replay recorded.
+/// A preset made from the game a replay recorded, from a directory the
+/// Replays page lists as playing one is.
 #[tauri::command]
-pub fn preset_from_replay(app: State<'_, App>, path: String, name: String) -> Result<Book> {
-	let text = content::demo::script(&path)?;
+pub async fn preset_from_replay(app: State<'_, App>, path: String, name: String) -> Result<Book> {
+	let replay = listed_replay(&data_dirs(&app)?, &path)?;
+	let text = disk_work(move || content::demo::script(replay)).await??;
 	let script = recoil::script_read::parse(&text);
 
 	let mut preset = Preset::new(name, now());
@@ -189,13 +191,45 @@ pub async fn apply_preset(
 	sections: Sections,
 ) -> Result<presets::Plan> {
 	let preset = one(&app, &name)?;
-	let plan = presets::plan(&preset, &current_room(&app).await?, sections);
+	let plan = send_to_room(&app, &preset, sections).await?;
+	app.presets.touch(&name, now())?;
+	Ok(plan)
+}
 
+/// What [`apply_preset`] sends, for any preset: loading a setting from the
+/// game history is the same paste. The AIs are not SPADS's to add, so they go
+/// out as the seat bar adds one: `ADDBOT`, then the bonus.
+pub(crate) async fn send_to_room(
+	app: &App,
+	preset: &Preset,
+	sections: Sections,
+) -> Result<presets::Plan> {
+	let plan = presets::plan(preset, &current_room(app).await?, sections);
 	if !plan.lines.is_empty() {
 		app.client.say(plan.lines.join("\n")).await?;
 	}
-
-	app.presets.touch(&name, now())?;
+	for seat in &plan.seats {
+		app.client
+			.add_bot(
+				seat.name.clone(),
+				seat.ai.clone(),
+				seat.team,
+				seat.ally_team,
+				seat.colour,
+			)
+			.await?;
+		if seat.handicap > 0 {
+			app.client
+				.update_bot(
+					seat.name.clone(),
+					seat.team,
+					seat.ally_team,
+					seat.handicap,
+					seat.colour,
+				)
+				.await?;
+		}
+	}
 	Ok(plan)
 }
 
@@ -225,8 +259,18 @@ pub async fn skirmish_apply_preset(
 	sections: Sections,
 ) -> Result<presets::Plan> {
 	let preset = one(&app, &name)?;
-	let done = app.client.skirmish_preset(preset.clone(), sections).await?;
+	let plan = put_in_skirmish(&app, preset, sections).await?;
 	app.presets.touch(&name, now())?;
+	Ok(plan)
+}
+
+/// What [`skirmish_apply_preset`] does, for any preset.
+pub(crate) async fn put_in_skirmish(
+	app: &App,
+	preset: Preset,
+	sections: Sections,
+) -> Result<presets::Plan> {
+	let done = app.client.skirmish_preset(preset.clone(), sections).await?;
 	Ok(presets::Plan {
 		lines: Vec::new(),
 		start_boxes: preset
@@ -242,6 +286,9 @@ pub async fn skirmish_apply_preset(
 			.collect(),
 		start_boxes_unsent: sections.start_boxes && !done.boxes && !preset.start_boxes.is_empty(),
 		already_set: done.already_set,
+		bots: done.bots,
+		bot_options_unsent: false,
+		seats: Vec::new(),
 	})
 }
 
@@ -556,12 +603,29 @@ async fn current_room(app: &App) -> Result<presets::Room> {
 	let Some((session, my)) = snapshot.room() else {
 		return Ok(presets::Room::default());
 	};
+	let battle = session.battles.iter().find(|battle| battle.id == my.id);
+	let bots = battle.map_or(&[][..], |battle| &battle.bots[..]);
+	let players = battle
+		.into_iter()
+		.flat_map(|battle| &battle.members)
+		.filter_map(|name| session.users.iter().find(|user| &user.name == name))
+		.filter_map(|user| user.battle_status)
+		.filter(|status| status.player)
+		.map(|status| status.team);
 	Ok(presets::Room {
-		map: session
-			.battles
+		map: battle.map(|battle| battle.map_name.clone()),
+		preset: my.preset.clone(),
+		bots: bots
 			.iter()
-			.find(|battle| battle.id == my.id)
-			.map(|battle| battle.map_name.clone()),
+			.map(|bot| presets::apply::RoomBot {
+				name: bot.name.clone(),
+				ai: bot.ai.clone(),
+				ally_team: bot.status.ally_team,
+			})
+			.collect(),
+		teams: players
+			.chain(bots.iter().map(|bot| bot.status.team))
+			.collect(),
 		modoptions: my
 			.script_tags
 			.iter()

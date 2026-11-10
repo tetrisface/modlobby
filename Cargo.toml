@@ -10,6 +10,7 @@ members = [
     "crates/tweaks",
     "crates/modoptions",
     "crates/presets",
+    "crates/game-history",
     "crates/startbox",
     "crates/skirmish",
     "crates/pve",
@@ -67,6 +68,7 @@ lobby-runtime = { path = "crates/lobby-runtime" }
 lobby-ui = { path = "crates/lobby-ui" }
 settings = { path = "crates/settings" }
 presets = { path = "crates/presets" }
+game-history = { path = "crates/game-history" }
 startbox = { path = "crates/startbox" }
 skirmish = { path = "crates/skirmish" }
 pve = { path = "crates/pve" }

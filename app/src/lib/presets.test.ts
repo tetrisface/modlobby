@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'vitest'
 import type { Preset } from '../ipc/bindings/Preset'
-import { DEFAULT_SORT, search, sort, tweakCount, when } from './presets'
+import type { Plan } from '../ipc/bindings/Plan'
+import {
+	DEFAULT_SORT,
+	loadOutcome,
+	search,
+	sort,
+	tweakCount,
+	when,
+} from './presets'
 
 const preset = (over: Partial<Preset> = {}): Preset => ({
 	name: 'a preset',
@@ -114,5 +122,49 @@ describe('describing one', () => {
 	test('a clock that disagrees does not produce a negative age', () => {
 		const now = 1_000_000
 		expect(when(Math.floor(now / 1000) + 500, now)).toBe('just now')
+	})
+})
+
+describe('what a load says it did', () => {
+	const plan = (
+		lines: number,
+		alreadySet = 0,
+		bots = 0,
+		botOptionsUnsent = false,
+	): Plan => ({
+		lines: Array.from({ length: lines }, (_, at) => `!bSet a${at} 1`),
+		startBoxes: [],
+		startBoxesUnsent: false,
+		alreadySet,
+		bots,
+		botOptionsUnsent,
+	})
+
+	test('the AIs a load adds are counted', () => {
+		expect(loadOutcome(plan(0, 0, 2), false)).toBe('loaded, 2 AIs added')
+		expect(loadOutcome(plan(0, 0, 1), true)).toBe(
+			'the settings already match, 1 AI added',
+		)
+		expect(loadOutcome(plan(10, 0, 2), true)).toBe(
+			'sending 10 commands, 2 AIs added. About 11s — the host only accepts so many at once.',
+		)
+	})
+
+	test("an added AI's own options are said to stay behind", () => {
+		expect(loadOutcome(plan(0, 0, 1, true), true)).toBe(
+			"the settings already match, 1 AI added. The AIs' own options stay behind: a room on the server keeps none.",
+		)
+	})
+
+	test('a room of your own is simply that way now', () => {
+		expect(loadOutcome(plan(0), false)).toBe('loaded')
+		expect(loadOutcome(plan(0, 3), false)).toBe('loaded, 3 already set')
+	})
+
+	test('a hosted room is still being asked', () => {
+		expect(loadOutcome(plan(0, 4), true)).toBe('the room already matches')
+		expect(loadOutcome(plan(10, 2), true)).toBe(
+			'sending 10 commands, 2 already set. About 11s — the host only accepts so many at once.',
+		)
 	})
 })

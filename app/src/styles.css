@@ -5726,6 +5726,7 @@ input[type='checkbox'].v-edit {
 .preset-sections {
 	display: flex;
 	flex-wrap: wrap;
+	align-items: center;
 	gap: 0.375rem;
 	padding: 0.375rem 0.875rem;
 	border-bottom: 1px solid var(--line);
@@ -5825,6 +5826,153 @@ input[type='checkbox'].v-edit {
 .tabular {
 	font-variant-numeric: tabular-nums;
 	font-size: 0.75rem;
+}
+
+/* ---- the settings of games already played ---- */
+
+/* The list and the comparison share the pane, the list on top: picking a
+   row is what fills the half below. */
+.past-games .preset-table,
+.past-split {
+	flex: 1 1 50%;
+}
+
+.past-rows {
+	grid-template-columns:
+		minmax(0, 1.2fr) minmax(0, 1fr) 4.5rem 2.5rem 2rem fit-content(30%)
+		auto;
+}
+
+/* A column that is not sorted by: no pointer, no lighting up. */
+.preset-head.past-head,
+.preset-head.past-head:hover {
+	cursor: default;
+	color: var(--faint);
+}
+
+.preset-row .past-players {
+	font-size: 0.75rem;
+}
+
+/* Two lines where a setting has something unusual to say, so rows grow. */
+.past-row {
+	height: auto;
+	min-height: 2.125rem;
+	padding-block: 0.25rem;
+}
+
+.past-row.pinned {
+	box-shadow: inset 2px 0 0 var(--muted);
+}
+
+.past-row.pinned.on {
+	box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.preset-row .past-map {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+
+.past-unusual {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 0.6875rem;
+}
+
+.preset-row .past-marks {
+	display: flex;
+	gap: 0.25rem;
+	align-items: center;
+	font-size: 0.6875rem;
+}
+
+.past-split {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	overflow-y: auto;
+	border-top: 1px solid var(--line);
+}
+
+.past-compare {
+	display: flex;
+	gap: 0.375rem;
+	padding: 0.375rem 0.875rem;
+	flex-shrink: 0;
+}
+
+/* One grid for the whole comparison, the rows subgrids of it, so the two
+   value columns line up under their sides' names. */
+.settings-diff {
+	display: grid;
+	grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
+	column-gap: 0.5rem;
+	align-content: start;
+	font-size: 0.8125rem;
+}
+
+.settings-diff > .setup-empty {
+	grid-column: 1 / -1;
+	padding: 0.75rem 0.875rem;
+}
+
+/* The comparison's own empty line, inset as the list's is. */
+.past-split > .setup-empty {
+	padding: 0.75rem 0.875rem;
+}
+
+.settings-diff-row {
+	display: grid;
+	grid-column: 1 / -1;
+	grid-template-columns: subgrid;
+	align-items: center;
+	min-height: 1.875rem;
+	padding: 0 0.875rem;
+	border-bottom: 1px solid var(--line-soft);
+}
+
+.settings-diff-row > span {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.settings-diff-row.head {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+	background: var(--panel);
+	border-bottom: 1px solid var(--line);
+	font-size: 0.6875rem;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--faint);
+}
+
+.settings-diff-name {
+	display: flex;
+	align-items: center;
+	gap: 0.25rem;
+}
+
+.settings-diff-section {
+	grid-column: 1 / -1;
+	padding: 0.5rem 0.875rem 0.25rem;
+	font-size: 0.6875rem;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--muted);
+}
+
+.settings-diff-lua {
+	grid-column: 1 / -1;
+	min-height: 16rem;
+	display: flex;
+	flex-direction: column;
+	border-bottom: 1px solid var(--line);
 }
 
 /* ---- what a PvE room scores ---- */

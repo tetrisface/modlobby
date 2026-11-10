@@ -7,6 +7,7 @@ mod boxes;
 mod commands;
 mod engine;
 mod flash;
+mod game_history;
 mod ingame;
 mod lan;
 mod logging;
@@ -701,6 +702,12 @@ pub fn run() {
 			presets::apply_preset,
 			presets::import_presets,
 			presets::export_presets,
+			game_history::game_history,
+			game_history::game_history_scan,
+			game_history::game_history_blob,
+			game_history::game_history_values,
+			game_history::game_history_apply,
+			game_history::game_history_save_preset,
 			commands::request_game_status,
 			commands::remember_channels,
 			commands::skirmish_options,
@@ -719,6 +726,7 @@ pub fn run() {
 			presets::skirmish_pve_score,
 			presets::skirmish_save_preset,
 			presets::skirmish_apply_preset,
+			game_history::skirmish_game_history_apply,
 			commands::list_replays,
 			commands::play_replay,
 			commands::refresh_friends,

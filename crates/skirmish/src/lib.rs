@@ -42,7 +42,7 @@ const DEFAULT_TITLE: &str = "Skirmish";
 
 /// Colours the engine can tell apart at a glance, as `0xBBGGRR`. The same six
 /// the seat bar offers online, so a room looks the same either way.
-pub const COLOURS: [u32; 6] = [0x4b73f2, 0x3fd07f, 0x2fb8f0, 0x9e5ce8, 0x50a0ff, 0x8fd04b];
+pub const COLOURS: [u32; 6] = presets::bots::COLOURS;
 
 /// Where a participant sits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

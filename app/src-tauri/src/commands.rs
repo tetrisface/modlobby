@@ -835,7 +835,7 @@ pub async fn list_replays(app: State<'_, App>) -> Result<Vec<ReplayView>> {
 
 /// `dirs` with the mods write directory among the read directories, for
 /// listing replays only: never for a launch.
-fn with_mods_demos(mut dirs: content::DataDirs) -> content::DataDirs {
+pub(crate) fn with_mods_demos(mut dirs: content::DataDirs) -> content::DataDirs {
 	dirs.read
 		.push(lobby_runtime::mods::layout(&dirs.write).write);
 	dirs
@@ -846,9 +846,16 @@ fn with_mods_demos(mut dirs: content::DataDirs) -> content::DataDirs {
 #[tauri::command]
 pub async fn play_replay(app: State<'_, App>, path: String) -> Result<()> {
 	let dirs = data_dirs(&app)?;
-	let replay = std::path::PathBuf::from(&path);
-	// Only from a directory we listed: a path from the front end is not a
-	// reason to hand the engine anything on the disk.
+	listed_replay(&dirs, &path)?;
+	app.client.play_replay(dirs, path).await?;
+	Ok(())
+}
+
+/// `path`, if it is a replay in a directory the Replays page lists: a path
+/// from the front end is not a reason to read or hand the engine anything
+/// else on the disk.
+pub(crate) fn listed_replay(dirs: &content::DataDirs, path: &str) -> Result<PathBuf> {
+	let replay = PathBuf::from(path);
 	let listed = with_mods_demos(dirs.clone())
 		.all()
 		.any(|dir| replay.parent() == Some(dir.join("demos").as_path()));
@@ -858,8 +865,7 @@ pub async fn play_replay(app: State<'_, App>, path: String) -> Result<()> {
 			"not a replay in the demos directory",
 		));
 	}
-	app.client.play_replay(dirs, path).await?;
-	Ok(())
+	Ok(replay)
 }
 
 /// Fetches whatever the current room needs and this machine does not have.
@@ -1062,7 +1068,9 @@ fn ai_rank(name: &str) -> u8 {
 /// Runs a read of the installed game off the main thread. Opening a rapid
 /// package costs tens of milliseconds, and a sync command pays them on the
 /// thread that paints the window.
-async fn disk_work<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> Result<T> {
+pub(crate) async fn disk_work<T: Send + 'static>(
+	work: impl FnOnce() -> T + Send + 'static,
+) -> Result<T> {
 	tauri::async_runtime::spawn_blocking(work)
 		.await
 		.map_err(|err| ApiError::new("disk", err.to_string()))

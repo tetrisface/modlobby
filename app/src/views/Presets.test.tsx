@@ -139,10 +139,10 @@ afterEach(() => {
 describe('Presets', () => {
 	test('without a room, Save and Load wait and the file actions do not', async () => {
 		setLobby(reconcile(emptyLobby()))
-		const { getByText } = render(pane)
+		const { getByRole, getByText } = render(pane)
 		await settle()
 		const save = getByText('Save') as HTMLButtonElement
-		const load = getByText('Load') as HTMLButtonElement
+		const load = getByRole('button', { name: 'Load' }) as HTMLButtonElement
 		expect(save.disabled).toBe(true)
 		expect(save.title).toBe('Join a room first')
 		fireEvent.click(getByText('raptors'))
@@ -171,9 +171,9 @@ describe('Presets', () => {
 	})
 
 	test('Load and Export wait for a row to be chosen', async () => {
-		const { getByText, container } = render(pane)
+		const { getByRole, getByText, container } = render(pane)
 		await settle()
-		const load = getByText('Load') as HTMLButtonElement
+		const load = getByRole('button', { name: 'Load' }) as HTMLButtonElement
 		const exportButton = getByText('Export to Chobby') as HTMLButtonElement
 		expect(load.disabled).toBe(true)
 		expect(exportButton.disabled).toBe(true)
@@ -209,13 +209,13 @@ describe('Presets', () => {
 	})
 
 	test('Reset lobby is off by default, and Load says so', async () => {
-		const { getByText } = render(pane)
+		const { getByRole, getByText } = render(pane)
 		await settle()
 		const reset = getByText('Reset lobby')
 		expect(reset.classList.contains('on')).toBe(false)
 
 		fireEvent.click(getByText('raptors'))
-		fireEvent.click(getByText('Load'))
+		fireEvent.click(getByRole('button', { name: 'Load' }))
 		await settle()
 		expect(calls('apply_preset')).toEqual([
 			{
@@ -233,6 +233,14 @@ describe('Presets', () => {
 
 		fireEvent.click(reset)
 		expect(reset.classList.contains('on')).toBe(true)
+	})
+
+	test('the AIs are offered and off until asked for', async () => {
+		const { getByText } = render(pane)
+		await settle()
+		const ais = getByText('AIs') as HTMLButtonElement
+		expect(ais.disabled).toBe(false)
+		expect(ais.classList.contains('on')).toBe(false)
 	})
 
 	test('the bin on a row deletes that preset', async () => {

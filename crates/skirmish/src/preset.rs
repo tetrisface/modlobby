@@ -88,7 +88,9 @@ pub fn apply(room: &mut Room, preset: &Preset, sections: Sections) -> Applied {
 	}
 
 	if sections.modoptions {
-		for (key, value) in &preset.modoptions {
+		// The arrangement rides in a modoption but belongs to the start boxes'
+		// section, below, as it does online.
+		for (key, value) in preset.modoptions.iter().filter(|(key, _)| *key != OVERRIDE) {
 			if room.set_option(key, value) {
 				done.changed += 1;
 			} else {
@@ -108,9 +110,8 @@ pub fn apply(room: &mut Room, preset: &Preset, sections: Sections) -> Applied {
 		done.bots = put_bots(room, preset);
 	}
 
-	// The boxes ride in a modoption, so they are already back if the settings
-	// were. A preset from an older file keeps them in `startBoxes` instead,
-	// and those are put back only when nothing has already said otherwise.
+	// The preset's own arrangement where it has one; a preset from an older
+	// file keeps rectangles in `startBoxes` instead.
 	if sections.start_boxes {
 		done.boxes = put_boxes(room, preset);
 	}
@@ -132,6 +133,17 @@ fn put_bots(room: &mut Room, preset: &Preset) -> usize {
 			.unwrap_or(COLOURS[usize::from(bot.ally_number) % COLOURS.len()]);
 		let team = room.free_team();
 		room.add_ai(&bot.name, &bot.ai_lib, team, bot.ally_number, colour);
+		// The colour the room settled on, which a collision may have changed.
+		let settled = room
+			.ais()
+			.iter()
+			.find(|ai| ai.name == bot.name)
+			.map(|ai| ai.colour);
+		if bot.handicap > 0
+			&& let Some(settled) = settled
+		{
+			room.update_ai(&bot.name, team, bot.ally_number, bot.handicap, settled);
+		}
 		for (key, value) in &bot.ai_options {
 			let text = match value {
 				serde_json::Value::String(held) => held.clone(),
@@ -150,7 +162,8 @@ fn put_bots(room: &mut Room, preset: &Preset) -> usize {
 /// the game enforces, and a rectangle drawn from a sparse `startBoxes` table
 /// would quietly disagree with it.
 fn put_boxes(room: &mut Room, preset: &Preset) -> bool {
-	if preset.modoptions.contains_key(OVERRIDE) {
+	if let Some(own) = preset.modoptions.get(OVERRIDE) {
+		room.set_option(OVERRIDE, own);
 		return true;
 	}
 	if preset.start_boxes.is_empty() {
@@ -251,6 +264,18 @@ mod tests {
 	}
 
 	#[test]
+	fn an_ais_bonus_survives_a_preset() {
+		let mut source = room();
+		source.add_ai("BARb", "BARb", 1, 1, 0);
+		source.update_ai("BARb", 1, 1, 60, 0);
+		let preset = to_preset(&source, "mine", 7);
+
+		let mut room = room();
+		apply(&mut room, &preset, all());
+		assert_eq!(room.ais()[0].seat.handicap, 60);
+	}
+
+	#[test]
 	fn applying_the_same_preset_twice_is_the_same_game_twice() {
 		let mut source = room();
 		source.add_ai("Left", "BARb", 1, 1, 0);
@@ -317,6 +342,41 @@ mod tests {
 		assert_eq!(room.map, "Comet Catcher");
 		assert!(room.ais().is_empty());
 		assert_eq!(room.modoption("ranked_game"), "0");
+	}
+
+	/// As online: the arrangement is a modoption, but the start boxes' section
+	/// is what says whether it goes back.
+	#[test]
+	fn the_arrangement_stays_when_the_start_boxes_are_left_out() {
+		let mut room = room();
+		room.set_option(OVERRIDE, "drawn-here");
+		let mut preset = Preset::new("mine", 7);
+		preset
+			.modoptions
+			.insert(OVERRIDE.into(), "from-the-preset".into());
+		preset.modoptions.insert("ranked_game".into(), "0".into());
+
+		apply(
+			&mut room,
+			&preset,
+			Sections {
+				start_boxes: false,
+				reset: false,
+				..Sections::default()
+			},
+		);
+		assert_eq!(room.modoption(OVERRIDE), "drawn-here");
+		assert_eq!(room.modoption("ranked_game"), "0");
+
+		apply(
+			&mut room,
+			&preset,
+			Sections {
+				reset: false,
+				..Sections::default()
+			},
+		);
+		assert_eq!(room.modoption(OVERRIDE), "from-the-preset");
 	}
 
 	#[test]

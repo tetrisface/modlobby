@@ -123,6 +123,14 @@ pub struct Library {
 	dirs: DataDirs,
 }
 
+/// See [`Library::replay_listing`].
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ReplayListing {
+	/// Each `demos` directory that could be listed.
+	pub listed: Vec<PathBuf>,
+	pub entries: Vec<replays::Entry>,
+}
+
 /// One `tag,md5,depends,name` line of a rapid index.
 struct RapidEntry {
 	tag: String,
@@ -236,6 +244,24 @@ impl Library {
 		let mut found: Vec<replays::Replay> = self.dirs.all().flat_map(replays::list).collect();
 		found.sort_by(|a, b| b.played_at.cmp(&a.played_at));
 		found
+	}
+
+	/// Every replay anywhere, newest first, with no file opened; and which
+	/// demos directories could be listed, so that one that could not is not
+	/// taken for one whose games were all deleted.
+	pub fn replay_listing(&self) -> ReplayListing {
+		let mut listing = ReplayListing::default();
+		for dir in self.dirs.all() {
+			let Ok(entries) = replays::entries(dir) else {
+				continue;
+			};
+			listing.listed.push(dir.join("demos"));
+			listing.entries.extend(entries);
+		}
+		listing
+			.entries
+			.sort_by(|a, b| b.played_at.cmp(&a.played_at));
+		listing
 	}
 
 	/// The map archive named after its display name.
@@ -1004,6 +1030,28 @@ mod listing_tests {
 			Library::new(dir.path()).installed_map_files(),
 			vec!["acidicquarry_5.17", "old_map"]
 		);
+	}
+
+	#[test]
+	fn a_replay_listing_names_only_the_demos_directories_it_could_read() {
+		let dir = tempfile::tempdir().unwrap();
+		let write = dir.path().join("write");
+		let demos = write.join("demos");
+		std::fs::create_dir_all(&demos).unwrap();
+		std::fs::write(
+			demos.join("2026-08-29_09-14-10-623_Ditched_V1_2026.07.04.sdfz"),
+			b"x",
+		)
+		.unwrap();
+		let library = Library::new(DataDirs {
+			write,
+			read: vec![dir.path().join("unplugged")],
+		});
+
+		let listing = library.replay_listing();
+
+		assert_eq!(listing.listed, vec![demos]);
+		assert_eq!(listing.entries.len(), 1);
 	}
 
 	#[test]

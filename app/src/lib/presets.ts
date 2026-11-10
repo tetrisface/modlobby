@@ -1,3 +1,4 @@
+import type { Plan } from '../ipc/bindings/Plan'
 import type { Preset } from '../ipc/bindings/Preset'
 
 /**
@@ -72,6 +73,39 @@ export function tweakCount(preset: Preset): number {
 			(key.startsWith('tweakdefs') || key.startsWith('tweakunits')) &&
 			value.length > 1,
 	).length
+}
+
+/**
+ * What loading a setup did. A room with a host is asked rather than told, so
+ * the lines are still going out as this is read; a room of your own is simply
+ * that way now, and has no lines at all.
+ */
+export function loadOutcome(plan: Plan, spads: boolean): string {
+	const already = plan.alreadySet ? `, ${plan.alreadySet} already set` : ''
+	const ais =
+		plan.bots === 0
+			? ''
+			: `, ${plan.bots} ${plan.bots === 1 ? 'AI' : 'AIs'} added`
+	const note = plan.botOptionsUnsent
+		? "The AIs' own options stay behind: a room on the server keeps none."
+		: null
+	if (!spads) return `loaded${already}${ais}`
+	if (plan.lines.length === 0) {
+		if (!ais) return 'the room already matches'
+		const matched = `the settings already match${ais}`
+		return note ? `${matched}. ${note}` : matched
+	}
+	const sending =
+		`sending ${plan.lines.length} commands${already}${ais}. ` +
+		`About ${Math.ceil(plan.lines.length * 1.1)}s — the host only accepts so many at once.`
+	return note ? `${sending} ${note}` : sending
+}
+
+/** Why a load's start boxes were not sent, for a plan with `startBoxesUnsent`. */
+export function startBoxesKept(spads: boolean): string {
+	return spads
+		? 'the room already has start boxes; left as they are'
+		: "the preset's start boxes do not cover every side; left as they are"
 }
 
 /** A date as a person reads it in a table: recent things in relative terms. */

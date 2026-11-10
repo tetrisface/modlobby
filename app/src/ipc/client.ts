@@ -25,6 +25,7 @@ import type { Book } from './bindings/Book'
 import type { ModOption } from './bindings/ModOption'
 import type { ModSetView } from './bindings/ModSetView'
 import type { FoldKinds } from './bindings/FoldKinds'
+import type { HistoryView } from './bindings/HistoryView'
 import type { Plan } from './bindings/Plan'
 import type { PlayerFilesView } from './bindings/PlayerFilesView'
 import type { ListedScore } from './bindings/ListedScore'
@@ -42,6 +43,7 @@ import type { Slot } from './bindings/Slot'
 import type { TweakView } from './bindings/TweakView'
 import type { UiMessage } from './bindings/UiMessage'
 import type { UpdateProgress } from './bindings/UpdateProgress'
+import type { ValuesView } from './bindings/ValuesView'
 import type { VersionView } from './bindings/VersionView'
 
 /** The shape every failed command rejects with (`ApiError` in commands.rs). */
@@ -262,6 +264,25 @@ export const api = {
 		invoke<{ book: Book; skipped: number }>('import_presets', { path }),
 	exportPresets: (path: string | null, names: string[]) =>
 		invoke<number>('export_presets', { path, names }),
+
+	// ---- the settings of games already played ----
+	/** The history as last read, without looking at the replays. */
+	gameHistory: () => invoke<HistoryView>('game_history'),
+	/**
+	 * Reads the replays new or changed since the last look, and answers with
+	 * the history after; progress arrives on `game-history-scan`.
+	 */
+	gameHistoryScan: () => invoke<HistoryView>('game_history_scan'),
+	/** One tweak's blob, by its id. */
+	gameHistoryBlob: (id: string) => invoke<string>('game_history_blob', { id }),
+	/** A room's modoptions held to the rule a game's are, to compare with one. */
+	gameHistoryValues: (values: Record<string, string>) =>
+		invoke<ValuesView>('game_history_values', { values }),
+	/** Puts a setting into the room, leaving out `skip`; see `applyPreset`. */
+	applyHistory: (key: string, sections: Sections, skip: string[]) =>
+		invoke<Plan>('game_history_apply', { key, sections, skip }),
+	historyToPreset: (key: string, name: string) =>
+		invoke<Book>('game_history_save_preset', { key, name }),
 	rememberPlayed: (played: boolean) =>
 		invoke<Settings>('remember_played', { played }),
 	rememberSide: (side: number) => invoke<Settings>('remember_side', { side }),
@@ -290,6 +311,8 @@ export const api = {
 		invoke<Book>('skirmish_save_preset', { name }),
 	skirmishApplyPreset: (name: string, sections: Sections) =>
 		invoke<Plan>('skirmish_apply_preset', { name, sections }),
+	skirmishApplyHistory: (key: string, sections: Sections, skip: string[]) =>
+		invoke<Plan>('skirmish_game_history_apply', { key, sections, skip }),
 	skirmishTweakSend: (
 		lua: string,
 		slot: Slot,

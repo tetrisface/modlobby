@@ -310,6 +310,17 @@ export function IconSprite() {
 						stroke-linejoin='round'
 					/>
 				</symbol>
+				{/* Scales: weigh the others against this one. */}
+				<symbol id='act-compare' viewBox='0 0 20 20'>
+					<path
+						d='M10 3.5 V16 M7 16 h6 M4.5 6 h11 M4.5 6 L2.3 11 M4.5 6 L6.7 11 M2.3 11 Q4.5 13.6 6.7 11 M15.5 6 L13.3 11 M15.5 6 L17.7 11 M13.3 11 Q15.5 13.6 17.7 11'
+						fill='none'
+						stroke='currentColor'
+						stroke-width='1.6'
+						stroke-linecap='round'
+						stroke-linejoin='round'
+					/>
+				</symbol>
 				{/* Two arrows chasing each other round a circle: try the connection again. */}
 				{/* Back to how it was: the battle list's sort. */}
 				<symbol id='act-undo' viewBox='0 0 20 20'>

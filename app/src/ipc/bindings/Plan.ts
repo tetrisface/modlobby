@@ -22,4 +22,13 @@ export type Plan = {
 	 * Settings the room already has, which is why they are not in `lines`.
 	 */
 	alreadySet: number
+	/**
+	 * AIs the load adds.
+	 */
+	bots: number
+	/**
+	 * Set when an AI added has options of its own, which a room on the
+	 * server keeps nowhere.
+	 */
+	botOptionsUnsent: boolean
 }

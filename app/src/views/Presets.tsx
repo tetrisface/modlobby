@@ -8,16 +8,18 @@ import {
 } from 'solid-js'
 import { ActionCell, CellButton } from '../components/ActionCell'
 import { Ask } from '../components/Ask'
-import type { Plan } from '../ipc/bindings/Plan'
+import { SectionChips } from '../components/SectionChips'
 import type { Preset } from '../ipc/bindings/Preset'
 import type { Sections } from '../ipc/bindings/Sections'
 import { api, describeError } from '../ipc/client'
 import {
 	DEFAULT_SORT,
 	type Column,
+	loadOutcome,
 	naturalDescending,
 	search,
 	sort,
+	startBoxesKept,
 	when,
 } from '../lib/presets'
 import { pushNotice } from '../store/chat'
@@ -34,13 +36,6 @@ const COLUMNS: Array<[Column, string, string]> = [
 	['used', 'Used', 'When it was last applied to a room'],
 	['updated', 'Updated', 'When it last changed'],
 ]
-
-const SECTIONS = [
-	['map', 'Map'],
-	['modoptions', 'Settings'],
-	['battle', 'Room'],
-	['startBoxes', 'Start boxes'],
-] as const
 
 /**
  * Everything but the bots, layered over what the room already has. Resetting
@@ -112,20 +107,6 @@ export function Presets() {
 	 */
 	const inRoom = () => room.presets() !== null
 
-	/**
-	 * What loading one did. A room with a host is asked rather than told, so the
-	 * lines are still going out as this is read; a room of your own is simply
-	 * that way now, and has no lines at all.
-	 */
-	function outcome(plan: Plan, already: string): string {
-		if (!room.caps.spads) return `loaded${already}`
-		if (plan.lines.length === 0) return 'the room already matches'
-		return (
-			`sending ${plan.lines.length} commands${already}. ` +
-			`About ${Math.ceil(plan.lines.length * 1.1)}s — the host only accepts so many at once.`
-		)
-	}
-
 	function head(next: Column) {
 		if (next === column()) return setDescending(!descending())
 		setColumn(next)
@@ -160,15 +141,12 @@ export function Presets() {
 			if (presets === null) return
 			const plan = await presets.applyPreset(preset.name, sections())
 			void refetch()
-			const already = plan.alreadySet ? `, ${plan.alreadySet} already set` : ''
-			pushNotice('info', `${preset.name}: ${outcome(plan, already)}`)
+			pushNotice(
+				'info',
+				`${preset.name}: ${loadOutcome(plan, room.caps.spads)}`,
+			)
 			if (plan.startBoxesUnsent)
-				pushNotice(
-					'warning',
-					room.caps.spads
-						? 'the room already has start boxes; left as they are'
-						: "the preset's start boxes do not cover every side; left as they are",
-				)
+				pushNotice('warning', startBoxesKept(room.caps.spads))
 		})
 
 	const remove = (preset: Preset) =>
@@ -255,36 +233,7 @@ export function Presets() {
 			</header>
 
 			{/* Which parts a Load sends. */}
-			<div class='preset-sections'>
-				<For each={SECTIONS}>
-					{([key, label]) => (
-						<button
-							class='chip-choice'
-							classList={{ on: sections()[key] }}
-							onClick={() =>
-								setSections({ ...sections(), [key]: !sections()[key] })
-							}
-						>
-							{label}
-						</button>
-					)}
-				</For>
-				{/* The one that decides whether two presets stack. */}
-				<button
-					class='chip-choice'
-					classList={{ on: sections().reset }}
-					title={
-						sections().reset
-							? 'Sends !preset first, so the room is reset to this preset alone'
-							: 'Leaves what the room already has, so presets stack'
-					}
-					onClick={() =>
-						setSections({ ...sections(), reset: !sections().reset })
-					}
-				>
-					Reset lobby
-				</button>
-			</div>
+			<SectionChips sections={sections()} onChange={setSections} />
 
 			{/* The header scrolls with the rows, stuck to the top: inside the same
           box as the rows, its columns stay over theirs whether or not a

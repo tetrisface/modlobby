@@ -62,6 +62,8 @@ export type RoomIo = Pick<
 export type PresetIo = {
 	savePreset(name: string): Promise<Book>
 	applyPreset(name: string, sections: Sections): Promise<Plan>
+	/** A setting from the game history, as a preset loads, leaving out `skip`. */
+	applyHistory(key: string, sections: Sections, skip: string[]): Promise<Plan>
 }
 
 /**

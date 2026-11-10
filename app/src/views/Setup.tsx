@@ -1,7 +1,9 @@
 import {
 	For,
-	createEffect,
+	Match,
 	Show,
+	Switch,
+	createEffect,
 	createMemo,
 	createResource,
 	createSignal,
@@ -66,6 +68,7 @@ import {
 import { tweakspaceFor } from '../store/tweakspaceInstance'
 import { PasteBanner } from './PasteBanner'
 import { Mods, runsMods } from './Mods'
+import { History } from './History'
 import { Presets } from './Presets'
 import { useRoom, type RoomModel } from './room/model'
 import { canSet, setRefusal } from './room/move'
@@ -144,11 +147,22 @@ const TAB_GAP = 2
  * Presets share the pane as a second face of it: they are read from and
  * written to this room, so beside the settings is where they belong. Mods
  * are its third: the room's own where its host runs them, and elsewhere the
- * way to rooms that do.
+ * way to rooms that do. History is the fourth: the settings of games already
+ * played, to set beside this room's.
  */
+type Face = 'setup' | 'presets' | 'mods' | 'history'
+
+/** The pane's faces, in the order its head shows them. */
+const FACES: ReadonlyArray<readonly [Face, string]> = [
+	['setup', 'Options'],
+	['presets', 'Presets'],
+	['mods', 'Mods'],
+	['history', 'History'],
+]
+
 export function Setup() {
 	const room = useRoom()
-	const [pane, setPane] = createSignal<'setup' | 'presets' | 'mods'>('setup')
+	const [pane, setPane] = createSignal<Face>('setup')
 	// A room whose host runs mods opens on them: they are what the room is
 	// about, and why a room on the mods server was taken. Once, as the host
 	// says so, since its tags land after the room does.
@@ -500,27 +514,17 @@ export function Setup() {
 			/>
 
 			<div class='setup-head'>
-				<button
-					class='pane-tab'
-					classList={{ on: pane() === 'setup' }}
-					onClick={() => setPane('setup')}
-				>
-					Options
-				</button>
-				<button
-					class='pane-tab'
-					classList={{ on: pane() === 'presets' }}
-					onClick={() => setPane('presets')}
-				>
-					Presets
-				</button>
-				<button
-					class='pane-tab'
-					classList={{ on: pane() === 'mods' }}
-					onClick={() => setPane('mods')}
-				>
-					Mods
-				</button>
+				<For each={FACES}>
+					{([face, name]) => (
+						<button
+							class='pane-tab'
+							classList={{ on: pane() === face }}
+							onClick={() => setPane(face)}
+						>
+							{name}
+						</button>
+					)}
+				</For>
 				<Show when={pane() === 'setup'}>
 					<span class='note'>{noteOfPane(room)}</span>
 					<Show when={space.unsent() > 0}>
@@ -542,166 +546,177 @@ export function Setup() {
 				<PasteBanner />
 			</Show>
 
-			<Show
-				when={pane() === 'setup'}
-				fallback={pane() === 'mods' ? <Mods /> : <Presets />}
-			>
-				<div class='setup-tabs' ref={strip}>
-					<button
-						class='setup-tab'
-						classList={{ on: !searching() && tab().key === ALL_TAB }}
-						title={ALL.desc}
-						onClick={() => {
-							setNeedle('')
-							open(ALL)
-						}}
-					>
-						{ALL.name}
-						<Show when={total() > 0}>
-							<span class='badge'>{total()}</span>
-						</Show>
-					</button>
-					<For each={TABS()}>
-						{(entry) => {
-							const count = createMemo(() => changedCount(entry, values()))
-							return (
-								<button
-									class='setup-tab'
-									classList={{
-										on: !searching() && tab().key === entry.key,
-										ours: entry.key === MODDING_TAB || entry.key === MAP_TAB,
-									}}
-									title={entry.desc}
-									onClick={() => {
-										setNeedle('')
-										open(entry)
-									}}
-								>
-									{entry.name}
-									<Show when={count() > 0}>
-										<span class='badge'>{count()}</span>
-									</Show>
-								</button>
-							)
-						}}
-					</For>
-					<Show when={!drafting()}>
-						<SearchBox
-							class='setup-search'
-							placeholder='Search settings'
-							value={needle()}
-							onInput={setNeedle}
-						/>
-					</Show>
-				</div>
-
-				<Show
-					when={!drafting()}
-					fallback={<Tweaks drafts onClose={closeDrafts} />}
-				>
-					<div class='setup-body' classList={{ bare: headings().length === 0 }}>
-						{/* The list at a glance, as Settings has its page: every
-							    heading in it, the one being read marked, and a press
-							    to go there. Nothing to name when nothing is headed. */}
-						<Show when={headings().length > 0}>
-							<nav class='groups' aria-label='Sections'>
-								<For each={headings()}>
-									{(name) => (
-										<button
-											type='button'
-											class='group'
-											classList={{ on: overview.marked() === name }}
-											aria-current={
-												overview.marked() === name ? 'location' : undefined
-											}
-											onClick={() => overview.jump(name, 'smooth')}
-										>
-											{name}
-										</button>
-									)}
-								</For>
-							</nav>
-						</Show>
-
-						<div class='setup-list' onMouseLeave={() => inspecting.leave()}>
-							<Query.Provider value={needle}>
-								<div
-									class='setup-detail'
-									ref={list}
-									onScroll={overview.spy}
-									onScrollEnd={overview.settle}
-									onWheel={overview.settle}
-									onMouseOver={(event) => {
-										overview.point(event)
-										rest(event)
-									}}
-									onMouseLeave={() => {
-										overview.leave()
-										setResting(null)
-										inspecting.stop()
-									}}
-									onClick={(event) => {
-										const key = keyAt(event.target)
-										if (key === null) return
-										const control = (event.target as Element).closest(
-											'input, select, button, a',
-										)
-										if (control) inspecting.pin(key)
-										else inspecting.toggle(key)
-									}}
-									onFocusIn={(event) => {
-										const key = keyAt(event.target)
-										if (key !== null) inspecting.pin(key)
-									}}
-								>
-									<Show
-										when={
-											!searching() &&
-											(tab().intro.length > 0 || tabLinks().length > 0)
-										}
+			<Switch>
+				<Match when={pane() === 'mods'}>
+					<Mods />
+				</Match>
+				<Match when={pane() === 'presets'}>
+					<Presets />
+				</Match>
+				<Match when={pane() === 'history'}>
+					<History catalogue={catalogue() ?? []} />
+				</Match>
+				<Match when={pane() === 'setup'}>
+					<div class='setup-tabs' ref={strip}>
+						<button
+							class='setup-tab'
+							classList={{ on: !searching() && tab().key === ALL_TAB }}
+							title={ALL.desc}
+							onClick={() => {
+								setNeedle('')
+								open(ALL)
+							}}
+						>
+							{ALL.name}
+							<Show when={total() > 0}>
+								<span class='badge'>{total()}</span>
+							</Show>
+						</button>
+						<For each={TABS()}>
+							{(entry) => {
+								const count = createMemo(() => changedCount(entry, values()))
+								return (
+									<button
+										class='setup-tab'
+										classList={{
+											on: !searching() && tab().key === entry.key,
+											ours: entry.key === MODDING_TAB || entry.key === MAP_TAB,
+										}}
+										title={entry.desc}
+										onClick={() => {
+											setNeedle('')
+											open(entry)
+										}}
 									>
-										<TabIntro lines={tab().intro} links={tabLinks()} />
-									</Show>
-									<Sections
-										sections={shown()}
-										empty={
-											searching()
-												? `Nothing matches "${needle().trim()}".`
-												: tab().key === ALL_TAB
-													? "Every setting is on BAR's default."
-													: "Every setting in this tab is on BAR's default."
-										}
-										editable={editable()}
-										onDrafts={openDrafts}
-										note={noteOf}
-									/>
-								</div>
-								{/* An open editor is the row's own detail, and wants the room. */}
-								<Show when={space.ws.expanded === null}>
-									<Inspector
-										row={inspected()}
-										fallback={
-											tab().desc ||
-											'Rest the pointer on a setting to read about it.'
-										}
-										refusal={setRefusal(room)}
-										change={latestChange(
-											history(),
-											inspected()?.option.key ?? '',
-										)}
-										vote={room.my()?.vote ?? null}
-										lock={locks().get(inspected()?.option.key ?? '') ?? null}
-										links={
-											links().byKey.get(inspected()?.option.key ?? '') ?? []
-										}
-									/>
-								</Show>
-							</Query.Provider>
-							{viewBar()}
-						</div>
+										{entry.name}
+										<Show when={count() > 0}>
+											<span class='badge'>{count()}</span>
+										</Show>
+									</button>
+								)
+							}}
+						</For>
+						<Show when={!drafting()}>
+							<SearchBox
+								class='setup-search'
+								placeholder='Search settings'
+								value={needle()}
+								onInput={setNeedle}
+							/>
+						</Show>
 					</div>
-				</Show>
-			</Show>
+
+					<Show
+						when={!drafting()}
+						fallback={<Tweaks drafts onClose={closeDrafts} />}
+					>
+						<div
+							class='setup-body'
+							classList={{ bare: headings().length === 0 }}
+						>
+							{/* The list at a glance, as Settings has its page: every
+								    heading in it, the one being read marked, and a press
+								    to go there. Nothing to name when nothing is headed. */}
+							<Show when={headings().length > 0}>
+								<nav class='groups' aria-label='Sections'>
+									<For each={headings()}>
+										{(name) => (
+											<button
+												type='button'
+												class='group'
+												classList={{ on: overview.marked() === name }}
+												aria-current={
+													overview.marked() === name ? 'location' : undefined
+												}
+												onClick={() => overview.jump(name, 'smooth')}
+											>
+												{name}
+											</button>
+										)}
+									</For>
+								</nav>
+							</Show>
+
+							<div class='setup-list' onMouseLeave={() => inspecting.leave()}>
+								<Query.Provider value={needle}>
+									<div
+										class='setup-detail'
+										ref={list}
+										onScroll={overview.spy}
+										onScrollEnd={overview.settle}
+										onWheel={overview.settle}
+										onMouseOver={(event) => {
+											overview.point(event)
+											rest(event)
+										}}
+										onMouseLeave={() => {
+											overview.leave()
+											setResting(null)
+											inspecting.stop()
+										}}
+										onClick={(event) => {
+											const key = keyAt(event.target)
+											if (key === null) return
+											const control = (event.target as Element).closest(
+												'input, select, button, a',
+											)
+											if (control) inspecting.pin(key)
+											else inspecting.toggle(key)
+										}}
+										onFocusIn={(event) => {
+											const key = keyAt(event.target)
+											if (key !== null) inspecting.pin(key)
+										}}
+									>
+										<Show
+											when={
+												!searching() &&
+												(tab().intro.length > 0 || tabLinks().length > 0)
+											}
+										>
+											<TabIntro lines={tab().intro} links={tabLinks()} />
+										</Show>
+										<Sections
+											sections={shown()}
+											empty={
+												searching()
+													? `Nothing matches "${needle().trim()}".`
+													: tab().key === ALL_TAB
+														? "Every setting is on BAR's default."
+														: "Every setting in this tab is on BAR's default."
+											}
+											editable={editable()}
+											onDrafts={openDrafts}
+											note={noteOf}
+										/>
+									</div>
+									{/* An open editor is the row's own detail, and wants the room. */}
+									<Show when={space.ws.expanded === null}>
+										<Inspector
+											row={inspected()}
+											fallback={
+												tab().desc ||
+												'Rest the pointer on a setting to read about it.'
+											}
+											refusal={setRefusal(room)}
+											change={latestChange(
+												history(),
+												inspected()?.option.key ?? '',
+											)}
+											vote={room.my()?.vote ?? null}
+											lock={locks().get(inspected()?.option.key ?? '') ?? null}
+											links={
+												links().byKey.get(inspected()?.option.key ?? '') ?? []
+											}
+										/>
+									</Show>
+								</Query.Provider>
+								{viewBar()}
+							</div>
+						</div>
+					</Show>
+				</Match>
+			</Switch>
 		</aside>
 	)
 }

@@ -47,6 +47,7 @@ startbox = { workspace = true }
 tauri = { workspace = true }
 modoptions = { workspace = true }
 presets = { workspace = true }
+game-history = { workspace = true }
 pve = { workspace = true }
 widgets = { workspace = true }
 tauri-plugin-global-shortcut = { workspace = true }

@@ -57,6 +57,8 @@ pub struct App {
 	pub update_memory: UpdateMemory,
 	/// Saved room setups, next to the settings they sit beside.
 	pub presets: presets::Store,
+	/// The settings of games already played, read from their replays.
+	pub game_history: Arc<crate::game_history::Held>,
 	/// The one client every HTTP request leaves through: pooled, and named.
 	pub http: reqwest::Client,
 	/// Reads a rapid server that is not BAR's before anything is fetched
@@ -128,6 +130,9 @@ impl App {
 			rejoin: RejoinMemory::new(settings.dir()),
 			update_memory: UpdateMemory::new(settings.dir()),
 			presets: presets::Store::new(settings.dir()),
+			game_history: Arc::new(crate::game_history::Held::new(game_history::Store::new(
+				settings.dir().join("history"),
+			))),
 			news_read: news::Memory::new(settings.dir()),
 			client,
 			sandbox,

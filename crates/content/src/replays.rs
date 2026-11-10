@@ -7,6 +7,7 @@
 //! the main thread. The rest of the file is never touched.
 
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use crate::demo;
 
@@ -52,13 +53,27 @@ fn parse_name(stem: &str) -> Option<(String, String, String)> {
 	))
 }
 
-/// Every replay in `<data>/demos`, newest first.
-pub fn list(data_dir: &Path) -> Vec<Replay> {
-	let Ok(entries) = std::fs::read_dir(data_dir.join("demos")) else {
-		return Vec::new();
-	};
+/// A replay as its name and the directory listing tell it, with no file
+/// opened: cheap enough to ask of every replay each time someone looks.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Entry {
+	pub path: PathBuf,
+	/// As [`Replay::played_at`].
+	pub played_at: String,
+	pub map: String,
+	pub engine: String,
+	pub bytes: u64,
+	/// `None` where the file system keeps no modification time.
+	pub modified: Option<SystemTime>,
+}
 
-	let mut replays: Vec<Replay> = entries
+/// Every replay in `<data>/demos`, newest first, from the listing alone.
+///
+/// An error means the directory could not be listed, which is not the same
+/// as it holding no replays: a drive that is not plugged in has not lost its
+/// games.
+pub fn entries(data_dir: &Path) -> std::io::Result<Vec<Entry>> {
+	let mut found: Vec<Entry> = std::fs::read_dir(data_dir.join("demos"))?
 		.filter_map(Result::ok)
 		.filter_map(|entry| {
 			let path = entry.path();
@@ -69,30 +84,44 @@ pub fn list(data_dir: &Path) -> Vec<Replay> {
 			}
 			let stem = path.file_stem()?.to_str()?;
 			let (played_at, map, engine) = parse_name(stem)?;
-			let bytes = entry.metadata().map(|meta| meta.len()).unwrap_or(0);
+			let meta = entry.metadata().ok();
+			let bytes = meta.as_ref().map_or(0, std::fs::Metadata::len);
 			// The engine holds a game in memory and writes it out when it
 			// shuts down, so a game still running, or one whose engine was
 			// killed, is an empty file. Neither can be played.
 			if bytes == 0 {
 				return None;
 			}
-			// Any game over takes some seconds on the clock; zero is the
-			// header of a game nobody saw end.
-			let length = demo::length(&path).ok().filter(|length| length.wall > 0);
-			Some(Replay {
+			Some(Entry {
+				modified: meta.and_then(|meta| meta.modified().ok()),
 				bytes,
 				path,
 				played_at,
 				map,
 				engine,
-				length,
 			})
 		})
 		.collect();
 
 	// The name begins with the timestamp, so lexical order is chronological.
-	replays.sort_by(|a, b| b.played_at.cmp(&a.played_at));
-	replays
+	found.sort_by(|a, b| b.played_at.cmp(&a.played_at));
+	Ok(found)
+}
+
+/// Every replay in `<data>/demos`, newest first.
+pub fn list(data_dir: &Path) -> Vec<Replay> {
+	entries(data_dir)
+		.unwrap_or_default()
+		.into_iter()
+		.map(|entry| Replay {
+			length: demo::length(&entry.path).ok().and_then(demo::Length::ended),
+			path: entry.path,
+			played_at: entry.played_at,
+			map: entry.map,
+			engine: entry.engine,
+			bytes: entry.bytes,
+		})
+		.collect()
 }
 
 #[cfg(test)]
@@ -164,6 +193,64 @@ mod tests {
 		);
 		assert_eq!(replays[0].map, "Forge v2.3", "newest first");
 		assert_eq!(replays[1].map, "Ditched_V1");
+	}
+
+	#[test]
+	fn an_entry_comes_from_the_name_and_the_directory_listing_alone() {
+		let dir = tempfile::tempdir().unwrap();
+		let demos = dir.path().join("demos");
+		std::fs::create_dir_all(&demos).unwrap();
+		// Not a demo inside: an entry is a name and a stat, and nothing is read.
+		std::fs::write(
+			demos.join("2026-08-29_09-14-10-623_Ditched_V1_2026.07.04.sdfz"),
+			b"not gzip",
+		)
+		.unwrap();
+		std::fs::write(
+			demos.join("2026-08-29_14-00-00-000_Forge v2.3_2026.07.04.sdfz"),
+			b"",
+		)
+		.unwrap();
+		std::fs::write(
+			demos.join("2026-08-29_13-17-21-351_Forge v2.3_2026.07.04.sdfz.cache"),
+			b"x",
+		)
+		.unwrap();
+
+		let found = entries(dir.path()).unwrap();
+
+		assert_eq!(found.len(), 1, "the empty demo and the cache are left out");
+		let entry = &found[0];
+		assert_eq!(entry.played_at, "2026-08-29T09:14:10Z");
+		assert_eq!(entry.map, "Ditched_V1");
+		assert_eq!(entry.engine, "2026.07.04");
+		assert_eq!(entry.bytes, 8);
+		assert!(entry.modified.is_some());
+	}
+
+	#[test]
+	fn entries_come_newest_first() {
+		let dir = tempfile::tempdir().unwrap();
+		let demos = dir.path().join("demos");
+		std::fs::create_dir_all(&demos).unwrap();
+		for name in [
+			"2026-08-29_09-14-10-623_Ditched_V1_2026.07.04.sdfz",
+			"2026-08-29_13-17-21-351_Forge v2.3_2026.07.04.sdfz",
+		] {
+			std::fs::write(demos.join(name), b"x").unwrap();
+		}
+		let maps: Vec<String> = entries(dir.path())
+			.unwrap()
+			.into_iter()
+			.map(|entry| entry.map)
+			.collect();
+		assert_eq!(maps, ["Forge v2.3", "Ditched_V1"]);
+	}
+
+	#[test]
+	fn a_demos_directory_that_cannot_be_read_is_an_error_rather_than_no_replays() {
+		let dir = tempfile::tempdir().unwrap();
+		assert!(entries(dir.path()).is_err());
 	}
 
 	#[test]

@@ -21,6 +21,7 @@ import {
 	readModOptions,
 	regroup,
 	rowsOf,
+	sameValue,
 	searchRows,
 	sortRows,
 	sortSections,
@@ -647,5 +648,46 @@ describe('order', () => {
 			'experimentallegionfaction',
 			'forceallunits',
 		])
+	})
+})
+
+describe('one rule for whether two values are the same', () => {
+	const number = { key: 'startmetal', type: 'number', def: '1000' } as const
+	const bool = { key: 'ranked', type: 'bool', def: true } as const
+	const text = { key: 'unitname', type: 'string', def: '' } as const
+	const map = {
+		key: 'mapmetadata_startbox_override',
+		type: 'string',
+		section: 'mapmetadata',
+		def: 'something',
+	} as const
+
+	test.each([
+		['a number by value, not by spelling', number, '1.0e3', '1000', true],
+		['a number against its default', number, null, '1000', true],
+		['two numbers', number, '1', '2', false],
+		['a switch by whether it is on', bool, 'true', '1', true],
+		['a switch against its default', bool, '0', null, false],
+		['an empty text and its cleared form', text, '', '0', true],
+		['a text against an empty default', text, '0', null, true],
+		['two texts', text, 'a', 'b', false],
+		['a map option, unset or cleared', map, null, '0', true],
+		['a map option set and not', map, 'QUJD', null, false],
+		[
+			'an option the game does not have, as written',
+			undefined,
+			'1',
+			'1.0',
+			false,
+		],
+		[
+			'an option the game does not have, both absent',
+			undefined,
+			null,
+			null,
+			true,
+		],
+	])('%s', (_, option, a, b, same) => {
+		expect(sameValue(option, a, b)).toBe(same)
 	})
 })
