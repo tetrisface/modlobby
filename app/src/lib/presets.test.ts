@@ -42,6 +42,24 @@ describe('ordering saved setups', () => {
 		expect(names(sort(all, 'used', false))).toEqual(['never', 'old', 'recent'])
 	})
 
+	test('among equals, the one changed last comes first', () => {
+		const all = [
+			preset({ name: 'saved long ago', updated: 100 }),
+			preset({ name: 'just saved', updated: 900 }),
+			preset({ name: 'used', updated: 10, lastUsed: 50 }),
+		]
+		expect(names(sort(all, DEFAULT_SORT, true))).toEqual([
+			'used',
+			'just saved',
+			'saved long ago',
+		])
+		expect(names(sort(all, 'map', false))).toEqual([
+			'just saved',
+			'saved long ago',
+			'used',
+		])
+	})
+
 	test('equal values keep a stable order rather than shuffling', () => {
 		const all = [
 			preset({ name: 'b', updated: 5 }),
