@@ -10,7 +10,10 @@ import type { Preset } from '../ipc/bindings/Preset'
 
 export type Column = 'name' | 'map' | 'options' | 'created' | 'updated' | 'used'
 
-/** Last used first: the one you want is nearly always the one you just had. */
+/**
+ * Last used first: the one you want is nearly always the one you just had.
+ * The never used follow, last changed first.
+ */
 export const DEFAULT_SORT: Column = 'used'
 
 /** Which way round a column reads when you first click it. */
@@ -59,10 +62,12 @@ export function sort(
 		if (typeof left === 'string' && typeof right === 'string')
 			order = left.localeCompare(right)
 		else order = Number(left) - Number(right)
-		// A stable tiebreak, so a column of equal dates does not shuffle about
-		// every time the table redraws.
-		if (order === 0) return a.name.localeCompare(b.name)
-		return descending ? -order : order
+		if (order !== 0) return descending ? -order : order
+		// Equals go to the one changed last, whichever way the column points: a
+		// preset just saved has never been used, and is the one you are after
+		// among those that have not. The name keeps the rest from shuffling
+		// about every time the table redraws.
+		return b.updated - a.updated || a.name.localeCompare(b.name)
 	})
 }
 
