@@ -32,6 +32,7 @@ describe('ListedChallenge', () => {
 		))
 		const cell = container.querySelector('[title]') as HTMLElement
 		expect(cell.textContent).toBe('12–15')
+		expect(cell.className).toBe('listed-challenge')
 		expect(cell.querySelector('.challenge-now')?.textContent).toBe('12')
 		expect(cell.title).toContain('With every seat taken: 15.1')
 		expect(cell.title).toContain('Last scored 3m ago')
@@ -53,6 +54,7 @@ describe('ListedChallenge', () => {
 		))
 		const cell = container.querySelector('[title]') as HTMLElement
 		expect(cell.textContent).toBe('25')
+		expect(cell.className).toBe('listed-challenge hard')
 		expect(cell.querySelector('.challenge-now')).toBeNull()
 		expect(cell.title).toContain(
 			'With the 8 players seated when it was scored: 24.9',

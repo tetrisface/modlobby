@@ -51,6 +51,36 @@ export function challengeParts(
 	return challengePair(challenge, score.fullChallenge, whole)
 }
 
+/** The figure `main` writes: the full team's, else the room's as seated. */
+function mainChallenge(score: ListedScore, players: number): number {
+	return (
+		score.fullChallenge ?? seated(score, players).challenge ?? score.challenge
+	)
+}
+
+/**
+ * Where a hard room starts: the service's own clear milestones, high enough
+ * that most listed rooms stay plain and the colour marks the exceptions.
+ */
+const HARD = 25
+const EXTREME = 30
+
+export type ChallengeBand = 'hard' | 'extreme'
+
+/**
+ * How hard the cell reads at a glance, judged on the figure as rounded on
+ * screen so a `25` is never left uncoloured. `null` below 25.
+ */
+export function challengeBand(
+	score: ListedScore,
+	players: number,
+): ChallengeBand | null {
+	const shown = Math.round(mainChallenge(score, players))
+	if (shown >= EXTREME) return 'extreme'
+	if (shown >= HARD) return 'hard'
+	return null
+}
+
 /** The cell's text: `12–15`, or one figure. */
 export function challengeLabel(score: ListedScore, players: number): string {
 	const { now, main } = challengeParts(score, players)
@@ -67,7 +97,9 @@ export function challengeTip(
 	now: number,
 ): string {
 	const held = seated(score, players)
-	const lines = ['Challenge out of 34, where 17 is an even game.']
+	const lines = [
+		`Challenge out of 34, where 17 is an even game; yellow from ${HARD}, red from ${EXTREME}.`,
+	]
 	if (held.challenge !== null) {
 		const who =
 			held.players === null

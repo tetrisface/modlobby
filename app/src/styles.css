@@ -8308,6 +8308,25 @@ button.link:hover {
 	color: var(--muted);
 }
 
+/* A hard room, yellow from 25 and red from 30: the gauge takes the colour
+   and the full-team figure only leans toward it, so a column of them reads
+   as a hint rather than an alarm. The seated figure stays muted. */
+.listed-challenge.hard {
+	--band: var(--warn);
+}
+
+.listed-challenge.extreme {
+	--band: var(--error);
+}
+
+.listed-challenge:is(.hard, .extreme) .icon.gauge {
+	color: color-mix(in srgb, var(--band) 81%, var(--muted));
+}
+
+.listed-challenge:is(.hard, .extreme) b {
+	color: color-mix(in srgb, var(--band) 55%, var(--text));
+}
+
 .challenge-now {
 	color: var(--muted);
 }

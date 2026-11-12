@@ -1,6 +1,6 @@
 import { Show } from 'solid-js'
 import type { ListedScore } from '../ipc/bindings/ListedScore'
-import { challengeParts, challengeTip } from '../lib/listed'
+import { challengeBand, challengeParts, challengeTip } from '../lib/listed'
 import { FigurePair } from './FigurePair'
 import { Gauge } from './icons'
 
@@ -9,7 +9,8 @@ import { Gauge } from './icons'
  * then `12–15`, the room as it is seated and the room with every seat taken,
  * the second in full colour and the first muted; one figure when there is
  * only one. The gauge says what the number is beside a map name; the scale,
- * who each figure is for and their age sit behind a hover. Nothing at all for
+ * who each figure is for and their age sit behind a hover. A hard room tints
+ * the gauge and the full-team figure; see `challengeBand`. Nothing at all for
  * a room without a score, which is most rooms -- a dash in every row would be
  * noise.
  */
@@ -21,17 +22,24 @@ export function ListedChallenge(props: {
 }) {
 	return (
 		<Show when={props.score}>
-			{(score) => (
-				<span
-					class='listed-challenge'
-					title={challengeTip(score(), props.players, props.now)}
-				>
-					<Gauge />
-					<b>
-						<FigurePair parts={challengeParts(score(), props.players)} />
-					</b>
-				</span>
-			)}
+			{(score) => {
+				const band = () => challengeBand(score(), props.players)
+				return (
+					<span
+						class='listed-challenge'
+						classList={{
+							hard: band() === 'hard',
+							extreme: band() === 'extreme',
+						}}
+						title={challengeTip(score(), props.players, props.now)}
+					>
+						<Gauge />
+						<b>
+							<FigurePair parts={challengeParts(score(), props.players)} />
+						</b>
+					</span>
+				)
+			}}
 		</Show>
 	)
 }
