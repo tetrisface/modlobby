@@ -172,13 +172,16 @@ pub fn alert(title: &str, message: &str) {
 
 #[cfg(test)]
 mod tests {
+	use std::os::windows::io::AsRawHandle;
 	use std::ptr::{null, null_mut};
 
-	use windows_sys::Win32::Foundation::GENERIC_ALL;
+	use windows_sys::Win32::Foundation::{GENERIC_ALL, WAIT_OBJECT_0};
 	use windows_sys::Win32::Graphics::Dwm::{
 		DWM_CLOAKED_APP, DWMWA_CLOAKED, DwmGetWindowAttribute,
 	};
 	use windows_sys::Win32::System::StationsAndDesktops::{CreateDesktopW, SetThreadDesktop};
+	use windows_sys::Win32::System::Threading::WaitForSingleObject;
+	use windows_sys::Win32::UI::Input::Ime::{ImmDisableIME, ImmGetDefaultIMEWnd};
 	use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetActiveWindow, SetActiveWindow};
 	use windows_sys::Win32::UI::WindowsAndMessaging::{
 		CreateWindowExW, GW_HWNDNEXT, GWL_EXSTYLE, GetWindow, GetWindowLongPtrW, IsZoomed,
@@ -191,24 +194,42 @@ mod tests {
 		text.encode_utf16().chain(Some(0)).collect()
 	}
 
+	/// How long a test on its own desktop may take, its thread's exit included.
+	/// They take milliseconds.
+	const PRIVATE_DESKTOP_LIMIT_MS: u32 = 30_000;
+
 	/// Runs `test` on a thread of its own, on a Windows desktop of its own:
 	/// windows made there can be shown, maximized and activated with nothing
 	/// happening on the screen anyone is using.
+	///
+	/// The thread has no input method. A first window otherwise brings the
+	/// system's text services along, whose teardown can hang the thread's exit
+	/// with a core spinning, and with it `cargo test` and the pre-push hook.
+	/// The wait is bounded too, so whatever else hangs fails the test instead.
 	fn on_a_private_desktop(name: &str, test: impl FnOnce() + Send + 'static) {
 		let name = wide(&format!("modlobby-test-{}-{name}", std::process::id()));
-		std::thread::spawn(move || {
-			// SAFETY: the name is NUL-terminated and outlives the call; the
-			// nulls ask for the defaults. A thread that owns no window yet may
-			// change desktop. The desktop goes with the process.
+		let thread = std::thread::spawn(move || {
+			// SAFETY: 0 names this thread, which has no window yet: the call
+			// only counts before the first. The name is NUL-terminated and
+			// outlives the call; the nulls ask for the defaults. A thread that
+			// owns no window yet may change desktop. The desktop goes with the
+			// process.
 			unsafe {
+				assert_ne!(ImmDisableIME(0), 0, "no input method on this thread");
 				let desktop = CreateDesktopW(name.as_ptr(), null(), null(), 0, GENERIC_ALL, null());
 				assert!(!desktop.is_null(), "a desktop of our own");
 				assert_ne!(SetThreadDesktop(desktop), 0, "and this thread on it");
 			}
 			test();
-		})
-		.join()
-		.expect("the test on its own desktop");
+		});
+		// SAFETY: the handle is the thread's own and lives as long as `thread`.
+		let ended =
+			unsafe { WaitForSingleObject(thread.as_raw_handle(), PRIVATE_DESKTOP_LIMIT_MS) };
+		assert_eq!(
+			ended, WAIT_OBJECT_0,
+			"the test on its own desktop, and its thread's exit, within {PRIVATE_DESKTOP_LIMIT_MS} ms"
+		);
+		thread.join().expect("the test on its own desktop");
 	}
 
 	fn a_window() -> HWND {
@@ -232,12 +253,17 @@ mod tests {
 			)
 		};
 		assert!(!window.is_null(), "a window to test with");
+		// SAFETY: a live window of this thread.
+		assert!(
+			unsafe { ImmGetDefaultIMEWnd(window) }.is_null(),
+			"no input method came along, see `on_a_private_desktop`"
+		);
 		window
 	}
 
-	/// The next window down that can be seen. A window takes the input method's
-	/// hidden helpers along with it, and those sit between it and anything it
-	/// is placed under.
+	/// The next window down that can be seen. Hidden windows, such as the
+	/// helpers an input method brings along outside these tests, can sit
+	/// between a window and anything it is placed under.
 	fn next_seen_below(window: HWND) -> HWND {
 		let mut below = window;
 		loop {
