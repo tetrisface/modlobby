@@ -150,17 +150,37 @@ fn write(path: &Path) -> (bool, String) {
 	}
 }
 
+/// `CF_UNICODETEXT`, from a module of the `windows` crate this one has no
+/// other use for.
+#[cfg(windows)]
+const CLIPBOARD_TEXT: u32 = 13;
+
+/// The job's limit is checked when the clipboard is opened on older Windows
+/// and only when it is read on newer, so a read is what is tried. It is
+/// refused before the format is even looked up, so what is on the clipboard,
+/// if anything, makes no difference.
 #[cfg(windows)]
 fn clipboard() -> (bool, String) {
-	use windows::Win32::System::DataExchange::{CloseClipboard, OpenClipboard};
+	use windows::Win32::System::DataExchange::{CloseClipboard, GetClipboardData, OpenClipboard};
 	unsafe {
-		match OpenClipboard(None) {
-			Ok(()) => {
-				let _ = CloseClipboard();
-				(true, "opened".into())
-			}
-			Err(err) => (false, err.to_string()),
+		if let Err(err) = OpenClipboard(None) {
+			return (false, err.to_string());
 		}
+		let read = GetClipboardData(CLIPBOARD_TEXT).map(|_| ());
+		let _ = CloseClipboard();
+		clipboard_read(read)
+	}
+}
+
+/// Only a refused read keeps the clipboard away: one that found nothing to
+/// read proves nothing.
+#[cfg(windows)]
+fn clipboard_read(read: windows::core::Result<()>) -> (bool, String) {
+	use windows::Win32::Foundation::E_ACCESSDENIED;
+	match read {
+		Ok(()) => (true, "read".into()),
+		Err(err) if err.code() == E_ACCESSDENIED => (false, "denied".into()),
+		Err(err) => (true, format!("not refused: {err}")),
 	}
 }
 
@@ -574,6 +594,21 @@ mod tests {
 	use std::sync::{Condvar, Mutex};
 
 	const HOLDS: &str = "read_canary\tfalse\tpermission denied\nwrite_inside\ttrue\twritten\nwrite_outside\tfalse\tpermission denied\nclipboard_read\tfalse\tdenied\nchild_process\tfalse\tblocked\ntcp_loopback\tfalse\ttimed out\nenv_keys\ttrue\tPATH,TEMP\n";
+
+	#[cfg(windows)]
+	#[test]
+	fn on_windows_only_a_refused_read_keeps_the_clipboard() {
+		use windows::Win32::Foundation::{E_ACCESSDENIED, ERROR_NOT_FOUND};
+		assert_eq!(
+			clipboard_read(Err(E_ACCESSDENIED.into())),
+			(false, "denied".to_owned())
+		);
+		assert!(
+			clipboard_read(Err(ERROR_NOT_FOUND.to_hresult().into())).0,
+			"nothing to read is no refusal"
+		);
+		assert!(clipboard_read(Ok(())).0);
+	}
 
 	#[test]
 	fn a_report_that_holds_passes() {
