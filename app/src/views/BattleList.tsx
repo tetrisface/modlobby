@@ -181,8 +181,6 @@ export function BattleList() {
 	 * A room whose band changes under the pin — its game started, it locked —
 	 * moves to where the order puts it now; see `regrouped`.
 	 */
-	/** The room the pointer rests on, whose people the card shows. */
-	const [peek, setPeek] = createSignal<Peek | null>(null)
 	const [held, setHeld] = createSignal<{
 		order: string[]
 		bands: Map<string, number>
@@ -205,10 +203,8 @@ export function BattleList() {
 	const rows = createMemo(() => {
 		const pinned = held()
 		if (pinned === null) return sorted()
-		const at = peek()
-		const pointer = at === null ? null : battleKey(at.server, at.id)
 		const moved = fixed(filters().sort)
-			? regrouped(sorted(), pinned.bands, pointer)
+			? regrouped(sorted(), pinned.bands)
 			: undefined
 		return stabilize(sorted(), pinned.order, moved)
 	})
@@ -386,6 +382,8 @@ export function BattleList() {
 	 * nothing to go back to.
 	 */
 	const [remembered, setRemembered] = createSignal<BattleOn | null>(null)
+	/** The room the pointer rests on, whose people the card shows. */
+	const [peek, setPeek] = createSignal<Peek | null>(null)
 	/**
 	 * Where the pointer is, kept apart from `peek` on purpose: rolling it into
 	 * that object would make the card's name list re-sort on every mouse move,

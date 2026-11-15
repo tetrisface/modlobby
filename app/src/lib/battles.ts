@@ -311,18 +311,20 @@ export function stabilize(
  * The held rooms whose band changed since the order was taken: a game that
  * started, a room that locked or emptied. Held where it was, a room that
  * started its game sits among the open ones for as long as the pointer stays
- * in the list, which reads as a room to join. The one under the pointer stays
- * put all the same; it is the one being reached for.
+ * in the list, which reads as a room to join.
+ *
+ * Where the pointer is plays no part. Sparing the room under it would put that
+ * room back in its held place the moment the pointer reached it, leaving
+ * another room under the pointer, and release it again when the pointer moved
+ * on: the rows would chase the pointer.
  */
 export function regrouped(
 	sorted: readonly Row[],
 	/** Each held room's band when the order was taken, by key. */
 	bands: ReadonlyMap<string, number>,
-	pointer: string | null,
 ): Set<string> {
 	return new Set(
 		sorted
-			.filter((row) => row.key !== pointer)
 			.filter((row) => {
 				const was = bands.get(row.key)
 				return was !== undefined && was !== band(row)

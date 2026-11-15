@@ -433,26 +433,20 @@ describe('holding the order still under the pointer', () => {
 		)
 
 		test('leaves its held place for the one the sort gives it', () => {
-			const moved = regrouped(now, bands, null)
+			const moved = regrouped(now, bands)
 			expect([...moved]).toEqual([battleKey('s', 2)])
 			expect(ids(stabilize(now, held(1, 2, 3, 4), moved))).toEqual([1, 3, 4, 2])
 		})
 
-		test('stays put while the pointer is on it', () => {
-			const moved = regrouped(now, bands, battleKey('s', 2))
-			expect(moved.size).toBe(0)
-			expect(ids(stabilize(now, held(1, 2, 3, 4), moved))).toEqual([1, 2, 3, 4])
-		})
-
 		test('a changed player count alone moves nothing', () => {
 			const fuller = [row({ id: 3, playerCount: 12 }), ...before.slice(0, 2)]
-			expect(regrouped(fuller, bands, null).size).toBe(0)
+			expect(regrouped(fuller, bands).size).toBe(0)
 		})
 
 		test('lands among held rooms, above the rooms that opened since', () => {
 			const opened = row({ id: 7, playerCount: 2 })
 			const fresh = arrange([...now, opened], filters(), '')
-			const moved = regrouped(fresh, bands, null)
+			const moved = regrouped(fresh, bands)
 			expect(ids(stabilize(fresh, held(1, 2, 3, 4), moved))).toEqual([
 				1, 3, 4, 2, 7,
 			])
