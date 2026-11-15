@@ -26,7 +26,7 @@ members = [
 [workspace.package]
 version = "0.2.6"
 edition = "2024"
-rust-version = "1.96.0"
+rust-version = "1.100.0"
 license = "MIT"
 
 # A debug build decodes a map picture twenty times slower than a release one,

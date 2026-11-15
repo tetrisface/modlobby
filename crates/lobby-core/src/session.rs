@@ -1998,31 +1998,32 @@ impl Session {
 				.get(founder)
 				.is_some_and(|user| user.status.bot)
 		};
-		let mut rooms: Vec<SpareRoom> =
-			self.state
-				.battles
-				.values()
-				.filter(|battle| {
-					!battle.passworded
-						&& !battle.locked && battle.spectator_count <= 1
-						&& battle.members.len() == 1
-						&& battle.engine_version == engine
-						&& !host_in_game(&battle.founder)
+		let mut rooms: Vec<SpareRoom> = self
+			.state
+			.battles
+			.values()
+			.filter(|battle| {
+				!battle.passworded
+					&& !battle.locked
+					&& battle.spectator_count <= 1
+					&& battle.members.len() == 1
+					&& battle.engine_version == engine
+					&& !host_in_game(&battle.founder)
+			})
+			.filter_map(|battle| {
+				// ponytail: a lone bot ties with a one-spare cluster in
+				// `hosting::pick`; rank clusters ahead if a stranger's bot
+				// ever gets taken on BAR's server.
+				let cluster = hosting::cluster_of(&battle.founder)
+					.or_else(|| lone_bot(&battle.founder).then_some(battle.founder.as_str()))?;
+				Some(SpareRoom {
+					id: battle.id,
+					founder: battle.founder.clone(),
+					cluster: cluster.to_owned(),
+					ip: battle.ip.parse().ok(),
 				})
-				.filter_map(|battle| {
-					// ponytail: a lone bot ties with a one-spare cluster in
-					// `hosting::pick`; rank clusters ahead if a stranger's bot
-					// ever gets taken on BAR's server.
-					let cluster = hosting::cluster_of(&battle.founder)
-						.or_else(|| lone_bot(&battle.founder).then_some(battle.founder.as_str()))?;
-					Some(SpareRoom {
-						id: battle.id,
-						founder: battle.founder.clone(),
-						cluster: cluster.to_owned(),
-						ip: battle.ip.parse().ok(),
-					})
-				})
-				.collect();
+			})
+			.collect();
 		rooms.sort_by_key(|room| room.id);
 		rooms
 	}

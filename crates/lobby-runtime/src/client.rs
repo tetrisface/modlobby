@@ -4165,7 +4165,8 @@ impl Runtime {
 					let wanted = self.auto_launch.take().or_else(|| {
 						(just_started
 							&& self.auto_launch_always
-							&& self.content_ready && self.engine.is_none()
+							&& self.content_ready
+							&& self.engine.is_none()
 							&& may_join)
 							.then(|| self.data_dirs())
 							.flatten()

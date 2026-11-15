@@ -346,7 +346,8 @@ fn windows_writes_as_named(path: &Path) -> bool {
 				&& ["COM", "LPT"].iter().any(|port| {
 					stem.get(..3)
 						.is_some_and(|head| head.eq_ignore_ascii_case(port))
-				}) && stem.as_bytes()[3].is_ascii_digit());
+				})
+				&& stem.as_bytes()[3].is_ascii_digit());
 		!name.contains(':') && !name.ends_with(['.', ' ']) && !device
 	})
 }

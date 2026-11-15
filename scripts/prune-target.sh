@@ -2,28 +2,41 @@
 #
 # Prunes superseded cargo build artifacts from the target directory.
 #
-# Cargo names every compilation unit `<crate>-<hash>` and never removes the old
-# hash once a dependency, feature or profile change produces a new one. The
-# copies accumulate without bound: on this workspace `target/debug/deps` grew to
-# 67 GB, 42 GB of which was units nothing refers to any more.
+# Cargo gives every compilation unit a directory of its own,
+# `<profile>/build/<package>/<hash>/`: the fingerprint in `fingerprint/` and
+# rustc's outputs in `out/` -- or, for a build script's run, its OUT_DIR there
+# and its output log in `run/`. Any dependency, feature, profile or toolchain
+# change makes a new hash, and cargo never removes the unit it replaced. The
+# copies accumulate without bound: in the layout before Cargo 1.100, which kept
+# the same files together in `deps/`, that directory grew to 67 GB on this
+# workspace, 42 GB of which was units nothing referred to any more.
 #
-# Keeping the newest few hashes per crate leaves every artifact a current build
-# reads, so a prune costs no rebuild. Only returning to a branch older than the
-# kept ones recompiles, and cargo already does that on its own -- it rebuilds
-# any unit whose output file has gone missing, which is why nothing here needs
-# to touch `.fingerprint`.
+# A fingerprint's file name says which target the unit builds
+# (`lib-<crate>.json`, `test-lib-<crate>.json`,
+# `run-build-script-build-script-build.json`), and its `path` hashes the source
+# path, which carries a registry crate's version. The units of one target of
+# one version are its generations, and keeping the newest few keeps what
+# current builds read, so a prune costs no rebuild. Ranking a package's units
+# all together would not: one build compiles windows-sys 0.59, 0.60 and 0.61,
+# two of those twice with different profiles. Only returning to a branch older
+# than the kept generations recompiles, and cargo already does that on its own
+# -- it rebuilds any unit whose directory has gone missing.
 #
 # `incremental/` grows the same way. Cargo garbage-collects old sessions inside
 # one `<crate>-<id>` directory, but the id follows the unit's metadata hash, and
 # a directory for an id no build produces any more is never removed: 466 of
 # them held 26 GB where the newest per crate held 1.4 GB. Each crate keeps a
-# few more directories than it keeps hashes, since `cargo build`, `cargo test`,
-# rust-analyzer and clippy each compile it under their own id.
+# few more directories than a target keeps generations, since `cargo build`,
+# `cargo test`, rust-analyzer and clippy each compile it under their own id.
 #
 # rustc also leaves scratch behind whenever a compile is killed mid-flight --
 # which `tauri dev` does on every restart after a save: `*.rcgu.o` object files
-# and `.tmp*`, `rustc*` and `rmeta*` directories in `deps/`. A finished compile
-# deletes its own, so anything older than an hour belongs to no one.
+# and `.tmp*`, `rustc*` and `rmeta*` directories in a unit's `out/`. A finished
+# compile deletes its own, so anything older than an hour belongs to no one.
+#
+# Cargo before 1.100 sorted the same files by kind instead: `deps/`,
+# `.fingerprint/`, `build/<package>-<hash>/` and hashed copies in `examples/`.
+# Nothing reads those any more, so they go whole.
 set -euo pipefail
 
 keep=3
@@ -38,7 +51,7 @@ usage() {
 	cat <<'USAGE'
 usage: prune-target.sh [-k N] [-i N] [-n] [-t DIR]
 
-  -k, --keep N              hashes to keep per crate (default 3)
+  -k, --keep N              generations to keep of each target (default 3)
   -i, --keep-incremental N  incremental directories to keep per crate (default 5)
   -n, --dry-run             report what would be removed and its size, remove nothing
   -t, --target DIR          target directory (default $CARGO_TARGET_DIR, else the
@@ -69,7 +82,7 @@ du=$(command -v gdu || command -v du)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
-# Reads `unit <TAB> mtime <TAB> crate <TAB> path` lines, ranks each crate's
+# Reads `unit <TAB> mtime <TAB> group <TAB> path` lines, ranks each group's
 # units by how recently anything in them was written, and prints the paths of
 # every unit past the newest `$1`.
 doom() {
@@ -77,8 +90,8 @@ doom() {
 	entries=$(mktemp "$work/XXXXXXXX")
 	cat >"$entries"
 	awk -F'\t' -v OFS='\t' '
-		{ if ($2 > mtime[$1]) mtime[$1] = $2; crate[$1] = $3 }
-		END { for (unit in mtime) print crate[unit], mtime[unit], unit }
+		{ if ($2 > mtime[$1]) mtime[$1] = $2; group[$1] = $3 }
+		END { for (unit in mtime) print group[unit], mtime[unit], unit }
 	' "$entries" |
 		sort -t"$(printf '\t')" -k1,1 -k2,2nr |
 		awk -F'\t' -v keep="$1" '
@@ -89,23 +102,25 @@ doom() {
 		"$entries.doomed" "$entries"
 }
 
-# Every hashed entry, tagged with the unit it belongs to. A unit is one
-# (directory, crate, hash) triple: the rlib, rmeta, pdb, object files and dep
-# list cargo emitted together all carry the same hash and live or die together.
-for dir in "$target_dir"/*/deps "$target_dir"/*/examples "$target_dir"/*/build; do
+# Every unit, grouped by package, target and version. Only a compile writes a
+# fingerprint, so its time is when the unit was last built.
+for dir in "$target_dir"/*/build; do
 	[ -d "$dir" ] || continue
-	"$find" "$dir" -mindepth 1 -maxdepth 1 -printf '%T@\t%f\t%p\n'
+	"$find" "$dir" -mindepth 4 -maxdepth 4 -path '*/fingerprint/*.json' -printf '%T@\t%p\n'
 done | awk -F'\t' -v OFS='\t' '
 	{
-		name = $2
-		if (!match(name, /-[0-9a-f]{16}([.-]|$)/)) next
-		crate = substr(name, 1, RSTART - 1)
-		hash = substr(name, RSTART + 1, 16)
-		sub(/^lib/, "", crate)
-		path = $3
-		dir = path
-		sub(/\/[^\/]*$/, "", dir)
-		print dir "|" crate "|" hash, int($1), dir "|" crate, path
+		fingerprint = $2
+		version = ""
+		if ((getline json <fingerprint) > 0 && match(json, /"path":[0-9]+/))
+			version = substr(json, RSTART + 7, RLENGTH - 7)
+		close(fingerprint)
+		unit = fingerprint
+		sub(/\/fingerprint\/[^\/]*$/, "", unit)
+		package = unit
+		sub(/\/[^\/]*$/, "", package)
+		target = fingerprint
+		sub(/^.*\//, "", target)
+		print unit, int($1), package "|" target "|" version, unit
 	}
 ' | doom "$keep" >"$work/doomed"
 
@@ -127,19 +142,33 @@ done | awk -F'\t' -v OFS='\t' '
 	}
 ' | doom "$keep_incremental" >>"$work/doomed"
 
-for dir in "$target_dir"/*/deps "$target_dir"/*/examples; do
+# The `out/` beside a `run/` is a build script's OUT_DIR, not rustc's, and is
+# left alone.
+for dir in "$target_dir"/*/build; do
 	[ -d "$dir" ] || continue
-	"$find" "$dir" -mindepth 1 -maxdepth 1 -mmin +60 \
+	"$find" "$dir" -mindepth 4 -maxdepth 4 -path '*/out/*' -mmin +60 \
 		\( \( -type f -name '*.rcgu.o' \) -o \( -type d \( -name '.tmp*' -o -name 'rustc*' -o -name 'rmeta*' \) \) \) \
 		-print
+done | while IFS= read -r path; do
+	[ -d "${path%/out/*}/run" ] || printf '%s\n' "$path"
 done >>"$work/doomed"
+
+# The layout before Cargo 1.100.
+for dir in "$target_dir"/*/deps "$target_dir"/*/.fingerprint; do
+	[ -d "$dir" ] || continue
+	printf '%s\n' "$dir"
+done >>"$work/doomed"
+for dir in "$target_dir"/*/build "$target_dir"/*/examples; do
+	[ -d "$dir" ] || continue
+	"$find" "$dir" -mindepth 1 -maxdepth 1 -printf '%f\t%p\n'
+done | awk -F'\t' '$1 ~ /-[0-9a-f]{16}([.-]|$)/ { print $2 }' >>"$work/doomed"
 
 sort -u -o "$work/doomed" "$work/doomed"
 
 count=$(wc -l <"$work/doomed" | tr -d ' ')
 [ "$count" -gt 0 ] || { echo "prune-target: nothing superseded, $target_dir is already lean" && exit 0; }
 
-printf 'prune-target: %s entries, keeping the %d newest hashes and %d incremental directories per crate\n' \
+printf 'prune-target: %s entries, keeping the %d newest generations of each target and %d incremental directories per crate\n' \
 	"$count" "$keep" "$keep_incremental"
 
 # Only a dry run measures: `du` stats every file under the doomed directories,
