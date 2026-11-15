@@ -13,10 +13,10 @@
 # carries its holder's name) and each attaches its bundles, .sig
 # files and latest.json to that draft, then versionless copies of the
 # bundles. tauri-action merges the `platforms` map of an existing latest.json
-# rather than replacing it. `publish` waits for ci on the pushed commit and
+# rather than replacing it. `attest` signs which run of this workflow built
+# the draft's files. `publish` waits for ci on the pushed commit and
 # makes the draft the latest release: nothing is visible to an updater until
-# every platform is in the manifest. `aur` then publishes the Arch package
-# from the .deb.
+# every platform is in the manifest.
 #
 # A red ci leaves the bump on main, the tag and the draft behind. Rerun ci and
 # then the `publish` job if it was a flake; otherwise delete the draft and its
@@ -82,7 +82,7 @@ jobs:
     steps:
       # A branch, not the detached HEAD workflow_dispatch checks out by
       # default: the version bump is pushed to main.
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
 
@@ -175,7 +175,7 @@ jobs:
       # pay for them.
       CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_OPT_LEVEL: 3
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: v${{ needs.tag.outputs.next }}
 
@@ -194,13 +194,13 @@ jobs:
           exit 1
 
       # rustup reads rust-toolchain.toml on the first cargo call; no action needed.
-      - uses: Swatinem/rust-cache@v2.9.2
-      - uses: actions/setup-node@v7.0.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 26.8.1
-      - uses: oven-sh/setup-bun@v2.2.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.2
       - run: bun install --frozen-lockfile
         working-directory: app
 
@@ -244,7 +244,7 @@ jobs:
       # artifact, and attaches bundle, .sig and latest.json to the release. No
       # submodule is needed: the one file compiled in from external/ is only
       # read under #[cfg(test)].
-      - uses: tauri-apps/tauri-action@v1.0.0
+      - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         id: tauri
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -282,11 +282,46 @@ jobs:
           done
           gh release upload "v$NEXT" latest/* --clobber
 
-  # Whole or not at all: every platform built, and ci green on the commit that
-  # was pushed. ci started with this workflow and is normally long done by
-  # now. The button has no push to wait for and publishes as it always did.
-  publish:
+  # Signs which run of this workflow, at which commit, built the draft's
+  # files; the README shows the check. The commit is the one this run started
+  # from, and the tag adds the version bump on top. A job of its own: id-token
+  # lets every step and child process sign as this workflow, and `build` runs
+  # crate build scripts, package install scripts and third-party actions. The
+  # digests are the ones GitHub computed on upload, so nothing is downloaded
+  # and the download counts stay untouched.
+  attest:
     needs: [tag, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      # Only push access lists drafts.
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      NEXT: ${{ needs.tag.outputs.next }}
+    steps:
+      - name: The draft's files and their digests
+        shell: bash
+        run: |
+          gh api "repos/$GH_REPO/releases?per_page=100" --paginate |
+            jq -r --arg tag "v$NEXT" '.[] | select(.tag_name == $tag) | .assets[]
+              | select(.name | test("\\.(sig|json)$") | not)
+              | "\(.digest // error("no digest for \(.name)") | ltrimstr("sha256:"))  \(.name)"' |
+            tee checksums.txt
+          [ -s checksums.txt ] || { echo "no files on the v$NEXT draft"; exit 1; }
+
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-checksums: checksums.txt
+
+  # Whole or not at all: every platform built and attested, and ci green on
+  # the commit that was pushed. ci started with this workflow and is normally
+  # long done by now. The button has no push to wait for and publishes as it
+  # always did.
+  publish:
+    needs: [tag, build, attest]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -305,44 +340,3 @@ jobs:
             { echo "ci was $conclusion: v$NEXT stays a draft. Rerun ci and this job, or delete the draft and its tag."; exit 1; }
 
       - run: gh release edit "v$NEXT" --draft=false --latest
-
-  # The Arch package: packaging/aur/PKGBUILD with this release's version,
-  # checksummed and test-built in an Arch container, then pushed to
-  # aur.archlinux.org. Needs an AUR account whose SSH key is in the secrets;
-  # without AUR_SSH_PRIVATE_KEY the job stops after printing the PKGBUILD.
-  aur:
-    # After `publish`: the PKGBUILD's source is the release's public download
-    # URL, which a draft does not have.
-    needs: [tag, publish]
-    runs-on: ubuntu-24.04
-    env:
-      AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          ref: v${{ needs.tag.outputs.next }}
-
-      - name: The .deb is on the release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NEXT: ${{ needs.tag.outputs.next }}
-        run: gh release view "v$NEXT" --json assets -q '.assets[].name' | grep -x "modlobby_${NEXT}_amd64.deb"
-
-      - name: PKGBUILD for this version
-        env:
-          NEXT: ${{ needs.tag.outputs.next }}
-        run: |
-          sed -i "s/^pkgver=.*/pkgver=$NEXT/" packaging/aur/PKGBUILD
-          cat packaging/aur/PKGBUILD
-
-      - uses: KSXGitHub/github-actions-deploy-aur@v4.2.0
-        if: ${{ env.AUR_SSH_PRIVATE_KEY != '' }}
-        with:
-          pkgname: modlobby-bin
-          pkgbuild: packaging/aur/PKGBUILD
-          updpkgsums: true
-          test: true
-          commit_username: ${{ secrets.AUR_USERNAME }}
-          commit_email: ${{ secrets.AUR_EMAIL }}
-          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          commit_message: ${{ needs.tag.outputs.next }}

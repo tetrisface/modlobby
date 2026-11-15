@@ -23,13 +23,13 @@ jobs:
   lint:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: actions/setup-node@v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 26.8.1
-      - uses: oven-sh/setup-bun@v2.2.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.2
       # rustup reads rust-toolchain.toml on the first cargo call; no action needed.
       - run: cargo fmt --all --check
       - run: bun install --frozen-lockfile
@@ -59,7 +59,7 @@ jobs:
     steps:
       # Submodules stay off: the 14 under external/ include RecoilEngine and
       # the whole game. Only one file of theirs is compiled in, below.
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: WebKitGTK and bundler libraries
         if: runner.os == 'Linux'
@@ -105,13 +105,13 @@ jobs:
           done
 
       # rustup reads rust-toolchain.toml on the first cargo call; no action needed.
-      - uses: Swatinem/rust-cache@v2.9.2
-      - uses: actions/setup-node@v7.0.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 26.8.1
-      - uses: oven-sh/setup-bun@v2.2.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.2
 
       - run: bun install --frozen-lockfile
         working-directory: app

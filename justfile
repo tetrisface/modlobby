@@ -1,5 +1,7 @@
 # `just dev --no-watch` keeps Rust edits from restarting the lobby.
 dev *args:
+	-mise outdated --bump
+	-bun scripts/action-pins.ts
 	(cd app && bun run dev {{args}})
 
 fmt: format

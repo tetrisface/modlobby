@@ -14,6 +14,14 @@ Packages are available at [releases](https://github.com/tetrisface/modlobby/rele
 [deb]: https://github.com/tetrisface/modlobby/releases/latest/download/modlobby_amd64.deb
 [dmg]: https://github.com/tetrisface/modlobby/releases/latest/download/modlobby_aarch64.dmg
 
+## Verifying a release
+
+```sh
+gh attestation verify modlobby_x64-setup.exe -R tetrisface/modlobby \
+  --signer-workflow tetrisface/modlobby/.github/workflows/release.yml
+```
+
+
 ## macOS
 
 Apple Silicon only, and skirmish, LAN and replays only. Automatically downloads a 3rd party [engine build](https://github.com/vandomas/RecoilEngine-AppleSilicon).
