@@ -225,7 +225,7 @@ describe('Presets', () => {
 					modoptions: true,
 					battle: true,
 					startBoxes: true,
-					bots: false,
+					bots: true,
 					reset: false,
 				},
 			},
@@ -235,12 +235,12 @@ describe('Presets', () => {
 		expect(reset.classList.contains('on')).toBe(true)
 	})
 
-	test('the AIs are offered and off until asked for', async () => {
+	test('the AIs are offered and on, as in History', async () => {
 		const { getByText } = render(pane)
 		await settle()
 		const ais = getByText('AIs') as HTMLButtonElement
 		expect(ais.disabled).toBe(false)
-		expect(ais.classList.contains('on')).toBe(false)
+		expect(ais.classList.contains('on')).toBe(true)
 	})
 
 	test('the bin on a row deletes that preset', async () => {

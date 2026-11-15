@@ -38,16 +38,17 @@ const COLUMNS: Array<[Column, string, string]> = [
 ]
 
 /**
- * Everything but the bots, layered over what the room already has. Resetting
- * first is the exception: it wipes the room down to the SPADS preset, which
- * is rarely what somebody stacking a tweak on top of a room wants.
+ * Everything the preset holds, layered over what the room already has: its
+ * AIs join the room's own, never twice. Resetting first is the exception: it
+ * wipes the room down to the SPADS preset, which is rarely what somebody
+ * stacking a tweak on top of a room wants.
  */
 const DEFAULT_SECTIONS: Sections = {
 	map: true,
 	modoptions: true,
 	battle: true,
 	startBoxes: true,
-	bots: false,
+	bots: true,
 	reset: false,
 }
 
