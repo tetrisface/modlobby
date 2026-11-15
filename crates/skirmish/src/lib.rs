@@ -441,6 +441,16 @@ impl Room {
 		}
 	}
 
+	/// The player's resource bonus, as a percentage. `false` while watching,
+	/// with no seat to give it to.
+	pub fn set_bonus(&mut self, handicap: u8) -> bool {
+		let Some(seat) = self.seat.as_mut() else {
+			return false;
+		};
+		seat.handicap = handicap.min(100);
+		true
+	}
+
 	/// Adds an AI. A name already in the room is refused rather than silently
 	/// renamed: the caller picked it, and two AIs with one name is a script
 	/// the engine will not run.

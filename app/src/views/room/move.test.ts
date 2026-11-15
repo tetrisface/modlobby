@@ -12,6 +12,7 @@ import {
 import type { Calls } from './fixture'
 import {
 	balancing,
+	bonusable,
 	bossing,
 	forceBonus,
 	forceTeam,
@@ -232,6 +233,38 @@ describe('a bonus', () => {
 		const calls: Calls = []
 		await setBonus(served(calls, 'me'), ALICE, 50, 1)
 		expect(calls).toEqual([['sayBattle', ['!force alice bonus 50']]])
+	})
+
+	test('our own seat goes to the host by our own name', async () => {
+		const calls: Calls = []
+		await setBonus(served(calls, 'me'), ME, 50, 0)
+		expect(calls).toEqual([['sayBattle', ['!force me bonus 50']]])
+	})
+})
+
+describe('who may ask for a bonus', () => {
+	/** A room on the server bossed by `boss`, with us seated or watching. */
+	function room(boss: string | null, seated: boolean) {
+		return fakeRoom({
+			caps: SERVED,
+			my: () => myBattle({ boss }),
+			users: () => ({
+				me: user('me', { battleStatus: status({ player: seated }) }),
+			}),
+		})
+	}
+
+	test('a seated player, for anyone and themselves, as SPADS votes on it', () => {
+		// Wider than moving: somebody else's boss mode still lets this through.
+		expect(movable(room('alice', true), ALICE)).toBe(false)
+		expect(bonusable(room('alice', true), ALICE)).toBe(true)
+		expect(bonusable(room(null, true), ME)).toBe(true)
+	})
+
+	test('a spectator for nobody, unless they boss the room', () => {
+		expect(bonusable(room('alice', false), ALICE)).toBe(false)
+		expect(bonusable(room('alice', false), ME)).toBe(false)
+		expect(bonusable(room('me', false), ALICE)).toBe(true)
 	})
 })
 

@@ -6718,7 +6718,9 @@ html.overlay body {
 
 html.overlay .shell {
 	position: fixed;
-	inset: 40px;
+	/* Where `CardGrips` last left the card's edges. */
+	inset: var(--card-top, 40px) var(--card-right, 40px) var(--card-bottom, 40px)
+		var(--card-left, 40px);
 	/* The base rule says 100vh, and an explicit height beats `bottom`. */
 	height: auto;
 	border: 1px solid var(--line);
@@ -6740,6 +6742,88 @@ html.overlay .shell {
 	html.overlay .shell {
 		animation: none;
 	}
+}
+
+/* The card's edges, a little either side of its border as a window's resize
+   border is, and its corners a little larger. Fixed to the viewport, from
+   the card's own insets, so its clipping does not cut them off. */
+.card-grip {
+	position: fixed;
+	z-index: 45;
+}
+
+.card-grip.n,
+.card-grip.s {
+	left: calc(var(--card-left) + 8px);
+	right: calc(var(--card-right) + 8px);
+	height: 8px;
+	cursor: ns-resize;
+}
+
+.card-grip.e,
+.card-grip.w {
+	top: calc(var(--card-top) + 8px);
+	bottom: calc(var(--card-bottom) + 8px);
+	width: 8px;
+	cursor: ew-resize;
+}
+
+.card-grip.n {
+	top: calc(var(--card-top) - 4px);
+}
+
+.card-grip.s {
+	bottom: calc(var(--card-bottom) - 4px);
+}
+
+.card-grip.w {
+	left: calc(var(--card-left) - 4px);
+}
+
+.card-grip.e {
+	right: calc(var(--card-right) - 4px);
+}
+
+.card-grip.nw,
+.card-grip.ne,
+.card-grip.sw,
+.card-grip.se {
+	width: 16px;
+	height: 16px;
+}
+
+.card-grip.nw {
+	top: calc(var(--card-top) - 8px);
+	left: calc(var(--card-left) - 8px);
+	cursor: nwse-resize;
+}
+
+.card-grip.ne {
+	top: calc(var(--card-top) - 8px);
+	right: calc(var(--card-right) - 8px);
+	cursor: nesw-resize;
+}
+
+.card-grip.sw {
+	bottom: calc(var(--card-bottom) - 8px);
+	left: calc(var(--card-left) - 8px);
+	cursor: nesw-resize;
+}
+
+.card-grip.se {
+	bottom: calc(var(--card-bottom) - 8px);
+	right: calc(var(--card-right) - 8px);
+	cursor: nwse-resize;
+}
+
+/* While an edge is dragged the card's contents stand aside, so the grip's
+   cursor holds wherever the pointer goes and nothing under it lights up. */
+body.resizing-card {
+	user-select: none;
+}
+
+body.resizing-card .shell > :not(.card-grip) {
+	pointer-events: none;
 }
 
 /* Bottom-right rather than over the nav: the nav is where you go to *use*

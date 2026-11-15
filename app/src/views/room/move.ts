@@ -120,6 +120,19 @@ export function movable(room: RoomModel, target: Target): boolean {
 }
 
 /**
+ * Whether we may ask for this row's bonus. Wider than `movable` for people:
+ * SPADS takes `!force … bonus` from the boss, and puts a seated player's to
+ * a vote, boss mode included (`commands.conf` `[force]` asks level 0 of a
+ * voter, and auto-callvote is on). A spectator it refuses. An AI goes with
+ * the right to move it, as before.
+ */
+export function bonusable(room: RoomModel, target: Target): boolean {
+	if (target.kind === 'bot' || bossing(room)) return movable(room, target)
+	const me = room.me()
+	return me !== null && (room.users()[me]?.battleStatus?.player ?? false)
+}
+
+/**
  * `!force <name> team <n>`.
  *
  * SPADS counts teams from one and takes the one back off before it sends
@@ -189,8 +202,8 @@ export async function moveTo(
 /**
  * A resource bonus, as a percentage.
  *
- * Not for your own seat: a bonus is something a host gives, and asking for one
- * for yourself is a request like any other -- by name, through the host.
+ * A bonus is something a host gives, so your own seat's is asked for like
+ * anybody's: by name, through the host.
  *
  * An AI of ours is asked of the host too, where there is one. The host writes
  * the start script from its own book of bonuses and answers in chat, where
@@ -200,7 +213,7 @@ export async function moveTo(
  */
 export async function setBonus(
 	room: RoomModel,
-	target: Named,
+	target: Target,
 	percent: number,
 	allyTeam: number,
 ): Promise<void> {
@@ -215,5 +228,13 @@ export async function setBonus(
 		)
 		return
 	}
-	await room.io.sayBattle(forceBonus(target, wanted))
+	const who = named(room, target)
+	if (who !== null) await room.io.sayBattle(forceBonus(who, wanted))
+}
+
+/** A target as a command names it: ourselves by our own name. */
+function named(room: RoomModel, target: Target): Named | null {
+	if (target.kind !== 'me') return target
+	const me = room.me()
+	return me === null ? null : { kind: 'player', name: me }
 }

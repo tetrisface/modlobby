@@ -6,7 +6,12 @@ import { type Skill, skillText, skillTier, skillTitle } from '../lib/skill'
 import { Flag, Glyph, Marks, RankIcon, SideIcon, StatusIcon } from './icons'
 import { rowGesture } from '../lib/drag'
 import { isGameMode } from '../lib/roster'
-import { type Moves, showBotMenu, showPlayerMenu } from './PlayerMenu'
+import {
+	type Bonus,
+	type Moves,
+	showBotMenu,
+	showPlayerMenu,
+} from './PlayerMenu'
 
 /**
  * One player, in Chobby's column order: status, country, rank, skill, faction,
@@ -25,6 +30,8 @@ export function PlayerRow(props: {
 	download?: DownloadStatus
 	/** Where this row may be sent. Absent outside a room, or where it may not. */
 	moves?: Moves
+	/** The bonus this row may be asked for, where it may. */
+	bonus?: Bonus
 	/**
 	 * Our own row only: a press released on the ready mark flips it. A press
 	 * that moves drags the row instead, as from anywhere else on it.
@@ -32,7 +39,10 @@ export function PlayerRow(props: {
 	onToggleReady?: () => void
 }) {
 	const menu = (event: MouseEvent) =>
-		showPlayerMenu(props.user.name, event, { moves: props.moves })
+		showPlayerMenu(props.user.name, event, {
+			moves: props.moves,
+			bonus: props.bonus,
+		})
 	const press = rowGesture({
 		canMove: () => props.moves !== undefined,
 		onMove: (ally) => void props.moves?.to(ally),
@@ -74,7 +84,7 @@ export function PlayerRow(props: {
 							{props.user.name}
 						</span>
 						<Marks status={props.user.status} boss={props.boss ?? false} />
-						<Bonus handicap={battle().handicap} />
+						<BonusMark handicap={battle().handicap} />
 					</span>
 				</div>
 			)}
@@ -83,7 +93,7 @@ export function PlayerRow(props: {
 }
 
 /** A resource bonus the host set on a seat, human or AI. None reads as nothing. */
-function Bonus(props: { handicap: number }) {
+function BonusMark(props: { handicap: number }) {
 	return (
 		<Show when={props.handicap > 0}>
 			<span class='bonus' title='Resource bonus'>
@@ -105,8 +115,10 @@ export function BotRow(props: {
 	onRemove?: () => Promise<void>
 	/** Offered where the room can tell an AI anything about itself. */
 	onOptions?: () => void
-	/** Where this AI may be sent, and what bonus it may be given. */
+	/** Where this AI may be sent. */
 	moves?: Moves
+	/** What bonus it may be given. */
+	bonus?: Bonus
 	/** Another of the same, on the same team. Ours to add, so ours to copy. */
 	onClone?: () => Promise<void>
 }) {
@@ -115,6 +127,7 @@ export function BotRow(props: {
 		if (remove)
 			showBotMenu(props.bot, remove, event, {
 				moves: props.moves,
+				bonus: props.bonus,
 				edit: props.onOptions,
 			})
 	}
@@ -153,7 +166,7 @@ export function BotRow(props: {
 			{/* An AI has no rating, rank or country, so the columns those would sit
           in are the AI's to use: a bonus reads there rather than pushing the
           name into an ellipsis. */}
-			<Bonus handicap={props.bot.status.handicap} />
+			<BonusMark handicap={props.bot.status.handicap} />
 			<Show when={props.onClone && !gameMode()}>
 				<button
 					class='row-act bot-clone'

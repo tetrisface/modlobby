@@ -13,6 +13,7 @@ import {
 	type ParentProps,
 } from 'solid-js'
 import { AccountMenu } from './components/AccountMenu'
+import { CardGrips } from './components/CardGrips'
 import { GameActions } from './components/GameActions'
 import { Glyph, IconSprite } from './components/icons'
 import { Thinking } from './components/Thinking'
@@ -477,13 +478,17 @@ function Layout(props: ParentProps) {
 	return (
 		<div class='shell'>
 			<IconSprite />
+			<Show when={over()}>
+				<CardGrips />
+			</Show>
 			{/* The nav doubles as the title bar, because the transparent window
           has none: empty nav space drags the window, double-click maximizes.
           Not in fullscreen, which is not a thing to drag around. Over a game
           it is: dragged partly off the game's monitor, the next Escape or
           hotkey fits it back over the game; dragged onto another monitor,
           it is an ordinary window there from the next press on. Rust makes
-          the overlay unmaximizable, so the double-click does nothing then. */}
+          the overlay unmaximizable, so the double-click puts the card back to
+          its first size instead (`CardGrips`). */}
 			<nav
 				class='nav'
 				data-tauri-drag-region={!fullscreen() ? true : undefined}

@@ -463,6 +463,48 @@ describe('the bonus, from a row to the host', () => {
 			['sayBattle', ['!force alice bonus 40']],
 		])
 	})
+
+	test('our own seat, from our own row', async () => {
+		const calls: Calls = []
+		const { container } = await openWithMenu(bossed(calls))
+		await setBonusOf(container, 'me')
+		expect(calls.filter(([name]) => name === 'sayBattle')).toEqual([
+			['sayBattle', ['!force me bonus 40']],
+		])
+	})
+
+	test("a whole team's bonus is the boss's alone", async () => {
+		// Anyone else's would be a vote per row, and SPADS holds one at a time.
+		const teamMenuOf = async (room: RoomModel) => {
+			const { container } = await openWithMenu(room)
+			const head = container.querySelector('.team-head') as HTMLElement
+			fireEvent.contextMenu(head, { clientX: 5, clientY: 5 })
+			await settle()
+			const shown = [...container.querySelectorAll('.player-menu button')].map(
+				(button) => button.textContent,
+			)
+			cleanup()
+			return shown
+		}
+		const room = bossed([])
+		expect(await teamMenuOf(room)).toContain('Bonus')
+		expect(
+			await teamMenuOf({ ...room, my: () => myBattle({ boss: 'alice' }) }),
+		).not.toContain('Bonus')
+	})
+
+	test('a seated player asks too, in a room somebody else bosses', async () => {
+		const calls: Calls = []
+		const room = bossed(calls)
+		const { container } = await openWithMenu({
+			...room,
+			my: () => myBattle({ boss: 'alice' }),
+		})
+		await setBonusOf(container, 'alice')
+		expect(calls.filter(([name]) => name === 'sayBattle')).toEqual([
+			['sayBattle', ['!force alice bonus 40']],
+		])
+	})
 })
 
 describe('a room behind the seam', () => {

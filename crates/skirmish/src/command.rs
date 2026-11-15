@@ -37,6 +37,10 @@ const HELP: &[(&str, &str)] = &[
 	("!rename <title>", "name the room"),
 	("!addBot <name> <ai>", "add an AI on the next free team"),
 	("!removeBot <name>", "take one out"),
+	(
+		"!force <name> bonus <0-100>",
+		"a resource bonus, for you or %AI",
+	),
 	("!fixColors", "one colour per side"),
 	("!set teamSize <n>", "how many per team"),
 	("!nbTeams <n>", "how many teams"),
@@ -88,6 +92,7 @@ pub fn command(room: &mut Room, line: &str) -> Outcome {
 			Outcome::Did("every side has its own colour".to_owned())
 		}
 		"set" => set(room, tail),
+		"force" => force(room, tail),
 		"nbteams" => count(tail, "!nbTeams <n>", |teams| {
 			let size = room.layout_size();
 			room.set_layout(teams, size);
@@ -178,6 +183,39 @@ fn set(room: &mut Room, tail: &str) -> Outcome {
 			format!("start positions: {}", crate::start_pos_name(pos))
 		}),
 		_ => Outcome::Said(format!("!set {key} is a host's setting; try !bSet.")),
+	}
+}
+
+/// `!force <name> bonus <percent>`, as a host takes it: the player by name, an
+/// AI as `%name`. A bonus is the one thing to force with nobody else here; a
+/// team is the seat bar's.
+fn force(room: &mut Room, tail: &str) -> Outcome {
+	const FORM: &str = "!force <name> bonus <0-100>";
+	let words: Vec<&str> = tail.split_whitespace().collect();
+	let [who, what, n] = words[..] else {
+		return Outcome::Said(FORM.to_owned());
+	};
+	let Ok(bonus) = n.parse::<u8>() else {
+		return Outcome::Said(FORM.to_owned());
+	};
+	if !what.eq_ignore_ascii_case("bonus") {
+		return Outcome::Said(FORM.to_owned());
+	}
+	let bonus = bonus.min(100);
+	if let Some(name) = who.strip_prefix('%') {
+		let Some(ai) = room.ais().iter().find(|ai| ai.name == name).cloned() else {
+			return Outcome::Said(format!("no AI here is called {name}"));
+		};
+		room.update_ai(name, ai.seat.team, ai.seat.ally_team, bonus, ai.colour);
+		return Outcome::Did(format!("{name} has a {bonus}% bonus"));
+	}
+	if !who.eq_ignore_ascii_case(&room.player) {
+		return Outcome::Said(format!("nobody here is called {who}"));
+	}
+	if room.set_bonus(bonus) {
+		Outcome::Did(format!("{who} has a {bonus}% bonus"))
+	} else {
+		Outcome::Said("Take a seat first: a bonus is a seat's.".to_owned())
 	}
 }
 
@@ -306,6 +344,22 @@ mod tests {
 		assert_eq!((layout.teams, layout.team_size), (2, 8));
 		assert!(said(&mut room, "!set teamSize 40").contains("1 to 16"));
 		assert!(said(&mut room, "!nbTeams x").contains("1 to 16"));
+	}
+
+	#[test]
+	fn a_bonus_is_forced_as_a_host_takes_it() {
+		let mut room = room();
+		room.take_seat(0, 0);
+		// What the row menu sends for our own seat, and for an AI.
+		did(&mut room, "!force me bonus 40");
+		assert_eq!(room.seat().map(|seat| seat.handicap), Some(40));
+		did(&mut room, "!addBot BARb");
+		did(&mut room, "!force %BARb bonus 250");
+		assert_eq!(room.ais()[0].seat.handicap, 100);
+		assert!(said(&mut room, "!force alice bonus 5").contains("nobody"));
+		assert!(said(&mut room, "!force me team 2").contains("bonus <0-100>"));
+		room.release_seat();
+		assert!(said(&mut room, "!force me bonus 5").contains("seat"));
 	}
 
 	#[test]

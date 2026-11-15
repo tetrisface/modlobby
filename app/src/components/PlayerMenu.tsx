@@ -29,9 +29,17 @@ export type Moves = {
 	/** Where they are now, so it is not offered as somewhere to go. */
 	on: number | null
 	to: (allyTeam: number) => Promise<void>
-	/** Present only where a bonus can be set: an AI of ours, or a boss's word. */
-	bonus?: (percent: number) => Promise<void>
-	bonusNow?: number
+}
+
+/**
+ * A resource bonus a row may be given, handed in by the room like `Moves`.
+ * Apart from them because more people may ask for one: SPADS puts a seated
+ * player's bonus to a vote, while only a boss moves other people's rows.
+ */
+export type Bonus = {
+	set: (percent: number) => Promise<void>
+	/** What the row has now, which the panel opens on. */
+	now: number
 }
 
 type Target =
@@ -41,6 +49,7 @@ type Target =
 			/** The server they were seen on; the room's when not said. */
 			server?: string
 			moves?: Moves
+			bonus?: Bonus
 			x: number
 			y: number
 	  }
@@ -52,6 +61,7 @@ type Target =
 			/** Opens what the AI is told about itself; absent where nothing is. */
 			edit?: () => void
 			moves?: Moves
+			bonus?: Bonus
 			x: number
 			y: number
 	  }
@@ -69,6 +79,7 @@ type Target =
 			/** What the actions would touch, said under the heading. */
 			holds: string
 			moves?: Moves
+			bonus?: Bonus
 			/** Opens the Add AI sheet on this team. */
 			addAi?: () => void
 			/** Our own AIs on it, cleared in one go. */
@@ -83,7 +94,7 @@ const [openFor, setOpenFor] = createSignal<Target | null>(null)
 export function showPlayerMenu(
 	name: string,
 	event: MouseEvent,
-	where: { moves?: Moves; server?: string } = {},
+	where: { moves?: Moves; bonus?: Bonus; server?: string } = {},
 ): void {
 	event.preventDefault()
 	event.stopPropagation()
@@ -105,7 +116,7 @@ export function showBotMenu(
 	bot: BotView,
 	remove: () => Promise<void>,
 	event: MouseEvent,
-	what: { moves?: Moves; edit?: () => void } = {},
+	what: { moves?: Moves; bonus?: Bonus; edit?: () => void } = {},
 ): void {
 	event.preventDefault()
 	event.stopPropagation()
@@ -131,6 +142,7 @@ export function showTeamMenu(
 	event: MouseEvent,
 	what: {
 		moves?: Moves
+		bonus?: Bonus
 		addAi?: () => void
 		removeBots?: () => Promise<void>
 	} = {},
@@ -290,19 +302,24 @@ export function PlayerMenu() {
 				 */
 				const placings = (moves: Moves | undefined): Entry[] => {
 					if (!moves) return []
-					const rows: Entry[] = moves.teams
+					return moves.teams
 						.filter((ally) => ally !== moves.on)
 						.map((ally) => [`Move to team ${ally + 1}`, () => moves.to(ally)])
-					if (moves.bonus)
-						rows.push([
-							'Bonus',
-							() => {
-								setPicking(true)
-							},
-							{ stay: true },
-						])
-					return rows
 				}
+
+				/** Where the room handed over a bonus, the way into its panel. */
+				const bonusing = (): Entry[] =>
+					openFor()?.bonus
+						? [
+								[
+									'Bonus',
+									() => {
+										setPicking(true)
+									},
+									{ stay: true },
+								],
+							]
+						: []
 
 				const items = () => {
 					const whole = team()
@@ -311,6 +328,7 @@ export function PlayerMenu() {
 						const clear = whole.removeBots
 						return [
 							...placings(openFor()?.moves),
+							...bonusing(),
 							...(add ? [['Add AI', add] as Entry] : []),
 							...(clear ? [['Remove the AIs', clear] as Entry] : []),
 						]
@@ -320,6 +338,7 @@ export function PlayerMenu() {
 						const edit = ai.edit
 						return [
 							...placings(openFor()?.moves),
+							...bonusing(),
 							...(edit ? [['Edit', edit] as Entry] : []),
 							['Remove', ai.remove] as Entry,
 						]
@@ -344,6 +363,8 @@ export function PlayerMenu() {
 						entries.push(['Ring', () => say(`!ring ${name()}`)])
 						entries.push(...placings(openFor()?.moves))
 					}
+					// Our own row too: the room hands one over only where it may be asked.
+					entries.push(...bonusing())
 					if (alongside && bossing()) {
 						entries.push(['Move to spectators', () => say(`!spec ${name()}`)])
 						entries.push(['Kick from the room', () => say(`!kick ${name()}`)])
@@ -495,13 +516,13 @@ export function PlayerMenu() {
 							when={!picking()}
 							fallback={
 								<BonusPanel
-									now={target().moves?.bonusNow ?? 0}
+									now={target().bonus?.now ?? 0}
 									apply={(percent) => {
 										// Taken before `act` closes the menu: once it has, the
 										// target is gone and there is nothing to read it off.
-										const bonus = target().moves?.bonus
+										const bonus = target().bonus
 										void act('bonus', async () => {
-											await bonus?.(percent)
+											await bonus?.set(percent)
 										})
 									}}
 									cancel={close}

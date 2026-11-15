@@ -109,6 +109,11 @@ impl TauriSurface {
 		// any window, and a double-click there would otherwise shrink the
 		// overlay to the work area, with the taskbar showing under the game.
 		let _ = self.window.set_maximizable(false);
+		// Nor something to resize. The window stays the whole monitor, and what
+		// a person takes for the window is the card drawn inside it, whose
+		// edges the page moves (`CardGrips`); a frameless window left resizable
+		// grabs at the edges of the screen instead.
+		resizable(&self.window, false);
 		// The shadow has to go with the decorations. On Windows an undecorated
 		// window with a shadow keeps an invisible frame roughly 8px wide, so a
 		// window told to sit at the monitor's corner actually lands shifted
@@ -139,6 +144,7 @@ impl TauriSurface {
 		let _ = self.window.unminimize();
 		let _ = self.window.set_always_on_top(false);
 		let _ = self.window.set_maximizable(true);
+		resizable(&self.window, true);
 		// Back on, unconditionally: a decorated window ignores it, and every
 		// ordinary window wants its shadow.
 		let _ = self.window.set_shadow(true);
@@ -287,6 +293,18 @@ fn set_alpha(window: &WebviewWindow, alpha: u8) {
 
 #[cfg(not(windows))]
 fn set_alpha(_window: &WebviewWindow, _alpha: u8) {}
+
+/// Whether the window's own edges resize it.
+#[cfg(windows)]
+fn resizable(window: &WebviewWindow, on: bool) {
+	let _ = window.set_resizable(on);
+}
+
+/// Elsewhere it keeps them. GTK pins a window that may not be resized to its
+/// minimum size, which would shrink the overlay into a corner of the game,
+/// and macOS is untried.
+#[cfg(not(windows))]
+fn resizable(_window: &WebviewWindow, _on: bool) {}
 
 /// Whether the compositor draws the window. See the module doc.
 #[cfg(windows)]

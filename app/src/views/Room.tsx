@@ -29,7 +29,7 @@ import {
 import { BotOptions } from '../components/BotOptions'
 import { MapPicture } from '../components/MapPicture'
 import { showPlayerMenu, showTeamMenu } from '../components/PlayerMenu'
-import type { Moves } from '../components/PlayerMenu'
+import type { Bonus, Moves } from '../components/PlayerMenu'
 import {
 	BotRow,
 	EmptySeat,
@@ -94,7 +94,14 @@ import { Welcome } from './room/Welcome'
 import { readiness } from './room/readiness'
 import { dragging } from '../lib/drag'
 import { Seat, canAddAi, showAddAi, sitOn, standUp } from './Seat'
-import { movable, moveTo, setBonus, type Target } from './room/move'
+import {
+	bonusable,
+	bossing,
+	movable,
+	moveTo,
+	setBonus,
+	type Target,
+} from './room/move'
 import { hostsMods } from '../lib/mutators'
 import { Setup } from './Setup'
 import { VoteBar } from './VoteBar'
@@ -329,23 +336,36 @@ export function Room() {
 	 * Handed to the row rather than worked out there: which teams exist is the
 	 * room's question, and the answer is the same for the drag and for the menu.
 	 */
-	const movesFor = (target: Target, on: number | null) => {
+	const movesFor = (target: Target, on: number | null): Moves | undefined => {
 		if (!movable(room, target)) return undefined
 		return {
 			teams: allyTeams(),
 			on,
 			to: (ally: number) => say(moveTo(room, target, ally)),
-			// A bonus is the host's to give, so it goes with the right to move the
-			// row -- the same permission -- for anybody but ourselves.
-			...(target.kind !== 'me'
-				? {
-						bonus: (percent: number) =>
-							say(setBonus(room, target, percent, on ?? 0)),
-						bonusNow: bonusOf(target),
-					}
-				: {}),
 		}
 	}
+
+	/** The bonus a row may be asked for, or nothing where SPADS would refuse. */
+	const bonusFor = (target: Target, on: number | null): Bonus | undefined => {
+		if (!bonusable(room, target)) return undefined
+		return {
+			set: (percent: number) => say(setBonus(room, target, percent, on ?? 0)),
+			now: bonusOf(target),
+		}
+	}
+
+	/** A seated person as a row names them: ourselves, or somebody by name. */
+	const personTarget = (name: string): Target =>
+		name === room.me() ? { kind: 'me' } : { kind: 'player', name }
+
+	const aiTarget = (bot: BotView): Target => ({
+		kind: 'bot',
+		name: bot.name,
+		mine: bot.owner === room.me(),
+		team: bot.status.team,
+		handicap: bot.status.handicap,
+		colour: bot.teamColour,
+	})
 
 	/** One action, with its refusal said where it can be read. */
 	const say = (work: Promise<void>) =>
@@ -361,61 +381,62 @@ export function Room() {
 	/**
 	 * Everybody on a team we may act on, as the targets their own rows give.
 	 *
-	 * A row we could not move on its own is left out rather than refusing the
+	 * A row we could not act on alone is left out rather than refusing the
 	 * batch: a team with one stranger standing in it is still a team whose AIs
 	 * can be sent somewhere.
 	 */
-	const teamTargets = (team: Team): Target[] =>
+	const teamTargets = (
+		team: Team,
+		may: (room: RoomModel, target: Target) => boolean,
+	): Target[] =>
 		[
-			...team.users.map(
-				(user): Target =>
-					user.name === room.me()
-						? { kind: 'me' }
-						: { kind: 'player', name: user.name },
-			),
-			...team.bots.map(
-				(bot): Target => ({
-					kind: 'bot',
-					name: bot.name,
-					mine: bot.owner === room.me(),
-					team: bot.status.team,
-					handicap: bot.status.handicap,
-					colour: bot.teamColour,
-				}),
-			),
-		].filter((target) => movable(room, target))
+			...team.users.map((user) => personTarget(user.name)),
+			...team.bots.map(aiTarget),
+		].filter((target) => may(room, target))
 
-	/** The row menu's own actions, over everybody on the team in turn. */
+	/**
+	 * In turn, not at once: online every one of these is a line of chat, and
+	 * the first refusal is the answer for all of them.
+	 */
+	const inTurn = async (
+		targets: Target[],
+		run: (target: Target) => Promise<void>,
+	) => {
+		for (const target of targets) await run(target)
+	}
+
+	/** The row menu's own moves, over everybody on the team in turn. */
 	const teamMoves = (team: Team): Moves | undefined => {
-		const targets = teamTargets(team)
+		const targets = teamTargets(team, movable)
 		if (targets.length === 0) return undefined
-		// In turn, not at once: online every one of these is a line of chat,
-		// and the first refusal is the answer for all of them.
-		const each = async (run: (target: Target) => Promise<void>) => {
-			for (const target of targets) await run(target)
-		}
-		const given = targets.map(bonusOf)
-		const theirs = targets.filter((target) => target.kind !== 'me')
 		return {
 			teams: allyTeams(),
 			on: team.allyTeam,
-			to: (ally: number) => say(each((target) => moveTo(room, target, ally))),
-			// Nobody gives themselves a bonus, so our own seat sits this one out.
-			...(theirs.length > 0
-				? {
-						bonus: (percent: number) =>
-							say(
-								each((target) =>
-									target.kind === 'me'
-										? Promise.resolve()
-										: setBonus(room, target, percent, team.allyTeam),
-								),
-							),
-						// What they all have, or nothing when they differ: there is no
-						// one number to open the panel on.
-						bonusNow: given.every((n) => n === given[0]) ? (given[0] ?? 0) : 0,
-					}
-				: {}),
+			to: (ally: number) =>
+				say(inTurn(targets, (target) => moveTo(room, target, ally))),
+		}
+	}
+
+	/**
+	 * The row menu's bonus, over everybody on the team in turn. On the boss's
+	 * word only: anyone else's ask is a vote, and SPADS holds one at a time, so
+	 * a batch would stop at its first.
+	 */
+	const teamBonus = (team: Team): Bonus | undefined => {
+		if (!bossing(room)) return undefined
+		const targets = teamTargets(team, bonusable)
+		if (targets.length === 0) return undefined
+		const given = targets.map(bonusOf)
+		return {
+			set: (percent: number) =>
+				say(
+					inTurn(targets, (target) =>
+						setBonus(room, target, percent, team.allyTeam),
+					),
+				),
+			// What they all have, or nothing when they differ: there is no one
+			// number to open the panel on.
+			now: given.every((n) => n === given[0]) ? (given[0] ?? 0) : 0,
 		}
 	}
 
@@ -444,11 +465,13 @@ export function Room() {
 	const teamMenu = (team: Team, event: MouseEvent) => {
 		if ((event.target as Element | null)?.closest('button')) return
 		const moves = teamMoves(team)
+		const bonus = teamBonus(team)
 		const removeBots = clearBots(team)
 		const addAi = canAddAi() ? () => showAddAi(team.allyTeam) : undefined
-		if (!moves && !removeBots && !addAi) return
+		if (!moves && !bonus && !removeBots && !addAi) return
 		showTeamMenu(team.allyTeam, holds(team), event, {
 			moves,
+			bonus,
 			addAi,
 			removeBots,
 		})
@@ -1150,9 +1173,11 @@ export function Room() {
 																		: undefined
 																}
 																moves={movesFor(
-																	user.name === room.me()
-																		? { kind: 'me' }
-																		: { kind: 'player', name: user.name },
+																	personTarget(user.name),
+																	team().allyTeam,
+																)}
+																bonus={bonusFor(
+																	personTarget(user.name),
 																	team().allyTeam,
 																)}
 															/>
@@ -1207,17 +1232,8 @@ export function Room() {
 																				)
 																		: undefined
 																}
-																moves={movesFor(
-																	{
-																		kind: 'bot',
-																		name: bot.name,
-																		mine: bot.owner === room.me(),
-																		team: bot.status.team,
-																		handicap: bot.status.handicap,
-																		colour: bot.teamColour,
-																	},
-																	team().allyTeam,
-																)}
+																moves={movesFor(aiTarget(bot), team().allyTeam)}
+																bonus={bonusFor(aiTarget(bot), team().allyTeam)}
 															/>
 														)}
 													</For>

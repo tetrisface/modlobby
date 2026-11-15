@@ -13,6 +13,7 @@ import {
 	showBotMenu,
 	showPlayerMenu,
 	showTeamMenu,
+	type Bonus,
 	type Moves,
 } from './PlayerMenu'
 
@@ -45,16 +46,15 @@ function press(): MouseEvent {
 	return new MouseEvent('contextmenu', { clientX: 10, clientY: 20 })
 }
 
-function moves(given: number[]): Moves {
+const MOVES: Moves = { teams: [0, 1], on: 1, to: () => Promise.resolve() }
+
+function bonus(given: number[]): Bonus {
 	return {
-		teams: [0, 1],
-		on: 1,
-		to: () => Promise.resolve(),
-		bonus: (percent) => {
+		set: (percent) => {
 			given.push(percent)
 			return Promise.resolve()
 		},
-		bonusNow: 25,
+		now: 25,
 	}
 }
 
@@ -78,7 +78,8 @@ describe('the bonus, from the row menu', () => {
 		const given: number[] = []
 		const { container } = render(() => <PlayerMenu />)
 		showBotMenu(BOT, () => Promise.resolve(), press(), {
-			moves: moves(given),
+			moves: MOVES,
+			bonus: bonus(given),
 		})
 		await settle()
 		expect(labels(container)).toEqual(['Bonus', 'Move to team 1', 'Remove'])
@@ -107,7 +108,8 @@ describe('the bonus, from the row menu', () => {
 		let opened = 0
 		const { container } = render(() => <PlayerMenu />)
 		showBotMenu(BOT, () => Promise.resolve(), press(), {
-			moves: moves([]),
+			moves: MOVES,
+			bonus: bonus([]),
 			edit: () => {
 				opened += 1
 			},
@@ -135,7 +137,8 @@ describe('the bonus, from the row menu', () => {
 		const { container } = render(() => <PlayerMenu />)
 		const added: number[] = []
 		showTeamMenu(1, '2 players · 3 AIs', press(), {
-			moves: moves(given),
+			moves: MOVES,
+			bonus: bonus(given),
 			addAi: () => added.push(1),
 			removeBots: () => {
 				cleared.push('all')
@@ -169,7 +172,7 @@ describe('the bonus, from the row menu', () => {
 	test('a person offers it too, where the room lets us', async () => {
 		const given: number[] = []
 		const { container } = render(() => <PlayerMenu />)
-		showPlayerMenu('alice', press(), { moves: moves(given) })
+		showPlayerMenu('alice', press(), { moves: MOVES, bonus: bonus(given) })
 		await settle()
 		expect(labels(container)).toContain('Bonus')
 	})
