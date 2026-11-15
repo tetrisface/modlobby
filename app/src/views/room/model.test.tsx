@@ -9,6 +9,7 @@ import type { Settings } from '../../ipc/bindings/Settings'
 import type { VacancyView } from '../../ipc/bindings/VacancyView'
 import { clearRoom, pushLine } from '../../store/chat'
 import { setWindowSeen } from '../../store/launch'
+import { setOver } from '../../store/overlay'
 import { setSettingsSignal } from '../../store/settings'
 import { emptyLobby, setLobby } from '../../store/lobby'
 import { seedSession } from '../../store/testing'
@@ -107,6 +108,9 @@ afterEach(() => {
 	setWindowSeen(null)
 })
 
+/** Where Escape goes; the list itself is not what is under test here. */
+const BattleList = () => <p class='battle-list' />
+
 async function open(model: RoomModel) {
 	const result = render(() => (
 		<MemoryRouter
@@ -115,6 +119,32 @@ async function open(model: RoomModel) {
 			)}
 		>
 			<Route path='/' component={Room} />
+			<Route path='/battles' component={BattleList} />
+		</MemoryRouter>
+	))
+	await settle()
+	return result
+}
+
+/** The menu lives beside the page, as in the app; what it knows of people
+ *  it reads off the lobby store. */
+async function openWithMenu(model: RoomModel) {
+	seedSession({
+		me: 'me',
+		myBattle: myBattle({ boss: 'me' }),
+		users: { alice: user('alice') },
+	})
+	const result = render(() => (
+		<MemoryRouter
+			root={(props) => (
+				<RoomProvider value={model}>
+					{props.children}
+					<PlayerMenu />
+				</RoomProvider>
+			)}
+		>
+			<Route path='/' component={Room} />
+			<Route path='/battles' component={BattleList} />
 		</MemoryRouter>
 	))
 	await settle()
@@ -391,30 +421,6 @@ describe('the bonus, from a row to the host', () => {
 			}),
 			io: recordingIo(calls),
 		})
-	}
-
-	/** The menu lives beside the page, as in the app; what it knows of people
-	 *  it reads off the lobby store. */
-	async function openWithMenu(model: RoomModel) {
-		seedSession({
-			me: 'me',
-			myBattle: myBattle({ boss: 'me' }),
-			users: { alice: user('alice') },
-		})
-		const result = render(() => (
-			<MemoryRouter
-				root={(props) => (
-					<RoomProvider value={model}>
-						{props.children}
-						<PlayerMenu />
-					</RoomProvider>
-				)}
-			>
-				<Route path='/' component={Room} />
-			</MemoryRouter>
-		))
-		await settle()
-		return result
 	}
 
 	async function setBonusOf(container: HTMLElement, name: string) {
@@ -826,6 +832,73 @@ describe('while our own engine is running', () => {
 		expect(cardButton(container, 'Leave game')).toBeTruthy()
 		expect(invoked()).not.toContain('stop_game')
 		expect(invoked()).not.toContain('quit_all')
+	})
+})
+
+describe('Escape in a room', () => {
+	afterEach(() => setOver(false))
+
+	async function pressEscape() {
+		fireEvent.keyDown(document.body, { key: 'Escape' })
+		await settle()
+	}
+	const onList = (container: HTMLElement) =>
+		container.querySelector('.battle-list') !== null
+
+	test('goes back to the battle list, still in the room', async () => {
+		const calls: Calls = []
+		const { container } = await open(
+			fakeRoom({ caps: SERVED, io: recordingIo(calls) }),
+		)
+		await pressEscape()
+		expect(onList(container)).toBe(true)
+		expect(calls.map(([name]) => name)).not.toContain('leaveBattle')
+	})
+
+	test("over a game it is the game's, not the room's", async () => {
+		setOver(true)
+		const { container } = await open(fakeRoom({ caps: SERVED }))
+		await pressEscape()
+		expect(onList(container)).toBe(false)
+	})
+
+	test("a room of one's own was never on the list", async () => {
+		const { container } = await open(alone([]))
+		await pressEscape()
+		expect(onList(container)).toBe(false)
+	})
+
+	test('an open menu takes the press, and only the menu closes', async () => {
+		const { container } = await openWithMenu(
+			fakeRoom({
+				caps: SERVED,
+				battle: () => battle({ members: ['me', 'alice'] }),
+				users: () => ({ me: user('me'), alice: user('alice') }),
+			}),
+		)
+		const alice = [...container.querySelectorAll('.pname')].find(
+			(cell) => cell.textContent === 'alice',
+		) as HTMLElement
+		fireEvent.contextMenu(alice, { clientX: 5, clientY: 5 })
+		await settle()
+		expect(container.querySelector('.player-menu')).toBeTruthy()
+
+		await pressEscape()
+		expect(container.querySelector('.player-menu')).toBeNull()
+		expect(onList(container)).toBe(false)
+	})
+
+	test('a sheet over the room keeps it, though it does not close on it', async () => {
+		const { container } = await open(fakeRoom({ caps: SERVED }))
+		const add = [...container.querySelectorAll('button')].find(
+			(button) => button.textContent === 'Add AI',
+		) as HTMLElement
+		fireEvent.click(add)
+		await settle()
+		expect(container.querySelector('.sheet')).toBeTruthy()
+
+		await pressEscape()
+		expect(onList(container)).toBe(false)
 	})
 })
 

@@ -5,6 +5,10 @@ import { onCleanup } from 'solid-js'
  * or on Escape, until the owner that called this is cleaned up. Call it from
  * the component, or from an effect that runs only while the thing is open.
  *
+ * The Escape that closes it is claimed (`preventDefault`), so the page's own
+ * Escape -- back to the game, back to the battle list -- waits for the next
+ * press.
+ *
  * On the document rather than stopped at the menu: Solid delegates
  * `onMouseDown` to the document too, and stopping propagation there does not
  * reach a listener on the same node.
@@ -19,7 +23,9 @@ export function dismiss(root: () => Node | undefined, close: () => void) {
 		close()
 	}
 	const onKey = (event: KeyboardEvent) => {
-		if (event.key === 'Escape') close()
+		if (event.key !== 'Escape') return
+		event.preventDefault()
+		close()
 	}
 	document.addEventListener('pointerdown', onDown)
 	document.addEventListener('keydown', onKey)

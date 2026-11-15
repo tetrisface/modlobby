@@ -75,6 +75,7 @@ import {
 	splitBounds,
 	writeWidth,
 } from '../lib/resize'
+import { unclaimedEscape } from '../lib/overlay'
 import { stopwatch } from '../lib/running'
 import { readSkills, teamSkill, type Skill } from '../lib/skill'
 import { chat, pushNotice } from '../store/chat'
@@ -736,6 +737,23 @@ export function Room() {
 	 * it: there is nothing to go back to yet, and a second click is an error.
 	 */
 	const loading = () => asked() || launching() || pressed() !== null
+
+	/**
+	 * Escape goes back to the battle list, still in the room: the seat or the
+	 * place in the queue is kept, and joining another room there leaves this
+	 * one. Only from a room joined off the list; a room of one's own was never
+	 * on it. Over a game Escape hands the game back instead (see `App`). A game
+	 * running with the lobby not over it is the player keeping the two apart,
+	 * so there the lobby goes on behaving as a lobby. A sheet open over the
+	 * room keeps Escape, whether or not the sheet closes on it.
+	 */
+	const escape = (event: KeyboardEvent) => {
+		if (!battle() || !room.caps.leave || over()) return
+		if (!unclaimedEscape(event) || document.querySelector('.sheet')) return
+		navigate('/battles')
+	}
+	window.addEventListener('keydown', escape)
+	onCleanup(() => window.removeEventListener('keydown', escape))
 
 	/**
 	 * A pressed start ends when the host refuses it, when the game it made has

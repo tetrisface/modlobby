@@ -2,12 +2,12 @@ import { describe, expect, test } from 'vitest'
 import {
 	clickAway,
 	clickLeavesOverlay,
-	escapeLeavesOverlay,
 	roomOnScreen,
+	unclaimedEscape,
 } from './overlay'
 
-function key(overrides: Partial<Parameters<typeof escapeLeavesOverlay>[0]>) {
-	return escapeLeavesOverlay({
+function key(overrides: Partial<Parameters<typeof unclaimedEscape>[0]>) {
+	return unclaimedEscape({
 		key: 'Escape',
 		defaultPrevented: false,
 		repeat: false,

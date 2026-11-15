@@ -8,23 +8,24 @@
  * than a careful reading.
  */
 
-/** Elements that consume Escape themselves before the overlay may have it. */
+/** Elements that consume Escape themselves before the page may have it. */
 const CLAIMS_ESCAPE =
 	'input, textarea, select, [contenteditable=""], [contenteditable="true"]'
 
 /**
- * Whether this key press should hand the game back.
+ * Whether this key press is an Escape for the page itself: over a game it
+ * hands the game back, in a room it goes back to the battle list.
  *
  * Escape only, pressed afresh, and only when nothing nearer has claimed it: a
- * dialog that called `preventDefault`, or a field someone is typing in —
- * Escape in a composer clears the draft, and losing the whole lobby instead
- * would be a nasty surprise.
+ * dialog or menu that called `preventDefault`, or a field someone is typing
+ * in — Escape in a composer clears the draft, and losing the whole lobby
+ * instead would be a nasty surprise.
  *
  * Not a repeat: the in-game Escape raises the lobby and focuses it mid-press,
  * so a key held past the keyboard's repeat delay sends its repeats here, and
  * taking one would toggle the game straight back.
  */
-export function escapeLeavesOverlay(event: {
+export function unclaimedEscape(event: {
 	key: string
 	defaultPrevented: boolean
 	repeat: boolean

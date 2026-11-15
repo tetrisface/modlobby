@@ -31,7 +31,7 @@ import { spectators } from './lib/battles'
 import { localStore } from './lib/resize'
 import { headCount, rememberSeen } from './lib/seen'
 import { serverId } from './lib/servers'
-import { clickAway, escapeLeavesOverlay, roomOnScreen } from './lib/overlay'
+import { clickAway, roomOnScreen, unclaimedEscape } from './lib/overlay'
 import { api, describeError, errorCode } from './ipc/client'
 import { raise } from './ipc/alerts'
 import { LAN, lanRoom } from './lan/lan'
@@ -332,7 +332,7 @@ function Layout(props: ParentProps) {
 		onCleanup(() => void veiled.then((unlisten) => unlisten()))
 
 		const keys = (event: KeyboardEvent) => {
-			if (over() && escapeLeavesOverlay(event)) void api.overlayToggle()
+			if (over() && unclaimedEscape(event)) void api.overlayToggle()
 		}
 		const away = clickAway(() => {
 			if (over()) void api.overlayToggle()
