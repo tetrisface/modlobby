@@ -185,6 +185,25 @@ describe('a player row', () => {
 		])
 	})
 
+	test('a bonus a host forced on a player reads after the name', () => {
+		const bonused = render(() => (
+			<PlayerRow
+				user={user({ battleStatus: battle({ handicap: 50 }) })}
+				skill={null}
+				me={false}
+			/>
+		))
+		expect(bonused.container.querySelector('.who')?.textContent).toBe(
+			'DrDandy+50%',
+		)
+		bonused.unmount()
+
+		const { container } = render(() => (
+			<PlayerRow user={user()} skill={null} me={false} />
+		))
+		expect(container.querySelector('.bonus')).toBeNull()
+	})
+
 	test('an uncertain rating reads ?? and a confident one is bright', () => {
 		const unrated = render(() => (
 			<PlayerRow user={user()} skill={skill({ sigma: 6.81 })} me={false} />

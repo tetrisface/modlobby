@@ -74,9 +74,21 @@ export function PlayerRow(props: {
 							{props.user.name}
 						</span>
 						<Marks status={props.user.status} boss={props.boss ?? false} />
+						<Bonus handicap={battle().handicap} />
 					</span>
 				</div>
 			)}
+		</Show>
+	)
+}
+
+/** A resource bonus the host set on a seat, human or AI. None reads as nothing. */
+function Bonus(props: { handicap: number }) {
+	return (
+		<Show when={props.handicap > 0}>
+			<span class='bonus' title='Resource bonus'>
+				+{props.handicap}%
+			</span>
 		</Show>
 	)
 }
@@ -141,11 +153,7 @@ export function BotRow(props: {
 			{/* An AI has no rating, rank or country, so the columns those would sit
           in are the AI's to use: a bonus reads there rather than pushing the
           name into an ellipsis. */}
-			<Show when={props.bot.status.handicap > 0}>
-				<span class='bot-bonus' title='Resource bonus'>
-					+{props.bot.status.handicap}%
-				</span>
-			</Show>
+			<Bonus handicap={props.bot.status.handicap} />
 			<Show when={props.onClone && !gameMode()}>
 				<button
 					class='row-act bot-clone'
