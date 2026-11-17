@@ -87,6 +87,7 @@ describe('search', () => {
 		title: 'SuPrEmE MuFF | 8v8',
 		mapName: 'Supreme Isthmus v2.1',
 		founder: 'Host[US4][000]',
+		members: ['Host[US4][000]', 'RetDef'],
 	})
 
 	test('one word is a substring of any field', () => {
@@ -94,6 +95,10 @@ describe('search', () => {
 		expect(matches(room, 'isthmus')).toBe(true)
 		expect(matches(room, 'us4')).toBe(true)
 		expect(matches(room, 'nonsense')).toBe(false)
+	})
+
+	test('a player in the room finds it', () => {
+		expect(matches(room, 'retdef')).toBe(true)
 	})
 
 	test('several words must all appear, in any field and any order', () => {

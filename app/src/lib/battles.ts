@@ -85,14 +85,21 @@ export function isVsAi(battle: BattleView): boolean {
 /**
  * Chobby's search: one word is a substring of any field, several words must
  * each appear somewhere, in any field and any order
- * (`battle_list_window.lua:803-845`).
+ * (`battle_list_window.lua:1030-1085`). The people in the room are fields
+ * too, so a name finds the room its player is in.
  */
 export function matches(
 	battle: BattleView,
 	query: string | readonly string[],
 ): boolean {
 	return hasEveryWord(
-		[battle.title, battle.mapName, battle.founder, battle.gameName].join(' '),
+		[
+			battle.title,
+			battle.mapName,
+			battle.founder,
+			battle.gameName,
+			...battle.members,
+		].join(' '),
 		query,
 	)
 }
