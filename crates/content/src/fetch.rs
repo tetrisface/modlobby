@@ -37,7 +37,8 @@ pub enum Error {
 /// few hundred megabytes and a game can be most of a gigabyte. What is already
 /// on disk is asked for with `Range`; a server that answers 206 continues it,
 /// one that answers 200 did not understand and starts over. `report` hears
-/// `(got, total)` every [`REPORT_EVERY`] bytes and once at the end.
+/// `(got, total)` once the server has answered, every [`REPORT_EVERY`] bytes
+/// after that, and once at the end.
 pub async fn resumable(
 	http: &reqwest::Client,
 	url: &str,
@@ -88,6 +89,9 @@ pub async fn resumable(
 		Some(remaining) => got + remaining,
 		None => expected.max(got),
 	};
+	// Said at once, so the size is on screen before the first
+	// `REPORT_EVERY` has arrived.
+	report(got, total);
 	let mut reported = got;
 
 	// `chunk` rather than a stream, so reqwest needs no extra feature and this

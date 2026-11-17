@@ -2,7 +2,7 @@ import { listen } from '@tauri-apps/api/event'
 import { Show, createEffect, createSignal, onCleanup, onMount } from 'solid-js'
 import type { EngineProgress } from '../ipc/bindings/EngineProgress'
 import { api, describeError, errorCode } from '../ipc/client'
-import { mb } from '../lib/download'
+import { engineFraction, mb, percent } from '../lib/download'
 import { pushNotice } from '../store/chat'
 
 /** Where `askedFor` is mirrored. Before it, since it is read at load. */
@@ -152,8 +152,12 @@ export function GetEngine(props: {
 				return 'looking it up…'
 			case 'downloading':
 				return at.total > 0 ? `${mb(at.got)} of ${mb(at.total)}` : mb(at.got)
-			case 'extracting':
-				return 'unpacking…'
+			case 'extracting': {
+				const fraction = engineFraction(at)
+				return fraction === null
+					? 'unpacking…'
+					: `unpacking ${percent(fraction)}`
+			}
 			case 'done':
 				return null
 			case 'failed':
@@ -161,12 +165,7 @@ export function GetEngine(props: {
 		}
 	}
 
-	const fraction = () => {
-		const at = progress()
-		return at?.phase === 'downloading' && at.total > 0
-			? at.got / at.total
-			: null
-	}
+	const fraction = () => engineFraction(progress())
 
 	return (
 		<div class='get-engine'>
@@ -184,14 +183,11 @@ export function GetEngine(props: {
 				{(text) => (
 					<div class='get-engine-progress'>
 						<div class='bar'>
+							{/* Only ever forward: a step with no size yet sits empty,
+							    and the words beside it say what it is doing. */}
 							<div
 								class='fill'
-								classList={{ indeterminate: fraction() === null }}
-								style={
-									fraction() === null
-										? undefined
-										: { width: `${(fraction() ?? 0) * 100}%` }
-								}
+								style={{ width: `${(fraction() ?? 0) * 100}%` }}
 							/>
 						</div>
 						<span class='muted'>{text()}</span>

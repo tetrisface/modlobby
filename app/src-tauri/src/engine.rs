@@ -37,9 +37,14 @@ pub enum EngineProgress {
 		#[ts(type = "number")]
 		total: u64,
 	},
-	/// The archive is in hand; checking and unpacking it is not interruptible
-	/// and can take a while, so it is worth saying that it is happening.
-	Extracting,
+	/// The archive is in hand and being unpacked: `done` of `total` unpacked
+	/// bytes, `total` 0 until the archive has said how much it holds.
+	Extracting {
+		#[ts(type = "number")]
+		done: u64,
+		#[ts(type = "number")]
+		total: u64,
+	},
 	Done {
 		version: String,
 	},
@@ -171,14 +176,33 @@ async fn fetch(
 	// resume; a checksum failure has already removed it.
 	download(http, &release, &staging, say).await?;
 
-	say(EngineProgress::Extracting);
-	let unpacked = tokio::task::spawn_blocking({
+	say(EngineProgress::Extracting { done: 0, total: 0 });
+	// The unpacking thread cannot borrow `say`, so its progress comes back
+	// over a channel, a whole percent at a time: the bytes arrive a few KiB
+	// per read.
+	let (tell, mut heard) = tokio::sync::mpsc::unbounded_channel();
+	let unpacking = tokio::task::spawn_blocking({
 		let staging = staging.clone();
 		let target = target.clone();
-		move || unpack(&staging, &target)
-	})
-	.await
-	.map_err(|err| ApiError::new("io", format!("unpacking: {err}")))?;
+		move || {
+			let mut told = None;
+			unpack(&staging, &target, |done, total| {
+				let percent = done * 100 / total.max(1);
+				if told == Some(percent) {
+					return;
+				}
+				told = Some(percent);
+				let _ = tell.send(EngineProgress::Extracting { done, total });
+			})
+		}
+	});
+	// Ends when the thread is done with the sender.
+	while let Some(progress) = heard.recv().await {
+		say(progress);
+	}
+	let unpacked = unpacking
+		.await
+		.map_err(|err| ApiError::new("io", format!("unpacking: {err}")))?;
 
 	let _ = std::fs::remove_file(&staging);
 	unpacked.map_err(|err| {
@@ -270,36 +294,91 @@ async fn text(http: &reqwest::Client, url: &str, doing: &str) -> Result<String> 
 }
 
 /// Unpacks an engine archive into `target`, by what it is: BAR's index serves
-/// 7z, GitHub's release is a zip.
-fn unpack(archive: &Path, target: &Path) -> std::result::Result<(), String> {
+/// 7z, GitHub's release is a zip. `progress` hears the bytes unpacked so far
+/// and how many there are in all.
+fn unpack(
+	archive: &Path,
+	target: &Path,
+	mut progress: impl FnMut(u64, u64),
+) -> std::result::Result<(), String> {
 	let zipped = archive
 		.file_name()
 		.and_then(|name| name.to_str())
 		.is_some_and(|name| name.ends_with(".zip.part"));
 	if zipped {
-		return unzip(archive, target).map_err(|err| err.to_string());
+		return unzip(archive, target, &mut progress).map_err(|err| err.to_string());
 	}
 	// Decoded from memory, where a seek is free: sevenz-rust2 seeks before
 	// every read, which also empties a `BufReader`. BAR's 105 engine took 52 s
 	// straight off the file, 21 s buffered, 2 s from memory.
-	let bytes = std::fs::read(archive).map_err(|err| err.to_string())?;
-	sevenz_rust2::decompress(std::io::Cursor::new(bytes), target).map_err(|err| err.to_string())
+	let mut bytes = std::io::Cursor::new(std::fs::read(archive).map_err(|err| err.to_string())?);
+	// The header read once more for its sizes; decompressing reads it again.
+	let total = sevenz_rust2::Archive::read(&mut bytes, &sevenz_rust2::Password::empty())
+		.map_err(|err| err.to_string())?
+		.files
+		.iter()
+		.map(|file| file.size)
+		.sum();
+	let mut done = 0;
+	let mut tally = |read| {
+		done += read;
+		progress(done, total);
+	};
+	sevenz_rust2::decompress_with_extract_fn(bytes, target, |entry, reader, dest| {
+		let mut reader = Tallied {
+			inner: reader,
+			tally: &mut tally,
+		};
+		sevenz_rust2::default_entry_extract_fn(entry, &mut reader, dest)
+	})
+	.map_err(|err| err.to_string())
+}
+
+/// A reader that tells `tally` how many bytes each read gave.
+struct Tallied<'a, R: std::io::Read + ?Sized> {
+	inner: &'a mut R,
+	tally: &'a mut dyn FnMut(u64),
+}
+
+impl<R: std::io::Read + ?Sized> std::io::Read for Tallied<'_, R> {
+	fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+		let read = self.inner.read(buf)?;
+		(self.tally)(read as u64);
+		Ok(read)
+	}
+}
+
+/// Where a zip member goes under the target: `None` for one that would land
+/// outside it, which `enclosed_name` refuses, and for the `__MACOSX/`
+/// resource forks a Mac's zip adds beside every file.
+fn kept<R: std::io::Read>(member: &zip::read::ZipFile<'_, R>) -> Option<PathBuf> {
+	member
+		.enclosed_name()
+		.filter(|relative| !relative.starts_with("__MACOSX"))
 }
 
 /// Unpacks a zip into `target`, keeping the executable bits and symlinks the
 /// archive carries -- an app bundle is nothing without either -- and leaving
-/// out the `__MACOSX/` resource forks a Mac's zip adds beside every file.
-fn unzip(archive: &Path, target: &Path) -> std::io::Result<()> {
+/// out what [`kept`] does.
+fn unzip(archive: &Path, target: &Path, progress: &mut dyn FnMut(u64, u64)) -> std::io::Result<()> {
 	let mut zip = zip::ZipArchive::new(std::fs::File::open(archive)?)?;
+	let mut total = 0;
+	for index in 0..zip.len() {
+		let member = zip.by_index_raw(index)?;
+		if kept(&member).is_some() {
+			total += member.size();
+		}
+	}
+	let mut done = 0;
+	let mut tally = |read| {
+		done += read;
+		progress(done, total);
+	};
 	for index in 0..zip.len() {
 		let mut member = zip.by_index(index)?;
-		// `enclosed_name` refuses a member that would land outside `target`.
-		let Some(relative) = member.enclosed_name() else {
+		let Some(relative) = kept(&member) else {
 			continue;
 		};
-		if relative.starts_with("__MACOSX") {
-			continue;
-		}
 		let path = target.join(relative);
 		if member.is_dir() {
 			std::fs::create_dir_all(&path)?;
@@ -316,7 +395,11 @@ fn unzip(archive: &Path, target: &Path) -> std::io::Result<()> {
 			continue;
 		}
 		let mut file = std::fs::File::create(&path)?;
-		std::io::copy(&mut member, &mut file)?;
+		let mut reader = Tallied {
+			inner: &mut member,
+			tally: &mut tally,
+		};
+		std::io::copy(&mut reader, &mut file)?;
 		#[cfg(unix)]
 		if let Some(mode) = member.unix_mode() {
 			use std::os::unix::fs::PermissionsExt;
@@ -460,10 +543,12 @@ mod tests {
 		zip.finish().unwrap();
 
 		let target = dir.path().join("v0.15.1");
-		unpack(&archive, &target).unwrap();
+		let mut last = None;
+		unpack(&archive, &target, |done, total| last = Some((done, total))).unwrap();
 		let spring = target.join("BAR Launcher.app/Contents/MacOS/spring");
 		assert_eq!(std::fs::read(&spring).unwrap(), b"engine");
 		assert!(!target.join("__MACOSX").exists());
+		assert_eq!(last, Some((6, 6)), "the forks left out are not counted");
 		#[cfg(unix)]
 		{
 			use std::os::unix::fs::PermissionsExt;
@@ -474,6 +559,29 @@ mod tests {
 				"an engine that cannot be run is no engine"
 			);
 		}
+	}
+
+	/// BAR's index serves 7z. The bar fills to the end and no further: a total
+	/// read from the wrong place would stop it short or run it over.
+	#[test]
+	fn a_7z_unpacks_and_counts_up_to_its_unpacked_size() {
+		let dir = tempfile::tempdir().unwrap();
+		let source = dir.path().join("source");
+		std::fs::create_dir_all(source.join("base")).unwrap();
+		std::fs::write(source.join("spring.exe"), b"engine").unwrap();
+		std::fs::write(source.join("base/springcontent.sdz"), b"content").unwrap();
+		let archive = dir.path().join(".x.7z.part");
+		sevenz_rust2::compress(&source, std::fs::File::create(&archive).unwrap()).unwrap();
+
+		let target = dir.path().join("2026.09.03");
+		let mut last = None;
+		unpack(&archive, &target, |done, total| last = Some((done, total))).unwrap();
+		assert_eq!(std::fs::read(target.join("spring.exe")).unwrap(), b"engine");
+		assert_eq!(
+			std::fs::read(target.join("base/springcontent.sdz")).unwrap(),
+			b"content"
+		);
+		assert_eq!(last, Some((13, 13)));
 	}
 
 	#[tokio::test]

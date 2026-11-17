@@ -10,11 +10,17 @@ describe('watchStep', () => {
 		).toMatchObject({ label: 'Engine 44%', fraction: 21 / 48 })
 	})
 
-	test('unpacking has no size to fill to', () => {
-		expect(watchStep('105', { phase: 'extracting' }, idle)).toMatchObject({
-			label: 'Unpacking',
-			fraction: null,
-		})
+	test('fills with the unpacking', () => {
+		expect(
+			watchStep('105', { phase: 'extracting', done: 30e6, total: 120e6 }, idle),
+		).toMatchObject({ label: 'Unpacking 25%', fraction: 0.25 })
+	})
+
+	// Before the archive has said how much it holds: no `NaN%`.
+	test('unpacking has no size to fill to at first', () => {
+		expect(
+			watchStep('105', { phase: 'extracting', done: 0, total: 0 }, idle),
+		).toMatchObject({ label: 'Unpacking', fraction: null })
 	})
 
 	// The engine's `done` stays the latest word through pr-downloader's run.

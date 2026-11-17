@@ -1,6 +1,6 @@
 import type { DownloadStatus } from '../ipc/bindings/DownloadStatus'
 import type { EngineProgress } from '../ipc/bindings/EngineProgress'
-import { downloadFraction, mb } from './download'
+import { downloadFraction, engineFraction, mb, percent } from './download'
 
 /** One step of a Watch, as its chip shows it. */
 export interface WatchStep {
@@ -10,8 +10,6 @@ export interface WatchStep {
 	/** The step in full, for the tooltip. */
 	title: string
 }
-
-const percent = (fraction: number) => `${Math.round(fraction * 100)}%`
 
 /**
  * Where a Watch on a replay has got: its engine, then the game and map
@@ -32,20 +30,22 @@ export function watchStep(
 				title: `Looking up engine ${version}`,
 			}
 		case 'downloading': {
-			const fraction =
-				engine.total > 0 ? Math.min(engine.got / engine.total, 1) : null
+			const fraction = engineFraction(engine)
 			return {
 				label: fraction === null ? 'Engine' : `Engine ${percent(fraction)}`,
 				fraction,
 				title: `Engine ${version}: ${mb(engine.got)} of ${mb(engine.total)}`,
 			}
 		}
-		case 'extracting':
+		case 'extracting': {
+			const fraction = engineFraction(engine)
 			return {
-				label: 'Unpacking',
-				fraction: null,
+				label:
+					fraction === null ? 'Unpacking' : `Unpacking ${percent(fraction)}`,
+				fraction,
 				title: `Unpacking engine ${version}`,
 			}
+		}
 	}
 	if (download.state === 'running') {
 		const fraction = downloadFraction(download)

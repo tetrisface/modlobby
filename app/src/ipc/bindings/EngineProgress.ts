@@ -6,6 +6,6 @@
 export type EngineProgress =
 	| { phase: 'finding' }
 	| { phase: 'downloading'; got: number; total: number }
-	| { phase: 'extracting' }
+	| { phase: 'extracting'; done: number; total: number }
 	| { phase: 'done'; version: string }
 	| { phase: 'failed'; reason: string }
