@@ -843,10 +843,17 @@ pub(crate) fn with_mods_demos(mut dirs: content::DataDirs) -> content::DataDirs 
 
 /// Plays a replay. The engine takes a demo file where it would take a
 /// `spring://` URL, so this is the launch path with a different target.
+///
+/// An old replay's engine is fetched first, the way BAR's debug launcher
+/// does: the runtime fetches the game and map with pr-downloader, which ships
+/// inside an engine.
 #[tauri::command]
-pub async fn play_replay(app: State<'_, App>, path: String) -> Result<()> {
+pub async fn play_replay(app: State<'_, App>, window: tauri::Window, path: String) -> Result<()> {
 	let dirs = data_dirs(&app)?;
-	listed_replay(&dirs, &path)?;
+	let replay = listed_replay(&dirs, &path)?;
+	if let Some(version) = content::replays::engine_of(&replay) {
+		crate::engine::get(&app, &window, &version).await?;
+	}
 	app.client.play_replay(dirs, path).await?;
 	Ok(())
 }

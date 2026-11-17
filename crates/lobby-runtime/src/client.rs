@@ -1615,6 +1615,9 @@ struct Runtime {
 	/// Where that room is kept between runs. `None` keeps it nowhere, which is
 	/// what the CLI and the tests want.
 	skirmish_path: Option<PathBuf>,
+	/// A replay asked for while its game or map was still missing, started
+	/// once the download that fetches them is done, and the Watch waiting on it.
+	replay_waiting: Option<(DataDirs, String, Reply<()>)>,
 }
 
 /// A room's engine, and its game and map by name, each with the hash the
@@ -2163,6 +2166,7 @@ impl Runtime {
 			skirmish: None,
 			skirmish_checked: None,
 			skirmish_path: None,
+			replay_waiting: None,
 			projector: Projector::new(),
 			batcher: Batcher::default(),
 			unheard: Vec::new(),
@@ -2266,20 +2270,58 @@ impl Runtime {
 		}
 	}
 
-	/// Starts the engine on a replay.
+	/// Starts the engine on a replay, or first fetches the game and map its
+	/// start script names and this machine lacks, and starts it once they are
+	/// in. An old replay is mostly games nobody has kept.
 	///
-	/// The engine reads the demo's own header for the engine version it needs,
-	/// so the replay's name is the only hint we have about which one to use;
-	/// falling back to any installed engine beats refusing to play it.
-	async fn play_replay(&mut self, dirs: DataDirs, path: String) -> Result<(), ClientError> {
+	/// `reply` is answered when the replay is up or its fetch has ended, so a
+	/// Watch is one request from the click to the game.
+	async fn play_replay(&mut self, dirs: DataDirs, path: String, reply: Reply<()>) {
+		match self.fetch_for_replay(&dirs, &path).await {
+			Ok(true) => self.replay_waiting = Some((dirs, path, reply)),
+			Ok(false) => {
+				let _ = reply.send(self.launch_replay(dirs, path).await);
+			}
+			Err(err) => {
+				let _ = reply.send(Err(err));
+			}
+		}
+	}
+
+	/// Starts fetching what of the replay's game and map is missing, and says
+	/// whether it did.
+	async fn fetch_for_replay(&mut self, dirs: &DataDirs, path: &str) -> Result<bool, ClientError> {
 		if self.engine.is_some() {
 			return Err(ClientError::Engine("the engine is already running".into()));
 		}
-		let version = std::path::Path::new(&path)
-			.file_stem()
-			.and_then(|stem| stem.to_str())
-			.and_then(|stem| stem.rsplit_once('_').map(|(_, engine)| engine.to_owned()))
+		let script = content::demo::script(path)
+			.map(|text| recoil::script_read::parse(&text))
 			.unwrap_or_default();
+		let named = |key: &str| script.game.get(key).cloned().unwrap_or_default();
+		let (game, map) = (named("gametype"), named("mapname"));
+		let library = content::Library::new(crate::mods::with_builds(dirs));
+		// A script naming no game is launched as it is: `fetch` would take the
+		// empty name for a first run asking for BAR.
+		let complete = game.is_empty()
+			|| (library.has_game(&game) && (map.is_empty() || library.has_map(&map)));
+		if complete {
+			return Ok(false);
+		}
+		let version = content::replays::engine_of(std::path::Path::new(path)).unwrap_or_default();
+		self.fetch((version, game, map), Vec::new(), None, true)
+			.await?;
+		Ok(true)
+	}
+
+	/// Starts the engine on a replay, with whatever of its content is here.
+	///
+	/// The engine reads the demo's own header for the engine version it needs,
+	/// so the replay's name is the only hint we have about which one to use.
+	async fn launch_replay(&mut self, dirs: DataDirs, path: String) -> Result<(), ClientError> {
+		if self.engine.is_some() {
+			return Err(ClientError::Engine("the engine is already running".into()));
+		}
+		let version = content::replays::engine_of(std::path::Path::new(&path)).unwrap_or_default();
 
 		// A replay of a modded game replays its mods, which is their code
 		// running: the same boundary as the game had.
@@ -2774,9 +2816,20 @@ impl Runtime {
 				} else {
 					DownloadStatus::Done { what }
 				};
+				let done = matches!(status, DownloadStatus::Done { .. });
 				self.batcher.push(Delta::Download(status));
 				// Whatever arrived changes the answer, so ask the disk again.
 				self.look_again().await;
+				// A failure is already said and a stop was somebody changing
+				// their mind, so either ends the Watch without an error.
+				if let Some((dirs, path, reply)) = self.replay_waiting.take() {
+					let result = if done {
+						self.launch_replay(dirs, path).await
+					} else {
+						Ok(())
+					};
+					let _ = reply.send(result);
+				}
 			}
 		}
 	}
@@ -3438,8 +3491,7 @@ impl Runtime {
 				let _ = reply.send(result);
 			}
 			Command::PlayReplay { dirs, path, reply } => {
-				let result = self.play_replay(dirs, path).await;
-				let _ = reply.send(result);
+				self.play_replay(dirs, path, reply).await;
 			}
 			Command::DownloadMissing { reply } => {
 				let result = self.start_download(true).await;
@@ -7024,9 +7076,10 @@ mod tests {
 		let demos = dir.path().join("demos");
 		std::fs::create_dir_all(&demos).unwrap();
 		let replay = demos.join("2026-10-18_modded_0.0.0.sdf");
+		// No game named, so nothing to fetch before the launch.
 		std::fs::write(
 			&replay,
-			demo_with("[game]\n{\n\tmutator0 = github-x-y-abc.sdd;\n\tgametype = g;\n}\n"),
+			demo_with("[game]\n{\n\tmutator0 = github-x-y-abc.sdd;\n}\n"),
 		)
 		.unwrap();
 		let result = client
@@ -7041,6 +7094,44 @@ mod tests {
 			}
 			other => panic!("{other:?}"),
 		}
+		client.shutdown().await;
+	}
+
+	/// An old replay's game is long gone from most machines, and the engine
+	/// started without it only stops at its own error screen. So it is asked
+	/// for, which with no data directory set is refused, rather than launched.
+	#[tokio::test]
+	async fn a_replay_whose_game_is_missing_is_fetched_not_launched() {
+		let (connector, _server) = in_memory();
+		let client = Client::spawn_with(
+			ThrottlePolicy::default(),
+			Hardware::stub(),
+			connector,
+			Arc::new(latency::Unmeasured),
+			None,
+			Some(scratch()),
+			Arc::new(sandbox::Refuse {
+				reason: "no sandbox in this test".into(),
+			}),
+		);
+		let dir = tempfile::tempdir().unwrap();
+		let demos = dir.path().join("demos");
+		std::fs::create_dir_all(&demos).unwrap();
+		let replay = demos.join("2024-10-23_19-00-26-147_Plate_105.1.1-2590-gb9462a0 BAR105.sdf");
+		std::fs::write(
+			&replay,
+			demo_with(
+				"[game]\n{\n\tgametype = Beyond All Reason test-1-abc;\n\tmapname = Plate;\n}\n",
+			),
+		)
+		.unwrap();
+		let result = client
+			.play_replay(
+				DataDirs::only(dir.path()),
+				replay.to_string_lossy().into_owned(),
+			)
+			.await;
+		assert!(matches!(result, Err(ClientError::Refused(_))), "{result:?}");
 		client.shutdown().await;
 	}
 

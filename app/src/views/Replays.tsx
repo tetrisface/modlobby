@@ -1,14 +1,56 @@
 import { createVirtualizer } from '@tanstack/solid-virtual'
-import { For, Show, createMemo, createResource, createSignal } from 'solid-js'
+import { listen } from '@tauri-apps/api/event'
+import {
+	For,
+	Show,
+	createMemo,
+	createResource,
+	createSignal,
+	onCleanup,
+	onMount,
+} from 'solid-js'
 import { Ask } from '../components/Ask'
+import { SyncIcon } from '../components/icons'
+import type { EngineProgress } from '../ipc/bindings/EngineProgress'
 import type { ReplayView } from '../ipc/bindings/ReplayView'
 import { api, describeError } from '../ipc/client'
 import { exactly } from '../lib/age'
 import { span } from '../lib/running'
+import { type WatchStep, watchStep } from '../lib/watch'
 import { pushNotice } from '../store/chat'
 import { lobby } from '../store/lobby'
 
 const ROW_HEIGHT = 40
+
+/**
+ * Watch, which on its way is its own progress bar: the same box, filling
+ * left to right, so the row holds still as it turns into one.
+ */
+function WatchButton(props: {
+	step: WatchStep | null
+	disabled: boolean
+	onClick: () => void
+}) {
+	const fill = () => `${Math.round((props.step?.fraction ?? 0) * 100)}%`
+	return (
+		<button
+			classList={{ watching: props.step !== null }}
+			disabled={props.disabled}
+			title={props.step?.title}
+			style={{ '--fill': fill() }}
+			onClick={() => props.onClick()}
+		>
+			<Show when={props.step} fallback='Watch'>
+				{(step) => (
+					<>
+						<SyncIcon fraction={null} running label={step().title} />
+						<span class='watch-step'>{step().label}</span>
+					</>
+				)}
+			</Show>
+		</button>
+	)
+}
 
 /** `51m game · 37m wall`, or `null` for a game left before it ended. */
 function lengthOf(replay: ReplayView): string | null {
@@ -67,11 +109,28 @@ export function Replays() {
 		overscan: 10,
 	})
 
+	// A Watch is one request from the click to the replay starting: the
+	// engine is fetched first, then the runtime fetches the game and map and
+	// answers once the replay is up. `watching` is the replay it is for.
+	const [watching, setWatching] = createSignal<string | null>(null)
+	const [engine, setEngine] = createSignal<EngineProgress | null>(null)
+	onMount(() => {
+		const pending = listen<EngineProgress>('engine-download', (event) =>
+			setEngine(event.payload),
+		)
+		onCleanup(() => void pending.then((unlisten) => unlisten()))
+	})
+
 	async function play(replay: ReplayView) {
+		if (watching() !== null) return
+		setEngine(null)
+		setWatching(replay.path)
 		try {
 			await api.playReplay(replay.path)
 		} catch (error) {
 			pushNotice('warning', describeError(error))
+		} finally {
+			setWatching(null)
 		}
 	}
 
@@ -174,12 +233,18 @@ export function Replays() {
 												>
 													To preset
 												</button>
-												<button
-													disabled={lobby.engine.state === 'running'}
+												<WatchButton
+													step={
+														watching() === r().path
+															? watchStep(r().engine, engine(), lobby.download)
+															: null
+													}
+													disabled={
+														lobby.engine.state === 'running' ||
+														watching() !== null
+													}
 													onClick={() => void play(r())}
-												>
-													Watch
-												</button>
+												/>
 											</div>
 										)}
 									</Show>

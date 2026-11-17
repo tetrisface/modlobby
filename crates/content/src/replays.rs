@@ -53,6 +53,14 @@ fn parse_name(stem: &str) -> Option<(String, String, String)> {
 	))
 }
 
+/// The engine a replay was recorded on, from the end of its name: the same
+/// version [`parse_name`] lists it under, for any name it lists.
+pub fn engine_of(path: &Path) -> Option<String> {
+	let stem = path.file_stem()?.to_str()?;
+	let (_, engine) = stem.rsplit_once('_')?;
+	Some(engine.to_owned())
+}
+
 /// A replay as its name and the directory listing tell it, with no file
 /// opened: cheap enough to ask of every replay each time someone looks.
 #[derive(Debug, Clone, PartialEq, Eq)]

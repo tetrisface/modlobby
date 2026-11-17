@@ -355,9 +355,26 @@ impl Launch {
 		if let Some(menu) = self.menu.as_ref().filter(|menu| menu.found()) {
 			cmd.arg("--menu").arg(&menu.name);
 		}
+		// A replay is served by a game server the engine starts here, on
+		// `HostIPDefault`'s `localhost` unless told otherwise. Windows answers
+		// that with `::1` first, which BAR's 2025.06.24 `spring.exe` cannot
+		// bind ("the requested address is not valid in its context") though
+		// its own spring-headless can. IPv4 loopback works on every engine.
+		if is_replay(&self.target) {
+			cmd.arg("--server").arg("127.0.0.1");
+		}
 		cmd.arg(&self.target);
 		cmd
 	}
+}
+
+/// Whether the engine takes `target` for a replay: BAR's extensions, as the
+/// engine's own `IsDemoExtension` reads them.
+fn is_replay(target: &str) -> bool {
+	Path::new(target)
+		.extension()
+		.and_then(|ext| ext.to_str())
+		.is_some_and(|ext| ext.eq_ignore_ascii_case("sdfz") || ext.eq_ignore_ascii_case("sdf"))
 }
 
 #[cfg(test)]
@@ -548,6 +565,40 @@ mod tests {
 			vec![root.join("theirs"), app.join("Contents").join("Resources")],
 			"ours first, the bundle last"
 		);
+
+		std::fs::remove_dir_all(&root).unwrap();
+	}
+
+	/// A replay's own server listens on IPv4 loopback: the `::1` Windows gives
+	/// for `localhost` stops BAR's 2025.06.24 at its loading screen. A game
+	/// joined by URL has no server of ours to place.
+	#[test]
+	fn a_replay_is_served_on_ipv4_loopback() {
+		let root = scratch("replay-server");
+		bundled_engine(&root);
+		let args = |target: &str| -> Vec<String> {
+			let launch = Launch {
+				engine: find_engine(&root, "2026.07.04").unwrap(),
+				data_dir: root.join("write"),
+				read_dirs: Vec::new(),
+				target: target.into(),
+				config: None,
+				menu: None,
+			};
+			let cmd = launch.command();
+			cmd.get_args()
+				.map(|arg| arg.to_string_lossy().into_owned())
+				.collect()
+		};
+
+		let replay = args("demos/2026-05-28_13-54-14-924_Ancient Bastion_2025.06.24.sdfz");
+		assert!(
+			replay
+				.windows(2)
+				.any(|pair| pair == ["--server", "127.0.0.1"]),
+			"{replay:?}"
+		);
+		assert!(!args("spring://me@host:8452").contains(&"--server".to_owned()));
 
 		std::fs::remove_dir_all(&root).unwrap();
 	}

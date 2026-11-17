@@ -2,12 +2,8 @@ import { listen } from '@tauri-apps/api/event'
 import { Show, createEffect, createSignal, onCleanup, onMount } from 'solid-js'
 import type { EngineProgress } from '../ipc/bindings/EngineProgress'
 import { api, describeError, errorCode } from '../ipc/client'
+import { mb } from '../lib/download'
 import { pushNotice } from '../store/chat'
-
-/** Bytes as something a person reads, which for this is always whole MB. */
-function mb(bytes: number): string {
-	return `${Math.round(bytes / 1_000_000)} MB`
-}
 
 /** Where `askedFor` is mirrored. Before it, since it is read at load. */
 const ASKED_KEY = 'modlobby.engines-asked'

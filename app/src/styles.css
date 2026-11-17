@@ -4487,8 +4487,9 @@ input[type='checkbox'].v-edit {
 
 .replay-row {
 	display: grid;
-	/* The length column fits `1h26 game · 1h51 wall`. */
-	grid-template-columns: 10.3125rem 1fr 9.5rem 6.25rem 5.625rem 6rem 5.625rem;
+	/* The length column fits `1h26 game · 1h51 wall`, the last Watch's
+	   `Content 100%`. */
+	grid-template-columns: 10.3125rem 1fr 9.5rem 6.25rem 5.625rem 6rem 7rem;
 	align-items: center;
 	gap: 0.75rem;
 	padding: 0 1rem;
@@ -4498,6 +4499,37 @@ input[type='checkbox'].v-edit {
 
 .replay-row:hover {
 	background: var(--raised);
+}
+
+/* A Watch on its way: the button keeps its box, with the room's download
+   colours filling it left to right. Its own font sets the height; the step
+   is said in the smaller chip type so `Content 100%` fits. */
+.replay-row button.watching {
+	opacity: 1;
+	cursor: progress;
+	padding-inline: 0.5rem;
+	white-space: nowrap;
+	color: var(--accent);
+	border-color: rgba(88, 196, 255, 0.32);
+	background-image: linear-gradient(
+		to right,
+		color-mix(in srgb, var(--accent) 24%, transparent) var(--fill, 0%),
+		transparent var(--fill, 0%)
+	);
+}
+
+.replay-row button.watching .icon {
+	display: inline-block;
+	width: 0.8125rem;
+	height: 0.8125rem;
+	margin-right: 0.3125rem;
+	vertical-align: -0.125rem;
+}
+
+.watch-step {
+	font-size: 0.65625rem;
+	font-weight: 500;
+	letter-spacing: 0.04em;
 }
 
 .col-when,

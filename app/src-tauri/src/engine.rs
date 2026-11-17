@@ -63,7 +63,13 @@ pub async fn download_engine(
 	window: tauri::Window,
 	version: String,
 ) -> Result<String> {
-	let dirs = crate::commands::data_dirs(&app)?;
+	get(&app, &window, &version).await
+}
+
+/// [`download_engine`] for a caller that needs the engine before going on;
+/// returns at once when it is already installed.
+pub(crate) async fn get(app: &App, window: &tauri::Window, version: &str) -> Result<String> {
+	let dirs = crate::commands::data_dirs(app)?;
 	let say = |progress: EngineProgress| {
 		let _ = window.emit("engine-download", progress);
 	};
@@ -72,7 +78,7 @@ pub async fn download_engine(
 	// for the same version, would otherwise write the same staging file. The
 	// second caller finds the engine installed and returns at once.
 	let _one_at_a_time = app.engine_downloads.lock().await;
-	match fetch(&app.http, &dirs, &version, &say).await {
+	match fetch(&app.http, &dirs, version, &say).await {
 		Ok((path, version)) => {
 			say(EngineProgress::Done { version });
 			// A room waiting on this engine can now fetch its game and map --
@@ -271,10 +277,13 @@ fn unpack(archive: &Path, target: &Path) -> std::result::Result<(), String> {
 		.and_then(|name| name.to_str())
 		.is_some_and(|name| name.ends_with(".zip.part"));
 	if zipped {
-		unzip(archive, target).map_err(|err| err.to_string())
-	} else {
-		sevenz_rust2::decompress_file(archive, target).map_err(|err| err.to_string())
+		return unzip(archive, target).map_err(|err| err.to_string());
 	}
+	// Decoded from memory, where a seek is free: sevenz-rust2 seeks before
+	// every read, which also empties a `BufReader`. BAR's 105 engine took 52 s
+	// straight off the file, 21 s buffered, 2 s from memory.
+	let bytes = std::fs::read(archive).map_err(|err| err.to_string())?;
+	sevenz_rust2::decompress(std::io::Cursor::new(bytes), target).map_err(|err| err.to_string())
 }
 
 /// Unpacks a zip into `target`, keeping the executable bits and symlinks the

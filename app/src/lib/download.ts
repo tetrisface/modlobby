@@ -9,3 +9,8 @@ export function downloadFraction(status: DownloadStatus): number | null {
 	if (status.state !== 'running' || status.total <= 0) return null
 	return Math.min(status.current / status.total, 1)
 }
+
+/** Bytes as something a person reads, which for a download is whole MB. */
+export function mb(bytes: number): string {
+	return `${Math.round(bytes / 1_000_000)} MB`
+}
