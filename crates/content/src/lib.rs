@@ -211,11 +211,20 @@ impl Library {
 		recoil::ai_options_file(&engine.content, ai)
 	}
 
-	/// A pr-downloader to run, from any installed engine.
+	/// A pr-downloader to run: `version`'s own from whichever data directory
+	/// has it, else the newest engine's. The binary does not care which engine
+	/// it came with, and a newer one carries the fixes.
 	pub fn find_downloader(&self, version: &str) -> Option<PathBuf> {
-		self.dirs
-			.all()
-			.find_map(|dir| recoil::find_downloader(dir, version))
+		let beside = |version: &str| {
+			self.find_engine(version)
+				.map(|engine| engine.downloader())
+				.filter(|path| path.is_file())
+		};
+		beside(version).or_else(|| {
+			self.installed_engines()
+				.iter()
+				.find_map(|installed| beside(installed))
+		})
 	}
 
 	/// Every engine version installed anywhere, newest first.
@@ -939,6 +948,27 @@ mod union_tests {
 			recoil::EngineLayout::flat(engine)
 		);
 		assert_eq!(library.installed_engines(), ["2026.07.04"], "listed once");
+	}
+
+	/// The room's own engine brings its pr-downloader from whichever install
+	/// has it. Another stands in only when none does, and then the newest, not
+	/// the folder name that sorts first.
+	#[test]
+	fn the_rooms_own_downloader_then_the_newest() {
+		let (ours, theirs, library) = split();
+		let install = |root: &Path, name: &str| {
+			let dir = root.join("engine").join(name);
+			std::fs::create_dir_all(&dir).unwrap();
+			std::fs::write(dir.join(recoil::ENGINE_BINARY), b"").unwrap();
+			std::fs::write(dir.join(recoil::DOWNLOADER_BINARY), b"").unwrap();
+			dir.join(recoil::DOWNLOADER_BINARY)
+		};
+		install(ours.path(), "105.1.1-2590-gb9462a0 BAR105");
+		let newest = install(ours.path(), "2026.09.02");
+		let rooms = install(theirs.path(), "recoil_2025.06.24");
+
+		assert_eq!(library.find_downloader("2025.06.24"), Some(rooms));
+		assert_eq!(library.find_downloader("2025.01.6"), Some(newest));
 	}
 }
 

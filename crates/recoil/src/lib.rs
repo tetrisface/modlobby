@@ -856,23 +856,6 @@ pub const DOWNLOADER_BINARY: &str = if cfg!(windows) {
 	"pr-downloader"
 };
 
-/// The pr-downloader to use: the one beside `version` if that engine is
-/// installed, otherwise any engine's, since the binary does not care which
-/// engine it came from.
-pub fn find_downloader(data_dir: &Path, version: &str) -> Option<PathBuf> {
-	let preferred = find_engine(data_dir, version).map(|engine| engine.downloader());
-	if let Some(path) = preferred
-		&& path.is_file()
-	{
-		return Some(path);
-	}
-
-	engine_layouts(data_dir)
-		.into_iter()
-		.map(|(_, engine)| engine.downloader())
-		.find(|path| path.is_file())
-}
-
 /// Gives the two binaries modlobby spawns their executable bit back.
 ///
 /// An engine archive is 7z, which carries Windows attributes only, so an

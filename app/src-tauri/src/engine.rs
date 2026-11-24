@@ -9,7 +9,7 @@
 //! verified before anything is unpacked, a download that broke off is resumed
 //! rather than restarted, and every mirror the index named gets its turn.
 //!
-//! After it, `recoil::find_downloader` has something to find and the ordinary
+//! After it, `Library::find_downloader` has something to find and the ordinary
 //! content path takes over.
 
 use std::path::{Path, PathBuf};
