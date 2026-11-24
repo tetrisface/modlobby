@@ -58,6 +58,7 @@ const row = (
 		battle: room,
 		running,
 		hasFriend,
+		refusedAtGate: false,
 		chev: null,
 		modded: false,
 		// As if every host were a person: the server's count, whole.
@@ -246,6 +247,25 @@ describe("relevance, which is Chobby's order", () => {
 			'busy',
 			'running empty',
 			'idle',
+		])
+	})
+
+	test('a room whose friends-only gate turned us away sinks to the locked band, unless a friend is in it', () => {
+		const rows = [
+			{
+				...row({ title: 'turned away', playerCount: 14 }),
+				refusedAtGate: true,
+			},
+			row({ title: 'running' }, true),
+			{
+				...row({ title: 'a friend inside', playerCount: 4 }, false, true),
+				refusedAtGate: true,
+			},
+		]
+		expect(titles(arrange(rows, filters(), ''))).toEqual([
+			'a friend inside',
+			'running',
+			'turned away',
 		])
 	})
 

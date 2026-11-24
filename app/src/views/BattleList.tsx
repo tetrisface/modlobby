@@ -37,6 +37,7 @@ import {
 	SORTS,
 	arrange,
 	band,
+	barred,
 	battleKey,
 	fixed,
 	isModded,
@@ -50,6 +51,7 @@ import {
 import { LIST_TILE, shownMapNames, warmMapPictures } from '../lib/maps'
 import { remPx } from '../lib/rem'
 import { pushNotice } from '../store/chat'
+import { gateRefusals, joinRoom } from '../store/gates'
 import { joinMilestone, markJoinAsked } from '../store/join'
 import { loginUnattended } from '../store/session'
 import {
@@ -139,6 +141,7 @@ export function BattleList() {
 				battle,
 				running: session.users[battle.founder]?.status.inGame ?? false,
 				hasFriend: battle.members.some((name) => known.has(name)),
+				refusedAtGate: gateRefusals().has(battleKey(server, battle.id)),
 				chev: chev(battle.members, session.users),
 				modded: isModded(battle, server, modsServer()),
 				spectators: spectators(battle, session.users),
@@ -303,7 +306,7 @@ export function BattleList() {
 	async function enter(row: Row, password: string | null) {
 		try {
 			markJoinAsked()
-			await api.joinBattle(row.server, row.battle.id, password)
+			await joinRoom(row.server, row.battle.id, password)
 			joinMilestone('accepted')
 			navigate('/room')
 		} catch (error) {
@@ -743,6 +746,11 @@ export function BattleList() {
 													</Show>
 													{r().running ? '▶ ' : ''}
 													{r().battle.locked ? '🔒 ' : ''}
+													<Show when={barred(r())}>
+														<span title='Friends only: this lobby turned you away. It lets in friends of anyone inside.'>
+															{'👥 '}
+														</span>
+													</Show>
 													{r().battle.passworded ? '🔑' : ''}
 												</span>
 											</div>

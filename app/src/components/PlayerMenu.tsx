@@ -2,6 +2,7 @@ import { For, Show, createSignal } from 'solid-js'
 import type { BotView } from '../ipc/bindings/BotView'
 import { api, describeError } from '../ipc/client'
 import { ensureRoom, privateRoom, pushNotice } from '../store/chat'
+import { joinRoom } from '../store/gates'
 import { lobby, mainServer, roomServer, roomSession } from '../store/lobby'
 import { hideLeavers, showsLeavers } from '../store/settings'
 import { isVsAi } from '../lib/battles'
@@ -428,7 +429,7 @@ export function PlayerMenu() {
 								}
 								const at = server()
 								if (at === undefined) return
-								await api.joinBattle(at, room.id, null)
+								await joinRoom(at, room.id, null)
 								location.hash = '#/room'
 							},
 						])

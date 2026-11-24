@@ -24,6 +24,8 @@ export type Row = {
 	running: boolean
 	/** Whether anyone in the room is a friend. */
 	hasFriend: boolean
+	/** Whether the room's friends-only gate turned us away; see `store/gates`. */
+	refusedAtGate: boolean
 	/** The room's median rank, 0-7; see `medianChevron`. */
 	chev: number | null
 	/** Mods on top of the game; see `isModded`. */
@@ -157,15 +159,23 @@ export function isModded(
 }
 
 /**
+ * Whether a room's friends-only gate keeps us out: it said no, and nobody in
+ * the room is a friend. Teiserver lets in a friend of anyone there, watchers
+ * included (`consul_server.ex`, `on_friendlist?`).
+ */
+export const barred = (row: Row) => row.refusedAtGate && !row.hasFriend
+
+/**
  * Which of Chobby's bands a room is in, lowest first: open rooms, then
- * running, then idle ones (no game, nobody seated), then the locked rooms
- * split the same way, then every passworded room as one band. Relevance sorts
- * by it before anything else.
+ * running, then idle ones (no game, nobody seated), then the rooms closed to
+ * us — locked, or barred — split the same way, then every passworded room as
+ * one band. Relevance sorts by it before anything else.
  */
 export function band(row: Row): number {
 	if (row.battle.passworded) return 8
+	const closed = row.battle.locked || barred(row)
 	const idle = !row.running && row.battle.playerCount === 0
-	return (row.battle.locked ? 4 : 0) + (idle ? 2 : 0) + (row.running ? 1 : 0)
+	return (closed ? 4 : 0) + (idle ? 2 : 0) + (row.running ? 1 : 0)
 }
 
 /**
